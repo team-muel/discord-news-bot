@@ -3,87 +3,69 @@ import json
 import discord
 import feedparser
 import asyncio
-import urllib.parse
 from openai import OpenAI
 from supabase import create_client
 
-# 로그 출력 강화
 def log(msg):
-    print(msg, flush=True)
-
-log("1. 환경 변수 로드...")
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID"))
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-client = OpenAI(api_key=OPENAI_KEY)
-
-async def collect_and_analyze():
-    log("2. 뉴스 분석 시작 (DB 저장)...")
-    search_query = '("매일경제" OR "한국경제") (금리 OR 물가 OR 반도체 OR 부동산 OR 유행)'
-    encoded_query = urllib.parse.quote(search_query)
-    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
-    
-    feed = await asyncio.to_thread(feedparser.parse, rss_url)
-    if not feed.entries: return
-
-    for entry in feed.entries[:12]: # 분석 개수 최적화
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": f"제목: {entry.title}\n5대 섹터(금리, 물가, 반도체, 부동산, 유행) JSON 분류."}],
-                response_format={ "type": "json_object" }
-            )
-            ai_res = json.loads(response.choices[0].message.content)
-            sector = ai_res.get('sector')
-            if sector in ["금리", "물가", "반도체", "부동산", "유행"]:
-                supabase.table("news_sentiment").insert({
-                    "title": entry.title,
-                    "sector": sector,
-                    "sentiment_score": int(round(float(ai_res.get('sentiment_score', 0)))),
-                    "summary": ai_res.get('summary', ''),
-                    "source": entry.link
-                }).execute()
-                log(f"   ✅ {sector} 저장 완료")
-        except: continue
+    print(f">> [LOG] {msg}", flush=True)
 
 async def main():
-    # 뉴스 분석은 로그인과 별개로 먼저 끝냄
-    await collect_and_analyze()
-    
-    log("3. 디스코드 접속 및 리포트 전송...")
-    intents = discord.Intents.default()
-    dc = discord.Client(intents=intents)
-
-    @dc.event
-    async def on_ready():
-        log(f"🤖 로그인 성공: {dc.user}")
-        ch = dc.get_channel(TARGET_CHANNEL_ID)
-        if ch:
-            await ch.send("🗞️ **[GitHub] 오늘의 5대 섹터 핵심 리포트**")
-            sectors = ["금리", "물가", "반도체", "부동산", "유행"]
-            for s in sectors:
-                res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
-                if res.data:
-                    item = res.data[0]
-                    score = item['sentiment_score']
-                    color = 0x2ecc71 if score > 0 else 0xe74c3c if score < 0 else 0x95a5a6
-                    embed = discord.Embed(title=f"[{item['sector']}] {item['title']}", description=item['summary'], url=item['source'], color=color)
-                    embed.add_field(name="심리 지수", value=f"**{score}점**")
-                    await ch.send(embed=embed)
-                    log(f"   📤 {s} 리포트 발송")
-                    await asyncio.sleep(1) # 전송 안정성 확보
-            log("🏁 모든 전송이 완료되었습니다.")
-        await dc.close()
-
-    # 타임아웃을 2분으로 대폭 늘려 안정성 확보
     try:
-        await asyncio.wait_for(dc.start(DISCORD_TOKEN), timeout=120.0)
+        log("프로그램 시작")
+        # 1. 키 로드 점검
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            log("❌ 에러: Supabase 키를 깃허브 Secrets에서 찾을 수 없습니다.")
+            return
+        
+        # 2. 클라이언트 초기화
+        supabase = create_client(url, key)
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        log("클라이언트 초기화 완료")
+
+        # 3. 뉴스 1개만 테스트 분석
+        feed = feedparser.parse("https://news.naver.com/rss/main/101")
+        if feed.entries:
+            test_entry = feed.entries[0]
+            log(f"테스트 기사 발견: {test_entry.title[:15]}")
+            
+            # OpenAI 분석
+            res = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": f"제목: {test_entry.title} 분류(금리,물가,반도체,부동산,유행) JSON"}],
+                response_format={ "type": "json_object" }
+            )
+            ai_data = json.loads(res.choices[0].message.content)
+            log(f"AI 분석 성공: {ai_data.get('sector')}")
+
+            # DB 저장 (이게 핵심)
+            db_res = supabase.table("news_sentiment").insert({
+                "title": test_entry.title,
+                "sector": ai_data.get('sector', '기타'),
+                "sentiment_score": 0,
+                "summary": "테스트",
+                "source": test_entry.link
+            }).execute()
+            log("✅ DB 저장 명령 전송 완료")
+        
+        # 4. 디스코드 전송 (간소화)
+        intents = discord.Intents.default()
+        dc = discord.Client(intents=intents)
+
+        @dc.event
+        async def on_ready():
+            log(f"디스코드 로그인 성공: {dc.user}")
+            ch = dc.get_channel(int(os.getenv("TARGET_CHANNEL_ID")))
+            if ch:
+                await ch.send("🚀 시스템 진단 테스트: DB 저장 및 전송 성공")
+            await dc.close()
+
+        log("디스코드 접속 시도...")
+        await asyncio.wait_for(dc.start(os.getenv("DISCORD_TOKEN")), timeout=60.0)
+
     except Exception as e:
-        log(f"⚠️ 전송 과정 중 알림: {e}")
+        log(f"⚠️ 치명적 에러 발생: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
