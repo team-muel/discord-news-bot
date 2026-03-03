@@ -1,0 +1,24 @@
+name: YouTube Monitor
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # 10분마다 자동으로 실행합니다.
+  workflow_dispatch: # 직접 버튼을 눌러서 실행할 수도 있게 합니다.
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: pip install discord.py feedparser supabase
+      - name: Run Monitor
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        run: python youtube_monitor.py
