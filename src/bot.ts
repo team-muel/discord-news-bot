@@ -6,7 +6,7 @@ export async function startBot(token: string): Promise<void> {
   if (!token) throw new Error('Discord token is required');
 
   if (client.isReady()) {
-    console.log('[BOT] client already ready');
+    logger.warn('[BOT] client already ready');
     return;
   }
 

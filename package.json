@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "muel-backend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,11 +10,9 @@
     "start": "npm run start:server",
     "start:server": "tsx server.ts",
     "start:bot": "tsx bot.ts",
-    "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "rimraf dist",
     "lint": "tsc --noEmit",
-    "seed:research-presets": "tsx scripts/seed-research-presets.ts",
-    "check:tailwind-binding": "node -e \"require('@tailwindcss/oxide'); console.log('tailwind oxide binding ok')\""
+    "seed:research-presets": "tsx scripts/seed-research-presets.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
