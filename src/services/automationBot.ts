@@ -245,6 +245,9 @@ const startPersistentJob = (jobName: AutomationJobName) => {
 
     if (code === 0) {
       logger.info('[AUTOMATION] Persistent worker %s exited gracefully', jobName);
+      if (started && state.enabled) {
+        setTimeout(() => startPersistentJob(jobName), AUTOMATION_RESTART_DELAY_MS);
+      }
       return;
     }
 

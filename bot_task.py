@@ -43,6 +43,28 @@ except ValueError:
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_ENABLED else None
 ai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 latest_results = {}
+NEWS_TABLE_AVAILABLE = SUPABASE_ENABLED
+NEWS_TABLE_ERROR_LOGGED = False
+
+
+def is_missing_table_error(err, table_name: str) -> bool:
+    text = str(err)
+    lowered = text.lower()
+    return (
+        "pgrst205" in lowered
+        or f"'{table_name}'" in lowered
+        or f'"{table_name}"' in lowered
+        or table_name.lower() in lowered and "schema cache" in lowered
+    )
+
+
+def disable_news_table_if_missing(err):
+    global NEWS_TABLE_AVAILABLE, NEWS_TABLE_ERROR_LOGGED
+    if NEWS_TABLE_AVAILABLE and is_missing_table_error(err, "news_sentiment"):
+        NEWS_TABLE_AVAILABLE = False
+        if not NEWS_TABLE_ERROR_LOGGED:
+            NEWS_TABLE_ERROR_LOGGED = True
+            log("⚠️ news_sentiment 테이블을 찾지 못해 no-db 모드로 전환합니다.")
 
 
 def fallback_analysis(title: str):
@@ -81,6 +103,7 @@ def fallback_analysis(title: str):
     return {"sector": sector, "sentiment_score": score, "summary": summary}
 
 async def main():
+    global NEWS_TABLE_AVAILABLE
     log("1단계: 강화된 AI 심리 분석 시작 (섹터: 세계전쟁상황 업데이트)")
     
     # [수정] 검색 키워드에 '전쟁', '교전', '이란', '중동' 등을 추가하여 관련 뉴스를 유도합니다.
@@ -146,24 +169,27 @@ async def main():
                     "source": entry.link,
                 }
 
-                if SUPABASE_ENABLED and supabase is not None:
-                    res = supabase.table("news_sentiment").insert({
-                        "title": entry.title,
-                        "sector": sector,
-                        "sentiment_score": score,
-                        "summary": summary,
-                        "source": entry.link
-                    }).execute()
-                    # 간단한 결과 체크
+                if SUPABASE_ENABLED and NEWS_TABLE_AVAILABLE and supabase is not None:
                     try:
+                        res = supabase.table("news_sentiment").insert({
+                            "title": entry.title,
+                            "sector": sector,
+                            "sentiment_score": score,
+                            "summary": summary,
+                            "source": entry.link
+                        }).execute()
+                        # 간단한 결과 체크
                         if hasattr(res, 'status_code') and res.status_code >= 400:
                             log(f"   ⚠️ DB 저장 실패 status={getattr(res, 'status_code', 'unknown')}")
+                            save_count += 1
+                            log(f"   ✅ no-db 분석(저장 실패 폴백): [{sector}] 심리점수: {score}점")
                         else:
                             save_count += 1
                             log(f"   ✅ DB 저장: [{sector}] 심리점수: {score}점")
-                    except Exception:
+                    except Exception as db_err:
+                        disable_news_table_if_missing(db_err)
                         save_count += 1
-                        log(f"   ✅ DB 저장(확인 불가): [{sector}] 심리점수: {score}점")
+                        log(f"   ✅ no-db 분석(DB 예외 폴백): [{sector}] 심리점수: {score}점")
                 else:
                     save_count += 1
                     log(f"   ✅ no-db 분석: [{sector}] 심리점수: {score}점")
@@ -193,11 +219,20 @@ async def send_report(dc: discord.Client, sectors):
 
     await ch.send("📊 **AI 경제/국제 정세 분석 리포트**")
     for s in sectors:
-        if SUPABASE_ENABLED and supabase is not None:
-            res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
-            if not res.data:
-                continue
-            item = res.data[0]
+        if SUPABASE_ENABLED and NEWS_TABLE_AVAILABLE and supabase is not None:
+            try:
+                res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
+                if not res.data:
+                    item = latest_results.get(s)
+                    if not item:
+                        continue
+                else:
+                    item = res.data[0]
+            except Exception as db_err:
+                disable_news_table_if_missing(db_err)
+                item = latest_results.get(s)
+                if not item:
+                    continue
         else:
             item = latest_results.get(s)
             if not item:

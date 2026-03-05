@@ -57,7 +57,19 @@ Also verify Runtime Environment Variables in Render:
 - For automation workers (shared token):
   - `SECONDARY_DISCORD_TOKEN=<automation bot token>`
   - optional fallback: `AUTOMATION_DISCORD_TOKEN=<automation bot token>`
+  - recommended: `SECONDARY_DISCORD_TOKEN != DISCORD_TOKEN`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
+
+## 2.2) Supabase Schema Setup (Required for DB mode)
+
+If `news_sentiment` or `youtube_log` table is missing, automation keeps running in no-db mode and logs warnings.
+To enable persistent DB storage, run `docs/SUPABASE_SCHEMA.sql` in Supabase SQL Editor.
+
+Typical missing-schema error:
+
+- `PGRST205: Could not find the table 'public.news_sentiment' in the schema cache`
+
+After applying SQL, restart or redeploy the service.
 
 ## 3) Restart / Stop Commands
 

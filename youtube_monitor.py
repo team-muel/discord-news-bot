@@ -31,6 +31,28 @@ if not YOUTUBE_DISCORD_TOKEN:
     raise SystemExit("SECONDARY_DISCORD_TOKEN (or AUTOMATION_DISCORD_TOKEN) must be set in environment")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_ENABLED else None
+YOUTUBE_TABLE_AVAILABLE = SUPABASE_ENABLED
+YOUTUBE_TABLE_ERROR_LOGGED = False
+
+
+def is_missing_table_error(err, table_name: str) -> bool:
+    text = str(err)
+    lowered = text.lower()
+    return (
+        "pgrst205" in lowered
+        or f"'{table_name}'" in lowered
+        or f'"{table_name}"' in lowered
+        or table_name.lower() in lowered and "schema cache" in lowered
+    )
+
+
+def disable_youtube_table_if_missing(err):
+    global YOUTUBE_TABLE_AVAILABLE, YOUTUBE_TABLE_ERROR_LOGGED
+    if YOUTUBE_TABLE_AVAILABLE and is_missing_table_error(err, "youtube_log"):
+        YOUTUBE_TABLE_AVAILABLE = False
+        if not YOUTUBE_TABLE_ERROR_LOGGED:
+            YOUTUBE_TABLE_ERROR_LOGGED = True
+            print(">> ⚠️ youtube_log 테이블을 찾지 못해 no-db 모드로 전환합니다.")
 
 async def check_youtube(client: discord.Client):
     global LAST_VIDEO_ID
@@ -47,11 +69,12 @@ async def check_youtube(client: discord.Client):
 
     # DB 조회 (or in-memory fallback)
     res = None
-    if SUPABASE_ENABLED and supabase is not None:
+    if SUPABASE_ENABLED and YOUTUBE_TABLE_AVAILABLE and supabase is not None:
         try:
             res = supabase.table("youtube_log").select("video_id").eq("channel_id", CHANNEL_ID).execute()
         except Exception as e:
-            print(f">> DB 조회 오류: {e}")
+            disable_youtube_table_if_missing(e)
+            print(f">> DB 조회 오류(폴백): {e}")
             res = None
     else:
         if LAST_VIDEO_ID == v_id:
@@ -67,11 +90,16 @@ async def check_youtube(client: discord.Client):
                 print(f">> [DAEMON] alert sent: {v_title}")
 
             try:
-                if SUPABASE_ENABLED and supabase is not None:
-                    if not res or not getattr(res, 'data', None) or res.data == []:
-                        supabase.table("youtube_log").insert({"channel_id": CHANNEL_ID, "video_id": v_id}).execute()
-                    else:
-                        supabase.table("youtube_log").update({"video_id": v_id}).eq("channel_id", CHANNEL_ID).execute()
+                if SUPABASE_ENABLED and YOUTUBE_TABLE_AVAILABLE and supabase is not None:
+                    try:
+                        if not res or not getattr(res, 'data', None) or res.data == []:
+                            supabase.table("youtube_log").insert({"channel_id": CHANNEL_ID, "video_id": v_id}).execute()
+                        else:
+                            supabase.table("youtube_log").update({"video_id": v_id}).eq("channel_id", CHANNEL_ID).execute()
+                    except Exception as e:
+                        disable_youtube_table_if_missing(e)
+                        LAST_VIDEO_ID = v_id
+                        print(f">> DB 저장 오류(폴백): {e}")
                 else:
                     LAST_VIDEO_ID = v_id
             except Exception as e:
