@@ -55,8 +55,8 @@ Also verify Runtime Environment Variables in Render:
 - `START_AUTOMATION_BOT=true`
 - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
 - For automation workers (shared token):
-	- `SECONDARY_DISCORD_TOKEN=<automation bot token>`
-	- optional fallback: `AUTOMATION_DISCORD_TOKEN=<automation bot token>`
+  - `SECONDARY_DISCORD_TOKEN=<automation bot token>`
+  - optional fallback: `AUTOMATION_DISCORD_TOKEN=<automation bot token>`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
 
 ## 3) Restart / Stop Commands
