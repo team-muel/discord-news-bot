@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits } from 'discord.js';
+import logger from './logger';
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -25,7 +26,7 @@ export async function startBot(token: string): Promise<void> {
     });
   });
 
-  console.log('[BOT] Discord client logged in');
+  logger.info('[BOT] Discord client logged in');
 }
 
 export default { client, startBot };
