@@ -22,8 +22,6 @@ TARGET_CHANNEL_ID_RAW = os.getenv("TARGET_CHANNEL_ID")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
-if not OPENAI_API_KEY:
-    raise SystemExit("OPENAI_API_KEY must be set in environment")
 if not DISCORD_TOKEN:
     raise SystemExit("DISCORD_TOKEN must be set in environment")
 if not TARGET_CHANNEL_ID_RAW:
@@ -35,7 +33,43 @@ except ValueError:
     raise SystemExit("TARGET_CHANNEL_ID must be an integer")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-client = OpenAI(api_key=OPENAI_API_KEY)
+ai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+
+def fallback_analysis(title: str):
+    lowered = title.lower()
+
+    sector_rules = [
+        ("세계전쟁상황", ["전쟁", "교전", "미사일", "중동", "우크라", "러시아", "이스라엘", "이란", "군사", "휴전"]),
+        ("금리", ["금리", "fomc", "fed", "연준", "기준금리", "국채", "채권"]),
+        ("물가", ["물가", "cpi", "ppi", "인플레", "인플레이션", "소비자물가"]),
+        ("반도체", ["반도체", "메모리", "hbm", "파운드리", "엔비디아", "삼성전자", "sk하이닉스"]),
+        ("부동산", ["부동산", "아파트", "주택", "분양", "전세", "재건축", "재개발"]),
+    ]
+
+    sector = "세계전쟁상황"
+    for candidate, keywords in sector_rules:
+        if any(keyword in lowered for keyword in keywords):
+            sector = candidate
+            break
+
+    positive_words = ["상승", "회복", "개선", "호재", "완화", "증가", "안정", "돌파"]
+    negative_words = ["하락", "급락", "악화", "위기", "불안", "긴장", "충돌", "침체", "경고"]
+
+    score = 0
+    for word in positive_words:
+        if word in lowered:
+            score += 1
+    for word in negative_words:
+        if word in lowered:
+            score -= 1
+
+    if score == 0:
+        score = -1 if sector == "세계전쟁상황" else 1
+
+    score = max(-5, min(5, score))
+    summary = f"{sector} 관련 핵심 이슈: {title}"
+    return {"sector": sector, "sentiment_score": score, "summary": summary}
 
 async def main():
     log("1단계: 강화된 AI 심리 분석 시작 (섹터: 세계전쟁상황 업데이트)")
@@ -52,34 +86,37 @@ async def main():
 
     for entry in feed.entries[:15]:
         try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{
-                    "role": "user", 
-                    "content": f"""
-                    다음 뉴스 제목을 분석해서 경제/국제 섹터를 분류하고 '시장 심리 점수'를 매겨줘.
-                    제목: {entry.title}
-                    
-                    [채점 규칙]
-                    1. 섹터: 금리, 물가, 반도체, 부동산, 세계전쟁상황 중 하나.
-                    * 전쟁, 군사 충돌, 중동 정세 등은 반드시 '세계전쟁상황'으로 분류해.
-                    2. sentiment_score: -5(매우 심각한 악재/불안)에서 5(엄청난 호재/안정) 사이의 정수. 
-                    * 아주 사소한 영향이라도 있다면 0점 대신 1이나 -1을 줘. 중립(0)은 가급적 피할 것.
-                    3. summary: 기사 내용을 한 문장으로 요약.
-                    
-                    반드시 아래 JSON 형식으로만 답해:
-                    {{"sector": "분류", "sentiment_score": 숫자, "summary": "요약"}}
-                    """
-                }],
-                response_format={ "type": "json_object" }
-            )
-            # 안전한 JSON 파싱 및 값 검증
-            try:
-                ai_content = response.choices[0].message.content
-                ai_res = json.loads(ai_content)
-            except Exception as e:
-                log(f"   ⚠️ AI 응답 파싱 실패: {e}")
-                continue
+            if ai_client:
+                response = ai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{
+                        "role": "user", 
+                        "content": f"""
+                        다음 뉴스 제목을 분석해서 경제/국제 섹터를 분류하고 '시장 심리 점수'를 매겨줘.
+                        제목: {entry.title}
+                        
+                        [채점 규칙]
+                        1. 섹터: 금리, 물가, 반도체, 부동산, 세계전쟁상황 중 하나.
+                        * 전쟁, 군사 충돌, 중동 정세 등은 반드시 '세계전쟁상황'으로 분류해.
+                        2. sentiment_score: -5(매우 심각한 악재/불안)에서 5(엄청난 호재/안정) 사이의 정수. 
+                        * 아주 사소한 영향이라도 있다면 0점 대신 1이나 -1을 줘. 중립(0)은 가급적 피할 것.
+                        3. summary: 기사 내용을 한 문장으로 요약.
+                        
+                        반드시 아래 JSON 형식으로만 답해:
+                        {{"sector": "분류", "sentiment_score": 숫자, "summary": "요약"}}
+                        """
+                    }],
+                    response_format={ "type": "json_object" }
+                )
+                # 안전한 JSON 파싱 및 값 검증
+                try:
+                    ai_content = response.choices[0].message.content
+                    ai_res = json.loads(ai_content)
+                except Exception as e:
+                    log(f"   ⚠️ AI 응답 파싱 실패, 폴백 사용: {e}")
+                    ai_res = fallback_analysis(entry.title)
+            else:
+                ai_res = fallback_analysis(entry.title)
 
             sector = ai_res.get('sector')
             if sector in valid_sectors:
@@ -147,4 +184,6 @@ async def main():
     await dc.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
+    if not OPENAI_API_KEY:
+        log("OPENAI_API_KEY missing: using fallback analysis mode")
     asyncio.run(main())
