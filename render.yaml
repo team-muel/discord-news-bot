@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: muel-service
+    runtime: node
+    plan: starter
+    autoDeploy: true
+    buildCommand: npm ci; python -m pip install -r requirements.txt; npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: START_BOT
+        value: "true"
+      - key: START_AUTOMATION_BOT
+        value: "true"
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: TARGET_CHANNEL_ID
+        sync: false

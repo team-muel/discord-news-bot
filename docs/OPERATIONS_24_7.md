@@ -38,6 +38,24 @@ npm run pm2:status
 npm run pm2:logs
 ```
 
+## 2.1) Render Settings (Important)
+
+When deploying as a Render `Web Service`, set commands exactly as below:
+
+- Build Command: `npm ci; python -m pip install -r requirements.txt; npm run build`
+- Start Command: `npm run start`
+
+Why: `youtube_monitor.py` and `bot_task.py` require Python packages from `requirements.txt`
+(`discord.py`, `feedparser`, `supabase`, etc.). Without this step, automation jobs fail with
+`ModuleNotFoundError`.
+
+Also verify Runtime Environment Variables in Render:
+
+- `START_BOT=true`
+- `START_AUTOMATION_BOT=true`
+- `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
+- `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
+
 ## 3) Restart / Stop Commands
 
 ```bash
