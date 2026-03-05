@@ -12,22 +12,6 @@ process.on('uncaughtException', (error) => {
   console.error('[PROCESS] Uncaught exception:', error);
 });
 
-const handleShutdownSignal = (signal: NodeJS.Signals) => {
-  console.log(`[PROCESS] Received ${signal}, shutting down Discord client...`);
-  try {
-    if (client.isReady()) {
-      client.destroy();
-    }
-  } catch (error) {
-    console.error('[PROCESS] Failed during Discord client shutdown:', error);
-  } finally {
-    process.exit(0);
-  }
-};
-
-process.on('SIGINT', () => handleShutdownSignal('SIGINT'));
-process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
-
 const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
 
 // 개발환경에서만 간단히 존재 여부를 남깁니다(길이 등 민감정보는 노출하지 않음).
