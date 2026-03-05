@@ -21,6 +21,8 @@ services:
         sync: false
       - key: DISCORD_TOKEN
         sync: false
+      - key: START_BOT
+        value: "true"
       - key: ENABLE_SECONDARY_BOT
         value: "false"
       - key: SECONDARY_DISCORD_TOKEN

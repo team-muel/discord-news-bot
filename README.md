@@ -35,20 +35,28 @@ Required environment variables
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (service role, keep secret)
-- `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN`
+- `START_BOT` (`true` by default, set `false` for API-only mode)
+- `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN` (required when `START_BOT=true`)
 - `ENABLE_SECONDARY_BOT` (optional, `true` to enable second bot in same service)
 - `SECONDARY_DISCORD_TOKEN` (optional, required when `ENABLE_SECONDARY_BOT=true`)
 - aliases: `SECONDARY_DISCORD_BOT_TOKEN`, `SECONDARY_BOT_TOKEN`
 - `DISCORD_BOT_ALERT_WEBHOOK_URL` (optional)
 - `DATABASE_URL` (if used)
+- `OAUTH_REDIRECT_ALLOWLIST` (recommended for OAuth redirect validation)
+- `CORS_ALLOWLIST` (optional, defaults to `OAUTH_REDIRECT_ALLOWLIST`)
 
 Single service / two bots mode
 
 - Keep one Render Web Service
-- Primary bot: `DISCORD_TOKEN`
+- Primary bot: `START_BOT=true` + `DISCORD_TOKEN`
 - Secondary bot: `ENABLE_SECONDARY_BOT=true` + `SECONDARY_DISCORD_TOKEN=<token>`
 - Important: secondary token must be different from primary token
 - Recommended: run crawler scheduler only on primary path (`FEATURE_CRAWLER_SCHEDULER_ENABLED=true` as default)
+
+API-only mode
+
+- Set `START_BOT=false` to run backend API without starting Discord clients.
+- In API-only mode, secondary bot is also skipped automatically.
 
 Local env template
 
