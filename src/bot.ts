@@ -48,7 +48,7 @@ const botRuntimeState: BotRuntimeSnapshot = {
   manualReconnectCooldownRemainingSec: 0,
 };
 
-client.on('ready', () => {
+client.on('clientReady', () => {
   botRuntimeState.ready = true;
   botRuntimeState.started = true;
   botRuntimeState.lastReadyAt = new Date().toISOString();
@@ -99,14 +99,14 @@ export async function startBot(token: string): Promise<void> {
       logger.info('[BOT] Attempting login (attempt %d/%d)', attempt, maxRetries);
       await client.login(token);
 
-      // Wait for ready event with configurable timeout
+      // Wait for clientReady event with configurable timeout
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Discord client ready timeout')), readyTimeout);
         if (client.isReady()) {
           clearTimeout(timeout);
           return resolve();
         }
-        client.once('ready', () => {
+        client.once('clientReady', () => {
           clearTimeout(timeout);
           resolve();
         });
