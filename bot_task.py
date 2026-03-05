@@ -20,7 +20,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-NEWS_DISCORD_TOKEN = os.getenv("AUTOMATION_NEWS_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN") or DISCORD_TOKEN
+NEWS_DISCORD_TOKEN = os.getenv("SECONDARY_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN") or DISCORD_TOKEN
 TARGET_CHANNEL_ID_RAW = os.getenv("TARGET_CHANNEL_ID")
 AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_NEWS_INTERVAL_MIN") or "30"))
 DAEMON_MODE = "--daemon" in sys.argv
@@ -28,7 +28,7 @@ DAEMON_MODE = "--daemon" in sys.argv
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
 if not NEWS_DISCORD_TOKEN:
-    raise SystemExit("AUTOMATION_NEWS_DISCORD_TOKEN (or AUTOMATION_DISCORD_TOKEN / DISCORD_TOKEN) must be set in environment")
+    raise SystemExit("SECONDARY_DISCORD_TOKEN (or AUTOMATION_DISCORD_TOKEN / DISCORD_TOKEN) must be set in environment")
 if not TARGET_CHANNEL_ID_RAW:
     raise SystemExit("TARGET_CHANNEL_ID must be set in environment")
 
