@@ -17,16 +17,19 @@ def log(msg):
 
 # 1. 초기 설정 및 클라이언트 준비
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or os.getenv("SUPABASE_KEY")
+)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 NEWS_DISCORD_TOKEN = os.getenv("SECONDARY_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN") or DISCORD_TOKEN
 TARGET_CHANNEL_ID_RAW = os.getenv("TARGET_CHANNEL_ID")
 AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_NEWS_INTERVAL_MIN") or "30"))
 DAEMON_MODE = "--daemon" in sys.argv
+SUPABASE_ENABLED = bool(SUPABASE_URL and SUPABASE_KEY)
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
 if not NEWS_DISCORD_TOKEN:
     raise SystemExit("SECONDARY_DISCORD_TOKEN (or AUTOMATION_DISCORD_TOKEN / DISCORD_TOKEN) must be set in environment")
 if not TARGET_CHANNEL_ID_RAW:
@@ -37,8 +40,9 @@ try:
 except ValueError:
     raise SystemExit("TARGET_CHANNEL_ID must be an integer")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_ENABLED else None
 ai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+latest_results = {}
 
 
 def fallback_analysis(title: str):
@@ -134,23 +138,35 @@ async def main():
                 score = max(-5, min(5, score))
 
                 summary = ai_res.get('summary', '분석 완료')
-                res = supabase.table("news_sentiment").insert({
-                    "title": entry.title,
+                latest_results[sector] = {
                     "sector": sector,
+                    "title": entry.title,
                     "sentiment_score": score,
                     "summary": summary,
-                    "source": entry.link
-                }).execute()
-                # 간단한 결과 체크
-                try:
-                    if hasattr(res, 'status_code') and res.status_code >= 400:
-                        log(f"   ⚠️ DB 저장 실패 status={getattr(res, 'status_code', 'unknown')}")
-                    else:
+                    "source": entry.link,
+                }
+
+                if SUPABASE_ENABLED and supabase is not None:
+                    res = supabase.table("news_sentiment").insert({
+                        "title": entry.title,
+                        "sector": sector,
+                        "sentiment_score": score,
+                        "summary": summary,
+                        "source": entry.link
+                    }).execute()
+                    # 간단한 결과 체크
+                    try:
+                        if hasattr(res, 'status_code') and res.status_code >= 400:
+                            log(f"   ⚠️ DB 저장 실패 status={getattr(res, 'status_code', 'unknown')}")
+                        else:
+                            save_count += 1
+                            log(f"   ✅ DB 저장: [{sector}] 심리점수: {score}점")
+                    except Exception:
                         save_count += 1
-                        log(f"   ✅ DB 저장: [{sector}] 심리점수: {score}점")
-                except Exception:
+                        log(f"   ✅ DB 저장(확인 불가): [{sector}] 심리점수: {score}점")
+                else:
                     save_count += 1
-                    log(f"   ✅ DB 저장(확인 불가): [{sector}] 심리점수: {score}점")
+                    log(f"   ✅ no-db 분석: [{sector}] 심리점수: {score}점")
         except Exception as e:
             log(f"   ⚠️ 오류: {e}")
             continue
@@ -159,7 +175,10 @@ async def main():
         log("❌ 신규 데이터 없음")
         return
 
-    return valid_sectors
+    if SUPABASE_ENABLED:
+        return valid_sectors
+
+    return list(latest_results.keys())
 
 
 async def send_report(dc: discord.Client, sectors):
@@ -174,24 +193,31 @@ async def send_report(dc: discord.Client, sectors):
 
     await ch.send("📊 **AI 경제/국제 정세 분석 리포트**")
     for s in sectors:
-        res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
-        if res.data:
+        if SUPABASE_ENABLED and supabase is not None:
+            res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
+            if not res.data:
+                continue
             item = res.data[0]
-            score = int(item['sentiment_score'])
+        else:
+            item = latest_results.get(s)
+            if not item:
+                continue
 
-            if score > 0:
-                color = 0x2ecc71
-            elif score < 0:
-                color = 0xe74c3c
-            else:
-                color = 0x95a5a6
+        score = int(item['sentiment_score'])
 
-            embed = discord.Embed(title=f"[{item['sector']}] {item['title']}", description=item['summary'], url=item['source'], color=color)
+        if score > 0:
+            color = 0x2ecc71
+        elif score < 0:
+            color = 0xe74c3c
+        else:
+            color = 0x95a5a6
 
-            gauge = "🟦" * (score + 5) if score >= 0 else "🟥" * (score + 5)
-            embed.add_field(name="AI 심리 지수", value=f"**{score}점**\n{gauge}")
+        embed = discord.Embed(title=f"[{item['sector']}] {item['title']}", description=item['summary'], url=item['source'], color=color)
 
-            await ch.send(embed=embed)
+        gauge = "🟦" * (score + 5) if score >= 0 else "🟥" * (score + 5)
+        embed.add_field(name="AI 심리 지수", value=f"**{score}점**\n{gauge}")
+
+        await ch.send(embed=embed)
 
     log("[DAEMON] report sent")
 
@@ -235,6 +261,8 @@ async def run_daemon_mode():
     await dc.start(NEWS_DISCORD_TOKEN)
 
 if __name__ == "__main__":
+    if not SUPABASE_ENABLED:
+        log("SUPABASE missing: running in no-db mode")
     if not OPENAI_API_KEY:
         log("OPENAI_API_KEY missing: using fallback analysis mode")
     if DAEMON_MODE:

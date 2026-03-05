@@ -13,22 +13,27 @@ load_dotenv()
 CHANNEL_ID = "UC6dN6Rilzh9KmzymxnZGslg"
 RSS_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or os.getenv("SUPABASE_KEY")
+)
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 YOUTUBE_DISCORD_TOKEN = os.getenv("SECONDARY_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN") or DISCORD_TOKEN
 # 여기는 환경변수로 덮어쓸 수 있도록 지원
 TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID") or "1478211311480471747")
 AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_YOUTUBE_INTERVAL_MIN") or "10"))
 DAEMON_MODE = "--daemon" in sys.argv
+SUPABASE_ENABLED = bool(SUPABASE_URL and SUPABASE_KEY)
+LAST_VIDEO_ID = None
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
 if not YOUTUBE_DISCORD_TOKEN:
     raise SystemExit("SECONDARY_DISCORD_TOKEN (or AUTOMATION_DISCORD_TOKEN / DISCORD_TOKEN) must be set in environment")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_ENABLED else None
 
 async def check_youtube(client: discord.Client):
+    global LAST_VIDEO_ID
     print(">> 업데이트 확인 시작...")
     feed = await asyncio.to_thread(feedparser.parse, RSS_URL)
     if not feed.entries:
@@ -40,12 +45,19 @@ async def check_youtube(client: discord.Client):
     v_url = latest_video.link
     v_title = latest_video.title
 
-    # DB 조회
-    try:
-        res = supabase.table("youtube_log").select("video_id").eq("channel_id", CHANNEL_ID).execute()
-    except Exception as e:
-        print(f">> DB 조회 오류: {e}")
-        res = None
+    # DB 조회 (or in-memory fallback)
+    res = None
+    if SUPABASE_ENABLED and supabase is not None:
+        try:
+            res = supabase.table("youtube_log").select("video_id").eq("channel_id", CHANNEL_ID).execute()
+        except Exception as e:
+            print(f">> DB 조회 오류: {e}")
+            res = None
+    else:
+        if LAST_VIDEO_ID == v_id:
+            print(f">> 중복 영상 패스(in-memory): {v_title}")
+            print(">> [DAEMON] tick complete")
+            return
 
     if not res or not getattr(res, 'data', None) or res.data == [] or res.data[0].get('video_id') != v_id:
         try:
@@ -55,10 +67,13 @@ async def check_youtube(client: discord.Client):
                 print(f">> [DAEMON] alert sent: {v_title}")
 
             try:
-                if not res or not getattr(res, 'data', None) or res.data == []:
-                    supabase.table("youtube_log").insert({"channel_id": CHANNEL_ID, "video_id": v_id}).execute()
+                if SUPABASE_ENABLED and supabase is not None:
+                    if not res or not getattr(res, 'data', None) or res.data == []:
+                        supabase.table("youtube_log").insert({"channel_id": CHANNEL_ID, "video_id": v_id}).execute()
+                    else:
+                        supabase.table("youtube_log").update({"video_id": v_id}).eq("channel_id", CHANNEL_ID).execute()
                 else:
-                    supabase.table("youtube_log").update({"video_id": v_id}).eq("channel_id", CHANNEL_ID).execute()
+                    LAST_VIDEO_ID = v_id
             except Exception as e:
                 print(f">> DB 저장 오류: {e}")
         except Exception as e:
@@ -101,6 +116,8 @@ async def run_daemon_mode():
     await client.start(YOUTUBE_DISCORD_TOKEN)
 
 if __name__ == "__main__":
+    if not SUPABASE_ENABLED:
+        print(">> SUPABASE missing: running in no-db mode")
     if DAEMON_MODE:
         asyncio.run(run_daemon_mode())
     else:
