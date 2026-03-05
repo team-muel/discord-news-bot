@@ -22,19 +22,19 @@ logger.info('[BOOT] START_BOT=%s START_AUTOMATION_BOT=%s DISCORD_TOKEN_PRESENT=%
 if (START_BOT) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
   if (!token) {
-    logger.error('START_BOT=true but DISCORD token not provided. Set DISCORD_TOKEN or DISCORD_BOT_TOKEN.');
-    process.exit(1);
+    logger.error('START_BOT=true but DISCORD token not provided. Running automation-only fallback.');
   }
 
-  import('./src/bot')
-    .then(({ startBot }) => startBot(token))
-    .then(() => {
-      logger.info('[BOT] START_BOT enabled and bot started');
-    })
-    .catch((err) => {
-      logger.error('[BOT] Failed to start while START_BOT=true: %o', err);
-      process.exit(1);
-    });
+  if (token) {
+    import('./src/bot')
+      .then(({ startBot }) => startBot(token))
+      .then(() => {
+        logger.info('[BOT] START_BOT enabled and bot started');
+      })
+      .catch((err) => {
+        logger.error('[BOT] Failed to start while START_BOT=true. Continuing with automation-only mode: %o', err);
+      });
+  }
 } else {
   logger.info('[BOT] START_BOT disabled; server-only mode');
 }

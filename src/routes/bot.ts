@@ -14,11 +14,15 @@ export function createBotRouter(): Router {
     const bot = getBotRuntimeSnapshot();
     const automation = getAutomationRuntimeSnapshot();
 
-    const primaryHealthy = START_BOT ? bot.ready : false;
-    const automationHealthy = isAutomationEnabled() ? automation.healthy : true;
-    const healthy = primaryHealthy && automationHealthy;
+    const botEnabled = START_BOT;
+    const automationEnabled = isAutomationEnabled();
+    const primaryHealthy = botEnabled && bot.ready;
+    const automationHealthy = automationEnabled && automation.healthy;
+    const healthy = primaryHealthy || automationHealthy;
+    const allEnabledHealthy = (!botEnabled || primaryHealthy) && (!automationEnabled || automationHealthy);
+    const anyEnabled = botEnabled || automationEnabled;
 
-    const statusGrade = !START_BOT ? 'offline' : healthy ? 'healthy' : 'degraded';
+    const statusGrade = !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline';
     const nextCheckInSec = healthy ? 15 : 45;
 
     let outageDurationMs = 0;
@@ -57,11 +61,11 @@ export function createBotRouter(): Router {
     const payload: BotStatusApiResponse = {
       healthy,
       statusGrade,
-      statusSummary: healthy
+      statusSummary: statusGrade === 'healthy'
         ? 'Bots are healthy'
-        : START_BOT
+        : statusGrade === 'degraded'
           ? 'One or more bot services are degraded'
-          : 'Bot is offline',
+          : 'Bot services are offline',
       recommendations: healthy ? [] : ['Check Discord bot and automation worker logs'],
       nextCheckInSec,
       outageDurationMs,

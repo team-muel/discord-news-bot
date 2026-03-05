@@ -13,11 +13,15 @@ export function createHealthRouter(): Router {
     const bot = buildBotSnapshot();
     const automation = getAutomationRuntimeSnapshot();
 
-    const botDegraded = START_BOT && !bot.ready;
-    const automationDegraded = isAutomationEnabled() && !automation.healthy;
-    const degraded = botDegraded || automationDegraded;
-    const status = degraded ? 'degraded' : 'ok';
-    const botStatusGrade = !START_BOT ? 'offline' : degraded ? 'degraded' : 'healthy';
+    const botEnabled = START_BOT;
+    const automationEnabled = isAutomationEnabled();
+    const botHealthy = botEnabled && bot.ready;
+    const automationHealthy = automationEnabled && automation.healthy;
+    const healthy = botHealthy || automationHealthy;
+    const allEnabledHealthy = (!botEnabled || botHealthy) && (!automationEnabled || automationHealthy);
+    const anyEnabled = botEnabled || automationEnabled;
+    const status = allEnabledHealthy ? 'ok' : 'degraded';
+    const botStatusGrade = !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline';
 
     const payload: HealthResponse = {
       status,
@@ -31,16 +35,18 @@ export function createHealthRouter(): Router {
   });
 
   router.get('/ready', (_req, res) => {
-    if (isAutomationEnabled() && !getAutomationRuntimeSnapshot().healthy) {
-      return res.status(503).json({ status: 'starting', bot: 'automation_not_ready' });
+    const botEnabled = START_BOT;
+    const automationEnabled = isAutomationEnabled();
+    const botReady = botEnabled && getBotRuntimeSnapshot().ready;
+    const automationReady = automationEnabled && getAutomationRuntimeSnapshot().healthy;
+
+    if (!botEnabled && !automationEnabled) {
+      return res.status(503).json({ status: 'starting', bot: 'all_disabled' });
     }
 
-    if (!START_BOT) {
-      return res.json({ status: 'ok', bot: 'disabled' });
-    }
-
-    if (getBotRuntimeSnapshot().ready) {
-      return res.json({ status: 'ok', bot: 'ready' });
+    if (botReady || automationReady) {
+      const mode = botReady && automationReady ? 'all_ready' : 'partial_ready';
+      return res.json({ status: 'ok', bot: mode });
     }
 
     return res.status(503).json({ status: 'starting', bot: 'not_ready' });
