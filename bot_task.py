@@ -4,9 +4,11 @@ import discord
 import feedparser
 import asyncio
 import urllib.parse
+import sys
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
+from discord.ext import tasks
 
 load_dotenv()
 
@@ -19,6 +21,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 TARGET_CHANNEL_ID_RAW = os.getenv("TARGET_CHANNEL_ID")
+AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_NEWS_INTERVAL_MIN") or "30"))
+DAEMON_MODE = "--daemon" in sys.argv
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
@@ -154,36 +158,85 @@ async def main():
         log("❌ 신규 데이터 없음")
         return
 
+    return valid_sectors
+
+
+async def send_report(dc: discord.Client, sectors):
     log("2단계: 디스코드 리포트 카드 발송")
+    ch = dc.get_channel(TARGET_CHANNEL_ID)
+    if not ch:
+        ch = await dc.fetch_channel(TARGET_CHANNEL_ID)
+
+    if not ch:
+        log("❌ 채널 접근 실패")
+        return
+
+    await ch.send("📊 **AI 경제/국제 정세 분석 리포트**")
+    for s in sectors:
+        res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
+        if res.data:
+            item = res.data[0]
+            score = int(item['sentiment_score'])
+
+            if score > 0:
+                color = 0x2ecc71
+            elif score < 0:
+                color = 0xe74c3c
+            else:
+                color = 0x95a5a6
+
+            embed = discord.Embed(title=f"[{item['sector']}] {item['title']}", description=item['summary'], url=item['source'], color=color)
+
+            gauge = "🟦" * (score + 5) if score >= 0 else "🟥" * (score + 5)
+            embed.add_field(name="AI 심리 지수", value=f"**{score}점**\n{gauge}")
+
+            await ch.send(embed=embed)
+
+    log("[DAEMON] report sent")
+
+
+async def run_cycle(dc: discord.Client):
+    sectors = await main()
+    if sectors:
+        await send_report(dc, sectors)
+    log("[DAEMON] tick complete")
+
+
+async def run_once_mode():
     intents = discord.Intents.default()
     dc = discord.Client(intents=intents)
 
     @dc.event
     async def on_ready():
-        ch = dc.get_channel(TARGET_CHANNEL_ID)
-        if ch:
-            await ch.send("📊 **AI 경제/국제 정세 분석 리포트**")
-            for s in valid_sectors:
-                res = supabase.table("news_sentiment").select("*").eq("sector", s).order("created_at", desc=True).limit(1).execute()
-                if res.data:
-                    item = res.data[0]
-                    score = int(item['sentiment_score'])
-                    
-                    if score > 0: color = 0x2ecc71 
-                    elif score < 0: color = 0xe74c3c 
-                    else: color = 0x95a5a6 
-                    
-                    embed = discord.Embed(title=f"[{item['sector']}] {item['title']}", description=item['summary'], url=item['source'], color=color)
-                    
-                    gauge = "🟦" * (score + 5) if score >= 0 else "🟥" * (score + 5)
-                    embed.add_field(name="AI 심리 지수", value=f"**{score}점**\n{gauge}")
-                    
-                    await ch.send(embed=embed)
-        await dc.close()
+        try:
+            await run_cycle(dc)
+        finally:
+            await dc.close()
+
+    await dc.start(DISCORD_TOKEN)
+
+
+async def run_daemon_mode():
+    intents = discord.Intents.default()
+    dc = discord.Client(intents=intents)
+
+    @tasks.loop(minutes=AUTOMATION_INTERVAL_MIN)
+    async def periodic_job():
+        await run_cycle(dc)
+
+    @dc.event
+    async def on_ready():
+        log(f"[DAEMON] news-analysis connected, interval={AUTOMATION_INTERVAL_MIN}m")
+        if not periodic_job.is_running():
+            periodic_job.start()
+        await run_cycle(dc)
 
     await dc.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
     if not OPENAI_API_KEY:
         log("OPENAI_API_KEY missing: using fallback analysis mode")
-    asyncio.run(main())
+    if DAEMON_MODE:
+        asyncio.run(run_daemon_mode())
+    else:
+        asyncio.run(run_once_mode())

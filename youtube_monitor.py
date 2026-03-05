@@ -2,8 +2,10 @@ import os
 import asyncio
 import discord
 import feedparser
+import sys
 from supabase import create_client
 from dotenv import load_dotenv
+from discord.ext import tasks
 
 load_dotenv()
 
@@ -15,6 +17,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 # 여기는 환경변수로 덮어쓸 수 있도록 지원
 TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID") or "1478211311480471747")
+AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_YOUTUBE_INTERVAL_MIN") or "10"))
+DAEMON_MODE = "--daemon" in sys.argv
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
@@ -23,10 +27,11 @@ if not DISCORD_TOKEN:
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-async def check_youtube():
+async def check_youtube(client: discord.Client):
     print(">> 업데이트 확인 시작...")
     feed = await asyncio.to_thread(feedparser.parse, RSS_URL)
     if not feed.entries:
+        print(">> [DAEMON] tick complete: no entries")
         return
 
     latest_video = feed.entries[0]
@@ -42,34 +47,60 @@ async def check_youtube():
         res = None
 
     if not res or not getattr(res, 'data', None) or res.data == [] or res.data[0].get('video_id') != v_id:
-        intents = discord.Intents.default()
-        client = discord.Client(intents=intents)
+        try:
+            ch = await client.fetch_channel(TARGET_CHANNEL_ID)
+            if ch:
+                await ch.send(f"📢 **센서스튜디오 신규 영상 업로드!**\n**제목:** {v_title}\n{v_url}")
+                print(f">> [DAEMON] alert sent: {v_title}")
 
-        @client.event
-        async def on_ready():
-                try:
-                    # get_channel 대신 fetch_channel을 사용하여 확실하게 채널을 가져옵니다.
-                    ch = await client.fetch_channel(TARGET_CHANNEL_ID)
-                    if ch:
-                        await ch.send(f"📢 **센서스튜디오 신규 영상 업로드!**\n**제목:** {v_title}\n{v_url}")
-                        print(f">> 알림 발송 성공: {v_title}")
-
-                    # DB 업데이트
-                    try:
-                        if not res or not getattr(res, 'data', None) or res.data == []:
-                            supabase.table("youtube_log").insert({"channel_id": CHANNEL_ID, "video_id": v_id}).execute()
-                        else:
-                            supabase.table("youtube_log").update({"video_id": v_id}).eq("channel_id", CHANNEL_ID).execute()
-                    except Exception as e:
-                        print(f">> DB 저장 오류: {e}")
-                except Exception as e:
-                    print(f">> 오류 발생: {e}")
-                finally:
-                    await client.close()
-
-        await client.start(DISCORD_TOKEN)
+            try:
+                if not res or not getattr(res, 'data', None) or res.data == []:
+                    supabase.table("youtube_log").insert({"channel_id": CHANNEL_ID, "video_id": v_id}).execute()
+                else:
+                    supabase.table("youtube_log").update({"video_id": v_id}).eq("channel_id", CHANNEL_ID).execute()
+            except Exception as e:
+                print(f">> DB 저장 오류: {e}")
+        except Exception as e:
+            print(f">> 오류 발생: {e}")
     else:
         print(f">> 중복 영상 패스: {v_title}")
 
+    print(">> [DAEMON] tick complete")
+
+
+async def run_once_mode():
+    intents = discord.Intents.default()
+    client = discord.Client(intents=intents)
+
+    @client.event
+    async def on_ready():
+        try:
+            await check_youtube(client)
+        finally:
+            await client.close()
+
+    await client.start(DISCORD_TOKEN)
+
+
+async def run_daemon_mode():
+    intents = discord.Intents.default()
+    client = discord.Client(intents=intents)
+
+    @tasks.loop(minutes=AUTOMATION_INTERVAL_MIN)
+    async def periodic_check():
+        await check_youtube(client)
+
+    @client.event
+    async def on_ready():
+        print(f">> [DAEMON] youtube-monitor connected, interval={AUTOMATION_INTERVAL_MIN}m")
+        if not periodic_check.is_running():
+            periodic_check.start()
+        await check_youtube(client)
+
+    await client.start(DISCORD_TOKEN)
+
 if __name__ == "__main__":
-    asyncio.run(check_youtube())
+    if DAEMON_MODE:
+        asyncio.run(run_daemon_mode())
+    else:
+        asyncio.run(run_once_mode())

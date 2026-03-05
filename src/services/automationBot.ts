@@ -56,6 +56,10 @@ const toBool = (value: string | undefined, fallback: boolean) => {
 const AUTOMATION_ENABLED = toBool(process.env.START_AUTOMATION_BOT, true);
 const PYTHON_COMMAND = process.env.AUTOMATION_PYTHON_COMMAND || 'python';
 const AUTOMATION_RUN_ON_START = toBool(process.env.AUTOMATION_RUN_ON_START, true);
+const AUTOMATION_PERSISTENT_WORKERS = toBool(process.env.AUTOMATION_PERSISTENT_WORKERS, true);
+const AUTOMATION_RESTART_DELAY_MS = parseInt(process.env.AUTOMATION_RESTART_DELAY_MS || '5000', 10);
+const AUTOMATION_NEWS_INTERVAL_MIN = parseInt(process.env.AUTOMATION_NEWS_INTERVAL_MIN || '30', 10);
+const AUTOMATION_YOUTUBE_INTERVAL_MIN = parseInt(process.env.AUTOMATION_YOUTUBE_INTERVAL_MIN || '10', 10);
 
 const JOB_CONFIGS: JobConfig[] = [
   {
@@ -108,6 +112,7 @@ const jobStates: Record<AutomationJobName, AutomationJobState> = {
 };
 
 const scheduledTasks: Partial<Record<AutomationJobName, ScheduledTask>> = {};
+const daemonProcesses: Partial<Record<AutomationJobName, ReturnType<typeof spawn>>> = {};
 let started = false;
 let startedAt: string | null = null;
 
@@ -147,6 +152,10 @@ const isHealthy = () => {
   }
 
   return !activeJobs.some((job) => {
+    if (AUTOMATION_PERSISTENT_WORKERS && !job.running) {
+      return true;
+    }
+
     if (!job.lastErrorAt) {
       return false;
     }
@@ -156,6 +165,97 @@ const isHealthy = () => {
     }
 
     return Date.parse(job.lastErrorAt) >= Date.parse(job.lastSuccessAt);
+  });
+};
+
+const getJobIntervalMin = (jobName: AutomationJobName) => {
+  return jobName === 'news-analysis' ? AUTOMATION_NEWS_INTERVAL_MIN : AUTOMATION_YOUTUBE_INTERVAL_MIN;
+};
+
+const startPersistentJob = (jobName: AutomationJobName) => {
+  const state = jobStates[jobName];
+  if (!state.enabled) {
+    return;
+  }
+
+  if (state.running) {
+    return;
+  }
+
+  const intervalMin = getJobIntervalMin(jobName);
+  state.running = true;
+  state.runCount += 1;
+  state.lastRunAt = new Date().toISOString();
+  state.lastError = null;
+
+  logger.info('[AUTOMATION] Starting persistent worker %s (interval=%dm)', jobName, intervalMin);
+
+  const child = spawn(PYTHON_COMMAND, [state.scriptPath, '--daemon'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      AUTOMATION_JOB_NAME: jobName,
+      AUTOMATION_JOB_INTERVAL_MIN: String(intervalMin),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  daemonProcesses[jobName] = child;
+
+  child.stdout.on('data', (chunk: Buffer) => {
+    const line = chunk.toString('utf8').trim();
+    if (!line) {
+      return;
+    }
+
+    logger.info('[AUTOMATION][%s][stdout] %s', jobName, line);
+    const lower = line.toLowerCase();
+    if (lower.includes('tick complete') || lower.includes('report sent') || lower.includes('alert sent')) {
+      state.successCount += 1;
+      state.lastSuccessAt = new Date().toISOString();
+      state.lastError = null;
+    }
+  });
+
+  child.stderr.on('data', (chunk: Buffer) => {
+    const line = chunk.toString('utf8').trim();
+    if (line) {
+      state.lastError = line;
+      logger.warn('[AUTOMATION][%s][stderr] %s', jobName, line);
+    }
+  });
+
+  child.on('error', (error) => {
+    state.running = false;
+    state.failCount += 1;
+    state.lastErrorAt = new Date().toISOString();
+    state.lastError = error.message;
+    state.lastExitCode = -1;
+    logger.error('[AUTOMATION] Persistent worker %s failed to start: %o', jobName, error);
+
+    if (started && state.enabled) {
+      setTimeout(() => startPersistentJob(jobName), AUTOMATION_RESTART_DELAY_MS);
+    }
+  });
+
+  child.on('close', (code) => {
+    state.running = false;
+    state.lastExitCode = code;
+    daemonProcesses[jobName] = undefined;
+
+    if (code === 0) {
+      logger.info('[AUTOMATION] Persistent worker %s exited gracefully', jobName);
+      return;
+    }
+
+    state.failCount += 1;
+    state.lastErrorAt = new Date().toISOString();
+    state.lastError = state.lastError || `Exited with code ${String(code)}`;
+    logger.error('[AUTOMATION] Persistent worker %s exited with code=%s', jobName, String(code));
+
+    if (started && state.enabled) {
+      setTimeout(() => startPersistentJob(jobName), AUTOMATION_RESTART_DELAY_MS);
+    }
   });
 };
 
@@ -251,6 +351,19 @@ export const startAutomationBot = () => {
     return;
   }
 
+  if (AUTOMATION_PERSISTENT_WORKERS) {
+    for (const config of JOB_CONFIGS) {
+      if (!config.enabled) {
+        logger.info('[AUTOMATION] Job %s is disabled', config.name);
+        continue;
+      }
+
+      startPersistentJob(config.name);
+    }
+
+    return;
+  }
+
   for (const config of JOB_CONFIGS) {
     if (!config.enabled) {
       logger.info('[AUTOMATION] Job %s is disabled', config.name);
@@ -284,6 +397,20 @@ export const startAutomationBot = () => {
 };
 
 export const triggerAutomationJob = (jobName: AutomationJobName) => {
+  if (AUTOMATION_PERSISTENT_WORKERS) {
+    const state = jobStates[jobName];
+    if (!state.enabled) {
+      return Promise.resolve({ ok: false, message: 'Job disabled' });
+    }
+
+    if (!state.running) {
+      startPersistentJob(jobName);
+      return Promise.resolve({ ok: true, message: 'Persistent worker restart requested' });
+    }
+
+    return Promise.resolve({ ok: true, message: 'Persistent worker already running' });
+  }
+
   return runJob(jobName, 'manual');
 };
 
