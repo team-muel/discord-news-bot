@@ -1,13 +1,9 @@
 import 'dotenv/config';
 import logger from './src/logger';
-// Sentry: optional error tracking (set SENTRY_DSN in env)
-import * as Sentry from '@sentry/node';
+import initMonitoring from './src/init';
 
-const sentryDsn = process.env.SENTRY_DSN;
-if (sentryDsn && !Sentry.getCurrentHub().getClient()) {
-  Sentry.init({ dsn: sentryDsn, environment: process.env.NODE_ENV || 'production' });
-  logger.info('Sentry initialized');
-}
+// Initialize monitoring (Sentry) if configured
+initMonitoring();
 
 import './bot'; // 서버가 켜질 때 bot.ts도 함께 실행시켜 스위치를 켭니다.
 import { createApp } from './src/app';

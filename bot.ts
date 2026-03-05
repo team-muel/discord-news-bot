@@ -2,13 +2,10 @@ import 'dotenv/config';
 import { client, startBot } from './src/bot';
 import { setDefaultResultOrder } from 'dns';
 import logger from './src/logger';
-import * as Sentry from '@sentry/node';
+import initMonitoring from './src/init';
 
-const sentryDsn = process.env.SENTRY_DSN;
-if (sentryDsn && !Sentry.getCurrentHub().getClient()) {
-  Sentry.init({ dsn: sentryDsn, environment: process.env.NODE_ENV || 'production' });
-  logger.info('Sentry initialized in bot process');
-}
+// Initialize monitoring (Sentry) if configured
+initMonitoring();
 
 setDefaultResultOrder('ipv4first');
 
