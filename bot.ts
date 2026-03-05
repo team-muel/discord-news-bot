@@ -1,24 +1,34 @@
 import 'dotenv/config';
 import { client, startBot } from './src/bot';
 import { setDefaultResultOrder } from 'dns';
+import logger from './src/logger';
+import * as Sentry from '@sentry/node';
+
+const sentryDsn = process.env.SENTRY_DSN;
+if (sentryDsn && !Sentry.getCurrentHub().getClient()) {
+  Sentry.init({ dsn: sentryDsn, environment: process.env.NODE_ENV || 'production' });
+  logger.info('Sentry initialized in bot process');
+}
 
 setDefaultResultOrder('ipv4first');
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[PROCESS] Unhandled rejection:', reason);
+  logger.error('[PROCESS] Unhandled rejection: %o', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('[PROCESS] Uncaught exception:', error);
+  logger.error('[PROCESS] Uncaught exception: %o', error);
 });
 
 const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
 
 // 개발환경에서만 간단히 존재 여부를 남깁니다(길이 등 민감정보는 노출하지 않음).
-console.log('DEBUG: DISCORD token present?', !!token);
+if (process.env.NODE_ENV !== 'production') {
+  logger.debug('DEBUG: DISCORD token present? %s', !!token);
+}
 
 if (!token) {
-  console.error('DISCORD token not provided. Set DISCORD_TOKEN or DISCORD_BOT_TOKEN.');
+  logger.error('DISCORD token not provided. Set DISCORD_TOKEN or DISCORD_BOT_TOKEN.');
   process.exit(1);
 }
 
@@ -26,26 +36,26 @@ if (!token) {
 (async () => {
   try {
     await startBot(token);
-    console.log('Muel bot is initiating...');
+    logger.info('Muel bot is initiating...');
   } catch (err) {
-    console.error('Failed to start bot:', err);
+    logger.error('Failed to start bot: %o', err);
     process.exit(1);
   }
 })();
 
 const handleShutdownSignal = async (signal: NodeJS.Signals) => {
-  console.log(`[PROCESS] Received ${signal}, shutting down Discord client...`);
+  logger.info(`[PROCESS] Received ${signal}, shutting down Discord client...`);
   try {
     if (client && typeof (client as any).isReady === 'function' && (client as any).isReady()) {
       // client.destroy() may be synchronous or return a Promise; wrap with Promise.resolve to await both cases.
       await Promise.resolve((client as any).destroy());
     }
   } catch (error) {
-    console.error('[PROCESS] Failed during Discord client shutdown:', error);
+    logger.error('[PROCESS] Failed during Discord client shutdown: %o', error);
   } finally {
     process.exit(0);
   }
 };
 
-process.on('SIGINT', () => { handleShutdownSignal('SIGINT').catch(e => console.error(e)); });
-process.on('SIGTERM', () => { handleShutdownSignal('SIGTERM').catch(e => console.error(e)); });
+process.on('SIGINT', () => { handleShutdownSignal('SIGINT').catch(e => logger.error(e)); });
+process.on('SIGTERM', () => { handleShutdownSignal('SIGTERM').catch(e => logger.error(e)); });
