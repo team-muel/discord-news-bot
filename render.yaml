@@ -1,22 +1,37 @@
-# Render service template - fill placeholders before using
-# See: https://render.com/docs/deploying-services#render-yaml
 services:
-  - type: web_service
-    name: yt-discord-server
+  - type: web
+    name: discord-news-bot
     env: node
-    plan: free # choose appropriate plan
-    repo: "<GIT_REPO_URL>"
-    branch: main
-    buildCommand: "npm ci --include=dev && npm run build"
+    plan: starter
+    autoDeploy: true
+    branch: moved/backend
+    buildCommand: "npm ci"
     startCommand: "npm run start:server"
+    healthCheckPath: "/health"
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
+      - key: APP_BASE_URL
+        sync: false
+      - key: OAUTH_REDIRECT_ALLOWLIST
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
       - key: SUPABASE_URL
-        fromDatabase: false
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
-        fromDatabase: false
+        sync: false
       - key: DATABASE_URL
-        fromDatabase: false
+        sync: false
+      - key: FEATURE_SOURCES_ENABLED
+        value: "true"
+      - key: FEATURE_YOUTUBE_CRAWLER_ENABLED
+        value: "true"
+      - key: FEATURE_CRAWLER_SCHEDULER_ENABLED
+        value: "true"

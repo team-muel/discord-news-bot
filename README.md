@@ -45,7 +45,11 @@ Local env template
 
 Render deployment
 
-- This repository includes `render.yaml` to configure a Render Web Service. Point Render at this repo and use the `moved/backend` branch (or merge to `main`).
+- This repository includes `render.yaml` to configure a Render Web Service.
+- Recommended branch: `moved/backend` (or your production backend branch).
+- Build command: `npm ci`
+- Start command: `npm run start:server`
+- Health check: `/health`
 
 CI
 
