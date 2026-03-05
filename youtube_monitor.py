@@ -15,6 +15,7 @@ RSS_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+YOUTUBE_DISCORD_TOKEN = os.getenv("AUTOMATION_YOUTUBE_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN") or DISCORD_TOKEN
 # 여기는 환경변수로 덮어쓸 수 있도록 지원
 TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID") or "1478211311480471747")
 AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_YOUTUBE_INTERVAL_MIN") or "10"))
@@ -22,8 +23,8 @@ DAEMON_MODE = "--daemon" in sys.argv
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
-if not DISCORD_TOKEN:
-    raise SystemExit("DISCORD_TOKEN must be set in environment")
+if not YOUTUBE_DISCORD_TOKEN:
+    raise SystemExit("AUTOMATION_YOUTUBE_DISCORD_TOKEN (or AUTOMATION_DISCORD_TOKEN / DISCORD_TOKEN) must be set in environment")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -79,7 +80,7 @@ async def run_once_mode():
         finally:
             await client.close()
 
-    await client.start(DISCORD_TOKEN)
+    await client.start(YOUTUBE_DISCORD_TOKEN)
 
 
 async def run_daemon_mode():
@@ -97,7 +98,7 @@ async def run_daemon_mode():
             periodic_check.start()
         await check_youtube(client)
 
-    await client.start(DISCORD_TOKEN)
+    await client.start(YOUTUBE_DISCORD_TOKEN)
 
 if __name__ == "__main__":
     if DAEMON_MODE:
