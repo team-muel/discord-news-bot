@@ -1,12 +1,13 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 import logger from './logger';
+import { DISCORD_READY_TIMEOUT_MS, DISCORD_START_RETRIES } from './config';
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 export async function startBot(token: string): Promise<void> {
   if (!token) throw new Error('Discord token is required');
-  const maxRetries = parseInt(process.env.DISCORD_START_RETRIES || '3', 10);
-  const readyTimeout = parseInt(process.env.DISCORD_READY_TIMEOUT_MS || '15000', 10);
+  const maxRetries = DISCORD_START_RETRIES;
+  const readyTimeout = DISCORD_READY_TIMEOUT_MS;
 
   if (client.isReady()) {
     logger.warn('[BOT] client already ready');
