@@ -6,7 +6,7 @@
   "scripts": {
     "dev:server": "tsx server.ts",
     "dev:bot": "tsx bot.ts",
-    "build": "python -m pip install -r requirements.txt && echo \"No frontend build for backend-only deployment\"",
+    "build": "node scripts/build-backend.mjs",
     "start": "npm run start:server",
     "start:server": "tsx server.ts",
     "start:bot": "tsx bot.ts",

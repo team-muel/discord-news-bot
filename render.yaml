@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: starter
     autoDeploy: true
-    buildCommand: npm ci; python -m pip install -r requirements.txt; npm run build
+    buildCommand: npm ci; npm run build
     startCommand: npm run start
     healthCheckPath: /health
     envVars:

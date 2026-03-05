@@ -42,12 +42,12 @@ npm run pm2:logs
 
 When deploying as a Render `Web Service`, set commands exactly as below:
 
-- Build Command: `npm ci; python -m pip install -r requirements.txt; npm run build`
+- Build Command: `npm ci; npm run build`
 - Start Command: `npm run start`
 
-Why: `youtube_monitor.py` and `bot_task.py` require Python packages from `requirements.txt`
-(`discord.py`, `feedparser`, `supabase`, etc.). Without this step, automation jobs fail with
-`ModuleNotFoundError`.
+Why: `npm run build` now installs Python dependencies from `requirements.txt` using
+hash-based caching (`.cache/python-requirements.sha256`). If requirements did not change,
+the build skips `pip install` for faster deploys.
 
 Also verify Runtime Environment Variables in Render:
 
