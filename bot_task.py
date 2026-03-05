@@ -6,6 +6,9 @@ import asyncio
 import urllib.parse
 from openai import OpenAI
 from supabase import create_client
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def log(msg):
     print(f">> [LOG] {msg}", flush=True)
@@ -15,7 +18,21 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID"))
+TARGET_CHANNEL_ID_RAW = os.getenv("TARGET_CHANNEL_ID")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise SystemExit("SUPABASE_URL and SUPABASE_KEY must be set in environment")
+if not OPENAI_API_KEY:
+    raise SystemExit("OPENAI_API_KEY must be set in environment")
+if not DISCORD_TOKEN:
+    raise SystemExit("DISCORD_TOKEN must be set in environment")
+if not TARGET_CHANNEL_ID_RAW:
+    raise SystemExit("TARGET_CHANNEL_ID must be set in environment")
+
+try:
+    TARGET_CHANNEL_ID = int(TARGET_CHANNEL_ID_RAW)
+except ValueError:
+    raise SystemExit("TARGET_CHANNEL_ID must be an integer")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -56,22 +73,42 @@ async def main():
                 }],
                 response_format={ "type": "json_object" }
             )
-            ai_res = json.loads(response.choices[0].message.content)
+            # 안전한 JSON 파싱 및 값 검증
+            try:
+                ai_content = response.choices[0].message.content
+                ai_res = json.loads(ai_content)
+            except Exception as e:
+                log(f"   ⚠️ AI 응답 파싱 실패: {e}")
+                continue
+
             sector = ai_res.get('sector')
-            
             if sector in valid_sectors:
                 raw_score = ai_res.get('sentiment_score', 0)
-                score = int(float(raw_score))
-                
-                supabase.table("news_sentiment").insert({
+                try:
+                    score = int(float(raw_score))
+                except Exception:
+                    score = 0
+                # 점수 범위 제한
+                score = max(-5, min(5, score))
+
+                summary = ai_res.get('summary', '분석 완료')
+                res = supabase.table("news_sentiment").insert({
                     "title": entry.title,
                     "sector": sector,
                     "sentiment_score": score,
-                    "summary": ai_res.get('summary', '분석 완료'),
+                    "summary": summary,
                     "source": entry.link
                 }).execute()
-                save_count += 1
-                log(f"   ✅ DB 저장: [{sector}] 심리점수: {score}점")
+                # 간단한 결과 체크
+                try:
+                    if hasattr(res, 'status_code') and res.status_code >= 400:
+                        log(f"   ⚠️ DB 저장 실패 status={getattr(res, 'status_code', 'unknown')}")
+                    else:
+                        save_count += 1
+                        log(f"   ✅ DB 저장: [{sector}] 심리점수: {score}점")
+                except Exception:
+                    save_count += 1
+                    log(f"   ✅ DB 저장(확인 불가): [{sector}] 심리점수: {score}점")
         except Exception as e:
             log(f"   ⚠️ 오류: {e}")
             continue

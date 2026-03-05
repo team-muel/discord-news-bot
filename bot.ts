@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { client, startBot } from './src/bot';
 import { setDefaultResultOrder } from 'dns';
 
@@ -29,20 +30,38 @@ process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
 
 const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
 
-// 봇이 안 켜질 때 범인을 찾는 디버그 로그
-console.log('DEBUG: Token exists?', !!token, '| Key length:', token?.length || 0);
+// 개발환경에서만 간단히 존재 여부를 남깁니다(길이 등 민감정보는 노출하지 않음).
+console.log('DEBUG: DISCORD token present?', !!token);
 
 if (!token) {
   console.error('DISCORD token not provided. Set DISCORD_TOKEN or DISCORD_BOT_TOKEN.');
   process.exit(1);
 }
 
-// 1. startBot이 Promise를 반환하지 않는 경우를 대비한 안전한 호출 방식
-try {
-  // 만약 startBot이 내부적으로 async라면, 아래처럼 호출하는 것이 가장 깔끔합니다.
-  startBot(token); 
-  console.log('Muel bot is initiating...'); 
-} catch (err) {
-  console.error('Failed to start bot:', err);
-  process.exit(1);
-}
+// 안전한 비동기 시작: startBot이 Promise를 반환하더라도 정상 동작하도록 await 처리합니다.
+(async () => {
+  try {
+    await startBot(token);
+    console.log('Muel bot is initiating...');
+  } catch (err) {
+    console.error('Failed to start bot:', err);
+    process.exit(1);
+  }
+})();
+
+const handleShutdownSignal = async (signal: NodeJS.Signals) => {
+  console.log(`[PROCESS] Received ${signal}, shutting down Discord client...`);
+  try {
+    if (client && typeof (client as any).isReady === 'function' && (client as any).isReady()) {
+      // client.destroy() may be synchronous or return a Promise; wrap with Promise.resolve to await both cases.
+      await Promise.resolve((client as any).destroy());
+    }
+  } catch (error) {
+    console.error('[PROCESS] Failed during Discord client shutdown:', error);
+  } finally {
+    process.exit(0);
+  }
+};
+
+process.on('SIGINT', () => { handleShutdownSignal('SIGINT').catch(e => console.error(e)); });
+process.on('SIGTERM', () => { handleShutdownSignal('SIGTERM').catch(e => console.error(e)); });
