@@ -1,0 +1,45 @@
+import jwt from 'jsonwebtoken';
+import { AUTH_COOKIE_NAME, JWT_SECRET, NODE_ENV } from '../config';
+import type { JwtUser } from '../types/auth';
+
+type SessionToken = { user: JwtUser };
+
+const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
+
+export function buildDevUserFromCode(code?: string): JwtUser {
+  const safeCode = (code || 'guest').slice(0, 24).replace(/[^a-zA-Z0-9_-]/g, '') || 'guest';
+  return {
+    id: `dev-${safeCode}`,
+    username: `dev_${safeCode}`,
+    avatar: null,
+  };
+}
+
+export function issueSessionToken(user: JwtUser): string {
+  return jwt.sign({ user } satisfies SessionToken, JWT_SECRET, { expiresIn: SESSION_TTL_SEC });
+}
+
+export function parseSessionToken(token?: string): JwtUser | null {
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as SessionToken;
+    if (!payload?.user?.id || !payload?.user?.username) return null;
+    return payload.user;
+  } catch {
+    return null;
+  }
+}
+
+export function getCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: NODE_ENV === 'production',
+    maxAge: SESSION_TTL_SEC * 1000,
+    path: '/',
+  };
+}
+
+export function clearSessionCookie(res: { clearCookie: (name: string, options: Record<string, unknown>) => void }) {
+  res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
+}

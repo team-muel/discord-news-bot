@@ -1,28 +1,20 @@
-name: Daily Economy News
+name: Backend CI
 
 on:
-  schedule:
-    - cron: "0 0 * * *" # 한국 시간 매일 오전 9시 (UTC 00:00)
-  workflow_dispatch: # 직접 실행해볼 수 있는 버튼 생성
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      run_legacy_python:
+        description: "Run legacy Python bot scripts"
+        required: false
+        default: "false"
 
 jobs:
-  run-bot:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run bot
-        env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          TARGET_CHANNEL_ID: ${{ secrets.TARGET_CHANNEL_ID }}
-        run: python bot_task.py
   node-ci:
     runs-on: ubuntu-latest
     steps:
@@ -30,8 +22,35 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
+          cache: "npm"
       - name: Install dependencies
         run: npm ci
       - name: Type check
         run: npm run lint
+      - name: API contract smoke test
+        env:
+          START_BOT: "false"
+        run: |
+          npm run start:server > server.log 2>&1 &
+          for i in {1..25}; do
+            if curl -fsS http://localhost:3000/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          npm run smoke:api
+
+  legacy-python-check:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_legacy_python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate Python syntax
+        run: python -m py_compile bot_task.py youtube_monitor.py

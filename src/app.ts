@@ -1,35 +1,50 @@
-import express, { Express } from 'express';
+import express, { type Express } from 'express';
 import cors from 'cors';
-import { client } from './bot';
+import cookieParser from 'cookie-parser';
 import { FRONTEND_ORIGIN } from './config';
+import { attachUser } from './middleware/auth';
+import { createAuthRouter } from './routes/auth';
+import { createBenchmarkRouter } from './routes/benchmark';
+import { createBotRouter } from './routes/bot';
+import { createHealthRouter } from './routes/health';
+import { createResearchRouter } from './routes/research';
+
+const buildCorsOrigins = () =>
+  (FRONTEND_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
 export function createApp(): Express {
   const app = express();
-  app.use(express.json());
+  const frontendOrigins = buildCorsOrigins();
 
-  // CORS: 프론트엔드 도메인만 허용하도록 환경변수로 설정합니다.
-  // 예: FRONTEND_ORIGIN=https://muel-front.vercel.app
-  const frontendOrigin = FRONTEND_ORIGIN || '';
-  if (frontendOrigin) {
-    app.use(
-      cors({
-        origin: frontendOrigin,
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      }),
-    );
-  } else {
-    // 개발 편의를 위해 명시적 허용 도메인이 없으면 제한적 허용
-    app.use(cors());
-  }
+  app.use(
+    cors({
+      origin: frontendOrigins.length > 0 ? frontendOrigins : true,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    }),
+  );
+  app.use(express.json({ limit: '2mb' }));
+  app.use(cookieParser());
+  app.use(attachUser);
 
-  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-  app.get('/ready', (_req, res) => {
-    const botReady = !!(client && (client as any).isReady && (client as any).isReady());
-    if (botReady) return res.json({ status: 'ok', bot: 'ready' });
-    return res.status(503).json({ status: 'starting', bot: 'not_ready' });
+  // Frontend popup callbacks often target /auth/callback without /api.
+  app.get('/auth/callback', (req, res) => {
+    const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    return res.redirect(`/api/auth/callback${query}`);
   });
-  app.get('/', (_req, res) => res.send('Muel bot server running'));
+
+  app.use(createHealthRouter());
+  app.use('/api/auth', createAuthRouter());
+  app.use('/api/research', createResearchRouter());
+  app.use('/api/bot', createBotRouter());
+  app.use('/api/benchmark', createBenchmarkRouter());
+
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'NOT_FOUND' });
+  });
 
   return app;
 }
