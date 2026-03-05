@@ -2,6 +2,14 @@
 
 This repository contains the backend extracted from `muel-front-uiux`: an Express + Discord bot service intended to be deployed on Render.
 
+## Separation Contract
+
+- Frontend lives in: `team-muel/muel-front-uiux`
+- Backend lives in: `team-muel/discord-news-bot`
+- Frontend links this repo as a Git submodule at `moved-bot-repo`
+
+When API contracts change, update backend first and then update frontend callers via `apiFetch`.
+
 Quick start
 
 1. Create a `.env` with the required environment variables (see below).
@@ -30,6 +38,10 @@ Required environment variables
 - `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN`
 - `DISCORD_BOT_ALERT_WEBHOOK_URL` (optional)
 - `DATABASE_URL` (if used)
+
+Local env template
+
+- Copy from: `.env.backend.example`
 
 Render deployment
 
