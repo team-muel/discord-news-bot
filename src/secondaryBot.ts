@@ -1,6 +1,16 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 
-const secondaryBotToken = (process.env.SECONDARY_DISCORD_TOKEN || '').trim();
+const resolveSecondaryBotToken = () => {
+  return (
+    process.env.SECONDARY_DISCORD_TOKEN ||
+    process.env.SECONDARY_DISCORD_BOT_TOKEN ||
+    process.env.SECONDARY_BOT_TOKEN ||
+    ''
+  ).trim();
+};
+
+const secondaryBotToken = resolveSecondaryBotToken();
+const primaryBotToken = (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
 const secondaryBotEnabled = String(process.env.ENABLE_SECONDARY_BOT || '').toLowerCase() === 'true';
 
 let secondaryClient: Client | null = null;
@@ -11,8 +21,19 @@ const shouldStartSecondaryBot = () => {
 };
 
 export const startSecondaryBot = async () => {
+  console.log(
+    `[RENDER_EVENT] SECONDARY_BOT_BOOT enabled=${secondaryBotEnabled} tokenPresent=${Boolean(secondaryBotToken)}`,
+  );
+
   if (!shouldStartSecondaryBot()) {
-    console.log('[RENDER_EVENT] SECONDARY_BOT_SKIPPED reason=disabled_or_missing_token');
+    const reason = secondaryBotEnabled ? 'missing_token' : 'disabled';
+    console.log(`[RENDER_EVENT] SECONDARY_BOT_SKIPPED reason=${reason}`);
+    return;
+  }
+
+  if (primaryBotToken && primaryBotToken === secondaryBotToken) {
+    console.log('[RENDER_EVENT] SECONDARY_BOT_SKIPPED reason=duplicate_token_with_primary');
+    console.error('[SECONDARY_BOT_CONFIG_ERROR] SECONDARY_DISCORD_TOKEN must be different from DISCORD_TOKEN/DISCORD_BOT_TOKEN.');
     return;
   }
 

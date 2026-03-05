@@ -38,6 +38,7 @@ Required environment variables
 - `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN`
 - `ENABLE_SECONDARY_BOT` (optional, `true` to enable second bot in same service)
 - `SECONDARY_DISCORD_TOKEN` (optional, required when `ENABLE_SECONDARY_BOT=true`)
+- aliases: `SECONDARY_DISCORD_BOT_TOKEN`, `SECONDARY_BOT_TOKEN`
 - `DISCORD_BOT_ALERT_WEBHOOK_URL` (optional)
 - `DATABASE_URL` (if used)
 
@@ -46,6 +47,7 @@ Single service / two bots mode
 - Keep one Render Web Service
 - Primary bot: `DISCORD_TOKEN`
 - Secondary bot: `ENABLE_SECONDARY_BOT=true` + `SECONDARY_DISCORD_TOKEN=<token>`
+- Important: secondary token must be different from primary token
 - Recommended: run crawler scheduler only on primary path (`FEATURE_CRAWLER_SCHEDULER_ENABLED=true` as default)
 
 Local env template
