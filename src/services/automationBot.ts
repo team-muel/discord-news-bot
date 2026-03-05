@@ -55,6 +55,7 @@ const toBool = (value: string | undefined, fallback: boolean) => {
 
 const AUTOMATION_ENABLED = toBool(process.env.START_AUTOMATION_BOT, true);
 const PYTHON_COMMAND = process.env.AUTOMATION_PYTHON_COMMAND || 'python';
+const AUTOMATION_RUN_ON_START = toBool(process.env.AUTOMATION_RUN_ON_START, true);
 
 const JOB_CONFIGS: JobConfig[] = [
   {
@@ -268,6 +269,17 @@ export const startAutomationBot = () => {
     });
 
     logger.info('[AUTOMATION] Scheduled job %s with cron %s', config.name, config.schedule);
+
+    if (AUTOMATION_RUN_ON_START) {
+      // Kick off one immediate run so startup health reflects actual script operability.
+      setTimeout(() => {
+        void runJob(config.name, 'manual').then((result) => {
+          if (!result.ok) {
+            logger.warn('[AUTOMATION] Startup run failed for %s: %s', config.name, result.message);
+          }
+        });
+      }, 2000);
+    }
   }
 };
 
