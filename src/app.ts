@@ -1,6 +1,7 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import { applyCommonMiddleware } from './middleware/common';
+import { createCorsMiddleware } from './middleware/cors';
+import { createSessionAuth } from './auth/session';
 import { createAuthRouter } from './routes/auth';
 import { createCrawlerRouter } from './routes/crawler';
 import { createBenchmarkRouter } from './routes/benchmark';
@@ -19,147 +20,26 @@ import { isBackendFeatureEnabled } from './backend/registry/externalFeatureRegis
 import { JwtUser, AuthenticatedRequest } from './types';
 import { imageUrlToBase64, truncateText, MAX_SOURCES_PER_GUILD, DEFAULT_PAGE_LIMIT, getSafeErrorMessage, validateYouTubeUrl } from './utils';
 import { scrapeYouTubePost } from './scraper';
-
-const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'muel_auth';
-const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'csrf_token';
-const OAUTH_NONCE_COOKIE_NAME = process.env.OAUTH_NONCE_COOKIE_NAME || 'oauth_nonce';
-const JWT_SECRET = process.env.JWT_SECRET || 'local-dev-insecure-secret';
-const OAUTH_NONCE_MAX_AGE_MS = Number(process.env.OAUTH_NONCE_MAX_AGE_MS || 10 * 60 * 1000);
-const DEFAULT_DISCORD_TOKEN_EXPIRES_IN_SEC = Number(process.env.DEFAULT_DISCORD_TOKEN_EXPIRES_IN_SEC || 3600);
-const PRESET_HISTORY_DEFAULT_LIMIT = Number(process.env.PRESET_HISTORY_DEFAULT_LIMIT || 20);
-const PRESET_HISTORY_MIN_LIMIT = Number(process.env.PRESET_HISTORY_MIN_LIMIT || 1);
-const PRESET_HISTORY_MAX_LIMIT = Number(process.env.PRESET_HISTORY_MAX_LIMIT || 50);
-const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = Number(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS || 60000);
-
-const isAllowedRedirectUri = (redirectUri: string, req: express.Request) => {
-  if (!redirectUri) return false;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(redirectUri);
-  } catch {
-    return false;
-  }
-
-  const allowlistRaw = process.env.OAUTH_REDIRECT_ALLOWLIST || '';
-  const allowlist = allowlistRaw
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const runtimeAllowed = new Set<string>(allowlist);
-  if (process.env.APP_BASE_URL) {
-    runtimeAllowed.add(process.env.APP_BASE_URL.trim());
-  }
-
-  const requestOrigin = req.get('origin');
-  if (requestOrigin) {
-    runtimeAllowed.add(requestOrigin);
-  }
-
-  const forwardedProto = req.get('x-forwarded-proto') || req.protocol;
-  const forwardedHost = req.get('x-forwarded-host') || req.get('host');
-  if (forwardedHost) {
-    runtimeAllowed.add(`${forwardedProto}://${forwardedHost}`);
-  }
-
-  if (runtimeAllowed.size === 0) {
-    return true;
-  }
-
-  return runtimeAllowed.has(parsed.origin);
-};
+import { serverConfig, buildCorsAllowlist, isAllowedRedirectUri } from './config/serverConfig';
+import { createBenchmarkMemoryStore } from './lib/benchmarkStore';
 
 export function createApp() {
   const app = express();
   const runtime = detectRuntimeEnvironment();
   const cookieSecurity = getCookieSecurity(runtime);
-  const benchmarkMemoryStore = new Map<string, Array<{ id: string; name: string; payload?: Record<string, string | number | boolean | null | undefined>; path: string; ts: string }>>();
+  const { store: benchmarkMemoryStore, appendBenchmarkMemoryEvents, getUserBenchmarkEvents } = createBenchmarkMemoryStore();
   const botStatusViewBenchmarkLastAt = new Map<string, number>();
+  const corsAllowlist = buildCorsAllowlist();
 
   applyCommonMiddleware(app);
+  app.use(createCorsMiddleware(corsAllowlist));
 
-  app.use((req, res, next) => {
-    const origin = req.get('origin');
-    const allowlistRaw = process.env.CORS_ALLOWLIST || process.env.OAUTH_REDIRECT_ALLOWLIST || '';
-    const allowlist = allowlistRaw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    if (!origin || allowlist.length === 0 || allowlist.includes(origin)) {
-      if (origin) {
-        res.header('Access-Control-Allow-Origin', origin);
-      }
-      res.header('Vary', 'Origin');
-      res.header('Access-Control-Allow-Credentials', 'true');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, x-csrf-token');
-      res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    }
-
-    if (req.method === 'OPTIONS') {
-      return res.status(204).end();
-    }
-
-    next();
+  const { issueAuthCookie, requireAuth, requireCsrf, requireAuthAndCsrf } = createSessionAuth({
+    authCookieName: serverConfig.authCookieName,
+    csrfCookieName: serverConfig.csrfCookieName,
+    jwtSecret: serverConfig.jwtSecret,
+    cookieSecurity,
   });
-
-  const issueAuthCookie = (res: express.Response, jwtPayload: JwtUser) => {
-    const token = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie(AUTH_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: cookieSecurity.secure,
-      sameSite: cookieSecurity.sameSite,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
-
-    const csrfToken = jwt.sign({ t: 'csrf', u: jwtPayload.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie(CSRF_COOKIE_NAME, csrfToken, {
-      httpOnly: false,
-      secure: cookieSecurity.secure,
-      sameSite: cookieSecurity.sameSite,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
-  };
-
-  const requireAuth: express.RequestHandler = (req, res, next) => {
-    const token = req.cookies?.[AUTH_COOKIE_NAME];
-    if (!token) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as JwtUser;
-      (req as AuthenticatedRequest).user = decoded;
-      next();
-    } catch {
-      return res.status(401).json({ error: 'Session expired' });
-    }
-  };
-
-  const requireCsrf: express.RequestHandler = (req, res, next) => {
-    const csrfCookie = req.cookies?.[CSRF_COOKIE_NAME];
-    const csrfHeader = req.get('x-csrf-token');
-    if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
-      return res.status(403).json({ error: 'Invalid CSRF token' });
-    }
-    next();
-  };
-
-  const requireAuthAndCsrf: express.RequestHandler = (req, res, next) => {
-    requireAuth(req, res, (authErr) => {
-      if (authErr) return next(authErr);
-      requireCsrf(req, res, next);
-    });
-  };
-
-  const appendBenchmarkMemoryEvents = (userId: string, events: Array<{ id: string; name: string; payload?: Record<string, string | number | boolean | null | undefined>; path: string; ts: string }>) => {
-    const existing = benchmarkMemoryStore.get(userId) || [];
-    const merged = [...existing, ...events].slice(-1200);
-    benchmarkMemoryStore.set(userId, merged);
-  };
 
   const appendServerBenchmarkEvent = async ({
     userId,
@@ -262,7 +142,7 @@ export function createApp() {
         ...user,
         accessToken: body.access_token,
         refreshToken: body.refresh_token || user.refreshToken,
-        tokenExpiresAt: nowSec + Number(body.expires_in || DEFAULT_DISCORD_TOKEN_EXPIRES_IN_SEC),
+        tokenExpiresAt: nowSec + Number(body.expires_in || serverConfig.defaultDiscordTokenExpiresInSec),
       };
     } catch {
       return null;
@@ -292,11 +172,11 @@ export function createApp() {
       requireCsrf,
       issueAuthCookie,
       isAllowedRedirectUri,
-      authCookieName: AUTH_COOKIE_NAME,
-      csrfCookieName: CSRF_COOKIE_NAME,
-      oauthNonceCookieName: OAUTH_NONCE_COOKIE_NAME,
-      oauthNonceMaxAgeMs: OAUTH_NONCE_MAX_AGE_MS,
-      defaultDiscordTokenExpiresInSec: DEFAULT_DISCORD_TOKEN_EXPIRES_IN_SEC,
+      authCookieName: serverConfig.authCookieName,
+      csrfCookieName: serverConfig.csrfCookieName,
+      oauthNonceCookieName: serverConfig.oauthNonceCookieName,
+      oauthNonceMaxAgeMs: serverConfig.oauthNonceMaxAgeMs,
+      defaultDiscordTokenExpiresInSec: serverConfig.defaultDiscordTokenExpiresInSec,
       discordOauthTokenUrl: 'https://discord.com/api/oauth2/token',
       discordApiMeUrl: 'https://discord.com/api/users/@me',
     }),
@@ -347,9 +227,9 @@ export function createApp() {
       isResolvedResearchPreset,
       appendResearchPresetAudit,
       appendServerBenchmarkEvent,
-      presetHistoryDefaultLimit: PRESET_HISTORY_DEFAULT_LIMIT,
-      presetHistoryMinLimit: PRESET_HISTORY_MIN_LIMIT,
-      presetHistoryMaxLimit: PRESET_HISTORY_MAX_LIMIT,
+      presetHistoryDefaultLimit: serverConfig.presetHistoryDefaultLimit,
+      presetHistoryMinLimit: serverConfig.presetHistoryMinLimit,
+      presetHistoryMaxLimit: serverConfig.presetHistoryMaxLimit,
     }),
   );
 
@@ -367,7 +247,7 @@ export function createApp() {
       appendServerBenchmarkEvent,
       botStatusViewBenchmarkLastAt,
       botStatusBenchmarkMinIntervalMs: 5000,
-      botStatusViewBenchmarkIntervalMs: BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS,
+      botStatusViewBenchmarkIntervalMs: serverConfig.botStatusViewBenchmarkIntervalMs,
       defaultReconnectReason: 'manual',
       reconnectReasonMaxLength: 120,
       botReconnectFailureStatus: 503,
@@ -387,7 +267,7 @@ export function createApp() {
   });
 
   app.get('/api/benchmark/memory-summary', requireAuth, (req: AuthenticatedRequest, res) => {
-    const events = benchmarkMemoryStore.get(req.user.id) || [];
+    const events = getUserBenchmarkEvents(req.user.id);
     return res.json({
       ...summarizeBenchmarkEvents(events),
       source: 'memory',
