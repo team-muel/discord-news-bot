@@ -36,8 +36,17 @@ Required environment variables
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (service role, keep secret)
 - `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN`
+- `ENABLE_SECONDARY_BOT` (optional, `true` to enable second bot in same service)
+- `SECONDARY_DISCORD_TOKEN` (optional, required when `ENABLE_SECONDARY_BOT=true`)
 - `DISCORD_BOT_ALERT_WEBHOOK_URL` (optional)
 - `DATABASE_URL` (if used)
+
+Single service / two bots mode
+
+- Keep one Render Web Service
+- Primary bot: `DISCORD_TOKEN`
+- Secondary bot: `ENABLE_SECONDARY_BOT=true` + `SECONDARY_DISCORD_TOKEN=<token>`
+- Recommended: run crawler scheduler only on primary path (`FEATURE_CRAWLER_SCHEDULER_ENABLED=true` as default)
 
 Local env template
 
