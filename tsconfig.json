@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "strict": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": [
+    "./server.ts",
+    "./bot.ts",
+    "./src/app.ts",
+    "./src/bot.ts",
+    "./src/supabase.ts",
+    "./src/types.ts",
+    "./src/utils.ts",
+    "./src/content/researchContent.ts",
+    "./src/lib/researchPresetValidation.ts",
+    "./src/lib/reconnectTelemetry.ts",
+    "./src/middleware/common.ts",
+    "./src/routes/**/*.ts",
+    "./src/backend/**/*.ts",
+    "./src/config/routes.ts",
+    "./src/types/**/*.ts",
+    "./backend/**/*.ts",
+    "./scripts/**/*.ts"
+  ],
+  "exclude": [
+    "./node_modules",
+    "./supabase/migrations"
+  ]
+}

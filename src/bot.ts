@@ -1,6 +1,3 @@
-client.once('ready', async () => {
-  await registerMuelCommand();
-});
 import {
   Client,
   GatewayIntentBits,
@@ -1521,7 +1518,6 @@ const handlePresetUpsertFromHistoryCommand = async (interaction: ChatInputComman
 
 
 // /뮤엘 명령만 등록
-import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 
 const registerMuelCommand = async () => {
   const command = new SlashCommandBuilder()
