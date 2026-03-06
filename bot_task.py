@@ -9,6 +9,15 @@ from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
 from discord.ext import tasks
+import requests
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from io import BytesIO
+from discord import app_commands
+from discord.ext import commands
+from PyPDF2 import PdfReader
 
 load_dotenv()
 
@@ -295,12 +304,208 @@ async def run_daemon_mode():
 
     await dc.start(NEWS_DISCORD_TOKEN)
 
+
+async def get_history(user_id):
+    if not supabase:
+        return []
+    def _get():
+        res = supabase.table("chat_history") \
+            .select("role,content") \
+            .eq("user_id", str(user_id)) \
+            .order("created_at") \
+            .limit(10) \
+            .execute()
+        return getattr(res, 'data', [])
+    return await asyncio.to_thread(_get)
+
+
+async def save_history(user_id, role, content):
+    if not supabase:
+        return
+    def _save():
+        supabase.table("chat_history").insert({
+            "user_id": str(user_id),
+            "role": role,
+            "content": content
+        }).execute()
+    await asyncio.to_thread(_save)
+
+
+async def clear_history(user_id):
+    if not supabase:
+        return
+    def _clear():
+        supabase.table("chat_history").delete().eq("user_id", str(user_id)).execute()
+    await asyncio.to_thread(_clear)
+
+
+async def get_pdf_text(attachment):
+    try:
+        res = await asyncio.to_thread(requests.get, attachment.url)
+        reader = PdfReader(BytesIO(res.content))
+        return "".join([p.extract_text() or "" for p in reader.pages[:5]])[:3000]
+    except Exception:
+        return ""
+
+
+async def get_naver_news(query):
+    try:
+        encoded = urllib.parse.quote(f"{query} 실적 매출")
+        feed = await asyncio.to_thread(
+            feedparser.parse,
+            f"https://newssearch.naver.com/search.naver?where=rss&query={encoded}"
+        )
+
+        if feed.entries:
+            return {
+                "title": feed.entries[0].title,
+                "link": feed.entries[0].link
+            }
+
+    except Exception:
+        return None
+
+
+ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
+
+
+def get_stock_price(symbol):
+    if not ALPHA_VANTAGE_KEY:
+        return None
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHA_VANTAGE_KEY}"
+    r = requests.get(url).json()
+    data = r.get("Global Quote", {})
+    if not data:
+        return None
+    return {
+        "price": data.get("05. price"),
+        "high": data.get("03. high"),
+        "low": data.get("04. low"),
+        "open": data.get("02. open"),
+        "prev": data.get("08. previous close")
+    }
+
+
+def get_stock_chart(symbol):
+    if not ALPHA_VANTAGE_KEY:
+        return None
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_VANTAGE_KEY}"
+    r = requests.get(url).json()
+    ts = r.get("Time Series (Daily)")
+    if not ts:
+        return None
+    df = pd.DataFrame(ts).T
+    df = df.astype(float)
+    df = df.sort_index()
+    close = df["4. close"].tail(30)
+    plt.figure()
+    close.plot()
+    plt.title(f"{symbol} Price")
+    plt.xlabel("Date")
+    plt.ylabel("Price")
+    buf = BytesIO()
+    plt.savefig(buf)
+    plt.close()
+    buf.seek(0)
+    return buf
+
+
+async def start_command_bot():
+    if not DISCORD_TOKEN:
+        log("DISCORD_TOKEN missing: command bot disabled")
+        return
+
+    intents = discord.Intents.default()
+    intents.message_content = True
+    bot = commands.Bot(command_prefix="!", intents=intents)
+
+    @bot.event
+    async def on_ready():
+        try:
+            await bot.tree.sync()
+        except Exception:
+            pass
+        log("✅ 명령봇 가동 (슬래시 명령)")
+
+    @bot.tree.command(name="주가", description="주식 현재 가격 조회")
+    async def stock_price(interaction: discord.Interaction, symbol: str):
+        await interaction.response.defer()
+        data = await asyncio.to_thread(get_stock_price, symbol)
+        if not data:
+            return await interaction.followup.send("❌ 주가 조회 실패")
+        msg = f"""
+📈 **{symbol} 주가**
+
+현재 가격: {data['price']}
+오늘 최고: {data['high']}
+오늘 최저: {data['low']}
+오늘 시가: {data['open']}
+전일 종가: {data['prev']}
+"""
+        await interaction.followup.send(msg)
+
+    @bot.tree.command(name="차트", description="주식 차트")
+    async def stock_chart(interaction: discord.Interaction, symbol: str):
+        await interaction.response.defer()
+        chart = await asyncio.to_thread(get_stock_chart, symbol)
+        if not chart:
+            return await interaction.followup.send("❌ 차트 생성 실패")
+        file = discord.File(chart, filename="chart.png")
+        embed = discord.Embed(title=f"{symbol} 주가 차트", color=0x2ecc71)
+        embed.set_image(url="attachment://chart.png")
+        await interaction.followup.send(embed=embed, file=file)
+
+    @bot.tree.command(name="분석", description="기업 분석")
+    async def analyze(interaction: discord.Interaction, query: str):
+        await interaction.response.defer()
+        news = await get_naver_news(query)
+        context = ""
+        link = ""
+        if news:
+            context = news["title"]
+            link = news["link"]
+        prompt = f"""
+기업 분석 질문: {query}
+
+뉴스:
+{context}
+
+투자 관점에서 분석해줘
+"""
+        try:
+            if ai_client:
+                res = ai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                answer = res.choices[0].message.content
+            else:
+                answer = "(AI 키 없음) 제공된 뉴스 제목을 기반으로 간단 분석을 수행할 수 없습니다."
+        except Exception as e:
+            answer = f"AI 응답 실패: {e}"
+
+        embed = discord.Embed(title="📊 AI 투자 분석", description=answer, color=0x3498db)
+        if link:
+            embed.add_field(name="관련 뉴스", value=f"[기사 보기]({link})")
+        await interaction.followup.send(embed=embed)
+
+    await bot.start(DISCORD_TOKEN)
+
+
+async def async_main():
+    # Start both the automation client (NEWS_DISCORD_TOKEN) and the command bot (DISCORD_TOKEN) concurrently
+    tasks_list = []
+    tasks_list.append(asyncio.create_task(run_daemon_mode()))
+    tasks_list.append(asyncio.create_task(start_command_bot()))
+    await asyncio.gather(*tasks_list)
+
 if __name__ == "__main__":
     if not SUPABASE_ENABLED:
         log("SUPABASE missing: running in no-db mode")
     if not OPENAI_API_KEY:
         log("OPENAI_API_KEY missing: using fallback analysis mode")
-    if DAEMON_MODE:
-        asyncio.run(run_daemon_mode())
-    else:
-        asyncio.run(run_once_mode())
+    # Start both the automation daemon and the command bot together.
+    try:
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        log("shutdown requested")
