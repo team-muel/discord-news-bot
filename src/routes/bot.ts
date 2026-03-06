@@ -1,11 +1,14 @@
 import crypto from 'crypto';
 import { Router } from 'express';
-import { getBotRuntimeSnapshot } from '../bot';
-import { START_BOT } from '../config';
+import { getBotRuntimeSnapshot, requestManualReconnect } from '../bot';
+import { BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, START_BOT } from '../config';
 import type { BotStatusApiResponse } from '../contracts/bot';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { appendBenchmarkEvents } from '../services/benchmarkStore';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob } from '../services/automationBot';
+import { toStringParam } from '../utils/validation';
+
+let lastBotStatusBenchmarkAt = 0;
 
 export function createBotRouter(): Router {
   const router = Router();
@@ -48,15 +51,19 @@ export function createBotRouter(): Router {
       outageDurationMs = Number.isFinite(outageStartMs) ? Math.max(0, Date.now() - outageStartMs) : 0;
     }
 
-    appendBenchmarkEvents([
-      {
-        id: crypto.randomUUID(),
-        name: 'bot_status_view',
-        ts: new Date().toISOString(),
-        path: '/api/bot/status',
-        payload: { status: statusGrade },
-      },
-    ]);
+    const now = Date.now();
+    if (now - lastBotStatusBenchmarkAt >= BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS) {
+      lastBotStatusBenchmarkAt = now;
+      appendBenchmarkEvents([
+        {
+          id: crypto.randomUUID(),
+          name: 'bot_status_view',
+          ts: new Date().toISOString(),
+          path: '/api/bot/status',
+          payload: { status: statusGrade },
+        },
+      ]);
+    }
 
     const payload: BotStatusApiResponse = {
       healthy,
@@ -90,22 +97,40 @@ export function createBotRouter(): Router {
     return res.status(202).json({ ok: true, message: `${jobName} execution started` });
   });
 
-  router.post('/reconnect', requireAdmin, (_req, res) => {
+  router.post('/reconnect', requireAdmin, async (req, res) => {
+    const requestedSource = toStringParam(req.body?.reason);
+    const source = requestedSource || 'api';
+
+    if (!START_BOT) {
+      appendBenchmarkEvents([
+        {
+          id: crypto.randomUUID(),
+          name: 'bot_reconnect_manual',
+          ts: new Date().toISOString(),
+          path: '/api/bot/reconnect',
+          payload: { source, status: 'rejected', reason: 'BOT_DISABLED' },
+        },
+      ]);
+      return res.status(409).json({ ok: false, message: '봇이 비활성화되어 있습니다.' });
+    }
+
+    const result = await requestManualReconnect(`api:${source}`);
+
     appendBenchmarkEvents([
       {
         id: crypto.randomUUID(),
         name: 'bot_reconnect_manual',
         ts: new Date().toISOString(),
         path: '/api/bot/reconnect',
-        payload: { source: 'api', status: START_BOT ? 'accepted' : 'rejected', reason: START_BOT ? 'OK' : 'BOT_DISABLED' },
+        payload: { source, status: result.status, reason: result.reason },
       },
     ]);
 
-    if (!START_BOT) {
-      return res.status(409).json({ error: 'BOT_DISABLED' });
+    if (!result.ok) {
+      return res.status(409).json({ ok: false, message: result.message });
     }
 
-    return res.status(202).json({ ok: true, message: 'Reconnect request accepted' });
+    return res.status(202).json({ ok: true, message: result.message });
   });
 
   return router;

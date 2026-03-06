@@ -14,6 +14,12 @@ Set these in your runtime environment (`.env` or host secret manager):
 - `JWT_SECRET=<strong secret>`
 - `FRONTEND_ORIGIN=<frontend url list>`
 
+Automation token behavior:
+
+- If `SECONDARY_DISCORD_TOKEN` / `AUTOMATION_DISCORD_TOKEN` is missing, automation workers are skipped by design.
+- In that case automation is treated as disabled in runtime status (no worker restart loop).
+- To run only API+primary bot, this token can remain unset.
+
 Optional but recommended:
 
 - `AUTOMATION_PYTHON_COMMAND=python`
@@ -49,10 +55,16 @@ Why: `npm run build` now installs Python dependencies from `requirements.txt` us
 hash-based caching (`.cache/python-requirements.sha256`). If requirements did not change,
 the build skips `pip install` for faster deploys.
 
+Additional deploy speed options:
+
+- If automation is off (`START_AUTOMATION_BOT=false`), Python dependency installation is skipped automatically.
+- You can force skip with `SKIP_PYTHON_DEPS=true`.
+- Render build command uses `npm ci --no-audit --no-fund` to reduce install overhead.
+
 Also verify Runtime Environment Variables in Render:
 
 - `START_BOT=true`
-- `START_AUTOMATION_BOT=true`
+- `START_AUTOMATION_BOT=false` (recommended when no secondary automation token is used)
 - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
 - For automation workers (shared token):
   - `SECONDARY_DISCORD_TOKEN=<automation bot token>`
@@ -117,3 +129,20 @@ curl -fsS http://localhost:3000/ready
 - `offline` status: `START_BOT` is false or Discord token is missing.
 - automation degraded: Python not found or job script exits non-zero.
 - frequent restarts: inspect logs with `npm run pm2:logs` and verify env vars.
+
+## 7) Render Email Alerts Off (Logs Only)
+
+This repository does not send email from code. If someone receives email on automation errors,
+it usually comes from Render notification settings.
+
+Disable email alerts in Render:
+
+1. Open Render Dashboard.
+2. Go to `Account Settings` -> `Notifications` (or the service `Alerting` tab).
+3. Disable email channel for this service/event policy.
+4. Keep monitoring through `Logs` and `/health`.
+
+Recommended for your current setup (no secondary automation token):
+
+- Set `START_AUTOMATION_BOT=false`.
+- Keep checking issues through Render Logs only.

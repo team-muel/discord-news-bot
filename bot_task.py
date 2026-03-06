@@ -18,24 +18,18 @@ from io import BytesIO
 from discord import app_commands
 from discord.ext import commands
 from PyPDF2 import PdfReader
+from automation_common import is_missing_table_error, log, parse_int_env, pick_env
 
 load_dotenv()
 
-def log(msg):
-    print(f">> [LOG] {msg}", flush=True)
-
 # 1. 초기 설정 및 클라이언트 준비
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = (
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    or os.getenv("SUPABASE_ANON_KEY")
-    or os.getenv("SUPABASE_KEY")
-)
+SUPABASE_KEY = pick_env("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY", "SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-NEWS_DISCORD_TOKEN = os.getenv("SECONDARY_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN")
+NEWS_DISCORD_TOKEN = pick_env("SECONDARY_DISCORD_TOKEN", "AUTOMATION_DISCORD_TOKEN")
 TARGET_CHANNEL_ID_RAW = os.getenv("TARGET_CHANNEL_ID")
-AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_NEWS_INTERVAL_MIN") or "30"))
+AUTOMATION_INTERVAL_MIN = parse_int_env("AUTOMATION_JOB_INTERVAL_MIN", "AUTOMATION_NEWS_INTERVAL_MIN", default=30, min_value=1)
 DAEMON_MODE = "--daemon" in sys.argv
 SUPABASE_ENABLED = bool(SUPABASE_URL and SUPABASE_KEY)
 
@@ -54,18 +48,6 @@ ai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 latest_results = {}
 NEWS_TABLE_AVAILABLE = SUPABASE_ENABLED
 NEWS_TABLE_ERROR_LOGGED = False
-
-
-def is_missing_table_error(err, table_name: str) -> bool:
-    text = str(err)
-    lowered = text.lower()
-    return (
-        "pgrst205" in lowered
-        or f"'{table_name}'" in lowered
-        or f'"{table_name}"' in lowered
-        or table_name.lower() in lowered and "schema cache" in lowered
-    )
-
 
 def disable_news_table_if_missing(err):
     global NEWS_TABLE_AVAILABLE, NEWS_TABLE_ERROR_LOGGED

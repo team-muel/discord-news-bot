@@ -9,6 +9,10 @@ const cacheDir = path.join(rootDir, '.cache');
 const pipCacheDir = path.join(cacheDir, 'pip');
 const markerPath = path.join(cacheDir, 'python-requirements.sha256');
 const pythonCommand = process.env.PYTHON_COMMAND || 'python';
+const startAutomation = (process.env.START_AUTOMATION_BOT || '').trim().toLowerCase();
+const automationEnabled = startAutomation === '' || ['1', 'true', 'yes', 'on'].includes(startAutomation);
+const skipPythonDeps = (process.env.SKIP_PYTHON_DEPS || '').trim().toLowerCase();
+const skipByEnv = ['1', 'true', 'yes', 'on'].includes(skipPythonDeps);
 
 const run = (cmd, args) => {
   const result = spawnSync(cmd, args, { stdio: 'inherit' });
@@ -19,6 +23,13 @@ const run = (cmd, args) => {
 
 if (!existsSync(requirementsPath)) {
   console.log('[build] requirements.txt not found. Skipping Python dependency install.');
+  console.log('No frontend build for backend-only deployment');
+  process.exit(0);
+}
+
+if (!automationEnabled || skipByEnv) {
+  const reason = !automationEnabled ? 'START_AUTOMATION_BOT is disabled' : 'SKIP_PYTHON_DEPS is enabled';
+  console.log(`[build] Skipping Python dependencies: ${reason}`);
   console.log('No frontend build for backend-only deployment');
   process.exit(0);
 }

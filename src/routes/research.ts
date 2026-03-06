@@ -8,12 +8,13 @@ import {
   restorePresetFromHistory,
   upsertPreset,
 } from '../services/researchPresetStore';
+import { toBoundedInt, toStringParam } from '../utils/validation';
 
 export function createResearchRouter(): Router {
   const router = Router();
 
   router.get('/preset/:presetKey', (req, res) => {
-    const key = String(req.params.presetKey || '');
+    const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
       return res.status(404).json({ error: 'NOT_FOUND' });
     }
@@ -22,19 +23,18 @@ export function createResearchRouter(): Router {
   });
 
   router.get('/preset/:presetKey/history', requireAuth, (req, res) => {
-    const key = String(req.params.presetKey || '');
+    const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
       return res.status(404).json({ error: 'NOT_FOUND' });
     }
 
-    const rawLimit = Number(req.query.limit || 20);
-    const limit = Number.isFinite(rawLimit) ? rawLimit : 20;
+    const limit = toBoundedInt(req.query.limit, 20, { min: 1, max: 100 });
 
     return res.json({ history: getPresetHistory(key, limit) });
   });
 
   router.post('/preset/:presetKey', requireAdmin, (req, res) => {
-    const key = String(req.params.presetKey || '');
+    const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
       return res.status(404).json({ error: 'NOT_FOUND' });
     }
@@ -56,14 +56,14 @@ export function createResearchRouter(): Router {
   });
 
   router.post('/preset/:presetKey/restore/:historyId', requireAdmin, (req, res) => {
-    const key = String(req.params.presetKey || '');
+    const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
       return res.status(404).json({ error: 'NOT_FOUND' });
     }
 
     const result = restorePresetFromHistory({
       key,
-      historyId: String(req.params.historyId || ''),
+      historyId: toStringParam(req.params.historyId),
       actorUserId: req.user!.id,
       actorUsername: req.user!.username,
     });

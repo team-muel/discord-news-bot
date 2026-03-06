@@ -1,11 +1,12 @@
 import express, { type Express } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { FRONTEND_ORIGIN } from './config';
+import { FRONTEND_ORIGIN, JSON_BODY_LIMIT } from './config';
 import { attachUser } from './middleware/auth';
 import { createAuthRouter } from './routes/auth';
 import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
+import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
 import { createResearchRouter } from './routes/research';
 
@@ -26,7 +27,7 @@ export function createApp(): Express {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     }),
   );
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(cookieParser());
   app.use(attachUser);
 
@@ -39,6 +40,7 @@ export function createApp(): Express {
   app.use(createHealthRouter());
   app.use('/api/auth', createAuthRouter());
   app.use('/api/research', createResearchRouter());
+  app.use('/api/fred', createFredRouter());
   app.use('/api/bot', createBotRouter());
   app.use('/api/benchmark', createBenchmarkRouter());
 

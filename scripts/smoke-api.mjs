@@ -31,6 +31,16 @@ async function main() {
     return res;
   };
 
+  const unauthMe = await fetch(`${base}/api/auth/me`);
+  if (unauthMe.status !== 401) {
+    throw new Error(`GET /api/auth/me expected 401 before login, got ${unauthMe.status}`);
+  }
+
+  const unauthBotStatus = await fetch(`${base}/api/bot/status`);
+  if (unauthBotStatus.status !== 401) {
+    throw new Error(`GET /api/bot/status expected 401 before login, got ${unauthBotStatus.status}`);
+  }
+
   const health = await fetch(`${base}/health`);
   await assertOk(health, 'GET /health');
   const healthJson = await health.json();
@@ -45,6 +55,23 @@ async function main() {
   }
 
   await assertOk(await fetch(`${base}/api/status`), 'GET /api/status');
+
+  const fred = await fetch(`${base}/api/fred/playground?ids=UNRATE,CPIAUCSL,FEDFUNDS&range=3Y`);
+  await assertOk(fred, 'GET /api/fred/playground');
+  const fredJson = await fred.json();
+  if (fredJson?.source !== 'backend') {
+    throw new Error('GET /api/fred/playground missing source=backend');
+  }
+  if (!Array.isArray(fredJson?.catalog) || fredJson.catalog.length < 1) {
+    throw new Error('GET /api/fred/playground missing catalog');
+  }
+  if (!Array.isArray(fredJson?.series) || fredJson.series.length < 1) {
+    throw new Error('GET /api/fred/playground missing series');
+  }
+  const firstSeries = fredJson.series[0];
+  if (!Array.isArray(firstSeries?.points) || firstSeries.points.length < 2) {
+    throw new Error('GET /api/fred/playground missing series points');
+  }
 
   const sdk = await fetchWithCookie('/api/auth/sdk', {
     method: 'POST',
@@ -69,6 +96,11 @@ async function main() {
   }
 
   await assertOk(await fetchWithCookie('/api/benchmark/summary'), 'GET /api/benchmark/summary');
+
+  const logout = await fetchWithCookie('/api/auth/logout', { method: 'POST' });
+  if (logout.status !== 204) {
+    throw new Error(`POST /api/auth/logout expected 204, got ${logout.status}`);
+  }
 
   console.log('[smoke] OK');
 }

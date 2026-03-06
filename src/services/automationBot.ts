@@ -1,172 +1,29 @@
 import { spawn } from 'child_process';
 import cron, { type ScheduledTask } from 'node-cron';
 import logger from '../logger';
+import {
+  AUTOMATION_ENABLED,
+  AUTOMATION_NEWS_INTERVAL_MIN,
+  AUTOMATION_PERSISTENT_WORKERS,
+  AUTOMATION_RESTART_DELAY_MS,
+  AUTOMATION_RUN_ON_START,
+  AUTOMATION_RUNTIME_ENABLED,
+  AUTOMATION_YOUTUBE_INTERVAL_MIN,
+  JOB_CONFIGS,
+  PYTHON_COMMAND,
+} from './automation/config';
+import { buildAutomationSummary, isAutomationHealthy } from './automation/health';
+import { createInitialJobStates, initJobState } from './automation/runtimeState';
+import type { AutomationJobName, AutomationRuntimeSnapshot } from './automation/types';
 
-export type AutomationJobName = 'news-analysis' | 'youtube-monitor';
+export type { AutomationJobName, AutomationRuntimeSnapshot };
 
-type AutomationJobState = {
-  name: AutomationJobName;
-  enabled: boolean;
-  schedule: string;
-  scriptPath: string;
-  running: boolean;
-  runCount: number;
-  successCount: number;
-  failCount: number;
-  lastRunAt: string | null;
-  lastSuccessAt: string | null;
-  lastErrorAt: string | null;
-  lastError: string | null;
-  lastDurationMs: number | null;
-  lastExitCode: number | null;
-};
-
-export type AutomationRuntimeSnapshot = {
-  started: boolean;
-  healthy: boolean;
-  summary: string;
-  startedAt: string | null;
-  pythonCommand: string;
-  jobs: Record<AutomationJobName, AutomationJobState>;
-};
-
-type JobConfig = {
-  name: AutomationJobName;
-  enabled: boolean;
-  schedule: string;
-  scriptPath: string;
-};
-
-const toBool = (value: string | undefined, fallback: boolean) => {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
-    return true;
-  }
-  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
-    return false;
-  }
-
-  return fallback;
-};
-
-const AUTOMATION_ENABLED = toBool(process.env.START_AUTOMATION_BOT, true);
-const PYTHON_COMMAND = process.env.AUTOMATION_PYTHON_COMMAND || 'python';
-const AUTOMATION_RUN_ON_START = toBool(process.env.AUTOMATION_RUN_ON_START, true);
-const AUTOMATION_PERSISTENT_WORKERS = toBool(process.env.AUTOMATION_PERSISTENT_WORKERS, true);
-const AUTOMATION_RESTART_DELAY_MS = parseInt(process.env.AUTOMATION_RESTART_DELAY_MS || '5000', 10);
-const AUTOMATION_NEWS_INTERVAL_MIN = parseInt(process.env.AUTOMATION_NEWS_INTERVAL_MIN || '30', 10);
-const AUTOMATION_YOUTUBE_INTERVAL_MIN = parseInt(process.env.AUTOMATION_YOUTUBE_INTERVAL_MIN || '10', 10);
-
-const JOB_CONFIGS: JobConfig[] = [
-  {
-    name: 'news-analysis',
-    enabled: toBool(process.env.AUTOMATION_NEWS_ENABLED, true),
-    schedule: process.env.AUTOMATION_NEWS_CRON || '*/30 * * * *',
-    scriptPath: process.env.AUTOMATION_NEWS_SCRIPT || 'bot_task.py',
-  },
-  {
-    name: 'youtube-monitor',
-    enabled: toBool(process.env.AUTOMATION_YOUTUBE_ENABLED, true),
-    schedule: process.env.AUTOMATION_YOUTUBE_CRON || '*/10 * * * *',
-    scriptPath: process.env.AUTOMATION_YOUTUBE_SCRIPT || 'youtube_monitor.py',
-  },
-];
-
-const jobStates: Record<AutomationJobName, AutomationJobState> = {
-  'news-analysis': {
-    name: 'news-analysis',
-    enabled: false,
-    schedule: '',
-    scriptPath: '',
-    running: false,
-    runCount: 0,
-    successCount: 0,
-    failCount: 0,
-    lastRunAt: null,
-    lastSuccessAt: null,
-    lastErrorAt: null,
-    lastError: null,
-    lastDurationMs: null,
-    lastExitCode: null,
-  },
-  'youtube-monitor': {
-    name: 'youtube-monitor',
-    enabled: false,
-    schedule: '',
-    scriptPath: '',
-    running: false,
-    runCount: 0,
-    successCount: 0,
-    failCount: 0,
-    lastRunAt: null,
-    lastSuccessAt: null,
-    lastErrorAt: null,
-    lastError: null,
-    lastDurationMs: null,
-    lastExitCode: null,
-  },
-};
+const jobStates = createInitialJobStates();
 
 const scheduledTasks: Partial<Record<AutomationJobName, ScheduledTask>> = {};
 const daemonProcesses: Partial<Record<AutomationJobName, ReturnType<typeof spawn>>> = {};
 let started = false;
 let startedAt: string | null = null;
-
-const initJobState = (config: JobConfig) => {
-  const state = jobStates[config.name];
-  state.enabled = config.enabled;
-  state.schedule = config.schedule;
-  state.scriptPath = config.scriptPath;
-};
-
-const buildSummary = () => {
-  if (!AUTOMATION_ENABLED) {
-    return 'Automation bot is disabled';
-  }
-
-  const activeJobs = Object.values(jobStates).filter((job) => job.enabled);
-  if (activeJobs.length === 0) {
-    return 'Automation bot has no enabled jobs';
-  }
-
-  const unhealthy = activeJobs.find((job) => job.lastErrorAt && (!job.lastSuccessAt || Date.parse(job.lastErrorAt) > Date.parse(job.lastSuccessAt)));
-  if (unhealthy) {
-    return `Automation job ${unhealthy.name} needs attention`;
-  }
-
-  return 'Automation bot is healthy';
-};
-
-const isHealthy = () => {
-  if (!AUTOMATION_ENABLED) {
-    return false;
-  }
-
-  const activeJobs = Object.values(jobStates).filter((job) => job.enabled);
-  if (activeJobs.length === 0) {
-    return false;
-  }
-
-  return !activeJobs.some((job) => {
-    if (AUTOMATION_PERSISTENT_WORKERS && !job.running) {
-      return true;
-    }
-
-    if (!job.lastErrorAt) {
-      return false;
-    }
-
-    if (!job.lastSuccessAt) {
-      return true;
-    }
-
-    return Date.parse(job.lastErrorAt) >= Date.parse(job.lastSuccessAt);
-  });
-};
 
 const getJobIntervalMin = (jobName: AutomationJobName) => {
   return jobName === 'news-analysis' ? AUTOMATION_NEWS_INTERVAL_MIN : AUTOMATION_YOUTUBE_INTERVAL_MIN;
@@ -343,7 +200,7 @@ export const startAutomationBot = () => {
   }
 
   for (const config of JOB_CONFIGS) {
-    initJobState(config);
+    initJobState(jobStates, config);
   }
 
   started = true;
@@ -351,6 +208,18 @@ export const startAutomationBot = () => {
 
   if (!AUTOMATION_ENABLED) {
     logger.info('[AUTOMATION] START_AUTOMATION_BOT disabled');
+    return;
+  }
+
+  if (!AUTOMATION_RUNTIME_ENABLED) {
+    for (const config of JOB_CONFIGS) {
+      const state = jobStates[config.name];
+      state.enabled = false;
+      state.lastError = null;
+      state.lastErrorAt = null;
+      state.running = false;
+    }
+    logger.info('[AUTOMATION] Token missing. Skipping automation workers (set SECONDARY_DISCORD_TOKEN or AUTOMATION_DISCORD_TOKEN to enable).');
     return;
   }
 
@@ -400,6 +269,10 @@ export const startAutomationBot = () => {
 };
 
 export const triggerAutomationJob = (jobName: AutomationJobName) => {
+  if (!AUTOMATION_RUNTIME_ENABLED) {
+    return Promise.resolve({ ok: false, message: 'Automation token is not configured' });
+  }
+
   if (AUTOMATION_PERSISTENT_WORKERS) {
     const state = jobStates[jobName];
     if (!state.enabled) {
@@ -420,8 +293,8 @@ export const triggerAutomationJob = (jobName: AutomationJobName) => {
 export const getAutomationRuntimeSnapshot = (): AutomationRuntimeSnapshot => {
   return {
     started,
-    healthy: isHealthy(),
-    summary: buildSummary(),
+    healthy: isAutomationHealthy(Object.values(jobStates)),
+    summary: buildAutomationSummary(Object.values(jobStates)),
     startedAt,
     pythonCommand: PYTHON_COMMAND,
     jobs: {
@@ -431,4 +304,4 @@ export const getAutomationRuntimeSnapshot = (): AutomationRuntimeSnapshot => {
   };
 };
 
-export const isAutomationEnabled = () => AUTOMATION_ENABLED;
+export const isAutomationEnabled = () => AUTOMATION_RUNTIME_ENABLED;

@@ -13,12 +13,15 @@
 
 ## Required Backend Env
 
-- `FRONTEND_ORIGIN`: comma-separated CORS allowlist
+- `CORS_ALLOWLIST` (preferred) or `FRONTEND_ORIGIN`: comma-separated CORS allowlist
   - Example: `https://muel-front-uiux.vercel.app,http://localhost:5173`
 - `START_BOT`: `false` for API-only mode, `true` to start Discord bot in same process
 - `START_AUTOMATION_BOT`: `true` to run automation worker bot (legacy python jobs)
 - `JWT_SECRET`: session token signing key
 - `RESEARCH_PRESET_ADMIN_USER_IDS`: comma-separated admin user IDs for preset mutation APIs
+- `JSON_BODY_LIMIT` (optional): express json body limit (default: `2mb`)
+- `BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS` (optional): `/api/bot/status` benchmark write interval (default: `60000`)
+- `BOT_MANUAL_RECONNECT_COOLDOWN_MS` (optional): manual reconnect cooldown for bot runtime (default: `30000`)
 
 ## Contract Endpoints
 
@@ -51,6 +54,12 @@
 - `GET /api/research/preset/:presetKey/history?limit=20` (auth required)
 - `POST /api/research/preset/:presetKey` (admin required)
 - `POST /api/research/preset/:presetKey/restore/:historyId` (admin required)
+
+### Macro Data
+
+- `GET /api/fred/playground?ids=UNRATE,CPIAUCSL,FEDFUNDS&range=3Y`
+  - Query: `ids` (comma-separated), `range` in `1Y|3Y|5Y|10Y`
+  - Returns: `{ source, catalog, series }` compatible payload for frontend playground
 
 ### Bot Ops
 

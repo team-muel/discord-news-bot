@@ -1,8 +1,28 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  Client,
+  GatewayIntentBits,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+} from 'discord.js';
 import logger from './logger';
-import { DISCORD_READY_TIMEOUT_MS, DISCORD_START_RETRIES } from './config';
+import {
+  DISCORD_READY_TIMEOUT_MS,
+  DISCORD_START_RETRIES,
+  RESEARCH_PRESET_ADMIN_USER_IDS,
+} from './config';
+import { getAutomationRuntimeSnapshot, triggerAutomationJob } from './services/automationBot';
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS || '30000', 10);
+
+const adminAllowlist = new Set(
+  RESEARCH_PRESET_ADMIN_USER_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 export type BotRuntimeSnapshot = {
   started: boolean;
@@ -48,6 +68,290 @@ const botRuntimeState: BotRuntimeSnapshot = {
   manualReconnectCooldownRemainingSec: 0,
 };
 
+let commandHandlersAttached = false;
+let activeToken: string | null = null;
+let reconnectInProgress = false;
+
+export type ManualReconnectRequestResult = {
+  ok: boolean;
+  status: 'accepted' | 'rejected';
+  reason: 'OK' | 'COOLDOWN' | 'IN_FLIGHT' | 'NO_TOKEN' | 'RECONNECT_FAILED';
+  message: string;
+};
+
+const commandDefinitions = [
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Check if the bot is responsive'),
+  new SlashCommandBuilder()
+    .setName('bot-status')
+    .setDescription('Show Discord and automation runtime status'),
+  new SlashCommandBuilder()
+    .setName('automation-run')
+    .setDescription('Run an automation job immediately (admin only)')
+    .addStringOption((option) =>
+      option
+        .setName('job')
+        .setDescription('Automation job name')
+        .setRequired(true)
+        .addChoices(
+          { name: 'news-analysis', value: 'news-analysis' },
+          { name: 'youtube-monitor', value: 'youtube-monitor' },
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName('bot-reconnect')
+    .setDescription('Reconnect the Discord client (admin only)'),
+].map((definition) => definition.toJSON());
+
+const getManualReconnectCooldownRemainingSec = () => {
+  if (!botRuntimeState.lastManualReconnectAt) {
+    return 0;
+  }
+
+  const lastReconnectAtMs = Date.parse(botRuntimeState.lastManualReconnectAt);
+  if (!Number.isFinite(lastReconnectAtMs)) {
+    return 0;
+  }
+
+  const remainingMs = Math.max(0, MANUAL_RECONNECT_COOLDOWN_MS - (Date.now() - lastReconnectAtMs));
+  return Math.ceil(remainingMs / 1000);
+};
+
+const hasAdminPermission = (interaction: ChatInputCommandInteraction) => {
+  if (adminAllowlist.has(interaction.user.id)) {
+    return true;
+  }
+
+  return Boolean(interaction.memberPermissions?.has(PermissionFlagsBits.Administrator));
+};
+
+const registerSlashCommands = async () => {
+  if (!client.application) {
+    logger.warn('[BOT] Discord application context unavailable, skipping slash command sync');
+    return;
+  }
+
+  try {
+    await client.application.commands.set(commandDefinitions);
+    logger.info('[BOT] Slash commands synced (%d commands)', commandDefinitions.length);
+  } catch (error) {
+    logger.error('[BOT] Failed to sync slash commands: %o', error);
+  }
+};
+
+const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => {
+  const bot = getBotRuntimeSnapshot();
+  const automation = getAutomationRuntimeSnapshot();
+  const jobStates = Object.values(automation.jobs)
+    .map((job) => {
+      const lastState = job.lastErrorAt && (!job.lastSuccessAt || Date.parse(job.lastErrorAt) >= Date.parse(job.lastSuccessAt))
+        ? `error(${job.lastError || 'unknown'})`
+        : job.running
+          ? 'running'
+          : 'idle';
+      return `${job.name}: ${lastState}`;
+    })
+    .join(' | ');
+
+  await interaction.reply({
+    content: [
+      `Bot ready: ${String(bot.ready)} | wsStatus: ${bot.wsStatus}`,
+      `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
+      `Automation healthy: ${String(automation.healthy)} | ${jobStates || 'no jobs'}`,
+    ].join('\n'),
+    ephemeral: true,
+  });
+};
+
+const runManualReconnect = async (reason: string): Promise<ManualReconnectRequestResult> => {
+  if (!activeToken) {
+    logger.warn('[BOT] Manual reconnect skipped: token unavailable');
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'NO_TOKEN',
+      message: '활성 봇 토큰이 없어 재연결할 수 없습니다.',
+    };
+  }
+
+  if (reconnectInProgress) {
+    logger.warn('[BOT] Manual reconnect skipped: reconnect already in progress');
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'IN_FLIGHT',
+      message: '재연결이 이미 진행 중입니다.',
+    };
+  }
+
+  reconnectInProgress = true;
+  botRuntimeState.reconnectQueued = true;
+  botRuntimeState.lastManualReconnectAt = new Date().toISOString();
+  botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
+
+  logger.warn('[BOT] Manual reconnect requested: %s', reason);
+
+  try {
+    await Promise.resolve((client as any).destroy());
+  } catch (error) {
+    logger.warn('[BOT] client.destroy() during manual reconnect failed: %o', error);
+  }
+
+  try {
+    await startBot(activeToken);
+    botRuntimeState.lastRecoveryAt = new Date().toISOString();
+    botRuntimeState.lastAlertAt = null;
+    botRuntimeState.lastAlertReason = null;
+    return {
+      ok: true,
+      status: 'accepted',
+      reason: 'OK',
+      message: '봇 재연결 요청을 전송했습니다.',
+    };
+  } catch (error) {
+    logger.error('[BOT] Manual reconnect failed: %o', error);
+    botRuntimeState.lastLoginErrorAt = new Date().toISOString();
+    botRuntimeState.lastLoginError = error instanceof Error ? error.message : String(error);
+    botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
+    botRuntimeState.lastAlertReason = botRuntimeState.lastLoginError;
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'RECONNECT_FAILED',
+      message: '재연결에 실패했습니다. 서버 로그를 확인하세요.',
+    };
+  } finally {
+    reconnectInProgress = false;
+    botRuntimeState.reconnectQueued = false;
+  }
+};
+
+export const requestManualReconnect = async (source: string): Promise<ManualReconnectRequestResult> => {
+  const remaining = getManualReconnectCooldownRemainingSec();
+  if (remaining > 0) {
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'COOLDOWN',
+      message: `재연결 쿨다운 중입니다. ${remaining}초 후 다시 시도하세요.`,
+    };
+  }
+
+  if (reconnectInProgress) {
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'IN_FLIGHT',
+      message: '재연결이 이미 진행 중입니다.',
+    };
+  }
+
+  if (!activeToken) {
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'NO_TOKEN',
+      message: '활성 봇 토큰이 없어 재연결할 수 없습니다.',
+    };
+  }
+
+  return runManualReconnect(source);
+};
+
+const handleAutomationRunCommand = async (interaction: ChatInputCommandInteraction) => {
+  if (!hasAdminPermission(interaction)) {
+    await interaction.reply({ content: 'Admin permission is required.', ephemeral: true });
+    return;
+  }
+
+  const jobName = interaction.options.getString('job', true);
+  if (jobName !== 'news-analysis' && jobName !== 'youtube-monitor') {
+    await interaction.reply({ content: 'Invalid job name.', ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+  const result = await triggerAutomationJob(jobName);
+  await interaction.editReply(result.ok ? `Accepted: ${result.message}` : `Failed: ${result.message}`);
+};
+
+const handleReconnectCommand = async (interaction: ChatInputCommandInteraction) => {
+  if (!hasAdminPermission(interaction)) {
+    await interaction.reply({ content: 'Admin permission is required.', ephemeral: true });
+    return;
+  }
+
+  const remaining = getManualReconnectCooldownRemainingSec();
+  if (remaining > 0) {
+    await interaction.reply({
+      content: `Reconnect is on cooldown. Try again in ${remaining}s.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (!activeToken) {
+    await interaction.reply({ content: 'DISCORD token is not loaded.', ephemeral: true });
+    return;
+  }
+
+  await interaction.reply({ content: 'Reconnect requested. Restarting Discord client...', ephemeral: true });
+
+  setTimeout(() => {
+    void runManualReconnect(`slash-command:${interaction.user.id}`);
+  }, 300);
+};
+
+const attachCommandHandlers = () => {
+  if (commandHandlersAttached) {
+    return;
+  }
+
+  commandHandlersAttached = true;
+
+  client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
+
+    try {
+      switch (interaction.commandName) {
+        case 'ping': {
+          await interaction.reply({
+            content: `Pong! ws=${client.ws.status} latency=${client.ws.ping}ms`,
+            ephemeral: true,
+          });
+          return;
+        }
+        case 'bot-status': {
+          await handleStatusCommand(interaction);
+          return;
+        }
+        case 'automation-run': {
+          await handleAutomationRunCommand(interaction);
+          return;
+        }
+        case 'bot-reconnect': {
+          await handleReconnectCommand(interaction);
+          return;
+        }
+        default: {
+          await interaction.reply({ content: 'Unknown command.', ephemeral: true });
+        }
+      }
+    } catch (error) {
+      logger.error('[BOT] interaction handler failed: %o', error);
+      const message = 'Command failed. Check server logs.';
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(message).catch(() => undefined);
+      } else {
+        await interaction.reply({ content: message, ephemeral: true }).catch(() => undefined);
+      }
+    }
+  });
+};
+
 client.on('clientReady', () => {
   botRuntimeState.ready = true;
   botRuntimeState.started = true;
@@ -55,6 +359,9 @@ client.on('clientReady', () => {
   botRuntimeState.lastRecoveryAt = botRuntimeState.lastReadyAt;
   botRuntimeState.lastAlertAt = null;
   botRuntimeState.lastAlertReason = null;
+  botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
+
+  void registerSlashCommands();
 });
 
 client.on('shardDisconnect', (event) => {
@@ -67,19 +374,33 @@ client.on('shardDisconnect', (event) => {
   botRuntimeState.lastAlertReason = event.reason || `Gateway disconnect code ${event.code}`;
 });
 
+client.on('invalidated', () => {
+  botRuntimeState.ready = false;
+  botRuntimeState.lastInvalidatedAt = new Date().toISOString();
+  botRuntimeState.lastAlertAt = botRuntimeState.lastInvalidatedAt;
+  botRuntimeState.lastAlertReason = 'Gateway session invalidated';
+});
+
 export function getBotRuntimeSnapshot(): BotRuntimeSnapshot {
   const started = botRuntimeState.started;
   const liveWsStatus = Number(client.ws?.status ?? botRuntimeState.wsStatus ?? -1);
+  const manualCooldown = getManualReconnectCooldownRemainingSec();
+  botRuntimeState.manualReconnectCooldownRemainingSec = manualCooldown;
   return {
     ...botRuntimeState,
     started,
     ready: client.isReady(),
     wsStatus: started ? liveWsStatus : -1,
+    manualReconnectCooldownRemainingSec: manualCooldown,
   };
 }
 
 export async function startBot(token: string): Promise<void> {
   if (!token) throw new Error('Discord token is required');
+
+  activeToken = token;
+  attachCommandHandlers();
+
   botRuntimeState.tokenPresent = Boolean(token);
   const maxRetries = DISCORD_START_RETRIES;
   const readyTimeout = DISCORD_READY_TIMEOUT_MS;

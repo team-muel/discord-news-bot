@@ -6,6 +6,7 @@ import sys
 from supabase import create_client
 from dotenv import load_dotenv
 from discord.ext import tasks
+from automation_common import is_missing_table_error, parse_int_env, pick_env
 
 load_dotenv()
 
@@ -13,16 +14,12 @@ load_dotenv()
 CHANNEL_ID = "UC6dN6Rilzh9KmzymxnZGslg"
 RSS_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = (
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    or os.getenv("SUPABASE_ANON_KEY")
-    or os.getenv("SUPABASE_KEY")
-)
+SUPABASE_KEY = pick_env("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY", "SUPABASE_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-YOUTUBE_DISCORD_TOKEN = os.getenv("SECONDARY_DISCORD_TOKEN") or os.getenv("AUTOMATION_DISCORD_TOKEN")
+YOUTUBE_DISCORD_TOKEN = pick_env("SECONDARY_DISCORD_TOKEN", "AUTOMATION_DISCORD_TOKEN")
 # 여기는 환경변수로 덮어쓸 수 있도록 지원
 TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID") or "1478211311480471747")
-AUTOMATION_INTERVAL_MIN = max(1, int(os.getenv("AUTOMATION_JOB_INTERVAL_MIN") or os.getenv("AUTOMATION_YOUTUBE_INTERVAL_MIN") or "10"))
+AUTOMATION_INTERVAL_MIN = parse_int_env("AUTOMATION_JOB_INTERVAL_MIN", "AUTOMATION_YOUTUBE_INTERVAL_MIN", default=10, min_value=1)
 DAEMON_MODE = "--daemon" in sys.argv
 SUPABASE_ENABLED = bool(SUPABASE_URL and SUPABASE_KEY)
 LAST_VIDEO_ID = None
@@ -33,18 +30,6 @@ if not YOUTUBE_DISCORD_TOKEN:
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_ENABLED else None
 YOUTUBE_TABLE_AVAILABLE = SUPABASE_ENABLED
 YOUTUBE_TABLE_ERROR_LOGGED = False
-
-
-def is_missing_table_error(err, table_name: str) -> bool:
-    text = str(err)
-    lowered = text.lower()
-    return (
-        "pgrst205" in lowered
-        or f"'{table_name}'" in lowered
-        or f'"{table_name}"' in lowered
-        or table_name.lower() in lowered and "schema cache" in lowered
-    )
-
 
 def disable_youtube_table_if_missing(err):
     global YOUTUBE_TABLE_AVAILABLE, YOUTUBE_TABLE_ERROR_LOGGED
