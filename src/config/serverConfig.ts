@@ -11,6 +11,36 @@ const toTrimmedList = (raw: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+const toOrigin = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      return new URL(trimmed).origin;
+    }
+
+    // Allow host-only values in env vars and assume HTTPS for production safety.
+    if (/^[a-z0-9.-]+(?::\d+)?$/i.test(trimmed)) {
+      return new URL(`https://${trimmed}`).origin;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const toOriginAllowlist = (raw: string) => {
+  const allowlist = toTrimmedList(raw)
+    .map((item) => toOrigin(item))
+    .filter((item): item is string => Boolean(item));
+
+  return Array.from(new Set(allowlist));
+};
+
 export const serverConfig = {
   authCookieName: process.env.AUTH_COOKIE_NAME || 'muel_auth',
   csrfCookieName: process.env.CSRF_COOKIE_NAME || 'csrf_token',
@@ -27,7 +57,7 @@ export const serverConfig = {
   appBaseUrl: process.env.APP_BASE_URL || '',
 };
 
-export const buildCorsAllowlist = () => toTrimmedList(serverConfig.corsAllowlistRaw);
+export const buildCorsAllowlist = () => toOriginAllowlist(serverConfig.corsAllowlistRaw);
 
 export const isAllowedRedirectUri = (redirectUri: string, req: express.Request) => {
   if (!redirectUri) return false;
@@ -39,16 +69,21 @@ export const isAllowedRedirectUri = (redirectUri: string, req: express.Request) 
     return false;
   }
 
-  const allowlist = toTrimmedList(serverConfig.oauthRedirectAllowlistRaw);
-  const runtimeAllowed = new Set<string>(allowlist);
+  const runtimeAllowed = new Set<string>(toOriginAllowlist(serverConfig.oauthRedirectAllowlistRaw));
 
   if (serverConfig.appBaseUrl) {
-    runtimeAllowed.add(serverConfig.appBaseUrl.trim());
+    const appBaseOrigin = toOrigin(serverConfig.appBaseUrl);
+    if (appBaseOrigin) {
+      runtimeAllowed.add(appBaseOrigin);
+    }
   }
 
   const requestOrigin = req.get('origin');
   if (requestOrigin) {
-    runtimeAllowed.add(requestOrigin);
+    const requestOriginNormalized = toOrigin(requestOrigin);
+    if (requestOriginNormalized) {
+      runtimeAllowed.add(requestOriginNormalized);
+    }
   }
 
   const forwardedProto = req.get('x-forwarded-proto') || req.protocol;

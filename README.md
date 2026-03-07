@@ -42,7 +42,8 @@ Required environment variables
 - aliases: `SECONDARY_DISCORD_BOT_TOKEN`, `SECONDARY_BOT_TOKEN`
 - `DISCORD_BOT_ALERT_WEBHOOK_URL` (optional)
 - `DATABASE_URL` (if used)
-- `OAUTH_REDIRECT_ALLOWLIST` (recommended for OAuth redirect validation)
+- `APP_BASE_URL` (recommended, frontend origin such as `https://<vercel-domain>`)
+- `OAUTH_REDIRECT_ALLOWLIST` (recommended for OAuth redirect validation, e.g. `https://<render-domain>,https://<vercel-domain>`)
 - `CORS_ALLOWLIST` (optional, defaults to `OAUTH_REDIRECT_ALLOWLIST`)
 - `RESEARCH_PRESET_ADMIN_USER_IDS` (optional, comma-separated Discord user IDs)
 - `ADMIN_ALLOWLIST_TABLE` (optional, Supabase table name with `user_id` column)
@@ -79,4 +80,5 @@ CI
 Notes
 
 - Secrets and service-role keys must never be published to the client-side repo. Keep them in Render/GitHub Secrets.
+- Discord OAuth2 Redirects must include `https://<render-domain>/auth/callback` exactly.
 - If you need help wiring Render or adding monitoring, tell me which provider account to use and I can generate a sample config.
