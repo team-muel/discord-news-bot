@@ -7,6 +7,7 @@ import { createCrawlerRouter } from './routes/crawler';
 import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
 import { createResearchRouter } from './routes/research';
+import { createQuantRouter } from './routes/quant';
 import { createAppRouter } from './routes/app';
 import { detectRuntimeEnvironment, getCookieSecurity } from './backend/runtimeEnvironment';
 import { supabase, isSupabaseConfigured } from './backend/supabase';
@@ -251,6 +252,13 @@ export function createApp() {
       defaultReconnectReason: 'manual',
       reconnectReasonMaxLength: 120,
       botReconnectFailureStatus: 503,
+    }),
+  );
+
+  app.use(
+    createQuantRouter({
+      requireAuth,
+      requireAuthAndCsrf,
     }),
   );
 

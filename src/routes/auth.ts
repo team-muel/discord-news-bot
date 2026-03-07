@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { Router, Request, Response, type RequestHandler } from 'express';
 import { supabase } from '../backend/supabase';
+import { isPresetAdmin } from '../backend/isPresetAdmin';
 import type { AuthenticatedRequest, JwtUser } from '../types';
 import { getCookieSecurity, type RuntimeEnvironment } from '../backend/runtimeEnvironment';
 
@@ -201,15 +202,18 @@ export const createAuthRouter = ({
     }
   });
 
-  router.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  router.get('/api/auth/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     const safeUser = {
       id: req.user.id,
       username: req.user.username,
       avatar: req.user.avatar,
     };
 
+    const admin = await isPresetAdmin(req.user.id);
+
     return res.json({
       user: safeUser,
+      isPresetAdmin: admin,
       csrfToken: req.cookies?.[csrfCookieName] || null,
     });
   });
