@@ -3,6 +3,7 @@ import logger from './src/logger';
 import initMonitoring from './src/init';
 import { PORT, START_BOT } from './src/config';
 import { startAutomationBot } from './src/services/automationBot';
+import { startTradingEngine } from './src/services/tradingEngine';
 
 // Initialize monitoring (Sentry) if configured
 initMonitoring();
@@ -12,6 +13,7 @@ import { createApp } from './src/app';
 const app = createApp();
 
 startAutomationBot();
+startTradingEngine();
 
 logger.info('[BOOT] START_BOT=%s START_AUTOMATION_BOT=%s DISCORD_TOKEN_PRESENT=%s',
   String(START_BOT),

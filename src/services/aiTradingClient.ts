@@ -1,4 +1,5 @@
 import {
+  AI_TRADING_MODE,
   AI_TRADING_BASE_URL,
   AI_TRADING_INTERNAL_TOKEN,
   AI_TRADING_ORDER_PATH,
@@ -6,6 +7,7 @@ import {
   AI_TRADING_TIMEOUT_MS,
 } from '../config';
 import type { TradeExecutionRequest, TradeExecutionResult } from '../contracts/trade';
+import { executeLocalAiTradingOrder, getLocalAiTradingPosition, isLocalAiTradingConfigured } from './localAiTradingClient';
 
 const sanitizePath = (value: string) => (value.startsWith('/') ? value : `/${value}`);
 
@@ -23,13 +25,34 @@ const requestWithTimeout = async (input: string, init: RequestInit, timeoutMs: n
 };
 
 export function isAiTradingConfigured(): boolean {
-  return Boolean(normalizeBaseUrl(AI_TRADING_BASE_URL) && AI_TRADING_INTERNAL_TOKEN);
+  return resolveTradingMode() !== 'none';
 }
 
 export function assertAiTradingConfigured(): void {
   if (!isAiTradingConfigured()) {
     throw new Error('AI_TRADING_NOT_CONFIGURED');
   }
+}
+
+function isProxyConfigured(): boolean {
+  return Boolean(normalizeBaseUrl(AI_TRADING_BASE_URL) && AI_TRADING_INTERNAL_TOKEN);
+}
+
+type TradingMode = 'proxy' | 'local' | 'none';
+
+function resolveTradingMode(): TradingMode {
+  const requested = String(AI_TRADING_MODE || 'auto').toLowerCase();
+
+  if (requested === 'proxy') {
+    return isProxyConfigured() ? 'proxy' : 'none';
+  }
+  if (requested === 'local') {
+    return isLocalAiTradingConfigured() ? 'local' : 'none';
+  }
+
+  if (isProxyConfigured()) return 'proxy';
+  if (isLocalAiTradingConfigured()) return 'local';
+  return 'none';
 }
 
 const buildUrl = (pathValue: string): string => {
@@ -47,6 +70,11 @@ const parseJsonObject = async (response: Response): Promise<Record<string, unkno
 };
 
 export async function executeAiTradingOrder(input: TradeExecutionRequest): Promise<TradeExecutionResult> {
+  const mode = resolveTradingMode();
+  if (mode === 'local') {
+    return executeLocalAiTradingOrder(input);
+  }
+
   const url = buildUrl(AI_TRADING_ORDER_PATH);
   const response = await requestWithTimeout(
     url,
@@ -75,6 +103,11 @@ export async function executeAiTradingOrder(input: TradeExecutionRequest): Promi
 }
 
 export async function getAiTradingPosition(symbol: string): Promise<Record<string, unknown>> {
+  const mode = resolveTradingMode();
+  if (mode === 'local') {
+    return getLocalAiTradingPosition(symbol);
+  }
+
   const url = `${buildUrl(AI_TRADING_POSITION_PATH)}?symbol=${encodeURIComponent(symbol)}`;
   const response = await requestWithTimeout(
     url,

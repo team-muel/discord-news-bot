@@ -10,12 +10,14 @@
 - This repository is backend-first and exposes API routes under `/api/*`.
 - Browser auth is cookie-based (`muel_session` by default).
 - Frontend should call backend only through `apiFetch` wrappers and relative `/api/*` paths.
+- Trading strategy loop can run in-process (`START_TRADING_BOT=true`) without external AI-trading service.
 
 ## Required Backend Env
 
 - `CORS_ALLOWLIST` (preferred) or `FRONTEND_ORIGIN`: comma-separated CORS allowlist
   - Example: `https://muel-front-uiux.vercel.app,http://localhost:5173`
 - `START_BOT`: `false` for API-only mode, `true` to start Discord bot in same process
+- `START_TRADING_BOT`: `true` to run CVD-based trading engine loop in same process
 - `START_AUTOMATION_BOT`: `true` to run automation worker bot (legacy python jobs)
   - compatibility alias: `ENABLE_SECONDARY_BOT`
 - `JWT_SECRET`: session token signing key
@@ -91,12 +93,12 @@
 - `GET /api/trades?symbol=BTCUSDT&status=open&limit=50` (auth required)
 - `POST /api/trades` (admin required)
   - Input: `{ symbol, side, entryTs, entryPrice, qty, ... }`
-  - Optional: `executeOrder=true` to proxy order execution to AI-trading service
+  - Optional: `executeOrder=true` to execute order through configured AI-trading mode (`proxy` or `local`)
 
-### AI-trading Proxy
+### AI-trading
 
 - `GET /api/trading/position?symbol=BTCUSDT` (admin required)
-  - Returns upstream position payload from AI-trading service
+  - Returns position payload from configured AI-trading mode (`proxy` or `local`)
 
 ## CORS Rules
 
@@ -107,7 +109,9 @@
 
 - API-only deployment: `START_BOT=false`
 - Unified deployment (API + bot): `START_BOT=true` and provide `DISCORD_TOKEN`
-- AI-trading proxy requires: `AI_TRADING_BASE_URL`, `AI_TRADING_INTERNAL_TOKEN`
+- Proxy mode: `AI_TRADING_MODE=proxy` with `AI_TRADING_BASE_URL`, `AI_TRADING_INTERNAL_TOKEN`
+- Single-Render delegated mode: `AI_TRADING_MODE=local` with `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+- Full in-process strategy mode: `START_TRADING_BOT=true` with `TRADING_*` params and Supabase candles table
 - Always set strong `JWT_SECRET` in production
 
 ## Quick Contract Check

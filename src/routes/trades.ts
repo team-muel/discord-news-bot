@@ -62,7 +62,7 @@ export function createTradesRouter(): Router {
     }
 
     if (executeOrder && !isAiTradingConfigured()) {
-      return res.status(503).json({ error: 'CONFIG', message: 'AI_TRADING proxy is not configured' });
+      return res.status(503).json({ error: 'CONFIG', message: 'AI_TRADING is not configured (set proxy or local mode)' });
     }
 
     try {
@@ -94,7 +94,7 @@ export function createTradesRouter(): Router {
       const meta = executeOrder
         ? {
             ...(inputMeta || {}),
-            executionSource: 'ai-trading',
+            executionSource: 'ai-trading-managed',
             executionRaw: orderResult,
           }
         : inputMeta;

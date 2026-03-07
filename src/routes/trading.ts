@@ -8,7 +8,7 @@ export function createTradingRouter(): Router {
 
   router.use((_, res, next) => {
     if (!isAiTradingConfigured()) {
-      return res.status(503).json({ error: 'CONFIG', message: 'AI_TRADING proxy is not configured' });
+      return res.status(503).json({ error: 'CONFIG', message: 'AI_TRADING is not configured (set proxy or local mode)' });
     }
 
     next();

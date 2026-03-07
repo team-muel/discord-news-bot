@@ -9,6 +9,7 @@ Set these in your runtime environment (`.env` or host secret manager):
 
 - `NODE_ENV=production`
 - `START_BOT=true`
+- `START_TRADING_BOT=false` (enable only when strategy loop should run on this instance)
 - `START_AUTOMATION_BOT=true`
 - `DISCORD_TOKEN=<your token>` (or `DISCORD_BOT_TOKEN`)
 - `JWT_SECRET=<strong secret>`
@@ -75,12 +76,27 @@ Also verify Runtime Environment Variables in Render:
   - recommended: `SECONDARY_DISCORD_TOKEN != DISCORD_TOKEN`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
 - `PYTHON_REQUIREMENTS_PROFILE=full` (all features)
-- AI-trading proxy (optional but recommended for real order execution):
-  - `AI_TRADING_BASE_URL=https://<ai-trading-service-domain>`
-  - `AI_TRADING_INTERNAL_TOKEN=<shared-internal-token>`
-  - `AI_TRADING_ORDER_PATH=/internal/binance/order`
-  - `AI_TRADING_POSITION_PATH=/internal/binance/position`
-  - `AI_TRADING_TIMEOUT_MS=15000`
+- AI-trading execution mode (choose one):
+  - Proxy mode (external service):
+    - `AI_TRADING_MODE=proxy`
+    - `AI_TRADING_BASE_URL=https://<ai-trading-service-domain>`
+    - `AI_TRADING_INTERNAL_TOKEN=<shared-internal-token>`
+    - `AI_TRADING_ORDER_PATH=/internal/binance/order`
+    - `AI_TRADING_POSITION_PATH=/internal/binance/position`
+    - `AI_TRADING_TIMEOUT_MS=15000`
+  - Local delegated mode (single Render, no external AI-trading service):
+    - `AI_TRADING_MODE=local`
+    - `BINANCE_API_KEY=<your-binance-key>`
+    - `BINANCE_API_SECRET=<your-binance-secret>`
+    - optional: `BINANCE_FUTURES=true`, `BINANCE_HEDGE_MODE=false`
+
+- In-process strategy loop (optional):
+  - `START_TRADING_BOT=true`
+  - `TRADING_DRY_RUN=true` for initial rollout
+  - `TRADING_SYMBOLS=BTC/USDT` (comma-separated)
+  - `TRADING_TIMEFRAME=30m`
+  - `TRADING_CANDLES_TABLE=candles`
+  - `TRADING_STATE_TABLE=bot_state`
 
 ## 2.2) Supabase Schema Setup (Required for DB mode)
 

@@ -26,6 +26,7 @@
     "@sentry/node": "^7.59.0",
     "@supabase/supabase-js": "^2.98.0",
     "better-sqlite3": "^12.4.1",
+    "ccxt": "^4.5.42",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "discord.js": "^14.25.1",
