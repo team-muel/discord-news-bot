@@ -2,11 +2,13 @@ import {
   ChatInputCommandInteraction,
   Client,
   GatewayIntentBits,
+  type Guild,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 import logger from './logger';
 import {
+  DISCORD_COMMAND_GUILD_ID,
   DISCORD_READY_TIMEOUT_MS,
   DISCORD_START_RETRIES,
   RESEARCH_PRESET_ADMIN_USER_IDS,
@@ -15,7 +17,12 @@ import { getAutomationRuntimeSnapshot, triggerAutomationJob } from './services/a
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS || '30000', 10);
+const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(
+  process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS
+  || process.env.DISCORD_MANUAL_RECONNECT_COOLDOWN_MS
+  || '30000',
+  10,
+);
 
 const adminAllowlist = new Set(
   RESEARCH_PRESET_ADMIN_USER_IDS
@@ -133,8 +140,25 @@ const registerSlashCommands = async () => {
   }
 
   try {
+    if (DISCORD_COMMAND_GUILD_ID) {
+      let guild: Guild | undefined;
+      try {
+        guild = await client.guilds.fetch(DISCORD_COMMAND_GUILD_ID);
+      } catch (fetchError) {
+        logger.error('[BOT] Failed to fetch target guild %s for slash sync: %o', DISCORD_COMMAND_GUILD_ID, fetchError);
+      }
+
+      if (guild) {
+        await guild.commands.set(commandDefinitions);
+        logger.info('[BOT] Slash commands synced to guild=%s (%d commands)', DISCORD_COMMAND_GUILD_ID, commandDefinitions.length);
+        return;
+      }
+
+      logger.warn('[BOT] Falling back to global slash command sync because target guild is unavailable');
+    }
+
     await client.application.commands.set(commandDefinitions);
-    logger.info('[BOT] Slash commands synced (%d commands)', commandDefinitions.length);
+    logger.info('[BOT] Slash commands synced globally (%d commands)', commandDefinitions.length);
   } catch (error) {
     logger.error('[BOT] Failed to sync slash commands: %o', error);
   }

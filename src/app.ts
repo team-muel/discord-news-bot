@@ -8,6 +8,7 @@ import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
 import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
+import { createQuantRouter } from './routes/quant';
 import { createResearchRouter } from './routes/research';
 
 const buildCorsOrigins = () =>
@@ -41,6 +42,7 @@ export function createApp(): Express {
   app.use('/api/auth', createAuthRouter());
   app.use('/api/research', createResearchRouter());
   app.use('/api/fred', createFredRouter());
+  app.use('/api/quant', createQuantRouter());
   app.use('/api/bot', createBotRouter());
   app.use('/api/benchmark', createBenchmarkRouter());
 
