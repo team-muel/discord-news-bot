@@ -13,7 +13,18 @@ Set these in your runtime environment (`.env` or host secret manager):
 - `START_AUTOMATION_BOT=true`
 - `DISCORD_TOKEN=<your token>` (or `DISCORD_BOT_TOKEN`)
 - `JWT_SECRET=<strong secret>`
+- `DEV_AUTH_ENABLED=false`
+- `DISCORD_OAUTH_CLIENT_ID=<discord app client id>`
+- `DISCORD_OAUTH_CLIENT_SECRET=<discord app client secret>`
+- `PUBLIC_BASE_URL=https://<your-backend-domain>`
+  - `DISCORD_OAUTH_REDIRECT_URI` is optional when `PUBLIC_BASE_URL` is set
 - `FRONTEND_ORIGIN=<frontend url list>`
+
+Compact alias set also supported:
+
+- `DISCORD_CLIENT_ID` (alias of `DISCORD_OAUTH_CLIENT_ID`)
+- `DISCORD_CLIENT_SECRET` (alias of `DISCORD_OAUTH_CLIENT_SECRET`)
+- `OAUTH_REDIRECT_ALLOWLIST` (alias of `FRONTEND_ORIGIN`/`CORS_ALLOWLIST`)
 
 Automation token behavior:
 
@@ -27,6 +38,9 @@ Optional but recommended:
 - `DISCORD_READY_TIMEOUT_MS=15000`
 - `DISCORD_START_RETRIES=3`
 - `LOG_LEVEL=info`
+- `ADMIN_ALLOWLIST_TABLE=user_roles` (if using DB-managed admin roles)
+- `ADMIN_ALLOWLIST_ROLE_VALUE=admin`
+- `ADMIN_ALLOWLIST_CACHE_TTL_MS=300000`
 
 ## 2) Install and Start with PM2
 
@@ -76,19 +90,19 @@ Also verify Runtime Environment Variables in Render:
   - recommended: `SECONDARY_DISCORD_TOKEN != DISCORD_TOKEN`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
 - `PYTHON_REQUIREMENTS_PROFILE=full` (all features)
-- AI-trading execution mode (choose one):
-  - Proxy mode (external service):
+- AI-trading execution mode (single Render default):
+  - Recommended local mode (same service process):
+    - `AI_TRADING_MODE=local`
+    - `BINANCE_API_KEY=<your-binance-key>`
+    - `BINANCE_API_SECRET=<your-binance-secret>`
+    - optional: `BINANCE_FUTURES=true`, `BINANCE_HEDGE_MODE=false`
+  - Optional proxy mode (external service delegation):
     - `AI_TRADING_MODE=proxy`
     - `AI_TRADING_BASE_URL=https://<ai-trading-service-domain>`
     - `AI_TRADING_INTERNAL_TOKEN=<shared-internal-token>`
     - `AI_TRADING_ORDER_PATH=/internal/binance/order`
     - `AI_TRADING_POSITION_PATH=/internal/binance/position`
     - `AI_TRADING_TIMEOUT_MS=15000`
-  - Local delegated mode (single Render, no external AI-trading service):
-    - `AI_TRADING_MODE=local`
-    - `BINANCE_API_KEY=<your-binance-key>`
-    - `BINANCE_API_SECRET=<your-binance-secret>`
-    - optional: `BINANCE_FUTURES=true`, `BINANCE_HEDGE_MODE=false`
 
 - In-process strategy loop (optional):
   - `START_TRADING_BOT=true`
@@ -97,6 +111,11 @@ Also verify Runtime Environment Variables in Render:
   - `TRADING_TIMEFRAME=30m`
   - `TRADING_CANDLES_TABLE=candles`
   - `TRADING_STATE_TABLE=bot_state`
+  - runtime strategy overrides are stored in `trading_engine_configs`
+  - runtime controls are available via API:
+    - pause: `POST /api/trading/runtime/pause`
+    - resume: `POST /api/trading/runtime/resume`
+    - force close: `POST /api/trading/position/close`
 
 ## 2.2) Supabase Schema Setup (Required for DB mode)
 

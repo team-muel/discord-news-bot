@@ -11,8 +11,8 @@ import {
   DISCORD_COMMAND_GUILD_ID,
   DISCORD_READY_TIMEOUT_MS,
   DISCORD_START_RETRIES,
-  RESEARCH_PRESET_ADMIN_USER_IDS,
 } from './config';
+import { isUserAdmin } from './services/adminAllowlistService';
 import { getAutomationRuntimeSnapshot, triggerAutomationJob } from './services/automationBot';
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -22,13 +22,6 @@ const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(
   || process.env.DISCORD_MANUAL_RECONNECT_COOLDOWN_MS
   || '30000',
   10,
-);
-
-const adminAllowlist = new Set(
-  RESEARCH_PRESET_ADMIN_USER_IDS
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
 );
 
 export type BotRuntimeSnapshot = {
@@ -125,12 +118,16 @@ const getManualReconnectCooldownRemainingSec = () => {
   return Math.ceil(remainingMs / 1000);
 };
 
-const hasAdminPermission = (interaction: ChatInputCommandInteraction) => {
-  if (adminAllowlist.has(interaction.user.id)) {
+const hasAdminPermission = async (interaction: ChatInputCommandInteraction): Promise<boolean> => {
+  if (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return true;
   }
 
-  return Boolean(interaction.memberPermissions?.has(PermissionFlagsBits.Administrator));
+  try {
+    return await isUserAdmin(interaction.user.id);
+  } catch {
+    return false;
+  }
 };
 
 const registerSlashCommands = async () => {
@@ -284,7 +281,7 @@ export const requestManualReconnect = async (source: string): Promise<ManualReco
 };
 
 const handleAutomationRunCommand = async (interaction: ChatInputCommandInteraction) => {
-  if (!hasAdminPermission(interaction)) {
+  if (!(await hasAdminPermission(interaction))) {
     await interaction.reply({ content: 'Admin permission is required.', ephemeral: true });
     return;
   }
@@ -301,7 +298,7 @@ const handleAutomationRunCommand = async (interaction: ChatInputCommandInteracti
 };
 
 const handleReconnectCommand = async (interaction: ChatInputCommandInteraction) => {
-  if (!hasAdminPermission(interaction)) {
+  if (!(await hasAdminPermission(interaction))) {
     await interaction.reply({ content: 'Admin permission is required.', ephemeral: true });
     return;
   }

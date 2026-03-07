@@ -128,3 +128,37 @@ export async function getAiTradingPosition(symbol: string): Promise<Record<strin
 
   return payload;
 }
+
+export async function closeAiTradingPosition(symbol: string): Promise<Record<string, unknown>> {
+  const position = await getAiTradingPosition(symbol);
+  const qty = Number((position as { qty?: unknown }).qty ?? 0);
+  const sideRaw = String((position as { side?: unknown }).side || '').toLowerCase();
+  const isOpen = typeof (position as { open?: unknown }).open === 'boolean'
+    ? Boolean((position as { open?: boolean }).open)
+    : Number.isFinite(qty) && Math.abs(qty) > 0;
+
+  if (!isOpen || !Number.isFinite(qty) || Math.abs(qty) <= 0) {
+    return { ok: true, closed: false, reason: 'NO_OPEN_POSITION', position };
+  }
+
+  if (sideRaw !== 'long' && sideRaw !== 'short') {
+    throw new Error('POSITION_SIDE_UNKNOWN');
+  }
+
+  const closeSide = sideRaw === 'long' ? 'short' : 'long';
+  const execution = await executeAiTradingOrder({
+    symbol,
+    side: closeSide,
+    qty: Math.abs(qty),
+  });
+
+  return {
+    ok: true,
+    closed: true,
+    closeSide,
+    qty: Math.abs(qty),
+    orderIds: execution.orderIds,
+    raw: execution.raw,
+    position,
+  };
+}

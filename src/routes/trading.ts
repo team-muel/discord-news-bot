@@ -1,10 +1,85 @@
 import { Router } from 'express';
+import type { TradingStrategyConfigPatch } from '../contracts/tradingStrategy';
 import { requireAdmin, requireAuth } from '../middleware/auth';
-import { getAiTradingPosition, isAiTradingConfigured } from '../services/aiTradingClient';
+import { closeAiTradingPosition, getAiTradingPosition, isAiTradingConfigured } from '../services/aiTradingClient';
+import {
+  getTradingEngineRuntimeSnapshot,
+  pauseTradingEngine,
+  resumeTradingEngine,
+  runTradingEngineOnce,
+} from '../services/tradingEngine';
+import {
+  getDefaultTradingStrategyConfig,
+  getTradingStrategyConfig,
+  resetTradingStrategyConfig,
+  updateTradingStrategyConfig,
+} from '../services/tradingStrategyService';
 import { toStringParam } from '../utils/validation';
 
 export function createTradingRouter(): Router {
   const router = Router();
+
+  router.get('/strategy', requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const strategy = await getTradingStrategyConfig();
+      return res.json({ strategy, defaults: getDefaultTradingStrategyConfig() });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+      return res.status(500).json({ error: 'INTERNAL', message });
+    }
+  });
+
+  router.put('/strategy', requireAuth, requireAdmin, async (req, res) => {
+    const patch = (req.body?.strategy || req.body || {}) as TradingStrategyConfigPatch;
+    try {
+      const strategy = await updateTradingStrategyConfig(patch);
+      return res.json({ ok: true, strategy });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+      return res.status(500).json({ error: 'INTERNAL', message });
+    }
+  });
+
+  router.post('/strategy/reset', requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const strategy = await resetTradingStrategyConfig();
+      return res.json({ ok: true, strategy });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+      return res.status(500).json({ error: 'INTERNAL', message });
+    }
+  });
+
+  router.get('/runtime', requireAuth, requireAdmin, async (_req, res) => {
+    const runtime = getTradingEngineRuntimeSnapshot();
+    const strategy = await getTradingStrategyConfig();
+    return res.json({ runtime, strategy });
+  });
+
+  router.post('/runtime/run-once', requireAuth, requireAdmin, async (_req, res) => {
+    const result = await runTradingEngineOnce();
+    if (!result.ok) {
+      return res.status(409).json(result);
+    }
+    return res.json(result);
+  });
+
+  router.post('/runtime/pause', requireAuth, requireAdmin, async (req, res) => {
+    const reason = toStringParam(req.body?.reason) || 'manual';
+    const result = pauseTradingEngine(reason);
+    if (!result.ok) {
+      return res.status(409).json(result);
+    }
+    return res.json(result);
+  });
+
+  router.post('/runtime/resume', requireAuth, requireAdmin, async (_req, res) => {
+    const result = resumeTradingEngine();
+    if (!result.ok) {
+      return res.status(409).json(result);
+    }
+    return res.json(result);
+  });
 
   router.use((_, res, next) => {
     if (!isAiTradingConfigured()) {
@@ -22,7 +97,23 @@ export function createTradingRouter(): Router {
 
     try {
       const payload = await getAiTradingPosition(symbol);
-      return res.json({ source: 'ai-trading', position: payload });
+      const source = typeof payload.source === 'string' ? payload.source : 'ai-trading';
+      return res.json({ source, position: payload });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+      return res.status(502).json({ error: 'UPSTREAM', message });
+    }
+  });
+
+  router.post('/position/close', requireAuth, requireAdmin, async (req, res) => {
+    const symbol = toStringParam(req.body?.symbol || req.query.symbol).toUpperCase();
+    if (!symbol) {
+      return res.status(422).json({ error: 'INVALID_PAYLOAD', message: 'symbol is required' });
+    }
+
+    try {
+      const result = await closeAiTradingPosition(symbol);
+      return res.json(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
       return res.status(502).json({ error: 'UPSTREAM', message });

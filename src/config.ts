@@ -1,9 +1,16 @@
 import { parseBooleanEnv, parseIntegerEnv } from './utils/env';
 
+const parsePositiveNumberEnv = (raw: string | undefined, fallback: number): number => {
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+};
+
 export const PORT = parseIntegerEnv(process.env.PORT, 3000);
-export const FRONTEND_ORIGIN = process.env.CORS_ALLOWLIST || process.env.FRONTEND_ORIGIN || '';
+export const FRONTEND_ORIGIN = process.env.CORS_ALLOWLIST || process.env.FRONTEND_ORIGIN || process.env.OAUTH_REDIRECT_ALLOWLIST || '';
 export const NODE_ENV = process.env.NODE_ENV || 'development';
 export const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '2mb';
+export const PUBLIC_BASE_URL =
+  (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || process.env.RENDER_PUBLIC_URL || '').replace(/\/+$/, '');
 
 export const DISCORD_READY_TIMEOUT_MS = parseIntegerEnv(
   process.env.DISCORD_READY_TIMEOUT_MS || process.env.DISCORD_LOGIN_TIMEOUT_MS,
@@ -13,13 +20,31 @@ export const DISCORD_START_RETRIES = parseIntegerEnv(process.env.DISCORD_START_R
 export const DISCORD_COMMAND_GUILD_ID = process.env.DISCORD_COMMAND_GUILD_ID || '';
 
 export const START_BOT = parseBooleanEnv(process.env.START_BOT, false);
-export const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-jwt-secret-change-in-production';
+const JWT_SECRET_FALLBACK = 'dev-jwt-secret-change-in-production';
+const JWT_SECRET_FROM_ENV = process.env.JWT_SECRET || process.env.SESSION_SECRET || '';
+if (NODE_ENV === 'production' && (!JWT_SECRET_FROM_ENV || JWT_SECRET_FROM_ENV === JWT_SECRET_FALLBACK)) {
+  throw new Error('JWT_SECRET (or SESSION_SECRET) must be set to a non-default value in production');
+}
+export const JWT_SECRET = JWT_SECRET_FROM_ENV || JWT_SECRET_FALLBACK;
 export const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'muel_session';
+export const DEV_AUTH_ENABLED = parseBooleanEnv(process.env.DEV_AUTH_ENABLED, NODE_ENV !== 'production');
+export const DISCORD_OAUTH_CLIENT_ID = process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || '';
+export const DISCORD_OAUTH_CLIENT_SECRET = process.env.DISCORD_OAUTH_CLIENT_SECRET || process.env.DISCORD_CLIENT_SECRET || '';
+export const DISCORD_OAUTH_REDIRECT_URI = process.env.DISCORD_OAUTH_REDIRECT_URI
+  || (PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}/api/auth/callback` : '');
+export const DISCORD_OAUTH_SCOPE = process.env.DISCORD_OAUTH_SCOPE || 'identify';
+export const DISCORD_OAUTH_API_BASE = process.env.DISCORD_OAUTH_API_BASE || 'https://discord.com/api';
+export const DISCORD_OAUTH_STATE_COOKIE_NAME = process.env.DISCORD_OAUTH_STATE_COOKIE_NAME || 'muel_oauth_state';
+export const DISCORD_OAUTH_STATE_TTL_SEC = parseIntegerEnv(process.env.DISCORD_OAUTH_STATE_TTL_SEC, 600);
 export const RESEARCH_PRESET_ADMIN_USER_IDS = process.env.RESEARCH_PRESET_ADMIN_USER_IDS || '';
+export const ADMIN_ALLOWLIST_TABLE = process.env.ADMIN_ALLOWLIST_TABLE || 'user_roles';
+export const ADMIN_ALLOWLIST_ROLE_VALUE = process.env.ADMIN_ALLOWLIST_ROLE_VALUE || 'admin';
+export const ADMIN_ALLOWLIST_CACHE_TTL_MS = parseIntegerEnv(process.env.ADMIN_ALLOWLIST_CACHE_TTL_MS, 300000);
 export const SUPABASE_URL = process.env.SUPABASE_URL || '';
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 export const SUPABASE_TRADES_TABLE = process.env.SUPABASE_TRADES_TABLE || 'trades';
-export const AI_TRADING_MODE = process.env.AI_TRADING_MODE || 'auto';
+// Single-service deployment default: execute via in-process/local trading path.
+export const AI_TRADING_MODE = process.env.AI_TRADING_MODE || 'local';
 export const AI_TRADING_DRY_RUN = parseBooleanEnv(process.env.AI_TRADING_DRY_RUN, false);
 export const AI_TRADING_BASE_URL = process.env.AI_TRADING_BASE_URL || '';
 export const AI_TRADING_INTERNAL_TOKEN = process.env.AI_TRADING_INTERNAL_TOKEN || '';
@@ -51,6 +76,9 @@ export const TRADING_TICK_MAX_PAGES = parseIntegerEnv(process.env.TRADING_TICK_M
 export const TRADING_DRY_RUN = parseBooleanEnv(process.env.TRADING_DRY_RUN ?? process.env.DRY_RUN, true);
 export const TRADING_CANDLES_TABLE = process.env.TRADING_CANDLES_TABLE || 'candles';
 export const TRADING_STATE_TABLE = process.env.TRADING_STATE_TABLE || 'bot_state';
+export const MAX_MANUAL_TRADE_QTY = parsePositiveNumberEnv(process.env.MAX_MANUAL_TRADE_QTY, 10_000);
+export const MAX_MANUAL_TRADE_LEVERAGE = parsePositiveNumberEnv(process.env.MAX_MANUAL_TRADE_LEVERAGE, 125);
+export const MAX_MANUAL_TRADE_ENTRY_PRICE = parsePositiveNumberEnv(process.env.MAX_MANUAL_TRADE_ENTRY_PRICE, 10_000_000);
 
 export const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, 60000);
@@ -60,13 +88,25 @@ export default {
   FRONTEND_ORIGIN,
   NODE_ENV,
   JSON_BODY_LIMIT,
+  PUBLIC_BASE_URL,
   DISCORD_READY_TIMEOUT_MS,
   DISCORD_START_RETRIES,
   DISCORD_COMMAND_GUILD_ID,
   START_BOT,
   JWT_SECRET,
   AUTH_COOKIE_NAME,
+  DEV_AUTH_ENABLED,
+  DISCORD_OAUTH_CLIENT_ID,
+  DISCORD_OAUTH_CLIENT_SECRET,
+  DISCORD_OAUTH_REDIRECT_URI,
+  DISCORD_OAUTH_SCOPE,
+  DISCORD_OAUTH_API_BASE,
+  DISCORD_OAUTH_STATE_COOKIE_NAME,
+  DISCORD_OAUTH_STATE_TTL_SEC,
   RESEARCH_PRESET_ADMIN_USER_IDS,
+  ADMIN_ALLOWLIST_TABLE,
+  ADMIN_ALLOWLIST_ROLE_VALUE,
+  ADMIN_ALLOWLIST_CACHE_TTL_MS,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   SUPABASE_TRADES_TABLE,
@@ -101,6 +141,9 @@ export default {
   TRADING_DRY_RUN,
   TRADING_CANDLES_TABLE,
   TRADING_STATE_TABLE,
+  MAX_MANUAL_TRADE_QTY,
+  MAX_MANUAL_TRADE_LEVERAGE,
+  MAX_MANUAL_TRADE_ENTRY_PRICE,
   LOG_LEVEL,
   BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS,
 };

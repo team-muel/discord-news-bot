@@ -51,7 +51,7 @@ export function summarizeReconnectEvents(): ReconnectSummary {
     const status = String(event.payload?.status || '').toUpperCase();
     const reason = String(event.payload?.reason || status || 'UNKNOWN').toUpperCase();
 
-    if (status === 'OK' || status === 'SUCCESS') success += 1;
+    if (status === 'OK' || status === 'SUCCESS' || status === 'ACCEPTED') success += 1;
     else if (status === 'REJECTED') rejected += 1;
     else failed += 1;
 

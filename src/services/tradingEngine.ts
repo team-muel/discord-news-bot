@@ -1,30 +1,21 @@
 import logger from '../logger';
 import type { TradeSide } from '../contracts/trade';
+import type { TradingStrategyConfig } from '../contracts/tradingStrategy';
 import {
   BINANCE_FUTURES,
   START_TRADING_BOT,
-  TRADING_CANDLE_LOOKBACK,
   TRADING_CANDLES_TABLE,
-  TRADING_CVD_LEN,
-  TRADING_DELTA_COEF,
-  TRADING_DRY_RUN,
-  TRADING_EQUITY_SPLIT,
   TRADING_EXCHANGE,
-  TRADING_INITIAL_CAPITAL,
-  TRADING_LEVERAGE,
-  TRADING_POLL_SECONDS,
-  TRADING_RISK_PCT,
-  TRADING_SL_PCT,
   TRADING_STATE_TABLE,
-  TRADING_SYMBOLS,
-  TRADING_TICK_FETCH_LIMIT,
-  TRADING_TICK_MAX_PAGES,
-  TRADING_TIMEFRAME,
-  TRADING_TP_PCT,
 } from '../config';
+import { executeAiTradingOrder, getAiTradingPosition, isAiTradingConfigured } from './aiTradingClient';
+import { buildBinanceClient, toBinanceSymbol } from './localAiTradingClient';
+import {
+  getDefaultTradingStrategyConfig,
+  getTradingStrategyConfig,
+} from './tradingStrategyService';
 import { createTrade } from './tradesStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { buildBinanceClient, executeLocalAiTradingOrder, getLocalAiTradingPosition, isLocalAiTradingConfigured, toBinanceSymbol } from './localAiTradingClient';
 
 type Candle = {
   ts: string;
@@ -52,6 +43,7 @@ type TickBar = {
 type SymbolRuntimeState = {
   cvdClosed: number[];
   cvdAccClosed: number;
+  closeSeries: number[];
   currentBar: TickBar | null;
   lastProcessedTradeMs: number;
   lastSignalKey?: string;
@@ -60,9 +52,14 @@ type SymbolRuntimeState = {
 type TradingRuntimeSnapshot = {
   started: boolean;
   startedAt: string | null;
+  paused: boolean;
+  pausedAt: string | null;
+  pausedReason: string | null;
   symbols: string[];
   timeframe: string;
   dryRun: boolean;
+  strategyMode: TradingStrategyConfig['signal']['mode'];
+  enabled: boolean;
   lastLoopAt: string | null;
   lastLoopError: string | null;
 };
@@ -75,15 +72,13 @@ let startedAt: string | null = null;
 let lastLoopAt: string | null = null;
 let lastLoopError: string | null = null;
 let stateTableAvailable: boolean | null = null;
+let stateTableRetryAtMs = 0;
+let activeStrategyConfig = getDefaultTradingStrategyConfig();
+let paused = false;
+let pausedAt: string | null = null;
+let pausedReason: string | null = null;
 
-function parseSymbols(raw: string): string[] {
-  const parsed = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  return parsed.length ? parsed : ['BTC/USDT'];
-}
+const STATE_TABLE_RETRY_COOLDOWN_MS = 60_000;
 
 function computeDelta(c: Candle, deltaCoef: number) {
   return (c.close - c.open) * c.volume * deltaCoef;
@@ -150,18 +145,22 @@ function sizeByExposure(params: { equity: number; riskPct: number; leverage: num
   return { qty: exposure / params.price, exposure };
 }
 
-function stateKey(symbol: string): string {
-  return [TRADING_EXCHANGE, symbol, TRADING_TIMEFRAME].join('|');
+function stateKey(symbol: string, timeframe: string): string {
+  return [TRADING_EXCHANGE, symbol, timeframe].join('|');
 }
 
-async function fetchRecentCandles(symbol: string, limit: number): Promise<Candle[]> {
+function runtimeKey(symbol: string, timeframe: string): string {
+  return `${symbol}|${timeframe}`;
+}
+
+async function fetchRecentCandles(symbol: string, timeframe: string, limit: number): Promise<Candle[]> {
   const client = getSupabaseClient();
   const { data, error } = await client
     .from(TRADING_CANDLES_TABLE)
     .select('ts, open, close, volume')
     .eq('exchange', TRADING_EXCHANGE)
     .eq('symbol', symbol)
-    .eq('timeframe', TRADING_TIMEFRAME)
+    .eq('timeframe', timeframe)
     .order('ts', { ascending: false })
     .limit(limit);
 
@@ -178,10 +177,14 @@ async function fetchRecentCandles(symbol: string, limit: number): Promise<Candle
   }));
 }
 
-async function getLastProcessedTs(symbol: string): Promise<string | undefined> {
-  const key = stateKey(symbol);
+async function getLastProcessedTs(symbol: string, timeframe: string): Promise<string | undefined> {
+  const key = stateKey(symbol, timeframe);
 
-  if (!isSupabaseConfigured() || stateTableAvailable === false) {
+  if (!isSupabaseConfigured()) {
+    return fallbackStateStore.get(key);
+  }
+
+  if (stateTableAvailable === false && Date.now() < stateTableRetryAtMs) {
     return fallbackStateStore.get(key);
   }
 
@@ -192,7 +195,7 @@ async function getLastProcessedTs(symbol: string): Promise<string | undefined> {
       .select('last_ts')
       .eq('exchange', TRADING_EXCHANGE)
       .eq('symbol', symbol)
-      .eq('timeframe', TRADING_TIMEFRAME)
+      .eq('timeframe', timeframe)
       .limit(1);
 
     if (error) {
@@ -200,20 +203,26 @@ async function getLastProcessedTs(symbol: string): Promise<string | undefined> {
     }
 
     stateTableAvailable = true;
+    stateTableRetryAtMs = 0;
     return (data?.[0]?.last_ts as string | undefined) ?? fallbackStateStore.get(key);
   } catch (error) {
     stateTableAvailable = false;
+    stateTableRetryAtMs = Date.now() + STATE_TABLE_RETRY_COOLDOWN_MS;
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('[TRADING] Falling back to in-memory state store: %s', message);
     return fallbackStateStore.get(key);
   }
 }
 
-async function setLastProcessedTs(symbol: string, ts: string): Promise<void> {
-  const key = stateKey(symbol);
+async function setLastProcessedTs(symbol: string, timeframe: string, ts: string): Promise<void> {
+  const key = stateKey(symbol, timeframe);
   fallbackStateStore.set(key, ts);
 
-  if (!isSupabaseConfigured() || stateTableAvailable === false) {
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  if (stateTableAvailable === false && Date.now() < stateTableRetryAtMs) {
     return;
   }
 
@@ -223,7 +232,7 @@ async function setLastProcessedTs(symbol: string, ts: string): Promise<void> {
       {
         exchange: TRADING_EXCHANGE,
         symbol,
-        timeframe: TRADING_TIMEFRAME,
+        timeframe,
         last_ts: ts,
         updated_at: new Date().toISOString(),
       },
@@ -235,8 +244,10 @@ async function setLastProcessedTs(symbol: string, ts: string): Promise<void> {
     }
 
     stateTableAvailable = true;
+    stateTableRetryAtMs = 0;
   } catch (error) {
     stateTableAvailable = false;
+    stateTableRetryAtMs = Date.now() + STATE_TABLE_RETRY_COOLDOWN_MS;
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('[TRADING] Failed to persist bot state, using in-memory fallback: %s', message);
   }
@@ -302,17 +313,23 @@ async function fetchTradesSince(params: {
   return all;
 }
 
-function finalizeCurrentBar(state: SymbolRuntimeState): void {
+function finalizeCurrentBar(state: SymbolRuntimeState, strategy: TradingStrategyConfig): void {
   if (!state.currentBar) return;
 
   const delta =
-    (state.currentBar.close - state.currentBar.open) * state.currentBar.volume * TRADING_DELTA_COEF;
+    (state.currentBar.close - state.currentBar.open) * state.currentBar.volume * strategy.signal.deltaCoef;
 
   state.cvdAccClosed += delta;
   state.cvdClosed.push(state.cvdAccClosed);
+  state.closeSeries.push(state.currentBar.close);
 
-  if (state.cvdClosed.length > TRADING_CANDLE_LOOKBACK) {
-    state.cvdClosed.splice(0, state.cvdClosed.length - TRADING_CANDLE_LOOKBACK);
+  const keep = Math.max(strategy.runtime.candleLookback, strategy.signal.cvdLen + 5, strategy.signal.priceSmaLen + 5);
+
+  if (state.cvdClosed.length > keep) {
+    state.cvdClosed.splice(0, state.cvdClosed.length - keep);
+  }
+  if (state.closeSeries.length > keep) {
+    state.closeSeries.splice(0, state.closeSeries.length - keep);
   }
 }
 
@@ -327,17 +344,34 @@ function newBarFromTick(tsMs: number, price: number, amount: number, tfMs: numbe
   };
 }
 
-function buildSignalFromState(state: SymbolRuntimeState) {
+function buildSignalFromState(state: SymbolRuntimeState, strategy: TradingStrategyConfig) {
   if (!state.currentBar) return { longCond: false, shortCond: false };
 
+  if (strategy.signal.mode === 'price_sma_cross') {
+    const series = [...state.closeSeries, state.currentBar.close];
+    if (series.length < strategy.signal.priceSmaLen + 2) return { longCond: false, shortCond: false };
+
+    const ma = sma(series, strategy.signal.priceSmaLen);
+    const i = series.length - 1;
+    const prev = i - 1;
+    if (!Number.isFinite(ma[prev]) || !Number.isFinite(ma[i])) {
+      return { longCond: false, shortCond: false };
+    }
+
+    return {
+      longCond: crossedOver(series[prev], ma[prev], series[i], ma[i]),
+      shortCond: crossedUnder(series[prev], ma[prev], series[i], ma[i]),
+    };
+  }
+
   const curDelta =
-    (state.currentBar.close - state.currentBar.open) * state.currentBar.volume * TRADING_DELTA_COEF;
+    (state.currentBar.close - state.currentBar.open) * state.currentBar.volume * strategy.signal.deltaCoef;
   const curCvd = state.cvdAccClosed + curDelta;
 
   const series = [...state.cvdClosed, curCvd];
-  if (series.length < TRADING_CVD_LEN + 2) return { longCond: false, shortCond: false };
+  if (series.length < strategy.signal.cvdLen + 2) return { longCond: false, shortCond: false };
 
-  const ma = sma(series, TRADING_CVD_LEN);
+  const ma = sma(series, strategy.signal.cvdLen);
   const i = series.length - 1;
   const prev = i - 1;
   if (!Number.isFinite(ma[prev]) || !Number.isFinite(ma[i])) {
@@ -351,23 +385,36 @@ function buildSignalFromState(state: SymbolRuntimeState) {
 }
 
 async function hasOpenPosition(symbol: string): Promise<boolean> {
-  const position = await getLocalAiTradingPosition(symbol);
-  return Boolean(position.open);
+  const position = await getAiTradingPosition(symbol);
+
+  if (typeof (position as { open?: unknown }).open === 'boolean') {
+    return Boolean((position as { open?: boolean }).open);
+  }
+
+  const qtyValue = Number((position as { qty?: unknown }).qty);
+  if (Number.isFinite(qtyValue)) {
+    return Math.abs(qtyValue) > 0;
+  }
+
+  const side = String((position as { side?: unknown }).side || '').toLowerCase();
+  return side === 'long' || side === 'short';
 }
 
-async function getOrInitState(symbol: string, tfMs: number): Promise<SymbolRuntimeState | null> {
-  const existing = runtime.get(symbol);
+async function getOrInitState(symbol: string, tfMs: number, strategy: TradingStrategyConfig): Promise<SymbolRuntimeState | null> {
+  const key = runtimeKey(symbol, strategy.timeframe);
+  const existing = runtime.get(key);
   if (existing) return existing;
 
-  const candles = await fetchRecentCandles(symbol, TRADING_CANDLE_LOOKBACK);
-  if (candles.length < TRADING_CVD_LEN + 2) {
+  const candles = await fetchRecentCandles(symbol, strategy.timeframe, strategy.runtime.candleLookback);
+  const need = Math.max(strategy.signal.cvdLen, strategy.signal.priceSmaLen) + 2;
+  if (candles.length < need) {
     return null;
   }
 
-  const cvdClosed = computeCvdSeries(candles, TRADING_DELTA_COEF);
+  const cvdClosed = computeCvdSeries(candles, strategy.signal.deltaCoef);
   const cvdAccClosed = cvdClosed[cvdClosed.length - 1] ?? 0;
 
-  const lastTs = await getLastProcessedTs(symbol);
+  const lastTs = await getLastProcessedTs(symbol, strategy.timeframe);
   const savedMs = lastTs ? Date.parse(lastTs) : Number.NaN;
   const nowBarStart = floorToTf(Date.now(), tfMs);
   const lastProcessedTradeMs = Number.isFinite(savedMs) ? Math.max(savedMs, nowBarStart - 1) : nowBarStart - 1;
@@ -375,22 +422,24 @@ async function getOrInitState(symbol: string, tfMs: number): Promise<SymbolRunti
   const state: SymbolRuntimeState = {
     cvdClosed,
     cvdAccClosed,
+    closeSeries: candles.map((c) => c.close),
     currentBar: null,
     lastProcessedTradeMs,
   };
 
-  runtime.set(symbol, state);
+  runtime.set(key, state);
   return state;
 }
 
 async function insertTradeRecord(params: {
   symbol: string;
+  timeframe: string;
   side: TradeSide;
   entryTs: string;
   entryPrice: number;
   qty: number;
-  tpPrice: number;
-  slPrice: number;
+  tpPrice: number | null;
+  slPrice: number | null;
   status: 'open' | 'error';
   orderIds?: Record<string, unknown>;
   meta?: Record<string, unknown>;
@@ -398,28 +447,28 @@ async function insertTradeRecord(params: {
   await createTrade({
     exchange: TRADING_EXCHANGE,
     symbol: params.symbol,
-    timeframe: TRADING_TIMEFRAME,
+    timeframe: params.timeframe,
     side: params.side,
     entryTs: params.entryTs,
     entryPrice: params.entryPrice,
     qty: params.qty,
-    tpPrice: params.tpPrice,
-    slPrice: params.slPrice,
+    tpPrice: params.tpPrice ?? undefined,
+    slPrice: params.slPrice ?? undefined,
     status: params.status,
     exchangeOrderIds: params.orderIds,
     meta: params.meta,
   });
 }
 
-async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
-  const state = await getOrInitState(symbol, tfMs);
+async function runSymbolOnce(symbol: string, tfMs: number, strategy: TradingStrategyConfig): Promise<void> {
+  const state = await getOrInitState(symbol, tfMs, strategy);
   if (!state) return;
 
   const ticks = await fetchTradesSince({
     symbol,
     sinceMs: state.lastProcessedTradeMs + 1,
-    limit: TRADING_TICK_FETCH_LIMIT,
-    maxPages: TRADING_TICK_MAX_PAGES,
+    limit: strategy.runtime.tickFetchLimit,
+    maxPages: strategy.runtime.tickMaxPages,
   });
 
   if (!ticks.length) return;
@@ -432,7 +481,7 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
     } else {
       const startMs = floorToTf(tick.tsMs, tfMs);
       if (startMs !== state.currentBar.startMs) {
-        finalizeCurrentBar(state);
+        finalizeCurrentBar(state, strategy);
         state.currentBar = newBarFromTick(tick.tsMs, tick.price, tick.amount, tfMs);
         state.lastSignalKey = undefined;
       } else {
@@ -443,13 +492,18 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
       }
     }
 
-    const { longCond, shortCond } = buildSignalFromState(state);
+    const { longCond, shortCond } = buildSignalFromState(state, strategy);
     if (!longCond && !shortCond) {
       state.lastProcessedTradeMs = tick.tsMs;
       continue;
     }
 
     const side: TradeSide = longCond ? 'long' : 'short';
+    if ((side === 'long' && !strategy.signal.allowLong) || (side === 'short' && !strategy.signal.allowShort)) {
+      state.lastProcessedTradeMs = tick.tsMs;
+      continue;
+    }
+
     const signalKey = `${state.currentBar!.startMs}:${side}`;
     if (state.lastSignalKey === signalKey) {
       state.lastProcessedTradeMs = tick.tsMs;
@@ -463,58 +517,65 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
       continue;
     }
 
-    const symbols = parseSymbols(TRADING_SYMBOLS);
-    const equityBase = TRADING_EQUITY_SPLIT ? TRADING_INITIAL_CAPITAL / symbols.length : TRADING_INITIAL_CAPITAL;
-    const { qty } = sizeByExposure({
+    const symbols = strategy.symbols;
+    const equityBase = strategy.risk.equitySplit ? strategy.risk.initialCapital / Math.max(1, symbols.length) : strategy.risk.initialCapital;
+    const sized = sizeByExposure({
       equity: equityBase,
-      riskPct: TRADING_RISK_PCT,
-      leverage: TRADING_LEVERAGE,
+      riskPct: strategy.risk.riskPct,
+      leverage: strategy.risk.leverage,
       price: tick.price,
     });
 
-    const tpPrice = longCond ? tick.price * (1 + TRADING_TP_PCT / 100) : tick.price * (1 - TRADING_TP_PCT / 100);
-    const slPrice = longCond ? tick.price * (1 - TRADING_SL_PCT / 100) : tick.price * (1 + TRADING_SL_PCT / 100);
+    const qty = Math.min(strategy.risk.maxQty, sized.qty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      state.lastProcessedTradeMs = tick.tsMs;
+      continue;
+    }
+
+    const tpPrice = strategy.exit.enableTp
+      ? (longCond ? tick.price * (1 + strategy.exit.tpPct / 100) : tick.price * (1 - strategy.exit.tpPct / 100))
+      : null;
+    const slPrice = strategy.exit.enableSl
+      ? (longCond ? tick.price * (1 - strategy.exit.slPct / 100) : tick.price * (1 + strategy.exit.slPct / 100))
+      : null;
 
     const entryTs = new Date(tick.tsMs).toISOString();
 
-    await insertTradeRecord({
-      symbol,
-      side,
-      entryTs,
-      entryPrice: tick.price,
-      qty,
-      tpPrice,
-      slPrice,
-      status: 'open',
-      meta: {
-        kind: 'signal',
-        source: 'trading-engine',
-        dryRun: TRADING_DRY_RUN,
-        params: {
-          timeframe: TRADING_TIMEFRAME,
-          cvdLen: TRADING_CVD_LEN,
-          deltaCoef: TRADING_DELTA_COEF,
-          leverage: TRADING_LEVERAGE,
-        },
-      },
-    });
-
     try {
-      if (!TRADING_DRY_RUN) {
-        const execution = await executeLocalAiTradingOrder({
+      if (strategy.runtime.dryRun) {
+        await insertTradeRecord({
+          symbol,
+          timeframe: strategy.timeframe,
+          side,
+          entryTs,
+          entryPrice: tick.price,
+          qty,
+          tpPrice,
+          slPrice,
+          status: 'open',
+          meta: {
+            kind: 'dry_run_signal',
+            source: 'trading-engine',
+            dryRun: true,
+            strategy,
+          },
+        });
+      } else {
+        const execution = await executeAiTradingOrder({
           symbol,
           side,
           qty,
           entryPrice: tick.price,
-          tpPrice,
-          slPrice,
-          leverage: TRADING_LEVERAGE,
+          tpPrice: tpPrice ?? undefined,
+          slPrice: slPrice ?? undefined,
+          leverage: strategy.risk.leverage,
         });
 
         openPos = true;
 
         await insertTradeRecord({
           symbol,
+          timeframe: strategy.timeframe,
           side,
           entryTs,
           entryPrice: tick.price,
@@ -527,6 +588,7 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
             kind: 'order_placed',
             source: 'trading-engine',
             dryRun: false,
+            strategy,
             executionRaw: execution.raw,
           },
         });
@@ -535,6 +597,7 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
       const message = error instanceof Error ? error.message : String(error);
       await insertTradeRecord({
         symbol,
+        timeframe: strategy.timeframe,
         side,
         entryTs,
         entryPrice: tick.price,
@@ -545,7 +608,8 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
         meta: {
           kind: 'order_failed',
           source: 'trading-engine',
-          dryRun: TRADING_DRY_RUN,
+          dryRun: strategy.runtime.dryRun,
+          strategy,
           error: message,
         },
       });
@@ -555,16 +619,15 @@ async function runSymbolOnce(symbol: string, tfMs: number): Promise<void> {
     state.lastProcessedTradeMs = tick.tsMs;
   }
 
-  await setLastProcessedTs(symbol, new Date(state.lastProcessedTradeMs).toISOString());
+  await setLastProcessedTs(symbol, strategy.timeframe, new Date(state.lastProcessedTradeMs).toISOString());
 }
 
-async function runOnce(): Promise<void> {
-  const tfMs = timeframeToMs(TRADING_TIMEFRAME);
-  const symbols = parseSymbols(TRADING_SYMBOLS);
+async function runOnce(strategy: TradingStrategyConfig): Promise<void> {
+  const tfMs = timeframeToMs(strategy.timeframe);
 
-  for (const symbol of symbols) {
+  for (const symbol of strategy.symbols) {
     try {
-      await runSymbolOnce(symbol, tfMs);
+      await runSymbolOnce(symbol, tfMs, strategy);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('[TRADING] %s loop error: %s', symbol, message);
@@ -577,7 +640,28 @@ async function runOnce(): Promise<void> {
 async function loop(): Promise<void> {
   while (started) {
     try {
-      await runOnce();
+      activeStrategyConfig = await getTradingStrategyConfig();
+
+      if (paused) {
+        lastLoopError = null;
+        await new Promise((resolve) => setTimeout(resolve, Math.max(1, activeStrategyConfig.runtime.pollSeconds) * 1000));
+        continue;
+      }
+
+      if (!activeStrategyConfig.enabled) {
+        lastLoopError = null;
+        await new Promise((resolve) => setTimeout(resolve, Math.max(1, activeStrategyConfig.runtime.pollSeconds) * 1000));
+        continue;
+      }
+
+      if (!isAiTradingConfigured() && !activeStrategyConfig.runtime.dryRun) {
+        lastLoopError = 'AI trading is not configured while strategy dryRun=false';
+        logger.error('[TRADING] %s', lastLoopError);
+        await new Promise((resolve) => setTimeout(resolve, Math.max(1, activeStrategyConfig.runtime.pollSeconds) * 1000));
+        continue;
+      }
+
+      await runOnce(activeStrategyConfig);
       lastLoopAt = new Date().toISOString();
       lastLoopError = null;
     } catch (error) {
@@ -586,7 +670,7 @@ async function loop(): Promise<void> {
       logger.error('[TRADING] loop failure: %s', message);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, Math.max(1, TRADING_POLL_SECONDS) * 1000));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(1, activeStrategyConfig.runtime.pollSeconds) * 1000));
   }
 }
 
@@ -605,32 +689,76 @@ export function startTradingEngine(): void {
     return;
   }
 
-  if (!isLocalAiTradingConfigured() && !TRADING_DRY_RUN) {
-    logger.error('[TRADING] BINANCE_API_KEY/BINANCE_API_SECRET missing while TRADING_DRY_RUN=false');
-    return;
-  }
-
   started = true;
   startedAt = new Date().toISOString();
 
-  logger.info(
-    '[TRADING] started exchange=%s symbols=%s timeframe=%s dryRun=%s',
-    TRADING_EXCHANGE,
-    TRADING_SYMBOLS,
-    TRADING_TIMEFRAME,
-    String(TRADING_DRY_RUN),
-  );
+  logger.info('[TRADING] started exchange=%s', TRADING_EXCHANGE);
 
   void loop();
+}
+
+export async function runTradingEngineOnce(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const strategy = await getTradingStrategyConfig(true);
+    activeStrategyConfig = strategy;
+
+    if (paused) {
+      return { ok: false, message: 'Engine is paused' };
+    }
+
+    if (!strategy.enabled) {
+      return { ok: false, message: 'Strategy is disabled' };
+    }
+
+    if (!isAiTradingConfigured() && !strategy.runtime.dryRun) {
+      return { ok: false, message: 'AI trading is not configured while strategy dryRun=false' };
+    }
+
+    await runOnce(strategy);
+    lastLoopAt = new Date().toISOString();
+    lastLoopError = null;
+    return { ok: true, message: 'Completed one cycle' };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lastLoopError = message;
+    return { ok: false, message };
+  }
+}
+
+export function pauseTradingEngine(reason = 'manual'): { ok: boolean; message: string } {
+  if (!started) {
+    return { ok: false, message: 'Engine is not started' };
+  }
+
+  paused = true;
+  pausedAt = new Date().toISOString();
+  pausedReason = reason;
+  return { ok: true, message: 'Engine paused' };
+}
+
+export function resumeTradingEngine(): { ok: boolean; message: string } {
+  if (!started) {
+    return { ok: false, message: 'Engine is not started' };
+  }
+
+  paused = false;
+  pausedAt = null;
+  pausedReason = null;
+  return { ok: true, message: 'Engine resumed' };
 }
 
 export function getTradingEngineRuntimeSnapshot(): TradingRuntimeSnapshot {
   return {
     started,
     startedAt,
-    symbols: parseSymbols(TRADING_SYMBOLS),
-    timeframe: TRADING_TIMEFRAME,
-    dryRun: TRADING_DRY_RUN,
+    paused,
+    pausedAt,
+    pausedReason,
+    symbols: activeStrategyConfig.symbols,
+    timeframe: activeStrategyConfig.timeframe,
+    dryRun: activeStrategyConfig.runtime.dryRun,
+    strategyMode: activeStrategyConfig.signal.mode,
+    enabled: activeStrategyConfig.enabled,
     lastLoopAt,
     lastLoopError,
   };

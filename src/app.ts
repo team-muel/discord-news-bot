@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { FRONTEND_ORIGIN, JSON_BODY_LIMIT } from './config';
+import { FRONTEND_ORIGIN, JSON_BODY_LIMIT, NODE_ENV } from './config';
 import { attachUser } from './middleware/auth';
 import { createAuthRouter } from './routes/auth';
 import { createBenchmarkRouter } from './routes/benchmark';
@@ -22,6 +22,10 @@ const buildCorsOrigins = () =>
 export function createApp(): Express {
   const app = express();
   const frontendOrigins = buildCorsOrigins();
+
+  if (NODE_ENV === 'production' && frontendOrigins.length === 0) {
+    throw new Error('CORS_ALLOWLIST or FRONTEND_ORIGIN must be configured in production');
+  }
 
   app.use(
     cors({
