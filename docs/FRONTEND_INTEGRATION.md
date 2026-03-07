@@ -11,6 +11,7 @@
 - Browser auth is cookie-based (`muel_session` by default).
 - Frontend should call backend only through `apiFetch` wrappers and relative `/api/*` paths.
 - Trading strategy loop can run in-process (`START_TRADING_BOT=true`) without external AI-trading service.
+- Copy-ready handoff assets for `team-muel/muel-front-uiux` are in `docs/front-uiux-handoff/`.
 
 ## Required Backend Env
 
