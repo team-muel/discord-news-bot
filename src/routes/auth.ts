@@ -189,7 +189,7 @@ export const createAuthRouter = ({
                 window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, ${safeTargetOrigin});
                 window.close();
               } else {
-                window.location.href = '/';
+                window.location.href = ${safeTargetOrigin};
               }
             </script>
             <p>Authentication successful. This window should close automatically.</p>
