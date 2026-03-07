@@ -15,7 +15,19 @@ services:
       - key: START_BOT
         value: "true"
       - key: START_AUTOMATION_BOT
-        value: "false"
+        value: "true"
+      - key: AUTOMATION_PERSISTENT_WORKERS
+        value: "true"
+      - key: AUTOMATION_RUN_ON_START
+        value: "true"
+      - key: AUTOMATION_NEWS_ENABLED
+        value: "true"
+      - key: AUTOMATION_YOUTUBE_ENABLED
+        value: "true"
+      - key: AUTOMATION_NEWS_INTERVAL_MIN
+        value: "30"
+      - key: AUTOMATION_YOUTUBE_INTERVAL_MIN
+        value: "10"
       - key: DISCORD_TOKEN
         sync: false
       - key: SECONDARY_DISCORD_TOKEN

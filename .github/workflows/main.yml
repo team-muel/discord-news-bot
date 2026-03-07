@@ -14,16 +14,31 @@ on:
         required: false
         default: "false"
 
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   node-ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v3
+      - name: Show run context
+        run: |
+          echo "workflow=${GITHUB_WORKFLOW}"
+          echo "run_id=${GITHUB_RUN_ID}"
+          echo "ref=${GITHUB_REF}"
+          echo "sha=${GITHUB_SHA}"
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
+      - name: Show Node runtime
+        run: |
+          node --version
+          npm --version
       - name: Verify lockfile
         run: |
           pwd

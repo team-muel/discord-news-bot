@@ -82,12 +82,19 @@ Additional deploy speed options:
 Also verify Runtime Environment Variables in Render:
 
 - `START_BOT=true`
-- `START_AUTOMATION_BOT=false` (recommended when no secondary automation token is used)
+- `START_AUTOMATION_BOT=true` (Render process runs 24/7 automation jobs)
 - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
 - For automation workers (shared token):
   - `SECONDARY_DISCORD_TOKEN=<automation bot token>`
   - optional fallback: `AUTOMATION_DISCORD_TOKEN=<automation bot token>`
   - recommended: `SECONDARY_DISCORD_TOKEN != DISCORD_TOKEN`
+- Automation scheduling controls:
+  - `AUTOMATION_PERSISTENT_WORKERS=true` (recommended)
+  - `AUTOMATION_RUN_ON_START=true`
+  - `AUTOMATION_NEWS_ENABLED=true`
+  - `AUTOMATION_YOUTUBE_ENABLED=true`
+  - `AUTOMATION_NEWS_INTERVAL_MIN=30`
+  - `AUTOMATION_YOUTUBE_INTERVAL_MIN=10`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
 - `PYTHON_REQUIREMENTS_PROFILE=full` (all features)
 - AI-trading execution mode (single Render default):
@@ -189,5 +196,14 @@ Disable email alerts in Render:
 
 Recommended for your current setup (no secondary automation token):
 
-- Set `START_AUTOMATION_BOT=false`.
+- Keep `START_AUTOMATION_BOT=true` only when `SECONDARY_DISCORD_TOKEN` (or `AUTOMATION_DISCORD_TOKEN`) is configured.
+- If you intentionally disable automation, set `START_AUTOMATION_BOT=false`.
 - Keep checking issues through Render Logs only.
+
+## 8) Workflow Migration Policy
+
+Recurring automation jobs are now owned by the Render service, not GitHub Actions.
+
+- YouTube monitoring schedule has been moved to Render automation worker.
+- `.github/workflows/youtube_check.yml` is kept as manual fallback (`workflow_dispatch`) only.
+- Keep GitHub Actions for CI (`main.yml`) and deploy trigger (`render-deploy.yml`).
