@@ -10,15 +10,45 @@ from supabase import create_client
 from dotenv import load_dotenv
 from discord.ext import tasks
 import requests
-import pandas as pd
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 from io import BytesIO
 from discord import app_commands
 from discord.ext import commands
-from PyPDF2 import PdfReader
 from automation_common import is_missing_table_error, log, parse_int_env, pick_env
+
+_PDF_READER = None
+_PANDAS = None
+_PYPLOT = None
+
+
+def get_pdf_reader():
+    global _PDF_READER
+    if _PDF_READER is not None:
+        return _PDF_READER
+
+    try:
+        from PyPDF2 import PdfReader as _Reader
+        _PDF_READER = _Reader
+        return _PDF_READER
+    except Exception:
+        return None
+
+
+def get_chart_libs():
+    global _PANDAS, _PYPLOT
+    if _PANDAS is not None and _PYPLOT is not None:
+        return _PANDAS, _PYPLOT
+
+    try:
+        import pandas as _pd
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as _plt
+
+        _PANDAS = _pd
+        _PYPLOT = _plt
+        return _PANDAS, _PYPLOT
+    except Exception:
+        return None, None
 
 load_dotenv()
 
@@ -323,8 +353,12 @@ async def clear_history(user_id):
 
 async def get_pdf_text(attachment):
     try:
+        reader_cls = get_pdf_reader()
+        if reader_cls is None:
+            return ""
+
         res = await asyncio.to_thread(requests.get, attachment.url)
-        reader = PdfReader(BytesIO(res.content))
+        reader = reader_cls(BytesIO(res.content))
         return "".join([p.extract_text() or "" for p in reader.pages[:5]])[:3000]
     except Exception:
         return ""
@@ -371,6 +405,11 @@ def get_stock_price(symbol):
 def get_stock_chart(symbol):
     if not ALPHA_VANTAGE_KEY:
         return None
+
+    pd, plt = get_chart_libs()
+    if pd is None or plt is None:
+        return None
+
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_VANTAGE_KEY}"
     r = requests.get(url).json()
     ts = r.get("Time Series (Daily)")

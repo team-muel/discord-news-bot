@@ -59,6 +59,9 @@ Additional deploy speed options:
 
 - If automation is off (`START_AUTOMATION_BOT=false`), Python dependency installation is skipped automatically.
 - You can force skip with `SKIP_PYTHON_DEPS=true`.
+- Dependency profile can be switched via `PYTHON_REQUIREMENTS_PROFILE`:
+  - `full` (default): installs full automation stack (`pandas`, `matplotlib`, `PyPDF2` 포함)
+  - `core`: installs minimal runtime dependencies only
 - Render build command uses `npm ci --no-audit --no-fund` to reduce install overhead.
 
 Also verify Runtime Environment Variables in Render:
@@ -71,6 +74,13 @@ Also verify Runtime Environment Variables in Render:
   - optional fallback: `AUTOMATION_DISCORD_TOKEN=<automation bot token>`
   - recommended: `SECONDARY_DISCORD_TOKEN != DISCORD_TOKEN`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
+- `PYTHON_REQUIREMENTS_PROFILE=full` (all features)
+- AI-trading proxy (optional but recommended for real order execution):
+  - `AI_TRADING_BASE_URL=https://<ai-trading-service-domain>`
+  - `AI_TRADING_INTERNAL_TOKEN=<shared-internal-token>`
+  - `AI_TRADING_ORDER_PATH=/internal/binance/order`
+  - `AI_TRADING_POSITION_PATH=/internal/binance/position`
+  - `AI_TRADING_TIMEOUT_MS=15000`
 
 ## 2.2) Supabase Schema Setup (Required for DB mode)
 

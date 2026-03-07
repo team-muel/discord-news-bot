@@ -10,6 +10,8 @@ import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
 import { createQuantRouter } from './routes/quant';
 import { createResearchRouter } from './routes/research';
+import { createTradingRouter } from './routes/trading';
+import { createTradesRouter } from './routes/trades';
 
 const buildCorsOrigins = () =>
   (FRONTEND_ORIGIN || '')
@@ -45,6 +47,8 @@ export function createApp(): Express {
   app.use('/api/quant', createQuantRouter());
   app.use('/api/bot', createBotRouter());
   app.use('/api/benchmark', createBenchmarkRouter());
+  app.use('/api/trades', createTradesRouter());
+  app.use('/api/trading', createTradingRouter());
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'NOT_FOUND' });

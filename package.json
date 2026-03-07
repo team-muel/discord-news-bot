@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@sentry/node": "^7.59.0",
+    "@supabase/supabase-js": "^2.98.0",
     "better-sqlite3": "^12.4.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

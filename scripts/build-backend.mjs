@@ -4,11 +4,13 @@ import { spawnSync } from 'child_process';
 import path from 'path';
 
 const rootDir = process.cwd();
-const requirementsPath = path.join(rootDir, 'requirements.txt');
 const cacheDir = path.join(rootDir, '.cache');
 const pipCacheDir = path.join(cacheDir, 'pip');
 const markerPath = path.join(cacheDir, 'python-requirements.sha256');
 const pythonCommand = process.env.PYTHON_COMMAND || 'python';
+const requirementsProfile = (process.env.PYTHON_REQUIREMENTS_PROFILE || 'full').trim().toLowerCase();
+const requirementsFileName = requirementsProfile === 'core' ? 'requirements.core.txt' : 'requirements.txt';
+const requirementsPath = path.join(rootDir, requirementsFileName);
 const startAutomation = (process.env.START_AUTOMATION_BOT || '').trim().toLowerCase();
 const automationEnabled = startAutomation === '' || ['1', 'true', 'yes', 'on'].includes(startAutomation);
 const skipPythonDeps = (process.env.SKIP_PYTHON_DEPS || '').trim().toLowerCase();
@@ -22,7 +24,7 @@ const run = (cmd, args) => {
 };
 
 if (!existsSync(requirementsPath)) {
-  console.log('[build] requirements.txt not found. Skipping Python dependency install.');
+  console.log(`[build] ${requirementsFileName} not found. Skipping Python dependency install.`);
   console.log('No frontend build for backend-only deployment');
   process.exit(0);
 }
@@ -38,14 +40,14 @@ mkdirSync(cacheDir, { recursive: true });
 mkdirSync(pipCacheDir, { recursive: true });
 
 const requirementsText = readFileSync(requirementsPath, 'utf8');
-const requirementsHash = createHash('sha256').update(requirementsText).digest('hex');
+const requirementsHash = createHash('sha256').update(`${requirementsProfile}\n${requirementsText}`).digest('hex');
 const previousHash = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : '';
 
 const forceInstall = process.env.FORCE_PYTHON_DEPS === '1' || process.env.FORCE_PYTHON_DEPS === 'true';
 const shouldInstall = forceInstall || requirementsHash !== previousHash;
 
 if (shouldInstall) {
-  console.log('[build] Installing Python dependencies (requirements changed or force enabled)...');
+  console.log(`[build] Installing Python dependencies (profile=${requirementsProfile}, requirements changed or force enabled)...`);
   run(pythonCommand, [
     '-m',
     'pip',
@@ -60,7 +62,7 @@ if (shouldInstall) {
   ]);
   writeFileSync(markerPath, `${requirementsHash}\n`, 'utf8');
 } else {
-  console.log('[build] Python dependencies unchanged. Using cache; skipping pip install.');
+  console.log(`[build] Python dependencies unchanged (profile=${requirementsProfile}). Using cache; skipping pip install.`);
 }
 
 console.log('No frontend build for backend-only deployment');

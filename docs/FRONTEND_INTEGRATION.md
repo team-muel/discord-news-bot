@@ -86,6 +86,18 @@
 - `POST /api/benchmark/events`
 - `GET /api/benchmark/summary`
 
+### Trades (Supabase)
+
+- `GET /api/trades?symbol=BTCUSDT&status=open&limit=50` (auth required)
+- `POST /api/trades` (admin required)
+  - Input: `{ symbol, side, entryTs, entryPrice, qty, ... }`
+  - Optional: `executeOrder=true` to proxy order execution to AI-trading service
+
+### AI-trading Proxy
+
+- `GET /api/trading/position?symbol=BTCUSDT` (admin required)
+  - Returns upstream position payload from AI-trading service
+
 ## CORS Rules
 
 - If `FRONTEND_ORIGIN` is empty: permissive CORS for local/dev
@@ -95,6 +107,7 @@
 
 - API-only deployment: `START_BOT=false`
 - Unified deployment (API + bot): `START_BOT=true` and provide `DISCORD_TOKEN`
+- AI-trading proxy requires: `AI_TRADING_BASE_URL`, `AI_TRADING_INTERNAL_TOKEN`
 - Always set strong `JWT_SECRET` in production
 
 ## Quick Contract Check

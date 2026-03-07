@@ -4,6 +4,3 @@ openai
 supabase
 python-dotenv
 requests
-pandas
-matplotlib
-PyPDF2
