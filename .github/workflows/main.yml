@@ -43,9 +43,13 @@ jobs:
         run: |
           pwd
           ls -la
+          git ls-files | grep package-lock.json || true
           if [ -f package-lock.json ]; then
             echo "Using npm ci with package-lock.json"
-            npm ci
+            npm ci || {
+              echo "::warning::npm ci failed; falling back to npm install"
+              npm install --no-audit --no-fund
+            }
           else
             echo "::warning::package-lock.json missing in runner context; falling back to npm install"
             npm install --no-audit --no-fund
