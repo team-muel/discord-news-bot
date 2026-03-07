@@ -44,6 +44,8 @@ Required environment variables
 - `DATABASE_URL` (if used)
 - `OAUTH_REDIRECT_ALLOWLIST` (recommended for OAuth redirect validation)
 - `CORS_ALLOWLIST` (optional, defaults to `OAUTH_REDIRECT_ALLOWLIST`)
+- `RESEARCH_PRESET_ADMIN_USER_IDS` (optional, comma-separated Discord user IDs)
+- `ADMIN_ALLOWLIST_TABLE` (optional, Supabase table name with `user_id` column)
 
 Single service / two bots mode
 
