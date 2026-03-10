@@ -27,21 +27,65 @@ export const claimSourceLock = async (params: {
   const nowIso = new Date().toISOString();
   const leaseUntilIso = new Date(Date.now() + params.lockLeaseMs).toISOString();
 
-  const { data, error } = await db
-    .from('sources')
-    .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
-    .eq('id', params.id)
-    .eq('is_active', true)
-    .or(`lock_token.is.null,lock_expires_at.is.null,lock_expires_at.lt.${nowIso},lock_token.eq.${params.instanceId}`)
-    .select('id')
-    .limit(1);
+  const tryClaimLockTokenNull = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .is('lock_token', null)
+      .select('id')
+      .limit(1);
+  };
 
-  if (error) {
-    logger.warn('%s lock claim failed source=%s: %s', params.logPrefix, String(params.id), error.message);
-    return false;
+  const tryClaimOwnLockToken = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .eq('lock_token', params.instanceId)
+      .select('id')
+      .limit(1);
+  };
+
+  const tryClaimExpiredLock = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .lt('lock_expires_at', nowIso)
+      .select('id')
+      .limit(1);
+  };
+
+  const tryClaimNullExpiresAt = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .is('lock_expires_at', null)
+      .select('id')
+      .limit(1);
+  };
+
+  const attempts = [tryClaimLockTokenNull, tryClaimOwnLockToken, tryClaimExpiredLock, tryClaimNullExpiresAt];
+
+  for (const attempt of attempts) {
+    const { data, error } = await attempt();
+    if (error) {
+      logger.warn('%s lock claim failed source=%s: %s', params.logPrefix, String(params.id), error.message);
+      return false;
+    }
+
+    if (Array.isArray(data) && data.length > 0) {
+      return true;
+    }
   }
 
-  return Array.isArray(data) && data.length > 0;
+  return false;
 };
 
 export const releaseSourceLock = async (params: {
