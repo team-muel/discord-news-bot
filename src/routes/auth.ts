@@ -8,6 +8,8 @@ import {
   DISCORD_OAUTH_CLIENT_SECRET,
   DISCORD_OAUTH_REDIRECT_URI,
   DISCORD_OAUTH_SCOPE,
+  DISCORD_INVITE_PERMISSIONS,
+  DISCORD_INVITE_SCOPES,
   DISCORD_OAUTH_STATE_COOKIE_NAME,
   DISCORD_OAUTH_STATE_TTL_SEC,
   FRONTEND_ORIGIN,
@@ -69,6 +71,27 @@ function buildDiscordAuthorizeUrl(state: string): string {
     state,
     prompt: 'none',
   });
+  return `${base}/oauth2/authorize?${params.toString()}`;
+}
+
+function buildDiscordBotInviteUrl(guildId?: string): string {
+  const appId = DISCORD_OAUTH_CLIENT_ID;
+  if (!appId) {
+    throw new Error('DISCORD_CLIENT_ID_MISSING');
+  }
+
+  const base = DISCORD_OAUTH_API_BASE.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  const params = new URLSearchParams({
+    client_id: appId,
+    scope: DISCORD_INVITE_SCOPES,
+    permissions: DISCORD_INVITE_PERMISSIONS,
+    disable_guild_select: guildId ? 'true' : 'false',
+  });
+
+  if (guildId) {
+    params.set('guild_id', guildId);
+  }
+
   return `${base}/oauth2/authorize?${params.toString()}`;
 }
 
@@ -210,6 +233,17 @@ export function createAuthRouter(): Router {
     }
 
     return res.redirect(authorizeUrl);
+  });
+
+  router.get('/invite', (req, res) => {
+    try {
+      const guildId = typeof req.query.guild_id === 'string' ? req.query.guild_id.trim() : '';
+      const inviteUrl = buildDiscordBotInviteUrl(guildId || undefined);
+      return res.json({ inviteUrl });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'INVITE_URL_BUILD_FAILED';
+      return res.status(503).json({ error: message });
+    }
   });
 
   router.get('/callback', async (req, res) => {

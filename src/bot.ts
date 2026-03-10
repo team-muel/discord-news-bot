@@ -100,6 +100,8 @@ const botRuntimeState: BotRuntimeSnapshot = {
 let commandHandlersAttached = false;
 let activeToken: string | null = null;
 let reconnectInProgress = false;
+const CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC = !['0', 'false', 'no', 'off']
+  .includes(String(process.env.DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC || 'true').toLowerCase());
 
 export type ManualReconnectRequestResult = {
   ok: boolean;
@@ -325,6 +327,11 @@ const commandDefinitions = [
             .addChannelTypes(ChannelType.GuildForum)
             .setRequired(true),
         ),
+        )
+        .addSubcommand((sub) =>
+          sub
+          .setName('동기화')
+          .setDescription('슬래시 명령 강제 재등록'),
     ),
 ].map((definition) => definition.toJSON());
 
@@ -406,9 +413,26 @@ const registerSlashCommands = async () => {
 
     await client.application.commands.set(commandDefinitions);
     logger.info('[BOT] Slash commands synced globally (%d commands)', commandDefinitions.length);
+
+    if (CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC) {
+      let cleared = 0;
+      for (const guild of client.guilds.cache.values()) {
+        try {
+          await guild.commands.set([]);
+          cleared += 1;
+        } catch (clearError) {
+          logger.warn('[BOT] Failed to clear guild-scoped commands for guild=%s: %o', guild.id, clearError);
+        }
+      }
+      logger.info('[BOT] Cleared stale guild-scoped commands for %d guild(s)', cleared);
+    }
   } catch (error) {
     logger.error('[BOT] Failed to sync slash commands: %o', error);
   }
+};
+
+export const forceRegisterSlashCommands = async () => {
+  await registerSlashCommands();
 };
 
 const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => {
@@ -444,10 +468,21 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
       '/도움, /구독, /뉴스채널, /주가, /차트, /분석, /ping',
       '',
       '관리자 명령',
-      '/관리 상태 | 자동화실행 | 재연결 | 채널아이디 | 포럼아이디',
+      '/관리 상태 | 자동화실행 | 재연결 | 채널아이디 | 포럼아이디 | 동기화',
     ].join('\n'),
     ephemeral: true,
   });
+};
+
+const handleAdminSyncCommand = async (interaction: ChatInputCommandInteraction) => {
+  if (!(await hasAdminPermission(interaction))) {
+    await interaction.reply({ content: 'Admin permission is required.', ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+  await forceRegisterSlashCommands();
+  await interaction.editReply('슬래시 명령 재등록을 요청했습니다. 10~60초 후 다시 확인하세요.');
 };
 
 const runManualReconnect = async (reason: string): Promise<ManualReconnectRequestResult> => {
@@ -978,6 +1013,10 @@ const handleAdminCommand = async (interaction: ChatInputCommandInteraction) => {
     }
     case '포럼아이디': {
       await handleForumIdCommand(interaction);
+      return;
+    }
+    case '동기화': {
+      await handleAdminSyncCommand(interaction);
       return;
     }
     default: {
