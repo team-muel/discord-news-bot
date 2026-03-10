@@ -210,7 +210,7 @@ const buildCommunityThreadBody = (latest: FeedEntry): string => {
 
 const sendCommunityPostWithThread = async (channel: any, latest: FeedEntry) => {
   const starter = await channel.send({
-    content: `⚠️ Muel 구독 시작:\n${latest.author}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기)`,
+    content: `🔔 Muel 구독 시작:\n${latest.author}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기)`,
   });
 
   const threadNameBase = `${latest.author} 게시글 알림 ${formatThreadDateLabel(latest.published)}`;
