@@ -296,12 +296,12 @@ const buildFallbackKoreanSummary = (item: NewsItem): string => {
   ].join('\n');
 };
 
-const buildTimeLabel = (publishedAtUnix: number | null): string => {
+const buildTimeTag = (publishedAtUnix: number | null): string => {
   if (!publishedAtUnix || !Number.isFinite(publishedAtUnix)) {
     return '';
   }
 
-  return `시간: <t:${publishedAtUnix}:R> (<t:${publishedAtUnix}:f>)`;
+  return `<t:${publishedAtUnix}:R>`;
 };
 
 const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
@@ -710,9 +710,9 @@ const sendNews = async (client: Client, channelId: string, item: NewsItem, summa
   }
 
   const summaryBlock = enforceTwoToThreeLines(summary || '') || buildFallbackKoreanSummary(item);
-  const timeLabel = buildTimeLabel(item.publishedAtUnix);
+  const timeTag = buildTimeTag(item.publishedAtUnix);
   const sourceLabel = item.publisherName || item.sourceName || 'Google Finance';
-  const description = [summaryBlock, timeLabel, item.link].filter(Boolean).join('\n\n');
+  const description = [summaryBlock, item.link, timeTag].filter(Boolean).join('\n\n');
 
   await channel.send({
     embeds: [
