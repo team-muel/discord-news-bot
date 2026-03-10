@@ -21,7 +21,7 @@ export type CrawlerRuntimeRegistryDeps = {
   isSupabaseConfigured: boolean;
   supabase: SupabaseClient;
   client: Pick<Client, 'isReady'>;
-  scrapeYouTubePost: (url: string) => Promise<{ content: string; imageUrl: string; author: string }>;
+  scrapeYouTubePost: (url: string) => Promise<{ content: string; imageUrl: string; author: string; sourceLabel?: string; publishedLabel?: string }>;
   createForumThread: (forumChannelId: string, title: string, content: string, imageBase64?: string, user_id?: string) => Promise<unknown>;
   logEvent: (message: string, type: 'info' | 'error' | 'success', user_id?: string) => Promise<unknown>;
   imageUrlToBase64: (url: string) => Promise<string | undefined>;
@@ -35,8 +35,19 @@ export type CrawlerRuntimeRegistryDeps = {
 export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) => {
   const buildSubscriptionThreadTitle = (displayName: string) => `🔔 Muel 구독 시작: ${displayName}`;
 
-  const buildSubscriptionThreadBody = (displayName: string, bodyText: string, sourceUrl: string) => {
-    return `${displayName}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기.)\n\n${bodyText}\n\n🔗 원본 링크: ${sourceUrl}`;
+  const buildSubscriptionThreadBody = (
+    displayName: string,
+    bodyText: string,
+    sourceUrl: string,
+    sourceLabel?: string,
+    publishedLabel?: string,
+  ) => {
+    const metaLines: string[] = [];
+    if (sourceLabel) metaLines.push(`• 출처: ${sourceLabel}`);
+    if (publishedLabel) metaLines.push(`• 게시 시점: ${publishedLabel}`);
+
+    const metaBlock = metaLines.length ? `\n\n${metaLines.join('\n')}` : '';
+    return `${displayName}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기.)\n\n${bodyText}${metaBlock}\n\n🔗 원본 링크: ${sourceUrl}`;
   };
 
   const processSource = async (source: Source) => {
@@ -45,7 +56,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
     if (!userId || !forumChannelId) return;
 
     try {
-      const { content, imageUrl, author } = await deps.scrapeYouTubePost(source.url);
+      const { content, imageUrl, author, sourceLabel, publishedLabel } = await deps.scrapeYouTubePost(source.url);
       const postSignature = `${content.substring(0, 100)}_${imageUrl}`;
 
       const updateData: Partial<Pick<Source, 'last_check_status' | 'last_check_error' | 'last_check_at' | 'last_post_signature'>> = {
@@ -73,7 +84,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
           const title = buildSubscriptionThreadTitle(displayName);
           const maxContentLength = 1800;
           const truncatedContent = deps.truncateText(content || '내용 없음', maxContentLength);
-          const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, source.url);
+          const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, source.url, sourceLabel, publishedLabel);
 
           await deps.createForumThread(forumChannelId, title, fullContent, imageBase64, userId);
           updateData.last_post_signature = postSignature;
@@ -248,7 +259,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
         return res.status(400).json({ error: urlValidation.message || '유효하지 않은 YouTube URL입니다.' });
       }
 
-      const { content, imageUrl, author } = await deps.scrapeYouTubePost(url);
+      const { content, imageUrl, author, sourceLabel, publishedLabel } = await deps.scrapeYouTubePost(url);
 
       let imageBase64 = undefined;
       if (imageUrl) {
@@ -259,7 +270,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
       const title = buildSubscriptionThreadTitle(displayName);
       const maxContentLength = 1800;
       const truncatedContent = deps.truncateText(content || '내용 없음', maxContentLength);
-      const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, url);
+      const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, url, sourceLabel, publishedLabel);
 
       await deps.createForumThread(channelId, title, fullContent, imageBase64, req.user.id);
       return res.json({ success: true, message: 'Thread created successfully!' });

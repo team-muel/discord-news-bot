@@ -21,6 +21,27 @@ const extractByRegex = (html: string, regex: RegExp) => {
   return match?.[1] || '';
 };
 
+const normalizeHeadline = (rawTitle: string) => {
+  const titleNoSiteSuffix = rawTitle.replace(/\s*-\s*YouTube\s*$/i, '').trim();
+  const titleNoVendorTag = titleNoSiteSuffix.replace(/^\s*\[Google Finance\]\s*/i, '').trim();
+
+  const metaMatch = titleNoVendorTag.match(
+    /^(?<source>[^\d\[\]]{2,50}?)\s+(?<age>(?:\d+\s*)?(?:분|시간|일|주|개월|년)\s*전|(?:\d+\s*)?(?:minute|hour|day|week|month|year)s?\s+ago)\s+(?<headline>.+)$/i,
+  );
+
+  if (!metaMatch?.groups) {
+    return {
+      content: titleNoVendorTag,
+    };
+  }
+
+  return {
+    content: metaMatch.groups.headline.trim(),
+    sourceLabel: metaMatch.groups.source.trim(),
+    publishedLabel: metaMatch.groups.age.trim(),
+  };
+};
+
 export async function scrapeYouTubePost(url: string): Promise<ScrapedYouTubePost> {
   const response = await fetchWithTimeout(url);
   if (!response.ok) {
@@ -28,16 +49,17 @@ export async function scrapeYouTubePost(url: string): Promise<ScrapedYouTubePost
   }
 
   const html = await response.text();
-  const title = extractByRegex(html, /<title>(.*?)<\/title>/i)
-    .replace(/\s*-\s*YouTube\s*$/i, '')
-    .trim();
+  const title = extractByRegex(html, /<title>(.*?)<\/title>/i);
+  const normalized = normalizeHeadline(title);
 
   const imageUrl = extractByRegex(html, /<meta\s+property="og:image"\s+content="([^"]+)"/i);
   const author = extractByRegex(html, /<meta\s+name="author"\s+content="([^"]+)"/i) || '유튜브 채널';
 
   return {
-    content: title || 'YouTube 콘텐츠',
+    content: normalized.content || 'YouTube 콘텐츠',
     imageUrl,
     author,
+    sourceLabel: normalized.sourceLabel,
+    publishedLabel: normalized.publishedLabel,
   };
 }

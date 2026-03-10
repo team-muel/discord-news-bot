@@ -29,6 +29,8 @@ export interface ScrapedYouTubePost {
   content: string;
   imageUrl: string;
   author: string;
+  sourceLabel?: string;
+  publishedLabel?: string;
 }
 
 export interface SettingsRow {
