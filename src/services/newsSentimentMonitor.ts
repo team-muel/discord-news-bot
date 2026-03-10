@@ -8,6 +8,8 @@ type NewsItem = {
   title: string;
   link: string;
   sourceName: string | null;
+  publisherName: string | null;
+  publishedAtUnix: number | null;
   key: string;
   lexicalSignature: string;
 };
@@ -133,6 +135,85 @@ const parseSourceName = (href: string): string | null => {
   }
 };
 
+const parseRelativeKoreanAgo = (text: string): number | null => {
+  const m = text.match(/(\d+)\s*(분|시간|일|주|달|개월|년)\s*전/);
+  if (!m) {
+    return null;
+  }
+
+  const amount = Number(m[1]);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  const unit = m[2];
+  const now = Date.now();
+  let deltaMs = 0;
+  if (unit === '분') deltaMs = amount * 60 * 1000;
+  else if (unit === '시간') deltaMs = amount * 60 * 60 * 1000;
+  else if (unit === '일') deltaMs = amount * 24 * 60 * 60 * 1000;
+  else if (unit === '주') deltaMs = amount * 7 * 24 * 60 * 60 * 1000;
+  else if (unit === '달' || unit === '개월') deltaMs = amount * 30 * 24 * 60 * 60 * 1000;
+  else if (unit === '년') deltaMs = amount * 365 * 24 * 60 * 60 * 1000;
+
+  return Math.floor((now - deltaMs) / 1000);
+};
+
+const parseRelativeEnglishAgo = (text: string): number | null => {
+  const m = text.toLowerCase().match(/(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago/);
+  if (!m) {
+    return null;
+  }
+
+  const amount = Number(m[1]);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  const unit = m[2];
+  const now = Date.now();
+  let deltaMs = 0;
+  if (unit.startsWith('minute')) deltaMs = amount * 60 * 1000;
+  else if (unit.startsWith('hour')) deltaMs = amount * 60 * 60 * 1000;
+  else if (unit.startsWith('day')) deltaMs = amount * 24 * 60 * 60 * 1000;
+  else if (unit.startsWith('week')) deltaMs = amount * 7 * 24 * 60 * 60 * 1000;
+  else if (unit.startsWith('month')) deltaMs = amount * 30 * 24 * 60 * 60 * 1000;
+  else if (unit.startsWith('year')) deltaMs = amount * 365 * 24 * 60 * 60 * 1000;
+
+  return Math.floor((now - deltaMs) / 1000);
+};
+
+const normalizeFinanceHeadline = (rawTitle: string): {
+  headline: string;
+  publisherName: string | null;
+  publishedAtUnix: number | null;
+} => {
+  const title = String(rawTitle || '').replace(/\s+/g, ' ').trim();
+  if (!title) {
+    return { headline: '', publisherName: null, publishedAtUnix: null };
+  }
+
+  const korean = title.match(/^(.+?)\s+(\d+\s*(?:분|시간|일|주|달|개월|년)\s*전)\s+(.+)$/);
+  if (korean) {
+    return {
+      publisherName: korean[1].trim(),
+      publishedAtUnix: parseRelativeKoreanAgo(korean[2]),
+      headline: korean[3].trim(),
+    };
+  }
+
+  const english = title.match(/^(.+?)\s+(\d+\s+(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago)\s+(.+)$/i);
+  if (english) {
+    return {
+      publisherName: english[1].trim(),
+      publishedAtUnix: parseRelativeEnglishAgo(english[2]),
+      headline: english[3].trim(),
+    };
+  }
+
+  return { headline: title, publisherName: null, publishedAtUnix: null };
+};
+
 const stripHtmlBlocks = (html: string): string => {
   return String(html || '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -213,6 +294,14 @@ const buildFallbackKoreanSummary = (item: NewsItem): string => {
     `핵심: ${item.title}`,
     `출처: ${item.sourceName || 'Google Finance'} 보도입니다.`,
   ].join('\n');
+};
+
+const buildTimeLabel = (publishedAtUnix: number | null): string => {
+  if (!publishedAtUnix || !Number.isFinite(publishedAtUnix)) {
+    return '';
+  }
+
+  return `시간: <t:${publishedAtUnix}:R> (<t:${publishedAtUnix}:f>)`;
 };
 
 const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
@@ -540,18 +629,23 @@ const extractFinanceNewsItems = (html: string): NewsItem[] => {
       continue;
     }
 
-    const key = `${href}|${title}`.slice(0, 1000);
+    const normalized = normalizeFinanceHeadline(title);
+    const headline = normalized.headline || title;
+
+    const key = `${href}|${headline}`.slice(0, 1000);
     if (seen.has(key)) {
       continue;
     }
 
     seen.add(key);
     items.push({
-      title,
+      title: headline,
       link: href,
       sourceName: parseSourceName(href),
+      publisherName: normalized.publisherName,
+      publishedAtUnix: normalized.publishedAtUnix,
       key,
-      lexicalSignature: buildLexicalSignature(title),
+      lexicalSignature: buildLexicalSignature(headline),
     });
   }
 
@@ -616,14 +710,17 @@ const sendNews = async (client: Client, channelId: string, item: NewsItem, summa
   }
 
   const summaryBlock = enforceTwoToThreeLines(summary || '') || buildFallbackKoreanSummary(item);
+  const timeLabel = buildTimeLabel(item.publishedAtUnix);
+  const sourceLabel = item.publisherName || item.sourceName || 'Google Finance';
+  const description = [summaryBlock, timeLabel, item.link].filter(Boolean).join('\n\n');
 
   await channel.send({
     embeds: [
       {
-        title: `[Google Finance] ${item.title}`.slice(0, 250),
-        description: `${summaryBlock}\n\n${item.link}`,
+        title: item.title.slice(0, 250),
+        description,
         color: 0x4285F4,
-        footer: { text: item.sourceName ? `source: ${item.sourceName}` : 'source: Google Finance' },
+        footer: { text: `source: ${sourceLabel}` },
       },
     ],
   });
