@@ -113,7 +113,7 @@ export type ManualReconnectRequestResult = {
 type ReplyVisibility = 'private' | 'public';
 
 const getReplyVisibility = (interaction: ChatInputCommandInteraction): ReplyVisibility => {
-  const value = interaction.options.getString('공개범위');
+  const value = interaction.options.getString('응답방식') || interaction.options.getString('공개범위');
   return value === 'public' ? 'public' : 'private';
 };
 
@@ -135,11 +135,11 @@ const commandDefinitions = [
     )
     .addStringOption((option) =>
       option
-        .setName('공개범위')
-        .setDescription('응답 공개 범위 (기본: 나만 보기)')
+        .setName('응답방식')
+        .setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
         .addChoices(
           { name: '나만 보기', value: 'private' },
-          { name: '채널 공유', value: 'public' },
+          { name: '채널에 공유', value: 'public' },
         )
         .setRequired(false),
     ),
@@ -154,11 +154,11 @@ const commandDefinitions = [
     )
     .addStringOption((option) =>
       option
-        .setName('공개범위')
-        .setDescription('응답 공개 범위 (기본: 나만 보기)')
+        .setName('응답방식')
+        .setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
         .addChoices(
           { name: '나만 보기', value: 'private' },
-          { name: '채널 공유', value: 'public' },
+          { name: '채널에 공유', value: 'public' },
         )
         .setRequired(false),
     ),
@@ -173,17 +173,17 @@ const commandDefinitions = [
     )
     .addStringOption((option) =>
       option
-        .setName('공개범위')
-        .setDescription('응답 공개 범위 (기본: 나만 보기)')
+        .setName('응답방식')
+        .setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
         .addChoices(
           { name: '나만 보기', value: 'private' },
-          { name: '채널 공유', value: 'public' },
+          { name: '채널에 공유', value: 'public' },
         )
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('뉴스채널')
-    .setDescription('Google Finance 뉴스 자동 발송 채널 관리')
+    .setName('뉴스')
+    .setDescription('이 채널에서 뉴스를 구독하세요')
     .addSubcommand((sub) =>
       sub
         .setName('등록')
@@ -227,7 +227,7 @@ const commandDefinitions = [
     ),
   new SlashCommandBuilder()
     .setName('구독')
-    .setDescription('YouTube 구독 관리')
+    .setDescription('YouTube를 구독하세요')
     .addSubcommand((sub) =>
       sub
         .setName('영상')
@@ -534,18 +534,16 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
       {
         title: 'Muel 명령어 안내',
         color: 0x2f80ed,
-        description: '자주 쓰는 명령을 빠르게 확인하세요. 일부 명령은 `공개` 옵션으로 채널 전체 공유가 가능합니다.',
+        description: '자주 쓰는 핵심 명령만 빠르게 확인하세요.',
         fields: [
           {
             name: '일반 명령',
             value: [
-              '`/구독` YouTube 구독 등록/목록/해제',
-              '`/뉴스채널` Google Finance 뉴스 채널 등록/목록/해제',
-              '`/주가` 현재 주가 조회 (`공개범위` 선택 가능)',
-              '`/차트` 30일 차트 조회 (`공개범위` 선택 가능)',
-              '`/분석` AI 투자 관점 분석 (`공개범위` 선택 가능)',
-              '`/ping` 봇 응답/지연 확인',
-              '`/도움` 현재 안내 보기',
+              '`/구독` YouTube를 구독하세요',
+              '`/뉴스` 이 채널에서 뉴스를 구독하세요',
+              '`/주가` 현재 주가 조회 (`응답방식` 선택 가능)',
+              '`/차트` 30일 차트 조회 (`응답방식` 선택 가능)',
+              '`/분석` 기업 분석 (`응답방식` 선택 가능)',
             ].join('\n'),
           },
           {
@@ -1182,7 +1180,8 @@ const attachCommandHandlers = () => {
           await handleGroupedSubscribeCommand(interaction);
           return;
         }
-        case '뉴스채널': {
+        case '뉴스채널':
+        case '뉴스': {
           await handleNewsChannelCommand(interaction);
           return;
         }
