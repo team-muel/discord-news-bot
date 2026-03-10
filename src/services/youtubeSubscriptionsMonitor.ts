@@ -357,12 +357,11 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
 
   if (mode === 'videos') {
     await channel.send({
-      embeds: [{
-        title: '신규 영상 업로드',
-        description: `**${latest.title}**\n${latest.link}`,
-        color: 0xE62117,
-        url: latest.link,
-      }],
+      content: [
+        `📌 ${latest.author} 신규 영상 업로드!`,
+        latest.title,
+        latest.link,
+      ].join('\n'),
     });
 
     await updateRowState(row.id, {
