@@ -15,6 +15,8 @@ type NewsItem = {
 type NewsChannelRow = {
   id: number;
   guild_id: string | null;
+  name: string | null;
+  url: string | null;
   channel_id: string | null;
   last_post_signature: string | null;
 };
@@ -46,6 +48,17 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || 'gpt-4o-mini';
 const NEWS_AI_DEDUP_ENABLED = (process.env.NEWS_AI_DEDUP_ENABLED || 'true').toLowerCase() !== 'false';
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
+
+const isGoogleFinanceSourceRow = (row: NewsChannelRow): boolean => {
+  const name = String(row.name || '').toLowerCase();
+  const url = String(row.url || '').toLowerCase();
+
+  if (name === 'google-finance-news' || name === 'google-finance' || name === 'news') {
+    return true;
+  }
+
+  return url.includes('google.com/finance');
+};
 
 type NewsHistoryRow = {
   guild_id: string | null;
@@ -435,9 +448,8 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
   const db = getSupabaseClient();
   let query = db
     .from('sources')
-    .select('id, guild_id, channel_id, last_post_signature')
-    .eq('is_active', true)
-    .eq('name', 'google-finance-news');
+    .select('id, guild_id, name, url, channel_id, last_post_signature')
+    .eq('is_active', true);
 
   if (guildId) {
     query = query.eq('guild_id', guildId);
@@ -450,7 +462,7 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
     return { processed: 0, failed: 0 };
   }
 
-  const rows = (data || []) as NewsChannelRow[];
+  const rows = ((data || []) as NewsChannelRow[]).filter(isGoogleFinanceSourceRow);
   if (rows.length === 0) {
     return { processed: 0, failed: 0 };
   }

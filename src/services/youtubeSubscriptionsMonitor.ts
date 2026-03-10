@@ -47,6 +47,7 @@ const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.YOUTUBE_MONITOR_LOCK_L
 const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.YOUTUBE_MONITOR_FETCH_TIMEOUT_MS || 15_000));
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 const CHANNEL_ID_RE = /\/channel\/(UC[0-9A-Za-z_-]{20,})/;
+const CHANNEL_ID_ANY_RE = /(UC[0-9A-Za-z_-]{20,})/;
 
 const parseMode = (row: SubscriptionRow): 'videos' | 'posts' => {
   if (row.url.endsWith('#posts')) {
@@ -75,7 +76,66 @@ const isYouTubeSourceRow = (row: SubscriptionRow): boolean => {
 const parseChannelId = (url: string): string | null => {
   const base = url.split('#', 1)[0];
   const m = base.match(CHANNEL_ID_RE);
-  return m?.[1] || null;
+  if (m?.[1]) {
+    return m[1];
+  }
+
+  const rawMatch = base.match(CHANNEL_ID_ANY_RE);
+  if (rawMatch?.[1]) {
+    return rawMatch[1];
+  }
+
+  try {
+    const parsed = new URL(base);
+    const queryChannelId = parsed.searchParams.get('channel_id');
+    if (queryChannelId && CHANNEL_ID_ANY_RE.test(queryChannelId)) {
+      return queryChannelId;
+    }
+  } catch {
+    // Ignore parse errors.
+  }
+
+  return null;
+};
+
+const resolveChannelIdFromHandleUrl = async (url: string): Promise<string | null> => {
+  const base = url.split('#', 1)[0];
+
+  let parsed: URL;
+  try {
+    parsed = new URL(base);
+  } catch {
+    return null;
+  }
+
+  if (!parsed.pathname.includes('/@')) {
+    return null;
+  }
+
+  try {
+    const response = await fetchWithTimeout(parsed.toString(), {
+      redirect: 'follow',
+      headers: {
+        accept: 'text/html,application/xhtml+xml',
+        'user-agent': 'Mozilla/5.0 (compatible; MuelBot/1.0; +https://github.com)',
+      },
+    }, Math.min(FETCH_TIMEOUT_MS, 10_000));
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const fromFinalUrl = parseChannelId(response.url);
+    if (fromFinalUrl) {
+      return fromFinalUrl;
+    }
+
+    const html = await response.text();
+    const match = html.match(/"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"/);
+    return match?.[1] || null;
+  } catch {
+    return null;
+  }
 };
 
 const textBetween = (source: string, start: string, end: string): string => {
@@ -216,7 +276,7 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
 
   try {
   const mode = parseMode(row);
-  const channelId = parseChannelId(row.url);
+  const channelId = parseChannelId(row.url) || await resolveChannelIdFromHandleUrl(row.url);
   if (!channelId || !row.channel_id) {
     await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Invalid subscription URL/channel' });
     return;
