@@ -7,16 +7,16 @@ import type { AutomationJobState } from './types';
 
 export const buildAutomationSummary = (jobs: AutomationJobState[]) => {
   if (!AUTOMATION_ENABLED) {
-    return 'Automation bot is disabled';
+    return 'Automation workers are disabled';
   }
 
   if (!AUTOMATION_RUNTIME_ENABLED) {
-    return 'Automation bot is disabled (missing SECONDARY_DISCORD_TOKEN/AUTOMATION_DISCORD_TOKEN)';
+    return 'Automation workers are disabled (missing DISCORD_TOKEN or DISCORD_BOT_TOKEN)';
   }
 
   const activeJobs = jobs.filter((job) => job.enabled);
   if (activeJobs.length === 0) {
-    return 'Automation bot has no enabled jobs';
+    return 'Automation workers have no enabled jobs';
   }
 
   const unhealthy = activeJobs.find(
@@ -26,7 +26,7 @@ export const buildAutomationSummary = (jobs: AutomationJobState[]) => {
     return `Automation job ${unhealthy.name} needs attention`;
   }
 
-  return 'Automation bot is healthy';
+  return 'Automation workers are healthy';
 };
 
 export const isAutomationHealthy = (jobs: AutomationJobState[]) => {

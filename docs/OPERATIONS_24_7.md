@@ -1,4 +1,4 @@
-# 24/7 Operations Runbook (Server + Discord Bot + Automation Bot)
+# 24/7 Operations Runbook (Server + Main Discord Bot + Automation Workers)
 
 This project runs both bots from the server process (`server.ts`).
 Use PM2 to keep the process alive and auto-restart on failures.
@@ -28,7 +28,7 @@ Compact alias set also supported:
 
 Automation token behavior:
 
-- If `SECONDARY_DISCORD_TOKEN` / `AUTOMATION_DISCORD_TOKEN` is missing, automation workers are skipped by design.
+- If `DISCORD_TOKEN` / `DISCORD_BOT_TOKEN` is missing, automation workers are skipped by design.
 - In that case automation is treated as disabled in runtime status (no worker restart loop).
 - To run only API+primary bot, this token can remain unset.
 
@@ -84,10 +84,9 @@ Also verify Runtime Environment Variables in Render:
 - `START_BOT=true`
 - `START_AUTOMATION_BOT=true` (Render process runs 24/7 automation jobs)
 - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
-- For automation workers (shared token):
-  - `SECONDARY_DISCORD_TOKEN=<automation bot token>`
-  - optional fallback: `AUTOMATION_DISCORD_TOKEN=<automation bot token>`
-  - recommended: `SECONDARY_DISCORD_TOKEN != DISCORD_TOKEN`
+- For automation workers (shared main-bot token):
+  - `DISCORD_TOKEN=<main bot token>` (or `DISCORD_BOT_TOKEN`)
+  - optional fallback: `AUTOMATION_DISCORD_TOKEN=<main bot token>`
 - Automation scheduling controls:
   - `AUTOMATION_PERSISTENT_WORKERS=true` (recommended)
   - `AUTOMATION_RUN_ON_START=true`
@@ -194,9 +193,9 @@ Disable email alerts in Render:
 3. Disable email channel for this service/event policy.
 4. Keep monitoring through `Logs` and `/health`.
 
-Recommended for your current setup (no secondary automation token):
+Recommended for your current setup (single main bot token):
 
-- Keep `START_AUTOMATION_BOT=true` only when `SECONDARY_DISCORD_TOKEN` (or `AUTOMATION_DISCORD_TOKEN`) is configured.
+- Keep `START_AUTOMATION_BOT=true` only when `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`) is configured.
 - If you intentionally disable automation, set `START_AUTOMATION_BOT=false`.
 - Keep checking issues through Render Logs only.
 

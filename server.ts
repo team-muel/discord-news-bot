@@ -20,11 +20,6 @@ logger.info('[BOOT] START_BOT=%s START_AUTOMATION_BOT=%s DISCORD_TOKEN_PRESENT=%
   String(process.env.START_AUTOMATION_BOT ?? 'undefined'),
   String(Boolean(process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN)),
 );
-logger.info('[BOOT] SECONDARY_DISCORD_TOKEN_PRESENT=%s AUTOMATION_DISCORD_TOKEN_PRESENT=%s TOKENS_SEPARATED=%s',
-  String(Boolean(process.env.SECONDARY_DISCORD_TOKEN)),
-  String(Boolean(process.env.AUTOMATION_DISCORD_TOKEN)),
-  String(Boolean(process.env.SECONDARY_DISCORD_TOKEN) && (process.env.SECONDARY_DISCORD_TOKEN !== (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN))),
-);
 
 if (START_BOT) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;

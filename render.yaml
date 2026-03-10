@@ -30,8 +30,6 @@ services:
         value: "10"
       - key: DISCORD_TOKEN
         sync: false
-      - key: SECONDARY_DISCORD_TOKEN
-        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY

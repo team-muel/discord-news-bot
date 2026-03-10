@@ -20,8 +20,7 @@
   - alias: `OAUTH_REDIRECT_ALLOWLIST`
 - `START_BOT`: `false` for API-only mode, `true` to start Discord bot in same process
 - `START_TRADING_BOT`: `true` to run CVD-based trading engine loop in same process
-- `START_AUTOMATION_BOT`: `true` to run automation worker bot (legacy python jobs)
-  - compatibility alias: `ENABLE_SECONDARY_BOT`
+- `START_AUTOMATION_BOT`: `true` to run automation workers (legacy python jobs)
 - `JWT_SECRET`: session token signing key
   - compatibility alias: `SESSION_SECRET`
 - `DEV_AUTH_ENABLED`: enables code-based dev auth endpoints (`/api/auth/sdk`, `/api/auth/callback`)

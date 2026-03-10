@@ -219,7 +219,7 @@ export const startAutomationBot = () => {
       state.lastErrorAt = null;
       state.running = false;
     }
-    logger.info('[AUTOMATION] Token missing. Skipping automation workers (set SECONDARY_DISCORD_TOKEN or AUTOMATION_DISCORD_TOKEN to enable).');
+    logger.info('[AUTOMATION] Token missing. Skipping automation workers (set DISCORD_TOKEN or DISCORD_BOT_TOKEN to enable).');
     return;
   }
 

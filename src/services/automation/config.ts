@@ -2,10 +2,14 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import type { JobConfig } from './types';
 
 export const AUTOMATION_ENABLED = parseBooleanEnv(
-  process.env.START_AUTOMATION_BOT ?? process.env.ENABLE_SECONDARY_BOT,
+  process.env.START_AUTOMATION_BOT,
   true,
 );
-export const AUTOMATION_DISCORD_TOKEN = process.env.SECONDARY_DISCORD_TOKEN || process.env.AUTOMATION_DISCORD_TOKEN || '';
+export const AUTOMATION_DISCORD_TOKEN =
+  process.env.DISCORD_TOKEN ||
+  process.env.DISCORD_BOT_TOKEN ||
+  process.env.AUTOMATION_DISCORD_TOKEN ||
+  '';
 export const AUTOMATION_RUNTIME_ENABLED = AUTOMATION_ENABLED && Boolean(AUTOMATION_DISCORD_TOKEN);
 
 export const PYTHON_COMMAND = process.env.AUTOMATION_PYTHON_COMMAND || 'python';
