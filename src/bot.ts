@@ -110,6 +110,13 @@ export type ManualReconnectRequestResult = {
   message: string;
 };
 
+type ReplyVisibility = 'private' | 'public';
+
+const getReplyVisibility = (interaction: ChatInputCommandInteraction): ReplyVisibility => {
+  const value = interaction.options.getString('공개범위');
+  return value === 'public' ? 'public' : 'private';
+};
+
 const commandDefinitions = [
   new SlashCommandBuilder()
     .setName('ping')
@@ -126,10 +133,14 @@ const commandDefinitions = [
         .setDescription('예: AAPL, TSLA, MSFT')
         .setRequired(true),
     )
-    .addBooleanOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName('공개')
-        .setDescription('채널 전체에 결과를 표시합니다 (기본: 나만 보기)')
+        .setName('공개범위')
+        .setDescription('응답 공개 범위 (기본: 나만 보기)')
+        .addChoices(
+          { name: '나만 보기', value: 'private' },
+          { name: '채널 공유', value: 'public' },
+        )
         .setRequired(false),
     ),
   new SlashCommandBuilder()
@@ -141,10 +152,14 @@ const commandDefinitions = [
         .setDescription('예: AAPL, TSLA, MSFT')
         .setRequired(true),
     )
-    .addBooleanOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName('공개')
-        .setDescription('채널 전체에 결과를 표시합니다 (기본: 나만 보기)')
+        .setName('공개범위')
+        .setDescription('응답 공개 범위 (기본: 나만 보기)')
+        .addChoices(
+          { name: '나만 보기', value: 'private' },
+          { name: '채널 공유', value: 'public' },
+        )
         .setRequired(false),
     ),
   new SlashCommandBuilder()
@@ -156,10 +171,14 @@ const commandDefinitions = [
         .setDescription('기업/종목/테마 입력')
         .setRequired(true),
     )
-    .addBooleanOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName('공개')
-        .setDescription('채널 전체에 결과를 표시합니다 (기본: 나만 보기)')
+        .setName('공개범위')
+        .setDescription('응답 공개 범위 (기본: 나만 보기)')
+        .addChoices(
+          { name: '나만 보기', value: 'private' },
+          { name: '채널 공유', value: 'public' },
+        )
         .setRequired(false),
     ),
   new SlashCommandBuilder()
@@ -522,9 +541,9 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
             value: [
               '`/구독` YouTube 구독 등록/목록/해제',
               '`/뉴스채널` Google Finance 뉴스 채널 등록/목록/해제',
-              '`/주가` 현재 주가 조회 (`공개` 옵션 지원)',
-              '`/차트` 30일 차트 조회 (`공개` 옵션 지원)',
-              '`/분석` AI 투자 관점 분석 (`공개` 옵션 지원)',
+              '`/주가` 현재 주가 조회 (`공개범위` 선택 가능)',
+              '`/차트` 30일 차트 조회 (`공개범위` 선택 가능)',
+              '`/분석` AI 투자 관점 분석 (`공개범위` 선택 가능)',
               '`/ping` 봇 응답/지연 확인',
               '`/도움` 현재 안내 보기',
             ].join('\n'),
@@ -703,7 +722,7 @@ const handleReconnectCommand = async (interaction: ChatInputCommandInteraction) 
 
 const handleStockPriceCommand = async (interaction: ChatInputCommandInteraction) => {
   const symbol = interaction.options.getString('symbol', true).toUpperCase().trim();
-  const shared = interaction.options.getBoolean('공개') === true;
+  const shared = getReplyVisibility(interaction) === 'public';
   await interaction.deferReply({ ephemeral: !shared });
 
   if (!isStockFeatureEnabled()) {
@@ -729,7 +748,7 @@ const handleStockPriceCommand = async (interaction: ChatInputCommandInteraction)
 
 const handleStockChartCommand = async (interaction: ChatInputCommandInteraction) => {
   const symbol = interaction.options.getString('symbol', true).toUpperCase().trim();
-  const shared = interaction.options.getBoolean('공개') === true;
+  const shared = getReplyVisibility(interaction) === 'public';
   await interaction.deferReply({ ephemeral: !shared });
 
   if (!isStockFeatureEnabled()) {
@@ -756,7 +775,7 @@ const handleStockChartCommand = async (interaction: ChatInputCommandInteraction)
 
 const handleAnalyzeCommand = async (interaction: ChatInputCommandInteraction) => {
   const query = interaction.options.getString('query', true).trim();
-  const shared = interaction.options.getBoolean('공개') === true;
+  const shared = getReplyVisibility(interaction) === 'public';
   await interaction.deferReply({ ephemeral: !shared });
 
   const answer = await generateInvestmentAnalysis(query);
