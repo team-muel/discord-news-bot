@@ -33,6 +33,16 @@ export type CrawlerRuntimeRegistryDeps = {
 };
 
 export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) => {
+  const normalizeSignatureText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  const buildLegacyPostSignature = (content: string, imageUrl: string) => `${content.substring(0, 100)}_${imageUrl}`;
+
+  const buildPostSignatureV2 = (content: string, displayName: string) => {
+    const normalizedContent = normalizeSignatureText(content).slice(0, 220);
+    const normalizedName = normalizeSignatureText(displayName).slice(0, 80);
+    return `v2:${normalizedName}:${normalizedContent}`;
+  };
+
   const textConfig = {
     initialTitlePrefix: process.env.CRAWLER_INITIAL_TITLE_PREFIX || '🔔 Muel 구독 시작',
     newPostTitleTemplate: process.env.CRAWLER_NEW_POST_TITLE_TEMPLATE || '{name}님의 새 커뮤니티 게시글',
@@ -70,7 +80,13 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
 
     try {
       const { content, imageUrl, author, sourceLabel, publishedLabel } = await deps.scrapeYouTubePost(source.url);
-      const postSignature = `${content.substring(0, 100)}_${imageUrl}`;
+      const displayName = source.name?.trim() || author;
+      const postSignatureLegacy = buildLegacyPostSignature(content, imageUrl);
+      const postSignatureV2 = buildPostSignatureV2(content, displayName);
+      const knownSignatures = new Set([
+        postSignatureLegacy,
+        postSignatureV2,
+      ]);
 
       const updateData: Partial<Pick<Source, 'last_check_status' | 'last_check_error' | 'last_check_at' | 'last_post_signature'>> = {
         last_check_status: 'success',
@@ -78,7 +94,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
         last_check_at: new Date().toISOString(),
       };
 
-      if (source.last_post_signature !== postSignature) {
+      if (!knownSignatures.has(source.last_post_signature || '')) {
         console.log(`[Background Job] New post detected for ${author} (User: ${userId})`);
 
         if (!deps.client.isReady()) {
@@ -93,7 +109,6 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
             imageBase64 = await deps.imageUrlToBase64(imageUrl);
           }
 
-          const displayName = source.name?.trim() || author;
           const title = source.last_post_signature
             ? buildNewPostThreadTitle(displayName)
             : buildInitialSubscriptionThreadTitle(displayName);
@@ -102,7 +117,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
           const fullContent = buildSubscriptionThreadBody(truncatedContent, source.url, sourceLabel, publishedLabel);
 
           await deps.createForumThread(forumChannelId, title, fullContent, imageBase64, userId);
-          updateData.last_post_signature = postSignature;
+          updateData.last_post_signature = postSignatureV2;
         }
       }
 
