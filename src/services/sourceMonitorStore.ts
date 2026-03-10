@@ -32,7 +32,7 @@ export const claimSourceLock = async (params: {
     .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
     .eq('id', params.id)
     .eq('is_active', true)
-    .or(`lock_token.is.null,lock_expires_at.lt.${nowIso},lock_token.eq.${params.instanceId}`)
+    .or(`lock_token.is.null,lock_expires_at.is.null,lock_expires_at.lt.${nowIso},lock_token.eq.${params.instanceId}`)
     .select('id')
     .limit(1);
 
