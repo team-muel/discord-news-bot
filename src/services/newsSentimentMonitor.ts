@@ -110,6 +110,8 @@ const decodeXml = (text: string): string => {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&bull;/g, '•')
+    .replace(/&nbsp;/g, ' ')
     .trim();
 };
 
@@ -209,6 +211,26 @@ const normalizeFinanceHeadline = (rawTitle: string): {
       publishedAtUnix: parseRelativeEnglishAgo(english[2]),
       headline: english[3].trim(),
     };
+  }
+
+  // Common Google Finance shape: "<headline> • <publisher> • <relative time>"
+  const bulletParts = title
+    .split(/\s*[•·|]\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (bulletParts.length >= 2) {
+    const last = bulletParts[bulletParts.length - 1] || '';
+    const publishedAtUnix = parseRelativeKoreanAgo(last) || parseRelativeEnglishAgo(last);
+    if (publishedAtUnix) {
+      const headline = bulletParts[0] || title;
+      const publisherName = bulletParts.length >= 3 ? bulletParts[1] : null;
+      return {
+        headline: headline.trim(),
+        publisherName: publisherName?.trim() || null,
+        publishedAtUnix,
+      };
+    }
   }
 
   return { headline: title, publisherName: null, publishedAtUnix: null };
@@ -632,7 +654,8 @@ const extractFinanceNewsItems = (html: string): NewsItem[] => {
     const normalized = normalizeFinanceHeadline(title);
     const headline = normalized.headline || title;
 
-    const key = `${href}|${headline}`.slice(0, 1000);
+    // Use canonical link as stable dedup key so relative-time title changes do not resend the same news.
+    const key = href.slice(0, 1000);
     if (seen.has(key)) {
       continue;
     }
