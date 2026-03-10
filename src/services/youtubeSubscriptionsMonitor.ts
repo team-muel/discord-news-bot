@@ -180,55 +180,34 @@ const parseFirstEntry = (xml: string): FeedEntry | null => {
   return { id, title, link, published, author };
 };
 
-const formatThreadDateLabel = (isoLike: string | undefined): string => {
-  const date = isoLike ? new Date(isoLike) : new Date();
-  if (Number.isNaN(date.getTime())) {
-    return '최근';
+const COMMUNITY_INITIAL_TITLE_PREFIX = process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX || '🔔 Muel 구독 시작';
+const COMMUNITY_NEW_POST_TITLE_TEMPLATE = process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE || '{author}님의 새 커뮤니티 게시글';
+const COMMUNITY_THREAD_REASON = process.env.YT_COMMUNITY_THREAD_REASON || 'YouTube community post subscription update';
+const COMMUNITY_AUTO_ARCHIVE_MIN = Math.max(60, Number(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN || 60));
+
+const buildCommunityStarterTitle = (latest: FeedEntry, isFirstNotification: boolean) => {
+  if (isFirstNotification) {
+    return `${COMMUNITY_INITIAL_TITLE_PREFIX}: ${latest.author}`;
   }
 
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return COMMUNITY_NEW_POST_TITLE_TEMPLATE.replace('{author}', latest.author);
 };
 
-const buildCommunityThreadBody = (latest: FeedEntry): string => {
-  const content = String(latest.content || latest.title || '').trim();
-  const summary = content.length > 1900 ? `${content.slice(0, 1900)}...` : content;
-
-  return [
-    '이제부터 해당 채널의 소식을 실시간으로 전달합니다.',
-    '',
-    '최신 게시글:',
-    `[${latest.title}]`,
-    '',
-    summary || '(본문 추출 실패)',
-    '',
-    latest.link,
-  ].join('\n');
-};
-
-const sendCommunityPostWithThread = async (channel: any, latest: FeedEntry) => {
+const sendCommunityPostWithThread = async (channel: any, latest: FeedEntry, isFirstNotification: boolean) => {
   const starter = await channel.send({
-    content: `🔔 Muel 구독 시작:\n${latest.author}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기)`,
+    content: buildCommunityStarterTitle(latest, isFirstNotification),
   });
 
-  const threadNameBase = `${latest.author} 게시글 알림 ${formatThreadDateLabel(latest.published)}`;
-  const threadName = threadNameBase.slice(0, 90);
+  const threadName = (latest.title || latest.author).slice(0, 90);
   const canCreateThread = channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement;
 
   if (canCreateThread && starter && typeof starter.startThread === 'function') {
-    const thread = await starter.startThread({
+    await starter.startThread({
       name: threadName,
-      autoArchiveDuration: 60,
-      reason: 'YouTube community post subscription update',
+      autoArchiveDuration: COMMUNITY_AUTO_ARCHIVE_MIN,
+      reason: COMMUNITY_THREAD_REASON,
     });
-
-    await thread.send({ content: buildCommunityThreadBody(latest) });
-    return;
   }
-
-  await channel.send({ content: buildCommunityThreadBody(latest) });
 };
 
 const fetchLatestFromFeed = async (channelId: string, mode: 'videos' | 'posts'): Promise<FeedEntry | null> => {
@@ -394,7 +373,8 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
     return 'sent';
   }
 
-  await sendCommunityPostWithThread(channel, latest);
+  const isFirstNotification = !previous;
+  await sendCommunityPostWithThread(channel, latest, isFirstNotification);
 
   await updateRowState(row.id, {
     last_check_status: 'success',
