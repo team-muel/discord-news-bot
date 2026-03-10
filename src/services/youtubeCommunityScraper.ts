@@ -200,9 +200,27 @@ export const scrapeLatestCommunityPostByChannelId = async (
   timeoutMs: number,
 ): Promise<ScrapedCommunityPost | null> => {
   const communityUrl = `https://www.youtube.com/channel/${encodeURIComponent(channelId)}/community`;
+  return scrapeLatestCommunityPostByUrl(communityUrl, timeoutMs);
+};
+
+export const scrapeLatestCommunityPostByUrl = async (
+  pageUrl: string,
+  timeoutMs: number,
+): Promise<ScrapedCommunityPost | null> => {
+  let parsed: URL;
+  try {
+    parsed = new URL(pageUrl);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  if (host !== 'youtube.com') {
+    return null;
+  }
 
   const response = await fetchWithTimeout(
-    communityUrl,
+    parsed.toString(),
     {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',

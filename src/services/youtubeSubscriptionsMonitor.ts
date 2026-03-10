@@ -2,7 +2,7 @@ import { ChannelType, type Client } from 'discord.js';
 import logger from '../logger';
 import { runWithConcurrency } from '../utils/async';
 import { fetchWithTimeout } from '../utils/network';
-import { scrapeLatestCommunityPostByChannelId } from './youtubeCommunityScraper';
+import { scrapeLatestCommunityPostByChannelId, scrapeLatestCommunityPostByUrl } from './youtubeCommunityScraper';
 import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
@@ -36,6 +36,10 @@ type YouTubeTickStats = {
 };
 
 type ProcessRowOutcome = 'sent' | 'skipped_locked' | 'skipped_duplicate' | 'skipped_no_latest' | 'error';
+
+type TickOptions = {
+  aggressiveProbe?: boolean;
+};
 
 let timer: NodeJS.Timeout | null = null;
 let started = false;
@@ -258,6 +262,67 @@ const fetchLatestFromFeed = async (channelId: string, mode: 'videos' | 'posts'):
   throw new Error('Feed request failed');
 };
 
+const buildAggressivePostProbeUrls = (sourceUrl: string): string[] => {
+  const urls: string[] = [];
+  const base = sourceUrl.split('#', 1)[0].trim();
+  if (!base) {
+    return urls;
+  }
+
+  try {
+    const parsed = new URL(base);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    if (host !== 'youtube.com') {
+      return urls;
+    }
+
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    if (path.endsWith('/posts') || path.endsWith('/community')) {
+      urls.push(`${parsed.origin}${path}`);
+    } else {
+      urls.push(`${parsed.origin}${path}/posts`);
+      urls.push(`${parsed.origin}${path}/community`);
+    }
+  } catch {
+    return urls;
+  }
+
+  return Array.from(new Set(urls));
+};
+
+const fetchLatestCommunityPostAggressively = async (
+  _channelId: string,
+  sourceUrl: string,
+): Promise<FeedEntry | null> => {
+  const probeUrls = buildAggressivePostProbeUrls(sourceUrl);
+  for (const probeUrl of probeUrls) {
+    const hit = await scrapeLatestCommunityPostByUrl(probeUrl, FETCH_TIMEOUT_MS);
+    if (hit) {
+      return hit;
+    }
+  }
+
+  return null;
+};
+
+const fetchLatestWithOptions = async (
+  row: SubscriptionRow,
+  channelId: string,
+  mode: 'videos' | 'posts',
+  options?: TickOptions,
+): Promise<FeedEntry | null> => {
+  const latest = await fetchLatestFromFeed(channelId, mode);
+  if (latest) {
+    return latest;
+  }
+
+  if (mode !== 'posts' || !options?.aggressiveProbe) {
+    return null;
+  }
+
+  return fetchLatestCommunityPostAggressively(channelId, row.url);
+};
+
 const updateRowState = async (id: number, patch: Record<string, string | null>) => {
   await updateSourceState({ id, patch, logPrefix: '[YT-MONITOR]' });
 };
@@ -275,7 +340,7 @@ const releaseRowLock = async (id: number) => {
   await releaseSourceLock({ id, instanceId: INSTANCE_ID, logPrefix: '[YT-MONITOR]' });
 };
 
-const processRow = async (client: Client, row: SubscriptionRow): Promise<ProcessRowOutcome> => {
+const processRow = async (client: Client, row: SubscriptionRow, options?: TickOptions): Promise<ProcessRowOutcome> => {
   if (!row.is_active) {
     return 'skipped_no_latest';
   }
@@ -299,7 +364,7 @@ const processRow = async (client: Client, row: SubscriptionRow): Promise<Process
     return 'error';
   }
 
-  const latest = await fetchLatestFromFeed(channelId, mode);
+  const latest = await fetchLatestWithOptions(row, channelId, mode, options);
   if (!latest) {
     await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
     return 'skipped_no_latest';
@@ -342,7 +407,7 @@ const processRow = async (client: Client, row: SubscriptionRow): Promise<Process
   }
 };
 
-const runTick = async (client: Client, guildId?: string): Promise<YouTubeTickStats> => {
+const runTick = async (client: Client, guildId?: string, options?: TickOptions): Promise<YouTubeTickStats> => {
   if (!isSupabaseConfigured()) {
     return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoLatest: 0 };
   }
@@ -377,7 +442,7 @@ const runTick = async (client: Client, guildId?: string): Promise<YouTubeTickSta
   await runWithConcurrency(rows, async (row) => {
     stats.processed += 1;
     try {
-      const outcome = await processRow(client, row);
+      const outcome = await processRow(client, row, options);
       if (outcome === 'sent') {
         stats.sent += 1;
       } else if (outcome === 'skipped_locked') {
@@ -400,7 +465,7 @@ const runTick = async (client: Client, guildId?: string): Promise<YouTubeTickSta
   return stats;
 };
 
-const executeTick = async (client: Client, guildId?: string) => {
+const executeTick = async (client: Client, guildId?: string, options?: TickOptions) => {
   if (running) {
     return { ok: false, message: 'Monitor tick already running' as const };
   }
@@ -411,7 +476,7 @@ const executeTick = async (client: Client, guildId?: string) => {
   const startMs = Date.now();
 
   try {
-    const tick = await runTick(client, guildId);
+    const tick = await runTick(client, guildId, options);
     lastTickProcessedSources = tick.processed;
     lastTickFailedSources = tick.failed;
     successCount += 1;
@@ -475,7 +540,7 @@ export const triggerYouTubeSubscriptionsMonitor = async (client: Client, guildId
     return { ok: false, message: 'Monitor is not started' };
   }
 
-  return executeTick(client, guildId);
+  return executeTick(client, guildId, { aggressiveProbe: true });
 };
 
 export const getYouTubeSubscriptionsMonitorSnapshot = () => ({
