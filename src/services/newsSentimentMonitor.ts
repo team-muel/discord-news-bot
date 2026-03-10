@@ -134,6 +134,43 @@ const stripTags = (html: string): string => {
   return decodeXml(String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
 };
 
+const isLikelyNavigationTitle = (title: string): boolean => {
+  const normalized = String(title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return true;
+  }
+
+  const blocked = [
+    'finance_mode',
+    'google finance',
+    'home',
+    '홈',
+    'markets',
+    '시장',
+    'watchlist',
+    '관심종목',
+    'portfolio',
+    '포트폴리오',
+  ];
+
+  return blocked.some((token) => normalized === token || normalized.startsWith(`${token} `));
+};
+
+const isInternalGoogleFinanceLink = (href: string): boolean => {
+  try {
+    const url = new URL(href);
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+    if (host !== 'google.com') {
+      return false;
+    }
+
+    // Keep only external article targets. Internal finance pages are navigation/quote hubs.
+    return url.pathname.startsWith('/finance');
+  } catch {
+    return true;
+  }
+};
+
 const normalizeTitleForSignature = (title: string): string => {
   return String(title || '')
     .toLowerCase()
@@ -339,6 +376,9 @@ const extractFinanceNewsItems = (html: string): NewsItem[] => {
     if (!title || title.length < 12) {
       continue;
     }
+    if (isLikelyNavigationTitle(title)) {
+      continue;
+    }
 
     let href = hrefRaw;
     if (href.startsWith('./')) {
@@ -360,6 +400,10 @@ const extractFinanceNewsItems = (html: string): NewsItem[] => {
       }
     } catch {
       // Ignore parse failures and keep original href.
+    }
+
+    if (isInternalGoogleFinanceLink(href)) {
+      continue;
     }
 
     const key = `${href}|${title}`.slice(0, 1000);
