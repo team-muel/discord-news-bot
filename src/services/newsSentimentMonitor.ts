@@ -32,6 +32,9 @@ type NewsTickStats = {
   skippedNoCandidate: number;
 };
 
+const SIGNATURE_HISTORY_MAX_ITEMS = Math.max(5, Number(process.env.NEWS_SIGNATURE_HISTORY_MAX_ITEMS || 12));
+const SIGNATURE_HISTORY_DELIMITER = '||';
+
 let timer: NodeJS.Timeout | null = null;
 let started = false;
 let running = false;
@@ -324,6 +327,34 @@ const buildTimeTag = (publishedAtUnix: number | null): string => {
   }
 
   return `<t:${publishedAtUnix}:R>`;
+};
+
+const parseSignatureHistory = (raw: string | null): string[] => {
+  const value = String(raw || '').trim();
+  if (!value) {
+    return [];
+  }
+
+  const parts = value.includes(SIGNATURE_HISTORY_DELIMITER)
+    ? value.split(SIGNATURE_HISTORY_DELIMITER)
+    : [value];
+
+  return parts.map((part) => part.trim()).filter(Boolean);
+};
+
+const hasSeenSignature = (raw: string | null, signature: string): boolean => {
+  if (!signature) {
+    return false;
+  }
+
+  const history = parseSignatureHistory(raw);
+  return history.includes(signature);
+};
+
+const appendSignatureHistory = (raw: string | null, signature: string): string => {
+  const next = [signature, ...parseSignatureHistory(raw).filter((item) => item !== signature)]
+    .slice(0, SIGNATURE_HISTORY_MAX_ITEMS);
+  return next.join(SIGNATURE_HISTORY_DELIMITER);
 };
 
 const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
@@ -826,7 +857,7 @@ const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats>
       }
 
       try {
-        if (row.last_post_signature === latest.key) {
+        if (hasSeenSignature(row.last_post_signature, latest.key)) {
           stats.skippedDuplicate += 1;
           await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
           continue;
@@ -838,7 +869,7 @@ const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats>
         await updateRowState(row.id, {
           last_check_status: 'success',
           last_check_error: null,
-          last_post_signature: latest.key,
+          last_post_signature: appendSignatureHistory(row.last_post_signature, latest.key),
         });
       } catch (err) {
         stats.failed += 1;
