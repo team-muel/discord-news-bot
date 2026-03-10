@@ -33,21 +33,34 @@ export type CrawlerRuntimeRegistryDeps = {
 };
 
 export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) => {
-  const buildSubscriptionThreadTitle = (displayName: string) => `🔔 Muel 구독 시작: ${displayName}`;
+  const textConfig = {
+    initialTitlePrefix: process.env.CRAWLER_INITIAL_TITLE_PREFIX || '🔔 Muel 구독 시작',
+    newPostTitleTemplate: process.env.CRAWLER_NEW_POST_TITLE_TEMPLATE || '{name}님의 새 커뮤니티 게시글',
+    sourceMetaLabel: process.env.CRAWLER_META_SOURCE_LABEL || '출처',
+    publishedMetaLabel: process.env.CRAWLER_META_PUBLISHED_LABEL || '게시 시점',
+    linkLabel: process.env.CRAWLER_LINK_LABEL || '원본 링크',
+    emptyContentPlaceholder: process.env.CRAWLER_EMPTY_CONTENT_PLACEHOLDER || '내용 없음',
+    youtubeUrlRequiredMessage: process.env.CRAWLER_YOUTUBE_URL_REQUIRED_MESSAGE || 'YouTube URL is required.',
+    channelIdRequiredMessage: process.env.CRAWLER_CHANNEL_ID_REQUIRED_MESSAGE || 'Channel ID is required. Please select a channel first.',
+    testThreadSuccessMessage: process.env.CRAWLER_TEST_THREAD_SUCCESS_MESSAGE || 'Thread created successfully!',
+  };
+
+  const buildInitialSubscriptionThreadTitle = (displayName: string) => `${textConfig.initialTitlePrefix}: ${displayName}`;
+
+  const buildNewPostThreadTitle = (displayName: string) => textConfig.newPostTitleTemplate.replace('{name}', displayName);
 
   const buildSubscriptionThreadBody = (
-    displayName: string,
     bodyText: string,
     sourceUrl: string,
     sourceLabel?: string,
     publishedLabel?: string,
   ) => {
     const metaLines: string[] = [];
-    if (sourceLabel) metaLines.push(`• 출처: ${sourceLabel}`);
-    if (publishedLabel) metaLines.push(`• 게시 시점: ${publishedLabel}`);
+    if (sourceLabel) metaLines.push(`• ${textConfig.sourceMetaLabel}: ${sourceLabel}`);
+    if (publishedLabel) metaLines.push(`• ${textConfig.publishedMetaLabel}: ${publishedLabel}`);
 
     const metaBlock = metaLines.length ? `\n\n${metaLines.join('\n')}` : '';
-    return `${displayName}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기.)\n\n${bodyText}${metaBlock}\n\n🔗 원본 링크: ${sourceUrl}`;
+    return `${bodyText}${metaBlock}\n\n🔗 ${textConfig.linkLabel}: ${sourceUrl}`;
   };
 
   const processSource = async (source: Source) => {
@@ -81,10 +94,12 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
           }
 
           const displayName = source.name?.trim() || author;
-          const title = buildSubscriptionThreadTitle(displayName);
+          const title = source.last_post_signature
+            ? buildNewPostThreadTitle(displayName)
+            : buildInitialSubscriptionThreadTitle(displayName);
           const maxContentLength = 1800;
-          const truncatedContent = deps.truncateText(content || '내용 없음', maxContentLength);
-          const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, source.url, sourceLabel, publishedLabel);
+          const truncatedContent = deps.truncateText(content || textConfig.emptyContentPlaceholder, maxContentLength);
+          const fullContent = buildSubscriptionThreadBody(truncatedContent, source.url, sourceLabel, publishedLabel);
 
           await deps.createForumThread(forumChannelId, title, fullContent, imageBase64, userId);
           updateData.last_post_signature = postSignature;
@@ -247,11 +262,11 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
       const { url, channelId } = (req.body || {}) as TriggerTestBody;
 
       if (!url) {
-        return res.status(400).json({ error: 'YouTube URL is required.' });
+        return res.status(400).json({ error: textConfig.youtubeUrlRequiredMessage });
       }
 
       if (!channelId) {
-        return res.status(400).json({ error: 'Channel ID is required. Please select a channel first.' });
+        return res.status(400).json({ error: textConfig.channelIdRequiredMessage });
       }
 
       const urlValidation = deps.validateYouTubeUrl(url);
@@ -267,13 +282,13 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
       }
 
       const displayName = author;
-      const title = buildSubscriptionThreadTitle(displayName);
+      const title = buildNewPostThreadTitle(displayName);
       const maxContentLength = 1800;
-      const truncatedContent = deps.truncateText(content || '내용 없음', maxContentLength);
-      const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, url, sourceLabel, publishedLabel);
+      const truncatedContent = deps.truncateText(content || textConfig.emptyContentPlaceholder, maxContentLength);
+      const fullContent = buildSubscriptionThreadBody(truncatedContent, url, sourceLabel, publishedLabel);
 
       await deps.createForumThread(channelId, title, fullContent, imageBase64, req.user.id);
-      return res.json({ success: true, message: 'Thread created successfully!' });
+      return res.json({ success: true, message: textConfig.testThreadSuccessMessage });
     } catch (error: unknown) {
       const safeMsg = deps.getSafeErrorMessage(error, 'POST /api/test-trigger');
       console.error('Error in test-trigger:', error);
