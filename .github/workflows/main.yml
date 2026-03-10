@@ -8,11 +8,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      run_legacy_python:
-        description: "Run legacy Python bot scripts"
-        required: false
-        default: "false"
 
 concurrency:
   group: backend-ci-${{ github.workflow }}-${{ github.ref }}
@@ -68,17 +63,3 @@ jobs:
             sleep 1
           done
           npm run smoke:api
-
-  legacy-python-check:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_legacy_python == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Validate Python syntax
-        run: python -m py_compile bot_task.py youtube_monitor.py

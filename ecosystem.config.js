@@ -16,7 +16,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         START_BOT: "true",
-        START_AUTOMATION_BOT: "true"
+        START_AUTOMATION_JOBS: "false"
       }
     }
   ]

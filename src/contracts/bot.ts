@@ -22,7 +22,7 @@ export type BotRuntimeStatus = {
   manualReconnectCooldownRemainingSec: number;
 };
 
-export type AutomationJobName = 'news-analysis' | 'youtube-monitor';
+export type AutomationJobName = 'youtube-monitor' | 'news-monitor';
 
 export type AutomationJobStatus = {
   name: AutomationJobName;
@@ -46,7 +46,7 @@ export type AutomationRuntimeStatus = {
   healthy: boolean;
   summary: string;
   startedAt: string | null;
-  pythonCommand: string;
+  runtime: string;
   jobs: Record<AutomationJobName, AutomationJobStatus>;
 };
 

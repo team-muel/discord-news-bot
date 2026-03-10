@@ -1,10 +1,11 @@
 import crypto from 'crypto';
 import { Router } from 'express';
-import { getBotRuntimeSnapshot, requestManualReconnect } from '../bot';
+import { client, getBotRuntimeSnapshot, requestManualReconnect } from '../bot';
 import { BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, START_BOT } from '../config';
 import type { BotStatusApiResponse } from '../contracts/bot';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { appendBenchmarkEvents } from '../services/benchmarkStore';
+import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob } from '../services/automationBot';
 import { toStringParam } from '../utils/validation';
 
@@ -69,11 +70,11 @@ export function createBotRouter(): Router {
       healthy,
       statusGrade,
       statusSummary: statusGrade === 'healthy'
-        ? 'Bots are healthy'
+        ? 'Discord and automation services are healthy'
         : statusGrade === 'degraded'
-          ? 'One or more bot services are degraded'
-          : 'Bot services are offline',
-      recommendations: healthy ? [] : ['Check Discord bot and automation worker logs'],
+          ? 'One or more runtime services are degraded'
+          : 'Runtime services are offline',
+      recommendations: healthy ? [] : ['Check Discord bot and automation job logs'],
       nextCheckInSec,
       outageDurationMs,
       bot,
@@ -85,7 +86,7 @@ export function createBotRouter(): Router {
 
   router.post('/automation/:jobName/run', requireAdmin, async (req, res) => {
     const jobName = String(req.params.jobName || '');
-    if (jobName !== 'news-analysis' && jobName !== 'youtube-monitor') {
+    if (jobName !== 'youtube-monitor' && jobName !== 'news-monitor') {
       return res.status(404).json({ error: 'NOT_FOUND' });
     }
 
@@ -131,6 +132,90 @@ export function createBotRouter(): Router {
     }
 
     return res.status(202).json({ ok: true, message: result.message });
+  });
+
+  router.get('/usage', requireAdmin, async (_req, res) => {
+    const discordGuildCount = client.guilds.cache.size;
+
+    if (!isSupabaseConfigured()) {
+      return res.json({
+        discordGuildCount,
+        sources: {
+          total: 0,
+          active: 0,
+          youtube: 0,
+          news: 0,
+        },
+        byGuild: [],
+        note: 'SUPABASE_NOT_CONFIGURED',
+      });
+    }
+
+    const db = getSupabaseClient();
+    const { data, error } = await db
+      .from('sources')
+      .select('guild_id, is_active, name, created_at');
+
+    if (error) {
+      return res.status(500).json({ error: error.message || 'USAGE_QUERY_FAILED' });
+    }
+
+    const rows = data || [];
+    const byGuildMap = new Map<string, {
+      guildId: string;
+      total: number;
+      active: number;
+      youtube: number;
+      news: number;
+      newestCreatedAt: string | null;
+    }>();
+
+    for (const row of rows as Array<{ guild_id: string | null; is_active: boolean | null; name: string | null; created_at: string | null }>) {
+      const guildId = row.guild_id || 'unknown';
+      const stat = byGuildMap.get(guildId) || {
+        guildId,
+        total: 0,
+        active: 0,
+        youtube: 0,
+        news: 0,
+        newestCreatedAt: null,
+      };
+
+      stat.total += 1;
+      if (row.is_active) {
+        stat.active += 1;
+      }
+
+      if ((row.name || '').startsWith('youtube-')) {
+        stat.youtube += 1;
+      } else if (row.name === 'google-finance-news') {
+        stat.news += 1;
+      }
+
+      if (row.created_at && (!stat.newestCreatedAt || Date.parse(row.created_at) > Date.parse(stat.newestCreatedAt))) {
+        stat.newestCreatedAt = row.created_at;
+      }
+
+      byGuildMap.set(guildId, stat);
+    }
+
+    const byGuild = [...byGuildMap.values()].sort((a, b) => b.active - a.active || b.total - a.total);
+    const sourceTotal = rows.length;
+    const sourceActive = rows.filter((row: any) => Boolean(row.is_active)).length;
+    const youtubeTotal = rows.filter((row: any) => String(row.name || '').startsWith('youtube-')).length;
+    const newsTotal = rows.filter((row: any) => String(row.name || '') === 'google-finance-news').length;
+
+    return res.json({
+      discordGuildCount,
+      sources: {
+        total: sourceTotal,
+        active: sourceActive,
+        youtube: youtubeTotal,
+        news: newsTotal,
+      },
+      byGuild,
+      generatedAt: new Date().toISOString(),
+    });
   });
 
   return router;

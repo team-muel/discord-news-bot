@@ -1,9 +1,0 @@
-discord.py
-feedparser
-openai
-supabase
-python-dotenv
-requests
-pandas
-matplotlib
-PyPDF2

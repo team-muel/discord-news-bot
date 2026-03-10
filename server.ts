@@ -2,7 +2,7 @@ import 'dotenv/config';
 import logger from './src/logger';
 import initMonitoring from './src/init';
 import { PORT, START_BOT } from './src/config';
-import { startAutomationBot } from './src/services/automationBot';
+import { startAutomationJobs } from './src/services/automationBot';
 import { startTradingEngine } from './src/services/tradingEngine';
 
 // Initialize monitoring (Sentry) if configured
@@ -12,19 +12,19 @@ import { createApp } from './src/app';
 
 const app = createApp();
 
-startAutomationBot();
+startAutomationJobs();
 startTradingEngine();
 
-logger.info('[BOOT] START_BOT=%s START_AUTOMATION_BOT=%s DISCORD_TOKEN_PRESENT=%s',
+logger.info('[BOOT] START_BOT=%s START_AUTOMATION_JOBS=%s DISCORD_TOKEN_PRESENT=%s',
   String(START_BOT),
-  String(process.env.START_AUTOMATION_BOT ?? 'undefined'),
+  String(process.env.START_AUTOMATION_JOBS ?? process.env.START_AUTOMATION_BOT ?? 'undefined'),
   String(Boolean(process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN)),
 );
 
 if (START_BOT) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
   if (!token) {
-    logger.error('START_BOT=true but DISCORD token not provided. Running automation-only fallback.');
+    logger.error('START_BOT=true but DISCORD token not provided. Bot and automation jobs cannot start without a token.');
   }
 
   if (token) {
@@ -34,7 +34,7 @@ if (START_BOT) {
         logger.info('[BOT] START_BOT enabled and bot started');
       })
       .catch((err) => {
-        logger.error('[BOT] Failed to start while START_BOT=true. Continuing with automation-only mode: %o', err);
+        logger.error('[BOT] Failed to start while START_BOT=true: %o', err);
       });
   }
 } else {

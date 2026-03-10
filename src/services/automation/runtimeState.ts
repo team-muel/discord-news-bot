@@ -1,8 +1,8 @@
 import type { AutomationJobName, AutomationJobState, JobConfig } from './types';
 
 export const createInitialJobStates = (): Record<AutomationJobName, AutomationJobState> => ({
-  'news-analysis': {
-    name: 'news-analysis',
+  'youtube-monitor': {
+    name: 'youtube-monitor',
     enabled: false,
     schedule: '',
     scriptPath: '',
@@ -17,8 +17,8 @@ export const createInitialJobStates = (): Record<AutomationJobName, AutomationJo
     lastDurationMs: null,
     lastExitCode: null,
   },
-  'youtube-monitor': {
-    name: 'youtube-monitor',
+  'news-monitor': {
+    name: 'news-monitor',
     enabled: false,
     schedule: '',
     scriptPath: '',

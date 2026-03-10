@@ -1,6 +1,0 @@
-discord.py
-feedparser
-openai
-supabase
-python-dotenv
-requests

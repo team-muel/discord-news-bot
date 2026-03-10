@@ -1,6 +1,6 @@
-# 24/7 Operations Runbook (Server + Main Discord Bot + Automation Workers)
+# 24/7 Operations Runbook (Server + Discord Bot + Automation Jobs)
 
-This project runs both bots from the server process (`server.ts`).
+This project runs one Discord bot plus automation jobs from the server process (`server.ts`).
 Use PM2 to keep the process alive and auto-restart on failures.
 
 ## 1) Required Environment Variables
@@ -10,7 +10,7 @@ Set these in your runtime environment (`.env` or host secret manager):
 - `NODE_ENV=production`
 - `START_BOT=true`
 - `START_TRADING_BOT=false` (enable only when strategy loop should run on this instance)
-- `START_AUTOMATION_BOT=true`
+- `START_AUTOMATION_JOBS=true`
 - `DISCORD_TOKEN=<your token>` (or `DISCORD_BOT_TOKEN`)
 - `JWT_SECRET=<strong secret>`
 - `DEV_AUTH_ENABLED=false`
@@ -28,13 +28,12 @@ Compact alias set also supported:
 
 Automation token behavior:
 
-- If `DISCORD_TOKEN` / `DISCORD_BOT_TOKEN` is missing, automation workers are skipped by design.
-- In that case automation is treated as disabled in runtime status (no worker restart loop).
-- To run only API+primary bot, this token can remain unset.
+- If `DISCORD_TOKEN` / `DISCORD_BOT_TOKEN` is missing, automation monitor is skipped by design.
+- In that case automation is treated as disabled in runtime status.
+- To run only API, this token can remain unset.
 
 Optional but recommended:
 
-- `AUTOMATION_PYTHON_COMMAND=python`
 - `DISCORD_READY_TIMEOUT_MS=15000`
 - `DISCORD_START_RETRIES=3`
 - `LOG_LEVEL=info`
@@ -66,36 +65,17 @@ When deploying as a Render `Web Service`, set commands exactly as below:
 - Build Command: `npm ci; npm run build`
 - Start Command: `npm run start`
 
-Why: `npm run build` now installs Python dependencies from `requirements.txt` using
-hash-based caching (`.cache/python-requirements.sha256`). If requirements did not change,
-the build skips `pip install` for faster deploys.
-
-Additional deploy speed options:
-
-- If automation is off (`START_AUTOMATION_BOT=false`), Python dependency installation is skipped automatically.
-- You can force skip with `SKIP_PYTHON_DEPS=true`.
-- Dependency profile can be switched via `PYTHON_REQUIREMENTS_PROFILE`:
-  - `full` (default): installs full automation stack (`pandas`, `matplotlib`, `PyPDF2` 포함)
-  - `core`: installs minimal runtime dependencies only
-- Render build command uses `npm ci --no-audit --no-fund` to reduce install overhead.
+Why: Node-only runtime no longer installs Python dependencies in the build step.
 
 Also verify Runtime Environment Variables in Render:
 
 - `START_BOT=true`
-- `START_AUTOMATION_BOT=true` (Render process runs 24/7 automation jobs)
+- `START_AUTOMATION_JOBS=true` (Render process runs 24/7 automation jobs)
 - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
-- For automation workers (shared main-bot token):
-  - `DISCORD_TOKEN=<main bot token>` (or `DISCORD_BOT_TOKEN`)
-  - optional fallback: `AUTOMATION_DISCORD_TOKEN=<main bot token>`
 - Automation scheduling controls:
-  - `AUTOMATION_PERSISTENT_WORKERS=true` (recommended)
-  - `AUTOMATION_RUN_ON_START=true`
-  - `AUTOMATION_NEWS_ENABLED=true`
   - `AUTOMATION_YOUTUBE_ENABLED=true`
-  - `AUTOMATION_NEWS_INTERVAL_MIN=30`
-  - `AUTOMATION_YOUTUBE_INTERVAL_MIN=10`
-- `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `TARGET_CHANNEL_ID`
-- `PYTHON_REQUIREMENTS_PROFILE=full` (all features)
+  - `YOUTUBE_MONITOR_INTERVAL_MS=300000`
+- `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `ALPHA_VANTAGE_KEY`
 - AI-trading execution mode (single Render default):
   - Recommended local mode (same service process):
     - `AI_TRADING_MODE=local`
@@ -178,7 +158,7 @@ curl -fsS http://localhost:3000/ready
 ## 6) Common Failure Cases
 
 - `offline` status: `START_BOT` is false or Discord token is missing.
-- automation degraded: Python not found or job script exits non-zero.
+- automation degraded: YouTube RSS fetch errors or invalid subscription/channel mapping.
 - frequent restarts: inspect logs with `npm run pm2:logs` and verify env vars.
 
 ## 7) Render Email Alerts Off (Logs Only)
@@ -193,16 +173,15 @@ Disable email alerts in Render:
 3. Disable email channel for this service/event policy.
 4. Keep monitoring through `Logs` and `/health`.
 
-Recommended for your current setup (single main bot token):
+Recommended for your current setup:
 
-- Keep `START_AUTOMATION_BOT=true` only when `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`) is configured.
-- If you intentionally disable automation, set `START_AUTOMATION_BOT=false`.
+- Keep `START_AUTOMATION_JOBS=true` only when `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`) is configured.
+- If you intentionally disable automation, set `START_AUTOMATION_JOBS=false`.
 - Keep checking issues through Render Logs only.
 
 ## 8) Workflow Migration Policy
 
 Recurring automation jobs are now owned by the Render service, not GitHub Actions.
 
-- YouTube monitoring schedule has been moved to Render automation worker.
-- `.github/workflows/youtube_check.yml` is kept as manual fallback (`workflow_dispatch`) only.
+- YouTube monitoring schedule is handled by the in-process Node monitor.
 - Keep GitHub Actions for CI (`main.yml`) and deploy trigger (`render-deploy.yml`).

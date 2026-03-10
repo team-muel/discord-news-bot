@@ -20,7 +20,7 @@
   - alias: `OAUTH_REDIRECT_ALLOWLIST`
 - `START_BOT`: `false` for API-only mode, `true` to start Discord bot in same process
 - `START_TRADING_BOT`: `true` to run CVD-based trading engine loop in same process
-- `START_AUTOMATION_BOT`: `true` to run automation workers (legacy python jobs)
+- `START_AUTOMATION_JOBS`: `true` to run Node automation monitor jobs
 - `JWT_SECRET`: session token signing key
   - compatibility alias: `SESSION_SECRET`
 - `DEV_AUTH_ENABLED`: enables code-based dev auth endpoints (`/api/auth/sdk`, `/api/auth/callback`)
@@ -100,7 +100,7 @@
   - Returns: `healthy`, `statusGrade` (`healthy|degraded|offline`), `statusSummary`, `recommendations`, `nextCheckInSec`, `outageDurationMs`, `bot`, `automation`
 - `POST /api/bot/reconnect` (admin required)
 - `POST /api/bot/automation/:jobName/run` (admin required)
-  - `jobName`: `news-analysis` or `youtube-monitor`
+  - `jobName`: `youtube-monitor`
 
 ### Benchmark
 
