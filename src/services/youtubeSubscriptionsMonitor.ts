@@ -1,11 +1,16 @@
 import { ChannelType, type Client } from 'discord.js';
 import logger from '../logger';
+import { runWithConcurrency } from '../utils/async';
+import { fetchWithTimeout } from '../utils/network';
+import { scrapeLatestCommunityPostByChannelId } from './youtubeCommunityScraper';
+import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type SubscriptionRow = {
   id: number;
   guild_id: string | null;
   url: string;
+  name: string | null;
   channel_id: string | null;
   is_active: boolean | null;
   last_post_id: string | null;
@@ -15,6 +20,7 @@ type SubscriptionRow = {
 type FeedEntry = {
   id: string;
   title: string;
+  content?: string;
   link: string;
   published: string;
   author: string;
@@ -42,8 +48,28 @@ const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.YOUTUBE_MONITOR_FETC
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 const CHANNEL_ID_RE = /\/channel\/(UC[0-9A-Za-z_-]{20,})/;
 
-const parseMode = (url: string): 'videos' | 'posts' => {
-  return url.endsWith('#posts') ? 'posts' : 'videos';
+const parseMode = (row: SubscriptionRow): 'videos' | 'posts' => {
+  if (row.url.endsWith('#posts')) {
+    return 'posts';
+  }
+
+  const name = String(row.name || '').toLowerCase();
+  if (name.includes('posts')) {
+    return 'posts';
+  }
+
+  return 'videos';
+};
+
+const isYouTubeSourceRow = (row: SubscriptionRow): boolean => {
+  const name = String(row.name || '').toLowerCase();
+  const url = String(row.url || '').toLowerCase();
+
+  if (name.startsWith('youtube-')) {
+    return true;
+  }
+
+  return url.includes('youtube.com/') || url.includes('youtu.be/');
 };
 
 const parseChannelId = (url: string): string | null => {
@@ -79,71 +105,103 @@ const parseFirstEntry = (xml: string): FeedEntry | null => {
   return { id, title, link, published, author };
 };
 
+const formatThreadDateLabel = (isoLike: string | undefined): string => {
+  const date = isoLike ? new Date(isoLike) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return '최근';
+  }
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const buildCommunityThreadBody = (latest: FeedEntry): string => {
+  const content = String(latest.content || latest.title || '').trim();
+  const summary = content.length > 1900 ? `${content.slice(0, 1900)}...` : content;
+
+  return [
+    '이제부터 해당 채널의 소식을 실시간으로 전달합니다.',
+    '',
+    '최신 게시글:',
+    `[${latest.title}]`,
+    '',
+    summary || '(본문 추출 실패)',
+    '',
+    latest.link,
+  ].join('\n');
+};
+
+const sendCommunityPostWithThread = async (channel: any, latest: FeedEntry) => {
+  const starter = await channel.send({
+    content: `⚠️ Muel 구독 시작:\n${latest.author}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기)`,
+  });
+
+  const threadNameBase = `${latest.author} 게시글 알림 ${formatThreadDateLabel(latest.published)}`;
+  const threadName = threadNameBase.slice(0, 90);
+  const canCreateThread = channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement;
+
+  if (canCreateThread && starter && typeof starter.startThread === 'function') {
+    const thread = await starter.startThread({
+      name: threadName,
+      autoArchiveDuration: 60,
+      reason: 'YouTube community post subscription update',
+    });
+
+    await thread.send({ content: buildCommunityThreadBody(latest) });
+    return;
+  }
+
+  await channel.send({ content: buildCommunityThreadBody(latest) });
+};
+
 const fetchLatestFromFeed = async (channelId: string, mode: 'videos' | 'posts'): Promise<FeedEntry | null> => {
   const feedUrl = mode === 'videos'
     ? `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
     : `https://www.youtube.com/feeds/posts.xml?channel_id=${channelId}`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetchWithTimeout(feedUrl, {
+      headers: {
+        'User-Agent': 'MuelBot/1.0',
+        'Accept-Language': 'ko,en;q=0.8',
+      },
+    }, FETCH_TIMEOUT_MS);
 
-  const res = await fetch(feedUrl, {
-    signal: controller.signal,
-    headers: {
-      'User-Agent': 'MuelBot/1.0',
-      'Accept-Language': 'ko,en;q=0.8',
-    },
-  }).finally(() => clearTimeout(timeout));
-
-  if (!res.ok) {
-    throw new Error(`Feed request failed: ${res.status}`);
+    if (res.ok) {
+      const xml = await res.text();
+      const entry = parseFirstEntry(xml);
+      if (entry) {
+        return entry;
+      }
+    }
+  } catch {
+    // Fall through to community scraper fallback for posts mode.
   }
 
-  const xml = await res.text();
-  return parseFirstEntry(xml);
+  if (mode === 'posts') {
+    return scrapeLatestCommunityPostByChannelId(channelId, FETCH_TIMEOUT_MS);
+  }
+
+  throw new Error('Feed request failed');
 };
 
 const updateRowState = async (id: number, patch: Record<string, string | null>) => {
-  const db = getSupabaseClient();
-  const { error } = await db.from('sources').update({ ...patch, last_check_at: new Date().toISOString() }).eq('id', id);
-  if (error) {
-    logger.warn('[YT-MONITOR] failed to update source=%s: %s', String(id), error.message);
-  }
+  await updateSourceState({ id, patch, logPrefix: '[YT-MONITOR]' });
 };
 
 const claimRowLock = async (id: number): Promise<boolean> => {
-  const db = getSupabaseClient();
-  const nowIso = new Date().toISOString();
-  const leaseUntilIso = new Date(Date.now() + LOCK_LEASE_MS).toISOString();
-
-  const { data, error } = await db
-    .from('sources')
-    .update({ lock_token: INSTANCE_ID, lock_expires_at: leaseUntilIso })
-    .eq('id', id)
-    .eq('is_active', true)
-    .or(`lock_token.is.null,lock_expires_at.lt.${nowIso},lock_token.eq.${INSTANCE_ID}`)
-    .select('id')
-    .limit(1);
-
-  if (error) {
-    logger.warn('[YT-MONITOR] lock claim failed source=%s: %s', String(id), error.message);
-    return false;
-  }
-
-  return Array.isArray(data) && data.length > 0;
+  return claimSourceLock({
+    id,
+    instanceId: INSTANCE_ID,
+    lockLeaseMs: LOCK_LEASE_MS,
+    logPrefix: '[YT-MONITOR]',
+  });
 };
 
 const releaseRowLock = async (id: number) => {
-  const db = getSupabaseClient();
-  const { error } = await db
-    .from('sources')
-    .update({ lock_token: null, lock_expires_at: null })
-    .eq('id', id)
-    .eq('lock_token', INSTANCE_ID);
-
-  if (error) {
-    logger.warn('[YT-MONITOR] lock release failed source=%s: %s', String(id), error.message);
-  }
+  await releaseSourceLock({ id, instanceId: INSTANCE_ID, logPrefix: '[YT-MONITOR]' });
 };
 
 const processRow = async (client: Client, row: SubscriptionRow) => {
@@ -157,7 +215,7 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
   }
 
   try {
-  const mode = parseMode(row.url);
+  const mode = parseMode(row);
   const channelId = parseChannelId(row.url);
   if (!channelId || !row.channel_id) {
     await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Invalid subscription URL/channel' });
@@ -200,14 +258,7 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
     return;
   }
 
-  await channel.send({
-    embeds: [{
-      title: `${latest.author} 새 커뮤니티 게시글`,
-      description: `${latest.title}\n\n${latest.link}`,
-      color: 0xCC0000,
-      url: latest.link,
-    }],
-  });
+  await sendCommunityPostWithThread(channel, latest);
 
   await updateRowState(row.id, {
     last_check_status: 'success',
@@ -219,26 +270,6 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
   }
 };
 
-const runWithConcurrency = async <T>(items: T[], worker: (item: T) => Promise<void>, concurrency: number) => {
-  if (items.length === 0) {
-    return;
-  }
-
-  let index = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (true) {
-      const current = index;
-      index += 1;
-      if (current >= items.length) {
-        return;
-      }
-      await worker(items[current]);
-    }
-  });
-
-  await Promise.all(workers);
-};
-
 const runTick = async (client: Client, guildId?: string): Promise<{ processed: number; failed: number }> => {
   if (!isSupabaseConfigured()) {
     return { processed: 0, failed: 0 };
@@ -247,9 +278,8 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
   const db = getSupabaseClient();
   let query = db
     .from('sources')
-    .select('id,guild_id,url,channel_id,is_active,last_post_id,last_post_signature')
-    .eq('is_active', true)
-    .ilike('url', '%youtube.com/channel/%#%');
+    .select('id,guild_id,url,name,channel_id,is_active,last_post_id,last_post_signature')
+    .eq('is_active', true);
 
   if (guildId) {
     query = query.eq('guild_id', guildId);
@@ -262,7 +292,7 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
     return { processed: 0, failed: 0 };
   }
 
-  const rows = (data || []) as SubscriptionRow[];
+  const rows = ((data || []) as SubscriptionRow[]).filter(isYouTubeSourceRow);
   let processed = 0;
   let failed = 0;
 
@@ -306,7 +336,15 @@ const executeTick = async (client: Client, guildId?: string) => {
       lastError = null;
     }
     lastDurationMs = Date.now() - startMs;
-    return { ok: true, message: 'Tick completed' as const };
+    if (tick.processed === 0) {
+      return { ok: true, message: 'Tick completed: processed=0 failed=0 (no matching subscriptions for this guild)' };
+    }
+
+    if (tick.failed > 0) {
+      return { ok: true, message: `Tick completed with partial failures: processed=${tick.processed} failed=${tick.failed}` };
+    }
+
+    return { ok: true, message: `Tick completed: processed=${tick.processed} failed=0` };
   } catch (err) {
     failCount += 1;
     lastTickStatus = 'failed';

@@ -7,6 +7,7 @@ import {
   AI_TRADING_TIMEOUT_MS,
 } from '../config';
 import type { TradeExecutionRequest, TradeExecutionResult } from '../contracts/trade';
+import { fetchWithTimeout } from '../utils/network';
 import { executeLocalAiTradingOrder, getLocalAiTradingPosition, isLocalAiTradingConfigured } from './localAiTradingClient';
 
 const sanitizePath = (value: string) => (value.startsWith('/') ? value : `/${value}`);
@@ -14,14 +15,7 @@ const sanitizePath = (value: string) => (value.startsWith('/') ? value : `/${val
 const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, '');
 
 const requestWithTimeout = async (input: string, init: RequestInit, timeoutMs: number): Promise<Response> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchWithTimeout(input, init, timeoutMs);
 };
 
 export function isAiTradingConfigured(): boolean {

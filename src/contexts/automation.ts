@@ -1,0 +1,27 @@
+// Context entrypoint: automation and bot runtime operations.
+export {
+  getAutomationRuntimeSnapshot,
+  isAutomationEnabled,
+  registerAutomationManualTrigger,
+  startAutomationJobs,
+  triggerAutomationJob,
+  type AutomationJobName,
+  type AutomationRuntimeSnapshot,
+} from '../services/automationBot';
+
+export {
+  getNewsSentimentMonitorSnapshot,
+  isNewsSentimentMonitorEnabled,
+  startNewsSentimentMonitor,
+  stopNewsSentimentMonitor,
+  triggerNewsSentimentMonitor,
+} from '../services/newsSentimentMonitor';
+
+export {
+  getYouTubeSubscriptionsMonitorSnapshot,
+  startYouTubeSubscriptionsMonitor,
+  stopYouTubeSubscriptionsMonitor,
+  triggerYouTubeSubscriptionsMonitor,
+} from '../services/youtubeSubscriptionsMonitor';
+
+export { startRuntimeAlerts, stopRuntimeAlerts } from '../services/runtimeAlertService';

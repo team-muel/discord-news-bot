@@ -3,6 +3,10 @@
 This project runs one Discord bot plus automation jobs from the server process (`server.ts`).
 Use PM2 to keep the process alive and auto-restart on failures.
 
+Related architecture guide:
+
+- `docs/CONTEXT_ISOLATION.md` for domain-focused review/edit workflow.
+
 ## 1) Required Environment Variables
 
 Set these in your runtime environment (`.env` or host secret manager):

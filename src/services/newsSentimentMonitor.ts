@@ -1,5 +1,7 @@
 import { type Client } from 'discord.js';
 import logger from '../logger';
+import { fetchWithTimeout } from '../utils/network';
+import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type NewsItem = {
@@ -207,12 +209,8 @@ const isSemanticDuplicateWithAi = async (candidate: NewsItem, recents: NewsHisto
   ].join('\n');
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), Math.min(FETCH_TIMEOUT_MS, 12_000));
-
-    const response = await fetch(OPENAI_URL, {
+    const response = await fetchWithTimeout(OPENAI_URL, {
       method: 'POST',
-      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -226,7 +224,7 @@ const isSemanticDuplicateWithAi = async (candidate: NewsItem, recents: NewsHisto
           { role: 'user', content: prompt },
         ],
       }),
-    }).finally(() => clearTimeout(timeout));
+    }, Math.min(FETCH_TIMEOUT_MS, 12_000));
 
     if (!response.ok) {
       return false;
@@ -361,16 +359,12 @@ const extractFinanceNewsItems = (html: string): NewsItem[] => {
 };
 
 const fetchLatestGoogleFinanceNews = async (): Promise<NewsItem[]> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  const res = await fetch(GOOGLE_FINANCE_NEWS_URL, {
-    signal: controller.signal,
+  const res = await fetchWithTimeout(GOOGLE_FINANCE_NEWS_URL, {
     headers: {
       'User-Agent': 'MuelBot/1.0',
       'Accept-Language': 'ko,en;q=0.8',
     },
-  }).finally(() => clearTimeout(timeout));
+  }, FETCH_TIMEOUT_MS);
 
   if (!res.ok) {
     throw new Error(`Google Finance request failed: ${res.status}`);
@@ -399,46 +393,20 @@ const pickBestCandidate = async (candidates: NewsItem[], recentHistory: NewsHist
 };
 
 const claimRowLock = async (id: number): Promise<boolean> => {
-  const db = getSupabaseClient();
-  const nowIso = new Date().toISOString();
-  const leaseUntilIso = new Date(Date.now() + LOCK_LEASE_MS).toISOString();
-
-  const { data, error } = await db
-    .from('sources')
-    .update({ lock_token: INSTANCE_ID, lock_expires_at: leaseUntilIso })
-    .eq('id', id)
-    .eq('is_active', true)
-    .or(`lock_token.is.null,lock_expires_at.lt.${nowIso},lock_token.eq.${INSTANCE_ID}`)
-    .select('id')
-    .limit(1);
-
-  if (error) {
-    logger.warn('[NEWS-MONITOR] lock claim failed source=%s: %s', String(id), error.message);
-    return false;
-  }
-
-  return Array.isArray(data) && data.length > 0;
+  return claimSourceLock({
+    id,
+    instanceId: INSTANCE_ID,
+    lockLeaseMs: LOCK_LEASE_MS,
+    logPrefix: '[NEWS-MONITOR]',
+  });
 };
 
 const releaseRowLock = async (id: number) => {
-  const db = getSupabaseClient();
-  const { error } = await db
-    .from('sources')
-    .update({ lock_token: null, lock_expires_at: null })
-    .eq('id', id)
-    .eq('lock_token', INSTANCE_ID);
-
-  if (error) {
-    logger.warn('[NEWS-MONITOR] lock release failed source=%s: %s', String(id), error.message);
-  }
+  await releaseSourceLock({ id, instanceId: INSTANCE_ID, logPrefix: '[NEWS-MONITOR]' });
 };
 
 const updateRowState = async (id: number, patch: Record<string, string | null>) => {
-  const db = getSupabaseClient();
-  const { error } = await db.from('sources').update({ ...patch, last_check_at: new Date().toISOString() }).eq('id', id);
-  if (error) {
-    logger.warn('[NEWS-MONITOR] failed to update source=%s: %s', String(id), error.message);
-  }
+  await updateSourceState({ id, patch, logPrefix: '[NEWS-MONITOR]' });
 };
 
 const sendNews = async (client: Client, channelId: string, item: NewsItem) => {
@@ -582,7 +550,15 @@ const executeTick = async (client: Client, guildId?: string) => {
       lastError = null;
     }
     lastDurationMs = Date.now() - startMs;
-    return { ok: true, message: 'News tick completed' as const };
+    if (tick.processed === 0) {
+      return { ok: true, message: 'News tick completed: processed=0 failed=0 (no matching subscriptions for this guild)' };
+    }
+
+    if (tick.failed > 0) {
+      return { ok: true, message: `News tick completed with partial failures: processed=${tick.processed} failed=${tick.failed}` };
+    }
+
+    return { ok: true, message: `News tick completed: processed=${tick.processed} failed=0` };
   } catch (error) {
     failCount += 1;
     lastTickStatus = 'failed';
