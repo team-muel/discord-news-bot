@@ -1,6 +1,5 @@
 import { createApp } from './src/app';
 import { client, startBot } from './src/bot';
-import { startSecondaryBot, stopSecondaryBot } from './src/secondaryBot';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const app = createApp();
@@ -38,12 +37,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[RENDER_EVENT] SERVER_READY port=${PORT}`);
   console.log(`Server running on http://localhost:${PORT}`);
 
-  const primaryBotStarted = bootstrapPrimaryBot();
-  if (primaryBotStarted) {
-    void startSecondaryBot();
-  } else {
-    console.log('[RENDER_EVENT] SECONDARY_BOT_SKIPPED reason=primary_disabled');
-  }
+  bootstrapPrimaryBot();
 });
 
 const gracefulShutdown = async (signal: NodeJS.Signals) => {
@@ -55,7 +49,6 @@ const gracefulShutdown = async (signal: NodeJS.Signals) => {
   } catch (error) {
     console.error('[RENDER_EVENT] BOT_PRIMARY_DESTROY_FAILED', error);
   }
-  await stopSecondaryBot();
   process.exit(0);
 };
 
