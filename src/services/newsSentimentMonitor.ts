@@ -55,7 +55,10 @@ const NEWS_HISTORY_LOOKBACK_HOURS = Math.max(1, Number(process.env.NEWS_DEDUP_LO
 const NEWS_HISTORY_MAX_ITEMS = Math.max(10, Number(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS || 60));
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || 'gpt-4o-mini';
+const OPENAI_NEWS_SUMMARY_MODEL = process.env.OPENAI_NEWS_SUMMARY_MODEL || 'gpt-4o-mini';
 const NEWS_AI_DEDUP_ENABLED = (process.env.NEWS_AI_DEDUP_ENABLED || 'true').toLowerCase() !== 'false';
+const NEWS_KR_SUMMARY_ENABLED = (process.env.NEWS_KR_SUMMARY_ENABLED || 'true').toLowerCase() !== 'false';
+const SUMMARY_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS || 12_000));
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 
 const isGoogleFinanceSourceRow = (row: NewsChannelRow): boolean => {
@@ -127,6 +130,137 @@ const parseSourceName = (href: string): string | null => {
     return url.hostname.replace(/^www\./, '');
   } catch {
     return null;
+  }
+};
+
+const stripHtmlBlocks = (html: string): string => {
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const pickMetaContent = (html: string, key: string): string => {
+  const re = new RegExp(`<meta[^>]+(?:name|property)=["']${key}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
+  const m = html.match(re);
+  return decodeXml(m?.[1] || '').trim();
+};
+
+const pickTitleTag = (html: string): string => {
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return decodeXml(stripHtmlBlocks(m?.[1] || '')).trim();
+};
+
+const enforceTwoToThreeLines = (text: string): string => {
+  const normalized = String(text || '').replace(/\r/g, '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.replace(/^[-*\d.\s]+/, '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  if (lines.length >= 2) {
+    return lines.join('\n');
+  }
+
+  const sentenceChunks = normalized
+    .split(/(?<=[.!?다])\s+/u)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  if (sentenceChunks.length >= 2) {
+    return sentenceChunks.join('\n');
+  }
+
+  return lines[0] || sentenceChunks[0] || normalized;
+};
+
+const loadArticleContext = async (link: string): Promise<{ title: string; description: string }> => {
+  try {
+    const response = await fetchWithTimeout(link, {
+      headers: {
+        'User-Agent': 'MuelBot/1.0',
+        'Accept-Language': 'ko,en;q=0.8',
+      },
+      redirect: 'follow',
+    }, SUMMARY_FETCH_TIMEOUT_MS);
+
+    if (!response.ok) {
+      return { title: '', description: '' };
+    }
+
+    const html = await response.text();
+    const ogTitle = pickMetaContent(html, 'og:title');
+    const metaDesc = pickMetaContent(html, 'description') || pickMetaContent(html, 'og:description');
+    const title = ogTitle || pickTitleTag(html);
+    const description = metaDesc || '';
+
+    return { title: title.slice(0, 300), description: description.slice(0, 1200) };
+  } catch {
+    return { title: '', description: '' };
+  }
+};
+
+const buildFallbackKoreanSummary = (item: NewsItem): string => {
+  return [
+    `핵심: ${item.title}`,
+    `출처: ${item.sourceName || 'Google Finance'} 보도입니다.`,
+  ].join('\n');
+};
+
+const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
+  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
+  if (!NEWS_KR_SUMMARY_ENABLED || !apiKey) {
+    return '';
+  }
+
+  const article = await loadArticleContext(item.link);
+  const prompt = [
+    '다음 금융 뉴스를 한국어로 2~3줄 요약하세요.',
+    '조건:',
+    '- 출력은 순수 텍스트 2~3줄만',
+    '- 과장/추측 금지, 주어진 정보만 사용',
+    '- 핵심 사실과 시장 영향 포인트를 포함',
+    `원문 제목: ${item.title}`,
+    `원문 링크: ${item.link}`,
+    `기사 제목(메타): ${article.title || '(없음)'}`,
+    `기사 설명(메타): ${article.description || '(없음)'}`,
+  ].join('\n');
+
+  try {
+    const response = await fetchWithTimeout(OPENAI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: OPENAI_NEWS_SUMMARY_MODEL,
+        temperature: 0.2,
+        max_tokens: 220,
+        messages: [
+          { role: 'system', content: 'You are a precise Korean financial news summarizer.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    }, Math.min(FETCH_TIMEOUT_MS, 12_000));
+
+    if (!response.ok) {
+      return '';
+    }
+
+    const payload = (await response.json()) as Record<string, any>;
+    const content = String(payload?.choices?.[0]?.message?.content || '');
+    return enforceTwoToThreeLines(content);
+  } catch {
+    return '';
   }
 };
 
@@ -475,17 +609,19 @@ const updateRowState = async (id: number, patch: Record<string, string | null>) 
   await updateSourceState({ id, patch, logPrefix: '[NEWS-MONITOR]' });
 };
 
-const sendNews = async (client: Client, channelId: string, item: NewsItem) => {
+const sendNews = async (client: Client, channelId: string, item: NewsItem, summary: string | null) => {
   const channel = await client.channels.fetch(channelId);
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
     throw new Error('Target news channel is not sendable');
   }
 
+  const summaryBlock = enforceTwoToThreeLines(summary || '') || buildFallbackKoreanSummary(item);
+
   await channel.send({
     embeds: [
       {
         title: `[Google Finance] ${item.title}`.slice(0, 250),
-        description: `${item.link}`,
+        description: `${summaryBlock}\n\n${item.link}`,
         color: 0x4285F4,
         footer: { text: item.sourceName ? `source: ${item.sourceName}` : 'source: Google Finance' },
       },
@@ -552,6 +688,8 @@ const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats>
       continue;
     }
 
+    const latestSummary = await summarizeNewsInKorean(latest);
+
     let sentAtLeastOnce = false;
 
     for (const row of group) {
@@ -574,7 +712,7 @@ const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats>
           continue;
         }
 
-        await sendNews(client, row.channel_id, latest);
+        await sendNews(client, row.channel_id, latest, latestSummary);
         stats.sent += 1;
         sentAtLeastOnce = true;
         await updateRowState(row.id, {
