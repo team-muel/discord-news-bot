@@ -33,6 +33,12 @@ export type CrawlerRuntimeRegistryDeps = {
 };
 
 export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) => {
+  const buildSubscriptionThreadTitle = (displayName: string) => `🔔 Muel 구독 시작: ${displayName}`;
+
+  const buildSubscriptionThreadBody = (displayName: string, bodyText: string, sourceUrl: string) => {
+    return `${displayName}님이 새 커뮤니티 게시글 스레드를 시작하셨어요.(스레드 모두 보기.)\n\n${bodyText}\n\n🔗 원본 링크: ${sourceUrl}`;
+  };
+
   const processSource = async (source: Source) => {
     const userId = source.user_id;
     const forumChannelId = source.channel_id;
@@ -63,10 +69,11 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
             imageBase64 = await deps.imageUrlToBase64(imageUrl);
           }
 
-          const title = `${author}님의 새 커뮤니티 게시글`;
+          const displayName = source.name?.trim() || author;
+          const title = buildSubscriptionThreadTitle(displayName);
           const maxContentLength = 1800;
           const truncatedContent = deps.truncateText(content || '내용 없음', maxContentLength);
-          const fullContent = `${truncatedContent}\n\n🔗 원본 링크: ${source.url}`;
+          const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, source.url);
 
           await deps.createForumThread(forumChannelId, title, fullContent, imageBase64, userId);
           updateData.last_post_signature = postSignature;
@@ -248,10 +255,11 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
         imageBase64 = await deps.imageUrlToBase64(imageUrl);
       }
 
-      const title = `${author}님의 새 커뮤니티 게시글`;
+      const displayName = author;
+      const title = buildSubscriptionThreadTitle(displayName);
       const maxContentLength = 1800;
       const truncatedContent = deps.truncateText(content || '내용 없음', maxContentLength);
-      const fullContent = `${truncatedContent}\n\n🔗 원본 링크: ${url}`;
+      const fullContent = buildSubscriptionThreadBody(displayName, truncatedContent, url);
 
       await deps.createForumThread(channelId, title, fullContent, imageBase64, req.user.id);
       return res.json({ success: true, message: 'Thread created successfully!' });
