@@ -4,6 +4,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type SubscriptionRow = {
   id: number;
+  guild_id: string | null;
   url: string;
   channel_id: string | null;
   is_active: boolean | null;
@@ -230,17 +231,23 @@ const runWithConcurrency = async <T>(items: T[], worker: (item: T) => Promise<vo
   await Promise.all(workers);
 };
 
-const runTick = async (client: Client) => {
+const runTick = async (client: Client, guildId?: string) => {
   if (!isSupabaseConfigured()) {
     return;
   }
 
   const db = getSupabaseClient();
-  const { data, error } = await db
+  let query = db
     .from('sources')
-    .select('id,url,channel_id,is_active,last_post_id,last_post_signature')
+    .select('id,guild_id,url,channel_id,is_active,last_post_id,last_post_signature')
     .eq('is_active', true)
     .ilike('url', '%youtube.com/channel/%#%');
+
+  if (guildId) {
+    query = query.eq('guild_id', guildId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     logger.warn('[YT-MONITOR] failed to load subscriptions: %s', error.message);
@@ -259,7 +266,7 @@ const runTick = async (client: Client) => {
   }, MONITOR_CONCURRENCY);
 };
 
-const executeTick = async (client: Client) => {
+const executeTick = async (client: Client, guildId?: string) => {
   if (running) {
     return { ok: false, message: 'Monitor tick already running' as const };
   }
@@ -270,7 +277,7 @@ const executeTick = async (client: Client) => {
   const startMs = Date.now();
 
   try {
-    await runTick(client);
+    await runTick(client, guildId);
     successCount += 1;
     lastSuccessAt = new Date().toISOString();
     lastError = null;
@@ -303,12 +310,12 @@ export const startYouTubeSubscriptionsMonitor = (client: Client) => {
   logger.info('[YT-MONITOR] started (intervalMs=%d, concurrency=%d, instance=%s)', MONITOR_INTERVAL_MS, MONITOR_CONCURRENCY, INSTANCE_ID);
 };
 
-export const triggerYouTubeSubscriptionsMonitor = async (client: Client) => {
+export const triggerYouTubeSubscriptionsMonitor = async (client: Client, guildId?: string) => {
   if (!started) {
     return { ok: false, message: 'Monitor is not started' };
   }
 
-  return executeTick(client);
+  return executeTick(client, guildId);
 };
 
 export const getYouTubeSubscriptionsMonitorSnapshot = () => ({

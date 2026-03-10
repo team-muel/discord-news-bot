@@ -11,6 +11,7 @@ type NewsItem = {
 
 type NewsChannelRow = {
   id: number;
+  guild_id: string | null;
   channel_id: string | null;
   last_post_signature: string | null;
 };
@@ -207,17 +208,23 @@ const sendNews = async (client: Client, channelId: string, item: NewsItem) => {
   });
 };
 
-const runTick = async (client: Client) => {
+const runTick = async (client: Client, guildId?: string) => {
   if (!isSupabaseConfigured()) {
     return;
   }
 
   const db = getSupabaseClient();
-  const { data, error } = await db
+  let query = db
     .from('sources')
-    .select('id, channel_id, last_post_signature')
+    .select('id, guild_id, channel_id, last_post_signature')
     .eq('is_active', true)
     .eq('name', 'google-finance-news');
+
+  if (guildId) {
+    query = query.eq('guild_id', guildId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     logger.warn('[NEWS-MONITOR] failed to load news channels: %s', error.message);
@@ -266,7 +273,7 @@ const runTick = async (client: Client) => {
   }
 };
 
-const executeTick = async (client: Client) => {
+const executeTick = async (client: Client, guildId?: string) => {
   if (running) {
     return { ok: false, message: 'News monitor tick already running' as const };
   }
@@ -277,7 +284,7 @@ const executeTick = async (client: Client) => {
   const startMs = Date.now();
 
   try {
-    await runTick(client);
+    await runTick(client, guildId);
     successCount += 1;
     lastSuccessAt = new Date().toISOString();
     lastError = null;
@@ -311,12 +318,12 @@ export const startNewsSentimentMonitor = (client: Client) => {
   logger.info('[NEWS-MONITOR] started (intervalMs=%d, instance=%s)', INTERVAL_MS, INSTANCE_ID);
 };
 
-export const triggerNewsSentimentMonitor = async (client: Client) => {
+export const triggerNewsSentimentMonitor = async (client: Client, guildId?: string) => {
   if (!started) {
     return { ok: false, message: 'News monitor is not started' };
   }
 
-  return executeTick(client);
+  return executeTick(client, guildId);
 };
 
 export const getNewsSentimentMonitorSnapshot = () => ({

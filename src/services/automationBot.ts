@@ -11,10 +11,14 @@ import { getYouTubeSubscriptionsMonitorSnapshot } from './youtubeSubscriptionsMo
 
 export type { AutomationJobName, AutomationRuntimeSnapshot };
 
+export type AutomationTriggerContext = {
+  guildId?: string;
+};
+
 const jobStates = createInitialJobStates();
 let started = false;
 let startedAt: string | null = null;
-const manualTriggers: Partial<Record<AutomationJobName, () => Promise<{ ok: boolean; message: string }>>> = {};
+const manualTriggers: Partial<Record<AutomationJobName, (context?: AutomationTriggerContext) => Promise<{ ok: boolean; message: string }>>> = {};
 
 const syncMonitorState = () => {
   {
@@ -52,7 +56,7 @@ const syncMonitorState = () => {
 
 export const registerAutomationManualTrigger = (
   jobName: AutomationJobName,
-  fn: () => Promise<{ ok: boolean; message: string }>,
+  fn: (context?: AutomationTriggerContext) => Promise<{ ok: boolean; message: string }>,
 ) => {
   manualTriggers[jobName] = fn;
 };
@@ -86,7 +90,7 @@ export const startAutomationJobs = () => {
   syncMonitorState();
 };
 
-export const triggerAutomationJob = async (jobName: AutomationJobName) => {
+export const triggerAutomationJob = async (jobName: AutomationJobName, context?: AutomationTriggerContext) => {
   const state = jobStates[jobName];
   if (!state) {
     return { ok: false, message: 'Unsupported job' };
@@ -109,7 +113,7 @@ export const triggerAutomationJob = async (jobName: AutomationJobName) => {
     return { ok: false, message: `${jobName} is not ready yet` };
   }
 
-  const result = await manualTrigger();
+  const result = await manualTrigger(context);
   syncMonitorState();
   return result;
 };

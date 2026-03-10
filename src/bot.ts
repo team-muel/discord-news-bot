@@ -125,6 +125,12 @@ const commandDefinitions = [
         .setName('symbol')
         .setDescription('예: AAPL, TSLA, MSFT')
         .setRequired(true),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('공개')
+        .setDescription('채널 전체에 결과를 표시합니다 (기본: 나만 보기)')
+        .setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName('차트')
@@ -134,6 +140,12 @@ const commandDefinitions = [
         .setName('symbol')
         .setDescription('예: AAPL, TSLA, MSFT')
         .setRequired(true),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('공개')
+        .setDescription('채널 전체에 결과를 표시합니다 (기본: 나만 보기)')
+        .setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName('분석')
@@ -143,6 +155,12 @@ const commandDefinitions = [
         .setName('query')
         .setDescription('기업/종목/테마 입력')
         .setRequired(true),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('공개')
+        .setDescription('채널 전체에 결과를 표시합니다 (기본: 나만 보기)')
+        .setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName('뉴스채널')
@@ -290,8 +308,8 @@ const commandDefinitions = [
     )
     .addSubcommand((sub) =>
       sub
-        .setName('자동화실행')
-        .setDescription('자동화 작업 즉시 실행')
+        .setName('즉시전송')
+        .setDescription('현재 길드 기준 즉시 전송 작업 실행')
         .addStringOption((option) =>
           option
             .setName('job')
@@ -387,6 +405,34 @@ const getUsageSummaryLine = async (): Promise<string> => {
   }
 };
 
+const getGuildUsageSummaryLine = async (guildId: string | null): Promise<string | null> => {
+  if (!guildId || !isSupabaseConfigured()) {
+    return null;
+  }
+
+  try {
+    const db = getSupabaseClient();
+    const { data, error } = await db
+      .from('sources')
+      .select('is_active,name')
+      .eq('guild_id', guildId);
+
+    if (error) {
+      return `Current guild: usage unavailable (${error.message})`;
+    }
+
+    const rows = data || [];
+    const active = rows.filter((row: any) => Boolean(row.is_active)).length;
+    const youtube = rows.filter((row: any) => String(row.name || '').startsWith('youtube-')).length;
+    const news = rows.filter((row: any) => String(row.name || '') === 'google-finance-news').length;
+
+    return `Current guild: sources=${rows.length} (active=${active}, yt=${youtube}, news=${news})`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `Current guild: usage unavailable (${message})`;
+  }
+};
+
 const registerSlashCommands = async () => {
   if (!client.application) {
     logger.warn('[BOT] Discord application context unavailable, skipping slash command sync');
@@ -439,6 +485,7 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
   const bot = getBotRuntimeSnapshot();
   const automation = getAutomationRuntimeSnapshot();
   const usage = await getUsageSummaryLine();
+  const guildUsage = await getGuildUsageSummaryLine(interaction.guildId);
   const jobStates = Object.values(automation.jobs)
     .map((job) => {
       const lastState = job.lastErrorAt && (!job.lastSuccessAt || Date.parse(job.lastErrorAt) >= Date.parse(job.lastSuccessAt))
@@ -456,6 +503,7 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
       `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
       `Automation healthy: ${String(automation.healthy)} | ${jobStates || 'no jobs'}`,
       usage,
+      guildUsage,
     ].join('\n'),
     ephemeral: true,
   });
@@ -463,13 +511,42 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
 
 const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
   await interaction.reply({
-    content: [
-      '사용자 명령',
-      '/도움, /구독, /뉴스채널, /주가, /차트, /분석, /ping',
-      '',
-      '관리자 명령',
-      '/관리 상태 | 자동화실행 | 재연결 | 채널아이디 | 포럼아이디 | 동기화',
-    ].join('\n'),
+    embeds: [
+      {
+        title: 'Muel 명령어 안내',
+        color: 0x2f80ed,
+        description: '자주 쓰는 명령을 빠르게 확인하세요. 일부 명령은 `공개` 옵션으로 채널 전체 공유가 가능합니다.',
+        fields: [
+          {
+            name: '일반 명령',
+            value: [
+              '`/구독` YouTube 구독 등록/목록/해제',
+              '`/뉴스채널` Google Finance 뉴스 채널 등록/목록/해제',
+              '`/주가` 현재 주가 조회 (`공개` 옵션 지원)',
+              '`/차트` 30일 차트 조회 (`공개` 옵션 지원)',
+              '`/분석` AI 투자 관점 분석 (`공개` 옵션 지원)',
+              '`/ping` 봇 응답/지연 확인',
+              '`/도움` 현재 안내 보기',
+            ].join('\n'),
+          },
+          {
+            name: '관리자 명령',
+            value: [
+              '`/관리 상태` 봇/자동화/사용량 요약',
+              '`/관리 즉시전송` 현재 길드 기준 자동화 작업 즉시 실행',
+              '`/관리 재연결` 디스코드 재연결',
+              '`/관리 채널아이디` 채널 ID 확인',
+              '`/관리 포럼아이디` 포럼 ID 확인',
+              '`/관리 동기화` 슬래시 명령 강제 재등록',
+            ].join('\n'),
+          },
+          {
+            name: '관리자 기준',
+            value: 'Discord 서버 `Administrator` 권한이 있거나, 시스템 admin allowlist에 등록된 사용자입니다.',
+          },
+        ],
+      },
+    ],
     ephemeral: true,
   });
 };
@@ -593,7 +670,7 @@ const handleAutomationRunCommand = async (interaction: ChatInputCommandInteracti
   }
 
   await interaction.deferReply({ ephemeral: true });
-  const result = await triggerAutomationJob(jobName);
+  const result = await triggerAutomationJob(jobName, { guildId: interaction.guildId || undefined });
   await interaction.editReply(result.ok ? `Accepted: ${result.message}` : `Failed: ${result.message}`);
 };
 
@@ -626,7 +703,8 @@ const handleReconnectCommand = async (interaction: ChatInputCommandInteraction) 
 
 const handleStockPriceCommand = async (interaction: ChatInputCommandInteraction) => {
   const symbol = interaction.options.getString('symbol', true).toUpperCase().trim();
-  await interaction.deferReply({ ephemeral: true });
+  const shared = interaction.options.getBoolean('공개') === true;
+  await interaction.deferReply({ ephemeral: !shared });
 
   if (!isStockFeatureEnabled()) {
     await interaction.editReply('ALPHA_VANTAGE_KEY가 없어 주가 기능을 사용할 수 없습니다.');
@@ -651,7 +729,8 @@ const handleStockPriceCommand = async (interaction: ChatInputCommandInteraction)
 
 const handleStockChartCommand = async (interaction: ChatInputCommandInteraction) => {
   const symbol = interaction.options.getString('symbol', true).toUpperCase().trim();
-  await interaction.deferReply({ ephemeral: true });
+  const shared = interaction.options.getBoolean('공개') === true;
+  await interaction.deferReply({ ephemeral: !shared });
 
   if (!isStockFeatureEnabled()) {
     await interaction.editReply('ALPHA_VANTAGE_KEY가 없어 차트 기능을 사용할 수 없습니다.');
@@ -677,7 +756,8 @@ const handleStockChartCommand = async (interaction: ChatInputCommandInteraction)
 
 const handleAnalyzeCommand = async (interaction: ChatInputCommandInteraction) => {
   const query = interaction.options.getString('query', true).trim();
-  await interaction.deferReply({ ephemeral: true });
+  const shared = interaction.options.getBoolean('공개') === true;
+  await interaction.deferReply({ ephemeral: !shared });
 
   const answer = await generateInvestmentAnalysis(query);
   const title = isInvestmentAnalysisEnabled() ? '📊 AI 투자 분석' : '📊 투자 분석 (제한 모드)';
@@ -999,7 +1079,8 @@ const handleAdminCommand = async (interaction: ChatInputCommandInteraction) => {
       await handleStatusCommand(interaction);
       return;
     }
-    case '자동화실행': {
+    case '자동화실행':
+    case '즉시전송': {
       await handleAutomationRunCommand(interaction);
       return;
     }
@@ -1115,8 +1196,12 @@ client.on('clientReady', () => {
   botRuntimeState.lastAlertReason = null;
   botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
-  registerAutomationManualTrigger('youtube-monitor', async () => triggerYouTubeSubscriptionsMonitor(client));
-  registerAutomationManualTrigger('news-monitor', async () => triggerNewsSentimentMonitor(client));
+  registerAutomationManualTrigger('youtube-monitor', async (context) =>
+    triggerYouTubeSubscriptionsMonitor(client, context?.guildId),
+  );
+  registerAutomationManualTrigger('news-monitor', async (context) =>
+    triggerNewsSentimentMonitor(client, context?.guildId),
+  );
   void registerSlashCommands();
   if (isAutomationEnabled()) {
     startYouTubeSubscriptionsMonitor(client);
