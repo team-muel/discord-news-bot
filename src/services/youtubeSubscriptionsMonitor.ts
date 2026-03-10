@@ -26,6 +26,17 @@ type FeedEntry = {
   author: string;
 };
 
+type YouTubeTickStats = {
+  processed: number;
+  failed: number;
+  sent: number;
+  skippedLocked: number;
+  skippedDuplicate: number;
+  skippedNoLatest: number;
+};
+
+type ProcessRowOutcome = 'sent' | 'skipped_locked' | 'skipped_duplicate' | 'skipped_no_latest' | 'error';
+
 let timer: NodeJS.Timeout | null = null;
 let started = false;
 let running = false;
@@ -264,14 +275,14 @@ const releaseRowLock = async (id: number) => {
   await releaseSourceLock({ id, instanceId: INSTANCE_ID, logPrefix: '[YT-MONITOR]' });
 };
 
-const processRow = async (client: Client, row: SubscriptionRow) => {
+const processRow = async (client: Client, row: SubscriptionRow): Promise<ProcessRowOutcome> => {
   if (!row.is_active) {
-    return;
+    return 'skipped_no_latest';
   }
 
   const claimed = await claimRowLock(row.id);
   if (!claimed) {
-    return;
+    return 'skipped_locked';
   }
 
   try {
@@ -279,25 +290,25 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
   const channelId = parseChannelId(row.url) || await resolveChannelIdFromHandleUrl(row.url);
   if (!channelId || !row.channel_id) {
     await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Invalid subscription URL/channel' });
-    return;
+    return 'error';
   }
 
   const channel = await client.channels.fetch(row.channel_id);
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
     await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Target channel not found or not sendable channel' });
-    return;
+    return 'error';
   }
 
   const latest = await fetchLatestFromFeed(channelId, mode);
   if (!latest) {
     await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
-    return;
+    return 'skipped_no_latest';
   }
 
   const previous = mode === 'videos' ? row.last_post_id : row.last_post_signature;
   if (previous === latest.id) {
     await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
-    return;
+    return 'skipped_duplicate';
   }
 
   if (mode === 'videos') {
@@ -315,7 +326,7 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
       last_check_error: null,
       last_post_id: latest.id,
     });
-    return;
+    return 'sent';
   }
 
   await sendCommunityPostWithThread(channel, latest);
@@ -325,14 +336,15 @@ const processRow = async (client: Client, row: SubscriptionRow) => {
     last_check_error: null,
     last_post_signature: latest.id,
   });
+  return 'sent';
   } finally {
     await releaseRowLock(row.id);
   }
 };
 
-const runTick = async (client: Client, guildId?: string): Promise<{ processed: number; failed: number }> => {
+const runTick = async (client: Client, guildId?: string): Promise<YouTubeTickStats> => {
   if (!isSupabaseConfigured()) {
-    return { processed: 0, failed: 0 };
+    return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoLatest: 0 };
   }
 
   const db = getSupabaseClient();
@@ -349,26 +361,43 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
 
   if (error) {
     logger.warn('[YT-MONITOR] failed to load subscriptions: %s', error.message);
-    return { processed: 0, failed: 0 };
+    return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoLatest: 0 };
   }
 
   const rows = ((data || []) as SubscriptionRow[]).filter(isYouTubeSourceRow);
-  let processed = 0;
-  let failed = 0;
+  const stats: YouTubeTickStats = {
+    processed: 0,
+    failed: 0,
+    sent: 0,
+    skippedLocked: 0,
+    skippedDuplicate: 0,
+    skippedNoLatest: 0,
+  };
 
   await runWithConcurrency(rows, async (row) => {
-    processed += 1;
+    stats.processed += 1;
     try {
-      await processRow(client, row);
+      const outcome = await processRow(client, row);
+      if (outcome === 'sent') {
+        stats.sent += 1;
+      } else if (outcome === 'skipped_locked') {
+        stats.skippedLocked += 1;
+      } else if (outcome === 'skipped_duplicate') {
+        stats.skippedDuplicate += 1;
+      } else if (outcome === 'skipped_no_latest') {
+        stats.skippedNoLatest += 1;
+      } else if (outcome === 'error') {
+        stats.failed += 1;
+      }
     } catch (err) {
-      failed += 1;
+      stats.failed += 1;
       const msg = err instanceof Error ? err.message : String(err);
       await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
       logger.warn('[YT-MONITOR] source=%s failed: %s', String(row.id), msg);
     }
   }, MONITOR_CONCURRENCY);
 
-  return { processed, failed };
+  return stats;
 };
 
 const executeTick = async (client: Client, guildId?: string) => {
@@ -397,14 +426,20 @@ const executeTick = async (client: Client, guildId?: string) => {
     }
     lastDurationMs = Date.now() - startMs;
     if (tick.processed === 0) {
-      return { ok: true, message: 'Tick completed: processed=0 failed=0 (no matching subscriptions for this guild)' };
+      return { ok: true, message: 'Tick completed: processed=0 failed=0 sent=0 (no matching subscriptions for this guild)' };
     }
 
     if (tick.failed > 0) {
-      return { ok: true, message: `Tick completed with partial failures: processed=${tick.processed} failed=${tick.failed}` };
+      return {
+        ok: true,
+        message: `Tick partial: processed=${tick.processed} sent=${tick.sent} failed=${tick.failed} duplicate=${tick.skippedDuplicate} locked=${tick.skippedLocked} noLatest=${tick.skippedNoLatest}`,
+      };
     }
 
-    return { ok: true, message: `Tick completed: processed=${tick.processed} failed=0` };
+    return {
+      ok: true,
+      message: `Tick completed: processed=${tick.processed} sent=${tick.sent} failed=0 duplicate=${tick.skippedDuplicate} locked=${tick.skippedLocked} noLatest=${tick.skippedNoLatest}`,
+    };
   } catch (err) {
     failCount += 1;
     lastTickStatus = 'failed';

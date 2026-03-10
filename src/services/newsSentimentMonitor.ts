@@ -21,6 +21,15 @@ type NewsChannelRow = {
   last_post_signature: string | null;
 };
 
+type NewsTickStats = {
+  processed: number;
+  failed: number;
+  sent: number;
+  skippedLocked: number;
+  skippedDuplicate: number;
+  skippedNoCandidate: number;
+};
+
 let timer: NodeJS.Timeout | null = null;
 let started = false;
 let running = false;
@@ -440,9 +449,9 @@ const sendNews = async (client: Client, channelId: string, item: NewsItem) => {
   });
 };
 
-const runTick = async (client: Client, guildId?: string): Promise<{ processed: number; failed: number }> => {
+const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats> => {
   if (!isSupabaseConfigured()) {
-    return { processed: 0, failed: 0 };
+    return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoCandidate: 0 };
   }
 
   const db = getSupabaseClient();
@@ -459,17 +468,17 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
 
   if (error) {
     logger.warn('[NEWS-MONITOR] failed to load news channels: %s', error.message);
-    return { processed: 0, failed: 0 };
+    return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoCandidate: 0 };
   }
 
   const rows = ((data || []) as NewsChannelRow[]).filter(isGoogleFinanceSourceRow);
   if (rows.length === 0) {
-    return { processed: 0, failed: 0 };
+    return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoCandidate: 0 };
   }
 
   const candidates = await fetchLatestGoogleFinanceNews();
   if (candidates.length === 0) {
-    return { processed: 0, failed: 0 };
+    return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoCandidate: rows.length };
   }
 
   const groupedRows = new Map<string, NewsChannelRow[]>();
@@ -480,8 +489,14 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
     groupedRows.set(key, existing);
   }
 
-  let processed = 0;
-  let failed = 0;
+  const stats: NewsTickStats = {
+    processed: 0,
+    failed: 0,
+    sent: 0,
+    skippedLocked: 0,
+    skippedDuplicate: 0,
+    skippedNoCandidate: 0,
+  };
 
   for (const [groupKey, group] of groupedRows.entries()) {
     const groupGuildId = groupKey === '__NULL_GUILD__' ? null : groupKey;
@@ -489,13 +504,14 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
     const latest = await pickBestCandidate(candidates, recentHistory);
     if (!latest) {
       logger.info('[NEWS-MONITOR] guild=%s all fetched candidates were deduplicated', groupGuildId || 'null');
+      stats.skippedNoCandidate += group.length;
       continue;
     }
 
     let sentAtLeastOnce = false;
 
     for (const row of group) {
-      processed += 1;
+      stats.processed += 1;
 
       if (!row.channel_id) {
         continue;
@@ -503,16 +519,19 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
 
       const locked = await claimRowLock(row.id);
       if (!locked) {
+        stats.skippedLocked += 1;
         continue;
       }
 
       try {
         if (row.last_post_signature === latest.key) {
+          stats.skippedDuplicate += 1;
           await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
           continue;
         }
 
         await sendNews(client, row.channel_id, latest);
+        stats.sent += 1;
         sentAtLeastOnce = true;
         await updateRowState(row.id, {
           last_check_status: 'success',
@@ -520,7 +539,7 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
           last_post_signature: latest.key,
         });
       } catch (err) {
-        failed += 1;
+        stats.failed += 1;
         const msg = err instanceof Error ? err.message : String(err);
         await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
         logger.warn('[NEWS-MONITOR] source=%s failed: %s', String(row.id), msg);
@@ -534,7 +553,7 @@ const runTick = async (client: Client, guildId?: string): Promise<{ processed: n
     }
   }
 
-  return { processed, failed };
+  return stats;
 };
 
 const executeTick = async (client: Client, guildId?: string) => {
@@ -563,14 +582,23 @@ const executeTick = async (client: Client, guildId?: string) => {
     }
     lastDurationMs = Date.now() - startMs;
     if (tick.processed === 0) {
-      return { ok: true, message: 'News tick completed: processed=0 failed=0 (no matching subscriptions for this guild)' };
+      return {
+        ok: true,
+        message: `News tick completed: processed=0 sent=0 failed=0 noCandidate=${tick.skippedNoCandidate} (no matching subscriptions for this guild)`,
+      };
     }
 
     if (tick.failed > 0) {
-      return { ok: true, message: `News tick completed with partial failures: processed=${tick.processed} failed=${tick.failed}` };
+      return {
+        ok: true,
+        message: `News tick partial: processed=${tick.processed} sent=${tick.sent} failed=${tick.failed} duplicate=${tick.skippedDuplicate} locked=${tick.skippedLocked} noCandidate=${tick.skippedNoCandidate}`,
+      };
     }
 
-    return { ok: true, message: `News tick completed: processed=${tick.processed} failed=0` };
+    return {
+      ok: true,
+      message: `News tick completed: processed=${tick.processed} sent=${tick.sent} failed=0 duplicate=${tick.skippedDuplicate} locked=${tick.skippedLocked} noCandidate=${tick.skippedNoCandidate}`,
+    };
   } catch (error) {
     failCount += 1;
     lastTickStatus = 'failed';
