@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { Router } from 'express';
 import {
+  AUTH_CSRF_COOKIE_NAME,
+  AUTH_CSRF_HEADER_NAME,
   AUTH_COOKIE_NAME,
   DEV_AUTH_ENABLED,
   DISCORD_OAUTH_API_BASE,
@@ -16,7 +18,9 @@ import {
   NODE_ENV,
 } from '../config';
 import { buildDevUserFromCode, clearSessionCookie, getCookieOptions, issueSessionToken } from '../services/authService';
+import { clearCsrfCookie, issueCsrfToken, setCsrfCookie } from '../services/authService';
 import { requireAuth } from '../middleware/auth';
+import { createRateLimiter } from '../middleware/rateLimit';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import type { JwtUser } from '../types/auth';
 
@@ -189,6 +193,8 @@ async function loginWithDiscordCode(code: string): Promise<JwtUser> {
 
 export function createAuthRouter(): Router {
   const router = Router();
+  const oauthRateLimiter = createRateLimiter({ windowMs: 60_000, max: 30, keyPrefix: 'auth-oauth', store: 'supabase' });
+  const devAuthRateLimiter = createRateLimiter({ windowMs: 60_000, max: 12, keyPrefix: 'auth-dev', store: 'supabase' });
 
   const denyDevAuth = (res: { status: (code: number) => { json: (payload: Record<string, unknown>) => void } }) =>
     res.status(403).json({ error: 'FORBIDDEN', message: 'DEV auth endpoints are disabled' });
@@ -198,10 +204,16 @@ export function createAuthRouter(): Router {
       return res.status(401).json({ error: 'UNAUTHORIZED' });
     }
 
-    return res.json({ user: req.user, csrfToken: null });
+    const existingCsrf = String(req.cookies?.[AUTH_CSRF_COOKIE_NAME] || '').trim();
+    const csrfToken = existingCsrf || issueCsrfToken();
+    if (!existingCsrf) {
+      setCsrfCookie(res, csrfToken);
+    }
+
+    return res.json({ user: req.user, csrfToken, csrfHeaderName: AUTH_CSRF_HEADER_NAME });
   });
 
-  router.post('/sdk', (req, res) => {
+  router.post('/sdk', devAuthRateLimiter, (req, res) => {
     if (!DEV_AUTH_ENABLED) {
       return denyDevAuth(res);
     }
@@ -210,16 +222,18 @@ export function createAuthRouter(): Router {
     const user = buildDevUserFromCode(code);
     const token = issueSessionToken(user);
     res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
+    setCsrfCookie(res, issueCsrfToken());
     return res.json({ ok: true, user });
   });
 
   router.post('/logout', requireAuth, (_req, res) => {
     clearSessionCookie(res);
+    clearCsrfCookie(res);
     res.clearCookie(DISCORD_OAUTH_STATE_COOKIE_NAME, { path: '/api/auth' });
     return res.status(204).send();
   });
 
-  router.get('/login', (req, res) => {
+  router.get('/login', oauthRateLimiter, (req, res) => {
     if (!isDiscordOAuthConfigured()) {
       return res.status(503).json({ error: 'CONFIG', message: 'Discord OAuth is not configured' });
     }
@@ -246,7 +260,7 @@ export function createAuthRouter(): Router {
     }
   });
 
-  router.get('/callback', async (req, res) => {
+  router.get('/callback', oauthRateLimiter, async (req, res) => {
     const code = typeof req.query?.code === 'string' ? req.query.code : undefined;
     const state = typeof req.query?.state === 'string' ? req.query.state : undefined;
 
@@ -266,6 +280,7 @@ export function createAuthRouter(): Router {
         const user = await loginWithDiscordCode(code);
         const token = issueSessionToken(user);
         res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
+        setCsrfCookie(res, issueCsrfToken());
         return res.type('html').send(renderAuthCallbackPage(true));
       } catch {
         return res.status(400).type('html').send(renderAuthCallbackPage(false));
@@ -283,6 +298,7 @@ export function createAuthRouter(): Router {
     const user = buildDevUserFromCode(code);
     const token = issueSessionToken(user);
     res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
+    setCsrfCookie(res, issueCsrfToken());
     return res.type('html').send(renderAuthCallbackPage(true));
   });
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { TradingStrategyConfigPatch } from '../contracts/tradingStrategy';
 import { requireAdmin, requireAuth } from '../middleware/auth';
+import { createRateLimiter } from '../middleware/rateLimit';
 import { closeAiTradingPosition, getAiTradingPosition, isAiTradingConfigured } from '../services/aiTradingClient';
 import {
   getTradingEngineRuntimeSnapshot,
@@ -18,6 +19,12 @@ import { toStringParam } from '../utils/validation';
 
 export function createTradingRouter(): Router {
   const router = Router();
+  const tradingControlRateLimiter = createRateLimiter({
+    windowMs: 60_000,
+    max: 20,
+    keyPrefix: 'trading-control',
+    store: 'supabase',
+  });
 
   router.get('/strategy', requireAuth, requireAdmin, async (_req, res) => {
     try {
@@ -29,7 +36,7 @@ export function createTradingRouter(): Router {
     }
   });
 
-  router.put('/strategy', requireAuth, requireAdmin, async (req, res) => {
+  router.put('/strategy', requireAuth, requireAdmin, tradingControlRateLimiter, async (req, res) => {
     const patch = (req.body?.strategy || req.body || {}) as TradingStrategyConfigPatch;
     try {
       const strategy = await updateTradingStrategyConfig(patch);
@@ -40,7 +47,7 @@ export function createTradingRouter(): Router {
     }
   });
 
-  router.post('/strategy/reset', requireAuth, requireAdmin, async (_req, res) => {
+  router.post('/strategy/reset', requireAuth, requireAdmin, tradingControlRateLimiter, async (_req, res) => {
     try {
       const strategy = await resetTradingStrategyConfig();
       return res.json({ ok: true, strategy });
@@ -56,7 +63,7 @@ export function createTradingRouter(): Router {
     return res.json({ runtime, strategy });
   });
 
-  router.post('/runtime/run-once', requireAuth, requireAdmin, async (_req, res) => {
+  router.post('/runtime/run-once', requireAuth, requireAdmin, tradingControlRateLimiter, async (_req, res) => {
     const result = await runTradingEngineOnce();
     if (!result.ok) {
       return res.status(409).json(result);
@@ -64,7 +71,7 @@ export function createTradingRouter(): Router {
     return res.json(result);
   });
 
-  router.post('/runtime/pause', requireAuth, requireAdmin, async (req, res) => {
+  router.post('/runtime/pause', requireAuth, requireAdmin, tradingControlRateLimiter, async (req, res) => {
     const reason = toStringParam(req.body?.reason) || 'manual';
     const result = pauseTradingEngine(reason);
     if (!result.ok) {
@@ -73,7 +80,7 @@ export function createTradingRouter(): Router {
     return res.json(result);
   });
 
-  router.post('/runtime/resume', requireAuth, requireAdmin, async (_req, res) => {
+  router.post('/runtime/resume', requireAuth, requireAdmin, tradingControlRateLimiter, async (_req, res) => {
     const result = resumeTradingEngine();
     if (!result.ok) {
       return res.status(409).json(result);
@@ -105,7 +112,7 @@ export function createTradingRouter(): Router {
     }
   });
 
-  router.post('/position/close', requireAuth, requireAdmin, async (req, res) => {
+  router.post('/position/close', requireAuth, requireAdmin, tradingControlRateLimiter, async (req, res) => {
     const symbol = toStringParam(req.body?.symbol || req.query.symbol).toUpperCase();
     if (!symbol) {
       return res.status(422).json({ error: 'INVALID_PAYLOAD', message: 'symbol is required' });

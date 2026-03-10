@@ -1,5 +1,6 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { AUTH_COOKIE_NAME, JWT_SECRET, NODE_ENV } from '../config';
+import { AUTH_COOKIE_NAME, AUTH_CSRF_COOKIE_NAME, JWT_SECRET, NODE_ENV } from '../config';
 import type { JwtUser } from '../types/auth';
 
 type SessionToken = { user: JwtUser };
@@ -42,4 +43,29 @@ export function getCookieOptions() {
 
 export function clearSessionCookie(res: { clearCookie: (name: string, options: Record<string, unknown>) => void }) {
   res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
+}
+
+export function issueCsrfToken(): string {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+export function getCsrfCookieOptions() {
+  return {
+    httpOnly: false,
+    sameSite: 'lax' as const,
+    secure: NODE_ENV === 'production',
+    maxAge: SESSION_TTL_SEC * 1000,
+    path: '/',
+  };
+}
+
+export function setCsrfCookie(
+  res: { cookie: (name: string, value: string, options: Record<string, unknown>) => void },
+  token: string,
+) {
+  res.cookie(AUTH_CSRF_COOKIE_NAME, token, getCsrfCookieOptions());
+}
+
+export function clearCsrfCookie(res: { clearCookie: (name: string, options: Record<string, unknown>) => void }) {
+  res.clearCookie(AUTH_CSRF_COOKIE_NAME, { path: '/' });
 }

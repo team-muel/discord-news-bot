@@ -27,6 +27,8 @@ if (NODE_ENV === 'production' && (!JWT_SECRET_FROM_ENV || JWT_SECRET_FROM_ENV ==
 }
 export const JWT_SECRET = JWT_SECRET_FROM_ENV || JWT_SECRET_FALLBACK;
 export const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'muel_session';
+export const AUTH_CSRF_COOKIE_NAME = process.env.AUTH_CSRF_COOKIE_NAME || 'muel_csrf';
+export const AUTH_CSRF_HEADER_NAME = process.env.AUTH_CSRF_HEADER_NAME || 'x-csrf-token';
 export const DEV_AUTH_ENABLED = parseBooleanEnv(process.env.DEV_AUTH_ENABLED, NODE_ENV !== 'production');
 export const DISCORD_OAUTH_CLIENT_ID = process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || '';
 export const DISCORD_OAUTH_CLIENT_SECRET = process.env.DISCORD_OAUTH_CLIENT_SECRET || process.env.DISCORD_CLIENT_SECRET || '';
@@ -97,6 +99,8 @@ export default {
   START_BOT,
   JWT_SECRET,
   AUTH_COOKIE_NAME,
+  AUTH_CSRF_COOKIE_NAME,
+  AUTH_CSRF_HEADER_NAME,
   DEV_AUTH_ENABLED,
   DISCORD_OAUTH_CLIENT_ID,
   DISCORD_OAUTH_CLIENT_SECRET,

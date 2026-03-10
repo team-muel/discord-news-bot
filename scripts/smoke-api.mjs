@@ -80,7 +80,20 @@ async function main() {
   });
   await assertOk(sdk, 'POST /api/auth/sdk');
 
-  await assertOk(await fetchWithCookie('/api/auth/me'), 'GET /api/auth/me');
+  const me = await fetchWithCookie('/api/auth/me');
+  await assertOk(me, 'GET /api/auth/me');
+  const meJson = await me.json();
+  const csrfToken = String(meJson?.csrfToken || '');
+  const csrfHeaderName = String(meJson?.csrfHeaderName || 'x-csrf-token');
+  if (!csrfToken) {
+    throw new Error('GET /api/auth/me missing csrfToken');
+  }
+
+  const logoutWithoutCsrf = await fetchWithCookie('/api/auth/logout', { method: 'POST' });
+  if (logoutWithoutCsrf.status !== 403) {
+    throw new Error(`POST /api/auth/logout without csrf expected 403, got ${logoutWithoutCsrf.status}`);
+  }
+
   await assertOk(await fetchWithCookie('/api/research/preset/embedded'), 'GET /api/research/preset/embedded');
   const botStatus = await fetchWithCookie('/api/bot/status');
   await assertOk(botStatus, 'GET /api/bot/status');
@@ -97,7 +110,12 @@ async function main() {
 
   await assertOk(await fetchWithCookie('/api/benchmark/summary'), 'GET /api/benchmark/summary');
 
-  const logout = await fetchWithCookie('/api/auth/logout', { method: 'POST' });
+  const logout = await fetchWithCookie('/api/auth/logout', {
+    method: 'POST',
+    headers: {
+      [csrfHeaderName]: csrfToken,
+    },
+  });
   if (logout.status !== 204) {
     throw new Error(`POST /api/auth/logout expected 204, got ${logout.status}`);
   }

@@ -334,7 +334,10 @@ const commandDefinitions = [
             .setName('job')
             .setDescription('Automation job name')
             .setRequired(true)
-            .addChoices({ name: 'youtube-monitor', value: 'youtube-monitor' }),
+            .addChoices(
+              { name: 'youtube-monitor', value: 'youtube-monitor' },
+              { name: 'news-monitor', value: 'news-monitor' },
+            ),
         ),
     )
     .addSubcommand((sub) =>
@@ -681,7 +684,7 @@ const handleAutomationRunCommand = async (interaction: ChatInputCommandInteracti
   }
 
   const jobName = interaction.options.getString('job', true);
-  if (jobName !== 'youtube-monitor') {
+  if (jobName !== 'youtube-monitor' && jobName !== 'news-monitor') {
     await interaction.reply({ content: 'Invalid job name.', ephemeral: true });
     return;
   }

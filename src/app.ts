@@ -2,7 +2,7 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { FRONTEND_ORIGIN, JSON_BODY_LIMIT, NODE_ENV } from './config';
-import { attachUser } from './middleware/auth';
+import { attachUser, requireCsrfForStateChange } from './middleware/auth';
 import { createAuthRouter } from './routes/auth';
 import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
@@ -37,6 +37,7 @@ export function createApp(): Express {
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(cookieParser());
   app.use(attachUser);
+  app.use(requireCsrfForStateChange);
 
   // Frontend popup callbacks often target /auth/callback without /api.
   app.get('/auth/callback', (req, res) => {

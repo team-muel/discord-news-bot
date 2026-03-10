@@ -7,12 +7,19 @@ import { requireAdmin, requireAuth } from '../middleware/auth';
 import { appendBenchmarkEvents } from '../services/benchmarkStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob } from '../services/automationBot';
+import { createRateLimiter } from '../middleware/rateLimit';
 import { toStringParam } from '../utils/validation';
 
 let lastBotStatusBenchmarkAt = 0;
 
 export function createBotRouter(): Router {
   const router = Router();
+  const adminActionRateLimiter = createRateLimiter({
+    windowMs: 60_000,
+    max: 20,
+    keyPrefix: 'bot-admin-action',
+    store: 'supabase',
+  });
 
   router.get('/status', requireAuth, (_req, res) => {
     const bot = getBotRuntimeSnapshot();
@@ -84,21 +91,26 @@ export function createBotRouter(): Router {
     return res.json(payload);
   });
 
-  router.post('/automation/:jobName/run', requireAdmin, async (req, res) => {
+  router.post('/automation/:jobName/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
     const jobName = String(req.params.jobName || '');
     if (jobName !== 'youtube-monitor' && jobName !== 'news-monitor') {
       return res.status(404).json({ error: 'NOT_FOUND' });
     }
 
-    const result = await triggerAutomationJob(jobName);
+    const guildId = toStringParam(req.body?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, message: 'guildId is required for scoped manual run' });
+    }
+
+    const result = await triggerAutomationJob(jobName, { guildId });
     if (!result.ok) {
       return res.status(409).json({ ok: false, message: result.message });
     }
 
-    return res.status(202).json({ ok: true, message: `${jobName} execution started` });
+    return res.status(202).json({ ok: true, message: `${jobName} execution started`, guildId });
   });
 
-  router.post('/reconnect', requireAdmin, async (req, res) => {
+  router.post('/reconnect', requireAdmin, adminActionRateLimiter, async (req, res) => {
     const requestedSource = toStringParam(req.body?.reason);
     const source = requestedSource || 'api';
 

@@ -31,10 +31,14 @@ let lastSuccessAt: string | null = null;
 let lastErrorAt: string | null = null;
 let lastError: string | null = null;
 let lastDurationMs: number | null = null;
+let lastTickProcessedSources = 0;
+let lastTickFailedSources = 0;
+let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 
 const MONITOR_INTERVAL_MS = Math.max(60_000, Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS || 5 * 60_000));
 const MONITOR_CONCURRENCY = Math.max(1, Number(process.env.YOUTUBE_MONITOR_CONCURRENCY || 5));
 const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS || 120_000));
+const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.YOUTUBE_MONITOR_FETCH_TIMEOUT_MS || 15_000));
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 const CHANNEL_ID_RE = /\/channel\/(UC[0-9A-Za-z_-]{20,})/;
 
@@ -80,12 +84,16 @@ const fetchLatestFromFeed = async (channelId: string, mode: 'videos' | 'posts'):
     ? `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
     : `https://www.youtube.com/feeds/posts.xml?channel_id=${channelId}`;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   const res = await fetch(feedUrl, {
+    signal: controller.signal,
     headers: {
       'User-Agent': 'MuelBot/1.0',
       'Accept-Language': 'ko,en;q=0.8',
     },
-  });
+  }).finally(() => clearTimeout(timeout));
 
   if (!res.ok) {
     throw new Error(`Feed request failed: ${res.status}`);
@@ -231,9 +239,9 @@ const runWithConcurrency = async <T>(items: T[], worker: (item: T) => Promise<vo
   await Promise.all(workers);
 };
 
-const runTick = async (client: Client, guildId?: string) => {
+const runTick = async (client: Client, guildId?: string): Promise<{ processed: number; failed: number }> => {
   if (!isSupabaseConfigured()) {
-    return;
+    return { processed: 0, failed: 0 };
   }
 
   const db = getSupabaseClient();
@@ -251,19 +259,26 @@ const runTick = async (client: Client, guildId?: string) => {
 
   if (error) {
     logger.warn('[YT-MONITOR] failed to load subscriptions: %s', error.message);
-    return;
+    return { processed: 0, failed: 0 };
   }
 
   const rows = (data || []) as SubscriptionRow[];
+  let processed = 0;
+  let failed = 0;
+
   await runWithConcurrency(rows, async (row) => {
+    processed += 1;
     try {
       await processRow(client, row);
     } catch (err) {
+      failed += 1;
       const msg = err instanceof Error ? err.message : String(err);
       await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
       logger.warn('[YT-MONITOR] source=%s failed: %s', String(row.id), msg);
     }
   }, MONITOR_CONCURRENCY);
+
+  return { processed, failed };
 };
 
 const executeTick = async (client: Client, guildId?: string) => {
@@ -277,14 +292,26 @@ const executeTick = async (client: Client, guildId?: string) => {
   const startMs = Date.now();
 
   try {
-    await runTick(client, guildId);
+    const tick = await runTick(client, guildId);
+    lastTickProcessedSources = tick.processed;
+    lastTickFailedSources = tick.failed;
     successCount += 1;
     lastSuccessAt = new Date().toISOString();
-    lastError = null;
+    if (tick.failed > 0) {
+      lastTickStatus = 'partial_failure';
+      lastErrorAt = new Date().toISOString();
+      lastError = `Partial failure: ${tick.failed}/${tick.processed} sources failed`;
+    } else {
+      lastTickStatus = 'success';
+      lastError = null;
+    }
     lastDurationMs = Date.now() - startMs;
     return { ok: true, message: 'Tick completed' as const };
   } catch (err) {
     failCount += 1;
+    lastTickStatus = 'failed';
+    lastTickProcessedSources = 0;
+    lastTickFailedSources = 0;
     lastErrorAt = new Date().toISOString();
     lastError = err instanceof Error ? err.message : String(err);
     lastDurationMs = Date.now() - startMs;
@@ -330,6 +357,9 @@ export const getYouTubeSubscriptionsMonitorSnapshot = () => ({
   lastErrorAt,
   lastError,
   lastDurationMs,
+  lastTickProcessedSources,
+  lastTickFailedSources,
+  lastTickStatus,
 });
 
 export const stopYouTubeSubscriptionsMonitor = () => {

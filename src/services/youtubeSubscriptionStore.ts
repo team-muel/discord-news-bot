@@ -15,9 +15,37 @@ export type YouTubeSubscription = {
 };
 
 const CHANNEL_ID_RE = /^UC[0-9A-Za-z_-]{20,}$/;
+const YOUTUBE_HOST_ALLOWLIST = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'youtu.be',
+  'www.youtu.be',
+]);
+
+const isAllowedYouTubeHost = (hostname: string): boolean => {
+  return YOUTUBE_HOST_ALLOWLIST.has(String(hostname || '').toLowerCase());
+};
+
+const normalizePossibleUrl = (input: string): string => {
+  const raw = String(input || '').trim();
+  if (!raw) {
+    return raw;
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  if (raw.startsWith('www.youtube.com/') || raw.startsWith('youtube.com/') || raw.startsWith('m.youtube.com/')) {
+    return `https://${raw}`;
+  }
+
+  return raw;
+};
 
 const extractChannelIdFromInput = (input: string): string | null => {
-  const raw = String(input || '').trim();
+  const raw = normalizePossibleUrl(input);
   if (!raw) return null;
 
   if (CHANNEL_ID_RE.test(raw)) {
@@ -26,7 +54,7 @@ const extractChannelIdFromInput = (input: string): string | null => {
 
   try {
     const parsed = new URL(raw);
-    if (parsed.hostname.includes('youtube.com') || parsed.hostname.includes('youtu.be')) {
+    if (isAllowedYouTubeHost(parsed.hostname)) {
       const fromQuery = parsed.searchParams.get('channel_id');
       if (fromQuery && CHANNEL_ID_RE.test(fromQuery)) {
         return fromQuery;
@@ -44,6 +72,78 @@ const extractChannelIdFromInput = (input: string): string | null => {
   return null;
 };
 
+const parseChannelIdFromText = (text: string): string | null => {
+  const patterns = [
+    /"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"/,
+    /https:\/\/www\.youtube\.com\/channel\/(UC[0-9A-Za-z_-]{20,})/,
+    /<link\s+rel="canonical"\s+href="https:\/\/www\.youtube\.com\/channel\/(UC[0-9A-Za-z_-]{20,})"/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1] && CHANNEL_ID_RE.test(match[1])) {
+      return match[1];
+    }
+  }
+
+  return null;
+};
+
+const resolveChannelIdFromHandleUrl = async (input: string): Promise<string | null> => {
+  const raw = normalizePossibleUrl(input);
+  if (!raw) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isAllowedYouTubeHost(parsed.hostname)) {
+    return null;
+  }
+
+  const shouldResolveHandle = parsed.pathname.includes('/@');
+  if (!shouldResolveHandle) {
+    return null;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
+
+    try {
+      const response = await fetch(parsed.toString(), {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          accept: 'text/html,application/xhtml+xml',
+          'user-agent': 'Mozilla/5.0 (compatible; MuelBot/1.0; +https://github.com)',
+        },
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const fromFinalUrl = extractChannelIdFromInput(response.url);
+      if (fromFinalUrl) {
+        return fromFinalUrl;
+      }
+
+      const html = await response.text();
+      return parseChannelIdFromText(html);
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    return null;
+  }
+};
+
 const buildSourceUrl = (
   channelId: string,
   kind: YouTubeSubscriptionKind,
@@ -53,10 +153,20 @@ const buildSourceUrl = (
   return `https://www.youtube.com/channel/${channelId}?muelGuild=${encodeURIComponent(guildId)}&muelChannel=${encodeURIComponent(discordChannelId)}#${kind}`;
 };
 
-export const parseYouTubeChannelIdOrThrow = (input: string): string => {
+export const parseYouTubeChannelIdOrThrow = async (input: string): Promise<string> => {
+  const directChannelId = extractChannelIdFromInput(input);
+  if (directChannelId) {
+    return directChannelId;
+  }
+
+  const resolvedChannelId = await resolveChannelIdFromHandleUrl(input);
+  if (resolvedChannelId) {
+    return resolvedChannelId;
+  }
+
   const channelId = extractChannelIdFromInput(input);
   if (!channelId) {
-    throw new Error('유효한 YouTube 채널 URL 또는 채널 ID(UC...)를 입력해주세요.');
+    throw new Error('유효한 YouTube 채널 URL(/channel/, /@handle 포함) 또는 채널 ID(UC...)를 입력해주세요.');
   }
   return channelId;
 };
@@ -72,7 +182,7 @@ export const createYouTubeSubscription = async (params: {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
-  const channelId = parseYouTubeChannelIdOrThrow(params.channelInput);
+  const channelId = await parseYouTubeChannelIdOrThrow(params.channelInput);
   const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId);
   const client = getSupabaseClient();
 
@@ -152,7 +262,7 @@ export const deleteYouTubeSubscription = async (params: {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
-  const channelId = parseYouTubeChannelIdOrThrow(params.channelInput);
+  const channelId = await parseYouTubeChannelIdOrThrow(params.channelInput);
   const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId);
   const client = getSupabaseClient();
 

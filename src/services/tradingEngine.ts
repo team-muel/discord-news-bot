@@ -15,6 +15,7 @@ import {
   getTradingStrategyConfig,
 } from './tradingStrategyService';
 import { createTrade } from './tradesStore';
+import { acquireDistributedLease, releaseDistributedLease } from './distributedLockService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type Candle = {
@@ -79,6 +80,60 @@ let pausedAt: string | null = null;
 let pausedReason: string | null = null;
 
 const STATE_TABLE_RETRY_COOLDOWN_MS = 60_000;
+const ENGINE_LOCK_NAME = 'trading-engine-main-loop';
+const ENGINE_LOCK_LEASE_MS = Math.max(15_000, Number(process.env.TRADING_ENGINE_LOCK_LEASE_MS || 90_000));
+const ENGINE_LOCK_OWNER = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
+
+const yieldToEventLoop = async () => new Promise<void>((resolve) => setImmediate(resolve));
+
+const getMemoryUsageMb = () => {
+  const usage = process.memoryUsage();
+  return {
+    heapUsedMb: Math.round(usage.heapUsed / (1024 * 1024)),
+    rssMb: Math.round(usage.rss / (1024 * 1024)),
+  };
+};
+
+const maybePauseByMemory = (strategy: TradingStrategyConfig): { paused: boolean; reason?: string } => {
+  const softLimitMb = Math.max(0, Number(strategy.runtime.memorySoftLimitMb || 0));
+  if (softLimitMb <= 0) {
+    return { paused: false };
+  }
+
+  const usage = getMemoryUsageMb();
+  if (usage.heapUsedMb < softLimitMb) {
+    return { paused: false };
+  }
+
+  paused = true;
+  pausedAt = new Date().toISOString();
+  pausedReason = `memory_guard(heapUsed=${usage.heapUsedMb}MB, rss=${usage.rssMb}MB, limit=${softLimitMb}MB)`;
+  logger.error('[TRADING] Memory soft limit exceeded. %s', pausedReason);
+  return { paused: true, reason: pausedReason };
+};
+
+const runWithConcurrency = async <T>(items: T[], worker: (item: T) => Promise<void>, concurrency: number) => {
+  if (items.length === 0) {
+    return;
+  }
+
+  const laneCount = Math.min(Math.max(1, concurrency), items.length);
+  let cursor = 0;
+
+  const lanes = Array.from({ length: laneCount }, async () => {
+    while (true) {
+      const idx = cursor;
+      cursor += 1;
+      if (idx >= items.length) {
+        return;
+      }
+
+      await worker(items[idx]);
+    }
+  });
+
+  await Promise.all(lanes);
+};
 
 function computeDelta(c: Candle, deltaCoef: number) {
   return (c.close - c.open) * c.volume * deltaCoef;
@@ -461,6 +516,11 @@ async function insertTradeRecord(params: {
 }
 
 async function runSymbolOnce(symbol: string, tfMs: number, strategy: TradingStrategyConfig): Promise<void> {
+  const memoryGuard = maybePauseByMemory(strategy);
+  if (memoryGuard.paused) {
+    return;
+  }
+
   const state = await getOrInitState(symbol, tfMs, strategy);
   if (!state) return;
 
@@ -473,9 +533,25 @@ async function runSymbolOnce(symbol: string, tfMs: number, strategy: TradingStra
 
   if (!ticks.length) return;
 
-  let openPos = await hasOpenPosition(symbol);
+  const maxTicksPerCycle = Math.max(1, strategy.runtime.maxTicksPerCycle);
+  const effectiveTicks = ticks.slice(0, maxTicksPerCycle);
+  if (ticks.length > effectiveTicks.length) {
+    logger.warn('[TRADING] %s tick batch capped: %d -> %d', symbol, ticks.length, effectiveTicks.length);
+  }
 
-  for (const tick of ticks) {
+  let openPos = await hasOpenPosition(symbol);
+  const tickYieldEvery = Math.max(1, strategy.runtime.tickYieldEvery);
+
+  for (let i = 0; i < effectiveTicks.length; i += 1) {
+    const tick = effectiveTicks[i];
+    if (i > 0 && i % tickYieldEvery === 0) {
+      await yieldToEventLoop();
+      const guard = maybePauseByMemory(strategy);
+      if (guard.paused) {
+        return;
+      }
+    }
+
     if (!state.currentBar) {
       state.currentBar = newBarFromTick(tick.tsMs, tick.price, tick.amount, tfMs);
     } else {
@@ -623,22 +699,29 @@ async function runSymbolOnce(symbol: string, tfMs: number, strategy: TradingStra
 }
 
 async function runOnce(strategy: TradingStrategyConfig): Promise<void> {
-  const tfMs = timeframeToMs(strategy.timeframe);
+  const memoryGuard = maybePauseByMemory(strategy);
+  if (memoryGuard.paused) {
+    return;
+  }
 
-  for (const symbol of strategy.symbols) {
+  const tfMs = timeframeToMs(strategy.timeframe);
+  const symbolConcurrency = Math.max(1, strategy.runtime.symbolConcurrency);
+
+  await runWithConcurrency(strategy.symbols, async (symbol) => {
     try {
       await runSymbolOnce(symbol, tfMs, strategy);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('[TRADING] %s loop error: %s', symbol, message);
     }
+  }, symbolConcurrency);
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
+  await yieldToEventLoop();
 }
 
 async function loop(): Promise<void> {
   while (started) {
+    let lockAcquired = false;
     try {
       activeStrategyConfig = await getTradingStrategyConfig();
 
@@ -661,6 +744,22 @@ async function loop(): Promise<void> {
         continue;
       }
 
+      const lock = await acquireDistributedLease({
+        name: ENGINE_LOCK_NAME,
+        owner: ENGINE_LOCK_OWNER,
+        leaseMs: ENGINE_LOCK_LEASE_MS,
+      });
+
+      if (!lock.ok) {
+        lastLoopError = lock.reason === 'LOCK_HELD'
+          ? 'Another instance is running trading loop'
+          : `Trading lock unavailable: ${lock.reason || 'unknown'}`;
+        await new Promise((resolve) => setTimeout(resolve, Math.max(1, activeStrategyConfig.runtime.pollSeconds) * 1000));
+        continue;
+      }
+
+      lockAcquired = true;
+
       await runOnce(activeStrategyConfig);
       lastLoopAt = new Date().toISOString();
       lastLoopError = null;
@@ -668,6 +767,10 @@ async function loop(): Promise<void> {
       const message = error instanceof Error ? error.message : String(error);
       lastLoopError = message;
       logger.error('[TRADING] loop failure: %s', message);
+    } finally {
+      if (lockAcquired) {
+        await releaseDistributedLease({ name: ENGINE_LOCK_NAME, owner: ENGINE_LOCK_OWNER });
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, Math.max(1, activeStrategyConfig.runtime.pollSeconds) * 1000));
@@ -698,6 +801,7 @@ export function startTradingEngine(): void {
 }
 
 export async function runTradingEngineOnce(): Promise<{ ok: boolean; message: string }> {
+  let lockAcquired = false;
   try {
     const strategy = await getTradingStrategyConfig(true);
     activeStrategyConfig = strategy;
@@ -714,6 +818,22 @@ export async function runTradingEngineOnce(): Promise<{ ok: boolean; message: st
       return { ok: false, message: 'AI trading is not configured while strategy dryRun=false' };
     }
 
+    const lock = await acquireDistributedLease({
+      name: ENGINE_LOCK_NAME,
+      owner: ENGINE_LOCK_OWNER,
+      leaseMs: ENGINE_LOCK_LEASE_MS,
+    });
+
+    if (!lock.ok) {
+      return {
+        ok: false,
+        message: lock.reason === 'LOCK_HELD'
+          ? 'Another instance is already running trading loop'
+          : `Trading lock unavailable: ${lock.reason || 'unknown'}`,
+      };
+    }
+    lockAcquired = true;
+
     await runOnce(strategy);
     lastLoopAt = new Date().toISOString();
     lastLoopError = null;
@@ -722,6 +842,10 @@ export async function runTradingEngineOnce(): Promise<{ ok: boolean; message: st
     const message = error instanceof Error ? error.message : String(error);
     lastLoopError = message;
     return { ok: false, message };
+  } finally {
+    if (lockAcquired) {
+      await releaseDistributedLease({ name: ENGINE_LOCK_NAME, owner: ENGINE_LOCK_OWNER });
+    }
   }
 }
 

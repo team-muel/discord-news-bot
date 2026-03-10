@@ -76,6 +76,34 @@ Also verify Runtime Environment Variables in Render:
   - `AUTOMATION_YOUTUBE_ENABLED=true`
   - `YOUTUBE_MONITOR_INTERVAL_MS=300000`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `ALPHA_VANTAGE_KEY`
+- Lock and monitor safety controls:
+  - `TRADING_ENGINE_LOCK_LEASE_MS=90000`
+  - `YOUTUBE_MONITOR_FETCH_TIMEOUT_MS=15000`
+  - `NEWS_MONITOR_FETCH_TIMEOUT_MS=15000`
+  - `NEWS_AI_DEDUP_ENABLED=true`
+  - `NEWS_DEDUP_LOOKBACK_HOURS=24`
+  - `NEWS_DEDUP_HISTORY_MAX_ITEMS=60`
+
+Runtime alert controls:
+
+- `RUNTIME_ALERT_ENABLED=true`
+- `RUNTIME_ALERT_SCAN_INTERVAL_MS=30000`
+- `RUNTIME_ALERT_COOLDOWN_MS=300000`
+- `RUNTIME_ALERT_WEBHOOK_URL=<ops-webhook-url>` (optional)
+
+Trading event-loop/memory safety controls (important on single Render instance):
+
+- `trading_engine_configs.config.runtime.symbolConcurrency` (default `2`)
+- `trading_engine_configs.config.runtime.tickYieldEvery` (default `200`)
+- `trading_engine_configs.config.runtime.maxTicksPerCycle` (default `2000`)
+- `trading_engine_configs.config.runtime.memorySoftLimitMb` (default `0`, disabled)
+
+Recommended single-instance starting values:
+
+- `symbolConcurrency=1`
+- `tickYieldEvery=100`
+- `maxTicksPerCycle=1200`
+- `memorySoftLimitMb=300` (pause engine automatically when heap exceeds this)
 - AI-trading execution mode (single Render default):
   - Recommended local mode (same service process):
     - `AI_TRADING_MODE=local`
@@ -160,6 +188,17 @@ curl -fsS http://localhost:3000/ready
 - `offline` status: `START_BOT` is false or Discord token is missing.
 - automation degraded: YouTube RSS fetch errors or invalid subscription/channel mapping.
 - frequent restarts: inspect logs with `npm run pm2:logs` and verify env vars.
+
+Manual run API note (admin dashboard):
+
+- `POST /api/bot/automation/:jobName/run` must include JSON body `{"guildId":"<discord-guild-id>"}`.
+- Without `guildId`, API returns `400` by design to prevent cross-guild accidental sends.
+
+Distributed rate limit note:
+
+- Auth/bot admin/trading control routes now use Supabase shared rate-limit via `public.acquire_rate_limit(...)`.
+- If `api_rate_limits` table or function is missing, service logs an error once and falls back to in-memory limiter.
+- Apply latest `docs/SUPABASE_SCHEMA.sql` before production rollout.
 
 ## 7) Render Email Alerts Off (Logs Only)
 

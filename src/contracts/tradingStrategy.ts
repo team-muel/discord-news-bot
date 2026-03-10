@@ -31,6 +31,10 @@ export type TradingStrategyConfig = {
     candleLookback: number;
     tickFetchLimit: number;
     tickMaxPages: number;
+    symbolConcurrency: number;
+    tickYieldEvery: number;
+    maxTicksPerCycle: number;
+    memorySoftLimitMb: number;
   };
 };
 

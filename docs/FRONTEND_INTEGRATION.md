@@ -9,6 +9,7 @@
 
 - This repository is backend-first and exposes API routes under `/api/*`.
 - Browser auth is cookie-based (`muel_session` by default).
+- CSRF protection is enabled for authenticated state-changing requests.
 - Frontend should call backend only through `apiFetch` wrappers and relative `/api/*` paths.
 - Trading strategy loop can run in-process (`START_TRADING_BOT=true`) without external AI-trading service.
 - Copy-ready handoff assets for `team-muel/muel-front-uiux` are in `docs/front-uiux-handoff/`.
@@ -72,8 +73,10 @@
   - Alias endpoint that redirects to `/api/auth/callback` for frontend compatibility
 - `GET /api/auth/me`
   - Returns current user or `401`
+  - Returns `csrfToken` and `csrfHeaderName` for subsequent mutating requests
 - `POST /api/auth/logout`
   - Clears session cookie
+  - Requires CSRF header: `<csrfHeaderName>: <csrfToken>`
 
 ### Research Presets
 
@@ -100,7 +103,15 @@
   - Returns: `healthy`, `statusGrade` (`healthy|degraded|offline`), `statusSummary`, `recommendations`, `nextCheckInSec`, `outageDurationMs`, `bot`, `automation`
 - `POST /api/bot/reconnect` (admin required)
 - `POST /api/bot/automation/:jobName/run` (admin required)
-  - `jobName`: `youtube-monitor`
+  - `jobName`: `youtube-monitor | news-monitor`
+  - Required JSON body: `{ "guildId": "<discord-guild-id>" }`
+
+### CSRF Request Rule
+
+- For authenticated `POST/PUT/PATCH/DELETE` requests, frontend must send CSRF header from `/api/auth/me`.
+- Example:
+  - `const me = await api.get('/api/auth/me')`
+  - `fetch('/api/trading/runtime/pause', { method: 'POST', headers: { [me.csrfHeaderName]: me.csrfToken } })`
 
 ### Benchmark
 

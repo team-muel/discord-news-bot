@@ -90,6 +90,10 @@ export function getDefaultTradingStrategyConfig(): TradingStrategyConfig {
       candleLookback: TRADING_CANDLE_LOOKBACK,
       tickFetchLimit: TRADING_TICK_FETCH_LIMIT,
       tickMaxPages: TRADING_TICK_MAX_PAGES,
+      symbolConcurrency: 2,
+      tickYieldEvery: 200,
+      maxTicksPerCycle: 2000,
+      memorySoftLimitMb: 0,
     },
   };
 }
@@ -140,6 +144,10 @@ export function normalizeTradingStrategyConfig(input: unknown, base?: TradingStr
       candleLookback: toPositiveInt(runtimeRaw.candleLookback, defaults.runtime.candleLookback),
       tickFetchLimit: toPositiveInt(runtimeRaw.tickFetchLimit, defaults.runtime.tickFetchLimit),
       tickMaxPages: toPositiveInt(runtimeRaw.tickMaxPages, defaults.runtime.tickMaxPages),
+      symbolConcurrency: toPositiveInt(runtimeRaw.symbolConcurrency, defaults.runtime.symbolConcurrency),
+      tickYieldEvery: toPositiveInt(runtimeRaw.tickYieldEvery, defaults.runtime.tickYieldEvery),
+      maxTicksPerCycle: toPositiveInt(runtimeRaw.maxTicksPerCycle, defaults.runtime.maxTicksPerCycle),
+      memorySoftLimitMb: toPositiveInt(runtimeRaw.memorySoftLimitMb, defaults.runtime.memorySoftLimitMb),
     },
   };
 }
