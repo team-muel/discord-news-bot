@@ -117,7 +117,12 @@ const CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC || 'true').toLowerCase());
 const SIMPLE_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED || 'true').toLowerCase());
-const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움', '구독', '해줘', '세션']);
+const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움말', '설정', '구독']);
+const LEGACY_SESSION_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
+  .includes(String(process.env.LEGACY_SESSION_COMMANDS_ENABLED || 'false').toLowerCase());
+const LEGACY_SESSION_COMMAND_NAMES = new Set(['시작', '상태', '스킬목록', '정책', '온보딩', '학습', '중지']);
+const LEGACY_SUBSCRIBE_COMMAND_ENABLED = !['0', 'false', 'no', 'off']
+  .includes(String(process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED || 'false').toLowerCase());
 
 export type ManualReconnectRequestResult = {
   ok: boolean;
@@ -212,8 +217,22 @@ const commandDefinitions = [
     .setName('ping')
     .setDescription('Check if the bot is responsive'),
   new SlashCommandBuilder()
-    .setName('도움')
+    .setName('도움말')
     .setDescription('사용 가능한 명령어 안내'),
+  new SlashCommandBuilder()
+    .setName('설정')
+    .setDescription('현재 봇 사용 모드/설정 안내')
+    .addStringOption((option) =>
+      option
+        .setName('항목')
+        .setDescription('확인할 설정 항목')
+        .setRequired(false)
+        .addChoices(
+          { name: '모드', value: 'mode' },
+          { name: '명령어', value: 'commands' },
+          { name: '자동화', value: 'automation' },
+        ),
+    ),
   new SlashCommandBuilder()
     .setName('주가')
     .setDescription('주식 현재 가격 조회')
@@ -383,6 +402,52 @@ const commandDefinitions = [
         )
         .addSubcommand((sub) =>
           sub
+            .setName('구독')
+            .setDescription('구독 자동화 세션 관리(추가/해제/목록)')
+            .addStringOption((option) =>
+              option
+                .setName('동작')
+                .setDescription('무엇을 할지 선택')
+                .setRequired(false)
+                .addChoices(
+                  { name: '추가', value: 'add' },
+                  { name: '해제', value: 'remove' },
+                  { name: '목록', value: 'list' },
+                ),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('종류')
+                .setDescription('대상 구독 종류 (미입력 시 자동 추론)')
+                .setRequired(false)
+                .addChoices(
+                  { name: '영상', value: 'videos' },
+                  { name: '게시글', value: 'posts' },
+                  { name: '뉴스', value: 'news' },
+                ),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('유튜브채널')
+                .setDescription('영상/게시글일 때 채널 URL 또는 UC... 채널 ID')
+                .setRequired(false),
+            )
+            .addChannelOption((option) =>
+              option
+                .setName('디스코드채널')
+                .setDescription('추가/해제 대상 Discord 채널 (목록은 생략 가능)')
+                .addChannelTypes(
+                  ChannelType.GuildText,
+                  ChannelType.GuildAnnouncement,
+                  ChannelType.PublicThread,
+                  ChannelType.PrivateThread,
+                  ChannelType.AnnouncementThread,
+                )
+                .setRequired(false),
+            ),
+        )
+        .addSubcommand((sub) =>
+          sub
             .setName('조회')
             .setDescription('세션 상태 조회')
             .addStringOption((option) =>
@@ -509,7 +574,38 @@ const commandDefinitions = [
         ),
 ]
   .map((definition) => definition.toJSON())
-  .filter((definition) => !SIMPLE_COMMANDS_ENABLED || SIMPLE_COMMAND_ALLOWLIST.has(String((definition as any).name || '')));
+  .filter((definition) => {
+    const name = String((definition as any).name || '');
+    if (!LEGACY_SUBSCRIBE_COMMAND_ENABLED && name === '구독') {
+      return false;
+    }
+    if (!LEGACY_SESSION_COMMANDS_ENABLED && LEGACY_SESSION_COMMAND_NAMES.has(name)) {
+      return false;
+    }
+    return !SIMPLE_COMMANDS_ENABLED || SIMPLE_COMMAND_ALLOWLIST.has(name);
+  });
+
+const replyLegacySessionRedirect = async (interaction: ChatInputCommandInteraction) => {
+  await interaction.reply({
+    ...buildSimpleEmbed(
+      '명령 통합 안내',
+      '해당 명령은 /세션으로 통합되었습니다.\n사용 예: /세션 추가, /세션 조회, /세션 제거',
+      EMBED_INFO,
+    ),
+    ephemeral: true,
+  });
+};
+
+const replyLegacySubscribeRedirect = async (interaction: ChatInputCommandInteraction) => {
+  await interaction.reply({
+    ...buildSimpleEmbed(
+      '명령 통합 안내',
+      '구독 기능은 /세션 구독으로 통합되었습니다.\n사용 예: /세션 구독 동작:추가 종류:뉴스',
+      EMBED_INFO,
+    ),
+    ephemeral: true,
+  });
+};
 
 const getManualReconnectCooldownRemainingSec = () => {
   if (!botRuntimeState.lastManualReconnectAt) {
@@ -680,9 +776,11 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
 
 const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
   const simpleUserLines = [
-    '`@봇이름 고양이 영상 찾아줘`처럼 멘션으로 바로 요청',
-    '봇의 직전 답변에 답글로 이어서 요청 (대화형)',
-    '`해줘 고양이 영상 찾아줘` 문장도 인식',
+    '`/구독` 영상/게시글/뉴스 구독 통합 관리',
+    '`/설정` 현재 사용 모드/설정 확인',
+    '`/ping` 상태 확인',
+    '`@봇이름 고양이 영상 찾아줘`처럼 멘션으로 자연어 요청',
+    '봇 답변에 답글로 이어서 대화 가능',
   ];
 
   const advancedAdminLines = [
@@ -701,7 +799,7 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
         title: 'Muel 명령어 안내',
         color: 0x2f80ed,
         description: SIMPLE_COMMANDS_ENABLED
-          ? '명령어 없이 대화형으로 사용하세요. 봇을 멘션하고 원하는 작업을 말하면 됩니다.'
+          ? '보이는 명령어를 최소화했습니다. 구독/설정/ping + 자연어 대화로 사용하세요.'
           : '자주 쓰는 핵심 명령만 빠르게 확인하세요.',
         fields: [
           {
@@ -709,15 +807,9 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
             value: SIMPLE_COMMANDS_ENABLED
               ? simpleUserLines.join('\n')
               : [
-                '`/구독 디스코드채널:#채널` (기본: 뉴스 추가)',
-                '`/구독 유튜브채널:UC... 디스코드채널:#채널` (기본: 영상 추가)',
-                '`/구독 동작:해제 디스코드채널:#채널` (기본: 뉴스 해제)',
-                '`/구독` (기본: 통합 목록)',
-                '`/세션 추가` (입력 없이 기본 자동화 실행)',
-                '`/세션 추가 요청:웹훅 알림 설정` (스킬 자동 선택)',
-                '`/세션 추가 스킬:webhook 설명:거래 채널 알림` (명시 실행)',
-                '`/세션 조회` 최근 세션 조회',
-                '`/세션 제거 세션아이디:...` 실행 중 세션 중지',
+                '`/구독` 영상/게시글/뉴스 구독 통합 관리',
+                '`/설정` 현재 사용 모드/설정 확인',
+                '`/ping` 상태 확인',
                 '`/주가` 현재 주가 조회 (`응답방식` 선택 가능)',
                 '`/차트` 30일 차트 조회 (`응답방식` 선택 가능)',
                 '`/분석` 기업 분석 (`응답방식` 선택 가능)',
@@ -736,6 +828,29 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
         ],
       },
     ],
+    ephemeral: true,
+  });
+};
+
+const handleSettingsCommand = async (interaction: ChatInputCommandInteraction) => {
+  const category = (interaction.options.getString('항목') || 'mode').trim();
+  const lines: string[] = [];
+
+  if (category === 'mode') {
+    lines.push(`SIMPLE_COMMANDS_ENABLED=${String(SIMPLE_COMMANDS_ENABLED)}`);
+    lines.push('현재 권장 UX: /구독, /도움말, /설정, /ping + 자연어 대화');
+  } else if (category === 'commands') {
+    lines.push('보이는 명령어: /구독, /도움말, /설정, /ping');
+    lines.push('자연어 상호작용: 멘션 또는 답글로 요청');
+    lines.push(`LEGACY_SUBSCRIBE_COMMAND_ENABLED=${String(LEGACY_SUBSCRIBE_COMMAND_ENABLED)}`);
+    lines.push(`LEGACY_SESSION_COMMANDS_ENABLED=${String(LEGACY_SESSION_COMMANDS_ENABLED)}`);
+  } else if (category === 'automation') {
+    lines.push('자동화는 내부 세션/스케줄러로 동작합니다.');
+    lines.push('구독 관련 자동화는 /구독 명령 하나에서 통합 관리합니다.');
+  }
+
+  await interaction.reply({
+    ...buildSimpleEmbed('설정', lines.join('\n'), EMBED_INFO),
     ephemeral: true,
   });
 };
@@ -1266,7 +1381,7 @@ const handleGroupedSubscribeCommand = async (interaction: ChatInputCommandIntera
   }
 
   const action = explicitAction
-    || (legacySub === '목록' ? 'list' : legacySub === '해제' ? 'remove' : legacySub ? 'add' : hasTargetChannel || channelInput ? 'add' : 'list');
+    || (legacySub === '목록' ? 'list' : legacySub === '해제' ? 'remove' : (legacySub && legacySub !== '구독') ? 'add' : hasTargetChannel || channelInput ? 'add' : 'list');
 
   const kind = explicitKind
     || (legacySub === '영상' ? 'videos' : legacySub === '게시글' ? 'posts' : legacySub === '뉴스' ? 'news' : '')
@@ -1614,6 +1729,11 @@ const handleSessionCommand = async (interaction: ChatInputCommandInteraction) =>
     return;
   }
 
+  if (sub === '구독') {
+    await handleGroupedSubscribeCommand(interaction);
+    return;
+  }
+
   if (sub === '제거') {
     await interaction.deferReply({ ephemeral: true });
     const sessionId = interaction.options.getString('세션아이디', true).trim();
@@ -1943,8 +2063,12 @@ const attachCommandHandlers = () => {
           });
           return;
         }
-        case '도움': {
+        case '도움말': {
           await handleHelpCommand(interaction);
+          return;
+        }
+        case '설정': {
+          await handleSettingsCommand(interaction);
           return;
         }
         case '주가': {
@@ -1960,6 +2084,10 @@ const attachCommandHandlers = () => {
           return;
         }
         case '구독': {
+          if (!LEGACY_SUBSCRIBE_COMMAND_ENABLED) {
+            await replyLegacySubscribeRedirect(interaction);
+            return;
+          }
           await handleGroupedSubscribeCommand(interaction);
           return;
         }
@@ -1972,30 +2100,58 @@ const attachCommandHandlers = () => {
           return;
         }
         case '시작': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '시작');
           return;
         }
         case '상태': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '상태');
           return;
         }
         case '스킬목록': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '스킬목록');
           return;
         }
         case '정책': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '정책');
           return;
         }
         case '온보딩': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '온보딩');
           return;
         }
         case '학습': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '학습');
           return;
         }
         case '중지': {
+          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
+            await replyLegacySessionRedirect(interaction);
+            return;
+          }
           await handleAgentCommand(interaction, '중지');
           return;
         }
