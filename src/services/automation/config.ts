@@ -10,7 +10,7 @@ export const AUTOMATION_RUNTIME_ENABLED = AUTOMATION_ENABLED && Boolean(PRIMARY_
 
 export const AUTOMATION_YOUTUBE_ENABLED = parseBooleanEnv(process.env.AUTOMATION_YOUTUBE_ENABLED, true);
 export const AUTOMATION_YOUTUBE_INTERVAL_MIN = parseIntegerEnv(process.env.AUTOMATION_YOUTUBE_INTERVAL_MIN, 10);
-export const AUTOMATION_NEWS_ENABLED = parseBooleanEnv(process.env.AUTOMATION_NEWS_ENABLED, true);
+export const AUTOMATION_NEWS_ENABLED = parseBooleanEnv(process.env.AUTOMATION_NEWS_ENABLED, false);
 export const AUTOMATION_NEWS_INTERVAL_MIN = parseIntegerEnv(process.env.AUTOMATION_NEWS_INTERVAL_MIN, 10);
 
 export const JOB_CONFIGS: JobConfig[] = [

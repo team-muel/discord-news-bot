@@ -947,7 +947,7 @@ const executeTick = async (client: Client, guildId?: string) => {
   }
 };
 
-export const isNewsSentimentMonitorEnabled = () => (process.env.AUTOMATION_NEWS_ENABLED || 'true').toLowerCase() !== 'false';
+export const isNewsSentimentMonitorEnabled = () => (process.env.AUTOMATION_NEWS_ENABLED || 'false').toLowerCase() !== 'false';
 
 export const startNewsSentimentMonitor = (client: Client) => {
   if (started || !isNewsSentimentMonitorEnabled()) {

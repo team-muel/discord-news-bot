@@ -10,6 +10,26 @@ export type NewsChannelSubscription = {
   created_at: string | null;
 };
 
+const resolvePersistedUserId = async (userId: string): Promise<string | null> => {
+  const normalized = userId.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('users')
+    .select('id')
+    .eq('id', normalized)
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  return data && data.length > 0 ? normalized : null;
+};
+
 const buildNewsSourceUrl = (guildId: string, discordChannelId: string): string => {
   return `https://www.google.com/finance/markets?muelGuild=${encodeURIComponent(guildId)}&muelChannel=${encodeURIComponent(discordChannelId)}#google-finance-news`;
 };
@@ -41,16 +61,21 @@ export const createNewsChannelSubscription = async (params: {
   if (existing && existing.length > 0) {
     const row = existing[0] as NewsChannelSubscription;
     if (!row.url) {
-      await client.from('sources').update({ url }).eq('id', row.id);
+      const { error: updateError } = await client.from('sources').update({ url }).eq('id', row.id);
+      if (updateError) {
+        throw updateError;
+      }
     }
     return { created: false, row };
   }
+
+  const persistedUserId = await resolvePersistedUserId(params.userId);
 
   const { data: inserted, error: insertError } = await client
     .from('sources')
     .insert([
       {
-        user_id: params.userId,
+        user_id: persistedUserId,
         guild_id: params.guildId,
         channel_id: params.discordChannelId,
         name: 'google-finance-news',

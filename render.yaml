@@ -18,6 +18,22 @@ services:
         value: "false"
       - key: AUTOMATION_YOUTUBE_ENABLED
         value: "true"
+      - key: AUTOMATION_NEWS_ENABLED
+        value: "false"
+      - key: AI_PROVIDER
+        value: openai
+      - key: AGENT_AUTO_ONBOARDING_ENABLED
+        value: "true"
+      - key: AGENT_DAILY_LEARNING_ENABLED
+        value: "true"
+      - key: AGENT_DAILY_LEARNING_HOUR
+        value: "4"
+      - key: AGENT_DAILY_MAX_GUILDS
+        value: "30"
+      - key: AGENT_MAX_CONCURRENT_SESSIONS
+        value: "4"
+      - key: AGENT_MAX_GOAL_LENGTH
+        value: "1200"
       - key: YOUTUBE_MONITOR_INTERVAL_MS
         value: "300000"
       - key: DISCORD_TOKEN

@@ -17,7 +17,7 @@ import { isUserAdmin } from './services/adminAllowlistService';
 import {
   getAutomationRuntimeSnapshot,
   isAutomationEnabled,
-  registerAutomationManualTrigger,
+  startAutomationModules,
   triggerAutomationJob,
 } from './services/automationBot';
 import {
@@ -33,16 +33,24 @@ import {
 } from './services/newsChannelStore';
 import { fetchStockChartImageUrl, fetchStockQuote, isStockFeatureEnabled } from './services/stockService';
 import { generateInvestmentAnalysis, isInvestmentAnalysisEnabled } from './services/investmentAnalysisService';
-import {
-  isNewsSentimentMonitorEnabled,
-  startNewsSentimentMonitor,
-  triggerNewsSentimentMonitor,
-} from './services/newsSentimentMonitor';
-import {
-  startYouTubeSubscriptionsMonitor,
-  triggerYouTubeSubscriptionsMonitor,
-} from './services/youtubeSubscriptionsMonitor';
 import { getSupabaseClient, isSupabaseConfigured } from './services/supabaseClient';
+import {
+  type AgentSession,
+  cancelAgentSession,
+  getAgentPolicy,
+  getAgentSession,
+  listAgentSkills,
+  getMultiAgentRuntimeSnapshot,
+  listGuildAgentSessions,
+  startAgentSession,
+} from './services/multiAgentService';
+import {
+  getAgentOpsSnapshot,
+  onGuildJoined,
+  startAgentDailyLearningLoop,
+  triggerDailyLearningRun,
+  triggerGuildOnboardingSession,
+} from './services/agentOpsService';
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -111,6 +119,35 @@ export type ManualReconnectRequestResult = {
 };
 
 type ReplyVisibility = 'private' | 'public';
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const parts = [record.code, record.message, record.details, record.hint]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean);
+
+    if (parts.length > 0) {
+      return parts.join(' | ');
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  return String(error);
+};
 
 const getReplyVisibility = (interaction: ChatInputCommandInteraction): ReplyVisibility => {
   const value = interaction.options.getString('응답방식') || interaction.options.getString('공개범위');
@@ -315,64 +352,155 @@ const commandDefinitions = [
             .setRequired(true),
         ),
     ),
-  new SlashCommandBuilder()
-    .setName('관리')
-    .setDescription('관리자 전용 운영 명령')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub
-        .setName('상태')
-        .setDescription('봇/자동화 상태 확인'),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('즉시전송')
-        .setDescription('현재 길드 기준 즉시 전송 작업 실행')
+      new SlashCommandBuilder()
+        .setName('해줘')
+        .setDescription('목표를 기반으로 멀티 실행 세션 시작')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addStringOption((option) =>
           option
-            .setName('job')
-            .setDescription('Automation job name')
-            .setRequired(true)
-            .addChoices(
-              { name: 'youtube-monitor', value: 'youtube-monitor' },
-              { name: 'news-monitor', value: 'news-monitor' },
-            ),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('재연결')
-        .setDescription('Discord 클라이언트 재연결'),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('채널아이디')
-        .setDescription('선택한 채널 ID 확인')
-        .addChannelOption((option) =>
-          option
-            .setName('channel')
-            .setDescription('Select a target channel')
+            .setName('목표')
+            .setDescription('예: 온보딩 자동화 정책 설계')
             .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('포럼아이디')
-        .setDescription('선택한 포럼 채널 ID 확인')
-        .addChannelOption((option) =>
-          option
-            .setName('forum')
-            .setDescription('Select a forum channel')
-            .addChannelTypes(ChannelType.GuildForum)
-            .setRequired(true),
-        ),
         )
-        .addSubcommand((sub) =>
-          sub
-          .setName('동기화')
-          .setDescription('슬래시 명령 강제 재등록'),
-    ),
+        .addStringOption((option) =>
+          option
+            .setName('스킬')
+            .setDescription('특정 스킬을 지정해 단일 실행')
+            .addChoices(
+              { name: 'ops-plan', value: 'ops-plan' },
+              { name: 'ops-execution', value: 'ops-execution' },
+              { name: 'ops-critique', value: 'ops-critique' },
+              { name: 'guild-onboarding-blueprint', value: 'guild-onboarding-blueprint' },
+              { name: 'incident-review', value: 'incident-review' },
+            )
+            .setRequired(false),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('우선순위')
+            .setDescription('실행 전략: 빠름/균형/정밀')
+            .addChoices(
+              { name: '빠름', value: 'fast' },
+              { name: '균형', value: 'balanced' },
+              { name: '정밀', value: 'precise' },
+            )
+            .setRequired(false),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('공개범위')
+            .setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+            .addChoices(
+              { name: '나만 보기', value: 'private' },
+              { name: '채널에 공유', value: 'public' },
+            )
+            .setRequired(false),
+        ),
+      new SlashCommandBuilder()
+        .setName('시작')
+        .setDescription('세션 시작(호환 명령)')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption((option) =>
+          option
+            .setName('목표')
+            .setDescription('예: 온보딩 자동화 정책 설계')
+            .setRequired(true),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('스킬')
+            .setDescription('특정 스킬을 지정해 단일 실행')
+            .addChoices(
+              { name: 'ops-plan', value: 'ops-plan' },
+              { name: 'ops-execution', value: 'ops-execution' },
+              { name: 'ops-critique', value: 'ops-critique' },
+              { name: 'guild-onboarding-blueprint', value: 'guild-onboarding-blueprint' },
+              { name: 'incident-review', value: 'incident-review' },
+            )
+            .setRequired(false),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('우선순위')
+            .setDescription('실행 전략: 빠름/균형/정밀')
+            .addChoices(
+              { name: '빠름', value: 'fast' },
+              { name: '균형', value: 'balanced' },
+              { name: '정밀', value: 'precise' },
+            )
+            .setRequired(false),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('공개범위')
+            .setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+            .addChoices(
+              { name: '나만 보기', value: 'private' },
+              { name: '채널에 공유', value: 'public' },
+            )
+            .setRequired(false),
+        ),
+      new SlashCommandBuilder()
+        .setName('상태')
+        .setDescription('최근 세션 또는 특정 세션 상태 확인')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption((option) =>
+          option
+            .setName('종류')
+            .setDescription('운영/세션/전체 중 표시할 상태 유형')
+            .addChoices(
+              { name: '전체', value: 'all' },
+              { name: '운영', value: 'runtime' },
+              { name: '세션', value: 'session' },
+            )
+            .setRequired(false),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('세션아이디')
+            .setDescription('확인할 세션 ID')
+            .setRequired(false),
+        ),
+      new SlashCommandBuilder()
+        .setName('스킬목록')
+        .setDescription('사용 가능한 스킬 목록 확인')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+      new SlashCommandBuilder()
+        .setName('정책')
+        .setDescription('실행 한도 및 운영 정책 조회')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+      new SlashCommandBuilder()
+        .setName('온보딩')
+        .setDescription('현재 길드 온보딩 분석 실행')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+      new SlashCommandBuilder()
+        .setName('학습')
+        .setDescription('현재 길드 일일 학습/회고 실행')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption((option) =>
+          option
+            .setName('목표')
+            .setDescription('선택: 기본 회고 목표 대신 사용자 지정 목표')
+            .setRequired(false),
+        ),
+      new SlashCommandBuilder()
+        .setName('중지')
+        .setDescription('실행 중 세션 중지 요청')
+        .setDMPermission(false)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption((option) =>
+          option
+            .setName('세션아이디')
+            .setDescription('중지할 세션 ID')
+            .setRequired(true),
+        ),
 ].map((definition) => definition.toJSON());
 
 const getManualReconnectCooldownRemainingSec = () => {
@@ -422,7 +550,7 @@ const getUsageSummaryLine = async (): Promise<string> => {
     const activeGuilds = new Set(rows.map((row: any) => String(row.guild_id || 'unknown'))).size;
     return `Usage: guilds=${guildCount} | activeGuilds=${activeGuilds} | sources=${rows.length} (active=${active}, yt=${youtube}, news=${news})`;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return `Usage: guilds=${guildCount} | source-stats unavailable (${message})`;
   }
 };
@@ -450,7 +578,7 @@ const getGuildUsageSummaryLine = async (guildId: string | null): Promise<string 
 
     return `Current guild: sources=${rows.length} (active=${active}, yt=${youtube}, news=${news})`;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return `Current guild: usage unavailable (${message})`;
   }
 };
@@ -503,11 +631,11 @@ export const forceRegisterSlashCommands = async () => {
   await registerSlashCommands();
 };
 
-const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => {
+const getRuntimeStatusLines = async (guildId: string | null): Promise<string[]> => {
   const bot = getBotRuntimeSnapshot();
   const automation = getAutomationRuntimeSnapshot();
   const usage = await getUsageSummaryLine();
-  const guildUsage = await getGuildUsageSummaryLine(interaction.guildId);
+  const guildUsage = await getGuildUsageSummaryLine(guildId);
   const jobStates = Object.values(automation.jobs)
     .map((job) => {
       const lastState = job.lastErrorAt && (!job.lastSuccessAt || Date.parse(job.lastErrorAt) >= Date.parse(job.lastSuccessAt))
@@ -519,14 +647,25 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
     })
     .join(' | ');
 
+  return [
+    '[런타임 상태]',
+    `Bot ready: ${String(bot.ready)} | wsStatus: ${bot.wsStatus}`,
+    `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
+    '',
+    '[자동화 상태]',
+    `Automation healthy: ${String(automation.healthy)} | ${jobStates || 'no jobs'}`,
+    '',
+    '[사용량]',
+    usage,
+    guildUsage,
+  ].filter(Boolean) as string[];
+};
+
+const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => {
+  const lines = await getRuntimeStatusLines(interaction.guildId);
+
   await interaction.reply({
-    content: [
-      `Bot ready: ${String(bot.ready)} | wsStatus: ${bot.wsStatus}`,
-      `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
-      `Automation healthy: ${String(automation.healthy)} | ${jobStates || 'no jobs'}`,
-      usage,
-      guildUsage,
-    ].join('\n'),
+    content: lines.join('\n'),
     ephemeral: true,
   });
 };
@@ -552,12 +691,14 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
           {
             name: '관리자 명령',
             value: [
-              '`/관리 상태` 봇/자동화/사용량 요약',
-              '`/관리 즉시전송` 현재 길드 기준 자동화 작업 즉시 실행',
-              '`/관리 재연결` 디스코드 재연결',
-              '`/관리 채널아이디` 채널 ID 확인',
-              '`/관리 포럼아이디` 포럼 ID 확인',
-              '`/관리 동기화` 슬래시 명령 강제 재등록',
+              '`/해줘` 목표 기반 멀티 실행 세션 시작',
+              '`/시작` 세션 시작(호환 명령)',
+              '`/상태` 운영/세션 상태 조회 (`종류`: 전체|운영|세션)',
+              '`/스킬목록` 사용 가능한 스킬셋 조회',
+              '`/정책` 실행 한도/가드레일 확인',
+              '`/온보딩` 현재 길드 온보딩 분석 실행',
+              '`/학습` 현재 길드 일일 학습/회고 실행',
+              '`/중지` 실행 중 세션 중지 요청',
             ].join('\n'),
           },
           {
@@ -630,7 +771,7 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
   } catch (error) {
     logger.error('[BOT] Manual reconnect failed: %o', error);
     botRuntimeState.lastLoginErrorAt = new Date().toISOString();
-    botRuntimeState.lastLoginError = error instanceof Error ? error.message : String(error);
+    botRuntimeState.lastLoginError = getErrorMessage(error);
     botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
     botRuntimeState.lastAlertReason = botRuntimeState.lastLoginError;
     return {
@@ -890,7 +1031,7 @@ const handleSubscribeCommand = async (
       `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     await interaction.editReply(`구독 등록 실패: ${message}`);
   }
 };
@@ -920,7 +1061,7 @@ const handleSubscriptionListCommand = async (interaction: ChatInputCommandIntera
     const suffix = rows.length > 20 ? `\n...(${rows.length - 20} more)` : '';
     await interaction.editReply(`총 ${rows.length}개\n${linesWithMeta.join('\n')}${suffix}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     await interaction.editReply(`구독 목록 조회 실패: ${message}`);
   }
 };
@@ -972,7 +1113,7 @@ const handleUnsubscribeCommand = async (interaction: ChatInputCommandInteraction
 
     await interaction.editReply(`해제 완료: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     await interaction.editReply(`구독 해제 실패: ${message}`);
   }
 };
@@ -1045,7 +1186,7 @@ const handleNewsChannelCommand = async (interaction: ChatInputCommandInteraction
       const suffix = rows.length > 20 ? `\n...(${rows.length - 20} more)` : '';
       await interaction.editReply(`총 ${rows.length}개\n${lines.join('\n')}${suffix}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       await interaction.editReply(`뉴스 채널 목록 조회 실패: ${message}`);
     }
     return;
@@ -1087,7 +1228,7 @@ const handleNewsChannelCommand = async (interaction: ChatInputCommandInteraction
 
     await interaction.editReply('지원되지 않는 뉴스채널 서브명령입니다.');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     await interaction.editReply(`뉴스 채널 처리 실패: ${message}`);
   }
 };
@@ -1124,6 +1265,215 @@ const handleAdminCommand = async (interaction: ChatInputCommandInteraction) => {
       await interaction.reply({ content: '지원되지 않는 관리자 서브명령입니다.', ephemeral: true });
     }
   }
+};
+
+const formatAgentSessionLine = (session: AgentSession) => {
+  const safeGoal = String(session.goal || '').replace(/\s+/g, ' ').slice(0, 48);
+  return `${session.id} | ${session.status} | priority=${session.priority} | ${session.updatedAt} | ${safeGoal}`;
+};
+
+const handleAgentCommand = async (interaction: ChatInputCommandInteraction, forcedSub?: string) => {
+  if (!(await hasAdminPermission(interaction))) {
+    await interaction.reply({ content: 'Admin permission is required.', ephemeral: true });
+    return;
+  }
+
+  if (!interaction.guildId) {
+    await interaction.reply({ content: '서버 채널에서만 사용할 수 있습니다.', ephemeral: true });
+    return;
+  }
+
+  const sub = forcedSub || interaction.options.getSubcommand();
+
+  if (sub === '실행' || sub === '시작') {
+    const shared = getReplyVisibility(interaction) === 'public';
+    await interaction.deferReply({ ephemeral: !shared });
+
+    const goal = interaction.options.getString('목표', true).trim();
+    const skillId = (interaction.options.getString('스킬') || '').trim();
+    const priority = (interaction.options.getString('우선순위') || 'balanced').trim();
+    if (!goal) {
+      await interaction.editReply('목표를 입력해주세요.');
+      return;
+    }
+
+    let session: AgentSession;
+    try {
+      session = startAgentSession({
+        guildId: interaction.guildId,
+        requestedBy: interaction.user.id,
+        goal,
+        skillId: skillId || null,
+        priority,
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      await interaction.editReply(`세션 시작 실패: ${message}`);
+      return;
+    }
+
+    const runtime = getMultiAgentRuntimeSnapshot();
+    await interaction.editReply([
+      `에이전트 세션 시작: ${session.id}`,
+      `상태: ${session.status}`,
+      `목표: ${session.goal}`,
+      `우선순위: ${session.priority}`,
+      session.requestedSkillId ? `스킬: ${session.requestedSkillId}` : '스킬: 기본 멀티 에이전트(계획/실행/검증)',
+      `현재 실행중 세션 수: ${runtime.runningSessions}`,
+      '결과 확인: /상태 세션아이디:<ID>',
+    ].join('\n'));
+    return;
+  }
+
+  if (sub === '온보딩') {
+    await interaction.deferReply({ ephemeral: true });
+    const result = triggerGuildOnboardingSession({
+      guildId: interaction.guildId,
+      guildName: interaction.guild?.name,
+      requestedBy: interaction.user.id,
+      reason: 'slash-command-onboarding',
+    });
+    await interaction.editReply(result.ok
+      ? `온보딩 세션 시작: ${result.sessionId}`
+      : `온보딩 실행 안됨: ${result.message}`);
+    return;
+  }
+
+  if (sub === '학습') {
+    await interaction.deferReply({ ephemeral: true });
+    const customGoal = (interaction.options.getString('목표') || '').trim();
+    if (customGoal) {
+      try {
+        const session = startAgentSession({
+          guildId: interaction.guildId,
+          requestedBy: interaction.user.id,
+          goal: customGoal,
+          skillId: 'incident-review',
+          priority: 'balanced',
+        });
+        await interaction.editReply(`학습 세션 시작: ${session.id}`);
+      } catch (error) {
+        await interaction.editReply(`학습 실행 실패: ${getErrorMessage(error)}`);
+      }
+      return;
+    }
+
+    const result = triggerDailyLearningRun(client, interaction.guildId);
+    await interaction.editReply(result.ok ? result.message : `학습 실행 실패: ${result.message}`);
+    return;
+  }
+
+  if (sub === '스킬목록') {
+    await interaction.deferReply({ ephemeral: true });
+    const skills = listAgentSkills();
+    const lines = skills.map((skill) => `${skill.id} | ${skill.title} | ${skill.description}`);
+    await interaction.editReply(`사용 가능한 스킬 ${skills.length}개\n${lines.join('\n')}`);
+    return;
+  }
+
+  if (sub === '정책') {
+    await interaction.deferReply({ ephemeral: true });
+    const policy = getAgentPolicy();
+    const ops = getAgentOpsSnapshot();
+    await interaction.editReply([
+      `동시 세션 한도: ${policy.maxConcurrentSessions}`,
+      `목표 최대 길이: ${policy.maxGoalLength}`,
+      `제한 스킬: ${policy.restrictedSkills.join(', ') || '없음'}`,
+      `자동 온보딩: ${String(ops.autoOnboardingEnabled)}`,
+      `일일 학습 루프: ${String(ops.dailyLearningEnabled)} (hour=${ops.dailyLearningHour})`,
+    ].join('\n'));
+    return;
+  }
+
+  if (sub === '상태') {
+    await interaction.deferReply({ ephemeral: true });
+    const statusType = (interaction.options.getString('종류') || 'all').trim();
+    const sessionId = (interaction.options.getString('세션아이디') || '').trim();
+
+    const includeRuntime = statusType === 'all' || statusType === 'runtime';
+    const includeSession = statusType === 'all' || statusType === 'session';
+
+    if (!includeSession) {
+      const runtimeLines = await getRuntimeStatusLines(interaction.guildId);
+      await interaction.editReply(runtimeLines.join('\n'));
+      return;
+    }
+
+    if (sessionId) {
+      const session = getAgentSession(sessionId);
+      if (!session || session.guildId !== interaction.guildId) {
+        await interaction.editReply('해당 세션을 찾을 수 없습니다.');
+        return;
+      }
+
+      const steps = session.steps
+        .map((step, index) => `${index + 1}. ${step.role}(${step.status}) - ${step.title}`)
+        .join('\n');
+      const runtime = getMultiAgentRuntimeSnapshot();
+      const runtimeLines = includeRuntime ? await getRuntimeStatusLines(interaction.guildId) : [];
+
+      await interaction.editReply([
+        ...runtimeLines,
+        '[세션 상태]',
+        `세션: ${session.id}`,
+        `상태: ${session.status}`,
+        `우선순위: ${session.priority}`,
+        `생성: ${session.createdAt}`,
+        `목표: ${session.goal}`,
+        '',
+        '[스텝]',
+        `스텝:\n${steps}`,
+        session.error ? `오류: ${session.error}` : '',
+        '',
+        '[결과]',
+        session.result ? `결과 요약:\n${session.result.slice(0, 1200)}` : '결과: 아직 생성 중입니다.',
+        '',
+        '[런타임 요약]',
+        `런타임: running=${runtime.runningSessions}, completed=${runtime.completedSessions}, failed=${runtime.failedSessions}`,
+      ].filter(Boolean).join('\n\n'));
+      return;
+    }
+
+    const sessions = listGuildAgentSessions(interaction.guildId, 8);
+    const runtime = getMultiAgentRuntimeSnapshot();
+    const runtimeLines = includeRuntime ? await getRuntimeStatusLines(interaction.guildId) : [];
+    if (sessions.length === 0) {
+      await interaction.editReply([
+        ...runtimeLines,
+        '최근 에이전트 세션이 없습니다.',
+        `런타임: running=${runtime.runningSessions}, completed=${runtime.completedSessions}, failed=${runtime.failedSessions}`,
+      ].join('\n'));
+      return;
+    }
+
+    await interaction.editReply([
+      ...runtimeLines,
+      '[세션 상태: 최근 목록]',
+      '최근 세션 목록:',
+      sessions.map((session) => formatAgentSessionLine(session)).join('\n'),
+      '',
+      '[런타임 요약]',
+      `런타임: running=${runtime.runningSessions}, completed=${runtime.completedSessions}, failed=${runtime.failedSessions}`,
+      '상세 조회: /상태 세션아이디:<ID>',
+    ].join('\n'));
+    return;
+  }
+
+  if (sub === '중지') {
+    await interaction.deferReply({ ephemeral: true });
+    const sessionId = interaction.options.getString('세션아이디', true).trim();
+    const session = getAgentSession(sessionId);
+    if (!session || session.guildId !== interaction.guildId) {
+      await interaction.editReply('해당 세션을 찾을 수 없습니다.');
+      return;
+    }
+
+    const result = cancelAgentSession(sessionId);
+    await interaction.editReply(result.ok ? `중지 요청 수락: ${sessionId}` : `중지 실패: ${result.message}`);
+    return;
+  }
+
+  await interaction.reply({ content: '지원되지 않는 명령입니다.', ephemeral: true });
 };
 
 const attachCommandHandlers = () => {
@@ -1188,8 +1538,36 @@ const attachCommandHandlers = () => {
           await handleNewsChannelCommand(interaction);
           return;
         }
-        case '관리': {
-          await handleAdminCommand(interaction);
+        case '해줘': {
+          await handleAgentCommand(interaction, '실행');
+          return;
+        }
+        case '시작': {
+          await handleAgentCommand(interaction, '시작');
+          return;
+        }
+        case '상태': {
+          await handleAgentCommand(interaction, '상태');
+          return;
+        }
+        case '스킬목록': {
+          await handleAgentCommand(interaction, '스킬목록');
+          return;
+        }
+        case '정책': {
+          await handleAgentCommand(interaction, '정책');
+          return;
+        }
+        case '온보딩': {
+          await handleAgentCommand(interaction, '온보딩');
+          return;
+        }
+        case '학습': {
+          await handleAgentCommand(interaction, '학습');
+          return;
+        }
+        case '중지': {
+          await handleAgentCommand(interaction, '중지');
           return;
         }
         default: {
@@ -1217,19 +1595,17 @@ client.on('clientReady', () => {
   botRuntimeState.lastAlertReason = null;
   botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
-  registerAutomationManualTrigger('youtube-monitor', async (context) =>
-    triggerYouTubeSubscriptionsMonitor(client, context?.guildId),
-  );
-  registerAutomationManualTrigger('news-monitor', async (context) =>
-    triggerNewsSentimentMonitor(client, context?.guildId),
-  );
   void registerSlashCommands();
   if (isAutomationEnabled()) {
-    startYouTubeSubscriptionsMonitor(client);
-    if (isNewsSentimentMonitorEnabled()) {
-      startNewsSentimentMonitor(client);
-    }
+    startAutomationModules(client);
   }
+
+  startAgentDailyLearningLoop(client);
+});
+
+client.on('guildCreate', (guild) => {
+  const result = onGuildJoined(guild);
+  logger.info('[AGENT-OPS] guildCreate onboarding guild=%s ok=%s message=%s', guild.id, String(result.ok), result.message);
 });
 
 client.on('shardDisconnect', (event) => {

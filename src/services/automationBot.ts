@@ -4,10 +4,10 @@ import {
   JOB_CONFIGS,
 } from './automation/config';
 import { buildAutomationSummary, isAutomationHealthy } from './automation/health';
+import { getAutomationModule, getAutomationModules } from './automation/modules';
 import { createInitialJobStates, initJobState } from './automation/runtimeState';
 import type { AutomationJobName, AutomationRuntimeSnapshot } from './automation/types';
-import { getNewsSentimentMonitorSnapshot } from './newsSentimentMonitor';
-import { getYouTubeSubscriptionsMonitorSnapshot } from './youtubeSubscriptionsMonitor';
+import type { Client } from 'discord.js';
 
 export type { AutomationJobName, AutomationRuntimeSnapshot };
 
@@ -18,28 +18,13 @@ export type AutomationTriggerContext = {
 const jobStates = createInitialJobStates();
 let started = false;
 let startedAt: string | null = null;
+let activeClient: Client | null = null;
 const manualTriggers: Partial<Record<AutomationJobName, (context?: AutomationTriggerContext) => Promise<{ ok: boolean; message: string }>>> = {};
 
 const syncMonitorState = () => {
-  {
-    const state = jobStates['youtube-monitor'];
-    const monitor = getYouTubeSubscriptionsMonitorSnapshot();
-
-    state.running = Boolean(monitor.running);
-    state.runCount = monitor.runCount;
-    state.successCount = monitor.successCount;
-    state.failCount = monitor.failCount;
-    state.lastRunAt = monitor.lastRunAt;
-    state.lastSuccessAt = monitor.lastSuccessAt;
-    state.lastErrorAt = monitor.lastErrorAt;
-    state.lastError = monitor.lastError;
-    state.lastDurationMs = monitor.lastDurationMs;
-    state.lastExitCode = null;
-  }
-
-  {
-    const state = jobStates['news-monitor'];
-    const monitor = getNewsSentimentMonitorSnapshot();
+  for (const module of getAutomationModules()) {
+    const state = jobStates[module.name];
+    const monitor = module.getSnapshot();
 
     state.running = Boolean(monitor.running);
     state.runCount = monitor.runCount;
@@ -90,6 +75,23 @@ export const startAutomationJobs = () => {
   syncMonitorState();
 };
 
+export const startAutomationModules = (client: Client) => {
+  if (!AUTOMATION_ENABLED || !AUTOMATION_RUNTIME_ENABLED) {
+    return;
+  }
+
+  activeClient = client;
+
+  for (const module of getAutomationModules()) {
+    const state = jobStates[module.name];
+    if (!state.enabled || !module.isEnabled()) {
+      continue;
+    }
+
+    module.start(client);
+  }
+};
+
 export const triggerAutomationJob = async (jobName: AutomationJobName, context?: AutomationTriggerContext) => {
   const state = jobStates[jobName];
   if (!state) {
@@ -109,11 +111,20 @@ export const triggerAutomationJob = async (jobName: AutomationJobName, context?:
   }
 
   const manualTrigger = manualTriggers[jobName];
-  if (!manualTrigger) {
+  const module = getAutomationModule(jobName);
+
+  if (!module.isEnabled()) {
+    return { ok: false, message: `${jobName} is disabled` };
+  }
+
+  if (!manualTrigger && !activeClient) {
     return { ok: false, message: `${jobName} is not ready yet` };
   }
 
-  const result = await manualTrigger(context);
+  const result = manualTrigger
+    ? await manualTrigger(context)
+    : await module.trigger(activeClient as Client, context?.guildId);
+
   syncMonitorState();
   return result;
 };

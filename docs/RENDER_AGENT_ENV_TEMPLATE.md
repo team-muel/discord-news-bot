@@ -1,0 +1,45 @@
+# Render Agent Env Template
+
+Use this as a baseline for deploying Muel as a server-operations runtime.
+
+## Required
+
+- START_BOT=true
+- DISCORD_TOKEN=<secret>
+- JWT_SECRET=<secret>
+
+## LLM Provider
+
+- AI_PROVIDER=openai or gemini
+- OPENAI_API_KEY=<secret> (if openai)
+- GEMINI_API_KEY=<secret> (if gemini)
+- OPENAI_ANALYSIS_MODEL=gpt-4o-mini (optional)
+- GEMINI_MODEL=gemini-1.5-flash (optional)
+
+## Agent Runtime Controls
+
+- AGENT_MAX_CONCURRENT_SESSIONS=4
+- AGENT_MAX_GOAL_LENGTH=1200
+- AGENT_AUTO_ONBOARDING_ENABLED=true
+- AGENT_DAILY_LEARNING_ENABLED=true
+- AGENT_DAILY_LEARNING_HOUR=4
+- AGENT_DAILY_MAX_GUILDS=30
+- AGENT_ONBOARDING_COOLDOWN_MS=21600000
+
+## Memory Layer
+
+- SUPABASE_URL=<secret>
+- SUPABASE_KEY=<secret>
+- OBSIDIAN_VAULT_PATH=/var/data/obsidian-vault (optional)
+
+## Automation Defaults
+
+- START_AUTOMATION_JOBS=false
+- AUTOMATION_YOUTUBE_ENABLED=true
+- AUTOMATION_NEWS_ENABLED=false
+
+## Notes
+
+- `AUTOMATION_NEWS_ENABLED=false` keeps non-essential news push opt-in.
+- If both OpenAI and Gemini keys exist, `AI_PROVIDER` selects priority.
+- If no provider key exists, `/해줘` and `/시작` session creation fails by design.

@@ -4,6 +4,7 @@ export {
   isAutomationEnabled,
   registerAutomationManualTrigger,
   startAutomationJobs,
+  startAutomationModules,
   triggerAutomationJob,
   type AutomationJobName,
   type AutomationRuntimeSnapshot,

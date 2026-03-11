@@ -9,6 +9,20 @@ import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseCli
 import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob } from '../services/automationBot';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { toStringParam } from '../utils/validation';
+import {
+  cancelAgentSession,
+  getAgentSession,
+  getAgentPolicy,
+  getMultiAgentRuntimeSnapshot,
+  listAgentSkills,
+  listGuildAgentSessions,
+  startAgentSession,
+} from '../services/multiAgentService';
+import {
+  getAgentOpsSnapshot,
+  triggerDailyLearningRun,
+  triggerGuildOnboardingSession,
+} from '../services/agentOpsService';
 
 let lastBotStatusBenchmarkAt = 0;
 
@@ -86,6 +100,7 @@ export function createBotRouter(): Router {
       outageDurationMs,
       bot,
       automation,
+      agents: getMultiAgentRuntimeSnapshot(),
     };
 
     return res.json(payload);
@@ -139,6 +154,108 @@ export function createBotRouter(): Router {
       },
     ]);
 
+    if (!result.ok) {
+      return res.status(409).json({ ok: false, message: result.message });
+    }
+
+    return res.status(202).json({ ok: true, message: result.message });
+  });
+
+  router.get('/agent/sessions', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ error: 'guildId is required' });
+    }
+
+    const limit = Number(req.query?.limit || 10);
+    const sessions = listGuildAgentSessions(guildId, Number.isFinite(limit) ? limit : 10);
+    return res.json({
+      runtime: getMultiAgentRuntimeSnapshot(),
+      skills: listAgentSkills(),
+      sessions,
+    });
+  });
+
+  router.get('/agent/skills', requireAdmin, async (_req, res) => {
+    return res.json({ skills: listAgentSkills() });
+  });
+
+  router.get('/agent/policy', requireAdmin, async (_req, res) => {
+    return res.json({ policy: getAgentPolicy(), ops: getAgentOpsSnapshot() });
+  });
+
+  router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ error: 'guildId is required' });
+    }
+
+    const guildName = toStringParam(req.body?.guildName) || undefined;
+    const requestedBy = toStringParam(req.user?.id) || 'api';
+    const result = triggerGuildOnboardingSession({
+      guildId,
+      guildName,
+      requestedBy,
+      reason: 'api-onboarding-run',
+    });
+
+    return res.status(result.ok ? 202 : 409).json(result);
+  });
+
+  router.post('/agent/learning/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const result = triggerDailyLearningRun(client, guildId || undefined);
+    return res.status(result.ok ? 202 : 409).json(result);
+  });
+
+  router.get('/agent/sessions/:sessionId', requireAdmin, async (req, res) => {
+    const sessionId = toStringParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+
+    const session = getAgentSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'SESSION_NOT_FOUND' });
+    }
+
+    return res.json({ session });
+  });
+
+  router.post('/agent/sessions', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const goal = toStringParam(req.body?.goal);
+    const skillId = toStringParam(req.body?.skillId);
+    const priority = req.body?.priority ? String(req.body.priority).trim() : undefined;
+    if (!guildId || !goal) {
+      return res.status(400).json({ error: 'guildId and goal are required' });
+    }
+
+    const requester = toStringParam(req.user?.id) || 'api';
+    let session;
+    try {
+      session = startAgentSession({
+        guildId,
+        requestedBy: requester,
+        goal,
+        skillId: skillId || null,
+        priority,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(409).json({ ok: false, message });
+    }
+
+    return res.status(202).json({ ok: true, session });
+  });
+
+  router.post('/agent/sessions/:sessionId/cancel', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const sessionId = toStringParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+
+    const result = cancelAgentSession(sessionId);
     if (!result.ok) {
       return res.status(409).json({ ok: false, message: result.message });
     }

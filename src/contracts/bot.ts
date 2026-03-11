@@ -59,6 +59,19 @@ export type BotStatusApiResponse = {
   outageDurationMs: number;
   bot?: BotRuntimeStatus;
   automation?: AutomationRuntimeStatus;
+  agents?: {
+    totalSessions: number;
+    runningSessions: number;
+    completedSessions: number;
+    failedSessions: number;
+    cancelledSessions: number;
+    latestSessionAt: string | null;
+    skills?: Array<{
+      id: string;
+      title: string;
+      description: string;
+    }>;
+  };
 };
 
 export type HealthResponse = {
