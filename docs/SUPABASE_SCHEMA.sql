@@ -211,6 +211,18 @@ create table if not exists public.user_roles (
 
 create index if not exists idx_user_roles_role on public.user_roles(role);
 
+create table if not exists public.discord_login_sessions (
+  guild_id text not null,
+  user_id text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, user_id)
+);
+
+create index if not exists idx_discord_login_sessions_expires_at
+  on public.discord_login_sessions (expires_at);
+
 -- Replace with real Discord user id before production use.
 insert into public.user_roles (user_id, role)
 values ('123456789012345678', 'admin')
@@ -230,6 +242,12 @@ begin
   return new;
 end;
 $$;
+
+drop trigger if exists trg_discord_login_sessions_updated_at on public.discord_login_sessions;
+create trigger trg_discord_login_sessions_updated_at
+before update on public.discord_login_sessions
+for each row
+execute function public.set_updated_at();
 
 -- ==========================================
 -- 10. Trading backend runtime tables

@@ -32,6 +32,11 @@ import {
   deleteNewsChannelSubscription,
   listNewsChannelSubscriptions,
 } from './services/newsChannelStore';
+import {
+  getDiscordLoginSessionExpiryMs,
+  purgeExpiredDiscordLoginSessions,
+  upsertDiscordLoginSession,
+} from './services/discordLoginSessionStore';
 import { fetchStockChartImageUrl, fetchStockQuote, isStockFeatureEnabled } from './services/stockService';
 import { generateInvestmentAnalysis, isInvestmentAnalysisEnabled } from './services/investmentAnalysisService';
 import { getSupabaseClient, isSupabaseConfigured } from './services/supabaseClient';
@@ -45,6 +50,7 @@ import {
   listGuildAgentSessions,
   startAgentSession,
 } from './services/multiAgentService';
+import { isAnyLlmConfigured } from './services/llmClient';
 import {
   getAgentOpsSnapshot,
   onGuildJoined,
@@ -117,12 +123,26 @@ const CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC || 'true').toLowerCase());
 const SIMPLE_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED || 'true').toLowerCase());
-const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움말', '설정', '구독']);
+const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움말', '설정', '구독', '로그인']);
 const LEGACY_SESSION_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.LEGACY_SESSION_COMMANDS_ENABLED || 'false').toLowerCase());
 const LEGACY_SESSION_COMMAND_NAMES = new Set(['시작', '상태', '스킬목록', '정책', '온보딩', '학습', '중지']);
 const LEGACY_SUBSCRIBE_COMMAND_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED || 'false').toLowerCase());
+const LOGIN_SESSION_TTL_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.DISCORD_LOGIN_SESSION_TTL_MS || 24 * 60 * 60 * 1000),
+);
+const LOGIN_SESSION_REFRESH_WINDOW_MS = Math.max(
+  60 * 1000,
+  Number(process.env.DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS || 2 * 60 * 60 * 1000),
+);
+const LOGIN_SESSION_CLEANUP_INTERVAL_MS = Math.max(
+  60 * 1000,
+  Number(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS || 30 * 60 * 1000),
+);
+const loggedInUsersByGuild = new Map<string, Map<string, number>>();
+let loginSessionCleanupTimer: NodeJS.Timeout | null = null;
 
 export type ManualReconnectRequestResult = {
   ok: boolean;
@@ -233,6 +253,10 @@ const commandDefinitions = [
           { name: '자동화', value: 'automation' },
         ),
     ),
+  new SlashCommandBuilder()
+    .setName('로그인')
+    .setDescription('내 계정으로 봇 기능 사용 가능 여부를 진단합니다')
+    .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('주가')
     .setDescription('주식 현재 가격 조회')
@@ -633,6 +657,144 @@ const hasAdminPermission = async (interaction: ChatInputCommandInteraction): Pro
   }
 };
 
+const cacheLoginSession = (guildId: string, userId: string, expiresAt: number) => {
+  const guildUsers = loggedInUsersByGuild.get(guildId) || new Map<string, number>();
+  guildUsers.set(userId, expiresAt);
+  loggedInUsersByGuild.set(guildId, guildUsers);
+};
+
+const uncacheLoginSession = (guildId: string, userId: string) => {
+  const guildUsers = loggedInUsersByGuild.get(guildId);
+  if (!guildUsers) {
+    return;
+  }
+
+  guildUsers.delete(userId);
+  if (guildUsers.size === 0) {
+    loggedInUsersByGuild.delete(guildId);
+  }
+};
+
+const markUserLoggedIn = async (guildId: string, userId: string): Promise<'persisted' | 'memory-only'> => {
+  const expiresAt = Date.now() + LOGIN_SESSION_TTL_MS;
+  cacheLoginSession(guildId, userId, expiresAt);
+
+  try {
+    const persisted = await upsertDiscordLoginSession({
+      guildId,
+      userId,
+      expiresAt: new Date(expiresAt).toISOString(),
+    });
+    return persisted ? 'persisted' : 'memory-only';
+  } catch (error) {
+    logger.warn('[BOT] Failed to persist login session guild=%s user=%s: %s', guildId, userId, getErrorMessage(error));
+    return 'memory-only';
+  }
+};
+
+const maybeRefreshLoginSession = async (guildId: string, userId: string, expiresAt: number): Promise<void> => {
+  const remainingMs = expiresAt - Date.now();
+  if (remainingMs > LOGIN_SESSION_REFRESH_WINDOW_MS) {
+    return;
+  }
+
+  const newExpiry = Date.now() + LOGIN_SESSION_TTL_MS;
+  cacheLoginSession(guildId, userId, newExpiry);
+
+  try {
+    await upsertDiscordLoginSession({
+      guildId,
+      userId,
+      expiresAt: new Date(newExpiry).toISOString(),
+    });
+  } catch (error) {
+    logger.warn('[BOT] Failed to refresh login session guild=%s user=%s: %s', guildId, userId, getErrorMessage(error));
+  }
+};
+
+const hasValidLoginSession = async (guildId: string, userId: string): Promise<boolean> => {
+  const guildUsers = loggedInUsersByGuild.get(guildId);
+  if (!guildUsers) {
+    try {
+      const persistedExpiry = await getDiscordLoginSessionExpiryMs({ guildId, userId });
+      if (!persistedExpiry) {
+        return false;
+      }
+
+      cacheLoginSession(guildId, userId, persistedExpiry);
+      await maybeRefreshLoginSession(guildId, userId, persistedExpiry);
+      return true;
+    } catch (error) {
+      logger.warn('[BOT] Failed to load login session guild=%s user=%s: %s', guildId, userId, getErrorMessage(error));
+      return false;
+    }
+  }
+
+  const expiresAt = guildUsers.get(userId);
+  if (!expiresAt) {
+    try {
+      const persistedExpiry = await getDiscordLoginSessionExpiryMs({ guildId, userId });
+      if (!persistedExpiry) {
+        return false;
+      }
+
+      cacheLoginSession(guildId, userId, persistedExpiry);
+      await maybeRefreshLoginSession(guildId, userId, persistedExpiry);
+      return true;
+    } catch (error) {
+      logger.warn('[BOT] Failed to load login session guild=%s user=%s: %s', guildId, userId, getErrorMessage(error));
+      return false;
+    }
+  }
+
+  if (Date.now() > expiresAt) {
+    uncacheLoginSession(guildId, userId);
+    return false;
+  }
+
+  await maybeRefreshLoginSession(guildId, userId, expiresAt);
+
+  return true;
+};
+
+const startLoginSessionCleanupLoop = () => {
+  if (loginSessionCleanupTimer) {
+    return;
+  }
+
+  const runCleanup = async () => {
+    try {
+      const deleted = await purgeExpiredDiscordLoginSessions();
+      if (deleted > 0) {
+        logger.info('[BOT] Login session cleanup removed %d expired row(s)', deleted);
+      }
+    } catch (error) {
+      logger.warn('[BOT] Login session cleanup failed: %s', getErrorMessage(error));
+    }
+  };
+
+  void runCleanup();
+  loginSessionCleanupTimer = setInterval(() => {
+    void runCleanup();
+  }, LOGIN_SESSION_CLEANUP_INTERVAL_MS);
+
+  if (typeof loginSessionCleanupTimer.unref === 'function') {
+    loginSessionCleanupTimer.unref();
+  }
+};
+
+const hasFeatureAccess = async (interaction: ChatInputCommandInteraction): Promise<boolean> => {
+  if (await hasAdminPermission(interaction)) {
+    return true;
+  }
+
+  if (!interaction.guildId) {
+    return false;
+  }
+
+  return hasValidLoginSession(interaction.guildId, interaction.user.id);
+};
+
 const getUsageSummaryLine = async (): Promise<string> => {
   const guildCount = client.guilds.cache.size;
 
@@ -694,6 +856,7 @@ const registerSlashCommands = async () => {
   }
 
   try {
+    let targetGuildIdForFastSync: string | null = null;
     if (DISCORD_COMMAND_GUILD_ID) {
       let guild: Guild | undefined;
       try {
@@ -705,10 +868,12 @@ const registerSlashCommands = async () => {
       if (guild) {
         await guild.commands.set(commandDefinitions);
         logger.info('[BOT] Slash commands synced to guild=%s (%d commands)', DISCORD_COMMAND_GUILD_ID, commandDefinitions.length);
-        return;
+        targetGuildIdForFastSync = DISCORD_COMMAND_GUILD_ID;
       }
 
-      logger.warn('[BOT] Falling back to global slash command sync because target guild is unavailable');
+      if (!guild) {
+        logger.warn('[BOT] Falling back to global slash command sync because target guild is unavailable');
+      }
     }
 
     await client.application.commands.set(commandDefinitions);
@@ -717,6 +882,9 @@ const registerSlashCommands = async () => {
     if (CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC) {
       let cleared = 0;
       for (const guild of client.guilds.cache.values()) {
+        if (targetGuildIdForFastSync && guild.id === targetGuildIdForFastSync) {
+          continue;
+        }
         try {
           await guild.commands.set([]);
           cleared += 1;
@@ -777,6 +945,7 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
 const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
   const simpleUserLines = [
     '`/구독` 영상/게시글/뉴스 구독 통합 관리',
+    '`/로그인` 내 계정 권한/사용 가능 상태 진단',
     '`/설정` 현재 사용 모드/설정 확인',
     '`/ping` 상태 확인',
     '`@봇이름 고양이 영상 찾아줘`처럼 멘션으로 자연어 요청',
@@ -808,6 +977,7 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
               ? simpleUserLines.join('\n')
               : [
                 '`/구독` 영상/게시글/뉴스 구독 통합 관리',
+                '`/로그인` 내 계정 권한/사용 가능 상태 진단',
                 '`/설정` 현재 사용 모드/설정 확인',
                 '`/ping` 상태 확인',
                 '`/주가` 현재 주가 조회 (`응답방식` 선택 가능)',
@@ -839,6 +1009,8 @@ const handleSettingsCommand = async (interaction: ChatInputCommandInteraction) =
   if (category === 'mode') {
     lines.push(`SIMPLE_COMMANDS_ENABLED=${String(SIMPLE_COMMANDS_ENABLED)}`);
     lines.push('현재 권장 UX: /구독, /도움말, /설정, /ping + 자연어 대화');
+    lines.push(`LOGIN_SESSION_TTL_MS=${LOGIN_SESSION_TTL_MS}`);
+    lines.push(`LOGIN_SESSION_REFRESH_WINDOW_MS=${LOGIN_SESSION_REFRESH_WINDOW_MS}`);
   } else if (category === 'commands') {
     lines.push('보이는 명령어: /구독, /도움말, /설정, /ping');
     lines.push('자연어 상호작용: 멘션 또는 답글로 요청');
@@ -847,10 +1019,69 @@ const handleSettingsCommand = async (interaction: ChatInputCommandInteraction) =
   } else if (category === 'automation') {
     lines.push('자동화는 내부 세션/스케줄러로 동작합니다.');
     lines.push('구독 관련 자동화는 /구독 명령 하나에서 통합 관리합니다.');
+    lines.push(`LOGIN_SESSION_CLEANUP_INTERVAL_MS=${LOGIN_SESSION_CLEANUP_INTERVAL_MS}`);
   }
 
   await interaction.reply({
     ...buildSimpleEmbed('설정', lines.join('\n'), EMBED_INFO),
+    ephemeral: true,
+  });
+};
+
+const handleLoginCommand = async (interaction: ChatInputCommandInteraction) => {
+  const checks: string[] = [];
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  const inGuild = Boolean(interaction.guildId);
+  checks.push(`서버 채널 사용: ${inGuild ? 'OK' : 'FAIL'}`);
+  if (!inGuild) {
+    blockers.push('서버 채널에서 다시 시도해주세요.');
+  }
+
+  const admin = await hasAdminPermission(interaction);
+  checks.push(`관리자 권한: ${admin ? 'OK' : 'LIMITED'}`);
+
+  checks.push(`LLM 설정: ${isAnyLlmConfigured() ? 'OK' : 'MISSING'}`);
+  if (!isAnyLlmConfigured()) {
+    warnings.push('자연어 자동화 기능은 LLM 키 설정이 필요합니다.');
+  }
+
+  checks.push(`주가 기능 키: ${isStockFeatureEnabled() ? 'OK' : 'MISSING'}`);
+  checks.push(`Supabase 연결: ${isSupabaseConfigured() ? 'OK' : 'LIMITED'}`);
+  checks.push(`명령 최소화 모드: ${SIMPLE_COMMANDS_ENABLED ? 'ON' : 'OFF'}`);
+
+  if (inGuild && blockers.length === 0 && interaction.guildId) {
+    const mode = await markUserLoggedIn(interaction.guildId, interaction.user.id);
+    checks.push('사용자 로그인 세션: ACTIVE');
+    checks.push(`세션 영속화: ${mode === 'persisted' ? 'OK' : 'MEMORY_ONLY'}`);
+    checks.push(`세션 만료 정책: ttl=${LOGIN_SESSION_TTL_MS}ms, sliding=${LOGIN_SESSION_REFRESH_WINDOW_MS}ms`);
+    if (mode !== 'persisted') {
+      warnings.push('Supabase 미설정 또는 저장 실패로 재시작 후 로그인 유지가 제한될 수 있습니다.');
+    }
+  }
+
+  const title = blockers.length === 0 ? '로그인/권한 진단: 정상' : '로그인/권한 진단: 점검 필요';
+  const summary = blockers.length === 0
+    ? '로그인 세션이 활성화되었습니다. 이제 주요 기능 사용이 가능합니다.'
+    : blockers.slice(0, 4).join('\n');
+
+  await interaction.reply({
+    ...buildSimpleEmbed(
+      title,
+      [
+        '[진단 결과]',
+        ...checks,
+        '',
+        '[안내]',
+        blockers.length === 0
+          ? '이제 /구독 추가/해제와 자연어 요청을 사용할 수 있습니다. 문제가 지속되면 /도움말 확인 후 다시 시도하세요.'
+          : summary,
+        warnings.length > 0 ? '[제한 사항]' : '',
+        ...(warnings.length > 0 ? warnings : []),
+      ].join('\n'),
+      blockers.length === 0 ? EMBED_SUCCESS : EMBED_WARN,
+    ),
     ephemeral: true,
   });
 };
@@ -1154,8 +1385,11 @@ const handleSubscribeCommand = async (
   interaction: ChatInputCommandInteraction,
   kind: 'videos' | 'posts',
 ) => {
-  if (!(await hasAdminPermission(interaction))) {
-    await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+  if (!(await hasFeatureAccess(interaction))) {
+    await interaction.reply({
+      ...buildSimpleEmbed('권한 오류', '이 기능을 사용하려면 /로그인을 먼저 실행해주세요.', EMBED_WARN),
+      ephemeral: true,
+    });
     return;
   }
 
@@ -1206,8 +1440,11 @@ const handleSubscribeCommand = async (
 };
 
 const handleSubscribeNewsCommand = async (interaction: ChatInputCommandInteraction) => {
-  if (!(await hasAdminPermission(interaction))) {
-    await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+  if (!(await hasFeatureAccess(interaction))) {
+    await interaction.reply({
+      ...buildSimpleEmbed('권한 오류', '이 기능을 사용하려면 /로그인을 먼저 실행해주세요.', EMBED_WARN),
+      ephemeral: true,
+    });
     return;
   }
 
@@ -1292,8 +1529,11 @@ const handleUnsubscribeCommand = async (
   interaction: ChatInputCommandInteraction,
   forcedKind?: 'videos' | 'posts' | 'news',
 ) => {
-  if (!(await hasAdminPermission(interaction))) {
-    await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+  if (!(await hasFeatureAccess(interaction))) {
+    await interaction.reply({
+      ...buildSimpleEmbed('권한 오류', '이 기능을 사용하려면 /로그인을 먼저 실행해주세요.', EMBED_WARN),
+      ephemeral: true,
+    });
     return;
   }
 
@@ -2071,6 +2311,10 @@ const attachCommandHandlers = () => {
           await handleSettingsCommand(interaction);
           return;
         }
+        case '로그인': {
+          await handleLoginCommand(interaction);
+          return;
+        }
         case '주가': {
           await handleStockPriceCommand(interaction);
           return;
@@ -2198,6 +2442,7 @@ client.on('clientReady', () => {
   }
 
   startAgentDailyLearningLoop(client);
+  startLoginSessionCleanupLoop();
 });
 
 client.on('guildCreate', (guild) => {
