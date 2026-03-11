@@ -1,0 +1,159 @@
+import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+
+type MetricsParams = {
+  guildId?: string;
+  days: number;
+};
+
+const toIsoFromDays = (days: number): string => {
+  const ms = Math.max(1, days) * 24 * 60 * 60 * 1000;
+  return new Date(Date.now() - ms).toISOString();
+};
+
+export async function getMemoryQualityMetrics(params: MetricsParams) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('SUPABASE_NOT_CONFIGURED');
+  }
+
+  const client = getSupabaseClient();
+  const sinceIso = toIsoFromDays(params.days);
+
+  let itemsQuery = client
+    .from('memory_items')
+    .select('status, source_count, pinned, approved_at, updated_at')
+    .gte('updated_at', sinceIso)
+    .limit(5000);
+
+  let conflictQuery = client
+    .from('memory_conflicts')
+    .select('status, created_at')
+    .gte('created_at', sinceIso)
+    .limit(5000);
+
+  let feedbackQuery = client
+    .from('memory_feedback')
+    .select('action, created_at')
+    .gte('created_at', sinceIso)
+    .limit(5000);
+
+  let jobsQuery = client
+    .from('memory_jobs')
+    .select('status, attempts, created_at, completed_at, deadlettered_at')
+    .gte('created_at', sinceIso)
+    .limit(5000);
+
+  let retrievalQuery = client
+    .from('memory_retrieval_logs')
+    .select('query_latency_ms, returned_count, avg_citations, avg_score, created_at')
+    .gte('created_at', sinceIso)
+    .limit(5000);
+
+  if (params.guildId) {
+    itemsQuery = itemsQuery.eq('guild_id', params.guildId);
+    conflictQuery = conflictQuery.eq('guild_id', params.guildId);
+    feedbackQuery = feedbackQuery.eq('guild_id', params.guildId);
+    jobsQuery = jobsQuery.eq('guild_id', params.guildId);
+    retrievalQuery = retrievalQuery.eq('guild_id', params.guildId);
+  }
+
+  const [itemsRes, conflictRes, feedbackRes, jobsRes, retrievalRes] = await Promise.all([
+    itemsQuery,
+    conflictQuery,
+    feedbackQuery,
+    jobsQuery,
+    retrievalQuery,
+  ]);
+
+  if (itemsRes.error) throw new Error(itemsRes.error.message || 'MEMORY_ITEMS_METRICS_FAILED');
+  if (conflictRes.error) throw new Error(conflictRes.error.message || 'MEMORY_CONFLICT_METRICS_FAILED');
+  if (feedbackRes.error) throw new Error(feedbackRes.error.message || 'MEMORY_FEEDBACK_METRICS_FAILED');
+  if (jobsRes.error) throw new Error(jobsRes.error.message || 'MEMORY_JOBS_METRICS_FAILED');
+  const retrievalTableMissing = Boolean(retrievalRes.error && /memory_retrieval_logs/i.test(retrievalRes.error.message || ''));
+  if (retrievalRes.error && !retrievalTableMissing) {
+    throw new Error(retrievalRes.error.message || 'MEMORY_RETRIEVAL_METRICS_FAILED');
+  }
+
+  const items = (itemsRes.data || []) as Array<Record<string, unknown>>;
+  const conflicts = (conflictRes.data || []) as Array<Record<string, unknown>>;
+  const feedback = (feedbackRes.data || []) as Array<Record<string, unknown>>;
+  const jobs = (jobsRes.data || []) as Array<Record<string, unknown>>;
+  const retrieval = retrievalTableMissing ? [] : (retrievalRes.data || []) as Array<Record<string, unknown>>;
+
+  const activeItems = items.filter((row) => String(row.status || '') === 'active').length;
+  const withSource = items.filter((row) => Number(row.source_count || 0) > 0).length;
+  const pinnedItems = items.filter((row) => Boolean(row.pinned)).length;
+  const approvedItems = items.filter((row) => Boolean(row.approved_at)).length;
+
+  const openConflicts = conflicts.filter((row) => String(row.status || '') === 'open').length;
+  const resolvedConflicts = conflicts.filter((row) => String(row.status || '') === 'resolved').length;
+
+  const correctionActions = feedback.filter((row) => {
+    const action = String(row.action || '');
+    return action === 'edit' || action === 'deprecate' || action === 'restore' || action === 'approve' || action === 'reject';
+  }).length;
+
+  const jobCompleted = jobs.filter((row) => String(row.status || '') === 'completed').length;
+  const jobFailed = jobs.filter((row) => String(row.status || '') === 'failed').length;
+  const jobDeadlettered = jobs.filter((row) => Boolean(row.deadlettered_at)).length;
+
+  const attemptTotal = jobs.reduce((acc, row) => acc + Math.max(0, Number(row.attempts || 0)), 0);
+  const avgAttempts = jobs.length > 0 ? Number((attemptTotal / jobs.length).toFixed(2)) : 0;
+
+  const citationRate = activeItems > 0 ? Number((withSource / activeItems).toFixed(4)) : 0;
+  const unresolvedConflictRate = activeItems > 0 ? Number((openConflicts / activeItems).toFixed(4)) : 0;
+  const correctionFollowupRate = activeItems > 0 ? Number((correctionActions / activeItems).toFixed(4)) : 0;
+  const jobFailureRate = jobs.length > 0 ? Number((jobFailed / jobs.length).toFixed(4)) : 0;
+
+  const retrievalTotal = retrieval.length;
+  const retrievalLatencyAvgMs = retrievalTotal > 0
+    ? Number((retrieval.reduce((acc, row) => acc + Math.max(0, Number(row.query_latency_ms || 0)), 0) / retrievalTotal).toFixed(2))
+    : 0;
+  const retrievalReturnedAvg = retrievalTotal > 0
+    ? Number((retrieval.reduce((acc, row) => acc + Math.max(0, Number(row.returned_count || 0)), 0) / retrievalTotal).toFixed(2))
+    : 0;
+  const retrievalCitationsAvg = retrievalTotal > 0
+    ? Number((retrieval.reduce((acc, row) => acc + Math.max(0, Number(row.avg_citations || 0)), 0) / retrievalTotal).toFixed(2))
+    : 0;
+  const retrievalScoreAvg = retrievalTotal > 0
+    ? Number((retrieval.reduce((acc, row) => acc + Math.max(0, Number(row.avg_score || 0)), 0) / retrievalTotal).toFixed(4))
+    : 0;
+
+  return {
+    scope: params.guildId || 'all',
+    windowDays: params.days,
+    since: sinceIso,
+    memory: {
+      activeItems,
+      withSource,
+      pinnedItems,
+      approvedItems,
+      citationRate,
+    },
+    conflicts: {
+      open: openConflicts,
+      resolved: resolvedConflicts,
+      unresolvedConflictRate,
+    },
+    feedback: {
+      totalActions: feedback.length,
+      correctionActions,
+      correctionFollowupRate,
+    },
+    jobs: {
+      total: jobs.length,
+      completed: jobCompleted,
+      failed: jobFailed,
+      deadlettered: jobDeadlettered,
+      avgAttempts,
+      failureRate: jobFailureRate,
+    },
+    retrieval: {
+      totalQueries: retrievalTotal,
+      avgLatencyMs: retrievalLatencyAvgMs,
+      avgReturned: retrievalReturnedAvg,
+      avgCitations: retrievalCitationsAvg,
+      avgScore: retrievalScoreAvg,
+    },
+    generatedAt: new Date().toISOString(),
+  };
+}

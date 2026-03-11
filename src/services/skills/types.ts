@@ -3,7 +3,8 @@ export type SkillId =
   | 'ops-execution'
   | 'ops-critique'
   | 'guild-onboarding-blueprint'
-  | 'incident-review';
+  | 'incident-review'
+  | 'webhook';
 
 export type SkillContext = {
   guildId: string;

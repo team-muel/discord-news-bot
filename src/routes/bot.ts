@@ -8,7 +8,7 @@ import { appendBenchmarkEvents } from '../services/benchmarkStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob } from '../services/automationBot';
 import { createRateLimiter } from '../middleware/rateLimit';
-import { toStringParam } from '../utils/validation';
+import { isOneOf, toBoundedInt, toStringParam } from '../utils/validation';
 import {
   cancelAgentSession,
   getAgentSession,
@@ -23,6 +23,26 @@ import {
   triggerDailyLearningRun,
   triggerGuildOnboardingSession,
 } from '../services/agentOpsService';
+import {
+  addMemoryFeedback,
+  createMemoryItem,
+  isConflictStatus,
+  isFeedbackAction,
+  isMemoryJobType,
+  isMemoryType,
+  listMemoryConflicts,
+  queueMemoryJob,
+  searchGuildMemory,
+} from '../services/agentMemoryStore';
+import type { MemoryType } from '../services/agentMemoryStore';
+import {
+  cancelMemoryJob,
+  getMemoryJobQueueStats,
+  getMemoryJobRunnerStats,
+  listMemoryJobDeadletters,
+  requeueDeadletterJob,
+} from '../services/memoryJobRunner';
+import { getMemoryQualityMetrics } from '../services/memoryQualityMetricsService';
 
 let lastBotStatusBenchmarkAt = 0;
 
@@ -261,6 +281,299 @@ export function createBotRouter(): Router {
     }
 
     return res.status(202).json({ ok: true, message: result.message });
+  });
+
+  router.get('/agent/memory/search', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const q = toStringParam(req.query?.q);
+    const typeValue = toStringParam(req.query?.type);
+    const limit = toBoundedInt(req.query?.limit, 8, { min: 1, max: 20 });
+
+    if (!guildId || !q) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and q are required' });
+    }
+
+    if (typeValue && !isMemoryType(typeValue)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid type' });
+    }
+
+    const memoryType: MemoryType | undefined = typeValue ? (typeValue as MemoryType) : undefined;
+
+    try {
+      const result = await searchGuildMemory({
+        guildId,
+        query: q,
+        type: memoryType,
+        limit,
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_SEARCH_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/items', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const channelId = toStringParam(req.body?.channelId);
+    const typeValue = toStringParam(req.body?.type);
+    const title = toStringParam(req.body?.title);
+    const content = toStringParam(req.body?.content);
+    const confidenceRaw = req.body?.confidence;
+    const tags = Array.isArray(req.body?.tags)
+      ? req.body.tags.map((tag: unknown) => toStringParam(tag)).filter(Boolean)
+      : [];
+
+    if (!guildId || !typeValue || !content) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId, type, content are required' });
+    }
+
+    if (!isMemoryType(typeValue)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid type' });
+    }
+
+    const sourceKind = toStringParam(req.body?.source?.sourceKind);
+    const allowedSourceKinds = ['discord_message', 'summary_job', 'admin_edit', 'system'] as const;
+    if (sourceKind && !isOneOf(sourceKind, allowedSourceKinds)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid sourceKind' });
+    }
+
+    const sourceKindTyped = (sourceKind || 'admin_edit') as (typeof allowedSourceKinds)[number];
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const item = await createMemoryItem({
+        guildId,
+        channelId: channelId || undefined,
+        type: typeValue as MemoryType,
+        title: title || undefined,
+        content,
+        tags,
+        confidence: Number.isFinite(Number(confidenceRaw)) ? Number(confidenceRaw) : undefined,
+        actorId,
+        source: req.body?.source
+          ? {
+            sourceKind: sourceKindTyped,
+            sourceMessageId: toStringParam(req.body.source.sourceMessageId) || undefined,
+            sourceRef: toStringParam(req.body.source.sourceRef) || undefined,
+            excerpt: toStringParam(req.body.source.excerpt) || undefined,
+          }
+          : undefined,
+      });
+
+      return res.status(201).json({ ok: true, item });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_CREATE_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/items/:memoryId/feedback', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const memoryId = toStringParam(req.params.memoryId);
+    const guildId = toStringParam(req.body?.guildId);
+    const action = toStringParam(req.body?.action);
+
+    if (!memoryId || !guildId || !action) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'memoryId, guildId, action are required' });
+    }
+
+    if (!isFeedbackAction(action)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid action' });
+    }
+
+    const patch = req.body?.patch;
+    const patchObject = patch && typeof patch === 'object' && !Array.isArray(patch)
+      ? patch as Record<string, unknown>
+      : undefined;
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      await addMemoryFeedback({
+        memoryId,
+        guildId,
+        action,
+        actorId,
+        reason: toStringParam(req.body?.reason) || undefined,
+        patch: patchObject,
+      });
+
+      return res.status(202).json({ ok: true, message: 'feedback accepted', memoryId, action });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'MEMORY_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_FEEDBACK_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/conflicts', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const statusValue = toStringParam(req.query?.status) || 'open';
+    const limit = toBoundedInt(req.query?.limit, 20, { min: 1, max: 100 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (!isConflictStatus(statusValue)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid status' });
+    }
+
+    try {
+      const conflicts = await listMemoryConflicts({ guildId, status: statusValue, limit });
+      return res.json({ ok: true, conflicts });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_CONFLICTS_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/jobs/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const jobType = toStringParam(req.body?.jobType);
+    const windowStartedAt = toStringParam(req.body?.windowStartedAt);
+    const windowEndedAt = toStringParam(req.body?.windowEndedAt);
+
+    if (!guildId || !jobType) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and jobType are required' });
+    }
+    if (!isMemoryJobType(jobType)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid jobType' });
+    }
+
+    const input = req.body?.input;
+    const inputObject = input && typeof input === 'object' && !Array.isArray(input)
+      ? input as Record<string, unknown>
+      : undefined;
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const job = await queueMemoryJob({
+        guildId,
+        jobType,
+        actorId,
+        windowStartedAt: windowStartedAt || undefined,
+        windowEndedAt: windowEndedAt || undefined,
+        input: inputObject,
+      });
+      return res.status(202).json({ ok: true, job });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_QUEUE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/jobs/stats', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+
+    try {
+      const runner = getMemoryJobRunnerStats();
+      const queue = await getMemoryJobQueueStats(guildId);
+      return res.json({
+        ok: true,
+        runner,
+        queue,
+        guildScope: guildId || 'all',
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_STATS_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/jobs/deadletters', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
+
+    try {
+      const deadletters = await listMemoryJobDeadletters({ guildId, limit });
+      return res.json({ ok: true, deadletters, guildScope: guildId || 'all' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_DEADLETTERS_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/jobs/deadletters/:deadletterId/requeue', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const deadletterId = toBoundedInt(req.params.deadletterId, -1, { min: -1 });
+    if (deadletterId < 0) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid deadletterId' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const result = await requeueDeadletterJob({ deadletterId, actorId });
+      return res.status(202).json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'DEADLETTER_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_REQUEUE_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/jobs/:jobId/cancel', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const jobId = toStringParam(req.params.jobId);
+    if (!jobId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'jobId is required' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const result = await cancelMemoryJob({ jobId, actorId });
+      return res.status(202).json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'JOB_NOT_CANCELABLE') {
+        return res.status(409).json({ ok: false, error: 'CONFLICT', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_CANCEL_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/quality/metrics', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
+
+    try {
+      const metrics = await getMemoryQualityMetrics({ guildId, days });
+      return res.json({ ok: true, ...metrics });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_QUALITY_METRICS_FAILED', message });
+    }
   });
 
   router.get('/usage', requireAdmin, async (_req, res) => {

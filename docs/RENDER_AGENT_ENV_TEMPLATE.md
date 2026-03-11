@@ -35,6 +35,19 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - SUPABASE_URL=<secret>
 - SUPABASE_KEY=<secret>
 - OBSIDIAN_VAULT_PATH=/var/data/obsidian-vault (optional)
+- OBSIDIAN_CLI_ENABLED=true (optional)
+- OBSIDIAN_CLI_COMMAND=/usr/local/bin/obsidian-headless (optional)
+- OBSIDIAN_CLI_ARGS_JSON=["query","--guild","{guildId}","--goal","{goal}","--vault","{vaultPath}"] (optional)
+- OBSIDIAN_CLI_TIMEOUT_MS=4000 (optional)
+- OBSIDIAN_CLI_MAX_HINTS=8 (optional)
+- ACTION_RUNNER_ENABLED=true (optional)
+- ACTION_RETRY_MAX=2 (optional)
+- ACTION_TIMEOUT_MS=15000 (optional)
+- ACTION_CIRCUIT_BREAKER_ENABLED=true (optional)
+- ACTION_CIRCUIT_FAILURE_THRESHOLD=3 (optional)
+- ACTION_CIRCUIT_OPEN_MS=60000 (optional)
+- ACTION_YOUTUBE_USE_PLAYWRIGHT=false (optional)
+- ACTION_YOUTUBE_PLAYWRIGHT_TIMEOUT_MS=8000 (optional)
 
 ## Automation Defaults
 
@@ -52,3 +65,4 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - `DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS` enables sliding expiration; sessions accessed near expiry are extended.
 - `DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS` controls periodic cleanup of expired persisted sessions.
 - Persistent login across bot restarts requires the `discord_login_sessions` table from `docs/SUPABASE_SCHEMA.sql`.
+- If `OBSIDIAN_CLI_COMMAND` is set, the backend executes it at runtime to fetch memory hints and falls back to direct markdown reads only when CLI output is unavailable.

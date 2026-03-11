@@ -69,6 +69,20 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
     temperature: 0.15,
     maxTokens: 900,
   },
+  {
+    id: 'webhook',
+    title: '웹훅 설계/운영',
+    description: '웹훅 이벤트 계약, 검증, 재시도, 운영 가드레일까지 포함한 실행안을 생성합니다.',
+    inputGuide: '이벤트 종류, 공급자, 인증 방식, 처리 목표, 실패 정책',
+    outputGuide: '엔드포인트 계약 + 검증/보안 + 재시도/멱등성 + 운영 체크리스트',
+    systemPrompt: [
+      '너는 웹훅 통합 아키텍트다.',
+      '이벤트 계약과 보안 검증(HMAC/서명), 멱등성 키, 재시도 전략을 필수로 포함한다.',
+      '실제 운영자가 바로 적용 가능한 단계와 예시를 한국어로 제공한다.',
+    ].join(' '),
+    temperature: 0.2,
+    maxTokens: 1200,
+  },
 ];
 
 const SKILL_MAP = new Map<SkillId, SkillDefinition>(BUILTIN_SKILLS.map((skill) => [skill.id, skill]));

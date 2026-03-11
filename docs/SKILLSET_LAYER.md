@@ -29,10 +29,41 @@ Muel is now designed as a server-operations agent with a generic skill layer.
   - `ops-critique`
   - `guild-onboarding-blueprint`
   - `incident-review`
+  - `webhook`
 
 3. `src/services/skills/engine.ts`
 
 - Normalized skill execution interface: `executeSkill(skillId, context)`.
+- Supports specialized module dispatch:
+  - `ops-plan` -> `src/services/skills/modules/opsPlan.ts`
+  - `ops-execution` -> `src/services/skills/modules/opsExecution.ts`
+  - `ops-critique` -> `src/services/skills/modules/opsCritique.ts`
+  - `guild-onboarding-blueprint` -> `src/services/skills/modules/guildOnboardingBlueprint.ts`
+  - `incident-review` -> `src/services/skills/modules/incidentReview.ts`
+  - `webhook` -> `src/services/skills/modules/webhook.ts`
+
+## Output Policy
+
+- User-facing `/해줘` flow is result-first.
+- Intermediate reasoning/process text is suppressed.
+- Final response should contain deliverable-oriented output, not chain-of-thought style narration.
+
+## Action Execution Path
+
+- `ops-execution` follows a commercial-style action pipeline before LLM fallback:
+  1. Action Planner: `src/services/skills/actions/planner.ts`
+  2. Action Registry: `src/services/skills/actions/registry.ts`
+  3. Action Executor: `src/services/skills/actionRunner.ts`
+  4. Action Logging: `src/services/skills/actionExecutionLogService.ts`
+  5. Action Modules:
+  - `youtube.search.first`
+  - `stock.quote`
+  - `stock.chart`
+  - `investment.analysis`
+- Planner can return a chain (max 3 actions) and executor runs them sequentially.
+- Retry and circuit-breaker are built-in for action reliability.
+- Optional headless-browser path is available for YouTube via Playwright.
+- If action execution is not applicable, it falls back to LLM-generated deliverable output.
 
 4. `src/services/multiAgentService.ts`
 
@@ -47,7 +78,9 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 6. `src/services/agentMemoryService.ts`
 
 - Hybrid memory hint provider.
-- Reads long-memory hints from Supabase (`guild_lore_docs`) and optional Obsidian vault markdown wrappers.
+- Reads long-memory hints from Supabase (`guild_lore_docs`) and optional Obsidian integrations:
+  - Runtime CLI execution (`OBSIDIAN_CLI_COMMAND`) for headless query
+  - Markdown file wrapper fallback (`OBSIDIAN_VAULT_PATH`)
 
 7. `src/services/agentSessionStore.ts`
 
@@ -86,6 +119,11 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY` (optional)
 - `OPENAI_ANALYSIS_MODEL` / `GEMINI_MODEL` (optional)
 - `OBSIDIAN_VAULT_PATH` (optional)
+- `OBSIDIAN_CLI_ENABLED` (optional)
+- `OBSIDIAN_CLI_COMMAND` (optional)
+- `OBSIDIAN_CLI_ARGS_JSON` (optional)
+- `OBSIDIAN_CLI_TIMEOUT_MS` (optional)
+- `OBSIDIAN_CLI_MAX_HINTS` (optional)
 - `AGENT_MAX_CONCURRENT_SESSIONS` (optional)
 - `AGENT_MAX_GOAL_LENGTH` (optional)
 - `AGENT_AUTO_ONBOARDING_ENABLED` (optional)

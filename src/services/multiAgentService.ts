@@ -83,6 +83,63 @@ const getErrorMessage = (error: unknown): string => {
   }
 };
 
+const extractMemoryCitations = (memoryHints: string[]): string[] => {
+  const out: string[] = [];
+  for (const hint of memoryHints) {
+    const line = String(hint || '');
+    const matches = line.match(/\[memory:([^\]\s]+)/g) || [];
+    for (const match of matches) {
+      const id = match.replace('[memory:', '').replace(']', '').trim();
+      if (!id) continue;
+      if (!out.includes(id)) {
+        out.push(id);
+      }
+      if (out.length >= 6) {
+        return out;
+      }
+    }
+  }
+  return out;
+};
+
+const toConfidenceLabel = (priority: AgentPriority, citationCount: number): string => {
+  if (citationCount >= 2 && priority === 'precise') {
+    return 'high';
+  }
+  if (citationCount >= 1) {
+    return 'medium';
+  }
+  return 'low';
+};
+
+const toConclusion = (raw: string): string => {
+  const compact = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '현재 시점에서 확정할 수 있는 결론을 생성하지 못했습니다.';
+  }
+  return compact.slice(0, 280);
+};
+
+const formatCitationFirstResult = (rawResult: string, session: AgentSession): string => {
+  const citations = extractMemoryCitations(session.memoryHints);
+  const confidence = toConfidenceLabel(session.priority, citations.length);
+  const conclusion = toConclusion(rawResult);
+
+  const citationText = citations.length > 0
+    ? citations.map((id) => `- memory:${id}`).join('\n')
+    : '- 근거 부족: memory 힌트에서 직접 인용 가능한 항목을 찾지 못했습니다.';
+
+  return [
+    '## Deliverable',
+    conclusion,
+    '',
+    '## Verification',
+    citationText,
+    '',
+    `## Confidence: ${confidence}`,
+  ].join('\n');
+};
+
 const touch = (session: AgentSession) => {
   session.updatedAt = nowIso();
 };
@@ -111,8 +168,8 @@ const runStep = async (
   session: AgentSession,
   step: AgentStep,
   skillId: SkillId,
-  buildInput: (priorOutput: string | null) => string,
-  priorOutput: string | null,
+  buildInput: (priorOutput?: string) => string,
+  priorOutput?: string,
 ): Promise<string> => {
   if (session.cancelRequested) {
     step.status = 'cancelled';
@@ -183,11 +240,11 @@ const executeSession = async (sessionId: string) => {
         singleSkillStep,
         session.requestedSkillId,
         () => session.goal,
-        null,
+        undefined,
       );
 
       markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-        result: singleResult,
+        result: formatCitationFirstResult(singleResult, session),
         error: null,
       });
       return;
@@ -200,13 +257,13 @@ const executeSession = async (sessionId: string) => {
     if (session.priority === 'fast') {
       const fastDraft = await runStep(session, researcher, 'ops-execution', () => [
         '우선순위: 빠름',
-        '요구사항: 속도를 최우선으로 핵심 실행안만 제시',
+        '요구사항: 중간 과정 없이 최종 결과물만 제시',
         `목표: ${session.goal}`,
-        '출력: 5~8줄의 즉시 실행 체크리스트',
-      ].join('\n'), null);
+        '출력: 바로 사용할 수 있는 결과물 텍스트',
+      ].join('\n'), undefined);
 
       markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-        result: ['## Fast Execution', fastDraft].join('\n'),
+        result: formatCitationFirstResult(fastDraft, session),
         error: null,
       });
       return;
@@ -218,7 +275,7 @@ const executeSession = async (sessionId: string) => {
       `목표: ${session.goal}`,
       '출력: 1) 실행 단계 2) 필요한 근거 3) 실패시 대안 을 간결한 한국어 문단으로 작성',
       '규칙: 추측과 단정 금지, 실제 실행 가능한 단계 중심',
-    ].join('\n'), null);
+    ].join('\n'), undefined);
 
     const executionDraft = await runStep(session, researcher, 'ops-execution', () => [
       session.priority === 'precise' ? '우선순위: 정밀 (근거/가드레일을 더 상세히 포함)' : '우선순위: 균형',
@@ -236,18 +293,19 @@ const executeSession = async (sessionId: string) => {
       '출력: 사실성 위험, 과잉자동화 위험, 개인정보/운영 리스크를 점검하고 보완안을 제시',
     ].join('\n'), executionDraft);
 
-    const finalResult = [
-      '## Planner',
-      plan,
-      '',
-      '## Researcher',
-      executionDraft,
-      '',
-      '## Critic',
-      critique,
-    ].join('\n');
+    const finalResult = await runStep(session, researcher, 'ops-execution', () => [
+      '요구사항: 중간 과정/역할별 산출물 노출 금지',
+      `목표: ${session.goal}`,
+      `계획 참고: ${plan}`,
+      `검증 참고: ${critique}`,
+      `초안 참고: ${executionDraft}`,
+      '출력: 사용자에게 전달할 최종 결과물만 간결하게 작성',
+    ].join('\n'), critique);
 
-    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', { result: finalResult, error: null });
+    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+      result: formatCitationFirstResult(finalResult, session),
+      error: null,
+    });
   } catch (error) {
     if (session.cancelRequested || getErrorMessage(error) === 'SESSION_CANCELLED') {
       markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });

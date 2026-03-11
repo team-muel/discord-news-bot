@@ -3,6 +3,7 @@ import logger from './src/logger';
 import initMonitoring from './src/init';
 import { PORT, START_BOT } from './src/config';
 import { startAutomationJobs } from './src/services/automationBot';
+import { startMemoryJobRunner } from './src/services/memoryJobRunner';
 import { startRuntimeAlerts } from './src/services/runtimeAlertService';
 import { startTradingEngine } from './src/services/tradingEngine';
 
@@ -14,6 +15,7 @@ import { createApp } from './src/app';
 const app = createApp();
 
 startAutomationJobs();
+startMemoryJobRunner();
 startTradingEngine();
 startRuntimeAlerts();
 

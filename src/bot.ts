@@ -513,6 +513,7 @@ const commandDefinitions = [
               { name: 'ops-critique', value: 'ops-critique' },
               { name: 'guild-onboarding-blueprint', value: 'guild-onboarding-blueprint' },
               { name: 'incident-review', value: 'incident-review' },
+              { name: 'webhook', value: 'webhook' },
             )
             .setRequired(false),
         )
@@ -1714,28 +1715,12 @@ const formatAgentSessionLine = (session: AgentSession) => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildSessionProgressText = (session: AgentSession, goal: string) => {
-  const steps = session.steps;
-  const completed = steps.filter((step) => step.status === 'completed').length;
-  const running = steps.find((step) => step.status === 'running');
-  const pending = steps.filter((step) => step.status === 'pending').length;
-
   if (session.status === 'queued') {
-    return [
-      '작업을 준비 중입니다...',
-      `목표: ${goal}`,
-      `우선순위: ${session.priority}`,
-      `진행: completed=${completed}, pending=${pending}`,
-    ].join('\n');
+    return '요청을 처리하기 위해 준비 중입니다...';
   }
 
   if (session.status === 'running') {
-    return [
-      '이러한 작업을 진행 중입니다...',
-      `목표: ${goal}`,
-      `우선순위: ${session.priority}`,
-      `현재 단계: ${running ? `${running.role} - ${running.title}` : '다음 단계를 준비 중'}`,
-      `진행: completed=${completed}/${steps.length}`,
-    ].join('\n');
+    return '요청을 실행 중입니다. 결과를 생성하고 있습니다...';
   }
 
   if (session.status === 'cancelled') {
@@ -1758,8 +1743,7 @@ const buildSessionProgressText = (session: AgentSession, goal: string) => {
   const clipped = result.length > 1700 ? `${result.slice(0, 1700)}\n...` : result;
   return [
     '작업이 완료되었습니다.',
-    `목표: ${goal}`,
-    clipped ? `결과:\n${clipped}` : '결과가 비어 있습니다.',
+    clipped || '결과가 비어 있습니다.',
   ].join('\n\n');
 };
 
@@ -1801,11 +1785,13 @@ const streamSessionProgress = async (sink: ProgressSink, sessionId: string, goal
 };
 
 const startVibeSession = (guildId: string, userId: string, request: string): AgentSession => {
+  const inferredSkill = inferSessionSkill(request);
   return startAgentSession({
     guildId,
     requestedBy: userId,
     goal: request,
-    priority: 'fast',
+    skillId: inferredSkill,
+    priority: 'balanced',
   });
 };
 
@@ -1860,7 +1846,7 @@ const handleVibeCommand = async (interaction: ChatInputCommandInteraction) => {
       '요청을 이해했어요. 바로 진행할게요.',
       `세션: ${session.id}`,
       `요청: ${request}`,
-      '진행 상황을 실시간으로 보여드릴게요...',
+      '완료 즉시 결과물만 전달합니다.',
     ].join('\n'),
     EMBED_INFO,
   ));
@@ -1890,8 +1876,8 @@ const handleSessionCommand = async (interaction: ChatInputCommandInteraction) =>
     const description = (interaction.options.getString('설명') || '').trim();
     const combinedText = [request, description].filter(Boolean).join('\n').trim();
     const selectedSkill = skill || inferSessionSkill(combinedText);
-    const mappedSkillId = selectedSkill === 'webhook' ? 'ops-execution' : selectedSkill;
-    const skillLabel = selectedSkill === 'webhook' ? 'webhook(ops-execution 매핑)' : selectedSkill;
+    const mappedSkillId = selectedSkill;
+    const skillLabel = selectedSkill;
     const baseRequest = request || '현재 길드 기준 자동화 실행안을 제안하고 즉시 적용 순서를 정리해줘.';
     const goal = [
       `세션 스킬 실행: ${skillLabel}`,
@@ -2040,7 +2026,7 @@ const handleVibeMessage = async (message: Message) => {
   const progressMessage = await message.reply([
     '요청을 이해했어요. 바로 진행할게요.',
     `요청: ${request}`,
-    '진행 상황을 실시간으로 보여드릴게요...',
+    '완료 즉시 결과물만 전달합니다.',
   ].join('\n'));
 
   let session: AgentSession;
@@ -2055,7 +2041,7 @@ const handleVibeMessage = async (message: Message) => {
     '요청을 이해했어요. 바로 진행할게요.',
     `세션: ${session.id}`,
     `요청: ${request}`,
-    '진행 상황을 실시간으로 보여드릴게요...',
+    '완료 즉시 결과물만 전달합니다.',
   ].join('\n'));
 
   await streamSessionProgress({ update: (content) => progressMessage.edit(content) }, session.id, request);
