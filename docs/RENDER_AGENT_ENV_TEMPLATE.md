@@ -20,6 +20,7 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 
 - AGENT_MAX_CONCURRENT_SESSIONS=4
 - AGENT_MAX_GOAL_LENGTH=1200
+- DISCORD_SIMPLE_COMMANDS_ENABLED=true
 - AGENT_AUTO_ONBOARDING_ENABLED=true
 - AGENT_DAILY_LEARNING_ENABLED=true
 - AGENT_DAILY_LEARNING_HOUR=4
@@ -43,3 +44,4 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - `AUTOMATION_NEWS_ENABLED=false` keeps non-essential news push opt-in.
 - If both OpenAI and Gemini keys exist, `AI_PROVIDER` selects priority.
 - If no provider key exists, `/해줘` and `/시작` session creation fails by design.
+- `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps command surface minimal (`/도움` only) and enables mention-first chat UX.
