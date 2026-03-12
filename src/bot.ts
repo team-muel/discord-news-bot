@@ -1725,6 +1725,68 @@ type ProgressRenderOptions = {
 
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
 
+const DEBUG_LINE_PATTERN = /^(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
+
+const isDebugLine = (line: string): boolean => DEBUG_LINE_PATTERN.test(String(line || '').trim());
+
+const stripActionDebugText = (raw: string): string => {
+  const lines = String(raw || '').split(/\r?\n/);
+  const kept: string[] = [];
+  let section: 'none' | 'artifact' | 'verification' = 'none';
+
+  for (const original of lines) {
+    const line = String(original || '').trim();
+    if (!line) {
+      continue;
+    }
+
+    if (line.startsWith('산출물:')) {
+      section = 'artifact';
+      const body = line.replace(/^산출물:\s*/i, '').trim();
+      if (body && body !== '없음') {
+        kept.push(body);
+      }
+      continue;
+    }
+
+    if (line.startsWith('검증:')) {
+      section = 'verification';
+      continue;
+    }
+
+    if (isDebugLine(line)) {
+      section = 'none';
+      continue;
+    }
+
+    if (section === 'verification' && line.startsWith('-')) {
+      continue;
+    }
+
+    if (line.startsWith('- ')) {
+      const bulletBody = line.slice(2).trim();
+      if (section === 'artifact' && bulletBody) {
+        kept.push(bulletBody);
+      }
+      continue;
+    }
+
+    kept.push(line);
+  }
+
+  const compact = kept.join('\n').trim();
+  if (compact) {
+    return compact;
+  }
+
+  const urls = String(raw || '').match(URL_PATTERN) || [];
+  if (urls.length > 0) {
+    return `요청한 링크를 찾았어요.\n${urls[0]}`;
+  }
+
+  return '';
+};
+
 const extractDeliverableBody = (raw: string): string | null => {
   const match = raw.match(/##\s*Deliverable\s*([\s\S]*?)(?:\n##\s*Verification|\n##\s*Confidence|$)/i);
   if (!match) {
@@ -1760,7 +1822,7 @@ const toUserFacingResult = (session: AgentSession, options: ProgressRenderOption
     return raw;
   }
 
-  const deliverableOnly = extractDeliverableBody(raw) || raw;
+  const deliverableOnly = extractDeliverableBody(raw) || stripActionDebugText(raw) || raw;
   const stripped = deliverableOnly
     .replace(/##\s*Verification[\s\S]*/i, '')
     .replace(/##\s*Confidence[\s\S]*/i, '')
@@ -1798,10 +1860,7 @@ const buildSessionProgressText = (session: AgentSession, goal: string, options: 
   const content = toUserFacingResult(session, options);
   const clipLimit = options.showDebugBlocks ? 1700 : 1200;
   const clipped = content.length > clipLimit ? `${content.slice(0, clipLimit)}\n...` : content;
-  return [
-    '작업이 완료되었습니다.',
-    clipped,
-  ].join('\n\n');
+  return clipped;
 };
 
 const streamSessionProgress = async (sink: ProgressSink, sessionId: string, goal: string, options: ProgressRenderOptions) => {
