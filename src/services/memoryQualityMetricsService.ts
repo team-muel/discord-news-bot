@@ -32,7 +32,7 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
 
   let feedbackQuery = client
     .from('memory_feedback')
-    .select('action, created_at')
+    .select('memory_item_id, action, created_at')
     .gte('created_at', sinceIso)
     .limit(5000);
 
@@ -44,7 +44,7 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
 
   let retrievalQuery = client
     .from('memory_retrieval_logs')
-    .select('query_latency_ms, returned_count, avg_citations, avg_score, created_at')
+    .select('query_latency_ms, requested_top_k, returned_count, avg_citations, avg_score, created_at')
     .gte('created_at', sinceIso)
     .limit(5000);
 
@@ -92,6 +92,56 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
     return action === 'edit' || action === 'deprecate' || action === 'restore' || action === 'approve' || action === 'reject';
   }).length;
 
+  const correctionRows = feedback.filter((row) => {
+    const action = String(row.action || '');
+    return action === 'edit' || action === 'deprecate' || action === 'restore' || action === 'approve' || action === 'reject';
+  });
+
+  const correctionItemIds = Array.from(new Set(correctionRows
+    .map((row) => String(row.memory_item_id || '').trim())
+    .filter(Boolean)));
+
+  const updatedAtByMemoryId = new Map<string, string>();
+  if (correctionItemIds.length > 0) {
+    const { data: correctedItems, error: correctedItemsError } = await client
+      .from('memory_items')
+      .select('id, updated_at')
+      .in('id', correctionItemIds)
+      .limit(5000);
+
+    if (correctedItemsError) {
+      throw new Error(correctedItemsError.message || 'MEMORY_CORRECTION_SLA_FAILED');
+    }
+
+    for (const row of (correctedItems || []) as Array<Record<string, unknown>>) {
+      const id = String(row.id || '').trim();
+      const updatedAt = String(row.updated_at || '').trim();
+      if (id && updatedAt) {
+        updatedAtByMemoryId.set(id, updatedAt);
+      }
+    }
+  }
+
+  const correctionSlaMinutes: number[] = [];
+  for (const row of correctionRows) {
+    const memoryId = String(row.memory_item_id || '').trim();
+    const feedbackAt = Date.parse(String(row.created_at || ''));
+    const updatedAt = Date.parse(updatedAtByMemoryId.get(memoryId) || '');
+    if (!Number.isFinite(feedbackAt) || !Number.isFinite(updatedAt)) {
+      continue;
+    }
+    const minutes = Math.max(0, (updatedAt - feedbackAt) / (1000 * 60));
+    correctionSlaMinutes.push(minutes);
+  }
+
+  correctionSlaMinutes.sort((a, b) => a - b);
+  const correctionSlaP95Minutes = correctionSlaMinutes.length > 0
+    ? Number(correctionSlaMinutes[Math.min(correctionSlaMinutes.length - 1, Math.floor(correctionSlaMinutes.length * 0.95))].toFixed(2))
+    : 0;
+  const correctionSlaWithin5mRate = correctionSlaMinutes.length > 0
+    ? Number((correctionSlaMinutes.filter((v) => v <= 5).length / correctionSlaMinutes.length).toFixed(4))
+    : 0;
+
   const jobCompleted = jobs.filter((row) => String(row.status || '') === 'completed').length;
   const jobFailed = jobs.filter((row) => String(row.status || '') === 'failed').length;
   const jobDeadlettered = jobs.filter((row) => Boolean(row.deadlettered_at)).length;
@@ -118,6 +168,27 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
     ? Number((retrieval.reduce((acc, row) => acc + Math.max(0, Number(row.avg_score || 0)), 0) / retrievalTotal).toFixed(4))
     : 0;
 
+  const proxyRelevantThreshold = 0.45;
+  const retrievalHitAt1 = retrieval.filter((row) => {
+    const returned = Number(row.returned_count || 0);
+    const avgScore = Number(row.avg_score || 0);
+    return returned >= 1 && avgScore >= proxyRelevantThreshold;
+  }).length;
+  const retrievalHitAt3 = retrieval.filter((row) => {
+    const returned = Number(row.returned_count || 0);
+    const avgScore = Number(row.avg_score || 0);
+    return returned >= 3 && avgScore >= proxyRelevantThreshold;
+  }).length;
+  const retrievalHitAt5 = retrieval.filter((row) => {
+    const returned = Number(row.returned_count || 0);
+    const avgScore = Number(row.avg_score || 0);
+    return returned >= 5 && avgScore >= proxyRelevantThreshold;
+  }).length;
+
+  const recallAt1 = retrievalTotal > 0 ? Number((retrievalHitAt1 / retrievalTotal).toFixed(4)) : 0;
+  const recallAt3 = retrievalTotal > 0 ? Number((retrievalHitAt3 / retrievalTotal).toFixed(4)) : 0;
+  const recallAt5 = retrievalTotal > 0 ? Number((retrievalHitAt5 / retrievalTotal).toFixed(4)) : 0;
+
   return {
     scope: params.guildId || 'all',
     windowDays: params.days,
@@ -138,6 +209,9 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
       totalActions: feedback.length,
       correctionActions,
       correctionFollowupRate,
+      correctionSlaSamples: correctionSlaMinutes.length,
+      correctionSlaP95Minutes,
+      correctionSlaWithin5mRate,
     },
     jobs: {
       total: jobs.length,
@@ -153,6 +227,10 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
       avgReturned: retrievalReturnedAvg,
       avgCitations: retrievalCitationsAvg,
       avgScore: retrievalScoreAvg,
+      recallAt1,
+      recallAt3,
+      recallAt5,
+      recallMethod: 'proxy: returned_count>=k and avg_score>=0.45',
     },
     generatedAt: new Date().toISOString(),
   };

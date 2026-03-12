@@ -7,29 +7,29 @@ import { executeGuildOnboardingBlueprintSkill } from './modules/guildOnboardingB
 import { executeIncidentReviewSkill } from './modules/incidentReview';
 import type { SkillContext, SkillExecutionResult, SkillId } from './types';
 
+type SkillExecutor = (context: SkillContext) => Promise<SkillExecutionResult>;
+
+const SKILL_EXECUTOR_MAP: Record<SkillId, SkillExecutor> = {
+  casual_chat: executeCasualChatSkill,
+  'ops-plan': executeOpsPlanSkill,
+  'ops-execution': executeOpsExecutionSkill,
+  'ops-critique': executeOpsCritiqueSkill,
+  'guild-onboarding-blueprint': executeGuildOnboardingBlueprintSkill,
+  'incident-review': executeIncidentReviewSkill,
+  webhook: executeWebhookSkill,
+};
+
 export const executeSkill = async (
   skillId: SkillId,
   context: SkillContext,
 ): Promise<SkillExecutionResult> => {
-  switch (skillId) {
-    case 'casual_chat':
-      return executeCasualChatSkill(context);
-    case 'ops-plan':
-      return executeOpsPlanSkill(context);
-    case 'ops-execution':
-      return executeOpsExecutionSkill(context);
-    case 'ops-critique':
-      return executeOpsCritiqueSkill(context);
-    case 'guild-onboarding-blueprint':
-      return executeGuildOnboardingBlueprintSkill(context);
-    case 'incident-review':
-      return executeIncidentReviewSkill(context);
-    case 'webhook':
-      return executeWebhookSkill(context);
-    default:
-      return {
-        skillId,
-        output: '지원되지 않는 스킬입니다.',
-      };
+  const executor = SKILL_EXECUTOR_MAP[skillId];
+  if (!executor) {
+    return {
+      skillId,
+      output: '지원되지 않는 스킬입니다.',
+    };
   }
+
+  return executor(context);
 };

@@ -58,6 +58,7 @@ import {
   triggerDailyLearningRun,
   triggerGuildOnboardingSession,
 } from './services/agentOpsService';
+import { forgetGuildRagData } from './services/privacyForgetService';
 
 export const client = new Client({ intents: [
   GatewayIntentBits.Guilds,
@@ -128,7 +129,7 @@ const LEGACY_SESSION_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.LEGACY_SESSION_COMMANDS_ENABLED || 'false').toLowerCase());
 const LEGACY_SESSION_COMMAND_NAMES = new Set(['시작', '상태', '스킬목록', '정책', '온보딩', '학습', '중지']);
 const LEGACY_SUBSCRIBE_COMMAND_ENABLED = !['0', 'false', 'no', 'off']
-  .includes(String(process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED || 'false').toLowerCase());
+  .includes(String(process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED || 'true').toLowerCase());
 const LOGIN_SESSION_TTL_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.DISCORD_LOGIN_SESSION_TTL_MS || 24 * 60 * 60 * 1000),
@@ -241,11 +242,11 @@ const commandDefinitions = [
     .setDescription('사용 가능한 명령어 안내'),
   new SlashCommandBuilder()
     .setName('설정')
-    .setDescription('현재 봇 사용 모드/설정 안내')
+    .setDescription('봇 상태와 사용법을 한눈에 확인')
     .addStringOption((option) =>
       option
         .setName('항목')
-        .setDescription('확인할 설정 항목')
+        .setDescription('확인할 설정 항목 (비우면 모드)')
         .setRequired(false)
         .addChoices(
           { name: '모드', value: 'mode' },
@@ -331,18 +332,18 @@ const commandDefinitions = [
     .addStringOption((option) =>
       option
         .setName('종류')
-        .setDescription('대상 구독 종류 (미입력 시 자동 추론)')
+        .setDescription('구독 종류 선택')
         .setRequired(false)
         .addChoices(
-          { name: '영상', value: 'videos' },
-          { name: '게시글', value: 'posts' },
-          { name: '뉴스', value: 'news' },
+          { name: '영상 + 링크', value: 'videos' },
+          { name: '게시글 + 링크', value: 'posts' },
+          { name: '뉴스 (구글 금융 고정)', value: 'news' },
         ),
     )
     .addStringOption((option) =>
       option
-        .setName('유튜브채널')
-        .setDescription('영상/게시글일 때 채널 URL 또는 UC... 채널 ID')
+        .setName('링크')
+        .setDescription('영상/게시글일 때 YouTube 채널 링크 또는 UC... 채널 ID')
         .setRequired(false),
     )
     .addChannelOption((option) =>
@@ -442,18 +443,18 @@ const commandDefinitions = [
             .addStringOption((option) =>
               option
                 .setName('종류')
-                .setDescription('대상 구독 종류 (미입력 시 자동 추론)')
+                .setDescription('구독 종류 선택')
                 .setRequired(false)
                 .addChoices(
-                  { name: '영상', value: 'videos' },
-                  { name: '게시글', value: 'posts' },
-                  { name: '뉴스', value: 'news' },
+                  { name: '영상 + 링크', value: 'videos' },
+                  { name: '게시글 + 링크', value: 'posts' },
+                  { name: '뉴스 (구글 금융 고정)', value: 'news' },
                 ),
             )
             .addStringOption((option) =>
               option
-                .setName('유튜브채널')
-                .setDescription('영상/게시글일 때 채널 URL 또는 UC... 채널 ID')
+                .setName('링크')
+                .setDescription('영상/게시글일 때 YouTube 채널 링크 또는 UC... 채널 ID')
                 .setRequired(false),
             )
             .addChannelOption((option) =>
@@ -945,10 +946,11 @@ const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => 
 
 const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
   const simpleUserLines = [
-    '`/구독` 영상/게시글/뉴스 구독 통합 관리',
+    '`/구독` 하나로 구독 관리 (종류: 영상+링크, 게시글+링크, 뉴스(구글 금융 고정))',
     '`/로그인` 내 계정 권한/사용 가능 상태 진단',
     '`/설정` 현재 사용 모드/설정 확인',
     '`/ping` 상태 확인',
+    '카테고리명을 `ai-chat` 또는 `ai-utility`로 지정하면 하위 채널에 모드가 자동 적용됨',
     '`@봇이름 고양이 영상 찾아줘`처럼 멘션으로 자연어 요청',
     '봇 답변에 답글로 이어서 대화 가능',
   ];
@@ -1006,18 +1008,24 @@ const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
 const handleSettingsCommand = async (interaction: ChatInputCommandInteraction) => {
   const category = (interaction.options.getString('항목') || 'mode').trim();
   const lines: string[] = [];
+  lines.push('빠른 확인: 이 메시지가 보이면 /설정 명령은 정상 동작 중입니다.');
 
   if (category === 'mode') {
+    lines.push('한 줄 안내: 지금은 /구독 + 자연어 대화 중심으로 쓰면 됩니다.');
     lines.push(`SIMPLE_COMMANDS_ENABLED=${String(SIMPLE_COMMANDS_ENABLED)}`);
     lines.push('현재 권장 UX: /구독, /도움말, /설정, /ping + 자연어 대화');
     lines.push(`LOGIN_SESSION_TTL_MS=${LOGIN_SESSION_TTL_MS}`);
     lines.push(`LOGIN_SESSION_REFRESH_WINDOW_MS=${LOGIN_SESSION_REFRESH_WINDOW_MS}`);
   } else if (category === 'commands') {
-    lines.push('보이는 명령어: /구독, /도움말, /설정, /ping');
+    lines.push('한 줄 안내: 핵심은 /구독 하나이고 나머지는 보조 확인용입니다.');
+    lines.push('보이는 명령어: /구독, /로그인, /도움말, /설정, /ping');
+    lines.push('/구독 사용 예: 동작=추가, 종류=영상 + 링크, 링크=<YouTube 채널 링크>, 디스코드채널=<알림 채널>');
     lines.push('자연어 상호작용: 멘션 또는 답글로 요청');
+    lines.push('채널 모드: 카테고리명 규칙(ai-chat, ai-utility, ai-off)으로 자동 적용');
     lines.push(`LEGACY_SUBSCRIBE_COMMAND_ENABLED=${String(LEGACY_SUBSCRIBE_COMMAND_ENABLED)}`);
     lines.push(`LEGACY_SESSION_COMMANDS_ENABLED=${String(LEGACY_SESSION_COMMANDS_ENABLED)}`);
   } else if (category === 'automation') {
+    lines.push('한 줄 안내: 자동화 점검/관리는 /구독에서 시작하면 됩니다.');
     lines.push('자동화는 내부 세션/스케줄러로 동작합니다.');
     lines.push('구독 관련 자동화는 /구독 명령 하나에서 통합 관리합니다.');
     lines.push(`LOGIN_SESSION_CLEANUP_INTERVAL_MS=${LOGIN_SESSION_CLEANUP_INTERVAL_MS}`);
@@ -1399,7 +1407,7 @@ const handleSubscribeCommand = async (
     return;
   }
 
-  const channelInput = (interaction.options.getString('유튜브채널') || '').trim();
+  const channelInput = (interaction.options.getString('링크') || interaction.options.getString('유튜브채널') || '').trim();
   const targetChannel = interaction.options.getChannel('디스코드채널', true);
 
   if (!channelInput) {
@@ -1549,7 +1557,7 @@ const handleUnsubscribeCommand = async (
     return;
   }
 
-  const channelInput = (interaction.options.getString('유튜브채널') || '').trim();
+  const channelInput = (interaction.options.getString('링크') || interaction.options.getString('유튜브채널') || '').trim();
   const targetChannel = interaction.options.getChannel('디스코드채널');
   if (!targetChannel) {
     await interaction.reply({ ...buildSimpleEmbed('입력 오류', '해제 동작에는 디스코드채널이 필요합니다.', EMBED_WARN), ephemeral: true });
@@ -1611,7 +1619,7 @@ const handleUnsubscribeCommand = async (
 const handleGroupedSubscribeCommand = async (interaction: ChatInputCommandInteraction) => {
   const explicitAction = (interaction.options.getString('동작') || '').trim();
   const explicitKind = (interaction.options.getString('종류') || '').trim();
-  const channelInput = (interaction.options.getString('유튜브채널') || '').trim();
+  const channelInput = (interaction.options.getString('링크') || interaction.options.getString('유튜브채널') || '').trim();
   const hasTargetChannel = Boolean(interaction.options.getChannel('디스코드채널'));
 
   let legacySub: string | null = null;
@@ -1726,13 +1734,24 @@ type ProgressRenderOptions = {
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
 
 const DEBUG_LINE_PATTERN = /^(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
+const DEBUG_INLINE_PATTERN = /(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
 
 const isDebugLine = (line: string): boolean => DEBUG_LINE_PATTERN.test(String(line || '').trim());
 
 const stripActionDebugText = (raw: string): string => {
   const lines = String(raw || '').split(/\r?\n/);
   const kept: string[] = [];
+  const keptLinks: string[] = [];
   let section: 'none' | 'artifact' | 'verification' = 'none';
+
+  const pushLink = (value: string) => {
+    const links = String(value || '').match(URL_PATTERN) || [];
+    for (const link of links) {
+      if (!keptLinks.includes(link)) {
+        keptLinks.push(link);
+      }
+    }
+  };
 
   for (const original of lines) {
     const line = String(original || '').trim();
@@ -1743,8 +1762,9 @@ const stripActionDebugText = (raw: string): string => {
     if (line.startsWith('산출물:')) {
       section = 'artifact';
       const body = line.replace(/^산출물:\s*/i, '').trim();
+      pushLink(body);
       if (body && body !== '없음') {
-        kept.push(body);
+        kept.push(body.replace(DEBUG_INLINE_PATTERN, '').trim());
       }
       continue;
     }
@@ -1765,8 +1785,28 @@ const stripActionDebugText = (raw: string): string => {
 
     if (line.startsWith('- ')) {
       const bulletBody = line.slice(2).trim();
+      pushLink(bulletBody);
       if (section === 'artifact' && bulletBody) {
-        kept.push(bulletBody);
+        const cleanedBullet = bulletBody.replace(DEBUG_INLINE_PATTERN, '').trim();
+        if (cleanedBullet) {
+          kept.push(cleanedBullet);
+        }
+      }
+      continue;
+    }
+
+    pushLink(line);
+    if (DEBUG_INLINE_PATTERN.test(line)) {
+      const cleanedInline = line
+        .replace(/요청 결과\s*/g, '')
+        .replace(/액션:[^\n]*/g, '')
+        .replace(/검증:[^\n]*/g, '')
+        .replace(/재시도 횟수:[^\n]*/g, '')
+        .replace(/소요시간\(ms\):[^\n]*/g, '')
+        .replace(/상태:[^\n]*/g, '')
+        .trim();
+      if (cleanedInline) {
+        kept.push(cleanedInline);
       }
       continue;
     }
@@ -1774,14 +1814,19 @@ const stripActionDebugText = (raw: string): string => {
     kept.push(line);
   }
 
-  const compact = kept.join('\n').trim();
+  const compact = kept
+    .filter((line) => !isDebugLine(line))
+    .map((line) => line.replace(/\s{2,}/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
   if (compact) {
     return compact;
   }
 
-  const urls = String(raw || '').match(URL_PATTERN) || [];
-  if (urls.length > 0) {
-    return `요청한 링크를 찾았어요.\n${urls[0]}`;
+  if (keptLinks.length > 0) {
+    const top = keptLinks.slice(0, 2);
+    return ['요청한 링크를 찾았어요.', ...top.map((url) => `- ${url}`)].join('\n');
   }
 
   return '';
@@ -1822,14 +1867,23 @@ const toUserFacingResult = (session: AgentSession, options: ProgressRenderOption
     return raw;
   }
 
-  const deliverableOnly = extractDeliverableBody(raw) || stripActionDebugText(raw) || raw;
-  const stripped = deliverableOnly
+  const sourceText = extractDeliverableBody(raw) || raw;
+  const cleaned = stripActionDebugText(sourceText) || stripActionDebugText(raw);
+  const stripped = String(cleaned || '')
     .replace(/##\s*Verification[\s\S]*/i, '')
     .replace(/##\s*Confidence[\s\S]*/i, '')
     .trim();
 
   const linkLimited = limitLinks(stripped, options.maxLinks);
   return linkLimited || '결과가 비어 있습니다.';
+};
+
+const toUserFacingFailureMessage = (session: AgentSession): string => {
+  const cleaned = stripActionDebugText(String(session.error || '').trim());
+  if (cleaned) {
+    return `요청 처리 중 문제가 발생했습니다.\n${cleaned}`;
+  }
+  return '요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
 };
 
 const buildSessionProgressText = (session: AgentSession, goal: string, options: ProgressRenderOptions) => {
@@ -1842,6 +1896,9 @@ const buildSessionProgressText = (session: AgentSession, goal: string, options: 
   }
 
   if (session.status === 'cancelled') {
+    if (!options.showDebugBlocks) {
+      return '요청이 중지되었습니다.';
+    }
     return [
       '작업이 중지되었습니다.',
       `목표: ${goal}`,
@@ -1850,6 +1907,9 @@ const buildSessionProgressText = (session: AgentSession, goal: string, options: 
   }
 
   if (session.status === 'failed') {
+    if (!options.showDebugBlocks) {
+      return toUserFacingFailureMessage(session);
+    }
     return [
       '작업이 실패했습니다.',
       `목표: ${goal}`,
@@ -1858,8 +1918,11 @@ const buildSessionProgressText = (session: AgentSession, goal: string, options: 
   }
 
   const content = toUserFacingResult(session, options);
+  const wrapped = options.showDebugBlocks
+    ? content
+    : ['요청하신 결과입니다.', '', content].join('\n');
   const clipLimit = options.showDebugBlocks ? 1700 : 1200;
-  const clipped = content.length > clipLimit ? `${content.slice(0, clipLimit)}\n...` : content;
+  const clipped = wrapped.length > clipLimit ? `${wrapped.slice(0, clipLimit)}\n...` : wrapped;
   return clipped;
 };
 
@@ -2031,7 +2094,7 @@ const handleSessionCommand = async (interaction: ChatInputCommandInteraction) =>
       { update: (content) => interaction.editReply(buildAdminCard('세션 진행 상태', content, [`session=${session.id}`], EMBED_INFO)) },
       session.id,
       session.goal,
-      { showDebugBlocks: session.priority === 'precise', maxLinks: 4 },
+      { showDebugBlocks: session.priority === 'precise' && !shared, maxLinks: 4 },
     );
     return;
   }
@@ -2125,22 +2188,69 @@ const parseVibeRequestFromMessage = (message: Message): string => {
   return text;
 };
 
+const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
+
+const inferAiModeFromLabel = (value: string): 'ai_chat' | 'ai_utility' | 'off' | null => {
+  const label = String(value || '').toLowerCase();
+  if (!label) return null;
+
+  if (/(^|[-_\s])ai[-_\s]?off($|[-_\s])|ai끔|ai-off/.test(label)) {
+    return 'off';
+  }
+
+  if (/(^|[-_\s])ai[-_\s]?chat($|[-_\s])|ai채팅|ai-채팅/.test(label)) {
+    return 'ai_chat';
+  }
+
+  if (/(^|[-_\s])ai[-_\s]?utility($|[-_\s])|ai유틸|ai-유틸/.test(label)) {
+    return 'ai_utility';
+  }
+
+  return null;
+};
+
+const inferChannelModeFromName = (message: Message): 'ai_chat' | 'ai_utility' | 'off' | null => {
+  const channelAny = message.channel as any;
+  const channelName = String(channelAny?.name || '');
+  const parentName = String(channelAny?.parent?.name || '');
+  const categoryName = String(channelAny?.parent?.parent?.name || '');
+
+  const probes = [categoryName, parentName, channelName];
+  for (const probe of probes) {
+    const mode = inferAiModeFromLabel(probe);
+    if (mode) return mode;
+  }
+
+  return null;
+};
+
 const handleVibeMessage = async (message: Message) => {
   if (!message.guildId || message.author.bot || !client.user) {
     return;
   }
 
   const raw = String(message.content || '').trim();
+  const channelMode = inferChannelModeFromName(message);
+  if (channelMode === 'off') {
+    return;
+  }
+
+  const isAiChatChannel = channelMode === 'ai_chat';
   const isMentioned = message.mentions.has(client.user.id);
   const isReplyToBot = message.reference?.messageId && message.mentions.repliedUser?.id === client.user.id;
   const isPrefixed = raw.toLowerCase().startsWith('해줘');
-  if (!isMentioned && !isReplyToBot && !isPrefixed) {
+  if (!isAiChatChannel && !isMentioned && !isReplyToBot && !isPrefixed) {
     return;
   }
 
   const request = parseVibeRequestFromMessage(message);
   if (!request) {
     await message.reply('원하는 작업을 함께 적어주세요. 예: `@봇이름 고양이 영상 찾아줘`');
+    return;
+  }
+
+  if (channelMode === 'ai_utility' && !UTILITY_TASK_HINT_PATTERN.test(request)) {
+    await message.reply('이 채널은 AI 유틸리티 채널입니다. 작업형 요청으로 입력해주세요. 예: `뉴스 요약해줘`, `고양이 영상 찾아줘`');
     return;
   }
 
@@ -2233,7 +2343,7 @@ const handleAgentCommand = async (interaction: ChatInputCommandInteraction, forc
       { update: (content) => interaction.editReply(buildAdminCard('진행 상태', content, [`session=${session.id}`], EMBED_INFO)) },
       session.id,
       session.goal,
-      { showDebugBlocks: session.priority === 'precise', maxLinks: 4 },
+      { showDebugBlocks: session.priority === 'precise' && !shared, maxLinks: 4 },
     );
     return;
   }
@@ -2565,6 +2675,32 @@ client.on('clientReady', () => {
 client.on('guildCreate', (guild) => {
   const result = onGuildJoined(guild);
   logger.info('[AGENT-OPS] guildCreate onboarding guild=%s ok=%s message=%s', guild.id, String(result.ok), result.message);
+});
+
+client.on('guildDelete', (guild) => {
+  const autoPurgeEnabled = String(process.env.FORGET_ON_GUILD_DELETE || 'true').trim().toLowerCase() !== 'false';
+  if (!autoPurgeEnabled) {
+    return;
+  }
+
+  void (async () => {
+    try {
+      const result = await forgetGuildRagData({
+        guildId: guild.id,
+        requestedBy: 'system:guildDelete',
+        reason: 'discord guildDelete event',
+        deleteObsidian: true,
+      });
+      logger.warn(
+        '[PRIVACY-FORGET] guildDelete purge completed guild=%s deleted=%d obsidianPaths=%d',
+        guild.id,
+        result.supabase.totalDeleted,
+        result.obsidian.removedPaths.length,
+      );
+    } catch (error) {
+      logger.error('[PRIVACY-FORGET] guildDelete purge failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+    }
+  })();
 });
 
 client.on('shardDisconnect', (event) => {

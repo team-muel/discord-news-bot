@@ -18,6 +18,14 @@ import {
   listGuildAgentSessions,
   startAgentSession,
 } from '../services/multiAgentService';
+import { listActions } from '../services/skills/actions/registry';
+import {
+  decideActionApprovalRequest,
+  isActionRunMode,
+  listActionApprovalRequests,
+  listGuildActionPolicies,
+  upsertGuildActionPolicy,
+} from '../services/skills/actionGovernanceStore';
 import {
   getAgentOpsSnapshot,
   triggerDailyLearningRun,
@@ -32,6 +40,7 @@ import {
   isMemoryType,
   listMemoryConflicts,
   queueMemoryJob,
+  resolveMemoryConflict,
   searchGuildMemory,
 } from '../services/agentMemoryStore';
 import type { MemoryType } from '../services/agentMemoryStore';
@@ -43,6 +52,15 @@ import {
   requeueDeadletterJob,
 } from '../services/memoryJobRunner';
 import { getMemoryQualityMetrics } from '../services/memoryQualityMetricsService';
+import { buildGoNoGoReport } from '../services/goNoGoService';
+import { getFinopsBudgetStatus, getFinopsSummary } from '../services/finopsService';
+import { isUserAdmin } from '../services/adminAllowlistService';
+import {
+  forgetGuildRagData,
+  forgetUserRagData,
+  previewForgetGuildRagData,
+  previewForgetUserRagData,
+} from '../services/privacyForgetService';
 
 let lastBotStatusBenchmarkAt = 0;
 
@@ -204,6 +222,229 @@ export function createBotRouter(): Router {
     return res.json({ policy: getAgentPolicy(), ops: getAgentOpsSnapshot() });
   });
 
+  router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, async (req, res) => {
+    const requester = toStringParam(req.user?.id) || '';
+    const targetUserId = toStringParam(req.body?.userId) || requester;
+    const guildId = toStringParam(req.body?.guildId) || undefined;
+    const confirm = toStringParam(req.body?.confirm);
+    const deleteObsidian = req.body?.deleteObsidian !== false;
+
+    if (!requester) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    }
+    if (!targetUserId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'userId is required' });
+    }
+
+    const admin = await isUserAdmin(requester);
+    if (targetUserId !== requester && !admin) {
+      return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'only admin can erase other users' });
+    }
+
+    const expectedConfirm = targetUserId === requester ? 'FORGET_USER' : 'FORGET_USER_ADMIN';
+    if (confirm !== expectedConfirm) {
+      return res.status(400).json({
+        ok: false,
+        error: 'VALIDATION',
+        message: `confirm must be ${expectedConfirm}`,
+      });
+    }
+
+    try {
+      const result = await forgetUserRagData({
+        userId: targetUserId,
+        guildId,
+        requestedBy: requester,
+        reason: toStringParam(req.body?.reason) || 'api:forget-user',
+        deleteObsidian,
+      });
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      if (message === 'USER_ID_REQUIRED') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      return res.status(500).json({ ok: false, error: 'FORGET_USER_FAILED', message });
+    }
+  });
+
+  router.post('/agent/privacy/forget-guild', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const confirm = toStringParam(req.body?.confirm);
+    const requester = toStringParam(req.user?.id) || 'api';
+    const deleteObsidian = req.body?.deleteObsidian !== false;
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (confirm !== 'FORGET_GUILD') {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'confirm must be FORGET_GUILD' });
+    }
+
+    try {
+      const result = await forgetGuildRagData({
+        guildId,
+        requestedBy: requester,
+        reason: toStringParam(req.body?.reason) || 'api:forget-guild',
+        deleteObsidian,
+      });
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      if (message === 'GUILD_ID_REQUIRED') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      return res.status(500).json({ ok: false, error: 'FORGET_GUILD_FAILED', message });
+    }
+  });
+
+  router.get('/agent/privacy/forget-preview', requireAuth, async (req, res) => {
+    const scope = toStringParam(req.query?.scope) || 'user';
+    const requester = toStringParam(req.user?.id) || '';
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const userId = toStringParam(req.query?.userId) || requester;
+
+    if (!requester) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    }
+
+    try {
+      if (scope === 'guild') {
+        if (!guildId) {
+          return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required for guild scope' });
+        }
+        const admin = await isUserAdmin(requester);
+        if (!admin) {
+          return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'admin required for guild scope preview' });
+        }
+        const preview = await previewForgetGuildRagData(guildId);
+        return res.json({ ok: true, preview });
+      }
+
+      const admin = await isUserAdmin(requester);
+      if (userId !== requester && !admin) {
+        return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'only admin can preview other users' });
+      }
+      const preview = await previewForgetUserRagData({ userId, guildId });
+      return res.json({ ok: true, preview });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'FORGET_PREVIEW_FAILED', message });
+    }
+  });
+
+  router.get('/agent/actions/policies', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ error: 'guildId is required' });
+    }
+
+    const [savedPolicies, actionCatalog] = await Promise.all([
+      listGuildActionPolicies(guildId),
+      Promise.resolve(listActions()),
+    ]);
+
+    return res.json({
+      guildId,
+      actions: actionCatalog.map((action) => action.name),
+      policies: savedPolicies,
+    });
+  });
+
+  router.put('/agent/actions/policies', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const actionName = toStringParam(req.body?.actionName);
+    const runMode = toStringParam(req.body?.runMode) || 'auto';
+    const enabledRaw = req.body?.enabled;
+    const enabled = typeof enabledRaw === 'boolean' ? enabledRaw : String(enabledRaw || '').trim() !== 'false';
+
+    if (!guildId || !actionName) {
+      return res.status(400).json({ error: 'guildId and actionName are required' });
+    }
+
+    if (!listActions().some((action) => action.name === actionName)) {
+      return res.status(400).json({ error: 'unknown actionName' });
+    }
+
+    if (!isActionRunMode(runMode)) {
+      return res.status(400).json({ error: 'invalid runMode (auto|approval_required|disabled)' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const policy = await upsertGuildActionPolicy({
+        guildId,
+        actionName,
+        enabled,
+        runMode,
+        actorId,
+      });
+      return res.json({ ok: true, policy });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'ACTION_POLICY_UPDATE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/actions/approvals', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const statusValue = toStringParam(req.query?.status) as 'pending' | 'approved' | 'rejected' | 'expired' | '';
+    const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
+
+    if (!guildId) {
+      return res.status(400).json({ error: 'guildId is required' });
+    }
+
+    if (statusValue && !isOneOf(statusValue, ['pending', 'approved', 'rejected', 'expired'])) {
+      return res.status(400).json({ error: 'invalid status' });
+    }
+
+    const items = await listActionApprovalRequests({
+      guildId,
+      status: statusValue || undefined,
+      limit,
+    });
+
+    return res.json({ ok: true, items });
+  });
+
+  router.post('/agent/actions/approvals/:requestId/decision', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const requestId = toStringParam(req.params.requestId);
+    const decision = toStringParam(req.body?.decision);
+    const reason = toStringParam(req.body?.reason);
+
+    if (!requestId) {
+      return res.status(400).json({ error: 'requestId is required' });
+    }
+
+    if (!isOneOf(decision, ['approve', 'reject'])) {
+      return res.status(400).json({ error: 'decision must be approve|reject' });
+    }
+
+    const actorId = toStringParam(req.user?.id) || 'api';
+    const updated = await decideActionApprovalRequest({
+      requestId,
+      decision: decision as 'approve' | 'reject',
+      actorId,
+      reason: reason || undefined,
+    });
+
+    if (!updated) {
+      return res.status(404).json({ ok: false, error: 'REQUEST_NOT_FOUND' });
+    }
+
+    return res.json({ ok: true, request: updated });
+  });
+
   router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     if (!guildId) {
@@ -319,6 +560,7 @@ export function createBotRouter(): Router {
   router.post('/agent/memory/items', requireAdmin, adminActionRateLimiter, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const channelId = toStringParam(req.body?.channelId);
+    const ownerUserId = toStringParam(req.body?.ownerUserId);
     const typeValue = toStringParam(req.body?.type);
     const title = toStringParam(req.body?.title);
     const content = toStringParam(req.body?.content);
@@ -351,6 +593,7 @@ export function createBotRouter(): Router {
         type: typeValue as MemoryType,
         title: title || undefined,
         content,
+        ownerUserId: ownerUserId || undefined,
         tags,
         confidence: Number.isFinite(Number(confidenceRaw)) ? Number(confidenceRaw) : undefined,
         actorId,
@@ -358,6 +601,7 @@ export function createBotRouter(): Router {
           ? {
             sourceKind: sourceKindTyped,
             sourceMessageId: toStringParam(req.body.source.sourceMessageId) || undefined,
+            sourceAuthorId: toStringParam(req.body.source.sourceAuthorId) || undefined,
             sourceRef: toStringParam(req.body.source.sourceRef) || undefined,
             excerpt: toStringParam(req.body.source.excerpt) || undefined,
           }
@@ -437,6 +681,46 @@ export function createBotRouter(): Router {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
       }
       return res.status(500).json({ ok: false, error: 'MEMORY_CONFLICTS_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/conflicts/:conflictId/resolve', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const conflictId = toBoundedInt(req.params.conflictId, -1, { min: 1 });
+    const status = toStringParam(req.body?.status) || 'resolved';
+    const resolution = toStringParam(req.body?.resolution) || undefined;
+    const keepItemId = toStringParam(req.body?.keepItemId) || undefined;
+
+    if (!guildId || conflictId <= 0) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and valid conflictId are required' });
+    }
+    if (!isOneOf(status, ['resolved', 'ignored'])) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'status must be resolved|ignored' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const result = await resolveMemoryConflict({
+        conflictId,
+        guildId,
+        actorId,
+        status: status as 'resolved' | 'ignored',
+        resolution,
+        keepItemId,
+      });
+      return res.status(202).json({ ok: true, conflict: result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'MEMORY_CONFLICT_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'INVALID_KEEP_ITEM_ID') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'MEMORY_CONFLICT_RESOLVE_FAILED', message });
     }
   });
 
@@ -573,6 +857,73 @@ export function createBotRouter(): Router {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
       }
       return res.status(500).json({ ok: false, error: 'MEMORY_QUALITY_METRICS_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/beta/go-no-go', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
+
+    try {
+      const report = await buildGoNoGoReport({ guildId, days });
+      return res.json({ ok: true, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'GO_NO_GO_REPORT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/finops/summary', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
+
+    try {
+      const summary = await getFinopsSummary({ guildId, days });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'FINOPS_SUMMARY_FAILED', message });
+    }
+  });
+
+  router.get('/agent/finops/showback', requireAdmin, async (req, res) => {
+    const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
+
+    try {
+      const summary = await getFinopsSummary({ days });
+      return res.json({
+        ok: true,
+        days,
+        byGuild: summary.byGuild,
+        generatedAt: summary.generatedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'FINOPS_SHOWBACK_FAILED', message });
+    }
+  });
+
+  router.get('/agent/finops/budget', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const budget = await getFinopsBudgetStatus(guildId);
+      return res.json({ ok: true, budget });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'FINOPS_BUDGET_FAILED', message });
     }
   });
 

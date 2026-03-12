@@ -5,6 +5,16 @@
 This document is the external analysis entrypoint for the backend repository.
 It provides a stable map of runtime flow, domain boundaries, and data boundaries.
 
+Primary operations entrypoint:
+
+- `docs/RUNBOOK_MUEL_PLATFORM.md` (unified DevOps/SRE runbook)
+- `docs/ONCALL_INCIDENT_TEMPLATE.md` (incident timeline template)
+- `docs/ONCALL_COMMS_PLAYBOOK.md` (incident communications)
+- `docs/POSTMORTEM_TEMPLATE.md` (post-incident review)
+- `docs/planning/mcp/MCP_TOOL_SPEC.md` (MCP tool contract)
+- `docs/planning/mcp/MCP_ROLLOUT_1W.md` (MCP rollout plan)
+- `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md` (core-worker split)
+
 ## Runtime Entrypoints
 
 - `server.ts`: HTTP API process bootstrap.

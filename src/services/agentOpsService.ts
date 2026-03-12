@@ -1,6 +1,7 @@
 import type { Client, Guild } from 'discord.js';
 import logger from '../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { queueMemoryJob } from './agentMemoryStore';
 import { listGuildAgentSessions, startAgentSession } from './multiAgentService';
 
 const AGENT_AUTO_ONBOARDING_ENABLED = parseBooleanEnv(process.env.AGENT_AUTO_ONBOARDING_ENABLED, true);
@@ -53,6 +54,22 @@ export const triggerGuildOnboardingSession = (params: {
   });
 
   logger.info('[AGENT-OPS] onboarding session started guild=%s session=%s', params.guildId, session.id);
+
+  // Non-blocking snapshot enqueue for memory bootstrap.
+  void queueMemoryJob({
+    guildId: params.guildId,
+    jobType: 'onboarding_snapshot',
+    actorId: params.requestedBy,
+    input: {
+      guildName: params.guildName || null,
+      reason: params.reason || 'manual',
+      ownerUserId: params.requestedBy,
+      sessionId: session.id,
+    },
+  }).catch((error) => {
+    logger.warn('[AGENT-OPS] onboarding snapshot queue failed guild=%s error=%s', params.guildId, error instanceof Error ? error.message : String(error));
+  });
+
   return { ok: true, message: '온보딩 세션을 시작했습니다.', sessionId: session.id };
 };
 

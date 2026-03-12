@@ -62,6 +62,17 @@ const clampConfidence = (value: unknown, fallback = 0.55): number => {
   return Math.max(0, Math.min(1, numeric));
 };
 
+const toMaybeUserId = (value: unknown): string | null => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return null;
+  }
+  if (/^\d{6,30}$/.test(text)) {
+    return text;
+  }
+  return null;
+};
+
 const toErrorMessage = (error: unknown): string => {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -252,6 +263,7 @@ const processDurableExtraction = async (params: {
   const row = {
     id: `mem_${crypto.randomUUID()}`,
     guild_id: params.guildId,
+    owner_user_id: toMaybeUserId(input.ownerUserId) || toMaybeUserId(input.sourceAuthorId),
     type,
     title,
     content,
@@ -356,6 +368,37 @@ const processConflictScan = async (guildId: string) => {
   };
 };
 
+const processOnboardingSnapshot = async (params: {
+  guildId: string;
+  input: Record<string, unknown>;
+}) => {
+  const guildName = String(params.input.guildName || '').trim();
+  const reason = String(params.input.reason || 'onboarding').trim();
+
+  const content = [
+    'Guild onboarding baseline snapshot',
+    `guildId=${params.guildId}`,
+    `guildName=${guildName || 'unknown'}`,
+    `reason=${reason}`,
+    `capturedAt=${nowIso()}`,
+    'notes=initial profile generated for onboarding quality and policy bootstrap',
+  ].join('\n');
+
+  return processDurableExtraction({
+    guildId: params.guildId,
+    input: {
+      type: 'policy',
+      title: `Onboarding Snapshot ${guildName || params.guildId}`,
+      summary: 'Initial guild onboarding snapshot for memory bootstrap.',
+      content,
+      tags: ['onboarding', 'snapshot', 'bootstrap'],
+      confidence: 0.75,
+      ownerUserId: params.input.ownerUserId,
+      sourceAuthorId: params.input.ownerUserId,
+    },
+  });
+};
+
 const processJobByType = async (job: {
   guild_id: string;
   job_type: string;
@@ -381,6 +424,10 @@ const processJobByType = async (job: {
 
   if (job.job_type === 'conflict_scan') {
     return processConflictScan(job.guild_id);
+  }
+
+  if (job.job_type === 'onboarding_snapshot') {
+    return processOnboardingSnapshot({ guildId: job.guild_id, input: job.input || {} });
   }
 
   if (job.job_type === 'reindex') {

@@ -13,6 +13,8 @@ export type ActionExecutionLogEvent = {
   retryCount: number;
   circuitOpen: boolean;
   error?: string;
+  estimatedCostUsd?: number;
+  finopsMode?: 'normal' | 'degraded' | 'blocked';
 };
 
 export const logActionExecutionEvent = async (event: ActionExecutionLogEvent) => {
@@ -34,6 +36,8 @@ export const logActionExecutionEvent = async (event: ActionExecutionLogEvent) =>
       duration_ms: Math.max(0, Math.trunc(event.durationMs || 0)),
       retry_count: Math.max(0, Math.trunc(event.retryCount || 0)),
       circuit_open: Boolean(event.circuitOpen),
+      estimated_cost_usd: typeof event.estimatedCostUsd === 'number' ? Math.max(0, Number(event.estimatedCostUsd)) : null,
+      finops_mode: event.finopsMode || null,
       error: event.error || null,
     });
   } catch {

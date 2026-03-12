@@ -1,6 +1,8 @@
 export type ActionExecutionInput = {
   goal: string;
   args?: Record<string, unknown>;
+  guildId?: string;
+  requestedBy?: string;
 };
 
 export type ActionExecutionResult = {

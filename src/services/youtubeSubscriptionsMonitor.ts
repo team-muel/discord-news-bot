@@ -1,10 +1,9 @@
 import { ChannelType, type Client } from 'discord.js';
 import logger from '../logger';
 import { runWithConcurrency } from '../utils/async';
-import { fetchWithTimeout } from '../utils/network';
-import { scrapeLatestCommunityPostByChannelId, scrapeLatestCommunityPostByUrl } from './youtubeCommunityScraper';
 import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 
 type SubscriptionRow = {
   id: number;
@@ -59,10 +58,7 @@ let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 const MONITOR_INTERVAL_MS = Math.max(60_000, Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS || 5 * 60_000));
 const MONITOR_CONCURRENCY = Math.max(1, Number(process.env.YOUTUBE_MONITOR_CONCURRENCY || 5));
 const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS || 120_000));
-const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.YOUTUBE_MONITOR_FETCH_TIMEOUT_MS || 15_000));
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
-const CHANNEL_ID_RE = /\/channel\/(UC[0-9A-Za-z_-]{20,})/;
-const CHANNEL_ID_ANY_RE = /(UC[0-9A-Za-z_-]{20,})/;
 
 const parseMode = (row: SubscriptionRow): 'videos' | 'posts' => {
   if (row.url.endsWith('#posts')) {
@@ -88,97 +84,6 @@ const isYouTubeSourceRow = (row: SubscriptionRow): boolean => {
   return url.includes('youtube.com/') || url.includes('youtu.be/');
 };
 
-const parseChannelId = (url: string): string | null => {
-  const base = url.split('#', 1)[0];
-  const m = base.match(CHANNEL_ID_RE);
-  if (m?.[1]) {
-    return m[1];
-  }
-
-  const rawMatch = base.match(CHANNEL_ID_ANY_RE);
-  if (rawMatch?.[1]) {
-    return rawMatch[1];
-  }
-
-  try {
-    const parsed = new URL(base);
-    const queryChannelId = parsed.searchParams.get('channel_id');
-    if (queryChannelId && CHANNEL_ID_ANY_RE.test(queryChannelId)) {
-      return queryChannelId;
-    }
-  } catch {
-    // Ignore parse errors.
-  }
-
-  return null;
-};
-
-const resolveChannelIdFromHandleUrl = async (url: string): Promise<string | null> => {
-  const base = url.split('#', 1)[0];
-
-  let parsed: URL;
-  try {
-    parsed = new URL(base);
-  } catch {
-    return null;
-  }
-
-  if (!parsed.pathname.includes('/@')) {
-    return null;
-  }
-
-  try {
-    const response = await fetchWithTimeout(parsed.toString(), {
-      redirect: 'follow',
-      headers: {
-        accept: 'text/html,application/xhtml+xml',
-        'user-agent': 'Mozilla/5.0 (compatible; MuelBot/1.0; +https://github.com)',
-      },
-    }, Math.min(FETCH_TIMEOUT_MS, 10_000));
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const fromFinalUrl = parseChannelId(response.url);
-    if (fromFinalUrl) {
-      return fromFinalUrl;
-    }
-
-    const html = await response.text();
-    const match = html.match(/"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"/);
-    return match?.[1] || null;
-  } catch {
-    return null;
-  }
-};
-
-const textBetween = (source: string, start: string, end: string): string => {
-  const s = source.indexOf(start);
-  if (s < 0) return '';
-  const i = s + start.length;
-  const e = source.indexOf(end, i);
-  if (e < 0) return '';
-  return source.slice(i, e).trim();
-};
-
-const parseFirstEntry = (xml: string): FeedEntry | null => {
-  const entryBlock = textBetween(xml, '<entry>', '</entry>');
-  if (!entryBlock) return null;
-
-  const id = textBetween(entryBlock, '<yt:videoId>', '</yt:videoId>')
-    || textBetween(entryBlock, '<id>', '</id>')
-    || '';
-  const title = textBetween(entryBlock, '<title>', '</title>') || '(제목 없음)';
-  const linkMatch = entryBlock.match(/<link[^>]*href="([^"]+)"/);
-  const link = linkMatch?.[1] || '';
-  const published = textBetween(entryBlock, '<published>', '</published>') || textBetween(entryBlock, '<updated>', '</updated>');
-  const authorBlock = textBetween(entryBlock, '<author>', '</author>');
-  const author = textBetween(authorBlock, '<name>', '</name>') || 'Unknown';
-
-  if (!id || !link) return null;
-  return { id, title, link, published, author };
-};
 
 const COMMUNITY_INITIAL_TITLE_PREFIX = process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX || '🔔 Muel 구독 시작';
 const COMMUNITY_NEW_POST_TITLE_TEMPLATE = process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE || '{author}님의 새 커뮤니티 게시글';
@@ -210,96 +115,22 @@ const sendCommunityPostWithThread = async (channel: any, latest: FeedEntry, isFi
   }
 };
 
-const fetchLatestFromFeed = async (channelId: string, mode: 'videos' | 'posts'): Promise<FeedEntry | null> => {
-  const feedUrl = mode === 'videos'
-    ? `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
-    : `https://www.youtube.com/feeds/posts.xml?channel_id=${channelId}`;
-
-  try {
-    const res = await fetchWithTimeout(feedUrl, {
-      headers: {
-        'User-Agent': 'MuelBot/1.0',
-        'Accept-Language': 'ko,en;q=0.8',
-      },
-    }, FETCH_TIMEOUT_MS);
-
-    if (res.ok) {
-      const xml = await res.text();
-      const entry = parseFirstEntry(xml);
-      if (entry) {
-        return entry;
-      }
-    }
-  } catch {
-    // Fall through to community scraper fallback for posts mode.
-  }
-
-  if (mode === 'posts') {
-    return scrapeLatestCommunityPostByChannelId(channelId, FETCH_TIMEOUT_MS);
-  }
-
-  throw new Error('Feed request failed');
-};
-
-const buildAggressivePostProbeUrls = (sourceUrl: string): string[] => {
-  const urls: string[] = [];
-  const base = sourceUrl.split('#', 1)[0].trim();
-  if (!base) {
-    return urls;
-  }
-
-  try {
-    const parsed = new URL(base);
-    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    if (host !== 'youtube.com') {
-      return urls;
-    }
-
-    const path = parsed.pathname.replace(/\/+$/, '') || '/';
-    if (path.endsWith('/posts') || path.endsWith('/community')) {
-      urls.push(`${parsed.origin}${path}`);
-    } else {
-      urls.push(`${parsed.origin}${path}/posts`);
-      urls.push(`${parsed.origin}${path}/community`);
-    }
-  } catch {
-    return urls;
-  }
-
-  return Array.from(new Set(urls));
-};
-
-const fetchLatestCommunityPostAggressively = async (
-  _channelId: string,
-  sourceUrl: string,
-): Promise<FeedEntry | null> => {
-  const probeUrls = buildAggressivePostProbeUrls(sourceUrl);
-  for (const probeUrl of probeUrls) {
-    const hit = await scrapeLatestCommunityPostByUrl(probeUrl, FETCH_TIMEOUT_MS);
-    if (hit) {
-      return hit;
-    }
-  }
-
-  return null;
-};
-
 const fetchLatestWithOptions = async (
   row: SubscriptionRow,
-  channelId: string,
   mode: 'videos' | 'posts',
   options?: TickOptions,
 ): Promise<FeedEntry | null> => {
-  const latest = await fetchLatestFromFeed(channelId, mode);
-  if (latest) {
-    return latest;
-  }
+  const latest = await fetchYouTubeLatestByWorker({
+    sourceUrl: row.url,
+    mode,
+    aggressiveProbe: Boolean(options?.aggressiveProbe),
+  });
 
-  if (mode !== 'posts' || !options?.aggressiveProbe) {
+  if (!latest || !latest.found || !latest.entry) {
     return null;
   }
 
-  return fetchLatestCommunityPostAggressively(channelId, row.url);
+  return latest.entry;
 };
 
 const updateRowState = async (id: number, patch: Record<string, string | null>) => {
@@ -331,8 +162,7 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
 
   try {
   const mode = parseMode(row);
-  const channelId = parseChannelId(row.url) || await resolveChannelIdFromHandleUrl(row.url);
-  if (!channelId || !row.channel_id) {
+  if (!row.channel_id) {
     await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Invalid subscription URL/channel' });
     return 'error';
   }
@@ -343,7 +173,7 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
     return 'error';
   }
 
-  const latest = await fetchLatestWithOptions(row, channelId, mode, options);
+  const latest = await fetchLatestWithOptions(row, mode, options);
   if (!latest) {
     await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
     return 'skipped_no_latest';

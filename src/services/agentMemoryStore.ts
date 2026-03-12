@@ -4,7 +4,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;
 const CONFLICT_STATUSES = ['open', 'resolved', 'ignored'] as const;
-const JOB_TYPES = ['short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan'] as const;
+const JOB_TYPES = ['short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot'] as const;
 
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 export type MemoryFeedbackAction = (typeof FEEDBACK_ACTIONS)[number];
@@ -32,9 +32,11 @@ type CreateMemoryParams = {
   tags?: string[];
   confidence?: number;
   actorId: string;
+  ownerUserId?: string;
   source?: {
     sourceKind?: 'discord_message' | 'summary_job' | 'admin_edit' | 'system';
     sourceMessageId?: string;
+    sourceAuthorId?: string;
     sourceRef?: string;
     excerpt?: string;
   };
@@ -66,6 +68,17 @@ const ensureSupabase = () => {
 };
 
 const safeLike = (value: string): string => value.replace(/[%,]/g, ' ').trim();
+
+const toMaybeUserId = (value: unknown): string | null => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return null;
+  }
+  if (/^\d{6,30}$/.test(text)) {
+    return text;
+  }
+  return null;
+};
 
 const recencyScore = (updatedAtIso: string | null): number => {
   if (!updatedAtIso) return 0;
@@ -223,6 +236,9 @@ export async function createMemoryItem(params: CreateMemoryParams) {
     id,
     guild_id: params.guildId,
     channel_id: params.channelId || null,
+    owner_user_id: toMaybeUserId(params.ownerUserId)
+      || toMaybeUserId(params.source?.sourceAuthorId)
+      || toMaybeUserId(params.actorId),
     type: params.type,
     title: params.title || null,
     content: params.content,
@@ -245,6 +261,7 @@ export async function createMemoryItem(params: CreateMemoryParams) {
       channel_id: params.channelId || null,
       source_kind: params.source.sourceKind || 'admin_edit',
       source_message_id: params.source.sourceMessageId || null,
+      source_author_id: params.source.sourceAuthorId || null,
       source_ref: params.source.sourceRef || null,
       excerpt: params.source.excerpt || null,
       source_ts: new Date().toISOString(),
@@ -338,6 +355,105 @@ export async function listMemoryConflicts(params: { guildId: string; status: Mem
     status: String(row.status || ''),
     createdAt: String(row.created_at || ''),
   }));
+}
+
+export async function resolveMemoryConflict(params: {
+  conflictId: number;
+  guildId: string;
+  actorId: string;
+  status: Extract<MemoryConflictStatus, 'resolved' | 'ignored'>;
+  resolution?: string;
+  keepItemId?: string;
+}) {
+  const client = ensureSupabase();
+
+  const { data: conflictRows, error: conflictReadError } = await client
+    .from('memory_conflicts')
+    .select('id, guild_id, item_a_id, item_b_id, status')
+    .eq('id', params.conflictId)
+    .eq('guild_id', params.guildId)
+    .limit(1);
+
+  if (conflictReadError) {
+    throw new Error(conflictReadError.message || 'MEMORY_CONFLICT_READ_FAILED');
+  }
+
+  const conflict = (conflictRows || [])[0] as Record<string, unknown> | undefined;
+  if (!conflict) {
+    throw new Error('MEMORY_CONFLICT_NOT_FOUND');
+  }
+
+  const itemAId = String(conflict.item_a_id || '').trim();
+  const itemBId = String(conflict.item_b_id || '').trim();
+  const candidates = [itemAId, itemBId].filter(Boolean);
+
+  if (params.status === 'resolved' && params.keepItemId && !candidates.includes(params.keepItemId)) {
+    throw new Error('INVALID_KEEP_ITEM_ID');
+  }
+
+  const now = new Date().toISOString();
+  const updatePatch = {
+    status: params.status,
+    resolution: params.resolution || null,
+    resolved_by: params.actorId,
+    resolved_at: now,
+    updated_at: now,
+  };
+
+  const { error: conflictUpdateError } = await client
+    .from('memory_conflicts')
+    .update(updatePatch)
+    .eq('id', params.conflictId)
+    .eq('guild_id', params.guildId);
+
+  if (conflictUpdateError) {
+    throw new Error(conflictUpdateError.message || 'MEMORY_CONFLICT_UPDATE_FAILED');
+  }
+
+  if (params.status === 'resolved' && params.keepItemId) {
+    const toDeprecate = candidates.filter((id) => id !== params.keepItemId);
+    if (toDeprecate.length > 0) {
+      const { error: deprecateError } = await client
+        .from('memory_items')
+        .update({
+          status: 'deprecated',
+          updated_by: params.actorId,
+        })
+        .eq('guild_id', params.guildId)
+        .in('id', toDeprecate);
+
+      if (deprecateError) {
+        throw new Error(deprecateError.message || 'MEMORY_CONFLICT_DEPRECATE_FAILED');
+      }
+
+      const feedbackRows = toDeprecate.map((memoryItemId) => ({
+        memory_item_id: memoryItemId,
+        guild_id: params.guildId,
+        action: 'deprecate',
+        actor_id: params.actorId,
+        reason: params.resolution || `resolve_conflict:${params.conflictId}`,
+        patch: {
+          conflictId: params.conflictId,
+          keepItemId: params.keepItemId,
+        },
+      }));
+      const { error: feedbackError } = await client.from('memory_feedback').insert(feedbackRows);
+      if (feedbackError) {
+        throw new Error(feedbackError.message || 'MEMORY_CONFLICT_FEEDBACK_FAILED');
+      }
+    }
+  }
+
+  return {
+    id: params.conflictId,
+    guildId: params.guildId,
+    status: params.status,
+    resolvedBy: params.actorId,
+    resolvedAt: now,
+    keepItemId: params.keepItemId || null,
+    itemAId,
+    itemBId,
+  };
 }
 
 export async function queueMemoryJob(params: QueueJobParams) {

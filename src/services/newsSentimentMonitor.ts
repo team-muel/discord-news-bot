@@ -3,6 +3,7 @@ import logger from '../logger';
 import { fetchWithTimeout } from '../utils/network';
 import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { fetchNewsMonitorCandidatesByWorker } from './newsMonitorWorkerClient';
 
 type NewsItem = {
   title: string;
@@ -52,7 +53,6 @@ let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 let newsHistoryTableUnavailableLogged = false;
 
 const INTERVAL_MS = Math.max(60_000, Number(process.env.NEWS_MONITOR_INTERVAL_MS || 10 * 60_000));
-const GOOGLE_FINANCE_NEWS_URL = (process.env.GOOGLE_FINANCE_NEWS_URL || 'https://www.google.com/finance/markets?hl=ko').trim();
 const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.NEWS_MONITOR_LOCK_LEASE_MS || 120_000));
 const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_MONITOR_FETCH_TIMEOUT_MS || 15_000));
 const NEWS_CANDIDATE_LIMIT = Math.max(3, Number(process.env.NEWS_MONITOR_CANDIDATE_LIMIT || 12));
@@ -97,15 +97,6 @@ const isHistoryUnavailableError = (error: any): boolean => {
     || msg.includes('sentiment_score');
 };
 
-const textBetween = (source: string, start: string, end: string): string => {
-  const s = source.indexOf(start);
-  if (s < 0) return '';
-  const i = s + start.length;
-  const e = source.indexOf(end, i);
-  if (e < 0) return '';
-  return source.slice(i, e).trim();
-};
-
 const decodeXml = (text: string): string => {
   return text
     .replace(/&amp;/g, '&')
@@ -116,127 +107,6 @@ const decodeXml = (text: string): string => {
     .replace(/&bull;/g, '•')
     .replace(/&nbsp;/g, ' ')
     .trim();
-};
-
-const normalizeLink = (raw: string): string => {
-  try {
-    const u = new URL(raw);
-    u.searchParams.delete('oc');
-    u.searchParams.delete('utm_source');
-    u.searchParams.delete('utm_medium');
-    u.searchParams.delete('utm_campaign');
-    return u.toString();
-  } catch {
-    return raw.trim();
-  }
-};
-
-const parseSourceName = (href: string): string | null => {
-  try {
-    const url = new URL(href);
-    return url.hostname.replace(/^www\./, '');
-  } catch {
-    return null;
-  }
-};
-
-const parseRelativeKoreanAgo = (text: string): number | null => {
-  const m = text.match(/(\d+)\s*(분|시간|일|주|달|개월|년)\s*전/);
-  if (!m) {
-    return null;
-  }
-
-  const amount = Number(m[1]);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return null;
-  }
-
-  const unit = m[2];
-  const now = Date.now();
-  let deltaMs = 0;
-  if (unit === '분') deltaMs = amount * 60 * 1000;
-  else if (unit === '시간') deltaMs = amount * 60 * 60 * 1000;
-  else if (unit === '일') deltaMs = amount * 24 * 60 * 60 * 1000;
-  else if (unit === '주') deltaMs = amount * 7 * 24 * 60 * 60 * 1000;
-  else if (unit === '달' || unit === '개월') deltaMs = amount * 30 * 24 * 60 * 60 * 1000;
-  else if (unit === '년') deltaMs = amount * 365 * 24 * 60 * 60 * 1000;
-
-  return Math.floor((now - deltaMs) / 1000);
-};
-
-const parseRelativeEnglishAgo = (text: string): number | null => {
-  const m = text.toLowerCase().match(/(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago/);
-  if (!m) {
-    return null;
-  }
-
-  const amount = Number(m[1]);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return null;
-  }
-
-  const unit = m[2];
-  const now = Date.now();
-  let deltaMs = 0;
-  if (unit.startsWith('minute')) deltaMs = amount * 60 * 1000;
-  else if (unit.startsWith('hour')) deltaMs = amount * 60 * 60 * 1000;
-  else if (unit.startsWith('day')) deltaMs = amount * 24 * 60 * 60 * 1000;
-  else if (unit.startsWith('week')) deltaMs = amount * 7 * 24 * 60 * 60 * 1000;
-  else if (unit.startsWith('month')) deltaMs = amount * 30 * 24 * 60 * 60 * 1000;
-  else if (unit.startsWith('year')) deltaMs = amount * 365 * 24 * 60 * 60 * 1000;
-
-  return Math.floor((now - deltaMs) / 1000);
-};
-
-const normalizeFinanceHeadline = (rawTitle: string): {
-  headline: string;
-  publisherName: string | null;
-  publishedAtUnix: number | null;
-} => {
-  const title = String(rawTitle || '').replace(/\s+/g, ' ').trim();
-  if (!title) {
-    return { headline: '', publisherName: null, publishedAtUnix: null };
-  }
-
-  const korean = title.match(/^(.+?)\s+(\d+\s*(?:분|시간|일|주|달|개월|년)\s*전)\s+(.+)$/);
-  if (korean) {
-    return {
-      publisherName: korean[1].trim(),
-      publishedAtUnix: parseRelativeKoreanAgo(korean[2]),
-      headline: korean[3].trim(),
-    };
-  }
-
-  const english = title.match(/^(.+?)\s+(\d+\s+(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago)\s+(.+)$/i);
-  if (english) {
-    return {
-      publisherName: english[1].trim(),
-      publishedAtUnix: parseRelativeEnglishAgo(english[2]),
-      headline: english[3].trim(),
-    };
-  }
-
-  // Common Google Finance shape: "<headline> • <publisher> • <relative time>"
-  const bulletParts = title
-    .split(/\s*[•·|]\s*/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (bulletParts.length >= 2) {
-    const last = bulletParts[bulletParts.length - 1] || '';
-    const publishedAtUnix = parseRelativeKoreanAgo(last) || parseRelativeEnglishAgo(last);
-    if (publishedAtUnix) {
-      const headline = bulletParts[0] || title;
-      const publisherName = bulletParts.length >= 3 ? bulletParts[1] : null;
-      return {
-        headline: headline.trim(),
-        publisherName: publisherName?.trim() || null,
-        publishedAtUnix,
-      };
-    }
-  }
-
-  return { headline: title, publisherName: null, publishedAtUnix: null };
 };
 
 const stripHtmlBlocks = (html: string): string => {
@@ -403,47 +273,6 @@ const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
     return enforceTwoToThreeLines(content);
   } catch {
     return '';
-  }
-};
-
-const stripTags = (html: string): string => {
-  return decodeXml(String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
-};
-
-const isLikelyNavigationTitle = (title: string): boolean => {
-  const normalized = String(title || '').toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return true;
-  }
-
-  const blocked = [
-    'finance_mode',
-    'google finance',
-    'home',
-    '홈',
-    'markets',
-    '시장',
-    'watchlist',
-    '관심종목',
-    'portfolio',
-    '포트폴리오',
-  ];
-
-  return blocked.some((token) => normalized === token || normalized.startsWith(`${token} `));
-};
-
-const isInternalGoogleFinanceLink = (href: string): boolean => {
-  try {
-    const url = new URL(href);
-    const host = url.hostname.replace(/^www\./, '').toLowerCase();
-    if (host !== 'google.com') {
-      return false;
-    }
-
-    // Keep only external article targets. Internal finance pages are navigation/quote hubs.
-    return url.pathname.startsWith('/finance');
-  } catch {
-    return true;
   }
 };
 
@@ -640,86 +469,21 @@ const storeNewsHistory = async (item: NewsItem, guildId: string | null) => {
   }
 };
 
-const extractFinanceNewsItems = (html: string): NewsItem[] => {
-  const items: NewsItem[] = [];
-  const seen = new Set<string>();
-  const anchorRegex = /<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = anchorRegex.exec(html)) !== null) {
-    const hrefRaw = decodeXml(match[1] || '');
-    const title = stripTags(match[2] || '');
-    if (!title || title.length < 12) {
-      continue;
-    }
-    if (isLikelyNavigationTitle(title)) {
-      continue;
-    }
-
-    let href = hrefRaw;
-    if (href.startsWith('./')) {
-      href = `https://www.google.com/finance/${href.slice(2)}`;
-    } else if (href.startsWith('/')) {
-      href = `https://www.google.com${href}`;
-    }
-
-    href = normalizeLink(href);
-    if (!/^https?:\/\//.test(href)) {
-      continue;
-    }
-
-    try {
-      const maybeGoogleRedirect = new URL(href);
-      const q = maybeGoogleRedirect.searchParams.get('q');
-      if (q && /^https?:\/\//.test(q)) {
-        href = normalizeLink(q);
-      }
-    } catch {
-      // Ignore parse failures and keep original href.
-    }
-
-    if (isInternalGoogleFinanceLink(href)) {
-      continue;
-    }
-
-    const normalized = normalizeFinanceHeadline(title);
-    const headline = normalized.headline || title;
-
-    // Use canonical link as stable dedup key so relative-time title changes do not resend the same news.
-    const key = href.slice(0, 1000);
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    items.push({
-      title: headline,
-      link: href,
-      sourceName: parseSourceName(href),
-      publisherName: normalized.publisherName,
-      publishedAtUnix: normalized.publishedAtUnix,
-      key,
-      lexicalSignature: buildLexicalSignature(headline),
-    });
-  }
-
-  return items;
-};
-
 const fetchLatestGoogleFinanceNews = async (): Promise<NewsItem[]> => {
-  const res = await fetchWithTimeout(GOOGLE_FINANCE_NEWS_URL, {
-    headers: {
-      'User-Agent': 'MuelBot/1.0',
-      'Accept-Language': 'ko,en;q=0.8',
-    },
-  }, FETCH_TIMEOUT_MS);
-
-  if (!res.ok) {
-    throw new Error(`Google Finance request failed: ${res.status}`);
+  const rows = await fetchNewsMonitorCandidatesByWorker(NEWS_CANDIDATE_LIMIT);
+  if (!rows) {
+    return [];
   }
 
-  const html = await res.text();
-  return extractFinanceNewsItems(html).slice(0, NEWS_CANDIDATE_LIMIT);
+  return rows.map((row) => ({
+    title: String(row.title || ''),
+    link: String(row.link || ''),
+    sourceName: row.sourceName ? String(row.sourceName) : null,
+    publisherName: row.publisherName ? String(row.publisherName) : null,
+    publishedAtUnix: Number.isFinite(Number(row.publishedAtUnix)) ? Number(row.publishedAtUnix) : null,
+    key: String(row.key || ''),
+    lexicalSignature: String(row.lexicalSignature || buildLexicalSignature(String(row.title || ''))),
+  })).filter((item) => Boolean(item.title && item.link && item.key));
 };
 
 const pickBestCandidate = async (candidates: NewsItem[], recentHistory: NewsHistoryRow[]): Promise<NewsItem | null> => {

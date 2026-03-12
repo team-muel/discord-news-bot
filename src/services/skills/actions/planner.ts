@@ -1,32 +1,34 @@
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { listActions } from './registry';
 import type { ActionChainPlan, ActionPlan } from './types';
+import { buildFallbackPlan, RAG_INTENT_REGEX } from './plannerRules';
+
+const isRagIntent = (goal: string): boolean => RAG_INTENT_REGEX.test(goal.toLowerCase());
+
+const applyRagPriority = (plans: ActionPlan[], goal: string): ActionPlan[] => {
+  if (!isRagIntent(goal)) {
+    return plans;
+  }
+
+  const rag = plans.find((plan) => plan.actionName === 'rag.retrieve');
+  const others = plans.filter((plan) => plan.actionName !== 'rag.retrieve');
+  if (rag) {
+    return [rag, ...others];
+  }
+
+  return [
+    { actionName: 'rag.retrieve', args: { query: goal }, reason: 'rag-priority-injected' },
+    ...others,
+  ];
+};
+
+const fallbackPlan = (goal: string): ActionPlan[] => buildFallbackPlan(goal);
 
 const pushUnique = (plans: ActionPlan[], next: ActionPlan) => {
   if (plans.some((plan) => plan.actionName === next.actionName)) {
     return;
   }
   plans.push(next);
-};
-
-const fallbackPlan = (goal: string): ActionPlan[] => {
-  const lower = goal.toLowerCase();
-  const plans: ActionPlan[] = [];
-
-  if (/(youtube|유튜브)/.test(lower)) {
-    pushUnique(plans, { actionName: 'youtube.search.first', args: { query: goal }, reason: 'youtube-intent' });
-  }
-  if (/(차트|chart)/.test(lower)) {
-    pushUnique(plans, { actionName: 'stock.chart', args: {}, reason: 'chart-intent' });
-  }
-  if (/(주가|가격|quote)/.test(lower)) {
-    pushUnique(plans, { actionName: 'stock.quote', args: {}, reason: 'quote-intent' });
-  }
-  if (/(분석|analysis)/.test(lower)) {
-    pushUnique(plans, { actionName: 'investment.analysis', args: { query: goal }, reason: 'analysis-intent' });
-  }
-
-  return plans;
 };
 
 const normalizePlan = (input: unknown): ActionPlan[] => {
@@ -83,6 +85,8 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     '{"actions":[{"actionName":"...","args":{},"reason":"..."}]}',
     '최대 3개 액션까지만 선택하세요.',
     '없으면 {"actions":[]} 로 출력하세요.',
+    '규칙: 목표가 근거/출처/기억 회상/검증 요청이면 첫 액션으로 rag.retrieve를 포함하세요.',
+    '규칙: rag.retrieve를 선택했다면 args.query에는 목표를 넣고 reason에 rag 관련 근거를 남기세요.',
     '',
     '액션 목록:',
     catalog,
@@ -105,7 +109,7 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     }
 
     const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
-    const normalized = normalizePlan(parsed).slice(0, 3);
+    const normalized = applyRagPriority(normalizePlan(parsed), goal).slice(0, 3);
     if (normalized.length === 0) {
       return { actions: fallbackPlan(goal) };
     }
