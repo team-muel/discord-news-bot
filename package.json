@@ -40,6 +40,7 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.2",
+    "tsx": "^4.21.0",
     "winston": "^3.9.0"
   },
   "devDependencies": {
@@ -51,7 +52,6 @@
     "@types/node-cron": "^3.0.11",
     "madge": "^8.0.0",
     "rimraf": "^5.0.0",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2"
   }
 }
