@@ -19,6 +19,7 @@
     "pm2:save": "npx pm2 save",
     "clean": "rimraf dist",
     "lint": "tsc --noEmit",
+    "env:check": "node scripts/validate-env.mjs",
     "seed:research-presets": "tsx scripts/seed-research-presets.ts",
     "smoke:api": "node scripts/smoke-api.mjs",
     "docs:routes": "node scripts/generate-route-inventory.mjs",

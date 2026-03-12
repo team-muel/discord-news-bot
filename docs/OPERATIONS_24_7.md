@@ -6,8 +6,15 @@ Use PM2 to keep the process alive and auto-restart on failures.
 Related architecture guide:
 
 - `docs/CONTEXT_ISOLATION.md` for domain-focused review/edit workflow.
+- `docs/MULTI_GUILD_OPERATIONS_CHECKLIST.md` for multi-server rollout checklist and env registration steps.
 
 ## 1) Required Environment Variables
+
+Quick validation command (run before deploy):
+
+```bash
+npm run env:check
+```
 
 Set these in your runtime environment (`.env` or host secret manager):
 

@@ -1,4 +1,5 @@
 import { executeWebhookSkill } from './modules/webhook';
+import { executeCasualChatSkill } from './modules/casualChat';
 import { executeOpsPlanSkill } from './modules/opsPlan';
 import { executeOpsExecutionSkill } from './modules/opsExecution';
 import { executeOpsCritiqueSkill } from './modules/opsCritique';
@@ -11,6 +12,8 @@ export const executeSkill = async (
   context: SkillContext,
 ): Promise<SkillExecutionResult> => {
   switch (skillId) {
+    case 'casual_chat':
+      return executeCasualChatSkill(context);
     case 'ops-plan':
       return executeOpsPlanSkill(context);
     case 'ops-execution':

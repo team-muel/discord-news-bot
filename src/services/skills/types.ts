@@ -1,4 +1,5 @@
 export type SkillId =
+  | 'casual_chat'
   | 'ops-plan'
   | 'ops-execution'
   | 'ops-critique'

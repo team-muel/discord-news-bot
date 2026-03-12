@@ -1714,7 +1714,63 @@ const formatAgentSessionLine = (session: AgentSession) => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const buildSessionProgressText = (session: AgentSession, goal: string) => {
+type ProgressSink = {
+  update: (content: string) => Promise<unknown>;
+};
+
+type ProgressRenderOptions = {
+  showDebugBlocks: boolean;
+  maxLinks: number;
+};
+
+const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
+
+const extractDeliverableBody = (raw: string): string | null => {
+  const match = raw.match(/##\s*Deliverable\s*([\s\S]*?)(?:\n##\s*Verification|\n##\s*Confidence|$)/i);
+  if (!match) {
+    return null;
+  }
+
+  const text = String(match[1] || '').trim();
+  return text || null;
+};
+
+const limitLinks = (input: string, maxLinks: number): string => {
+  if (maxLinks < 1) {
+    return input.replace(URL_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  let count = 0;
+  return input.replace(URL_PATTERN, (url) => {
+    count += 1;
+    if (count <= maxLinks) {
+      return url;
+    }
+    return '';
+  }).replace(/\n{3,}/g, '\n\n').trim();
+};
+
+const toUserFacingResult = (session: AgentSession, options: ProgressRenderOptions): string => {
+  const raw = String(session.result || '').trim();
+  if (!raw) {
+    return '결과가 비어 있습니다.';
+  }
+
+  if (options.showDebugBlocks) {
+    return raw;
+  }
+
+  const deliverableOnly = extractDeliverableBody(raw) || raw;
+  const stripped = deliverableOnly
+    .replace(/##\s*Verification[\s\S]*/i, '')
+    .replace(/##\s*Confidence[\s\S]*/i, '')
+    .trim();
+
+  const linkLimited = limitLinks(stripped, options.maxLinks);
+  return linkLimited || '결과가 비어 있습니다.';
+};
+
+const buildSessionProgressText = (session: AgentSession, goal: string, options: ProgressRenderOptions) => {
   if (session.status === 'queued') {
     return '요청을 처리하기 위해 준비 중입니다...';
   }
@@ -1739,19 +1795,16 @@ const buildSessionProgressText = (session: AgentSession, goal: string) => {
     ].join('\n');
   }
 
-  const result = String(session.result || '').trim();
-  const clipped = result.length > 1700 ? `${result.slice(0, 1700)}\n...` : result;
+  const content = toUserFacingResult(session, options);
+  const clipLimit = options.showDebugBlocks ? 1700 : 1200;
+  const clipped = content.length > clipLimit ? `${content.slice(0, clipLimit)}\n...` : content;
   return [
     '작업이 완료되었습니다.',
-    clipped || '결과가 비어 있습니다.',
+    clipped,
   ].join('\n\n');
 };
 
-type ProgressSink = {
-  update: (content: string) => Promise<unknown>;
-};
-
-const streamSessionProgress = async (sink: ProgressSink, sessionId: string, goal: string) => {
+const streamSessionProgress = async (sink: ProgressSink, sessionId: string, goal: string, options: ProgressRenderOptions) => {
   const startedAt = Date.now();
   const timeoutMs = 8 * 60 * 1000;
   const intervalMs = 2200;
@@ -1764,7 +1817,7 @@ const streamSessionProgress = async (sink: ProgressSink, sessionId: string, goal
       return;
     }
 
-    const text = buildSessionProgressText(session, goal);
+    const text = buildSessionProgressText(session, goal, options);
     if (text !== previous) {
       await sink.update(text);
       previous = text;
@@ -1785,12 +1838,11 @@ const streamSessionProgress = async (sink: ProgressSink, sessionId: string, goal
 };
 
 const startVibeSession = (guildId: string, userId: string, request: string): AgentSession => {
-  const inferredSkill = inferSessionSkill(request);
   return startAgentSession({
     guildId,
     requestedBy: userId,
     goal: request,
-    skillId: inferredSkill,
+    skillId: null,
     priority: 'balanced',
   });
 };
@@ -1851,7 +1903,12 @@ const handleVibeCommand = async (interaction: ChatInputCommandInteraction) => {
     EMBED_INFO,
   ));
 
-  await streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard('진행 상태', content, EMBED_INFO)) }, session.id, request);
+  await streamSessionProgress(
+    { update: (content) => interaction.editReply(buildUserCard('진행 상태', content, EMBED_INFO)) },
+    session.id,
+    request,
+    { showDebugBlocks: false, maxLinks: 2 },
+  );
 };
 
 const handleSessionCommand = async (interaction: ChatInputCommandInteraction) => {
@@ -1911,7 +1968,12 @@ const handleSessionCommand = async (interaction: ChatInputCommandInteraction) =>
       EMBED_SUCCESS,
     ));
 
-    await streamSessionProgress({ update: (content) => interaction.editReply(buildAdminCard('세션 진행 상태', content, [`session=${session.id}`], EMBED_INFO)) }, session.id, session.goal);
+    await streamSessionProgress(
+      { update: (content) => interaction.editReply(buildAdminCard('세션 진행 상태', content, [`session=${session.id}`], EMBED_INFO)) },
+      session.id,
+      session.goal,
+      { showDebugBlocks: session.priority === 'precise', maxLinks: 4 },
+    );
     return;
   }
 
@@ -2044,7 +2106,12 @@ const handleVibeMessage = async (message: Message) => {
     '완료 즉시 결과물만 전달합니다.',
   ].join('\n'));
 
-  await streamSessionProgress({ update: (content) => progressMessage.edit(content) }, session.id, request);
+  await streamSessionProgress(
+    { update: (content) => progressMessage.edit(content) },
+    session.id,
+    request,
+    { showDebugBlocks: false, maxLinks: 2 },
+  );
 };
 
 const handleAgentCommand = async (interaction: ChatInputCommandInteraction, forcedSub?: string) => {
@@ -2103,7 +2170,12 @@ const handleAgentCommand = async (interaction: ChatInputCommandInteraction, forc
       EMBED_INFO,
     ));
 
-    await streamSessionProgress({ update: (content) => interaction.editReply(buildAdminCard('진행 상태', content, [`session=${session.id}`], EMBED_INFO)) }, session.id, session.goal);
+    await streamSessionProgress(
+      { update: (content) => interaction.editReply(buildAdminCard('진행 상태', content, [`session=${session.id}`], EMBED_INFO)) },
+      session.id,
+      session.goal,
+      { showDebugBlocks: session.priority === 'precise', maxLinks: 4 },
+    );
     return;
   }
 

@@ -2,6 +2,20 @@ import type { SkillDefinition, SkillId } from './types';
 
 const BUILTIN_SKILLS: SkillDefinition[] = [
   {
+    id: 'casual_chat',
+    title: '일상 대화 응답',
+    description: '감정 표현/잡담 입력을 공감형 자연어로 응답합니다.',
+    inputGuide: '감정 표현, 안부, 짧은 일상 발화',
+    outputGuide: '도구 없이 공감 + 필요 시 1개 되묻기',
+    systemPrompt: [
+      '너는 공감형 한국어 대화 파트너다.',
+      '작업 실행/검색 도구 호출 없이 자연스럽게 반응한다.',
+      '감정/짧은 일상 발화는 장기기억 조회보다 현재 공감과 가벼운 질문을 우선한다.',
+    ].join(' '),
+    temperature: 0.5,
+    maxTokens: 220,
+  },
+  {
     id: 'ops-plan',
     title: '운영 계획 수립',
     description: '목표를 실행 가능한 단계로 분해하고 우선순위를 제안합니다.',
