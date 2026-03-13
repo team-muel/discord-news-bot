@@ -114,7 +114,7 @@
     },
     {
       "id": "news-verify-intent",
-      "pattern": "검증|팩트체크|교차확인|사실(이야|인가|맞아)|fact\s*check|verify|cross\s*check",
+      "pattern": "검증|팩트체크|교차확인|사실(이야|인가|맞아)|fact.?check|verify|cross.?check",
       "plans": [
         {
           "actionName": "news.verify",
