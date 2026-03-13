@@ -35,6 +35,8 @@ import {
   listGuildAgentSessions,
   startAgentSession,
 } from './services/multiAgentService';
+import { createMemoryItem } from './services/agentMemoryStore';
+import { getGuildActionPolicy } from './services/skills/actionGovernanceStore';
 import { isAnyLlmConfigured } from './services/llmClient';
 import { queryObsidianRAG, initObsidianRAG } from './services/obsidianRagService';
 import { generateText } from './services/llmClient';
@@ -185,6 +187,19 @@ const botRuntimeState: BotRuntimeSnapshot = {
 let commandHandlersAttached = false;
 let activeToken: string | null = null;
 let reconnectInProgress = false;
+const LEARNING_POLICY_ACTION = 'memory_learning';
+const learningPolicyCache = new Map<string, { enabled: boolean; fetchedAt: number }>();
+
+const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
+  const cached = learningPolicyCache.get(guildId);
+  if (cached && (Date.now() - cached.fetchedAt) < 30_000) {
+    return cached.enabled;
+  }
+  const policy = await getGuildActionPolicy(guildId, LEARNING_POLICY_ACTION);
+  const enabled = policy.enabled;
+  learningPolicyCache.set(guildId, { enabled, fetchedAt: Date.now() });
+  return enabled;
+};
 
 export type ManualReconnectRequestResult = {
   ok: boolean;
@@ -895,6 +910,10 @@ const attachCommandHandlers = () => {
           await adminHandlers.handleManageSettingsCommand(interaction);
           return;
         }
+        case '잊어줘': {
+          await adminHandlers.handleForgetCommand(interaction);
+          return;
+        }
         case '시작': {
           if (!LEGACY_SESSION_COMMANDS_ENABLED) {
             await replyLegacySessionRedirect(interaction);
@@ -966,6 +985,34 @@ const attachCommandHandlers = () => {
 
     try {
       await vibeHandlers.handleVibeMessage(message);
+
+      // Optional passive memory capture by guild policy
+      if (message.guildId && !message.author.bot) {
+        const enabled = await isGuildLearningEnabled(message.guildId);
+        const content = String(message.content || '').trim();
+        if (enabled && content.length >= 20 && !content.startsWith('/')) {
+          await createMemoryItem({
+            guildId: message.guildId,
+            channelId: message.channelId,
+            type: 'episode',
+            title: `discord:${message.author.id}:${new Date().toISOString().slice(0, 10)}`,
+            content: content.slice(0, 2000),
+            tags: ['discord-chat', 'auto-captured', `user:${message.author.id}`, `channel:${message.channelId}`],
+            confidence: 0.55,
+            actorId: 'system',
+            ownerUserId: message.author.id,
+            source: {
+              sourceKind: 'discord_message',
+              sourceMessageId: message.id,
+              sourceAuthorId: message.author.id,
+              sourceRef: `discord://guild/${message.guildId}/channel/${message.channelId}/message/${message.id}`,
+              excerpt: content.slice(0, 300),
+            },
+          }).catch((error) => {
+            logger.debug('[MEMORY] passive capture skipped: %s', getErrorMessage(error));
+          });
+        }
+      }
     } catch (error) {
       logger.warn('[BOT] vibe message handling failed: %o', error);
     }

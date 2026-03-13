@@ -3,6 +3,14 @@ import { buildAdminCard, buildSimpleEmbed, EMBED_ERROR, EMBED_INFO, EMBED_SUCCES
 import { isAnyLlmConfigured } from '../../services/llmClient';
 import { isSupabaseConfigured } from '../../services/supabaseClient';
 import { isStockFeatureEnabled } from '../../services/stockService';
+import { isUserAdmin } from '../../services/adminAllowlistService';
+import {
+  forgetGuildRagData,
+  forgetUserRagData,
+  previewForgetGuildRagData,
+  previewForgetUserRagData,
+} from '../../services/privacyForgetService';
+import { getGuildActionPolicy, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 
 type BotRuntimeSnapshotLike = {
   ready: boolean;
@@ -11,7 +19,7 @@ type BotRuntimeSnapshotLike = {
   reconnectAttempts: number;
 };
 
-const guildLearningPolicy = new Map<string, boolean>();
+const LEARNING_POLICY_ACTION = 'memory_learning';
 
 type AutomationSnapshotLike = {
   healthy: boolean;
@@ -95,6 +103,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       '/차트',
       '/상태',
       '/설정 (대시보드 이동)',
+      '/잊어줘 (미리보기/실행)',
     ];
     const adminCommands = [
       '/세션 조회',
@@ -137,13 +146,103 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       return;
     }
     const mode = String(interaction.options.getString('학습') || '').trim().toLowerCase();
-    if (mode === 'on') guildLearningPolicy.set(interaction.guildId, true);
-    if (mode === 'off') guildLearningPolicy.set(interaction.guildId, false);
-    const enabled = guildLearningPolicy.get(interaction.guildId) ?? true;
+    if (mode === 'on' || mode === 'off') {
+      await upsertGuildActionPolicy({
+        guildId: interaction.guildId,
+        actionName: LEARNING_POLICY_ACTION,
+        enabled: mode === 'on',
+        runMode: 'auto',
+        actorId: interaction.user.id,
+      });
+    }
+    const policy = await getGuildActionPolicy(interaction.guildId, LEARNING_POLICY_ACTION);
+    const enabled = policy.enabled;
     await interaction.reply({
-      ...buildSimpleEmbed('관리 설정', `학습 허용: ${enabled ? 'ON' : 'OFF'}\n(현재는 런타임 설정이며 재시작 시 초기화될 수 있습니다.)`, EMBED_INFO),
+      ...buildSimpleEmbed('관리 설정', `학습 허용: ${enabled ? 'ON' : 'OFF'}\n(영구 저장됨: guild=${interaction.guildId})`, EMBED_INFO),
       ephemeral: true,
     });
+  };
+
+  const handleForgetCommand = async (interaction: ChatInputCommandInteraction) => {
+    if (!interaction.guildId) {
+      await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      return;
+    }
+
+    const action = String(interaction.options.getString('동작') || 'preview').trim().toLowerCase();
+    const scope = String(interaction.options.getString('범위') || 'user').trim().toLowerCase();
+    const confirm = String(interaction.options.getString('확인문구') || '').trim();
+    const targetUser = interaction.options.getUser('대상유저')?.id || interaction.user.id;
+    const admin = await isUserAdmin(interaction.user.id);
+
+    await interaction.deferReply({ ephemeral: true });
+
+    if (action === 'preview') {
+      if (scope === 'guild') {
+        if (!admin) {
+          await interaction.editReply(buildSimpleEmbed('권한 오류', '길드 전체 미리보기는 관리자만 가능합니다.', EMBED_ERROR));
+          return;
+        }
+        const preview = await previewForgetGuildRagData(interaction.guildId);
+        await interaction.editReply(buildSimpleEmbed('잊어줘 미리보기(guild)', [
+          `삭제 후보 합계: ${preview.supabase.totalCandidates}`,
+          `Obsidian 후보 경로: ${preview.obsidian.candidatePaths.length}`,
+          '실행 확인문구: FORGET_GUILD',
+        ].join('\n'), EMBED_INFO));
+        return;
+      }
+
+      const preview = await previewForgetUserRagData({ userId: targetUser, guildId: interaction.guildId });
+      await interaction.editReply(buildSimpleEmbed('잊어줘 미리보기(user)', [
+        `대상 user_id: ${targetUser}`,
+        `삭제 후보 합계: ${preview.supabase.totalCandidates}`,
+        `Obsidian 후보 경로: ${preview.obsidian.candidatePaths.length}`,
+        `실행 확인문구: ${targetUser === interaction.user.id ? 'FORGET_USER' : 'FORGET_USER_ADMIN'}`,
+      ].join('\n'), EMBED_INFO));
+      return;
+    }
+
+    if (scope === 'guild') {
+      if (!admin) {
+        await interaction.editReply(buildSimpleEmbed('권한 오류', '길드 전체 삭제는 관리자만 가능합니다.', EMBED_ERROR));
+        return;
+      }
+      if (confirm !== 'FORGET_GUILD') {
+        await interaction.editReply(buildSimpleEmbed('확인문구 오류', '확인문구는 FORGET_GUILD 여야 합니다.', EMBED_WARN));
+        return;
+      }
+      const result = await forgetGuildRagData({
+        guildId: interaction.guildId,
+        requestedBy: interaction.user.id,
+        reason: 'slash:/잊어줘 guild',
+      });
+      await interaction.editReply(buildSimpleEmbed('잊어줘 실행 완료(guild)', [
+        `삭제 합계: ${result.supabase.totalDeleted}`,
+        `Obsidian 삭제 경로: ${result.obsidian.removedPaths.length}`,
+      ].join('\n'), EMBED_SUCCESS));
+      return;
+    }
+
+    const expected = targetUser === interaction.user.id ? 'FORGET_USER' : 'FORGET_USER_ADMIN';
+    if (targetUser !== interaction.user.id && !admin) {
+      await interaction.editReply(buildSimpleEmbed('권한 오류', '다른 유저 데이터 삭제는 관리자만 가능합니다.', EMBED_ERROR));
+      return;
+    }
+    if (confirm !== expected) {
+      await interaction.editReply(buildSimpleEmbed('확인문구 오류', `확인문구는 ${expected} 여야 합니다.`, EMBED_WARN));
+      return;
+    }
+    const result = await forgetUserRagData({
+      userId: targetUser,
+      guildId: interaction.guildId,
+      requestedBy: interaction.user.id,
+      reason: 'slash:/잊어줘 user',
+    });
+    await interaction.editReply(buildSimpleEmbed('잊어줘 실행 완료(user)', [
+      `대상 user_id: ${targetUser}`,
+      `삭제 합계: ${result.supabase.totalDeleted}`,
+      `Obsidian 삭제 경로: ${result.obsidian.removedPaths.length}`,
+    ].join('\n'), EMBED_SUCCESS));
   };
 
   const handleLoginCommand = async (interaction: ChatInputCommandInteraction) => {
@@ -271,5 +370,6 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     handleReconnectCommand,
     handleAdminCommand,
     handleManageSettingsCommand,
+    handleForgetCommand,
   };
 };

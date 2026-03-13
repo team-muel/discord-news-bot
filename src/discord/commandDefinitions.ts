@@ -28,6 +28,7 @@ export const SIMPLE_COMMAND_ALLOWLIST = new Set([
   '정책',
   '세션',
   '관리설정',
+  '잊어줘',
 ]);
 export const LEGACY_SESSION_COMMANDS_ENABLED = parseBooleanEnv(
   process.env.LEGACY_SESSION_COMMANDS_ENABLED,
@@ -276,6 +277,32 @@ const ALL_COMMANDS = [
           { name: 'off', value: 'off' },
         )
         .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName('잊어줘')
+    .setDescription('잊혀질 권리: 유저/길드 데이터 삭제 요청')
+    .setDMPermission(false)
+    .addStringOption((o) =>
+      o.setName('동작').setDescription('미리보기 또는 실행')
+        .addChoices(
+          { name: '미리보기', value: 'preview' },
+          { name: '실행', value: 'execute' },
+        )
+        .setRequired(false),
+    )
+    .addStringOption((o) =>
+      o.setName('범위').setDescription('삭제 범위')
+        .addChoices(
+          { name: '내 데이터(user)', value: 'user' },
+          { name: '서버 데이터(guild)', value: 'guild' },
+        )
+        .setRequired(false),
+    )
+    .addUserOption((o) =>
+      o.setName('대상유저').setDescription('관리자 전용: 다른 유저 데이터 삭제 대상').setRequired(false),
+    )
+    .addStringOption((o) =>
+      o.setName('확인문구').setDescription('실행 시: FORGET_USER / FORGET_USER_ADMIN / FORGET_GUILD').setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName('온보딩')
