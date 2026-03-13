@@ -1,6 +1,7 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { RAGQueryResult } from '../../services/obsidianRagService';
 import type { LlmTextRequest } from '../../services/llmClient';
+import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 
 const DISCORD_MSG_LIMIT = 1900;
@@ -20,7 +21,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
   const handleAskCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!interaction.guildId) {
       await interaction.reply({
-        ...buildUserCard('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN),
+        ...buildUserCard(DISCORD_MESSAGES.docs.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN),
         ephemeral: true,
       });
       return;
@@ -31,36 +32,35 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
     const question = (interaction.options.getString('질문', true) || '').trim();
     if (!question) {
-      await interaction.editReply(buildUserCard('입력 오류', '질문을 입력해주세요.', EMBED_WARN));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleInputError, DISCORD_MESSAGES.docs.askInputRequired, EMBED_WARN));
       return;
     }
 
     await interaction.editReply(
-      buildUserCard('검색 중', `"${question.slice(0, 60)}"에 관련된 문서를 찾고 있어요...`, EMBED_INFO),
+      buildUserCard(DISCORD_MESSAGES.docs.titleSearching, DISCORD_MESSAGES.docs.searchingFor(question.slice(0, 60)), EMBED_INFO),
     );
 
     let ragResult: RAGQueryResult;
     try {
       ragResult = await deps.queryObsidianRAG(question, { maxDocs: 8 });
     } catch (error) {
-      await interaction.editReply(buildUserCard('검색 오류', deps.getErrorMessage(error), EMBED_ERROR));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleSearchError, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
     if (ragResult.documentCount === 0) {
       await interaction.editReply(
-        buildUserCard('문서 없음', [
-          `"${question.slice(0, 60)}"에 관련된 문서를 찾지 못했습니다.`,
-          `감지된 의도: \`${ragResult.intent}\``,
-          '',
-          '힌트: Obsidian vault 경로(OBSIDIAN_VAULT_PATH)가 올바르게 설정되어 있는지 확인해주세요.',
-        ].join('\n'), EMBED_WARN),
+        buildUserCard(
+          DISCORD_MESSAGES.docs.titleNoDocument,
+          DISCORD_MESSAGES.docs.noDocumentLines(question.slice(0, 60), ragResult.intent).join('\n'),
+          EMBED_WARN,
+        ),
       );
       return;
     }
 
     // LLM이 구성된 경우 문서 컨텍스트를 기반으로 답변 생성
-    let answer = '(LLM 미설정 — 아래 문서를 직접 참고하세요)';
+    let answer: string = DISCORD_MESSAGES.docs.llmNotConfigured;
     if (deps.isAnyLlmConfigured() && ragResult.documentContext) {
       try {
         const system = [
@@ -80,7 +80,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
         answer = await deps.generateText({ system, user, maxTokens: 700 });
       } catch {
         // LLM 실패 시 원본 컨텍스트 일부를 그대로 표시
-        answer = ragResult.documentContext.slice(0, 600) + '\n...(LLM 오류로 전체 컨텍스트 표시 생략)';
+        answer = ragResult.documentContext.slice(0, 600) + DISCORD_MESSAGES.docs.llmFallbackSuffix;
       }
     }
 
@@ -93,14 +93,14 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     const body = [
       truncatedAnswer,
       '',
-      `─── 참고 문서 (${ragResult.documentCount}개) ───`,
-      sources || '(없음)',
+      DISCORD_MESSAGES.docs.sourceHeader(ragResult.documentCount),
+      sources || DISCORD_MESSAGES.docs.noSource,
       '',
-      `카테고리: \`${ragResult.intent}\` | ${ragResult.executionTimeMs}ms | 캐시 ${ragResult.cacheStatus.hits}히트`,
+      DISCORD_MESSAGES.docs.summaryLine(ragResult.intent, ragResult.executionTimeMs, ragResult.cacheStatus.hits),
     ].join('\n');
 
     await interaction.editReply(
-      buildUserCard(`📚 ${question.slice(0, 40)}`, body.slice(0, DISCORD_MSG_LIMIT), EMBED_INFO),
+      buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_MSG_LIMIT), EMBED_INFO),
     );
   };
 
@@ -110,7 +110,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
   const handleDocsCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!interaction.guildId) {
       await interaction.reply({
-        ...buildUserCard('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN),
+        ...buildUserCard(DISCORD_MESSAGES.docs.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN),
         ephemeral: true,
       });
       return;
@@ -121,7 +121,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
     const keyword = (interaction.options.getString('검색어', true) || '').trim();
     if (!keyword) {
-      await interaction.editReply(buildUserCard('입력 오류', '검색어를 입력해주세요.', EMBED_WARN));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleInputError, DISCORD_MESSAGES.docs.searchInputRequired, EMBED_WARN));
       return;
     }
 
@@ -129,19 +129,19 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     try {
       ragResult = await deps.queryObsidianRAG(keyword, { maxDocs: 12 });
     } catch (error) {
-      await interaction.editReply(buildUserCard('검색 오류', deps.getErrorMessage(error), EMBED_ERROR));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleSearchError, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
     if (ragResult.documentCount === 0) {
       await interaction.editReply(
-        buildUserCard('검색 결과 없음', `"${keyword.slice(0, 60)}"에 관련된 문서가 없습니다.`, EMBED_WARN),
+        buildUserCard(DISCORD_MESSAGES.docs.titleNoSearchResult, DISCORD_MESSAGES.docs.noSearchResult(keyword.slice(0, 60)), EMBED_WARN),
       );
       return;
     }
 
     const lines: string[] = [
-      `카테고리: **${ragResult.intent}** | 문서 **${ragResult.documentCount}**개 | ${ragResult.executionTimeMs}ms`,
+      DISCORD_MESSAGES.docs.listHeader(ragResult.intent, ragResult.documentCount, ragResult.executionTimeMs),
       '',
     ];
 
@@ -152,11 +152,11 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     });
 
     lines.push('');
-    lines.push(`캐시: ${ragResult.cacheStatus.hits}히트 / ${ragResult.cacheStatus.misses}미스`);
+    lines.push(DISCORD_MESSAGES.docs.cacheLine(ragResult.cacheStatus.hits, ragResult.cacheStatus.misses));
 
     const body = lines.join('\n');
     await interaction.editReply(
-      buildUserCard(`🗂️ "${keyword.slice(0, 30)}" 관련 문서`, body.slice(0, DISCORD_MSG_LIMIT), EMBED_INFO),
+      buildUserCard(DISCORD_MESSAGES.docs.docsTitle(keyword.slice(0, 30)), body.slice(0, DISCORD_MSG_LIMIT), EMBED_INFO),
     );
   };
 

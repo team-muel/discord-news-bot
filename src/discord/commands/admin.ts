@@ -11,12 +11,18 @@ import {
   previewForgetUserRagData,
 } from '../../services/privacyForgetService';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
+import { DISCORD_MESSAGES } from '../messages';
 
 type BotRuntimeSnapshotLike = {
   ready: boolean;
   wsStatus: number;
   reconnectQueued: boolean;
   reconnectAttempts: number;
+  dynamicWorkerRestoreEnabled?: boolean;
+  dynamicWorkerRestoreApprovedCount?: number;
+  dynamicWorkerRestoreSuccessCount?: number;
+  dynamicWorkerRestoreFailedCount?: number;
+  dynamicWorkerRestoreLastError?: string | null;
 };
 
 const LEARNING_POLICY_ACTION = 'memory_learning';
@@ -46,7 +52,7 @@ type AdminDeps = {
   getUsageSummaryLine: () => Promise<string>;
   getGuildUsageSummaryLine: (guildId: string | null) => Promise<string | null>;
   forceRegisterSlashCommands: () => Promise<void>;
-  triggerAutomationJob: (jobName: 'youtube-monitor' | 'news-monitor', options: { guildId?: string }) => Promise<{ ok: boolean; message: string }>;
+  triggerAutomationJob: (jobName: string, options: { guildId?: string }) => Promise<{ ok: boolean; message: string }>;
   getManualReconnectCooldownRemainingSec: () => number;
   hasActiveToken: () => boolean;
   requestManualReconnect: (reason: string) => Promise<{ ok: boolean; message: string }>;
@@ -73,6 +79,12 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       '[런타임 상태]',
       `Bot ready: ${String(bot.ready)} | wsStatus: ${bot.wsStatus}`,
       `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
+      typeof bot.dynamicWorkerRestoreEnabled === 'boolean'
+        ? `Dynamic worker restore: enabled=${String(bot.dynamicWorkerRestoreEnabled)} approved=${bot.dynamicWorkerRestoreApprovedCount || 0} restored=${bot.dynamicWorkerRestoreSuccessCount || 0} failed=${bot.dynamicWorkerRestoreFailedCount || 0}`
+        : null,
+      bot.dynamicWorkerRestoreLastError
+        ? `Dynamic restore error: ${bot.dynamicWorkerRestoreLastError}`
+        : null,
       '',
       '[자동화 상태]',
       `Automation healthy: ${String(automation.healthy)} | ${jobStates || 'no jobs'}`,
@@ -86,7 +98,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
   const handleStatusCommand = async (interaction: ChatInputCommandInteraction) => {
     const lines = await getRuntimeStatusLines(interaction.guildId);
     await interaction.reply({
-      ...buildSimpleEmbed('런타임 상태', lines.join('\n'), EMBED_INFO),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleStatus, lines.join('\n'), EMBED_INFO),
       ephemeral: true,
     });
   };
@@ -99,6 +111,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       '`/구독` : 영상/게시글/뉴스 구독 (링크만 넣으면 현재 채널 자동 등록)',
       '`/해줘` : 실행형 요청(미구현/코드성은 `/만들어줘` 흐름으로 연결)',
       '`/만들어줘` : 스레드 기반 협업 코딩/자동화 구현',
+      '`/학습 조회|활성화|비활성화` : 내 자동 학습 저장 on/off (개인 설정)',
       '`/주가` : 현재가 조회',
       '`/차트` : 30일 차트 조회',
       '`/상태` : 봇/자동화 런타임 상태 확인',
@@ -107,19 +120,22 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     ];
     const adminCommands = [
       '`/세션 조회` : 현재 작동 중인 세션 확인/즉시 실행 버튼',
+      '`/세션 이력` : 최근 완료 세션 산출물(코드/결과) 요약 목록',
       '`/세션 제거` : 현재 작동 중인 세션 제거 버튼',
-      '`/정책` : 동시 세션 한도 및 운영 정책 확인',
+      '`/정책 조회` : 세션 한도·뉴스 도메인 허용 목록 조회',
+      '`/정책 도메인추가` : 뉴스 캡처 허용 도메인 추가',
+      '`/정책 도메인삭제` : 뉴스 캡처 허용 목록에서 도메인 삭제',
       '`/관리설정` : 학습 허용 on/off',
     ];
 
     await interaction.reply({
       embeds: [
         {
-          title: 'Muel 명령어 안내',
+          title: DISCORD_MESSAGES.admin.titleHelp,
           color: 0x2f80ed,
           fields: [
-            { name: '기본 명령어', value: publicCommands.join('\n') },
-            { name: '관리자 명령어', value: adminCommands.join('\n') },
+            { name: DISCORD_MESSAGES.admin.fieldPublicCommands, value: publicCommands.join('\n') },
+            { name: DISCORD_MESSAGES.admin.fieldAdminCommands, value: adminCommands.join('\n') },
           ],
         },
       ],
@@ -133,16 +149,16 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     const line = dashboardUrl
       ? `대시보드로 이동: ${dashboardUrl}`
       : '대시보드 URL이 설정되지 않았습니다. PUBLIC_BASE_URL 또는 FRONTEND_ORIGIN을 설정해주세요.';
-    await interaction.reply({ ...buildSimpleEmbed('설정', line, EMBED_INFO), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleSettings, line, EMBED_INFO), ephemeral: true });
   };
 
   const handleManageSettingsCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!(await deps.hasAdminPermission(interaction))) {
-      await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titlePermissionError, DISCORD_MESSAGES.common.adminPermissionRequired, EMBED_ERROR), ephemeral: true });
       return;
     }
     if (!interaction.guildId) {
-      await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
       return;
     }
     const mode = String(interaction.options.getString('학습') || '').trim().toLowerCase();
@@ -158,14 +174,14 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     const policy = await getGuildActionPolicy(interaction.guildId, LEARNING_POLICY_ACTION);
     const enabled = policy.enabled;
     await interaction.reply({
-      ...buildSimpleEmbed('관리 설정', `학습 허용: ${enabled ? 'ON' : 'OFF'}\n(영구 저장됨: guild=${interaction.guildId})`, EMBED_INFO),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleManageSettings, `학습 허용: ${enabled ? 'ON' : 'OFF'}\n(영구 저장됨: guild=${interaction.guildId})`, EMBED_INFO),
       ephemeral: true,
     });
   };
 
   const handleForgetCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!interaction.guildId) {
-      await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
       return;
     }
 
@@ -180,11 +196,11 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     if (action === 'preview') {
       if (scope === 'guild') {
         if (!admin) {
-          await interaction.editReply(buildSimpleEmbed('권한 오류', '길드 전체 미리보기는 관리자만 가능합니다.', EMBED_ERROR));
+          await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titlePermissionError, '길드 전체 미리보기는 관리자만 가능합니다.', EMBED_ERROR));
           return;
         }
         const preview = await previewForgetGuildRagData(interaction.guildId);
-        await interaction.editReply(buildSimpleEmbed('잊어줘 미리보기(guild)', [
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleForgetPreviewGuild, [
           `삭제 후보 합계: ${preview.supabase.totalCandidates}`,
           `Obsidian 후보 경로: ${preview.obsidian.candidatePaths.length}`,
           '실행 확인문구: FORGET_GUILD',
@@ -193,7 +209,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       }
 
       const preview = await previewForgetUserRagData({ userId: targetUser, guildId: interaction.guildId });
-      await interaction.editReply(buildSimpleEmbed('잊어줘 미리보기(user)', [
+      await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleForgetPreviewUser, [
         `대상 user_id: ${targetUser}`,
         `삭제 후보 합계: ${preview.supabase.totalCandidates}`,
         `Obsidian 후보 경로: ${preview.obsidian.candidatePaths.length}`,
@@ -204,14 +220,14 @@ export const createAdminHandlers = (deps: AdminDeps) => {
 
     if (scope === 'guild') {
       if (!admin) {
-        await interaction.editReply(buildSimpleEmbed('권한 오류', '길드 전체 삭제는 관리자만 가능합니다.', EMBED_ERROR));
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titlePermissionError, '길드 전체 삭제는 관리자만 가능합니다.', EMBED_ERROR));
         return;
       }
       if (!confirm) {
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
           new ButtonBuilder()
             .setCustomId(`forget_confirm_guild:${interaction.user.id}`)
-            .setLabel('정말 삭제합니다')
+            .setLabel('잊기')
             .setStyle(ButtonStyle.Danger),
           new ButtonBuilder()
             .setCustomId(`forget_cancel:${interaction.user.id}`)
@@ -219,13 +235,13 @@ export const createAdminHandlers = (deps: AdminDeps) => {
             .setStyle(ButtonStyle.Secondary),
         );
         await interaction.editReply({
-          ...buildSimpleEmbed('삭제 확인', '정말 삭제할까요? 뮤엘이 이 서버에 대한 기억을 모두 잃어버립니다.', EMBED_WARN),
+          ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleForgetConfirm, '정말 삭제할까요? 뮤엘이 이 서버에 대한 기억을 모두 잃어버립니다.', EMBED_WARN),
           components: [row],
         });
         return;
       }
       if (confirm !== 'FORGET_GUILD') {
-        await interaction.editReply(buildSimpleEmbed('확인문구 오류', '확인문구는 FORGET_GUILD 여야 합니다.', EMBED_WARN));
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleConfirmCodeError, '확인문구는 FORGET_GUILD 여야 합니다.', EMBED_WARN));
         return;
       }
       const result = await forgetGuildRagData({
@@ -233,7 +249,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
         requestedBy: interaction.user.id,
         reason: 'slash:/잊어줘 guild',
       });
-      await interaction.editReply(buildSimpleEmbed('잊어줘 실행 완료(guild)', [
+      await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleForgetDoneGuild, [
         `삭제 합계: ${result.supabase.totalDeleted}`,
         `Obsidian 삭제 경로: ${result.obsidian.removedPaths.length}`,
       ].join('\n'), EMBED_SUCCESS));
@@ -242,14 +258,14 @@ export const createAdminHandlers = (deps: AdminDeps) => {
 
     const expected = targetUser === interaction.user.id ? 'FORGET_USER' : 'FORGET_USER_ADMIN';
     if (targetUser !== interaction.user.id && !admin) {
-      await interaction.editReply(buildSimpleEmbed('권한 오류', '다른 유저 데이터 삭제는 관리자만 가능합니다.', EMBED_ERROR));
+      await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titlePermissionError, '다른 유저 데이터 삭제는 관리자만 가능합니다.', EMBED_ERROR));
       return;
     }
     if (!confirm) {
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(`forget_confirm_user:${targetUser}:${interaction.user.id}`)
-          .setLabel('정말 삭제합니다')
+          .setLabel('잊기')
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
           .setCustomId(`forget_cancel:${interaction.user.id}`)
@@ -257,14 +273,14 @@ export const createAdminHandlers = (deps: AdminDeps) => {
           .setStyle(ButtonStyle.Secondary),
       );
       await interaction.editReply({
-        ...buildSimpleEmbed('삭제 확인', `정말 삭제할까요? 뮤엘이 @${targetUser}에 대한 기억을 모두 잃어버립니다.`, EMBED_WARN),
+        ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleForgetConfirm, `정말 삭제할까요? 뮤엘이 @${targetUser}에 대한 기억을 모두 잃어버립니다.`, EMBED_WARN),
         components: [row],
       });
       return;
     }
 
     if (confirm !== expected) {
-      await interaction.editReply(buildSimpleEmbed('확인문구 오류', `확인문구는 ${expected} 여야 합니다.`, EMBED_WARN));
+      await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleConfirmCodeError, `확인문구는 ${expected} 여야 합니다.`, EMBED_WARN));
       return;
     }
     const result = await forgetUserRagData({
@@ -273,7 +289,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       requestedBy: interaction.user.id,
       reason: 'slash:/잊어줘 user',
     });
-    await interaction.editReply(buildSimpleEmbed('잊어줘 실행 완료(user)', [
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleForgetDoneUser, [
       `대상 user_id: ${targetUser}`,
       `삭제 합계: ${result.supabase.totalDeleted}`,
       `Obsidian 삭제 경로: ${result.obsidian.removedPaths.length}`,
@@ -330,44 +346,46 @@ export const createAdminHandlers = (deps: AdminDeps) => {
 
   const handleAdminSyncCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!(await deps.hasAdminPermission(interaction))) {
-      await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titlePermissionError, DISCORD_MESSAGES.common.adminPermissionRequired, EMBED_ERROR), ephemeral: true });
       return;
     }
     await interaction.deferReply({ ephemeral: true });
     await deps.forceRegisterSlashCommands();
-    await interaction.editReply(buildSimpleEmbed('동기화 요청 완료', '슬래시 명령 재등록을 요청했습니다. 10~60초 후 다시 확인하세요.', EMBED_SUCCESS));
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.admin.titleSyncDone, DISCORD_MESSAGES.admin.syncRequested, EMBED_SUCCESS));
   };
 
   const handleAutomationRunCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!(await deps.hasAdminPermission(interaction))) {
-      await interaction.reply({ ...buildAdminCard('권한 오류', 'Admin permission is required.', ['요구 권한: Administrator'], EMBED_ERROR), ephemeral: true });
+      await interaction.reply({ ...buildAdminCard(DISCORD_MESSAGES.admin.titlePermissionError, DISCORD_MESSAGES.common.adminPermissionRequired, [DISCORD_MESSAGES.admin.permissionRequirementLine], EMBED_ERROR), ephemeral: true });
       return;
     }
     const jobName = interaction.options.getString('job', true);
-    if (jobName !== 'youtube-monitor' && jobName !== 'news-monitor') {
-      await interaction.reply({ ...buildAdminCard('입력 오류', 'Invalid job name.', ['허용 값: youtube-monitor, news-monitor'], EMBED_WARN), ephemeral: true });
+    const snapshot = deps.getAutomationRuntimeSnapshot();
+    const allowedJobs = Object.keys(snapshot.jobs);
+    if (!allowedJobs.includes(jobName)) {
+      await interaction.reply({ ...buildAdminCard(DISCORD_MESSAGES.admin.titleInputError, DISCORD_MESSAGES.admin.invalidJobName, [DISCORD_MESSAGES.admin.allowedJobs], EMBED_WARN), ephemeral: true });
       return;
     }
     await interaction.deferReply({ ephemeral: true });
     const result = await deps.triggerAutomationJob(jobName, { guildId: interaction.guildId || undefined });
-    await interaction.editReply(buildAdminCard(result.ok ? '자동화 실행 수락' : '자동화 실행 실패', result.message, [`job=${jobName}`, `guild=${interaction.guildId || 'unknown'}`], result.ok ? EMBED_SUCCESS : EMBED_ERROR));
+    await interaction.editReply(buildAdminCard(result.ok ? DISCORD_MESSAGES.admin.titleAutomationAccepted : DISCORD_MESSAGES.admin.titleAutomationFailed, result.message, [`job=${jobName}`, `guild=${interaction.guildId || 'unknown'}`], result.ok ? EMBED_SUCCESS : EMBED_ERROR));
   };
 
   const handleReconnectCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!(await deps.hasAdminPermission(interaction))) {
-      await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titlePermissionError, DISCORD_MESSAGES.common.adminPermissionRequired, EMBED_ERROR), ephemeral: true });
       return;
     }
     const remaining = deps.getManualReconnectCooldownRemainingSec();
     if (remaining > 0) {
-      await interaction.reply({ ...buildSimpleEmbed('재연결 대기', `Reconnect is on cooldown. Try again in ${remaining}s.`, EMBED_WARN), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleReconnectWait, DISCORD_MESSAGES.admin.reconnectCooldown(remaining), EMBED_WARN), ephemeral: true });
       return;
     }
     if (!deps.hasActiveToken()) {
-      await interaction.reply({ ...buildSimpleEmbed('재연결 실패', 'DISCORD token is not loaded.', EMBED_ERROR), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleReconnectFailed, DISCORD_MESSAGES.admin.tokenNotLoaded, EMBED_ERROR), ephemeral: true });
       return;
     }
-    await interaction.reply({ ...buildSimpleEmbed('재연결 요청', 'Reconnect requested. Restarting Discord client...', EMBED_INFO), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.admin.titleReconnectRequested, DISCORD_MESSAGES.admin.reconnectRequested, EMBED_INFO), ephemeral: true });
     setTimeout(() => {
       void deps.requestManualReconnect(`slash-command:${interaction.user.id}`);
     }, 300);
@@ -390,7 +408,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       case '포럼아이디': await marketHandlers.handleForumIdCommand(interaction); return;
       case '동기화': await handleAdminSyncCommand(interaction); return;
       default:
-        await interaction.reply({ ...buildSimpleEmbed('명령 오류', '지원되지 않는 관리자 서브명령입니다.', EMBED_WARN), ephemeral: true });
+        await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.agent.titleCommandError, DISCORD_MESSAGES.admin.unknownAdminSubcommand, EMBED_WARN), ephemeral: true });
     }
   };
 

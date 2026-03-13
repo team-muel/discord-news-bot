@@ -36,6 +36,19 @@ type ForgetResult = {
 
 const FORGET_OBSIDIAN_ENABLED = String(process.env.FORGET_OBSIDIAN_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const OBSIDIAN_VAULT_ROOT = String(process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
+const FORGET_GUILD_TABLES = [
+  'memory_feedback',
+  'memory_conflicts',
+  'memory_jobs',
+  'memory_job_deadletters',
+  'memory_retrieval_logs',
+  'guild_lore_docs',
+  'memory_items',
+  'agent_action_logs',
+  'agent_sessions',
+  'agent_action_policies',
+  'agent_action_approval_requests',
+] as const;
 
 const sanitizeDiscordId = (value: unknown): string => {
   const text = String(value || '').trim();
@@ -321,17 +334,9 @@ export const previewForgetGuildRagData = async (guildIdRaw: string): Promise<For
   }
 
   const counts: ForgetTableCounts = {};
-  addCount(counts, 'memory_feedback', await countByGuild('memory_feedback', guildId));
-  addCount(counts, 'memory_conflicts', await countByGuild('memory_conflicts', guildId));
-  addCount(counts, 'memory_jobs', await countByGuild('memory_jobs', guildId));
-  addCount(counts, 'memory_job_deadletters', await countByGuild('memory_job_deadletters', guildId));
-  addCount(counts, 'memory_retrieval_logs', await countByGuild('memory_retrieval_logs', guildId));
-  addCount(counts, 'guild_lore_docs', await countByGuild('guild_lore_docs', guildId));
-  addCount(counts, 'memory_items', await countByGuild('memory_items', guildId));
-  addCount(counts, 'agent_action_logs', await countByGuild('agent_action_logs', guildId));
-  addCount(counts, 'agent_sessions', await countByGuild('agent_sessions', guildId));
-  addCount(counts, 'agent_action_policies', await countByGuild('agent_action_policies', guildId));
-  addCount(counts, 'agent_action_approval_requests', await countByGuild('agent_action_approval_requests', guildId));
+  for (const table of FORGET_GUILD_TABLES) {
+    addCount(counts, table, await countByGuild(table, guildId));
+  }
 
   return {
     scope: 'guild',
@@ -416,18 +421,9 @@ export const forgetGuildRagData = async (params: {
   }
 
   const counts: ForgetTableCounts = {};
-
-  addCount(counts, 'memory_feedback', await deleteByGuild('memory_feedback', guildId));
-  addCount(counts, 'memory_conflicts', await deleteByGuild('memory_conflicts', guildId));
-  addCount(counts, 'memory_jobs', await deleteByGuild('memory_jobs', guildId));
-  addCount(counts, 'memory_job_deadletters', await deleteByGuild('memory_job_deadletters', guildId));
-  addCount(counts, 'memory_retrieval_logs', await deleteByGuild('memory_retrieval_logs', guildId));
-  addCount(counts, 'agent_action_logs', await deleteByGuild('agent_action_logs', guildId));
-  addCount(counts, 'agent_action_approval_requests', await deleteByGuild('agent_action_approval_requests', guildId));
-  addCount(counts, 'agent_action_policies', await deleteByGuild('agent_action_policies', guildId));
-  addCount(counts, 'agent_sessions', await deleteByGuild('agent_sessions', guildId));
-  addCount(counts, 'guild_lore_docs', await deleteByGuild('guild_lore_docs', guildId));
-  addCount(counts, 'memory_items', await deleteByGuild('memory_items', guildId));
+  for (const table of FORGET_GUILD_TABLES) {
+    addCount(counts, table, await deleteByGuild(table, guildId));
+  }
 
   let removedPaths: string[] = [];
   if (params.deleteObsidian !== false) {

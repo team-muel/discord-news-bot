@@ -46,3 +46,17 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: WEB_SEARCH_MAX_RESULTS
+        value: "5"
+      - key: ACTION_NEWS_CAPTURE_ENABLED
+        value: "true"
+      - key: ACTION_NEWS_CAPTURE_TTL_MS
+        value: "21600000"
+      - key: ACTION_NEWS_CAPTURE_MIN_ITEMS
+        value: "2"
+      - key: ACTION_NEWS_CAPTURE_MAX_AGE_HOURS
+        value: "72"
+      - key: NEWS_VERIFY_SOURCE_LIMIT
+        value: "4"

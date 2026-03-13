@@ -1,29 +1,32 @@
-# 실행 보드 (Now / Next / Later)
+# 실행 보드 (Frontier 2026)
 
-## Now (즉시)
+기준 문서: `docs/planning/FRONTIER_2026_PROGRAM.md`
 
-1. T-006 회수 품질 지표 고도화(recall@k proxy + 대시보드 반영)
-2. T-007 기억 충돌 해결 루프 API 완성(resolve)
-3. T-009 길드 온보딩 스냅샷 잡 안정화
-4. Go/No-Go 체크리스트 운영 적용
-5. FinOps 가시화/예산가드레일/자동완화 모드 적용
+## Now (D1-D30: Foundation Lock)
 
-## Next (다음 스프린트)
+1. 승인 저장소/동적 워커 레지스트리 영속화
+2. 토론 종료 감지 + durable_extraction 자동 enqueue v1
+3. memory -> obsidian 역동기화 워커 추가
+4. 운영 관측 대시보드 단일화(지연/토큰/품질/비용)
+5. Runbook/SOP/Control Tower 상충 항목 정리 완료
 
-1. 라벨 기반 recall@k(정답셋) 도입
-2. conflict resolve UX 명령 통합
-3. 메모리 품질 리포트 자동 발행
-4. 운영 런북 SLA 섹션 보강
-5. 파일럿 회고 자동화
+## Next (D31-D60: Autonomous Loops)
 
-## Later (베타 안정화)
+1. user-topic/user-user/user-time 그래프 추출 파이프라인 v1
+2. 개인화 추천 응답 템플릿 + 근거 로그 연결
+3. 도구 부재 감지 기반 worker propose 자동 트리거
+4. conflict resolve UX 명령/버튼 단일 플로우화
+5. 라벨 기반 recall@k 품질 검증 도입
 
-1. T-011 파일럿 길드 3곳 운영
-2. T-012 품질 회고 및 정책 튜닝
-3. T-013 관리자 UX 개선
+## Later (D61-D90: Frontier Hardening)
+
+1. 멀티길드 스케일 테스트(파일럿 3+)
+2. 실패 주입/보안 주입 테스트 운영화
+3. go/no-go 연속 통과 + 베타 확장 승인
+4. 월간 blocked 0 상태 유지 검증
 
 ## 운영 원칙
 
-- 기능 추가보다 품질 지표 안정화를 우선
-- 관리자 교정 루프를 끊지 않음
-- 길드 데이터 격리 원칙을 모든 변경에 적용
+- 구현률 100%와 운영 무결성을 동시에 달성
+- 가용성/정확성/보안을 비용보다 우선
+- 배포 판단은 go/no-go 게이트로 일원화

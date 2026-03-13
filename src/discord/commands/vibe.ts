@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInteraction, type Message } from 'discord.js';
 import type { AgentSession } from '../../services/multiAgentService';
 import { getAgentSession } from '../../services/multiAgentService';
+import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 
 type VibeDeps = {
@@ -15,7 +16,48 @@ type VibeDeps = {
 };
 
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
+const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
 const fallbackRequestCache = new Map<string, string>();
+
+const extractDiagnosticCount = (resultText: string, key: string): number => {
+  const regex = new RegExp(`${key}=([0-9]+)`, 'i');
+  const match = String(resultText || '').match(regex);
+  if (!match) {
+    return 0;
+  }
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const shouldSuggestWorkerProposal = (request: string, resultText: string): boolean => {
+  const missingAction = extractDiagnosticCount(resultText, 'missing_action');
+  const policyBlocked = extractDiagnosticCount(resultText, 'policy_blocked');
+
+  if (policyBlocked > 0 && missingAction === 0) {
+    return false;
+  }
+
+  if (UTILITY_TASK_HINT_PATTERN.test(request) && /(자동화|integration|ping|status|monitor|체크|확인|연동|api|worker|툴|tool)/i.test(request)) {
+    return true;
+  }
+
+  return MISSING_TOOL_SIGNAL_PATTERN.test(resultText);
+};
+
+const shouldSuggestPolicyGuidance = (resultText: string): boolean => {
+  const missingAction = extractDiagnosticCount(resultText, 'missing_action');
+  const policyBlocked = extractDiagnosticCount(resultText, 'policy_blocked');
+  return policyBlocked > 0 && missingAction === 0;
+};
+
+const buildWorkerProposalRow = (sessionId: string, request: string) => {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`worker_propose:${sessionId}:${encodeURIComponent(request.slice(0, 200))}`)
+      .setLabel('🚀 자동화 워커로 등록')
+      .setStyle(ButtonStyle.Secondary),
+  );
+};
 
 const inferAiModeFromLabel = (value: string): 'ai_chat' | 'ai_utility' | 'off' | null => {
   const label = String(value || '').toLowerCase();
@@ -53,7 +95,7 @@ const parseVibeRequestFromMessage = (message: Message): string => {
 export const createVibeHandlers = (deps: VibeDeps) => {
   const handleVibeCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!interaction.guildId) {
-      await interaction.reply({ ...buildUserCard('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
       return;
     }
 
@@ -62,7 +104,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     const request = (interaction.options.getString('요청', true) || '').trim();
     if (!request) {
-      await interaction.editReply(buildUserCard('입력 오류', '요청을 입력해주세요. 예: 고양이 영상 찾아줘', EMBED_WARN));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleInputError, DISCORD_MESSAGES.vibe.inputExampleAsk, EMBED_WARN));
       return;
     }
 
@@ -71,34 +113,38 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     if (deps.codingIntentPattern.test(request)) {
       fallbackRequestCache.set(cacheKey, request);
       runtimeGoal = `코드로 구현해줘: ${request}`;
-      await interaction.editReply(buildUserCard('💡 팁', [
-        '코드·스크립트 작성 요청이시군요!',
-        '`/해줘`에서 실행이 어렵거나 미구현된 요청은 `/만들어줘` 세션으로 자동 이관합니다.',
-        '요청을 캐시하고 코드 세션을 바로 시작할게요.',
-        '',
-        '이번엔 그냥 진행할게요 👇',
-      ].join('\n'), EMBED_INFO));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.tipTitle, DISCORD_MESSAGES.vibe.tipLines.join('\n'), EMBED_INFO));
     }
 
     let session: AgentSession;
     try {
       session = deps.startVibeSession(interaction.guildId, interaction.user.id, runtimeGoal);
     } catch (error) {
-      await interaction.editReply(buildUserCard('작업 시작 실패', deps.getErrorMessage(error), EMBED_ERROR));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
-    await interaction.editReply(buildUserCard('요청 수락', [
-      '요청을 이해했어요. 바로 진행할게요.',
-      `세션: ${session.id}`,
-      `요청: ${request}`,
-      '완료 즉시 결과물만 전달합니다.',
-    ].join('\n'), EMBED_INFO));
+    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleAccepted, DISCORD_MESSAGES.vibe.acceptedLines(session.id, request).join('\n'), EMBED_INFO));
 
-    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard('진행 상태', content, EMBED_INFO)) }, session.id, runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
+    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleProgress, content, EMBED_INFO)) }, session.id, runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
+
+    const completed = getAgentSession(session.id);
+    const resultText = String(completed?.result || '');
+    if (shouldSuggestPolicyGuidance(resultText)) {
+      await interaction.followUp({
+        content: `⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`,
+        ephemeral: true,
+      }).catch(() => undefined);
+    }
+    if (shouldSuggestWorkerProposal(request, resultText)) {
+      await interaction.followUp({
+        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
+        components: [buildWorkerProposalRow(session.id, request)],
+        ephemeral: true,
+      }).catch(() => undefined);
+    }
 
     if (deps.codeThreadEnabled && shared) {
-      const completed = getAgentSession(session.id);
       if (completed?.status === 'completed') {
         try {
           const replyMsg = await interaction.fetchReply();
@@ -112,7 +158,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
   const handleMakeCommand = async (interaction: ChatInputCommandInteraction) => {
     if (!interaction.guildId) {
-      await interaction.reply({ ...buildUserCard('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
       return;
     }
 
@@ -121,7 +167,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     const request = (interaction.options.getString('요청', true) || '').trim();
     if (!request) {
-      await interaction.editReply(buildUserCard('입력 오류', '만들 내용을 입력해주세요. 예: Express 라우터 만들어줘', EMBED_WARN));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleInputError, DISCORD_MESSAGES.vibe.inputExampleMake, EMBED_WARN));
       return;
     }
 
@@ -131,18 +177,13 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     try {
       session = deps.startVibeSession(interaction.guildId, interaction.user.id, codeGoal);
     } catch (error) {
-      await interaction.editReply(buildUserCard('작업 시작 실패', deps.getErrorMessage(error), EMBED_ERROR));
+      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
-    await interaction.editReply(buildUserCard('💻 코드 작업 시작', [
-      '요청을 이해했어요. 코드를 생성할게요.',
-      `세션: ${session.id}`,
-      `요청: ${request}`,
-      shared ? '완료되면 이 채널에 코드 스레드를 만들어드릴게요 🧵' : '완료되면 결과를 알려드릴게요.',
-    ].join('\n'), EMBED_INFO));
+    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeStart, DISCORD_MESSAGES.vibe.codeStartLines(session.id, request, shared).join('\n'), EMBED_INFO));
 
-    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard('코드 생성 중', content, EMBED_INFO)) }, session.id, codeGoal, { showDebugBlocks: false, maxLinks: 2 });
+    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeProgress, content, EMBED_INFO)) }, session.id, codeGoal, { showDebugBlocks: false, maxLinks: 2 });
 
     if (deps.codeThreadEnabled) {
       const completed = getAgentSession(session.id);
@@ -157,12 +198,9 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     }
 
     if (deps.automationIntentPattern.test(request)) {
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(`worker_propose:${session.id}:${encodeURIComponent(request.slice(0, 200))}`).setLabel('🚀 자동화 워커로 등록').setStyle(ButtonStyle.Secondary),
-      );
       await interaction.followUp({
-        content: '💡 이 코드를 자동화 워커로 서버에 등록할 수 있습니다. 관리자 검토 후 승인되면 즉시 활성화됩니다.',
-        components: [row],
+        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
+        components: [buildWorkerProposalRow(session.id, request)],
         ephemeral: true,
       });
     }
@@ -183,31 +221,42 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     const request = parseVibeRequestFromMessage(message);
     if (!request) {
-      await message.reply('원하는 작업을 함께 적어주세요. 예: `@봇이름 고양이 영상 찾아줘`');
+      await message.reply(DISCORD_MESSAGES.vibe.mentionPrompt);
       return;
     }
 
     if (channelMode === 'ai_utility' && !UTILITY_TASK_HINT_PATTERN.test(request)) {
-      await message.reply('이 채널은 AI 유틸리티 채널입니다. 작업형 요청으로 입력해주세요. 예: `뉴스 요약해줘`, `고양이 영상 찾아줘`');
+      await message.reply(DISCORD_MESSAGES.vibe.utilityOnlyPrompt);
       return;
     }
 
-    const progressMessage = await message.reply(['요청을 이해했어요. 바로 진행할게요.', `요청: ${request}`, '완료 즉시 결과물만 전달합니다.'].join('\n'));
+    const progressMessage = await message.reply(DISCORD_MESSAGES.vibe.acceptedNoSessionLines(request).join('\n'));
 
     let session: AgentSession;
     try {
       session = deps.startVibeSession(message.guildId, message.author.id, request);
     } catch (error) {
-      await progressMessage.edit(`작업 시작 실패: ${deps.getErrorMessage(error)}`);
+      await progressMessage.edit(DISCORD_MESSAGES.vibe.startFailedInline(deps.getErrorMessage(error)));
       return;
     }
 
-    await progressMessage.edit(['요청을 이해했어요. 바로 진행할게요.', `세션: ${session.id}`, `요청: ${request}`, '완료 즉시 결과물만 전달합니다.'].join('\n'));
+    await progressMessage.edit(DISCORD_MESSAGES.vibe.acceptedLines(session.id, request).join('\n'));
 
     await deps.streamSessionProgress({ update: (content) => progressMessage.edit(content) }, session.id, request, { showDebugBlocks: false, maxLinks: 2 });
 
+    const completed = getAgentSession(session.id);
+    const resultText = String(completed?.result || '');
+    if (shouldSuggestPolicyGuidance(resultText)) {
+      await message.reply(`⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`).catch(() => undefined);
+    }
+    if (shouldSuggestWorkerProposal(request, resultText)) {
+      await message.reply({
+        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
+        components: [buildWorkerProposalRow(session.id, request)],
+      }).catch(() => undefined);
+    }
+
     if (deps.codeThreadEnabled) {
-      const completed = getAgentSession(session.id);
       if (completed?.status === 'completed') {
         await deps.tryPostCodeThread(progressMessage, completed, message.guildId).catch(() => undefined);
       }

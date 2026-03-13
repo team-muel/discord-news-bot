@@ -19,6 +19,7 @@ import {
   generateInvestmentAnalysis,
   isInvestmentAnalysisEnabled,
 } from '../../services/investmentAnalysisService';
+import { DISCORD_MESSAGES } from '../messages';
 
 export const handleStockPriceCommand = async (
   interaction: ChatInputCommandInteraction,
@@ -29,14 +30,14 @@ export const handleStockPriceCommand = async (
 
   if (!isStockFeatureEnabled()) {
     await interaction.editReply(
-      buildSimpleEmbed('주가 조회 불가', 'ALPHA_VANTAGE_KEY가 없어 주가 기능을 사용할 수 없습니다.', EMBED_WARN),
+      buildSimpleEmbed(DISCORD_MESSAGES.market.titlePriceUnavailable, 'ALPHA_VANTAGE_KEY가 없어 주가 기능을 사용할 수 없습니다.', EMBED_WARN),
     );
     return;
   }
 
   const quote = await fetchStockQuote(symbol);
   if (!quote) {
-    await interaction.editReply(buildSimpleEmbed('주가 조회 실패', symbol, EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.market.titlePriceFailed, symbol, EMBED_ERROR));
     return;
   }
 
@@ -66,14 +67,14 @@ export const handleStockChartCommand = async (
 
   if (!isStockFeatureEnabled()) {
     await interaction.editReply(
-      buildSimpleEmbed('차트 조회 불가', 'ALPHA_VANTAGE_KEY가 없어 차트 기능을 사용할 수 없습니다.', EMBED_WARN),
+      buildSimpleEmbed(DISCORD_MESSAGES.market.titleChartUnavailable, 'ALPHA_VANTAGE_KEY가 없어 차트 기능을 사용할 수 없습니다.', EMBED_WARN),
     );
     return;
   }
 
   const imageUrl = await fetchStockChartImageUrl(symbol);
   if (!imageUrl) {
-    await interaction.editReply(buildSimpleEmbed('차트 생성 실패', symbol, EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.market.titleChartFailed, symbol, EMBED_ERROR));
     return;
   }
 
@@ -116,13 +117,13 @@ export const handleForumIdCommand = async (
   const forum = interaction.options.getChannel('forum', true);
   if (forum.type !== ChannelType.GuildForum) {
     await interaction.reply({
-      ...buildSimpleEmbed('입력 오류', '선택한 채널이 포럼 채널이 아닙니다.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.market.titleInputError, DISCORD_MESSAGES.market.forumTypeRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
   await interaction.reply({
-    ...buildSimpleEmbed('포럼 정보', `forum_id=${forum.id}\nname=${forum.name}`, EMBED_INFO),
+    ...buildSimpleEmbed(DISCORD_MESSAGES.market.titleForumInfo, `forum_id=${forum.id}\nname=${forum.name}`, EMBED_INFO),
     ephemeral: true,
   });
 };

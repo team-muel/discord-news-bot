@@ -104,7 +104,7 @@ export const runWorkerGenerationPipeline = async (params: {
   }
 
   // 5. Create approval record
-  const approval = createApproval({
+  const approval = await createApproval({
     guildId: params.guildId,
     requestedBy: params.requestedBy,
     goal: params.goal,
@@ -140,7 +140,7 @@ export const rerunWorkerPipeline = async (params: {
 
   if (result.ok) {
     // Update the existing approval record with new code
-    updateApprovalCode(
+    await updateApprovalCode(
       params.approvalId,
       result.approval.generatedCode,
       result.approval.sandboxDir,

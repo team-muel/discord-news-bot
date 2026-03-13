@@ -37,6 +37,7 @@ import {
 } from './services/multiAgentService';
 import { createMemoryItem } from './services/agentMemoryStore';
 import { getGuildActionPolicy } from './services/skills/actionGovernanceStore';
+import { isUserLearningEnabled } from './services/userLearningPrefsService';
 import { isAnyLlmConfigured } from './services/llmClient';
 import { queryObsidianRAG, initObsidianRAG } from './services/obsidianRagService';
 import { generateText } from './services/llmClient';
@@ -61,8 +62,13 @@ import {
   tryPostCodeThread,
 } from './utils/codeThread';
 import { runWorkerGenerationPipeline, rerunWorkerPipeline } from './services/workerGeneration/workerGenerationPipeline';
-import { getApproval, updateApprovalStatus } from './services/workerGeneration/workerApprovalStore';
-import { loadDynamicWorkerFromFile, setDynamicWorkerAdminNotifier } from './services/workerGeneration/dynamicWorkerRegistry';
+import { getApproval, listApprovals, updateApprovalStatus } from './services/workerGeneration/workerApprovalStore';
+import { loadDynamicWorkerFromCode, loadDynamicWorkerFromFile, setDynamicWorkerAdminNotifier } from './services/workerGeneration/dynamicWorkerRegistry';
+import {
+  recordWorkerApprovalDecision,
+  recordWorkerGenerationResult,
+  recordWorkerProposalClick,
+} from './services/workerGeneration/workerProposalMetrics';
 import { cleanupSandbox } from './services/workerGeneration/workerSandbox';
 // ─── Discord layer modules ────────────────────────────────────────────────────
 import {
@@ -124,6 +130,7 @@ import { createAgentHandlers } from './discord/commands/agent';
 import { createVibeHandlers } from './discord/commands/vibe';
 import { createDocsHandlers } from './discord/commands/docs';
 import { registerSlashCommands as registerSlashCommandsFromLifecycle } from './discord/lifecycle';
+import { DISCORD_MESSAGES } from './discord/messages';
 import { isStockFeatureEnabled } from './services/stockService';
 
 
@@ -160,6 +167,12 @@ export type BotRuntimeSnapshot = {
   lastRecoveryAt: string | null;
   lastManualReconnectAt: string | null;
   manualReconnectCooldownRemainingSec: number;
+  dynamicWorkerRestoreEnabled: boolean;
+  dynamicWorkerRestoreAttemptedAt: string | null;
+  dynamicWorkerRestoreApprovedCount: number;
+  dynamicWorkerRestoreSuccessCount: number;
+  dynamicWorkerRestoreFailedCount: number;
+  dynamicWorkerRestoreLastError: string | null;
 };
 
 const botRuntimeState: BotRuntimeSnapshot = {
@@ -182,13 +195,85 @@ const botRuntimeState: BotRuntimeSnapshot = {
   lastRecoveryAt: null,
   lastManualReconnectAt: null,
   manualReconnectCooldownRemainingSec: 0,
+  dynamicWorkerRestoreEnabled: String(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT || 'true').trim().toLowerCase() !== 'false',
+  dynamicWorkerRestoreAttemptedAt: null,
+  dynamicWorkerRestoreApprovedCount: 0,
+  dynamicWorkerRestoreSuccessCount: 0,
+  dynamicWorkerRestoreFailedCount: 0,
+  dynamicWorkerRestoreLastError: null,
 };
 
 let commandHandlersAttached = false;
 let activeToken: string | null = null;
 let reconnectInProgress = false;
 const LEARNING_POLICY_ACTION = 'memory_learning';
+const DYNAMIC_WORKER_RESTORE_ON_BOOT = String(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT || 'true').trim().toLowerCase() !== 'false';
 const learningPolicyCache = new Map<string, { enabled: boolean; fetchedAt: number }>();
+
+const restoreApprovedDynamicWorkers = async () => {
+  if (!DYNAMIC_WORKER_RESTORE_ON_BOOT) {
+    return;
+  }
+
+  botRuntimeState.dynamicWorkerRestoreEnabled = true;
+  botRuntimeState.dynamicWorkerRestoreAttemptedAt = new Date().toISOString();
+  botRuntimeState.dynamicWorkerRestoreApprovedCount = 0;
+  botRuntimeState.dynamicWorkerRestoreSuccessCount = 0;
+  botRuntimeState.dynamicWorkerRestoreFailedCount = 0;
+  botRuntimeState.dynamicWorkerRestoreLastError = null;
+
+  try {
+    const approved = await listApprovals({ status: 'approved' });
+    botRuntimeState.dynamicWorkerRestoreApprovedCount = approved.length;
+    if (approved.length === 0) {
+      logger.info('[DYNAMIC-WORKER] restore skipped: no approved entries');
+      return;
+    }
+
+    let restored = 0;
+    let failed = 0;
+
+    for (const entry of approved) {
+      if (!entry.validationPassed) {
+        failed += 1;
+        continue;
+      }
+
+      let loaded = entry.sandboxFilePath
+        ? await loadDynamicWorkerFromFile(entry.sandboxFilePath, entry.id)
+        : { ok: false, error: 'missing sandbox file path' };
+
+      if (!loaded.ok && entry.generatedCode) {
+        loaded = await loadDynamicWorkerFromCode({
+          approvalId: entry.id,
+          generatedCode: entry.generatedCode,
+          actionNameHint: entry.actionName,
+        });
+      }
+
+      if (loaded.ok) {
+        restored += 1;
+      } else {
+        failed += 1;
+        logger.warn(
+          '[DYNAMIC-WORKER] restore failed approval=%s action=%s error=%s',
+          entry.id,
+          entry.actionName,
+          loaded.error || 'unknown',
+        );
+      }
+    }
+
+    botRuntimeState.dynamicWorkerRestoreSuccessCount = restored;
+    botRuntimeState.dynamicWorkerRestoreFailedCount = failed;
+
+    logger.info('[DYNAMIC-WORKER] restore completed approved=%d restored=%d failed=%d', approved.length, restored, failed);
+  } catch (error) {
+    const message = getErrorMessage(error);
+    botRuntimeState.dynamicWorkerRestoreLastError = message;
+    logger.error('[DYNAMIC-WORKER] restore process failed: %s', message);
+  }
+};
 
 const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
   const cached = learningPolicyCache.get(guildId);
@@ -211,8 +296,8 @@ export type ManualReconnectRequestResult = {
 const replyLegacySessionRedirect = async (interaction: ChatInputCommandInteraction) => {
   await interaction.reply({
     ...buildSimpleEmbed(
-      '명령 통합 안내',
-      '해당 명령은 /세션으로 통합되었습니다.\n사용 예: /세션 추가, /세션 조회, /세션 제거',
+      DISCORD_MESSAGES.bot.titleLegacySessionGuide,
+      DISCORD_MESSAGES.bot.legacySessionGuideBody,
       EMBED_INFO,
     ),
     ephemeral: true,
@@ -331,6 +416,10 @@ const getRuntimeStatusLines = async (guildId: string | null): Promise<string[]> 
     '[런타임 상태]',
     `Bot ready: ${String(bot.ready)} | wsStatus: ${bot.wsStatus}`,
     `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
+    `Dynamic worker restore: enabled=${String(bot.dynamicWorkerRestoreEnabled)} approved=${bot.dynamicWorkerRestoreApprovedCount} restored=${bot.dynamicWorkerRestoreSuccessCount} failed=${bot.dynamicWorkerRestoreFailedCount}`,
+    bot.dynamicWorkerRestoreLastError
+      ? `Dynamic restore error: ${bot.dynamicWorkerRestoreLastError}`
+      : null,
     '',
     '[자동화 상태]',
     `Automation healthy: ${String(automation.healthy)} | ${jobStates || 'no jobs'}`,
@@ -451,7 +540,7 @@ const adminHandlers = createAdminHandlers({
   getUsageSummaryLine,
   getGuildUsageSummaryLine,
   forceRegisterSlashCommands,
-  triggerAutomationJob,
+  triggerAutomationJob: (jobName, options) => triggerAutomationJob(jobName as any, options),
   getManualReconnectCooldownRemainingSec,
   hasActiveToken: () => Boolean(activeToken),
   requestManualReconnect: runManualReconnect,
@@ -527,7 +616,7 @@ const attachCommandHandlers = () => {
     }
 
     if (!interaction.guildId) {
-      await interaction.reply({ content: '서버 채널에서만 사용할 수 있습니다.', ephemeral: true });
+      await interaction.reply({ content: DISCORD_MESSAGES.bot.guildOnly, ephemeral: true });
       return;
     }
 
@@ -536,18 +625,18 @@ const attachCommandHandlers = () => {
       const payloadParts = parentSessionId.split(':');
       const requesterId = payloadParts[payloadParts.length - 1] || '';
       if (!requesterId || requesterId !== interaction.user.id) {
-        await interaction.reply({ content: '이 확인 버튼은 요청자만 사용할 수 있습니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.forgetRequesterOnly, ephemeral: true });
         return;
       }
 
       if (action === 'forget_cancel') {
-        await interaction.update({ content: '삭제 요청이 취소되었습니다.', components: [] });
+        await interaction.update({ content: DISCORD_MESSAGES.bot.forgetCancelled, components: [] });
         return;
       }
 
       if (action === 'forget_confirm_guild') {
         if (!(await isUserAdmin(interaction.user.id))) {
-          await interaction.reply({ content: '길드 전체 삭제는 관리자만 가능합니다.', ephemeral: true });
+          await interaction.reply({ content: DISCORD_MESSAGES.bot.forgetGuildAdminOnly, ephemeral: true });
           return;
         }
         await interaction.deferReply({ ephemeral: true });
@@ -557,20 +646,20 @@ const attachCommandHandlers = () => {
             requestedBy: interaction.user.id,
             reason: 'button:forget_confirm_guild',
           });
-          await interaction.editReply(`✅ 길드 데이터 삭제 완료: ${result.supabase.totalDeleted}건, Obsidian ${result.obsidian.removedPaths.length}건`);
+          await interaction.editReply(DISCORD_MESSAGES.bot.forgetGuildDone(result.supabase.totalDeleted, result.obsidian.removedPaths.length));
         } catch (error) {
-          await interaction.editReply(`❌ 길드 데이터 삭제 실패: ${getErrorMessage(error)}`);
+          await interaction.editReply(DISCORD_MESSAGES.bot.forgetGuildFailed(getErrorMessage(error)));
         }
         return;
       }
 
       const targetUserId = payloadParts[0] || '';
       if (!targetUserId) {
-        await interaction.reply({ content: '대상 유저 정보가 누락되었습니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.forgetTargetMissing, ephemeral: true });
         return;
       }
       if (targetUserId !== interaction.user.id && !(await isUserAdmin(interaction.user.id))) {
-        await interaction.reply({ content: '다른 유저 데이터 삭제는 관리자만 가능합니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.forgetOtherUserAdminOnly, ephemeral: true });
         return;
       }
       await interaction.deferReply({ ephemeral: true });
@@ -581,9 +670,9 @@ const attachCommandHandlers = () => {
           requestedBy: interaction.user.id,
           reason: 'button:forget_confirm_user',
         });
-        await interaction.editReply(`✅ 유저 데이터 삭제 완료: ${result.supabase.totalDeleted}건, Obsidian ${result.obsidian.removedPaths.length}건`);
+        await interaction.editReply(DISCORD_MESSAGES.bot.forgetUserDone(result.supabase.totalDeleted, result.obsidian.removedPaths.length));
       } catch (error) {
-        await interaction.editReply(`❌ 유저 데이터 삭제 실패: ${getErrorMessage(error)}`);
+        await interaction.editReply(DISCORD_MESSAGES.bot.forgetUserFailed(getErrorMessage(error)));
       }
       return;
     }
@@ -591,13 +680,13 @@ const attachCommandHandlers = () => {
     // ── Session control button handlers ─────────────────────────────────────
     if (SESSION_BUTTON_ACTIONS.has(action)) {
       if (!(await isUserAdmin(interaction.user.id))) {
-        await interaction.reply({ content: '⛔ 세션 제어는 관리자 권한이 필요합니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.sessionControlAdminOnly, ephemeral: true });
         return;
       }
 
       const target = getAgentSession(parentSessionId);
       if (!target || target.guildId !== interaction.guildId) {
-        await interaction.reply({ content: '세션을 찾을 수 없습니다. 이미 종료되었을 수 있습니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.sessionNotFoundMaybeClosed, ephemeral: true });
         return;
       }
 
@@ -610,15 +699,15 @@ const attachCommandHandlers = () => {
             skillId: target.requestedSkillId,
             priority: target.priority,
           });
-          await interaction.reply({ content: `▶️ 세션 실행 시작: ${replay.id}`, ephemeral: true });
+          await interaction.reply({ content: DISCORD_MESSAGES.bot.sessionRunStarted(replay.id), ephemeral: true });
         } catch (error) {
-          await interaction.reply({ content: `실행 실패: ${getErrorMessage(error)}`, ephemeral: true });
+          await interaction.reply({ content: DISCORD_MESSAGES.bot.runFailed(getErrorMessage(error)), ephemeral: true });
         }
         return;
       }
 
       const result = cancelAgentSession(parentSessionId);
-      await interaction.reply({ content: result.ok ? `🛑 세션 제거 요청 완료: ${parentSessionId}` : `세션 제거 실패: ${result.message}`, ephemeral: true });
+      await interaction.reply({ content: DISCORD_MESSAGES.bot.sessionRemoveResult(result.ok, parentSessionId, result.message), ephemeral: true });
       return;
     }
 
@@ -631,11 +720,13 @@ const attachCommandHandlers = () => {
         const goal = goalEncoded ? decodeURIComponent(goalEncoded) : parentSessionId;
 
         await interaction.deferReply({ ephemeral: true });
+        recordWorkerProposalClick();
         const pipeResult = await runWorkerGenerationPipeline({
           goal,
           guildId: interaction.guildId,
           requestedBy: interaction.user.id,
         });
+        recordWorkerGenerationResult(pipeResult.ok, pipeResult.ok ? undefined : pipeResult.error);
 
         if (!pipeResult.ok) {
           await interaction.editReply(`❌ 워커 생성 실패: ${pipeResult.error}`);
@@ -691,7 +782,7 @@ const attachCommandHandlers = () => {
           }
         } catch { /* best-effort */ }
 
-        updateApprovalStatus(appr.id, 'pending', { adminMessageId: adminMsgId, adminChannelId: adminChId });
+        await updateApprovalStatus(appr.id, 'pending', { adminMessageId: adminMsgId, adminChannelId: adminChId });
         await interaction.editReply(
           adminMsgId
             ? `📨 관리자 채널에 승인 요청을 보냈습니다.\n승인 ID: \`${appr.id}\``
@@ -702,13 +793,13 @@ const attachCommandHandlers = () => {
 
       // Approve / Reject / Refactor — admin only
       if (!(await isUserAdmin(interaction.user.id))) {
-        await interaction.reply({ content: '⛔ 워커 승인은 관리자 권한이 필요합니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.workerApproveAdminOnly, ephemeral: true });
         return;
       }
 
-      const appr = getApproval(parentSessionId);
+      const appr = await getApproval(parentSessionId);
       if (!appr) {
-        await interaction.reply({ content: '승인 정보를 찾을 수 없습니다. 이미 처리됐거나 만료됐을 수 있습니다.', ephemeral: true });
+        await interaction.reply({ content: DISCORD_MESSAGES.bot.approvalNotFound, ephemeral: true });
         return;
       }
 
@@ -718,9 +809,19 @@ const attachCommandHandlers = () => {
           await interaction.followUp({ content: `⚠️ 이 워커는 검증에 실패했습니다: ${appr.validationErrors.join(', ')}`, ephemeral: true });
           return;
         }
-        const loadResult = await loadDynamicWorkerFromFile(appr.sandboxFilePath, appr.id);
+        let loadResult = appr.sandboxFilePath
+          ? await loadDynamicWorkerFromFile(appr.sandboxFilePath, appr.id)
+          : { ok: false, error: 'missing sandbox file path' };
+        if (!loadResult.ok && appr.generatedCode) {
+          loadResult = await loadDynamicWorkerFromCode({
+            approvalId: appr.id,
+            generatedCode: appr.generatedCode,
+            actionNameHint: appr.actionName,
+          });
+        }
         if (loadResult.ok) {
-          updateApprovalStatus(parentSessionId, 'approved');
+          recordWorkerApprovalDecision('approved');
+          await updateApprovalStatus(parentSessionId, 'approved');
           try {
             const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
             await interaction.message.edit({ content: `${prev}\n\n✅ **워커 활성화 완료** (승인자: <@${interaction.user.id}>)\n액션: \`${appr.actionName}\``, components: [] });
@@ -734,7 +835,8 @@ const attachCommandHandlers = () => {
       if (action === 'worker_reject') {
         await interaction.deferUpdate();
         await cleanupSandbox(appr.sandboxDir);
-        updateApprovalStatus(parentSessionId, 'rejected');
+        recordWorkerApprovalDecision('rejected');
+        await updateApprovalStatus(parentSessionId, 'rejected');
         try {
           const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
           await interaction.message.edit({ content: `${prev}\n\n❌ **반려됨** (처리자: <@${interaction.user.id}>)`, components: [] });
@@ -744,6 +846,7 @@ const attachCommandHandlers = () => {
 
       if (action === 'worker_refactor') {
         await interaction.deferReply({ ephemeral: true });
+        recordWorkerApprovalDecision('refactor_requested');
         const refactorResult = await rerunWorkerPipeline({
           approvalId: parentSessionId,
           goal: appr.goal,
@@ -803,7 +906,7 @@ const attachCommandHandlers = () => {
 
     const parentArtifact = getArtifact(parentSessionId);
     if (!parentArtifact) {
-      await interaction.reply({ content: '원본 세션 정보를 찾을 수 없습니다. 세션이 만료됐을 수 있습니다.', ephemeral: true });
+      await interaction.reply({ content: DISCORD_MESSAGES.bot.parentSessionNotFound, ephemeral: true });
       return;
     }
 
@@ -822,9 +925,9 @@ const attachCommandHandlers = () => {
     }
 
     const ACTION_LABELS: Record<string, string> = {
-      code_regen: '🔄 재생성',
-      code_refactor: '🔧 리팩터',
-      code_test: '🧪 테스트 추가',
+      code_regen: DISCORD_MESSAGES.bot.codeActionRegen,
+      code_refactor: DISCORD_MESSAGES.bot.codeActionRefactor,
+      code_test: DISCORD_MESSAGES.bot.codeActionTest,
     };
     const label = ACTION_LABELS[action] || action;
 
@@ -833,15 +936,11 @@ const attachCommandHandlers = () => {
       newSession = startVibeSession(interaction.guildId, interaction.user.id, newGoal);
       (newSession as any).__parentSessionId = parentSessionId; // hint for artifact linking
     } catch (error) {
-      await thread.send(`작업 시작 실패: ${getErrorMessage(error)}`);
+      await thread.send(DISCORD_MESSAGES.bot.codeStartFailed(getErrorMessage(error)));
       return;
     }
 
-    const progressMsg = await thread.send([
-      `**${label}** 요청을 받았습니다.`,
-      `세션: \`${newSession.id}\``,
-      '생성 중...',
-    ].join('\n'));
+    const progressMsg = await thread.send(DISCORD_MESSAGES.bot.codeProgressLines(label, newSession.id).join('\n'));
 
     await streamSessionProgress(
       { update: (content) => progressMsg.edit(content) },
@@ -895,7 +994,7 @@ const attachCommandHandlers = () => {
       switch (interaction.commandName) {
         case 'ping': {
           await interaction.reply({
-            ...buildSimpleEmbed('Pong', `ws=${client.ws.status} latency=${client.ws.ping}ms`, EMBED_INFO),
+            ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titlePong, DISCORD_MESSAGES.bot.pongBody(client.ws.status, client.ws.ping), EMBED_INFO),
             ephemeral: true,
           });
           return;
@@ -993,7 +1092,7 @@ const attachCommandHandlers = () => {
           return;
         }
         case '정책': {
-          await agentHandlers.handleAgentCommand(interaction, '정책');
+          await agentHandlers.handlePolicyCommand(interaction);
           return;
         }
         case '온보딩': {
@@ -1005,11 +1104,7 @@ const attachCommandHandlers = () => {
           return;
         }
         case '학습': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
-          await agentHandlers.handleAgentCommand(interaction, '학습');
+          await agentHandlers.handleUserLearningCommand(interaction);
           return;
         }
         case '중지': {
@@ -1021,16 +1116,16 @@ const attachCommandHandlers = () => {
           return;
         }
         default: {
-          await interaction.reply({ ...buildSimpleEmbed('Unknown command', '지원되지 않는 명령입니다.', EMBED_WARN), ephemeral: true });
+          await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleUnknownCommand, DISCORD_MESSAGES.common.unknownCommand, EMBED_WARN), ephemeral: true });
         }
       }
     } catch (error) {
       logger.error('[BOT] interaction handler failed: %o', error);
-      const message = 'Command failed. Check server logs.';
+      const message = DISCORD_MESSAGES.bot.executionFailedBody;
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(buildSimpleEmbed('실행 실패', message, EMBED_ERROR)).catch(() => undefined);
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR)).catch(() => undefined);
       } else {
-        await interaction.reply({ ...buildSimpleEmbed('실행 실패', message, EMBED_ERROR), ephemeral: true }).catch(() => undefined);
+        await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR), ephemeral: true }).catch(() => undefined);
       }
     }
   });
@@ -1044,9 +1139,11 @@ const attachCommandHandlers = () => {
     try {
       await vibeHandlers.handleVibeMessage(message);
 
-      // Optional passive memory capture by guild policy
+      // Optional passive memory capture by guild policy + user preference
       if (message.guildId && !message.author.bot) {
-        const enabled = await isGuildLearningEnabled(message.guildId);
+        const guildEnabled = await isGuildLearningEnabled(message.guildId);
+        const userEnabled = guildEnabled ? await isUserLearningEnabled(message.author.id, message.guildId) : false;
+        const enabled = guildEnabled && userEnabled;
         const content = String(message.content || '').trim();
         if (enabled && content.length >= 20 && !content.startsWith('/')) {
           await createMemoryItem({
@@ -1089,6 +1186,8 @@ client.on('clientReady', () => {
   if (isAutomationEnabled()) {
     startAutomationModules(client);
   }
+
+  void restoreApprovedDynamicWorkers();
 
   startAgentDailyLearningLoop(client);
   startLoginSessionCleanupLoop();

@@ -27,6 +27,7 @@ import {
   listGuildActionPolicies,
   upsertGuildActionPolicy,
 } from '../services/skills/actionGovernanceStore';
+import { getActionRunnerDiagnosticsSnapshot } from '../services/skills/actionRunner';
 import {
   getAgentOpsSnapshot,
   triggerDailyLearningRun,
@@ -62,6 +63,8 @@ import {
   previewForgetGuildRagData,
   previewForgetUserRagData,
 } from '../services/privacyForgetService';
+import { getWorkerApprovalStoreSnapshot } from '../services/workerGeneration/workerApprovalStore';
+import { getWorkerProposalMetricsSnapshot } from '../services/workerGeneration/workerProposalMetrics';
 
 let lastBotStatusBenchmarkAt = 0;
 
@@ -75,8 +78,32 @@ export function createBotRouter(): Router {
   });
 
   router.get('/status', requireAuth, (_req, res) => {
+    return (async () => {
     const bot = getBotRuntimeSnapshot();
     const automation = getAutomationRuntimeSnapshot();
+    const approvalStore = await getWorkerApprovalStoreSnapshot();
+    const actionRunnerDiagnostics = getActionRunnerDiagnosticsSnapshot();
+    const workerProposalMetrics = getWorkerProposalMetricsSnapshot();
+    const topFailureCodeRecommendations = actionRunnerDiagnostics.topFailureCodes
+      .flatMap((item) => {
+        if (item.code === 'ACTION_NOT_IMPLEMENTED' || item.code === 'DYNAMIC_WORKER_NOT_FOUND') {
+          return ['Top failure: missing implementation; prioritize worker proposal and approval for uncovered actions'];
+        }
+        if (item.code === 'ACTION_POLICY_UNAVAILABLE') {
+          return ['Top failure: governance policy unavailable; verify policy store connectivity and fallback mode'];
+        }
+        if (item.code === 'ACTION_NOT_ALLOWED' || item.code === 'ACTION_DISABLED_BY_POLICY' || item.code === 'ACTION_APPROVAL_REQUIRED') {
+          return ['Top failure: policy blocked actions; review allowlist/run-mode and admin approval backlog'];
+        }
+        if (item.code.includes('FINOPS') || item.code.includes('BUDGET')) {
+          return ['Top failure: FinOps budget guardrail blocks execution; tune budget limits or degraded policy'];
+        }
+        if (item.code.includes('WORKER') || item.code.includes('MCP_') || item.code === 'ACTION_TIMEOUT') {
+          return ['Top failure: external/runtime dependency unstable; inspect worker runtime and upstream latency'];
+        }
+        return [] as string[];
+      })
+      .slice(0, 2);
 
     const botEnabled = START_BOT;
     const automationEnabled = isAutomationEnabled();
@@ -88,6 +115,7 @@ export function createBotRouter(): Router {
 
     const statusGrade = !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline';
     const nextCheckInSec = healthy ? 15 : 45;
+    const dynamicRestoreFailed = Number(bot.dynamicWorkerRestoreFailedCount || 0);
 
     let outageDurationMs = 0;
     if (!healthy) {
@@ -134,15 +162,62 @@ export function createBotRouter(): Router {
         : statusGrade === 'degraded'
           ? 'One or more runtime services are degraded'
           : 'Runtime services are offline',
-      recommendations: healthy ? [] : ['Check Discord bot and automation job logs'],
+      recommendations: [
+        ...(healthy ? [] : ['Check Discord bot and automation job logs']),
+        ...(dynamicRestoreFailed > 0
+          ? ['Dynamic worker restore failures detected; inspect runtime logs and approval artifacts']
+          : []),
+        ...((approvalStore.configuredMode === 'supabase' && approvalStore.activeBackend !== 'supabase')
+          ? ['Worker approval store is not using Supabase backend; verify schema/env and fallback condition']
+          : []),
+        ...(approvalStore.lastError
+          ? [`Worker approval store error: ${approvalStore.lastError}`]
+          : []),
+        ...(Number(actionRunnerDiagnostics.failureTotals.missingAction || 0) > 0
+          ? ['Missing action failures detected; consider worker generation proposal for uncovered capabilities']
+          : []),
+        ...((actionRunnerDiagnostics.trend.direction === 'up' && actionRunnerDiagnostics.trend.comparedRuns > 0)
+          ? ['Action runner failure trend is rising; inspect latest policy/action changes and external dependencies']
+          : []),
+        ...(actionRunnerDiagnostics.topFailureCodes.length > 0
+          ? [`Top failure codes: ${actionRunnerDiagnostics.topFailureCodes.map((item) => `${item.code}(${item.count})`).join(', ')}`]
+          : []),
+        ...topFailureCodeRecommendations,
+        ...((workerProposalMetrics.generationRequested >= 5 && workerProposalMetrics.generationSuccessRate < 0.5)
+          ? ['Worker generation success rate is low; tighten prompts and validator constraints']
+          : []),
+        ...(workerProposalMetrics.topGenerationFailureReasons.length > 0
+          ? [`Top worker generation failures: ${workerProposalMetrics.topGenerationFailureReasons.map((item) => `${item.reason}(${item.count})`).join(', ')}`]
+          : []),
+        ...((workerProposalMetrics.approvalsApproved + workerProposalMetrics.approvalsRejected >= 5 && workerProposalMetrics.approvalPassRate < 0.4)
+          ? ['Worker approval pass rate is low; improve proposal quality or adjust approval criteria']
+          : []),
+      ],
       nextCheckInSec,
       outageDurationMs,
-      bot,
+      bot: {
+        ...bot,
+        dynamicWorkerRestore: {
+          enabled: Boolean(bot.dynamicWorkerRestoreEnabled),
+          attemptedAt: bot.dynamicWorkerRestoreAttemptedAt,
+          approvedCount: Number(bot.dynamicWorkerRestoreApprovedCount || 0),
+          restoredCount: Number(bot.dynamicWorkerRestoreSuccessCount || 0),
+          failedCount: Number(bot.dynamicWorkerRestoreFailedCount || 0),
+          lastError: bot.dynamicWorkerRestoreLastError || null,
+        },
+        workerApprovalStore: approvalStore,
+      },
       automation,
+      actionRunnerDiagnostics,
+      workerProposalMetrics,
       agents: getMultiAgentRuntimeSnapshot(),
     };
 
     return res.json(payload);
+    })().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ error: 'STATUS_BUILD_FAILED', message });
+    });
   });
 
   router.post('/automation/:jobName/run', requireAdmin, adminActionRateLimiter, async (req, res) => {

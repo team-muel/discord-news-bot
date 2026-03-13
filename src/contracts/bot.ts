@@ -20,6 +20,28 @@ export type BotRuntimeStatus = {
   lastRecoveryAt: string | null;
   lastManualReconnectAt: string | null;
   manualReconnectCooldownRemainingSec: number;
+  dynamicWorkerRestore: {
+    enabled: boolean;
+    attemptedAt: string | null;
+    approvedCount: number;
+    restoredCount: number;
+    failedCount: number;
+    lastError: string | null;
+  };
+  workerApprovalStore?: {
+    configuredMode: 'auto' | 'supabase' | 'file';
+    activeBackend: 'supabase' | 'file' | 'unknown';
+    supabaseConfigured: boolean;
+    supabaseDisabled: boolean;
+    dbTable: string;
+    filePath: string;
+    loaded: boolean;
+    totalApprovals: number;
+    pendingApprovals: number;
+    approvedApprovals: number;
+    rejectedApprovals: number;
+    lastError: string | null;
+  };
 };
 
 export type AutomationJobName = 'youtube-monitor' | 'news-monitor';
@@ -59,6 +81,87 @@ export type BotStatusApiResponse = {
   outageDurationMs: number;
   bot?: BotRuntimeStatus;
   automation?: AutomationRuntimeStatus;
+  actionRunnerDiagnostics?: {
+    lastUpdatedAt: string | null;
+    totalRuns: number;
+    handledRuns: number;
+    successRuns: number;
+    failedRuns: number;
+    externalUnavailableRuns: number;
+    failureTotals: {
+      totalFailures: number;
+      missingAction: number;
+      policyBlocked: number;
+      governanceUnavailable: number;
+      finopsBlocked: number;
+      externalFailures: number;
+      unknownFailures: number;
+    };
+    trend: {
+      windowSize: number;
+      comparedRuns: number;
+      failureRateDelta: number | null;
+      missingActionDelta: number | null;
+      policyBlockedDelta: number | null;
+      direction: 'up' | 'down' | 'flat' | 'unknown';
+    };
+    topFailureCodes: Array<{
+      code: string;
+      count: number;
+      share: number;
+    }>;
+    recentRuns: Array<{
+      at: string;
+      totalFailures: number;
+      failed: boolean;
+      missingAction: number;
+      policyBlocked: number;
+    }>;
+    lastRun: {
+      handled: boolean;
+      hasSuccess: boolean;
+      externalUnavailable: boolean;
+      diagnostics: {
+        totalFailures: number;
+        missingAction: number;
+        policyBlocked: number;
+        governanceUnavailable: number;
+        finopsBlocked: number;
+        externalFailures: number;
+        unknownFailures: number;
+      };
+    } | null;
+  };
+  workerProposalMetrics?: {
+    startedAt: string;
+    lastUpdatedAt: string | null;
+    proposalClicks: number;
+    generationRequested: number;
+    generationSucceeded: number;
+    generationFailed: number;
+    approvalsApproved: number;
+    approvalsRejected: number;
+    approvalsRefactorRequested: number;
+    generationSuccessRate: number;
+    approvalDecisionRate: number;
+    approvalPassRate: number;
+    generationFailureReasonCounts: Record<string, number>;
+    topGenerationFailureReasons: Array<{
+      reason: string;
+      count: number;
+      share: number;
+    }>;
+    history: Array<{
+      at: string;
+      proposalClicks: number;
+      generationRequested: number;
+      generationSucceeded: number;
+      generationFailed: number;
+      approvalsApproved: number;
+      approvalsRejected: number;
+      approvalsRefactorRequested: number;
+    }>;
+  };
   agents?: {
     totalSessions: number;
     runningSessions: number;

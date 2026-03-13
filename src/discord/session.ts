@@ -4,6 +4,7 @@
  */
 import type { AgentSession } from '../services/multiAgentService';
 import { getAgentSession, startAgentSession } from '../services/multiAgentService';
+import { DISCORD_MESSAGES } from './messages';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type ProgressSink = {
@@ -93,7 +94,7 @@ const stripActionDebugText = (raw: string): string => {
 
   if (keptLinks.length > 0) {
     const top = keptLinks.slice(0, 2);
-    return ['요청한 링크를 찾았어요.', ...top.map((url) => `- ${url}`)].join('\n');
+    return [DISCORD_MESSAGES.session.linkFoundHeader, ...top.map((url) => `- ${url}`)].join('\n');
   }
   return '';
 };
@@ -131,7 +132,7 @@ const limitLinks = (input: string, maxLinks: number): string => {
 
 const toUserFacingResult = (session: AgentSession, options: ProgressRenderOptions): string => {
   const raw = String(session.result || '').trim();
-  if (!raw) return '결과가 비어 있습니다.';
+  if (!raw) return DISCORD_MESSAGES.session.emptyResult;
   if (options.showDebugBlocks) return raw;
 
   const sourceText = extractDeliverableBody(raw) || raw;
@@ -142,13 +143,23 @@ const toUserFacingResult = (session: AgentSession, options: ProgressRenderOption
     .trim();
   const deLabeled = removeSectionLabelLeaks(stripped);
   const linkLimited = limitLinks(deLabeled, options.maxLinks);
-  return linkLimited || '요청을 처리했지만 표시 가능한 결과 본문이 없어 다시 시도해주세요.';
+  return linkLimited || DISCORD_MESSAGES.session.noDisplayableResult;
 };
 
 const toUserFacingFailureMessage = (session: AgentSession): string => {
   const cleaned = stripActionDebugText(String(session.error || '').trim());
-  if (cleaned) return `요청 처리 중 문제가 발생했습니다.\n${cleaned}`;
-  return '요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  if (cleaned) return `${DISCORD_MESSAGES.session.failureGeneric.split('\n')[0]}\n${cleaned}`;
+  return DISCORD_MESSAGES.session.failureGeneric;
+};
+
+const toFriendlyStageLine = (stage: string): string => {
+  const n = String(stage || '').toLowerCase();
+  if (/계획|plan/.test(n)) return '지금 계획을 생각 중이에요.';
+  if (/조사|research|자료|검색|수집/.test(n)) return '관련 자료를 찾고 정리 중이에요.';
+  if (/검토|critic|리스크|확인/.test(n)) return '결과를 점검하고 다듬고 있어요.';
+  if (/실행|execution/.test(n)) return '실행 내용을 정리 중이에요.';
+  if (/최종|응답|final/.test(n)) return '답변을 마무리하고 있어요.';
+  return '요청을 계속 처리 중이에요.';
 };
 
 const describeActiveStep = (session: AgentSession): string => {
@@ -168,33 +179,46 @@ export const buildSessionProgressText = (
 ): string => {
   if (session.status === 'queued') {
     const sec = Math.max(0, Math.floor(elapsedMs / 1000));
-    return `요청을 처리하기 위해 준비 중입니다... (대기 ${sec}초)`;
+    return DISCORD_MESSAGES.session.queued(sec);
   }
   if (session.status === 'running') {
     const sec = Math.max(0, Math.floor(elapsedMs / 1000));
     const stage = describeActiveStep(session);
+    if (!options.showDebugBlocks) {
+      return [
+        DISCORD_MESSAGES.session.runningHeader,
+        toFriendlyStageLine(stage),
+        DISCORD_MESSAGES.session.runningElapsed(sec),
+      ].join('\n');
+    }
     return [
-      '요청을 실행 중입니다.',
-      `현재 단계: ${stage}`,
-      `경과시간: ${sec}초`,
-      '지연이 길어지면 자동으로 타임아웃/폴백 처리됩니다.',
+      DISCORD_MESSAGES.session.runningDebugHeader,
+      DISCORD_MESSAGES.session.runningDebugStage(stage),
+      DISCORD_MESSAGES.session.runningDebugElapsed(sec),
+      DISCORD_MESSAGES.session.runningDebugTail,
     ].join('\n');
   }
   if (session.status === 'cancelled') {
-    if (!options.showDebugBlocks) return '요청이 중지되었습니다.';
-    return ['작업이 중지되었습니다.', `목표: ${goal}`, session.error ? `사유: ${session.error}` : '']
+    if (!options.showDebugBlocks) return DISCORD_MESSAGES.session.cancelled;
+    return [
+      DISCORD_MESSAGES.session.cancelledDebugHeader,
+      DISCORD_MESSAGES.session.cancelledDebugGoal(goal),
+      session.error ? DISCORD_MESSAGES.session.cancelledDebugReason(session.error) : '',
+    ]
       .filter(Boolean)
       .join('\n');
   }
   if (session.status === 'failed') {
     if (!options.showDebugBlocks) return toUserFacingFailureMessage(session);
-    return ['작업이 실패했습니다.', `목표: ${goal}`, `오류: ${session.error || 'unknown'}`].join('\n');
+    return [
+      DISCORD_MESSAGES.session.failedDebugHeader,
+      DISCORD_MESSAGES.session.failedDebugGoal(goal),
+      DISCORD_MESSAGES.session.failedDebugError(session.error || 'unknown'),
+    ].join('\n');
   }
 
   const content = toUserFacingResult(session, options);
-  const wrapped = options.showDebugBlocks
-    ? content
-    : ['요청하신 결과입니다.', '', content].join('\n');
+  const wrapped = content;
   const clipLimit = options.showDebugBlocks ? 1700 : 1200;
   return wrapped.length > clipLimit ? `${wrapped.slice(0, clipLimit)}\n...` : wrapped;
 };
@@ -215,7 +239,7 @@ export const streamSessionProgress = async (
   while (Date.now() - startedAt < timeoutMs) {
     const session = getAgentSession(sessionId);
     if (!session) {
-      await sink.update('세션 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+      await sink.update(DISCORD_MESSAGES.session.sessionNotFound);
       return;
     }
 
@@ -240,13 +264,18 @@ export const streamSessionProgress = async (
     await sleep(intervalMs);
   }
 
-  await sink.update(
-    [
-      '작업은 계속 진행 중입니다.',
-      `세션: ${sessionId}`,
-      '진행 상황은 /상태 세션아이디:<ID> 로 확인할 수 있습니다.',
-    ].join('\n'),
-  );
+  if (options.showDebugBlocks) {
+    await sink.update(
+      [
+        DISCORD_MESSAGES.session.timeoutDebugHeader,
+        DISCORD_MESSAGES.session.timeoutDebugSession(sessionId),
+        DISCORD_MESSAGES.session.timeoutDebugHint,
+      ].join('\n'),
+    );
+    return;
+  }
+
+  await sink.update(DISCORD_MESSAGES.session.timeoutUser);
 };
 
 export const startVibeSession = (

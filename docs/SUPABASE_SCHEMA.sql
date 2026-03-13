@@ -884,6 +884,57 @@ begin
 end
 $$;
 
+-- ==========================================
+-- 17. Dynamic worker approvals persistence
+-- ==========================================
+
+create table if not exists public.worker_approvals (
+  id text primary key,
+  guild_id text not null,
+  requested_by text not null,
+  goal text not null,
+  action_name text not null,
+  generated_code text not null,
+  sandbox_dir text,
+  sandbox_file_path text,
+  validation_passed boolean not null default false,
+  validation_errors text[] not null default '{}',
+  validation_warnings text[] not null default '{}',
+  admin_message_id text,
+  admin_channel_id text,
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (status in ('pending', 'approved', 'rejected', 'refactor_requested'))
+);
+
+create index if not exists idx_worker_approvals_status_updated
+  on public.worker_approvals (status, updated_at desc);
+
+create index if not exists idx_worker_approvals_guild_created
+  on public.worker_approvals (guild_id, created_at desc);
+
+drop trigger if exists trg_worker_approvals_updated_at on public.worker_approvals;
+create trigger trg_worker_approvals_updated_at
+before update on public.worker_approvals
+for each row
+execute function public.set_updated_at();
+
+alter table public.worker_approvals enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='worker_approvals' and policyname='worker_approvals_guild_all'
+  ) then
+    create policy worker_approvals_guild_all on public.worker_approvals
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+end
+$$;
+
 drop trigger if exists trg_memory_jobs_updated_at on public.memory_jobs;
 create trigger trg_memory_jobs_updated_at
 before update on public.memory_jobs

@@ -43,6 +43,7 @@ Open these first when verifying behavior:
 - Runtime architecture index: `docs/ARCHITECTURE_INDEX.md`
 - 24/7 runtime ops: `docs/OPERATIONS_24_7.md`
 - Operator decision matrix: `docs/OPERATOR_SOP_DECISION_TABLE.md`
+- Platform document control tower: `docs/planning/PLATFORM_CONTROL_TOWER.md`
 - Harness playbook: `docs/HARNESS_ENGINEERING_PLAYBOOK.md`
 - Harness manifest template: `docs/HARNESS_MANIFEST.example.yaml`
 - Harness release gates: `docs/HARNESS_RELEASE_GATES.md`

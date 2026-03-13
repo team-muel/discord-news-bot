@@ -22,6 +22,7 @@ import {
   deleteNewsChannelSubscription,
   listNewsChannelSubscriptions,
 } from '../../services/newsChannelStore';
+import { DISCORD_MESSAGES } from '../messages';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getChannelTypeLabel = (channelType: number): string => {
@@ -68,13 +69,13 @@ const handleSubscribeYouTubeCommand = async (
 ): Promise<void> => {
   if (!(await hasFeatureAccess(interaction))) {
     await interaction.reply({
-      ...buildSimpleEmbed('권한 오류', '이 기능을 사용하려면 /로그인을 먼저 실행해주세요.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
   }
   const channelInput = (
@@ -86,11 +87,11 @@ const handleSubscribeYouTubeCommand = async (
   const targetChannel = selectedChannel || interaction.channel;
 
   if (!channelInput) {
-    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상/게시글 구독은 유튜브채널을 입력해주세요.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '영상/게시글 구독은 유튜브채널을 입력해주세요.', EMBED_WARN), ephemeral: true });
     return;
   }
   if (!targetChannel || !isValidSubscribeChannelType((targetChannel as any).type)) {
-    await interaction.reply({ ...buildSimpleEmbed('채널 유형 오류', '텍스트/공지/포럼 스레드 채널만 구독 대상으로 지정할 수 있습니다.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 구독 대상으로 지정할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
 
@@ -106,13 +107,13 @@ const handleSubscribeYouTubeCommand = async (
     const state = result.created ? '등록 완료' : '이미 등록됨';
     await interaction.editReply(
       buildSimpleEmbed(
-        '구독 처리 결과',
+        DISCORD_MESSAGES.subscribe.titleSubscribeResult,
         `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})`,
         EMBED_SUCCESS,
       ),
     );
   } catch (error) {
-    await interaction.editReply(buildSimpleEmbed('구독 등록 실패', getErrorMessage(error), EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleSubscribeCreateFailed, getErrorMessage(error), EMBED_ERROR));
   }
 };
 
@@ -121,19 +122,19 @@ const handleSubscribeNewsCommand = async (
 ): Promise<void> => {
   if (!(await hasFeatureAccess(interaction))) {
     await interaction.reply({
-      ...buildSimpleEmbed('권한 오류', '이 기능을 사용하려면 /로그인을 먼저 실행해주세요.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
   }
   const selectedChannel = interaction.options.getChannel('디스코드채널', false);
   const targetChannel = selectedChannel || interaction.channel;
   if (!targetChannel || !isValidSubscribeChannelType((targetChannel as any).type)) {
-    await interaction.reply({ ...buildSimpleEmbed('채널 유형 오류', '텍스트/공지/포럼 스레드 채널만 등록할 수 있습니다.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 등록할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
 
@@ -147,13 +148,13 @@ const handleSubscribeNewsCommand = async (
     const state = result.created ? '등록 완료' : '이미 등록됨';
     await interaction.editReply(
       buildSimpleEmbed(
-        '뉴스 구독',
+        DISCORD_MESSAGES.subscribe.titleNewsSubscribe,
         `${state}: news -> <#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})`,
         EMBED_SUCCESS,
       ),
     );
   } catch (error) {
-    await interaction.editReply(buildSimpleEmbed('뉴스 구독 실패', getErrorMessage(error), EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleNewsSubscribeFailed, getErrorMessage(error), EMBED_ERROR));
   }
 };
 
@@ -161,7 +162,7 @@ const handleSubscriptionListCommand = async (
   interaction: ChatInputCommandInteraction,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
   }
   await interaction.deferReply({ ephemeral: true });
@@ -171,7 +172,7 @@ const handleSubscriptionListCommand = async (
       listNewsChannelSubscriptions({ guildId: interaction.guildId }),
     ]);
     if (ytRows.length === 0 && newsRows.length === 0) {
-      await interaction.editReply(buildSimpleEmbed('구독 목록', '등록된 구독이 없습니다.', EMBED_INFO));
+      await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleList, DISCORD_MESSAGES.subscribe.noSubscriptions, EMBED_INFO));
       return;
     }
 
@@ -191,7 +192,7 @@ const handleSubscriptionListCommand = async (
 
     await interaction.editReply(
       buildSimpleEmbed(
-        '통합 구독 목록',
+        DISCORD_MESSAGES.subscribe.titleListMerged,
         [
           `[YouTube] ${ytRows.length}개`,
           ...(ytLines.length > 0 ? ytLines : ['- 없음']),
@@ -208,7 +209,7 @@ const handleSubscriptionListCommand = async (
     );
   } catch (error) {
     await interaction.editReply(
-      buildSimpleEmbed('구독 목록 조회 실패', getErrorMessage(error), EMBED_ERROR),
+      buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleListFailed, getErrorMessage(error), EMBED_ERROR),
     );
   }
 };
@@ -219,20 +220,20 @@ const handleUnsubscribeCommand = async (
 ): Promise<void> => {
   if (!(await hasFeatureAccess(interaction))) {
     await interaction.reply({
-      ...buildSimpleEmbed('권한 오류', '이 기능을 사용하려면 /로그인을 먼저 실행해주세요.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
   }
 
   const kind = (forcedKind || interaction.options.getString('종류') || '').trim();
   if (kind !== 'videos' && kind !== 'posts' && kind !== 'news') {
     await interaction.reply({
-      ...buildSimpleEmbed('입력 오류', '종류는 videos, posts, news만 가능합니다.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '종류는 videos, posts, news만 가능합니다.', EMBED_WARN),
       ephemeral: true,
     });
     return;
@@ -246,14 +247,14 @@ const handleUnsubscribeCommand = async (
   const targetChannel = interaction.options.getChannel('디스코드채널');
   if (!targetChannel) {
     await interaction.reply({
-      ...buildSimpleEmbed('입력 오류', '해제 동작에는 디스코드채널이 필요합니다.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '해제 동작에는 디스코드채널이 필요합니다.', EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
   if (!isValidSubscribeChannelType(targetChannel.type)) {
     await interaction.reply({
-      ...buildSimpleEmbed('채널 유형 오류', '텍스트/공지/포럼 스레드 채널만 해제 대상으로 지정할 수 있습니다.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 해제 대상으로 지정할 수 있습니다.', EMBED_WARN),
       ephemeral: true,
     });
     return;
@@ -268,7 +269,7 @@ const handleUnsubscribeCommand = async (
       });
       await interaction.editReply(
         buildSimpleEmbed(
-          result.deleted ? '구독 해제 완료' : '구독 해제',
+          result.deleted ? DISCORD_MESSAGES.subscribe.titleUnsubscribeDone : DISCORD_MESSAGES.subscribe.titleUnsubscribe,
           result.deleted
             ? `해제 완료: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`
             : `해제 대상이 없습니다: news -> <#${targetChannel.id}>`,
@@ -280,7 +281,7 @@ const handleUnsubscribeCommand = async (
 
     if (!channelInput) {
       await interaction.editReply(
-        buildSimpleEmbed('입력 오류', '영상/게시글 해제 시 유튜브채널을 입력해주세요.', EMBED_WARN),
+        buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '영상/게시글 해제 시 유튜브채널을 입력해주세요.', EMBED_WARN),
       );
       return;
     }
@@ -293,7 +294,7 @@ const handleUnsubscribeCommand = async (
     });
     await interaction.editReply(
       buildSimpleEmbed(
-        result.deleted ? '구독 해제 완료' : '구독 해제',
+        result.deleted ? DISCORD_MESSAGES.subscribe.titleUnsubscribeDone : DISCORD_MESSAGES.subscribe.titleUnsubscribe,
         result.deleted
           ? `해제 완료: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`
           : `해제 대상이 없습니다: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`,
@@ -302,7 +303,7 @@ const handleUnsubscribeCommand = async (
     );
   } catch (error) {
     await interaction.editReply(
-      buildSimpleEmbed('구독 해제 실패', getErrorMessage(error), EMBED_ERROR),
+      buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUnsubscribeFailed, getErrorMessage(error), EMBED_ERROR),
     );
   }
 };
@@ -352,7 +353,7 @@ export const handleGroupedSubscribeCommand = async (
     if (kind === 'news') { await handleSubscribeNewsCommand(interaction); return; }
     if (kind === 'videos' || kind === 'posts') { await handleSubscribeYouTubeCommand(interaction, kind); return; }
     await interaction.reply({
-      ...buildSimpleEmbed('입력 오류', '추가 동작에는 종류(영상/게시글/뉴스)가 필요합니다.', EMBED_WARN),
+      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '추가 동작에는 종류(영상/게시글/뉴스)가 필요합니다.', EMBED_WARN),
       ephemeral: true,
     });
     return;
@@ -369,7 +370,7 @@ export const handleGroupedSubscribeCommand = async (
   }
 
   await interaction.reply({
-    ...buildSimpleEmbed('입력 오류', '동작은 추가/해제/목록 중 하나여야 합니다.', EMBED_WARN),
+    ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '동작은 추가/해제/목록 중 하나여야 합니다.', EMBED_WARN),
     ephemeral: true,
   });
 };

@@ -1,8 +1,13 @@
 import logger from '../../logger';
 import type { ActionDefinition, ActionExecutionInput, ActionExecutionResult } from '../skills/actions/types';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const CIRCUIT_FAILURE_THRESHOLD = Math.max(2, Number(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD || 3));
 const CIRCUIT_OPEN_MS = Math.max(10_000, Number(process.env.DYNAMIC_CIRCUIT_OPEN_MS || 120_000));
+const DYNAMIC_WORKER_RUNTIME_DIR = String(process.env.DYNAMIC_WORKER_RUNTIME_DIR || path.join(process.cwd(), '.runtime', 'dynamic-workers')).trim();
 
 type DynamicEntry = {
   definition: ActionDefinition;
@@ -75,6 +80,31 @@ const wrapExecute = (name: string, execute: ActionDefinition['execute']): Action
   };
 };
 
+const activateDynamicDefinition = (def: ActionDefinition, approvalId: string) => {
+  const wrapped: ActionDefinition = {
+    name: def.name,
+    description: String(def.description || def.name),
+    execute: wrapExecute(def.name, def.execute),
+  };
+
+  registry.set(def.name, {
+    definition: wrapped,
+    approvalId,
+    addedAt: new Date().toISOString(),
+    failures: 0,
+    openUntilMs: 0,
+  });
+
+  logger.info('[DYNAMIC-WORKER] activated name=%s approvalId=%s', def.name, approvalId);
+  return { ok: true, actionName: def.name } as const;
+};
+
+const resolveImportSpec = (filePath: string): string => {
+  const asUrl = pathToFileURL(filePath).href;
+  const version = Date.now();
+  return `${asUrl}?v=${version}`;
+};
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export const getDynamicAction = (name: string): ActionDefinition | null =>
@@ -98,7 +128,8 @@ export const loadDynamicWorkerFromFile = async (
 ): Promise<{ ok: boolean; actionName?: string; error?: string }> => {
   try {
     // Native ESM dynamic import – works with .mjs files at runtime
-    const mod = await import(filePath) as Record<string, unknown>;
+    const importSpec = resolveImportSpec(filePath);
+    const mod = await import(importSpec) as Record<string, unknown>;
 
     const def = Object.values(mod).find(
       (v): v is ActionDefinition =>
@@ -111,26 +142,49 @@ export const loadDynamicWorkerFromFile = async (
     if (!def) {
       return { ok: false, error: 'no valid ActionDefinition export found in the module' };
     }
-
-    const wrapped: ActionDefinition = {
-      name: def.name,
-      description: String(def.description || def.name),
-      execute: wrapExecute(def.name, def.execute),
-    };
-
-    registry.set(def.name, {
-      definition: wrapped,
-      approvalId,
-      addedAt: new Date().toISOString(),
-      failures: 0,
-      openUntilMs: 0,
-    });
-
-    logger.info('[DYNAMIC-WORKER] activated name=%s approvalId=%s', def.name, approvalId);
-    return { ok: true, actionName: def.name };
+    return activateDynamicDefinition(def, approvalId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error('[DYNAMIC-WORKER] import failed path=%s: %s', filePath, message);
     return { ok: false, error: message };
   }
+};
+
+/** Persist generated code to runtime folder and load it as dynamic action. */
+export const loadDynamicWorkerFromCode = async (
+  params: {
+    approvalId: string;
+    generatedCode: string;
+    actionNameHint?: string;
+  },
+): Promise<{ ok: boolean; actionName?: string; error?: string; filePath?: string }> => {
+  const code = String(params.generatedCode || '').trim();
+  if (!code) {
+    return { ok: false, error: 'generatedCode is empty' };
+  }
+
+  const baseName = String(params.actionNameHint || 'dynamic.worker')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .slice(0, 60)
+    || 'dynamic.worker';
+
+  const artifactDir = DYNAMIC_WORKER_RUNTIME_DIR || path.join(os.tmpdir(), 'muel-dynamic-workers');
+  const filePath = path.join(artifactDir, `${baseName}-${params.approvalId}.mjs`);
+
+  try {
+    await fs.mkdir(artifactDir, { recursive: true });
+    await fs.writeFile(filePath, `${code}\n`, 'utf-8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('[DYNAMIC-WORKER] code artifact write failed approval=%s: %s', params.approvalId, message);
+    return { ok: false, error: `artifact write failed: ${message}` };
+  }
+
+  const loaded = await loadDynamicWorkerFromFile(filePath, params.approvalId);
+  if (!loaded.ok) {
+    return { ...loaded, filePath };
+  }
+
+  return { ...loaded, filePath };
 };

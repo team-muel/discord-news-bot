@@ -7,7 +7,20 @@ import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/a
 export function createHealthRouter(): Router {
   const router = Router();
 
-  const buildBotSnapshot = () => getBotRuntimeSnapshot();
+  const buildBotSnapshot = () => {
+    const bot = getBotRuntimeSnapshot();
+    return {
+      ...bot,
+      dynamicWorkerRestore: {
+        enabled: Boolean(bot.dynamicWorkerRestoreEnabled),
+        attemptedAt: bot.dynamicWorkerRestoreAttemptedAt,
+        approvedCount: Number(bot.dynamicWorkerRestoreApprovedCount || 0),
+        restoredCount: Number(bot.dynamicWorkerRestoreSuccessCount || 0),
+        failedCount: Number(bot.dynamicWorkerRestoreFailedCount || 0),
+        lastError: bot.dynamicWorkerRestoreLastError || null,
+      },
+    };
+  };
 
   router.get('/health', (_req, res) => {
     const bot = buildBotSnapshot();

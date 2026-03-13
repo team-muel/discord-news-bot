@@ -35,10 +35,14 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - ACTION_RUNNER_ENABLED=true (optional)
 - ACTION_RETRY_MAX=2 (optional)
 - ACTION_TIMEOUT_MS=15000 (optional)
+- ACTION_POLICY_DEFAULT_ENABLED=true (optional, no policy row fallback)
+- ACTION_POLICY_DEFAULT_RUN_MODE=approval_required (optional: auto|approval_required|disabled)
+- ACTION_POLICY_FAIL_OPEN_ON_ERROR=false (optional, keep false for fail-closed)
 - ACTION_CACHE_ENABLED=true (optional)
 - ACTION_CACHE_TTL_MS=600000 (optional, 10 minutes)
 - ACTION_CACHE_MAX_ENTRIES=1000 (optional)
-- ACTION_CACHEABLE_ACTIONS=rag.retrieve,news.google.search,community.search,web.fetch,youtube.search.first,stock.quote,stock.chart,db.supabase.read (optional)
+- ACTION_CACHEABLE_ACTIONS=rag.retrieve,news.google.search,community.search,web.fetch,web.search,youtube.search.first,stock.quote,stock.chart,db.supabase.read (optional)
+- ACTION_RUNNER_TREND_WINDOW_RUNS=10 (optional, trend delta comparison window)
 - ACTION_CIRCUIT_BREAKER_ENABLED=true (optional)
 - ACTION_CIRCUIT_FAILURE_THRESHOLD=3 (optional)
 - ACTION_CIRCUIT_OPEN_MS=60000 (optional)
@@ -52,9 +56,32 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 
 ## Automation Defaults
 
-- START_AUTOMATION_JOBS=false
-- AUTOMATION_YOUTUBE_ENABLED=true
-- AUTOMATION_NEWS_ENABLED=false
+- START_AUTOMATION_JOBS=true (optional)
+- AUTOMATION_YOUTUBE_ENABLED=true (optional)
+- AUTOMATION_NEWS_ENABLED=false (optional)
+- DYNAMIC_WORKER_RESTORE_ON_BOOT=true (optional, default true: restart 시 승인된 동적 워커 자동 복원)
+- DYNAMIC_WORKER_RUNTIME_DIR=.runtime/dynamic-workers (optional, 동적 워커 코드 아티팩트 저장 경로)
+- WORKER_APPROVAL_STORE_MODE=auto (optional: auto|supabase|file)
+- WORKER_APPROVAL_DB_TABLE=worker_approvals (optional)
+- WORKER_APPROVAL_STORE_PATH=.runtime/worker-approvals.json (optional, file 모드/폴백 경로)
+
+## Web Search & Verification
+
+- SERPER_API_KEY=<secret> (optional — Google 품질 검색; 없으면 DuckDuckGo HTML 폴백 자동 사용)
+- WEB_SEARCH_MAX_RESULTS=5 (optional)
+- NEWS_VERIFY_SOURCE_LIMIT=4 (optional)
+- ACTION_NEWS_CAPTURE_ENABLED=true (optional)
+- ACTION_NEWS_CAPTURE_TTL_MS=21600000 (optional, 6시간)
+- ACTION_NEWS_CAPTURE_MIN_ITEMS=2 (optional)
+- ACTION_NEWS_CAPTURE_MAX_ITEMS=5 (optional)
+- ACTION_NEWS_CAPTURE_MAX_AGE_HOURS=72 (optional)
+- ACTION_NEWS_CAPTURE_SOURCE=google_news_rss (optional)
+
+## Trading Credentials
+
+- BINANCE_API_KEY=<secret>
+- BINANCE_API_SECRET=<secret>
+- BINANCE_SECRET_KEY=<secret> (legacy alias, migrate to BINANCE_API_SECRET)
 
 ## Notes
 

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type ActionRunMode = 'auto' | 'approval_required' | 'disabled';
@@ -32,6 +32,9 @@ export type ActionApprovalRequest = {
 const ACTION_POLICY_TABLE = String(process.env.ACTION_POLICY_TABLE || 'agent_action_policies').trim();
 const ACTION_APPROVAL_TABLE = String(process.env.ACTION_APPROVAL_TABLE || 'agent_action_approval_requests').trim();
 const ACTION_APPROVAL_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_APPROVAL_TTL_MS, 60 * 60 * 1000));
+const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
+const ACTION_POLICY_DEFAULT_RUN_MODE = String(process.env.ACTION_POLICY_DEFAULT_RUN_MODE || 'approval_required').trim();
+const ACTION_POLICY_FAIL_OPEN_ON_ERROR = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);
 
 const memoryPolicies = new Map<string, GuildActionPolicy>();
 const memoryApprovals = new Map<string, ActionApprovalRequest>();
@@ -42,6 +45,24 @@ const nowIso = () => new Date().toISOString();
 
 export const isActionRunMode = (value: string): value is ActionRunMode => {
   return value === 'auto' || value === 'approval_required' || value === 'disabled';
+};
+
+const resolveDefaultRunMode = (): ActionRunMode => {
+  if (isActionRunMode(ACTION_POLICY_DEFAULT_RUN_MODE)) {
+    return ACTION_POLICY_DEFAULT_RUN_MODE;
+  }
+  return 'approval_required';
+};
+
+const buildFallbackPolicy = (guildId: string, actionName: string, failOpen: boolean): GuildActionPolicy => {
+  return {
+    guildId,
+    actionName,
+    enabled: failOpen ? true : ACTION_POLICY_DEFAULT_ENABLED,
+    runMode: failOpen ? 'auto' : resolveDefaultRunMode(),
+    updatedAt: nowIso(),
+    updatedBy: null,
+  };
 };
 
 const normalizePolicyRow = (row: any): GuildActionPolicy => {
@@ -82,14 +103,8 @@ const normalizeApprovalRow = (row: any): ActionApprovalRequest => {
 };
 
 export const getGuildActionPolicy = async (guildId: string, actionName: string): Promise<GuildActionPolicy> => {
-  const fallback: GuildActionPolicy = {
-    guildId,
-    actionName,
-    enabled: true,
-    runMode: 'auto',
-    updatedAt: nowIso(),
-    updatedBy: null,
-  };
+  const fallback = buildFallbackPolicy(guildId, actionName, false);
+  const failOpenFallback = buildFallbackPolicy(guildId, actionName, true);
 
   if (!guildId || !actionName) {
     return fallback;
@@ -108,13 +123,17 @@ export const getGuildActionPolicy = async (guildId: string, actionName: string):
       .eq('action_name', actionName)
       .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      return ACTION_POLICY_FAIL_OPEN_ON_ERROR ? failOpenFallback : fallback;
+    }
+
+    if (!data) {
       return fallback;
     }
 
     return normalizePolicyRow(data);
   } catch {
-    return fallback;
+    return ACTION_POLICY_FAIL_OPEN_ON_ERROR ? failOpenFallback : fallback;
   }
 };
 
@@ -188,6 +207,57 @@ export const upsertGuildActionPolicy = async (params: {
   }
 
   return normalizePolicyRow(data);
+};
+
+const DOMAIN_POLICY_PREFIX = 'news.capture.domain:';
+
+const normalizeDomainForPolicy = (domain: string): string =>
+  String(domain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/[/?#].*$/, '');
+
+const buildDomainPolicyActionName = (domain: string): string => `${DOMAIN_POLICY_PREFIX}${domain}`;
+
+const parseDomainPolicyActionName = (actionName: string): string | null => {
+  if (!actionName.startsWith(DOMAIN_POLICY_PREFIX)) {
+    return null;
+  }
+  const domain = normalizeDomainForPolicy(actionName.slice(DOMAIN_POLICY_PREFIX.length));
+  if (!domain || !domain.includes('.')) {
+    return null;
+  }
+  return domain;
+};
+
+export const listGuildAllowedDomains = async (guildId: string): Promise<string[]> => {
+  const policies = await listGuildActionPolicies(guildId);
+  return policies
+    .filter((p) => p.enabled)
+    .map((p) => parseDomainPolicyActionName(p.actionName))
+    .filter((domain): domain is string => Boolean(domain));
+};
+
+export const upsertGuildDomainPolicy = async (params: {
+  guildId: string;
+  domain: string;
+  allowed: boolean;
+  actorId: string;
+}): Promise<{ domain: string; allowed: boolean }> => {
+  const normalized = normalizeDomainForPolicy(params.domain);
+  if (!normalized || normalized.length < 3 || !normalized.includes('.')) {
+    throw new Error('INVALID_DOMAIN');
+  }
+  await upsertGuildActionPolicy({
+    guildId: params.guildId,
+    actionName: buildDomainPolicyActionName(normalized),
+    enabled: params.allowed,
+    runMode: 'auto',
+    actorId: params.actorId,
+  });
+  return { domain: normalized, allowed: params.allowed };
 };
 
 export const createActionApprovalRequest = async (params: {

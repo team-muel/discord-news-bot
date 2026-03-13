@@ -1,20 +1,81 @@
+import crypto from 'crypto';
+import {
+  buildNewsFingerprint,
+  isNewsFingerprinted,
+  recordNewsFingerprint,
+} from '../newsCaptureDedupService';
 import { getAction } from './actions/registry';
 import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
-import { createActionApprovalRequest, getGuildActionPolicy } from './actionGovernanceStore';
+import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
+import { createMemoryItem } from '../agentMemoryStore';
+
+type FailureDiagnostics = {
+  totalFailures: number;
+  missingAction: number;
+  policyBlocked: number;
+  governanceUnavailable: number;
+  finopsBlocked: number;
+  externalFailures: number;
+  unknownFailures: number;
+};
 
 type SkillActionResult = {
   handled: boolean;
   output: string;
   hasSuccess: boolean;
   externalUnavailable: boolean;
+  diagnostics: FailureDiagnostics;
+};
+
+export type ActionRunnerDiagnosticsSnapshot = {
+  lastUpdatedAt: string | null;
+  totalRuns: number;
+  handledRuns: number;
+  successRuns: number;
+  failedRuns: number;
+  externalUnavailableRuns: number;
+  failureTotals: FailureDiagnostics;
+  trend: {
+    windowSize: number;
+    comparedRuns: number;
+    failureRateDelta: number | null;
+    missingActionDelta: number | null;
+    policyBlockedDelta: number | null;
+    direction: 'up' | 'down' | 'flat' | 'unknown';
+  };
+  topFailureCodes: Array<{
+    code: string;
+    count: number;
+    share: number;
+  }>;
+  recentRuns: Array<{
+    at: string;
+    totalFailures: number;
+    failed: boolean;
+    missingAction: number;
+    policyBlocked: number;
+  }>;
+  lastRun: {
+    handled: boolean;
+    hasSuccess: boolean;
+    externalUnavailable: boolean;
+    diagnostics: FailureDiagnostics;
+  } | null;
+};
+
+type ActionRunnerRunSample = {
+  at: string;
+  failureTotal: number;
+  missingAction: number;
+  policyBlocked: number;
 };
 
 type GoalActionInput = {
@@ -35,12 +96,21 @@ const ACTION_RUNNER_MODE = getActionRunnerMode();
 const ACTION_CACHE_ENABLED = parseBooleanEnv(process.env.ACTION_CACHE_ENABLED, true);
 const ACTION_CACHE_TTL_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000));
 const ACTION_CACHE_MAX_ENTRIES = Math.max(50, parseIntegerEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000));
+const ACTION_NEWS_CAPTURE_ENABLED = parseBooleanEnv(process.env.ACTION_NEWS_CAPTURE_ENABLED, true);
+const ACTION_NEWS_CAPTURE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000));
+const ACTION_NEWS_CAPTURE_MIN_ITEMS = Math.max(1, Math.min(5, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2)));
+const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = Math.max(6, Math.min(24 * 30, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72)));
+const ACTION_NEWS_CAPTURE_MAX_ITEMS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5)));
+const ACTION_NEWS_CAPTURE_SOURCE = String(process.env.ACTION_NEWS_CAPTURE_SOURCE || 'google_news_rss').trim() || 'google_news_rss';
+const ACTION_RUNNER_TREND_WINDOW_RUNS = Math.max(4, Math.min(50, parseIntegerEnv(process.env.ACTION_RUNNER_TREND_WINDOW_RUNS, 10)));
 const DEFAULT_CACHEABLE_ACTIONS = [
   'code.generate',
   'rag.retrieve',
   'news.google.search',
+  'news.verify',
   'community.search',
   'web.fetch',
+  'web.search',
   'youtube.search.first',
   'stock.quote',
   'stock.chart',
@@ -67,7 +137,234 @@ const actionResultCache = new TtlCache<{
 
 const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
 
+const createEmptyDiagnostics = (): FailureDiagnostics => ({
+  totalFailures: 0,
+  missingAction: 0,
+  policyBlocked: 0,
+  governanceUnavailable: 0,
+  finopsBlocked: 0,
+  externalFailures: 0,
+  unknownFailures: 0,
+});
+
+const cloneDiagnostics = (source: FailureDiagnostics): FailureDiagnostics => ({
+  totalFailures: Number(source.totalFailures || 0),
+  missingAction: Number(source.missingAction || 0),
+  policyBlocked: Number(source.policyBlocked || 0),
+  governanceUnavailable: Number(source.governanceUnavailable || 0),
+  finopsBlocked: Number(source.finopsBlocked || 0),
+  externalFailures: Number(source.externalFailures || 0),
+  unknownFailures: Number(source.unknownFailures || 0),
+});
+
+const actionRunnerDiagnosticsState: ActionRunnerDiagnosticsSnapshot = {
+  lastUpdatedAt: null,
+  totalRuns: 0,
+  handledRuns: 0,
+  successRuns: 0,
+  failedRuns: 0,
+  externalUnavailableRuns: 0,
+  failureTotals: createEmptyDiagnostics(),
+  trend: {
+    windowSize: ACTION_RUNNER_TREND_WINDOW_RUNS,
+    comparedRuns: 0,
+    failureRateDelta: null,
+    missingActionDelta: null,
+    policyBlockedDelta: null,
+    direction: 'unknown',
+  },
+  topFailureCodes: [],
+  recentRuns: [],
+  lastRun: null,
+};
+
+const actionRunnerRecentRuns: ActionRunnerRunSample[] = [];
+const actionRunnerFailureCodeCounts = new Map<string, number>();
+
+const round = (value: number): number => Number(value.toFixed(4));
+
+const computeTrendDirection = (deltas: Array<number | null>): 'up' | 'down' | 'flat' | 'unknown' => {
+  const available = deltas.filter((value): value is number => Number.isFinite(value));
+  if (available.length === 0) {
+    return 'unknown';
+  }
+
+  const score = available.reduce((sum, value) => sum + value, 0);
+  if (score > 0.03) {
+    return 'up';
+  }
+  if (score < -0.03) {
+    return 'down';
+  }
+  return 'flat';
+};
+
+const computeTrendSnapshot = () => {
+  const windowSize = ACTION_RUNNER_TREND_WINDOW_RUNS;
+  const latest = actionRunnerRecentRuns.slice(-windowSize);
+  const previous = actionRunnerRecentRuns.slice(-(windowSize * 2), -windowSize);
+  if (latest.length === 0 || previous.length === 0) {
+    return {
+      windowSize,
+      comparedRuns: 0,
+      failureRateDelta: null,
+      missingActionDelta: null,
+      policyBlockedDelta: null,
+      direction: 'unknown' as const,
+    };
+  }
+
+  const failureRate = (samples: ActionRunnerRunSample[]): number => {
+    const failed = samples.filter((sample) => sample.failureTotal > 0).length;
+    return failed / samples.length;
+  };
+  const averageBy = (samples: ActionRunnerRunSample[], key: 'missingAction' | 'policyBlocked'): number => {
+    const total = samples.reduce((sum, sample) => sum + sample[key], 0);
+    return total / samples.length;
+  };
+
+  const failureRateDelta = round(failureRate(latest) - failureRate(previous));
+  const missingActionDelta = round(averageBy(latest, 'missingAction') - averageBy(previous, 'missingAction'));
+  const policyBlockedDelta = round(averageBy(latest, 'policyBlocked') - averageBy(previous, 'policyBlocked'));
+
+  return {
+    windowSize,
+    comparedRuns: latest.length + previous.length,
+    failureRateDelta,
+    missingActionDelta,
+    policyBlockedDelta,
+    direction: computeTrendDirection([failureRateDelta, missingActionDelta, policyBlockedDelta]),
+  };
+};
+
+const computeTopFailureCodes = (): Array<{ code: string; count: number; share: number }> => {
+  const totalFailures = Math.max(0, Number(actionRunnerDiagnosticsState.failureTotals.totalFailures || 0));
+  if (totalFailures <= 0 || actionRunnerFailureCodeCounts.size === 0) {
+    return [];
+  }
+
+  return Array.from(actionRunnerFailureCodeCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([code, count]) => ({
+      code,
+      count,
+      share: round(count / totalFailures),
+    }));
+};
+
+const updateActionRunnerDiagnostics = (result: SkillActionResult) => {
+  const nowIso = new Date().toISOString();
+  actionRunnerDiagnosticsState.lastUpdatedAt = nowIso;
+  actionRunnerDiagnosticsState.totalRuns += 1;
+  if (result.handled) {
+    actionRunnerDiagnosticsState.handledRuns += 1;
+  }
+  if (result.hasSuccess) {
+    actionRunnerDiagnosticsState.successRuns += 1;
+  }
+  if (result.diagnostics.totalFailures > 0) {
+    actionRunnerDiagnosticsState.failedRuns += 1;
+  }
+  if (result.externalUnavailable) {
+    actionRunnerDiagnosticsState.externalUnavailableRuns += 1;
+  }
+
+  const totals = actionRunnerDiagnosticsState.failureTotals;
+  totals.totalFailures += result.diagnostics.totalFailures;
+  totals.missingAction += result.diagnostics.missingAction;
+  totals.policyBlocked += result.diagnostics.policyBlocked;
+  totals.governanceUnavailable += result.diagnostics.governanceUnavailable;
+  totals.finopsBlocked += result.diagnostics.finopsBlocked;
+  totals.externalFailures += result.diagnostics.externalFailures;
+  totals.unknownFailures += result.diagnostics.unknownFailures;
+
+  actionRunnerDiagnosticsState.lastRun = {
+    handled: result.handled,
+    hasSuccess: result.hasSuccess,
+    externalUnavailable: result.externalUnavailable,
+    diagnostics: cloneDiagnostics(result.diagnostics),
+  };
+
+  actionRunnerRecentRuns.push({
+    at: nowIso,
+    failureTotal: Number(result.diagnostics.totalFailures || 0),
+    missingAction: Number(result.diagnostics.missingAction || 0),
+    policyBlocked: Number(result.diagnostics.policyBlocked || 0),
+  });
+  const maxRuns = ACTION_RUNNER_TREND_WINDOW_RUNS * 2;
+  while (actionRunnerRecentRuns.length > maxRuns) {
+    actionRunnerRecentRuns.shift();
+  }
+
+  actionRunnerDiagnosticsState.trend = computeTrendSnapshot();
+  actionRunnerDiagnosticsState.topFailureCodes = computeTopFailureCodes();
+  actionRunnerDiagnosticsState.recentRuns = actionRunnerRecentRuns.map((sample) => ({
+    at: sample.at,
+    totalFailures: sample.failureTotal,
+    failed: sample.failureTotal > 0,
+    missingAction: sample.missingAction,
+    policyBlocked: sample.policyBlocked,
+  }));
+};
+
+export const getActionRunnerDiagnosticsSnapshot = (): ActionRunnerDiagnosticsSnapshot => ({
+  lastUpdatedAt: actionRunnerDiagnosticsState.lastUpdatedAt,
+  totalRuns: actionRunnerDiagnosticsState.totalRuns,
+  handledRuns: actionRunnerDiagnosticsState.handledRuns,
+  successRuns: actionRunnerDiagnosticsState.successRuns,
+  failedRuns: actionRunnerDiagnosticsState.failedRuns,
+  externalUnavailableRuns: actionRunnerDiagnosticsState.externalUnavailableRuns,
+  failureTotals: cloneDiagnostics(actionRunnerDiagnosticsState.failureTotals),
+  trend: {
+    windowSize: actionRunnerDiagnosticsState.trend.windowSize,
+    comparedRuns: actionRunnerDiagnosticsState.trend.comparedRuns,
+    failureRateDelta: actionRunnerDiagnosticsState.trend.failureRateDelta,
+    missingActionDelta: actionRunnerDiagnosticsState.trend.missingActionDelta,
+    policyBlockedDelta: actionRunnerDiagnosticsState.trend.policyBlockedDelta,
+    direction: actionRunnerDiagnosticsState.trend.direction,
+  },
+  topFailureCodes: actionRunnerDiagnosticsState.topFailureCodes.map((item) => ({
+    code: item.code,
+    count: item.count,
+    share: item.share,
+  })),
+  recentRuns: actionRunnerDiagnosticsState.recentRuns.map((sample) => ({
+    at: sample.at,
+    totalFailures: sample.totalFailures,
+    failed: sample.failed,
+    missingAction: sample.missingAction,
+    policyBlocked: sample.policyBlocked,
+  })),
+  lastRun: actionRunnerDiagnosticsState.lastRun
+    ? {
+      handled: actionRunnerDiagnosticsState.lastRun.handled,
+      hasSuccess: actionRunnerDiagnosticsState.lastRun.hasSuccess,
+      externalUnavailable: actionRunnerDiagnosticsState.lastRun.externalUnavailable,
+      diagnostics: cloneDiagnostics(actionRunnerDiagnosticsState.lastRun.diagnostics),
+    }
+    : null,
+});
+
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+
+const csvToSet = (value: string): Set<string> => {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+};
+
+const ACTION_NEWS_CAPTURE_ALLOW_GUILDS = csvToSet(process.env.ACTION_NEWS_CAPTURE_ALLOW_GUILDS || '');
+const ACTION_NEWS_CAPTURE_DENY_GUILDS = csvToSet(process.env.ACTION_NEWS_CAPTURE_DENY_GUILDS || '');
+const ACTION_NEWS_CAPTURE_DENY_USERS = csvToSet(process.env.ACTION_NEWS_CAPTURE_DENY_USERS || '');
+const ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS = new Set(
+  Array.from(csvToSet(process.env.ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS || ''))
+    .map((domain) => domain.toLowerCase().replace(/^\*\./, '').replace(/^www\./, ''))
+    .filter(Boolean),
+);
 
 const stableStringify = (value: unknown): string => {
   if (value === null || value === undefined) return 'null';
@@ -93,6 +390,280 @@ const buildActionCacheKey = (params: {
   const goal = compact(params.goal).toLowerCase().slice(0, 500);
   const args = stableStringify(params.args || {});
   return [params.guildId, params.actionName, goal, args].join('|');
+};
+
+const extractUrlFromArtifact = (artifact: string): string | null => {
+  const lines = String(artifact || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (/^https?:\/\//i.test(line)) {
+      return line;
+    }
+  }
+
+  const inline = String(artifact || '').match(/https?:\/\/\S+/i);
+  return inline?.[0] || null;
+};
+
+type ParsedNewsArtifact = {
+  title: string;
+  url: string;
+  domain: string;
+  publishedAt: string | null;
+  canonicalUrl: string;
+  raw: string;
+};
+
+const extractRequestedUserId = (requestedBy: string): string => {
+  const text = String(requestedBy || '').trim();
+  if (/^\d{6,30}$/.test(text)) {
+    return text;
+  }
+  const match = text.match(/(\d{6,30})/);
+  return match?.[1] || '';
+};
+
+const normalizeDomain = (hostname: string): string => {
+  return String(hostname || '').trim().toLowerCase().replace(/^www\./, '');
+};
+
+const canonicalizeUrl = (urlText: string): string => {
+  try {
+    const url = new URL(urlText);
+    const trackingKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'];
+    for (const key of trackingKeys) {
+      url.searchParams.delete(key);
+    }
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return urlText.trim();
+  }
+};
+
+const parsePublishedAt = (metaText: string): string | null => {
+  const normalized = String(metaText || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return new Date(parsed).toISOString();
+};
+
+const parseNewsArtifact = (artifact: string): ParsedNewsArtifact | null => {
+  const lines = String(artifact || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const url = extractUrlFromArtifact(artifact);
+  if (!url) {
+    return null;
+  }
+
+  let domain = '';
+  try {
+    domain = normalizeDomain(new URL(url).hostname);
+  } catch {
+    return null;
+  }
+
+  const title = (lines[0] && !/^https?:\/\//i.test(lines[0])) ? lines[0] : `news@${domain}`;
+  const metaLine = lines.length >= 3 ? lines[2] : '';
+  const publishedAt = parsePublishedAt(metaLine.includes('|') ? metaLine.split('|').pop() || '' : metaLine);
+
+  return {
+    title,
+    url,
+    domain,
+    publishedAt,
+    canonicalUrl: canonicalizeUrl(url),
+    raw: artifact,
+  };
+};
+
+const isNewsCaptureAllowedByPolicy = async (params: {
+  guildId: string;
+  requestedBy: string;
+}): Promise<boolean> => {
+  if (ACTION_NEWS_CAPTURE_ALLOW_GUILDS.size > 0 && !ACTION_NEWS_CAPTURE_ALLOW_GUILDS.has(params.guildId)) {
+    return false;
+  }
+  if (ACTION_NEWS_CAPTURE_DENY_GUILDS.has(params.guildId)) {
+    return false;
+  }
+
+  const requestedUserId = extractRequestedUserId(params.requestedBy);
+  if (requestedUserId && ACTION_NEWS_CAPTURE_DENY_USERS.has(requestedUserId)) {
+    return false;
+  }
+
+  try {
+    const capturePolicy = await getGuildActionPolicy(params.guildId, 'news.capture.external');
+    if (!capturePolicy.enabled || capturePolicy.runMode === 'disabled' || capturePolicy.runMode === 'approval_required') {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  return true;
+};
+
+const captureExternalNewsMemory = async (params: {
+  guildId: string;
+  requestedBy: string;
+  goal: string;
+  artifacts: string[];
+}) => {
+  if (!ACTION_NEWS_CAPTURE_ENABLED) {
+    return;
+  }
+
+  if (!(await isNewsCaptureAllowedByPolicy({ guildId: params.guildId, requestedBy: params.requestedBy }))) {
+    return;
+  }
+
+  const maxAgeMs = ACTION_NEWS_CAPTURE_MAX_AGE_HOURS * 60 * 60 * 1000;
+  const nowMs = Date.now();
+
+  let dbDomains: Set<string> = new Set();
+  try {
+    const dbDomainList = await listGuildAllowedDomains(params.guildId);
+    dbDomains = new Set(dbDomainList);
+  } catch {
+    return;
+  }
+  const effectiveDomainFilter = new Set([...ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS, ...dbDomains]);
+
+  const parsed = params.artifacts
+    .map((artifact) => parseNewsArtifact(artifact))
+    .filter((item): item is ParsedNewsArtifact => Boolean(item))
+    .filter((item) => {
+      if (effectiveDomainFilter.size === 0) {
+        return true;
+      }
+      for (const allowed of effectiveDomainFilter) {
+        if (item.domain === allowed || item.domain.endsWith(`.${allowed}`)) {
+          return true;
+        }
+      }
+      return false;
+    })
+    .filter((item) => {
+      if (!item.publishedAt) {
+        return true;
+      }
+      const publishedMs = Date.parse(item.publishedAt);
+      if (!Number.isFinite(publishedMs)) {
+        return true;
+      }
+      return (nowMs - publishedMs) <= maxAgeMs;
+    });
+
+  const deduped: ParsedNewsArtifact[] = [];
+  const seenUrl = new Set<string>();
+  const seenTitle = new Set<string>();
+  for (const item of parsed) {
+    const titleKey = item.title.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (seenUrl.has(item.canonicalUrl) || seenTitle.has(titleKey)) {
+      continue;
+    }
+    seenUrl.add(item.canonicalUrl);
+    seenTitle.add(titleKey);
+    deduped.push(item);
+    if (deduped.length >= ACTION_NEWS_CAPTURE_MAX_ITEMS) {
+      break;
+    }
+  }
+
+  if (deduped.length < ACTION_NEWS_CAPTURE_MIN_ITEMS) {
+    return;
+  }
+
+  const links = deduped.map((item) => item.canonicalUrl);
+
+  if (links.length === 0) {
+    return;
+  }
+
+  const fingerprint = buildNewsFingerprint({
+    guildId: params.guildId,
+    goal: params.goal,
+    canonicalUrls: links,
+  });
+  const digest = fingerprint.slice(0, 16);
+
+  const alreadySeen = await isNewsFingerprinted({
+    guildId: params.guildId,
+    fingerprint,
+    ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
+  });
+  if (alreadySeen) {
+    return;
+  }
+
+  const uniqueDomains = new Set(deduped.map((item) => item.domain)).size;
+  const freshWithin24h = deduped.filter((item) => {
+    if (!item.publishedAt) {
+      return false;
+    }
+    const ts = Date.parse(item.publishedAt);
+    return Number.isFinite(ts) && (nowMs - ts) <= 24 * 60 * 60 * 1000;
+  }).length;
+  const diversityScore = uniqueDomains / Math.max(1, deduped.length);
+  const freshnessScore = freshWithin24h / Math.max(1, deduped.length);
+  const coverageScore = Math.min(1, deduped.length / ACTION_NEWS_CAPTURE_MAX_ITEMS);
+  const qualityScore = Math.max(0, Math.min(1, 0.4 * coverageScore + 0.35 * diversityScore + 0.25 * freshnessScore));
+  const confidence = Math.max(0.45, Math.min(0.85, 0.5 + qualityScore * 0.3));
+
+  const compactGoal = params.goal.replace(/\s+/g, ' ').trim().slice(0, 90) || '외부 뉴스';
+  const content = [
+    `query: ${compactGoal}`,
+    `source: ${ACTION_NEWS_CAPTURE_SOURCE}`,
+    `quality_score: ${qualityScore.toFixed(3)}`,
+    `unique_domains: ${uniqueDomains}`,
+    `fresh_within_24h: ${freshWithin24h}`,
+    'items:',
+    ...deduped.map((item) => `- ${item.raw.replace(/\r?\n/g, ' | ')}`),
+  ].join('\n');
+
+  try {
+    await createMemoryItem({
+      guildId: params.guildId,
+      type: 'semantic',
+      title: `외부뉴스: ${compactGoal}`,
+      content,
+      tags: [
+        'external-news',
+        'google-news',
+        'auto-captured',
+        `quality:${Math.round(qualityScore * 100)}`,
+        `domains:${uniqueDomains}`,
+        `dedupe:${digest}`,
+      ],
+      confidence,
+      actorId: String(params.requestedBy || 'system:action-runner'),
+      source: {
+        sourceKind: 'system',
+        sourceRef: links[0],
+        excerpt: deduped[0]?.raw.slice(0, 500) || undefined,
+      },
+    });
+    await recordNewsFingerprint({
+      guildId: params.guildId,
+      fingerprint,
+      goal: params.goal,
+      ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
+    });
+  } catch {
+    // Best-effort capture: action response should not fail because of memory persistence.
+  }
 };
 
 const isCircuitOpen = (actionName: string): boolean => {
@@ -162,24 +733,64 @@ const isExternalUnavailableError = (errorCode?: string): boolean => {
     || code === 'WEB_FETCH_FAILED';
 };
 
+const classifyFailureCode = (code: string | undefined): 'missingAction' | 'policyBlocked' | 'governanceUnavailable' | 'finopsBlocked' | 'externalFailures' | 'unknownFailures' => {
+  const error = String(code || '').trim().toUpperCase();
+  if (!error) {
+    return 'unknownFailures';
+  }
+  if (error === 'ACTION_NOT_IMPLEMENTED' || error === 'DYNAMIC_WORKER_NOT_FOUND') {
+    return 'missingAction';
+  }
+  if (error === 'ACTION_NOT_ALLOWED' || error === 'ACTION_DISABLED_BY_POLICY' || error === 'ACTION_APPROVAL_REQUIRED') {
+    return 'policyBlocked';
+  }
+  if (error === 'ACTION_POLICY_UNAVAILABLE') {
+    return 'governanceUnavailable';
+  }
+  if (error.includes('FINOPS') || error.includes('BUDGET')) {
+    return 'finopsBlocked';
+  }
+  if (isExternalUnavailableError(error)) {
+    return 'externalFailures';
+  }
+  return 'unknownFailures';
+};
+
 export const runGoalActions = async (input: GoalActionInput): Promise<SkillActionResult> => {
+  const diagnostics = createEmptyDiagnostics();
+
+  const finish = (result: SkillActionResult): SkillActionResult => {
+    updateActionRunnerDiagnostics(result);
+    return result;
+  };
+
+  const recordFailureCategory = (code: string | undefined) => {
+    diagnostics.totalFailures += 1;
+    const normalizedCode = String(code || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
+    actionRunnerFailureCodeCounts.set(normalizedCode, (actionRunnerFailureCodeCounts.get(normalizedCode) || 0) + 1);
+    const key = classifyFailureCode(normalizedCode);
+    diagnostics[key] += 1;
+  };
+
   if (!ACTION_RUNNER_ENABLED) {
-    return {
+    return finish({
       handled: false,
       output: '',
       hasSuccess: false,
       externalUnavailable: false,
-    };
+      diagnostics,
+    });
   }
 
   const chain = await planActions(input.goal);
   if (!chain.actions || chain.actions.length === 0) {
-    return {
+    return finish({
       handled: false,
       output: '',
       hasSuccess: false,
       externalUnavailable: false,
-    };
+      diagnostics,
+    });
   }
 
   const lines: string[] = ['요청 결과'];
@@ -200,6 +811,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       });
 
       if (!finopsDecision.allow) {
+        recordFailureCategory(finopsDecision.reason);
         lines.push(`액션: ${planned.actionName}`);
         lines.push(`상태: 실패 (${finopsDecision.reason})`);
         await logActionExecutionEvent({
@@ -223,6 +835,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     }
 
     if (!isActionAllowed(planned.actionName)) {
+      recordFailureCategory('ACTION_NOT_ALLOWED');
       lines.push(`액션: ${planned.actionName}`);
       lines.push('상태: 실패 (ACTION_NOT_ALLOWED)');
       await logActionExecutionEvent({
@@ -246,11 +859,57 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
 
     const action = getAction(planned.actionName) ?? getDynamicAction(planned.actionName);
     if (!action) {
+      recordFailureCategory('ACTION_NOT_IMPLEMENTED');
+      lines.push(`액션: ${planned.actionName}`);
+      lines.push('상태: 실패 (ACTION_NOT_IMPLEMENTED)');
+      await logActionExecutionEvent({
+        guildId: input.guildId,
+        requestedBy: input.requestedBy,
+        goal: input.goal,
+        actionName: planned.actionName,
+        ok: false,
+        summary: '요청된 액션이 아직 구현되지 않았습니다.',
+        artifacts: [],
+        verification: ['action registry lookup miss'],
+        durationMs: 0,
+        retryCount: 0,
+        circuitOpen: false,
+        error: 'ACTION_NOT_IMPLEMENTED',
+        estimatedCostUsd: 0,
+        finopsMode,
+      });
+      externalUnavailable = true;
       continue;
     }
 
-    const governance = await getGuildActionPolicy(input.guildId, action.name);
+    let governance;
+    try {
+      governance = await getGuildActionPolicy(input.guildId, action.name);
+    } catch {
+      recordFailureCategory('ACTION_POLICY_UNAVAILABLE');
+      lines.push(`액션: ${action.name}`);
+      lines.push('상태: 실패 (ACTION_POLICY_UNAVAILABLE)');
+      await logActionExecutionEvent({
+        guildId: input.guildId,
+        requestedBy: input.requestedBy,
+        goal: input.goal,
+        actionName: action.name,
+        ok: false,
+        summary: '길드 액션 정책 조회 실패로 실행이 차단되었습니다.',
+        artifacts: [],
+        verification: ['tenant action policy unavailable'],
+        durationMs: 0,
+        retryCount: 0,
+        circuitOpen: false,
+        error: 'ACTION_POLICY_UNAVAILABLE',
+        estimatedCostUsd: 0,
+        finopsMode,
+      });
+      continue;
+    }
+
     if (!governance.enabled || governance.runMode === 'disabled') {
+      recordFailureCategory('ACTION_DISABLED_BY_POLICY');
       lines.push(`액션: ${action.name}`);
       lines.push('상태: 실패 (ACTION_DISABLED_BY_POLICY)');
       await logActionExecutionEvent({
@@ -277,6 +936,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     const effectiveRunMode = autoApprovalRequired ? 'approval_required' : governance.runMode;
 
     if (effectiveRunMode === 'approval_required') {
+      recordFailureCategory('ACTION_APPROVAL_REQUIRED');
       const request = await createActionApprovalRequest({
         guildId: input.guildId,
         requestedBy: input.requestedBy,
@@ -335,6 +995,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     }
 
     if (isCircuitOpen(action.name)) {
+      recordFailureCategory('CIRCUIT_OPEN');
       const message = `상태: 실패 (CIRCUIT_OPEN)`;
       lines.push(`액션: ${action.name}`);
       lines.push(message);
@@ -489,6 +1150,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     if (final.ok) {
       recordSuccess(action.name);
       hasSuccess = true;
+      if (final.name === 'news.google.search') {
+        await captureExternalNewsMemory({
+          guildId: input.guildId,
+          requestedBy: input.requestedBy,
+          goal: input.goal,
+          artifacts: final.artifacts,
+        });
+      }
       if (cacheEligible && cacheKey) {
         actionResultCache.set(cacheKey, {
           name: final.name,
@@ -499,6 +1168,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       }
     } else {
       recordFailure(action.name);
+      recordFailureCategory(final.error);
       if (isExternalUnavailableError(final.error)) {
         externalUnavailable = true;
       }
@@ -537,18 +1207,31 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
   }
 
   if (!handledAny) {
-    return {
+    return finish({
       handled: false,
       output: '',
       hasSuccess: false,
       externalUnavailable: false,
-    };
+      diagnostics,
+    });
   }
 
-  return {
+  if (diagnostics.totalFailures > 0) {
+    lines.push('[실패 진단]');
+    lines.push(`total=${diagnostics.totalFailures}`);
+    lines.push(`missing_action=${diagnostics.missingAction}`);
+    lines.push(`policy_blocked=${diagnostics.policyBlocked}`);
+    lines.push(`governance_unavailable=${diagnostics.governanceUnavailable}`);
+    lines.push(`finops_blocked=${diagnostics.finopsBlocked}`);
+    lines.push(`external_failures=${diagnostics.externalFailures}`);
+    lines.push(`unknown_failures=${diagnostics.unknownFailures}`);
+  }
+
+  return finish({
     handled: true,
     output: lines.filter(Boolean).join('\n\n'),
     hasSuccess,
     externalUnavailable,
-  };
+    diagnostics,
+  });
 };

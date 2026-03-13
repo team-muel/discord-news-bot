@@ -29,13 +29,14 @@ export const SIMPLE_COMMAND_ALLOWLIST = new Set([
   '세션',
   '관리설정',
   '잊어줘',
+  '학습',
 ]);
 export const LEGACY_SESSION_COMMANDS_ENABLED = parseBooleanEnv(
   process.env.LEGACY_SESSION_COMMANDS_ENABLED,
   false,
 );
 export const LEGACY_SESSION_COMMAND_NAMES = new Set([
-  '시작', '스킬목록', '온보딩', '학습', '중지',
+  '시작', '스킬목록', '온보딩', '중지',
 ]);
 export const LEGACY_SUBSCRIBE_COMMAND_ENABLED = parseBooleanEnv(
   process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED,
@@ -212,6 +213,9 @@ const ALL_COMMANDS = [
       sub.setName('조회').setDescription('현재 서버에서 작동 중인 세션 조회'),
     )
     .addSubcommand((sub) =>
+      sub.setName('이력').setDescription('최근 완료된 세션 산출물 이력 조회'),
+    )
+    .addSubcommand((sub) =>
       sub.setName('제거').setDescription('현재 서버에서 작동 중인 세션 제거'),
     ),
   new SlashCommandBuilder()
@@ -254,9 +258,28 @@ const ALL_COMMANDS = [
     .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('정책')
-    .setDescription('현재 서버 동시 세션 한도와 정책을 조회합니다')
+    .setDescription('서버 운영 정책을 조회하고 설정합니다')
     .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand((sub) =>
+      sub.setName('조회').setDescription('현재 서버 정책 전체 조회 (세션 한도, 도메인 허용 목록 등)'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('도메인추가')
+        .setDescription('뉴스 자동 캡처 허용 도메인 추가')
+        .addStringOption((o) =>
+          o.setName('도메인').setDescription('예: reuters.com, bloomberg.com').setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('도메인삭제')
+        .setDescription('뉴스 자동 캡처 허용 목록에서 도메인 삭제')
+        .addStringOption((o) =>
+          o.setName('도메인').setDescription('삭제할 도메인').setRequired(true),
+        ),
+    ),
   new SlashCommandBuilder()
     .setName('관리설정')
     .setDescription('서버 데이터 학습 허용(on/off)을 설정합니다')
@@ -303,11 +326,16 @@ const ALL_COMMANDS = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('학습')
-    .setDescription('현재 길드 일일 학습/회고 실행')
+    .setDescription('내 학습 자동 메모리 저장 설정을 조회하거나 변경합니다')
     .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addStringOption((o) =>
-      o.setName('목표').setDescription('선택: 기본 회고 목표 대신 사용자 지정 목표').setRequired(false),
+    .addSubcommand((sub) =>
+      sub.setName('조회').setDescription('내 학습 저장 활성화 여부 확인'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('활성화').setDescription('내 대화 내용을 학습 메모리에 자동 저장합니다'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('비활성화').setDescription('내 대화 내용을 학습 메모리에 저장하지 않습니다 (임시 옵트아웃)'),
     ),
   new SlashCommandBuilder()
     .setName('중지')

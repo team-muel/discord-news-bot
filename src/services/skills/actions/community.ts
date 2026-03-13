@@ -2,6 +2,16 @@ import type { ActionDefinition } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { extractQuery } from './queryUtils';
 
+const buildCommunityFallbackLinks = (query: string): string[] => {
+  const encoded = encodeURIComponent(query);
+  return [
+    `Reddit 검색\\nhttps://www.reddit.com/search/?q=${encoded}`,
+    `Naver 카페/게시글 검색\\nhttps://search.naver.com/search.naver?where=article&query=${encoded}`,
+    `DCInside 통합검색\\nhttps://search.dcinside.com/combine/q/${encoded}`,
+    `Ruliweb 검색\\nhttps://bbs.ruliweb.com/search?search_type=subject_content&search_key=${encoded}`,
+  ];
+};
+
 const extractCommunityQuery = (goal: string, args?: Record<string, unknown>): string => {
   return extractQuery({
     goal,
@@ -26,6 +36,8 @@ export const communitySearchAction: ActionDefinition = {
       };
     }
 
+    const fallbackArtifacts = buildCommunityFallbackLinks(query);
+
     const delegated = await runDelegatedAction({
       actionName: 'community.search',
       workerKind: 'community',
@@ -35,27 +47,25 @@ export const communitySearchAction: ActionDefinition = {
       strictFailureSummary: '커뮤니티 워커 호출 실패',
       respectStrictRouting: false,
       onWorkerMissing: () => ({
-        ok: false,
+        ok: true,
         name: 'community.search',
-        summary: '커뮤니티 워커가 구성되지 않았습니다.',
-        artifacts: ['MCP_COMMUNITY_WORKER_URL is empty'],
-        verification: ['delegation-only policy'],
-        error: 'COMMUNITY_WORKER_NOT_CONFIGURED',
+        summary: '커뮤니티 워커 미구성: 수동 검색 링크를 제공합니다.',
+        artifacts: fallbackArtifacts,
+        verification: ['community worker missing', 'fallback links returned'],
       }),
       onEmptyResult: (blocks) => ({
-        ok: false,
+        ok: true,
         name: 'community.search',
-        summary: '커뮤니티 워커가 유효한 결과를 반환하지 않았습니다.',
-        artifacts: blocks,
-        verification: ['delegated tool returned empty/error'],
-        error: 'COMMUNITY_RESULT_EMPTY',
+        summary: '커뮤니티 워커 결과가 비어 있어 수동 검색 링크로 대체했습니다.',
+        artifacts: blocks.length > 0 ? [...blocks, ...fallbackArtifacts] : fallbackArtifacts,
+        verification: ['delegated tool returned empty/error', 'fallback links returned'],
       }),
       onWorkerError: (error) => ({
-        ok: false,
+        ok: true,
         name: 'community.search',
-        summary: '커뮤니티 워커 호출 실패',
-        artifacts: [],
-        verification: ['delegated tool call failed'],
+        summary: '커뮤니티 워커 호출 실패: 수동 검색 링크를 제공합니다.',
+        artifacts: fallbackArtifacts,
+        verification: ['delegated tool call failed', 'fallback links returned'],
         error: error instanceof Error ? error.message : String(error),
       }),
     });
@@ -64,11 +74,11 @@ export const communitySearchAction: ActionDefinition = {
     }
 
     return {
-      ok: false,
+      ok: true,
       name: 'community.search',
-      summary: '커뮤니티 워커 호출 실패',
-      artifacts: [],
-      verification: ['delegated tool call failed'],
+      summary: '커뮤니티 워커 호출 실패: 수동 검색 링크를 제공합니다.',
+      artifacts: fallbackArtifacts,
+      verification: ['delegated tool call failed', 'fallback links returned'],
       error: 'COMMUNITY_WORKER_CALL_FAILED',
     };
   },

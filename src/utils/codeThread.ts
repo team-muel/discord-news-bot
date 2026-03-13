@@ -1,4 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type Message } from 'discord.js';
+import { DISCORD_MESSAGES } from '../discord/messages';
 import type { AgentSession } from '../services/multiAgentService';
 import { saveArtifact, setArtifactThreadId } from './sessionArtifactStore';
 
@@ -21,19 +22,19 @@ export const hasCodeBlocksInText = (text: string): boolean => /```[\s\S]+?```/.t
 export const buildCodeActionRow = (sessionId: string) => new ActionRowBuilder<ButtonBuilder>().addComponents(
   new ButtonBuilder()
     .setCustomId(`code_regen:${sessionId}`)
-    .setLabel('🔄 재생성')
+    .setLabel(DISCORD_MESSAGES.bot.codeActionRegen)
     .setStyle(ButtonStyle.Primary),
   new ButtonBuilder()
     .setCustomId(`code_refactor:${sessionId}`)
-    .setLabel('🔧 리팩터')
+    .setLabel(DISCORD_MESSAGES.bot.codeActionRefactor)
     .setStyle(ButtonStyle.Secondary),
   new ButtonBuilder()
     .setCustomId(`code_test:${sessionId}`)
-    .setLabel('🧪 테스트 추가')
+    .setLabel(DISCORD_MESSAGES.bot.codeActionTest)
     .setStyle(ButtonStyle.Secondary),
   new ButtonBuilder()
     .setCustomId(`code_history:${sessionId}`)
-    .setLabel('📋 이력')
+    .setLabel(DISCORD_MESSAGES.bot.codeActionHistory)
     .setStyle(ButtonStyle.Secondary),
 );
 
@@ -77,13 +78,9 @@ export const tryPostCodeThread = async (
   });
   setArtifactThreadId(session.id, thread.id);
 
-  await thread.send([
-    '**💻 코드 작업 세션**',
-    `요청: ${session.goal.slice(0, 200)}`,
-    `세션: \`${session.id}\``,
-    `파일 ${blocks.length}개 생성됨.`,
-    '아래 버튼으로 재생성·리팩터·테스트 추가를 이어서 할 수 있습니다.',
-  ].join('\n'));
+  await thread.send(
+    DISCORD_MESSAGES.bot.codeThreadHeaderLines(session.goal.slice(0, 200), session.id, blocks.length).join('\n'),
+  );
 
   for (const [i, block] of blocks.entries()) {
     const safe = block.length > DISCORD_MSG_LIMIT

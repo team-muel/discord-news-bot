@@ -3,6 +3,7 @@
  * No service imports. No side-effects on load.
  */
 import type { ChatInputCommandInteraction } from 'discord.js';
+import { DISCORD_MESSAGES } from './messages';
 
 // ─── Colour palette ───────────────────────────────────────────────────────────
 export const EMBED_INFO    = 0x2f80ed;
@@ -27,7 +28,7 @@ export const buildUserCard = (title: string, description: string, color = EMBED_
       title,
       description: String(description || '').slice(0, 3900),
       color,
-      footer: { text: 'Muel for Users' },
+      footer: { text: DISCORD_MESSAGES.ui.footerUser },
     },
   ],
 });
@@ -45,9 +46,9 @@ export const buildAdminCard = (
       description: String(summary || '').slice(0, 2000),
       fields:
         details.length > 0
-          ? [{ name: '상세 정보', value: details.join('\n').slice(0, 1000) }]
+          ? [{ name: DISCORD_MESSAGES.ui.detailsFieldTitle, value: details.join('\n').slice(0, 1000) }]
           : undefined,
-      footer: { text: 'Muel for Admins' },
+      footer: { text: DISCORD_MESSAGES.ui.footerAdmin },
     },
   ],
 });
