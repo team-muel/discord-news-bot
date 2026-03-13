@@ -12,7 +12,7 @@ import { parseBooleanEnv } from '../utils/env';
 
 export const SIMPLE_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED || 'true').toLowerCase());
-export const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움말', '설정', '구독', '로그인']);
+export const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움말', '설정', '구독', '로그인', '물어봐', '문서']);
 export const LEGACY_SESSION_COMMANDS_ENABLED = parseBooleanEnv(
   process.env.LEGACY_SESSION_COMMANDS_ENABLED,
   false,
@@ -129,6 +129,30 @@ const ALL_COMMANDS = [
           ChannelType.PrivateThread,
           ChannelType.AnnouncementThread,
         )
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName('물어봐')
+    .setDescription('Obsidian 문서 기반으로 질문에 답해드립니다')
+    .setDMPermission(false)
+    .addStringOption((o) =>
+      o.setName('질문').setDescription('예: 트레이딩 전략이 어떻게 구성되어 있나요?').setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName('문서')
+    .setDescription('Obsidian vault에서 관련 문서를 검색합니다')
+    .setDMPermission(false)
+    .addStringOption((o) =>
+      o.setName('검색어').setDescription('예: 아키텍처, 트레이딩, 온보딩').setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
         .setRequired(false),
     ),
   new SlashCommandBuilder()

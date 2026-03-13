@@ -36,6 +36,8 @@ import {
   startAgentSession,
 } from './services/multiAgentService';
 import { isAnyLlmConfigured } from './services/llmClient';
+import { queryObsidianRAG, initObsidianRAG } from './services/obsidianRagService';
+import { generateText } from './services/llmClient';
 import {
   getAgentOpsSnapshot,
   onGuildJoined,
@@ -118,6 +120,7 @@ import {
 import { createAdminHandlers } from './discord/commands/admin';
 import { createAgentHandlers } from './discord/commands/agent';
 import { createVibeHandlers } from './discord/commands/vibe';
+import { createDocsHandlers } from './discord/commands/docs';
 import { registerSlashCommands as registerSlashCommandsFromLifecycle } from './discord/lifecycle';
 import { isStockFeatureEnabled } from './services/stockService';
 
@@ -460,6 +463,14 @@ const agentHandlers = createAgentHandlers({
   getErrorMessage,
   getChain,
   listGuildArtifacts,
+});
+
+const docsHandlers = createDocsHandlers({
+  getReplyVisibility,
+  queryObsidianRAG,
+  generateText,
+  isAnyLlmConfigured,
+  getErrorMessage,
 });
 
 const attachCommandHandlers = () => {
@@ -823,6 +834,14 @@ const attachCommandHandlers = () => {
         }
         case '만들어줘': {
           await vibeHandlers.handleMakeCommand(interaction);
+          return;
+        }
+        case '물어봐': {
+          await docsHandlers.handleAskCommand(interaction);
+          return;
+        }
+        case '문서': {
+          await docsHandlers.handleDocsCommand(interaction);
           return;
         }
         case '관리자': {

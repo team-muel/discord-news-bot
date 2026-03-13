@@ -3,6 +3,7 @@ import { client, startBot } from './src/bot';
 import { setDefaultResultOrder } from 'dns';
 import logger from './src/logger';
 import initMonitoring from './src/init';
+import { initObsidianRAG } from './src/services/obsidianRagService';
 
 // Initialize monitoring (Sentry) if configured
 initMonitoring();
@@ -33,6 +34,8 @@ if (!token) {
 (async () => {
   try {
     await startBot(token);
+    // Initialize Obsidian RAG after bot is ready (non-blocking)
+    initObsidianRAG().catch((err) => logger.warn('[BOOT] Obsidian RAG init failed (non-fatal): %o', err));
     logger.info('Muel bot is initiating...');
   } catch (err) {
     logger.error('Failed to start bot: %o', err);
