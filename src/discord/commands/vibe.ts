@@ -15,6 +15,7 @@ type VibeDeps = {
 };
 
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
+const fallbackRequestCache = new Map<string, string>();
 
 const inferAiModeFromLabel = (value: string): 'ai_chat' | 'ai_utility' | 'off' | null => {
   const label = String(value || '').toLowerCase();
@@ -65,11 +66,15 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       return;
     }
 
+    const cacheKey = `${interaction.guildId}:${interaction.user.id}`;
+    let runtimeGoal = request;
     if (deps.codingIntentPattern.test(request)) {
+      fallbackRequestCache.set(cacheKey, request);
+      runtimeGoal = `코드로 구현해줘: ${request}`;
       await interaction.editReply(buildUserCard('💡 팁', [
         '코드·스크립트 작성 요청이시군요!',
-        '아직 `/해줘`는 코드를 직접 작성하는 기능이 완전히 연결되어 있지 않아요.',
-        '앞으로는 **`/만들어줘`** 를 써보세요. 코드 파일을 스레드로 바로 올려드립니다 🧵',
+        '`/해줘`에서 실행이 어렵거나 미구현된 요청은 `/만들어줘` 세션으로 자동 이관합니다.',
+        '요청을 캐시하고 코드 세션을 바로 시작할게요.',
         '',
         '이번엔 그냥 진행할게요 👇',
       ].join('\n'), EMBED_INFO));
@@ -77,7 +82,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     let session: AgentSession;
     try {
-      session = deps.startVibeSession(interaction.guildId, interaction.user.id, request);
+      session = deps.startVibeSession(interaction.guildId, interaction.user.id, runtimeGoal);
     } catch (error) {
       await interaction.editReply(buildUserCard('작업 시작 실패', deps.getErrorMessage(error), EMBED_ERROR));
       return;
@@ -90,7 +95,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       '완료 즉시 결과물만 전달합니다.',
     ].join('\n'), EMBED_INFO));
 
-    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard('진행 상태', content, EMBED_INFO)) }, session.id, request, { showDebugBlocks: false, maxLinks: 2 });
+    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard('진행 상태', content, EMBED_INFO)) }, session.id, runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
 
     if (deps.codeThreadEnabled && shared) {
       const completed = getAgentSession(session.id);

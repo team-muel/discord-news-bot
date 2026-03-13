@@ -505,12 +505,47 @@ const attachCommandHandlers = () => {
 
     const CODE_BUTTON_ACTIONS = new Set(['code_regen', 'code_refactor', 'code_test', 'code_history']);
     const WORKER_BUTTON_ACTIONS = new Set(['worker_propose', 'worker_approve', 'worker_reject', 'worker_refactor']);
-    if (!CODE_BUTTON_ACTIONS.has(action) && !WORKER_BUTTON_ACTIONS.has(action)) {
+    const SESSION_BUTTON_ACTIONS = new Set(['session_run', 'session_remove']);
+    if (!CODE_BUTTON_ACTIONS.has(action) && !WORKER_BUTTON_ACTIONS.has(action) && !SESSION_BUTTON_ACTIONS.has(action)) {
       return;
     }
 
     if (!interaction.guildId) {
       await interaction.reply({ content: '서버 채널에서만 사용할 수 있습니다.', ephemeral: true });
+      return;
+    }
+
+    // ── Session control button handlers ─────────────────────────────────────
+    if (SESSION_BUTTON_ACTIONS.has(action)) {
+      if (!(await isUserAdmin(interaction.user.id))) {
+        await interaction.reply({ content: '⛔ 세션 제어는 관리자 권한이 필요합니다.', ephemeral: true });
+        return;
+      }
+
+      const target = getAgentSession(parentSessionId);
+      if (!target || target.guildId !== interaction.guildId) {
+        await interaction.reply({ content: '세션을 찾을 수 없습니다. 이미 종료되었을 수 있습니다.', ephemeral: true });
+        return;
+      }
+
+      if (action === 'session_run') {
+        try {
+          const replay = startAgentSession({
+            guildId: interaction.guildId,
+            requestedBy: interaction.user.id,
+            goal: target.goal,
+            skillId: target.requestedSkillId,
+            priority: target.priority,
+          });
+          await interaction.reply({ content: `▶️ 세션 실행 시작: ${replay.id}`, ephemeral: true });
+        } catch (error) {
+          await interaction.reply({ content: `실행 실패: ${getErrorMessage(error)}`, ephemeral: true });
+        }
+        return;
+      }
+
+      const result = cancelAgentSession(parentSessionId);
+      await interaction.reply({ content: result.ok ? `🛑 세션 제거 요청 완료: ${parentSessionId}` : `세션 제거 실패: ${result.message}`, ephemeral: true });
       return;
     }
 
@@ -792,6 +827,7 @@ const attachCommandHandlers = () => {
           });
           return;
         }
+        case 'help':
         case '도움말': {
           await adminHandlers.handleHelpCommand(interaction);
           return;
@@ -802,6 +838,10 @@ const attachCommandHandlers = () => {
         }
         case '로그인': {
           await adminHandlers.handleLoginCommand(interaction);
+          return;
+        }
+        case '뮤엘': {
+          await vibeHandlers.handleVibeCommand(interaction);
           return;
         }
         case '주가': {
@@ -851,6 +891,10 @@ const attachCommandHandlers = () => {
           });
           return;
         }
+        case '관리설정': {
+          await adminHandlers.handleManageSettingsCommand(interaction);
+          return;
+        }
         case '시작': {
           if (!LEGACY_SESSION_COMMANDS_ENABLED) {
             await replyLegacySessionRedirect(interaction);
@@ -860,11 +904,7 @@ const attachCommandHandlers = () => {
           return;
         }
         case '상태': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
-          await agentHandlers.handleAgentCommand(interaction, '상태');
+          await adminHandlers.handleStatusCommand(interaction);
           return;
         }
         case '스킬목록': {
@@ -876,10 +916,6 @@ const attachCommandHandlers = () => {
           return;
         }
         case '정책': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
           await agentHandlers.handleAgentCommand(interaction, '정책');
           return;
         }

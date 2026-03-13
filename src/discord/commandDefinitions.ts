@@ -12,13 +12,29 @@ import { parseBooleanEnv } from '../utils/env';
 
 export const SIMPLE_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED || 'true').toLowerCase());
-export const SIMPLE_COMMAND_ALLOWLIST = new Set(['ping', '도움말', '설정', '구독', '로그인', '물어봐', '문서']);
+export const SIMPLE_COMMAND_ALLOWLIST = new Set([
+  'ping',
+  'help',
+  '도움말',
+  '로그인',
+  '뮤엘',
+  '구독',
+  '해줘',
+  '만들어줘',
+  '주가',
+  '차트',
+  '상태',
+  '설정',
+  '정책',
+  '세션',
+  '관리설정',
+]);
 export const LEGACY_SESSION_COMMANDS_ENABLED = parseBooleanEnv(
   process.env.LEGACY_SESSION_COMMANDS_ENABLED,
   false,
 );
 export const LEGACY_SESSION_COMMAND_NAMES = new Set([
-  '시작', '상태', '스킬목록', '정책', '온보딩', '학습', '중지',
+  '시작', '스킬목록', '온보딩', '학습', '중지',
 ]);
 export const LEGACY_SUBSCRIBE_COMMAND_ENABLED = parseBooleanEnv(
   process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED,
@@ -47,6 +63,9 @@ const ALL_COMMANDS = [
     .setName('ping')
     .setDescription('Check if the bot is responsive'),
   new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('사용 가능한 명령어 안내'),
+  new SlashCommandBuilder()
     .setName('도움말')
     .setDescription('사용 가능한 명령어 안내'),
   new SlashCommandBuilder()
@@ -64,6 +83,18 @@ const ALL_COMMANDS = [
     .setName('로그인')
     .setDescription('내 계정으로 봇 기능 사용 가능 여부를 진단합니다')
     .setDMPermission(false),
+  new SlashCommandBuilder()
+    .setName('뮤엘')
+    .setDescription('Muel과 바로 대화합니다')
+    .setDMPermission(false)
+    .addStringOption((o) =>
+      o.setName('요청').setDescription('예: 오늘 해야 할 일 정리해줘').setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+        .setRequired(false),
+    ),
   new SlashCommandBuilder()
     .setName('주가')
     .setDescription('주식 현재 가격 조회')
@@ -181,39 +212,14 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('세션')
-    .setDescription('자동화 세션 추가/조회/제거')
+    .setDescription('현재 서버 세션 조회/제거')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) =>
-      sub.setName('추가').setDescription('새 자동화 세션 실행')
-        .addStringOption((o) =>
-          o.setName('스킬').setDescription('실행할 스킬(미입력 시 자동 선택)').setRequired(false)
-            .addChoices(
-              { name: 'ops-plan', value: 'ops-plan' },
-              { name: 'ops-execution', value: 'ops-execution' },
-              { name: 'ops-critique', value: 'ops-critique' },
-              { name: 'guild-onboarding-blueprint', value: 'guild-onboarding-blueprint' },
-              { name: 'incident-review', value: 'incident-review' },
-              { name: 'webhook', value: 'webhook' },
-            ),
-        )
-        .addStringOption((o) =>
-          o.setName('요청').setDescription('하고 싶은 작업(미입력 시 기본 실행안 생성)').setRequired(false),
-        )
-        .addStringOption((o) =>
-          o.setName('설명').setDescription('추가 설명(선택)').setRequired(false),
-        )
-        .addStringOption((o) =>
-          o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-            .setRequired(false),
-        ),
+      sub.setName('조회').setDescription('현재 서버에서 작동 중인 세션 조회'),
     )
     .addSubcommand((sub) =>
-      sub.setName('이력').setDescription('이 길드의 코드 아티팩트 이력 조회')
-        .addStringOption((o) =>
-          o.setName('세션아이디').setDescription('특정 세션 ID의 전체 수정 체인 조회 (생략 시 최근 목록)').setRequired(false),
-        ),
+      sub.setName('제거').setDescription('현재 서버에서 작동 중인 세션 제거'),
     ),
   new SlashCommandBuilder()
     .setName('시작')
@@ -251,31 +257,26 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('상태')
-    .setDescription('최근 세션 또는 특정 세션 상태 확인')
+    .setDescription('봇과 자동화 상태 확인')
+    .setDMPermission(false),
+  new SlashCommandBuilder()
+    .setName('정책')
+    .setDescription('현재 서버 동시 세션 한도 및 운영 정책 조회')
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('관리설정')
+    .setDescription('서버 데이터 학습 허용 설정')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
-      o.setName('종류').setDescription('운영/세션/전체 중 표시할 상태 유형')
+      o.setName('학습').setDescription('학습 허용 on/off')
         .addChoices(
-          { name: '전체', value: 'all' },
-          { name: '운영', value: 'runtime' },
-          { name: '세션', value: 'session' },
+          { name: 'on', value: 'on' },
+          { name: 'off', value: 'off' },
         )
         .setRequired(false),
-    )
-    .addStringOption((o) =>
-      o.setName('세션아이디').setDescription('확인할 세션 ID').setRequired(false),
     ),
-  new SlashCommandBuilder()
-    .setName('스킬목록')
-    .setDescription('사용 가능한 스킬 목록 확인')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName('정책')
-    .setDescription('실행 한도 및 운영 정책 조회')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('온보딩')
     .setDescription('현재 길드 온보딩 분석 실행')

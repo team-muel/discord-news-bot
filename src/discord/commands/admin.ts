@@ -11,6 +11,8 @@ type BotRuntimeSnapshotLike = {
   reconnectAttempts: number;
 };
 
+const guildLearningPolicy = new Map<string, boolean>();
+
 type AutomationSnapshotLike = {
   healthy: boolean;
   jobs: Record<string, {
@@ -82,24 +84,23 @@ export const createAdminHandlers = (deps: AdminDeps) => {
   };
 
   const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
-    const simpleUserLines = [
-      '`/구독` 하나로 구독 관리 (종류: 영상+링크, 게시글+링크, 뉴스(구글 금융 고정))',
-      '`/로그인` 내 계정 권한/사용 가능 상태 진단',
-      '`/설정` 현재 사용 모드/설정 확인',
-      '`/ping` 상태 확인',
-      '카테고리명을 `ai-chat` 또는 `ai-utility`로 지정하면 하위 채널에 모드가 자동 적용됨',
-      '`@봇이름 고양이 영상 찾아줘`처럼 멘션으로 자연어 요청',
-      '봇 답변에 답글로 이어서 대화 가능',
+    const publicCommands = [
+      '/ping',
+      '/로그인',
+      '/뮤엘 또는 @Muel',
+      '/구독 (영상/게시글/뉴스, 링크만 넣으면 현재 채널 자동 등록)',
+      '/해줘',
+      '/만들어줘',
+      '/주가',
+      '/차트',
+      '/상태',
+      '/설정 (대시보드 이동)',
     ];
-
-    const advancedAdminLines = [
-      '`/시작` 세션 시작(호환 명령)',
-      '`/상태` 운영/세션 상태 조회 (`종류`: 전체|운영|세션)',
-      '`/스킬목록` 사용 가능한 스킬셋 조회',
-      '`/정책` 실행 한도/가드레일 확인',
-      '`/온보딩` 현재 길드 온보딩 분석 실행',
-      '`/학습` 현재 길드 일일 학습/회고 실행',
-      '`/중지` 실행 중 세션 중지 요청',
+    const adminCommands = [
+      '/세션 조회',
+      '/세션 제거',
+      '/정책',
+      '/관리설정',
     ];
 
     await interaction.reply({
@@ -107,34 +108,9 @@ export const createAdminHandlers = (deps: AdminDeps) => {
         {
           title: 'Muel 명령어 안내',
           color: 0x2f80ed,
-          description: deps.simpleCommandsEnabled
-            ? '보이는 명령어를 최소화했습니다. 구독/설정/ping + 자연어 대화로 사용하세요.'
-            : '자주 쓰는 핵심 명령만 빠르게 확인하세요.',
           fields: [
-            {
-              name: deps.simpleCommandsEnabled ? '권장 명령' : '일반 명령',
-              value: deps.simpleCommandsEnabled
-                ? simpleUserLines.join('\n')
-                : [
-                  '`/구독` 영상/게시글/뉴스 구독 통합 관리',
-                  '`/로그인` 내 계정 권한/사용 가능 상태 진단',
-                  '`/설정` 현재 사용 모드/설정 확인',
-                  '`/ping` 상태 확인',
-                  '`/주가` 현재 주가 조회 (`응답방식` 선택 가능)',
-                  '`/차트` 30일 차트 조회 (`응답방식` 선택 가능)',
-                  '`/분석` 기업 분석 (`응답방식` 선택 가능)',
-                ].join('\n'),
-            },
-            {
-              name: deps.simpleCommandsEnabled ? '고급 모드 안내' : '관리자 명령',
-              value: deps.simpleCommandsEnabled
-                ? '고급 명령이 필요하면 `DISCORD_SIMPLE_COMMANDS_ENABLED=false` 로 전환하세요.'
-                : advancedAdminLines.join('\n'),
-            },
-            {
-              name: '관리자 기준',
-              value: 'Discord 서버 `Administrator` 권한이 있거나, 시스템 admin allowlist에 등록된 사용자입니다.',
-            },
+            { name: '기본 명령어', value: publicCommands.join('\n') },
+            { name: '관리자 명령어', value: adminCommands.join('\n') },
           ],
         },
       ],
@@ -143,32 +119,31 @@ export const createAdminHandlers = (deps: AdminDeps) => {
   };
 
   const handleSettingsCommand = async (interaction: ChatInputCommandInteraction) => {
-    const category = (interaction.options.getString('항목') || 'mode').trim();
-    const lines: string[] = [];
-    lines.push('빠른 확인: 이 메시지가 보이면 /설정 명령은 정상 동작 중입니다.');
+    const base = String(process.env.PUBLIC_BASE_URL || process.env.FRONTEND_ORIGIN || '').split(',')[0].trim();
+    const dashboardUrl = base ? `${base.replace(/\/$/, '')}/dashboard` : '';
+    const line = dashboardUrl
+      ? `대시보드로 이동: ${dashboardUrl}`
+      : '대시보드 URL이 설정되지 않았습니다. PUBLIC_BASE_URL 또는 FRONTEND_ORIGIN을 설정해주세요.';
+    await interaction.reply({ ...buildSimpleEmbed('설정', line, EMBED_INFO), ephemeral: true });
+  };
 
-    if (category === 'mode') {
-      lines.push('한 줄 안내: 지금은 /구독 + 자연어 대화 중심으로 쓰면 됩니다.');
-      lines.push(`SIMPLE_COMMANDS_ENABLED=${String(deps.simpleCommandsEnabled)}`);
-      lines.push('현재 권장 UX: /구독, /도움말, /설정, /ping + 자연어 대화');
-      lines.push(`LOGIN_SESSION_TTL_MS=${deps.loginSessionTtlMs}`);
-      lines.push(`LOGIN_SESSION_REFRESH_WINDOW_MS=${deps.loginSessionRefreshWindowMs}`);
-    } else if (category === 'commands') {
-      lines.push('한 줄 안내: 핵심은 /구독 하나이고 나머지는 보조 확인용입니다.');
-      lines.push('보이는 명령어: /구독, /로그인, /도움말, /설정, /ping');
-      lines.push('/구독 사용 예: 동작=추가, 종류=영상 + 링크, 링크=<YouTube 채널 링크>, 디스코드채널=<알림 채널>');
-      lines.push('자연어 상호작용: 멘션 또는 답글로 요청');
-      lines.push('채널 모드: 카테고리명 규칙(ai-chat, ai-utility, ai-off)으로 자동 적용');
-      lines.push(`LEGACY_SUBSCRIBE_COMMAND_ENABLED=${String(deps.legacySubscribeCommandEnabled)}`);
-      lines.push(`LEGACY_SESSION_COMMANDS_ENABLED=${String(deps.legacySessionCommandsEnabled)}`);
-    } else if (category === 'automation') {
-      lines.push('한 줄 안내: 자동화 점검/관리는 /구독에서 시작하면 됩니다.');
-      lines.push('자동화는 내부 세션/스케줄러로 동작합니다.');
-      lines.push('구독 관련 자동화는 /구독 명령 하나에서 통합 관리합니다.');
-      lines.push(`LOGIN_SESSION_CLEANUP_INTERVAL_MS=${deps.loginSessionCleanupIntervalMs}`);
+  const handleManageSettingsCommand = async (interaction: ChatInputCommandInteraction) => {
+    if (!(await deps.hasAdminPermission(interaction))) {
+      await interaction.reply({ ...buildSimpleEmbed('권한 오류', 'Admin permission is required.', EMBED_ERROR), ephemeral: true });
+      return;
     }
-
-    await interaction.reply({ ...buildSimpleEmbed('설정', lines.join('\n'), EMBED_INFO), ephemeral: true });
+    if (!interaction.guildId) {
+      await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      return;
+    }
+    const mode = String(interaction.options.getString('학습') || '').trim().toLowerCase();
+    if (mode === 'on') guildLearningPolicy.set(interaction.guildId, true);
+    if (mode === 'off') guildLearningPolicy.set(interaction.guildId, false);
+    const enabled = guildLearningPolicy.get(interaction.guildId) ?? true;
+    await interaction.reply({
+      ...buildSimpleEmbed('관리 설정', `학습 허용: ${enabled ? 'ON' : 'OFF'}\n(현재는 런타임 설정이며 재시작 시 초기화될 수 있습니다.)`, EMBED_INFO),
+      ephemeral: true,
+    });
   };
 
   const handleLoginCommand = async (interaction: ChatInputCommandInteraction) => {
@@ -295,5 +270,6 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     handleAutomationRunCommand,
     handleReconnectCommand,
     handleAdminCommand,
+    handleManageSettingsCommand,
   };
 };

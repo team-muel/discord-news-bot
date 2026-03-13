@@ -1,4 +1,4 @@
-import type { ChatInputCommandInteraction } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInteraction } from 'discord.js';
 import type { AgentSession } from '../../services/multiAgentService';
 import {
   cancelAgentSession,
@@ -43,54 +43,28 @@ export const createAgentHandlers = (deps: AgentDeps) => {
 
     const sub = interaction.options.getSubcommand();
 
-    if (sub === '추가') {
-      const shared = (interaction.options.getString('공개범위') || 'private') === 'public';
-      await interaction.deferReply({ ephemeral: !shared });
-
-      const skill = (interaction.options.getString('스킬') || '').trim();
-      const request = (interaction.options.getString('요청') || '').trim();
-      const description = (interaction.options.getString('설명') || '').trim();
-      const combinedText = [request, description].filter(Boolean).join('\n').trim();
-      const selectedSkill = skill || deps.inferSessionSkill(combinedText);
-      const baseRequest = request || '현재 길드 기준 자동화 실행안을 제안하고 즉시 적용 순서를 정리해줘.';
-      const goal = [
-        `세션 스킬 실행: ${selectedSkill}`,
-        `요청: ${baseRequest}`,
-        description ? `설명: ${description}` : '설명: 없음',
-        selectedSkill === 'webhook' ? '요청: 웹훅 자동화 관점으로 실행안을 작성' : '',
-      ].filter(Boolean).join('\n');
-
-      let session: AgentSession;
-      try {
-        session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal, skillId: selectedSkill, priority: 'balanced' });
-      } catch (error) {
-        await interaction.editReply(buildAdminCard('세션 추가 실패', deps.getErrorMessage(error), [`skill=${skill}`], EMBED_ERROR));
-        return;
-      }
-
-      await interaction.editReply(buildAdminCard('세션 추가 완료', `세션 ${session.id} 실행을 시작했습니다.`, [`skill=${selectedSkill}`, `session=${session.id}`, `requestedBy=${interaction.user.id}`], EMBED_SUCCESS));
-      await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildAdminCard('세션 진행 상태', content, [`session=${session.id}`], EMBED_INFO)) }, session.id, session.goal, { showDebugBlocks: session.priority === 'precise' && !shared, maxLinks: 4 });
-      return;
-    }
-
     if (sub === '조회') {
       await interaction.deferReply({ ephemeral: true });
-      const sessionId = (interaction.options.getString('세션아이디') || '').trim();
-      if (sessionId) {
-        const session = getAgentSession(sessionId);
-        if (!session || session.guildId !== interaction.guildId) {
-          await interaction.editReply(buildAdminCard('세션 조회 실패', '해당 세션을 찾을 수 없습니다.', [`session=${sessionId}`], EMBED_WARN));
-          return;
-        }
-        await interaction.editReply(buildAdminCard('세션 조회', `상태: ${session.status}`, [`session=${session.id}`, `priority=${session.priority}`, `goal=${session.goal.slice(0, 240)}`, session.error ? `error=${session.error.slice(0, 180)}` : 'error=none'], EMBED_INFO));
-        return;
-      }
-      const sessions = listGuildAgentSessions(interaction.guildId, 10);
+      const sessions = listGuildAgentSessions(interaction.guildId, 10)
+        .filter((session) => session.status === 'queued' || session.status === 'running');
       if (sessions.length === 0) {
-        await interaction.editReply(buildAdminCard('세션 조회', '최근 세션이 없습니다.', [`guild=${interaction.guildId}`], EMBED_INFO));
+        await interaction.editReply(buildAdminCard('세션 조회', '현재 작동 중인 세션이 없습니다.', [`guild=${interaction.guildId}`], EMBED_INFO));
         return;
       }
-      await interaction.editReply(buildAdminCard('최근 세션 조회', `총 ${sessions.length}개`, sessions.map((s) => `${s.id} | ${s.status} | ${s.updatedAt}`), EMBED_INFO));
+
+      const preview = sessions.slice(0, 5);
+      const lines = preview.map((s, i) => `${i + 1}. ${s.goal.replace(/\s+/g, ' ').slice(0, 60)} (${s.status})`);
+      const runRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...preview.map((s, i) => new ButtonBuilder()
+          .setCustomId(`session_run:${s.id}`)
+          .setLabel(`${i + 1} 실행`)
+          .setStyle(ButtonStyle.Primary)),
+      );
+
+      await interaction.editReply({
+        ...buildAdminCard('세션 조회', `현재 작동 중인 세션 ${sessions.length}개`, lines, EMBED_INFO),
+        components: [runRow],
+      });
       return;
     }
 
@@ -101,14 +75,26 @@ export const createAgentHandlers = (deps: AgentDeps) => {
 
     if (sub === '제거') {
       await interaction.deferReply({ ephemeral: true });
-      const sessionId = interaction.options.getString('세션아이디', true).trim();
-      const session = getAgentSession(sessionId);
-      if (!session || session.guildId !== interaction.guildId) {
-        await interaction.editReply(buildAdminCard('세션 제거 실패', '해당 세션을 찾을 수 없습니다.', [`session=${sessionId}`], EMBED_WARN));
+      const sessions = listGuildAgentSessions(interaction.guildId, 10)
+        .filter((session) => session.status === 'queued' || session.status === 'running');
+      if (sessions.length === 0) {
+        await interaction.editReply(buildAdminCard('세션 제거', '현재 제거 가능한 세션이 없습니다.', [`guild=${interaction.guildId}`], EMBED_INFO));
         return;
       }
-      const result = cancelAgentSession(sessionId);
-      await interaction.editReply(buildAdminCard(result.ok ? '세션 제거 요청 수락' : '세션 제거 실패', result.ok ? '중지 요청을 전달했습니다.' : result.message, [`session=${sessionId}`], result.ok ? EMBED_SUCCESS : EMBED_ERROR));
+
+      const preview = sessions.slice(0, 5);
+      const lines = preview.map((s, i) => `${i + 1}. ${s.goal.replace(/\s+/g, ' ').slice(0, 60)} (${s.status})`);
+      const removeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...preview.map((s, i) => new ButtonBuilder()
+          .setCustomId(`session_remove:${s.id}`)
+          .setLabel(`${i + 1} 제거`)
+          .setStyle(ButtonStyle.Danger)),
+      );
+
+      await interaction.editReply({
+        ...buildAdminCard('세션 제거', `현재 작동 중인 세션 ${sessions.length}개`, lines, EMBED_WARN),
+        components: [removeRow],
+      });
       return;
     }
 

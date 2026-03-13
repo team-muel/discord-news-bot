@@ -82,13 +82,14 @@ const handleSubscribeYouTubeCommand = async (
     interaction.options.getString('유튜브채널') ||
     ''
   ).trim();
-  const targetChannel = interaction.options.getChannel('디스코드채널', true);
+  const selectedChannel = interaction.options.getChannel('디스코드채널', false);
+  const targetChannel = selectedChannel || interaction.channel;
 
   if (!channelInput) {
     await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상/게시글 구독은 유튜브채널을 입력해주세요.', EMBED_WARN), ephemeral: true });
     return;
   }
-  if (!isValidSubscribeChannelType(targetChannel.type)) {
+  if (!targetChannel || !isValidSubscribeChannelType((targetChannel as any).type)) {
     await interaction.reply({ ...buildSimpleEmbed('채널 유형 오류', '텍스트/공지/포럼 스레드 채널만 구독 대상으로 지정할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
@@ -98,7 +99,7 @@ const handleSubscribeYouTubeCommand = async (
     const result = await createYouTubeSubscription({
       userId: interaction.user.id,
       guildId: interaction.guildId,
-      discordChannelId: targetChannel.id,
+      discordChannelId: (targetChannel as any).id,
       channelInput,
       kind,
     });
@@ -106,7 +107,7 @@ const handleSubscribeYouTubeCommand = async (
     await interaction.editReply(
       buildSimpleEmbed(
         '구독 처리 결과',
-        `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`,
+        `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})`,
         EMBED_SUCCESS,
       ),
     );
@@ -129,8 +130,9 @@ const handleSubscribeNewsCommand = async (
     await interaction.reply({ ...buildSimpleEmbed('사용 위치 오류', '서버 채널에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
-  const targetChannel = interaction.options.getChannel('디스코드채널', true);
-  if (!isValidSubscribeChannelType(targetChannel.type)) {
+  const selectedChannel = interaction.options.getChannel('디스코드채널', false);
+  const targetChannel = selectedChannel || interaction.channel;
+  if (!targetChannel || !isValidSubscribeChannelType((targetChannel as any).type)) {
     await interaction.reply({ ...buildSimpleEmbed('채널 유형 오류', '텍스트/공지/포럼 스레드 채널만 등록할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
@@ -140,13 +142,13 @@ const handleSubscribeNewsCommand = async (
     const result = await createNewsChannelSubscription({
       userId: interaction.user.id,
       guildId: interaction.guildId,
-      discordChannelId: targetChannel.id,
+      discordChannelId: (targetChannel as any).id,
     });
     const state = result.created ? '등록 완료' : '이미 등록됨';
     await interaction.editReply(
       buildSimpleEmbed(
         '뉴스 구독',
-        `${state}: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`,
+        `${state}: news -> <#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})`,
         EMBED_SUCCESS,
       ),
     );
