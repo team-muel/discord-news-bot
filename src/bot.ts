@@ -47,7 +47,7 @@ import {
   triggerDailyLearningRun,
   triggerGuildOnboardingSession,
 } from './services/agentOpsService';
-import { forgetGuildRagData } from './services/privacyForgetService';
+import { forgetGuildRagData, forgetUserRagData } from './services/privacyForgetService';
 import {
   getArtifact,
   getChain,
@@ -521,12 +521,70 @@ const attachCommandHandlers = () => {
     const CODE_BUTTON_ACTIONS = new Set(['code_regen', 'code_refactor', 'code_test', 'code_history']);
     const WORKER_BUTTON_ACTIONS = new Set(['worker_propose', 'worker_approve', 'worker_reject', 'worker_refactor']);
     const SESSION_BUTTON_ACTIONS = new Set(['session_run', 'session_remove']);
-    if (!CODE_BUTTON_ACTIONS.has(action) && !WORKER_BUTTON_ACTIONS.has(action) && !SESSION_BUTTON_ACTIONS.has(action)) {
+    const FORGET_BUTTON_ACTIONS = new Set(['forget_confirm_user', 'forget_confirm_guild', 'forget_cancel']);
+    if (!CODE_BUTTON_ACTIONS.has(action) && !WORKER_BUTTON_ACTIONS.has(action) && !SESSION_BUTTON_ACTIONS.has(action) && !FORGET_BUTTON_ACTIONS.has(action)) {
       return;
     }
 
     if (!interaction.guildId) {
       await interaction.reply({ content: '서버 채널에서만 사용할 수 있습니다.', ephemeral: true });
+      return;
+    }
+
+    // ── Forget confirmation button handlers ─────────────────────────────────
+    if (FORGET_BUTTON_ACTIONS.has(action)) {
+      const payloadParts = parentSessionId.split(':');
+      const requesterId = payloadParts[payloadParts.length - 1] || '';
+      if (!requesterId || requesterId !== interaction.user.id) {
+        await interaction.reply({ content: '이 확인 버튼은 요청자만 사용할 수 있습니다.', ephemeral: true });
+        return;
+      }
+
+      if (action === 'forget_cancel') {
+        await interaction.update({ content: '삭제 요청이 취소되었습니다.', components: [] });
+        return;
+      }
+
+      if (action === 'forget_confirm_guild') {
+        if (!(await isUserAdmin(interaction.user.id))) {
+          await interaction.reply({ content: '길드 전체 삭제는 관리자만 가능합니다.', ephemeral: true });
+          return;
+        }
+        await interaction.deferReply({ ephemeral: true });
+        try {
+          const result = await forgetGuildRagData({
+            guildId: interaction.guildId,
+            requestedBy: interaction.user.id,
+            reason: 'button:forget_confirm_guild',
+          });
+          await interaction.editReply(`✅ 길드 데이터 삭제 완료: ${result.supabase.totalDeleted}건, Obsidian ${result.obsidian.removedPaths.length}건`);
+        } catch (error) {
+          await interaction.editReply(`❌ 길드 데이터 삭제 실패: ${getErrorMessage(error)}`);
+        }
+        return;
+      }
+
+      const targetUserId = payloadParts[0] || '';
+      if (!targetUserId) {
+        await interaction.reply({ content: '대상 유저 정보가 누락되었습니다.', ephemeral: true });
+        return;
+      }
+      if (targetUserId !== interaction.user.id && !(await isUserAdmin(interaction.user.id))) {
+        await interaction.reply({ content: '다른 유저 데이터 삭제는 관리자만 가능합니다.', ephemeral: true });
+        return;
+      }
+      await interaction.deferReply({ ephemeral: true });
+      try {
+        const result = await forgetUserRagData({
+          userId: targetUserId,
+          guildId: interaction.guildId,
+          requestedBy: interaction.user.id,
+          reason: 'button:forget_confirm_user',
+        });
+        await interaction.editReply(`✅ 유저 데이터 삭제 완료: ${result.supabase.totalDeleted}건, Obsidian ${result.obsidian.removedPaths.length}건`);
+      } catch (error) {
+        await interaction.editReply(`❌ 유저 데이터 삭제 실패: ${getErrorMessage(error)}`);
+      }
       return;
     }
 

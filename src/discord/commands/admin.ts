@@ -1,4 +1,4 @@
-import type { ChatInputCommandInteraction } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInteraction } from 'discord.js';
 import { buildAdminCard, buildSimpleEmbed, EMBED_ERROR, EMBED_INFO, EMBED_SUCCESS, EMBED_WARN } from '../ui';
 import { isAnyLlmConfigured } from '../../services/llmClient';
 import { isSupabaseConfigured } from '../../services/supabaseClient';
@@ -93,23 +93,23 @@ export const createAdminHandlers = (deps: AdminDeps) => {
 
   const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
     const publicCommands = [
-      '/ping',
-      '/로그인',
-      '/뮤엘 또는 @Muel',
-      '/구독 (영상/게시글/뉴스, 링크만 넣으면 현재 채널 자동 등록)',
-      '/해줘',
-      '/만들어줘',
-      '/주가',
-      '/차트',
-      '/상태',
-      '/설정 (대시보드 이동)',
-      '/잊어줘 (미리보기/실행)',
+      '`/ping` : 봇 응답/지연 상태 확인',
+      '`/로그인` : 내 계정 권한 및 기능 사용 가능 여부 확인',
+      '`/뮤엘` 또는 `@Muel` : 자연어로 대화/요청',
+      '`/구독` : 영상/게시글/뉴스 구독 (링크만 넣으면 현재 채널 자동 등록)',
+      '`/해줘` : 실행형 요청(미구현/코드성은 `/만들어줘` 흐름으로 연결)',
+      '`/만들어줘` : 스레드 기반 협업 코딩/자동화 구현',
+      '`/주가` : 현재가 조회',
+      '`/차트` : 30일 차트 조회',
+      '`/상태` : 봇/자동화 런타임 상태 확인',
+      '`/설정` : 대시보드 이동',
+      '`/잊어줘` : 내 데이터 또는 서버 데이터 삭제(확인 UX 제공)',
     ];
     const adminCommands = [
-      '/세션 조회',
-      '/세션 제거',
-      '/정책',
-      '/관리설정',
+      '`/세션 조회` : 현재 작동 중인 세션 확인/즉시 실행 버튼',
+      '`/세션 제거` : 현재 작동 중인 세션 제거 버튼',
+      '`/정책` : 동시 세션 한도 및 운영 정책 확인',
+      '`/관리설정` : 학습 허용 on/off',
     ];
 
     await interaction.reply({
@@ -207,6 +207,23 @@ export const createAdminHandlers = (deps: AdminDeps) => {
         await interaction.editReply(buildSimpleEmbed('권한 오류', '길드 전체 삭제는 관리자만 가능합니다.', EMBED_ERROR));
         return;
       }
+      if (!confirm) {
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`forget_confirm_guild:${interaction.user.id}`)
+            .setLabel('정말 삭제합니다')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId(`forget_cancel:${interaction.user.id}`)
+            .setLabel('취소')
+            .setStyle(ButtonStyle.Secondary),
+        );
+        await interaction.editReply({
+          ...buildSimpleEmbed('삭제 확인', '정말 삭제할까요? 뮤엘이 이 서버에 대한 기억을 모두 잃어버립니다.', EMBED_WARN),
+          components: [row],
+        });
+        return;
+      }
       if (confirm !== 'FORGET_GUILD') {
         await interaction.editReply(buildSimpleEmbed('확인문구 오류', '확인문구는 FORGET_GUILD 여야 합니다.', EMBED_WARN));
         return;
@@ -228,6 +245,24 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       await interaction.editReply(buildSimpleEmbed('권한 오류', '다른 유저 데이터 삭제는 관리자만 가능합니다.', EMBED_ERROR));
       return;
     }
+    if (!confirm) {
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`forget_confirm_user:${targetUser}:${interaction.user.id}`)
+          .setLabel('정말 삭제합니다')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId(`forget_cancel:${interaction.user.id}`)
+          .setLabel('취소')
+          .setStyle(ButtonStyle.Secondary),
+      );
+      await interaction.editReply({
+        ...buildSimpleEmbed('삭제 확인', `정말 삭제할까요? 뮤엘이 @${targetUser}에 대한 기억을 모두 잃어버립니다.`, EMBED_WARN),
+        components: [row],
+      });
+      return;
+    }
+
     if (confirm !== expected) {
       await interaction.editReply(buildSimpleEmbed('확인문구 오류', `확인문구는 ${expected} 여야 합니다.`, EMBED_WARN));
       return;

@@ -62,31 +62,23 @@ export { CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC };
 const ALL_COMMANDS = [
   new SlashCommandBuilder()
     .setName('ping')
-    .setDescription('Check if the bot is responsive'),
+    .setDescription('봇 응답 속도를 확인합니다'),
   new SlashCommandBuilder()
     .setName('help')
-    .setDescription('사용 가능한 명령어 안내'),
+    .setDescription('사용 가능한 명령어를 한눈에 안내합니다'),
   new SlashCommandBuilder()
     .setName('도움말')
-    .setDescription('사용 가능한 명령어 안내'),
+    .setDescription('사용 가능한 명령어를 한눈에 안내합니다'),
   new SlashCommandBuilder()
     .setName('설정')
-    .setDescription('봇 상태와 사용법을 한눈에 확인')
-    .addStringOption((o) =>
-      o.setName('항목').setDescription('확인할 설정 항목 (비우면 모드)').setRequired(false)
-        .addChoices(
-          { name: '모드', value: 'mode' },
-          { name: '명령어', value: 'commands' },
-          { name: '자동화', value: 'automation' },
-        ),
-    ),
+    .setDescription('뮤엘 대시보드로 이동합니다'),
   new SlashCommandBuilder()
     .setName('로그인')
-    .setDescription('내 계정으로 봇 기능 사용 가능 여부를 진단합니다')
+    .setDescription('내 계정 권한과 기능 사용 가능 여부를 확인합니다')
     .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('뮤엘')
-    .setDescription('Muel과 바로 대화합니다')
+    .setDescription('Muel에게 자연어로 요청합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
       o.setName('요청').setDescription('예: 오늘 해야 할 일 정리해줘').setRequired(true),
@@ -98,7 +90,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('주가')
-    .setDescription('주식 현재 가격 조회')
+    .setDescription('주식 현재 가격을 조회합니다')
     .addStringOption((o) =>
       o.setName('symbol').setDescription('예: AAPL, TSLA, MSFT').setRequired(true),
     )
@@ -109,7 +101,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('차트')
-    .setDescription('주식 30일 차트 조회')
+    .setDescription('주식 30일 차트를 조회합니다')
     .addStringOption((o) =>
       o.setName('symbol').setDescription('예: AAPL, TSLA, MSFT').setRequired(true),
     )
@@ -131,7 +123,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('구독')
-    .setDescription('영상/게시글/뉴스를 구독합니다')
+    .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다')
     .addStringOption((o) =>
       o.setName('동작').setDescription('무엇을 할지 선택').setRequired(false)
         .addChoices(
@@ -189,7 +181,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('해줘')
-    .setDescription('자연어로 요청하면 작업을 알아서 진행합니다')
+    .setDescription('실행형 요청을 능동적으로 처리합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
       o.setName('요청').setDescription('예: 고양이 영상 찾아줘, 이번주 애플 주가 요약해줘').setRequired(true),
@@ -201,7 +193,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('만들어줘')
-    .setDescription('코드·스크립트·자동화 로직을 만들어드립니다')
+    .setDescription('코드·스크립트·자동화를 스레드로 협업 생성합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
       o.setName('요청').setDescription('예: Express 라우터 만들어줘, Python 크롤러 만들어줘').setRequired(true),
@@ -213,7 +205,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('세션')
-    .setDescription('현재 서버 세션 조회/제거')
+    .setDescription('현재 서버 세션 조회/제거를 수행합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) =>
@@ -258,16 +250,16 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('상태')
-    .setDescription('봇과 자동화 상태 확인')
+    .setDescription('봇과 자동화 런타임 상태를 확인합니다')
     .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('정책')
-    .setDescription('현재 서버 동시 세션 한도 및 운영 정책 조회')
+    .setDescription('현재 서버 동시 세션 한도와 정책을 조회합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('관리설정')
-    .setDescription('서버 데이터 학습 허용 설정')
+    .setDescription('서버 데이터 학습 허용(on/off)을 설정합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
@@ -280,7 +272,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('잊어줘')
-    .setDescription('잊혀질 권리: 유저/길드 데이터 삭제 요청')
+    .setDescription('잊혀질 권리: 유저/길드 데이터 삭제를 요청합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
       o.setName('동작').setDescription('미리보기 또는 실행')
