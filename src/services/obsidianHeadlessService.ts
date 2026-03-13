@@ -6,8 +6,8 @@
  */
 
 import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, readdirSync, statSync } from 'fs';
+import { join, relative, extname } from 'path';
 import logger from '../logger';
 
 export interface ObsidianNode {
@@ -84,8 +84,12 @@ export async function searchObsidianVault(
     if (headlessAvailable) {
       return searchViaHeadless(query, limit);
     }
-    
-    logger.debug('[OBSIDIAN] Headless unavailable, skipping search');
+    // Fallback: direct filesystem scan of vault directory
+    const vaultPath = process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '';
+    if (vaultPath) {
+      return searchViaFilesystem(query, vaultPath, limit);
+    }
+    logger.debug('[OBSIDIAN] Headless unavailable and vault path not set, skipping search');
     return [];
   } catch (error) {
     logger.warn('[OBSIDIAN] Search failed: %o', error);
@@ -252,4 +256,83 @@ function parseGraphMetadata(output: string): Record<string, ObsidianNode> {
     logger.warn('[OBSIDIAN] Parse graph metadata failed: %o', error);
     return {};
   }
+}
+
+// ─── Filesystem Fallback ─────────────────────────────────────────────────────
+
+function collectMarkdownFiles(dir: string, results: string[] = []): string[] {
+  try {
+    const entries = readdirSync(dir);
+    for (const entry of entries) {
+      if (entry.startsWith('.') || entry === 'node_modules') continue;
+      const fullPath = join(dir, entry);
+      try {
+        const stat = statSync(fullPath);
+        if (stat.isDirectory()) {
+          collectMarkdownFiles(fullPath, results);
+        } else if (extname(entry).toLowerCase() === '.md') {
+          results.push(fullPath);
+        }
+      } catch { /* skip unreadable entries */ }
+    }
+  } catch { /* skip unreadable dirs */ }
+  return results;
+}
+
+function searchViaFilesystem(query: string, vaultPath: string, limit: number): ObsidianSearchResult[] {
+  const files = collectMarkdownFiles(vaultPath);
+  const queryLower = query.toLowerCase();
+
+  // Strip "tag:" prefix for tag-based queries coming from INTENT_ROUTES
+  const isTagQuery = queryLower.startsWith('tag:');
+  const searchTerm = isTagQuery ? queryLower.slice(4).trim() : queryLower;
+  const keywords = searchTerm.split(/\s+/).filter(Boolean);
+
+  const scored: Array<{ filePath: string; title: string; score: number }> = [];
+
+  for (const fullPath of files) {
+    try {
+      const content = readFileSync(fullPath, 'utf-8');
+      const contentLower = content.toLowerCase();
+      const relPath = relative(vaultPath, fullPath).replace(/\\/g, '/');
+
+      // Extract title from frontmatter or first heading
+      const titleMatch = content.match(/^title:\s*(.+)$/m) || content.match(/^#\s+(.+)$/m);
+      const title = titleMatch
+        ? titleMatch[1].trim()
+        : (relPath.split('/').pop()?.replace('.md', '') ?? relPath);
+
+      let score = 0;
+
+      // Score: tag match in frontmatter
+      if (isTagQuery) {
+        const fmTagMatch = content.match(/^tags:\s*\[?([^\]\n]+)\]?/m);
+        if (fmTagMatch && fmTagMatch[1].toLowerCase().includes(searchTerm)) {
+          score += 1.0;
+        }
+        // Also match "tags:\n  - item" style
+        const tagLines = [...content.matchAll(/^\s*-\s+(.+)$/gm)];
+        for (const m of tagLines) {
+          if (m[1].toLowerCase().includes(searchTerm)) score += 0.5;
+        }
+      }
+
+      // Score: keyword presence in content and path
+      for (const kw of keywords) {
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const occurrences = (contentLower.match(new RegExp(escaped, 'g')) ?? []).length;
+        score += Math.min(occurrences * 0.1, 0.8);
+        if (title.toLowerCase().includes(kw)) score += 0.5;
+        if (relPath.toLowerCase().includes(kw)) score += 0.3;
+      }
+
+      if (score > 0) {
+        scored.push({ filePath: relPath, title, score });
+      }
+    } catch { /* skip unreadable file */ }
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
