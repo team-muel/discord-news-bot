@@ -1,25 +1,25 @@
 # Dependency Graph
 
-- Generated at: 2026-03-11T20:50:31.798Z
+- Generated at: 2026-03-13T17:19:23.640Z
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 86
+- Nodes: 128
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/services/supabaseClient.ts | 22 |
-| src/logger.ts | 17 |
+| src/services/supabaseClient.ts | 29 |
+| src/logger.ts | 24 |
+| src/services/skills/actions/types.ts | 17 |
 | src/config.ts | 16 |
-| src/services/skills/types.ts | 11 |
-| src/utils/env.ts | 8 |
+| src/utils/env.ts | 16 |
+| src/services/skills/types.ts | 12 |
+| src/services/llmClient.ts | 8 |
+| src/services/multiAgentService.ts | 8 |
+| src/discord/ui.ts | 7 |
 | src/middleware/auth.ts | 7 |
-| src/services/skills/modules/common.ts | 6 |
-| src/contracts/trade.ts | 5 |
-| src/services/automation/types.ts | 5 |
-| src/services/automationBot.ts | 5 |
-| src/services/skills/actions/types.ts | 5 |
-| src/utils/validation.ts | 5 |
+| src/services/automationBot.ts | 6 |
+| src/services/skills/actions/queryUtils.ts | 6 |
 
 ## Mermaid
 
@@ -49,23 +49,63 @@ graph LR
   "src/app.ts" --> "src/routes/trades.ts"
   "src/app.ts" --> "src/routes/trading.ts"
   "src/bot.ts" --> "src/config.ts"
+  "src/bot.ts" --> "src/discord/auth.ts"
+  "src/bot.ts" --> "src/discord/commandDefinitions.ts"
+  "src/bot.ts" --> "src/discord/commands/admin.ts"
+  "src/bot.ts" --> "src/discord/commands/agent.ts"
+  "src/bot.ts" --> "src/discord/commands/market.ts"
+  "src/bot.ts" --> "src/discord/commands/subscribe.ts"
+  "src/bot.ts" --> "src/discord/commands/vibe.ts"
+  "src/bot.ts" --> "src/discord/lifecycle.ts"
+  "src/bot.ts" --> "src/discord/session.ts"
+  "src/bot.ts" --> "src/discord/ui.ts"
   "src/bot.ts" --> "src/logger.ts"
   "src/bot.ts" --> "src/services/adminAllowlistService.ts"
   "src/bot.ts" --> "src/services/agentOpsService.ts"
   "src/bot.ts" --> "src/services/automationBot.ts"
-  "src/bot.ts" --> "src/services/discordLoginSessionStore.ts"
-  "src/bot.ts" --> "src/services/investmentAnalysisService.ts"
   "src/bot.ts" --> "src/services/llmClient.ts"
   "src/bot.ts" --> "src/services/multiAgentService.ts"
-  "src/bot.ts" --> "src/services/newsChannelStore.ts"
+  "src/bot.ts" --> "src/services/privacyForgetService.ts"
   "src/bot.ts" --> "src/services/stockService.ts"
   "src/bot.ts" --> "src/services/supabaseClient.ts"
-  "src/bot.ts" --> "src/services/youtubeSubscriptionStore.ts"
+  "src/bot.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
+  "src/bot.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/bot.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
+  "src/bot.ts" --> "src/services/workerGeneration/workerSandbox.ts"
+  "src/bot.ts" --> "src/utils/codeThread.ts"
+  "src/bot.ts" --> "src/utils/sessionArtifactStore.ts"
   "src/config.ts" --> "src/utils/env.ts"
   "src/contracts/bot.ts":::file
   "src/contracts/researchPreset.ts":::file
   "src/contracts/trade.ts":::file
   "src/contracts/tradingStrategy.ts":::file
+  "src/discord/auth.ts" --> "src/discord/ui.ts"
+  "src/discord/auth.ts" --> "src/logger.ts"
+  "src/discord/auth.ts" --> "src/services/adminAllowlistService.ts"
+  "src/discord/auth.ts" --> "src/services/discordLoginSessionStore.ts"
+  "src/discord/commandDefinitions.ts" --> "src/utils/env.ts"
+  "src/discord/commands/admin.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/admin.ts" --> "src/services/llmClient.ts"
+  "src/discord/commands/admin.ts" --> "src/services/stockService.ts"
+  "src/discord/commands/admin.ts" --> "src/services/supabaseClient.ts"
+  "src/discord/commands/agent.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/agent.ts" --> "src/services/agentOpsService.ts"
+  "src/discord/commands/agent.ts" --> "src/services/multiAgentService.ts"
+  "src/discord/commands/market.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/market.ts" --> "src/services/investmentAnalysisService.ts"
+  "src/discord/commands/market.ts" --> "src/services/stockService.ts"
+  "src/discord/commands/subscribe.ts" --> "src/discord/auth.ts"
+  "src/discord/commands/subscribe.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/subscribe.ts" --> "src/services/newsChannelStore.ts"
+  "src/discord/commands/subscribe.ts" --> "src/services/youtubeSubscriptionStore.ts"
+  "src/discord/commands/vibe.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/vibe.ts" --> "src/services/multiAgentService.ts"
+  "src/discord/lifecycle.ts" --> "src/logger.ts"
+  "src/discord/lifecycle.ts" --> "src/services/agentOpsService.ts"
+  "src/discord/lifecycle.ts" --> "src/services/automationBot.ts"
+  "src/discord/lifecycle.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/session.ts" --> "src/services/multiAgentService.ts"
+  "src/discord/ui.ts":::file
   "src/init.ts" --> "src/logger.ts"
   "src/logger.ts":::file
   "src/middleware/auth.ts" --> "src/config.ts"
@@ -85,13 +125,19 @@ graph LR
   "src/routes/bot.ts" --> "src/contracts/bot.ts"
   "src/routes/bot.ts" --> "src/middleware/auth.ts"
   "src/routes/bot.ts" --> "src/middleware/rateLimit.ts"
+  "src/routes/bot.ts" --> "src/services/adminAllowlistService.ts"
   "src/routes/bot.ts" --> "src/services/agentMemoryStore.ts"
   "src/routes/bot.ts" --> "src/services/agentOpsService.ts"
   "src/routes/bot.ts" --> "src/services/automationBot.ts"
   "src/routes/bot.ts" --> "src/services/benchmarkStore.ts"
+  "src/routes/bot.ts" --> "src/services/finopsService.ts"
+  "src/routes/bot.ts" --> "src/services/goNoGoService.ts"
   "src/routes/bot.ts" --> "src/services/memoryJobRunner.ts"
   "src/routes/bot.ts" --> "src/services/memoryQualityMetricsService.ts"
   "src/routes/bot.ts" --> "src/services/multiAgentService.ts"
+  "src/routes/bot.ts" --> "src/services/privacyForgetService.ts"
+  "src/routes/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
+  "src/routes/bot.ts" --> "src/services/skills/actions/registry.ts"
   "src/routes/bot.ts" --> "src/services/supabaseClient.ts"
   "src/routes/bot.ts" --> "src/utils/validation.ts"
   "src/routes/fred.ts" --> "src/utils/validation.ts"
@@ -122,10 +168,16 @@ graph LR
   "src/services/adminAllowlistService.ts" --> "src/logger.ts"
   "src/services/adminAllowlistService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentMemoryService.ts" --> "src/logger.ts"
+  "src/services/agentMemoryService.ts" --> "src/services/memoryPoisonGuard.ts"
+  "src/services/agentMemoryService.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/agentMemoryService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentMemoryService.ts" --> "src/utils/env.ts"
+  "src/services/agentMemoryService.ts" --> "src/utils/obsidianFileLock.ts"
+  "src/services/agentMemoryStore.ts" --> "src/services/memoryPoisonGuard.ts"
+  "src/services/agentMemoryStore.ts" --> "src/services/obsidianSanitizationWorker.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentOpsService.ts" --> "src/logger.ts"
+  "src/services/agentOpsService.ts" --> "src/services/agentMemoryStore.ts"
   "src/services/agentOpsService.ts" --> "src/services/multiAgentService.ts"
   "src/services/agentOpsService.ts" --> "src/utils/env.ts"
   "src/services/agentPolicyService.ts" --> "src/services/skills/types.ts"
@@ -156,13 +208,23 @@ graph LR
   "src/services/discordLoginSessionStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/distributedLockService.ts" --> "src/logger.ts"
   "src/services/distributedLockService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/finopsService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/finopsService.ts" --> "src/utils/env.ts"
+  "src/services/goNoGoService.ts" --> "src/services/memoryJobRunner.ts"
+  "src/services/goNoGoService.ts" --> "src/services/memoryQualityMetricsService.ts"
+  "src/services/goNoGoService.ts" --> "src/services/supabaseClient.ts"
   "src/services/investmentAnalysisService.ts":::file
-  "src/services/llmClient.ts":::file
+  "src/services/llmClient.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/localAiTradingClient.ts" --> "src/config.ts"
   "src/services/localAiTradingClient.ts" --> "src/contracts/trade.ts"
+  "src/services/mcpWorkerClient.ts" --> "src/services/structuredErrorLogService.ts"
+  "src/services/mcpWorkerClient.ts" --> "src/services/workerExecution.ts"
   "src/services/memoryJobRunner.ts" --> "src/logger.ts"
+  "src/services/memoryJobRunner.ts" --> "src/services/memoryPoisonGuard.ts"
+  "src/services/memoryJobRunner.ts" --> "src/services/obsidianSanitizationWorker.ts"
   "src/services/memoryJobRunner.ts" --> "src/services/supabaseClient.ts"
   "src/services/memoryJobRunner.ts" --> "src/utils/env.ts"
+  "src/services/memoryPoisonGuard.ts":::file
   "src/services/memoryQualityMetricsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentMemoryService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentPolicyService.ts"
@@ -172,10 +234,17 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/skills/registry.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/types.ts"
   "src/services/newsChannelStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/newsMonitorWorkerClient.ts" --> "src/services/mcpWorkerClient.ts"
+  "src/services/newsMonitorWorkerClient.ts" --> "src/utils/env.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/logger.ts"
+  "src/services/newsSentimentMonitor.ts" --> "src/services/newsMonitorWorkerClient.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/services/sourceMonitorStore.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/services/supabaseClient.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/utils/network.ts"
+  "src/services/obsidianSanitizationWorker.ts" --> "src/utils/env.ts"
+  "src/services/privacyForgetService.ts" --> "src/logger.ts"
+  "src/services/privacyForgetService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/privacyForgetService.ts" --> "src/utils/obsidianFileLock.ts"
   "src/services/researchPresetStore.ts" --> "src/contracts/researchPreset.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/automationBot.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/runtime-alerts/types.ts"
@@ -190,24 +259,76 @@ graph LR
   "src/services/runtimeAlertService.ts" --> "src/services/runtime-alerts/config.ts"
   "src/services/runtimeAlertService.ts" --> "src/services/runtime-alerts/dispatcher.ts"
   "src/services/skills/actionExecutionLogService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/skills/actionGovernanceStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/skills/actionGovernanceStore.ts" --> "src/utils/env.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/finopsService.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actionExecutionLogService.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actions/planner.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/skills/actions/policy.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actions/registry.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/structuredErrorLogService.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/workerExecution.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/services/skills/actionRunner.ts" --> "src/utils/env.ts"
+  "src/services/skills/actionRunner.ts" --> "src/utils/ttlCache.ts"
   "src/services/skills/actions/analysis.ts" --> "src/services/investmentAnalysisService.ts"
   "src/services/skills/actions/analysis.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/code.ts" --> "src/services/llmClient.ts"
+  "src/services/skills/actions/code.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/code.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/community.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
+  "src/services/skills/actions/community.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/community.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/db.ts" --> "src/services/skills/actions/policy.ts"
+  "src/services/skills/actions/db.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/db.ts" --> "src/services/supabaseClient.ts"
+  "src/services/skills/actions/mcpDelegate.ts" --> "src/services/mcpWorkerClient.ts"
+  "src/services/skills/actions/mcpDelegate.ts" --> "src/utils/env.ts"
+  "src/services/skills/actions/mcpDelegatedAction.ts" --> "src/services/skills/actions/mcpDelegate.ts"
+  "src/services/skills/actions/mcpDelegatedAction.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/news.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
+  "src/services/skills/actions/news.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/news.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/planner.ts" --> "src/services/llmClient.ts"
+  "src/services/skills/actions/planner.ts" --> "src/services/skills/actions/plannerRules.ts"
   "src/services/skills/actions/planner.ts" --> "src/services/skills/actions/registry.ts"
   "src/services/skills/actions/planner.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/plannerRules.ts" --> "src/logger.ts"
+  "src/services/skills/actions/plannerRules.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/policy.ts" --> "src/utils/env.ts"
+  "src/services/skills/actions/privacy.ts" --> "src/services/privacyForgetService.ts"
+  "src/services/skills/actions/privacy.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/queryUtils.ts":::file
+  "src/services/skills/actions/rag.ts" --> "src/services/agentMemoryService.ts"
+  "src/services/skills/actions/rag.ts" --> "src/services/agentMemoryStore.ts"
+  "src/services/skills/actions/rag.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/analysis.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/code.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/community.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/db.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/news.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/privacy.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/rag.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/stock.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/web.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/youtube.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/youtubeWebhook.ts"
   "src/services/skills/actions/stock.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/stock.ts" --> "src/services/stockService.ts"
   "src/services/skills/actions/types.ts":::file
+  "src/services/skills/actions/web.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
+  "src/services/skills/actions/web.ts" --> "src/services/skills/actions/policy.ts"
+  "src/services/skills/actions/web.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/web.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/youtube.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
+  "src/services/skills/actions/youtube.ts" --> "src/services/skills/actions/queryUtils.ts"
   "src/services/skills/actions/youtube.ts" --> "src/services/skills/actions/types.ts"
-  "src/services/skills/actions/youtube.ts" --> "src/utils/env.ts"
+  "src/services/skills/actions/youtubeWebhook.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
+  "src/services/skills/actions/youtubeWebhook.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/youtubeWebhook.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/engine.ts" --> "src/services/skills/modules/casualChat.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/modules/guildOnboardingBlueprint.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/modules/incidentReview.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/modules/opsCritique.ts"
@@ -215,6 +336,8 @@ graph LR
   "src/services/skills/engine.ts" --> "src/services/skills/modules/opsPlan.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/modules/webhook.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/types.ts"
+  "src/services/skills/modules/casualChat.ts" --> "src/services/llmClient.ts"
+  "src/services/skills/modules/casualChat.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/common.ts" --> "src/services/llmClient.ts"
   "src/services/skills/modules/common.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/guildOnboardingBlueprint.ts" --> "src/services/skills/modules/common.ts"
@@ -235,6 +358,9 @@ graph LR
   "src/services/sourceMonitorStore.ts" --> "src/logger.ts"
   "src/services/sourceMonitorStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/stockService.ts":::file
+  "src/services/structuredErrorLogService.ts" --> "src/logger.ts"
+  "src/services/structuredErrorLogService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/structuredErrorLogService.ts" --> "src/utils/env.ts"
   "src/services/supabaseClient.ts" --> "src/config.ts"
   "src/services/supabaseRateLimitService.ts" --> "src/logger.ts"
   "src/services/supabaseRateLimitService.ts" --> "src/services/supabaseClient.ts"
@@ -256,18 +382,32 @@ graph LR
   "src/services/tradingStrategyService.ts" --> "src/contracts/tradingStrategy.ts"
   "src/services/tradingStrategyService.ts" --> "src/logger.ts"
   "src/services/tradingStrategyService.ts" --> "src/services/supabaseClient.ts"
-  "src/services/youtubeCommunityScraper.ts" --> "src/utils/network.ts"
+  "src/services/workerExecution.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/workerGeneration/dynamicWorkerRegistry.ts" --> "src/logger.ts"
+  "src/services/workerGeneration/dynamicWorkerRegistry.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/workerGeneration/workerApprovalStore.ts":::file
+  "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/logger.ts"
+  "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/llmClient.ts"
+  "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerSandbox.ts"
+  "src/services/workerGeneration/workerSandbox.ts":::file
+  "src/services/youtubeMonitorWorkerClient.ts" --> "src/services/mcpWorkerClient.ts"
+  "src/services/youtubeMonitorWorkerClient.ts" --> "src/utils/env.ts"
   "src/services/youtubeSubscriptionStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/logger.ts"
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/services/sourceMonitorStore.ts"
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/services/supabaseClient.ts"
-  "src/services/youtubeSubscriptionsMonitor.ts" --> "src/services/youtubeCommunityScraper.ts"
+  "src/services/youtubeSubscriptionsMonitor.ts" --> "src/services/youtubeMonitorWorkerClient.ts"
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/utils/async.ts"
-  "src/services/youtubeSubscriptionsMonitor.ts" --> "src/utils/network.ts"
   "src/types/auth.ts":::file
   "src/utils/async.ts":::file
+  "src/utils/codeThread.ts" --> "src/services/multiAgentService.ts"
+  "src/utils/codeThread.ts" --> "src/utils/sessionArtifactStore.ts"
   "src/utils/env.ts":::file
   "src/utils/network.ts":::file
+  "src/utils/obsidianFileLock.ts":::file
+  "src/utils/sessionArtifactStore.ts":::file
+  "src/utils/ttlCache.ts":::file
   "src/utils/validation.ts":::file
   classDef file fill:#f7f7f7,stroke:#777,stroke-width:1px;
 ```

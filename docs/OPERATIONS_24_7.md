@@ -6,6 +6,7 @@ Use PM2 to keep the process alive and auto-restart on failures.
 Related architecture guide:
 
 - `docs/RUNBOOK_MUEL_PLATFORM.md` as the top-level unified runbook (DevOps/SRE entrypoint).
+- `docs/OPERATOR_SOP_DECISION_TABLE.md` for operator auto decision thresholds and actions.
 - `docs/CONTEXT_ISOLATION.md` for domain-focused review/edit workflow.
 - `docs/MULTI_GUILD_OPERATIONS_CHECKLIST.md` for multi-server rollout checklist and env registration steps.
 - `docs/OBSIDIAN_SUPABASE_SYNC.md` for no-disk periodic Obsidian -> Supabase sync.

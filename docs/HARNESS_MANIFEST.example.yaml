@@ -1,0 +1,64 @@
+version: 1
+service: muel-backend
+updatedAt: 2026-03-14
+
+llm:
+  providerPriority:
+    - openai
+    - anthropic
+    - gemini
+    - openclaw
+    - ollama
+  timeoutMs: 15000
+  fallbackEnabled: true
+
+promptContext:
+  strategyDoc: docs/CONTEXT_ENGINEERING_STRATEGY.md
+  codeActionFile: src/services/skills/actions/code.ts
+  sevenPackEnabled: true
+  summarizeHistory: true
+  selectRelevantOnly: true
+  splitComplexWorkflow: true
+
+skills:
+  catalogDoc: docs/SKILLSET_LAYER.md
+  plannerRules: docs/SKILL_ACTION_RULES.json
+  executionMode:
+    actionRunnerEnabled: true
+    retryMax: 2
+    timeoutMs: 15000
+    cacheEnabled: true
+    circuitBreakerEnabled: true
+
+mcp:
+  strictRouting: true
+  delegationEnabled: true
+  workerTimeoutMs: 10000
+  clients:
+    - src/services/mcpWorkerClient.ts
+    - src/mcp/server.ts
+
+runtimeGovernance:
+  sessionQueue:
+    maxQueueSize: 300
+    queuePollMs: 250
+  sessionTimeoutMs: 180000
+  stepTimeoutMs: 75000
+  maxAttempts: 2
+  deadletterMax: 300
+
+observability:
+  structuredErrorLog: src/services/structuredErrorLogService.ts
+  keyApis:
+    - /health
+    - /ready
+    - /api/bot/status
+    - /api/bot/agent/deadletters
+    - /api/bot/agent/memory/jobs/deadletters
+
+releaseGates:
+  doc: docs/HARNESS_RELEASE_GATES.md
+  requiredChecks:
+    - npm run lint
+    - npm run docs:check
+    - npm run smoke:api

@@ -4,50 +4,51 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 
 ## Required
 
-- START_BOT=true
-- DISCORD_TOKEN=<secret>
-- JWT_SECRET=<secret>
+- ERROR_LOG_DB_ENABLED=true
+- ERROR_LOG_TABLE=system_error_events
+- LLM_API_TIMEOUT_MS=15000
 
-## LLM Provider
+## LLM Provider (Harness)
 
-- AI_PROVIDER=openai or gemini
+- AI_PROVIDER=openai|gemini|anthropic|openclaw|ollama
 - OPENAI_API_KEY=<secret> (if openai)
 - GEMINI_API_KEY=<secret> (if gemini)
-- OPENAI_ANALYSIS_MODEL=gpt-4o-mini (optional)
-- GEMINI_MODEL=gemini-1.5-flash (optional)
+- ANTHROPIC_API_KEY=<secret> (if anthropic)
+- OPENCLAW_BASE_URL=<url> (if openclaw)
+- OPENCLAW_API_KEY=<secret> (optional)
+- OLLAMA_MODEL=<model> (if ollama)
+- OLLAMA_BASE_URL=http://127.0.0.1:11434 (optional)
+- OPENAI_ANALYSIS_MODEL / GEMINI_MODEL / ANTHROPIC_MODEL (optional)
 
 ## Agent Runtime Controls
 
-- AGENT_MAX_CONCURRENT_SESSIONS=4
-- AGENT_MAX_GOAL_LENGTH=1200
-- DISCORD_SIMPLE_COMMANDS_ENABLED=true
-- DISCORD_LOGIN_SESSION_TTL_MS=86400000
-- DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS=7200000
-- DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS=1800000
-- AGENT_AUTO_ONBOARDING_ENABLED=true
-- AGENT_DAILY_LEARNING_ENABLED=true
-- AGENT_DAILY_LEARNING_HOUR=4
-- AGENT_DAILY_MAX_GUILDS=30
-- AGENT_ONBOARDING_COOLDOWN_MS=21600000
-
-## Memory Layer
-
-- SUPABASE_URL=<secret>
-- SUPABASE_KEY=<secret>
-- OBSIDIAN_VAULT_PATH=/var/data/obsidian-vault (optional)
-- OBSIDIAN_CLI_ENABLED=true (optional)
-- OBSIDIAN_CLI_COMMAND=/usr/local/bin/obsidian-headless (optional)
-- OBSIDIAN_CLI_ARGS_JSON=["query","--guild","{guildId}","--goal","{goal}","--vault","{vaultPath}"] (optional)
-- OBSIDIAN_CLI_TIMEOUT_MS=4000 (optional)
-- OBSIDIAN_CLI_MAX_HINTS=8 (optional)
+- OBSIDIAN_FILE_LOCK_STALE_MS=60000 (optional, stale lock auto-recovery)
+- OBSIDIAN_FILE_LOCK_RETRY_MS=120 (optional, lock retry interval)
+- MEMORY_POISON_BLOCK_THRESHOLD=0.85 (optional, block suspicious memory ingestion)
+- MEMORY_POISON_REVIEW_THRESHOLD=0.55 (optional, downgrade confidence + tag for review)
+- MEMORY_RETRIEVE_MIN_CONFIDENCE=0.35 (optional, retrieval floor for non-pinned memory)
+- MEMORY_HINT_MIN_CONFIDENCE=0.35 (optional, LLM hint floor for non-pinned memory)
+- OBSIDIAN_SANITIZER_ENABLED=true (optional)
+- OBSIDIAN_SANITIZER_MAX_TEXT_LEN=12000 (optional)
+- OBSIDIAN_SANITIZER_MIN_TEXT_LEN=20 (optional)
+- OBSIDIAN_SANITIZER_MAX_LINKS=8 (optional)
 - ACTION_RUNNER_ENABLED=true (optional)
 - ACTION_RETRY_MAX=2 (optional)
 - ACTION_TIMEOUT_MS=15000 (optional)
+- ACTION_CACHE_ENABLED=true (optional)
+- ACTION_CACHE_TTL_MS=600000 (optional, 10 minutes)
+- ACTION_CACHE_MAX_ENTRIES=1000 (optional)
+- ACTION_CACHEABLE_ACTIONS=rag.retrieve,news.google.search,community.search,web.fetch,youtube.search.first,stock.quote,stock.chart,db.supabase.read (optional)
 - ACTION_CIRCUIT_BREAKER_ENABLED=true (optional)
 - ACTION_CIRCUIT_FAILURE_THRESHOLD=3 (optional)
 - ACTION_CIRCUIT_OPEN_MS=60000 (optional)
 - ACTION_YOUTUBE_USE_PLAYWRIGHT=false (optional)
 - ACTION_YOUTUBE_PLAYWRIGHT_TIMEOUT_MS=8000 (optional)
+- AGENT_MAX_QUEUE_SIZE=300 (optional)
+- AGENT_SESSION_TIMEOUT_MS=180000 (optional)
+- AGENT_STEP_TIMEOUT_MS=75000 (optional)
+- AGENT_SESSION_MAX_ATTEMPTS=2 (optional)
+- AGENT_DEADLETTER_MAX=300 (optional)
 
 ## Automation Defaults
 
@@ -58,11 +59,16 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 ## Notes
 
 - `AUTOMATION_NEWS_ENABLED=false` keeps non-essential news push opt-in.
-- If both OpenAI and Gemini keys exist, `AI_PROVIDER` selects priority.
-- If no provider key exists, `/해줘` and `/시작` session creation fails by design.
+- If multiple providers are configured, `AI_PROVIDER` selects priority.
+- If no provider configuration exists, `/해줘` and `/시작` session creation fails by design.
+- 비용 최소화가 목표라면 `AI_PROVIDER=ollama`와 소형 모델(예: qwen2.5:3b-instruct) 조합을 권장합니다.
 - `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps command surface minimal (`/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`) and enables mention-first chat UX.
 - `DISCORD_LOGIN_SESSION_TTL_MS` controls how long a non-admin login session stays active for subscription add/remove.
 - `DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS` enables sliding expiration; sessions accessed near expiry are extended.
 - `DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS` controls periodic cleanup of expired persisted sessions.
 - Persistent login across bot restarts requires the `discord_login_sessions` table from `docs/SUPABASE_SCHEMA.sql`.
 - If `OBSIDIAN_CLI_COMMAND` is set, the backend executes it at runtime to fetch memory hints and falls back to direct markdown reads only when CLI output is unavailable.
+- Untrusted chat input is sanitized before passing to Obsidian CLI (control chars, traversal tokens, shell metacharacters removed) and guild-scoped markdown path resolution is constrained under `OBSIDIAN_VAULT_PATH`.
+- Obsidian markdown access is serialized with local file locks to reduce concurrent read/delete collisions when multiple Discord commands run at the same time.
+- Memory ingest/retrieval uses poison-guard heuristics (prompt-injection/ad-spam/link-heavy patterns) to block or down-rank contaminated context before it reaches RAG/LLM prompts.
+- A lightweight rule-based sanitization worker runs before memory persistence (future Obsidian writes included) and blocks malformed/injection-like text early.

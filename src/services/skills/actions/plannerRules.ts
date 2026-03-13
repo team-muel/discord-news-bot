@@ -1,7 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { ActionPlan } from './types';
+import logger from '../../../logger';
 
-export const RAG_INTENT_REGEX = /(rag|근거|출처|기억|메모리|memory|회상|리콜|retrieve|retrieval|요약근거)/;
-const YOUTUBE_WEBHOOK_INTENT_REGEX = /(웹훅|webhook|알림|전송|post|notify)/;
+const DEFAULT_RAG_INTENT_PATTERN = 'rag|근거|출처|기억|메모리|memory|회상|리콜|retrieve|retrieval|요약근거';
+const RULES_DOC_PATH = path.resolve(process.cwd(), 'docs', 'SKILL_ACTION_RULES.json');
 
 type QueryArgMode = 'goal' | 'none';
 
@@ -19,6 +22,21 @@ type IntentRuleSpec = {
     when: RegExp;
     plans: RulePlanSpec[];
   }>;
+};
+
+type IntentRuleConfig = {
+  id: string;
+  pattern: string;
+  plans: RulePlanSpec[];
+  conditionalPlans?: Array<{
+    when: string;
+    plans: RulePlanSpec[];
+  }>;
+};
+
+type PlannerRulesConfig = {
+  ragIntentPattern: string;
+  rules: IntentRuleConfig[];
 };
 
 const pushUnique = (plans: ActionPlan[], next: ActionPlan) => {
@@ -43,69 +61,119 @@ const buildPlansFromSpecs = (specs: RulePlanSpec[], goal: string): ActionPlan[] 
   }));
 };
 
-const INTENT_RULE_SPECS: IntentRuleSpec[] = [
-  {
-    id: 'privacy-forget-user-intent',
-    pattern: /(잊어|잊혀|forget|erase|삭제|지워|파기|개인정보|프라이버시|gdpr|탈퇴)/,
-    plans: [{ actionName: 'privacy.forget.user', reason: 'privacy-forget-user-intent', queryArg: 'none' }],
-  },
-  {
-    id: 'privacy-forget-guild-intent',
-    pattern: /(길드|서버).*(삭제|파기|초기화|잊어)|guild.*(delete|remove|forget)|서버.*추방/,
-    plans: [{ actionName: 'privacy.forget.guild', reason: 'privacy-forget-guild-intent', queryArg: 'none' }],
-  },
-  {
-    id: 'rag-intent',
-    pattern: RAG_INTENT_REGEX,
-    plans: [{ actionName: 'rag.retrieve', reason: 'rag-intent', queryArg: 'goal' }],
-  },
-  {
-    id: 'youtube-intent',
-    pattern: /(youtube|유튜브)/,
-    plans: [{ actionName: 'youtube.search.first', reason: 'youtube-intent', queryArg: 'goal' }],
-    conditionalPlans: [
-      {
-        when: YOUTUBE_WEBHOOK_INTENT_REGEX,
-        plans: [{ actionName: 'youtube.search.webhook', reason: 'youtube-webhook-intent', queryArg: 'goal' }],
-      },
-    ],
-  },
-  {
-    id: 'chart-intent',
-    pattern: /(차트|chart)/,
-    plans: [{ actionName: 'stock.chart', reason: 'chart-intent', queryArg: 'none' }],
-  },
-  {
-    id: 'quote-intent',
-    pattern: /(주가|가격|quote)/,
-    plans: [{ actionName: 'stock.quote', reason: 'quote-intent', queryArg: 'none' }],
-  },
-  {
-    id: 'analysis-intent',
-    pattern: /(분석|analysis)/,
-    plans: [{ actionName: 'investment.analysis', reason: 'analysis-intent', queryArg: 'goal' }],
-  },
-  {
-    id: 'news-intent',
-    pattern: /(뉴스|news|헤드라인|기사)/,
-    plans: [{ actionName: 'news.google.search', reason: 'news-intent', queryArg: 'goal' }],
-  },
-  {
-    id: 'community-intent',
-    pattern: /(커뮤니티|community|게시글|포럼|reddit|디시|클리앙|루리웹|블라인드)/,
-    plans: [{ actionName: 'community.search', reason: 'community-intent', queryArg: 'goal' }],
-  },
-  {
-    id: 'web-intent',
-    pattern: /(웹\s*검색|웹검색|web\s*search|search|뉴스|자료\s*찾|기사|url|링크|http)/,
-    plans: [{ actionName: 'web.fetch', reason: 'web-intent', queryArg: 'none' }],
-  },
-  {
-    id: 'db-intent',
-    pattern: /(db|database|데이터베이스|supabase|메모리\s*조회|기억\s*조회|lore)/,
-    plans: [{ actionName: 'db.supabase.read', reason: 'db-intent', queryArg: 'none' }],
-  },
-];
+const isQueryArgMode = (value: unknown): value is QueryArgMode => value === 'goal' || value === 'none';
+
+const normalizePlanSpec = (input: unknown): RulePlanSpec | null => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+
+  const row = input as Record<string, unknown>;
+  const actionName = String(row.actionName || '').trim();
+  const reason = String(row.reason || '').trim();
+  if (!actionName || !reason) {
+    return null;
+  }
+
+  const queryArg = row.queryArg;
+  return {
+    actionName,
+    reason,
+    queryArg: isQueryArgMode(queryArg) ? queryArg : 'none',
+  };
+};
+
+const normalizeIntentRuleConfig = (input: unknown): IntentRuleConfig | null => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+
+  const row = input as Record<string, unknown>;
+  const id = String(row.id || '').trim();
+  const pattern = String(row.pattern || '').trim();
+  const plans = Array.isArray(row.plans)
+    ? row.plans.map((plan) => normalizePlanSpec(plan)).filter((plan): plan is RulePlanSpec => Boolean(plan))
+    : [];
+
+  if (!id || !pattern || plans.length === 0) {
+    return null;
+  }
+
+  const conditionalPlans = Array.isArray(row.conditionalPlans)
+    ? row.conditionalPlans
+      .map((conditional) => {
+        if (!conditional || typeof conditional !== 'object' || Array.isArray(conditional)) {
+          return null;
+        }
+        const when = String((conditional as Record<string, unknown>).when || '').trim();
+        const conditionalSpecs = Array.isArray((conditional as Record<string, unknown>).plans)
+          ? ((conditional as Record<string, unknown>).plans as unknown[])
+            .map((plan) => normalizePlanSpec(plan))
+            .filter((plan): plan is RulePlanSpec => Boolean(plan))
+          : [];
+
+        if (!when || conditionalSpecs.length === 0) {
+          return null;
+        }
+
+        return { when, plans: conditionalSpecs };
+      })
+      .filter((entry): entry is { when: string; plans: RulePlanSpec[] } => Boolean(entry))
+    : undefined;
+
+  return { id, pattern, plans, conditionalPlans };
+};
+
+const loadPlannerRulesConfig = (): PlannerRulesConfig => {
+  try {
+    const raw = fs.readFileSync(RULES_DOC_PATH, 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const ragIntentPattern = String(parsed.ragIntentPattern || '').trim() || DEFAULT_RAG_INTENT_PATTERN;
+    const rules = Array.isArray(parsed.rules)
+      ? parsed.rules.map((rule) => normalizeIntentRuleConfig(rule)).filter((rule): rule is IntentRuleConfig => Boolean(rule))
+      : [];
+
+    if (rules.length === 0) {
+      logger.warn('[PLANNER-RULES] no valid rule entries in %s; fallback to empty rules', RULES_DOC_PATH);
+    }
+
+    return { ragIntentPattern, rules };
+  } catch (error) {
+    logger.warn('[PLANNER-RULES] failed to load %s: %s', RULES_DOC_PATH, error instanceof Error ? error.message : String(error));
+    return {
+      ragIntentPattern: DEFAULT_RAG_INTENT_PATTERN,
+      rules: [],
+    };
+  }
+};
+
+const compileIntentRuleSpecs = (configRules: IntentRuleConfig[]): IntentRuleSpec[] => {
+  const compiled: IntentRuleSpec[] = [];
+
+  for (const rule of configRules) {
+    try {
+      compiled.push({
+        id: rule.id,
+        pattern: new RegExp(rule.pattern, 'i'),
+        plans: rule.plans,
+        conditionalPlans: rule.conditionalPlans?.map((entry) => ({
+          when: new RegExp(entry.when, 'i'),
+          plans: entry.plans,
+        })),
+      });
+    } catch (error) {
+      logger.warn('[PLANNER-RULES] invalid regex rule id=%s: %s', rule.id, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  return compiled;
+};
+
+const loadedRulesConfig = loadPlannerRulesConfig();
+const RAG_INTENT_REGEX = new RegExp(loadedRulesConfig.ragIntentPattern, 'i');
+const INTENT_RULE_SPECS: IntentRuleSpec[] = compileIntentRuleSpecs(loadedRulesConfig.rules);
+
+export const isRagIntentGoal = (goal: string): boolean => RAG_INTENT_REGEX.test(String(goal || '').toLowerCase());
 
 export const buildFallbackPlan = (goal: string): ActionPlan[] => {
   const lower = goal.toLowerCase();

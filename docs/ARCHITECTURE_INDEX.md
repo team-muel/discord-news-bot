@@ -8,6 +8,9 @@ It provides a stable map of runtime flow, domain boundaries, and data boundaries
 Primary operations entrypoint:
 
 - `docs/RUNBOOK_MUEL_PLATFORM.md` (unified DevOps/SRE runbook)
+- `docs/OPERATOR_SOP_DECISION_TABLE.md` (who/when/threshold/action decision matrix)
+- `docs/HARNESS_ENGINEERING_PLAYBOOK.md` (model runtime harness design)
+- `docs/HARNESS_RELEASE_GATES.md` (go/no-go gates for harness quality)
 - `docs/ONCALL_INCIDENT_TEMPLATE.md` (incident timeline template)
 - `docs/ONCALL_COMMS_PLAYBOOK.md` (incident communications)
 - `docs/POSTMORTEM_TEMPLATE.md` (post-incident review)

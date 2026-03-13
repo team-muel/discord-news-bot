@@ -1,14 +1,20 @@
 import { getAction } from './actions/registry';
+import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { TtlCache } from '../../utils/ttlCache';
 import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
+import { logStructuredError } from '../structuredErrorLogService';
+import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
 
 type SkillActionResult = {
   handled: boolean;
   output: string;
+  hasSuccess: boolean;
+  externalUnavailable: boolean;
 };
 
 type GoalActionInput = {
@@ -26,8 +32,68 @@ const ACTION_CIRCUIT_OPEN_MS = Math.max(5_000, parseIntegerEnv(process.env.ACTIO
 const ACTION_FINOPS_DEGRADED_RETRY_MAX = Math.max(0, parseIntegerEnv(process.env.ACTION_FINOPS_DEGRADED_RETRY_MAX, 1));
 const ACTION_FINOPS_DEGRADED_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_FINOPS_DEGRADED_TIMEOUT_MS, 8_000));
 const ACTION_RUNNER_MODE = getActionRunnerMode();
+const ACTION_CACHE_ENABLED = parseBooleanEnv(process.env.ACTION_CACHE_ENABLED, true);
+const ACTION_CACHE_TTL_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000));
+const ACTION_CACHE_MAX_ENTRIES = Math.max(50, parseIntegerEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000));
+const DEFAULT_CACHEABLE_ACTIONS = [
+  'code.generate',
+  'rag.retrieve',
+  'news.google.search',
+  'community.search',
+  'web.fetch',
+  'youtube.search.first',
+  'stock.quote',
+  'stock.chart',
+  'db.supabase.read',
+];
+const ACTION_CACHEABLE_ACTION_SET = new Set(
+  String(process.env.ACTION_CACHEABLE_ACTIONS || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean),
+);
+if (ACTION_CACHEABLE_ACTION_SET.size === 0) {
+  for (const actionName of DEFAULT_CACHEABLE_ACTIONS) {
+    ACTION_CACHEABLE_ACTION_SET.add(actionName);
+  }
+}
+
+const actionResultCache = new TtlCache<{
+  name: string;
+  summary: string;
+  artifacts: string[];
+  verification: string[];
+}>(ACTION_CACHE_MAX_ENTRIES);
 
 const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
+
+const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+
+const stableStringify = (value: unknown): string => {
+  if (value === null || value === undefined) return 'null';
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${k}:${stableStringify(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const isActionCacheable = (actionName: string): boolean => ACTION_CACHEABLE_ACTION_SET.has(actionName);
+
+const buildActionCacheKey = (params: {
+  guildId: string;
+  actionName: string;
+  goal: string;
+  args: Record<string, unknown>;
+}): string => {
+  const goal = compact(params.goal).toLowerCase().slice(0, 500);
+  const args = stableStringify(params.args || {});
+  return [params.guildId, params.actionName, goal, args].join('|');
+};
 
 const isCircuitOpen = (actionName: string): boolean => {
   if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
@@ -84,11 +150,25 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 };
 
+const isExternalUnavailableError = (errorCode?: string): boolean => {
+  const code = String(errorCode || '').toUpperCase();
+  if (!code) {
+    return false;
+  }
+
+  return code.includes('WORKER')
+    || code.includes('MCP_')
+    || code === 'ACTION_TIMEOUT'
+    || code === 'WEB_FETCH_FAILED';
+};
+
 export const runGoalActions = async (input: GoalActionInput): Promise<SkillActionResult> => {
   if (!ACTION_RUNNER_ENABLED) {
     return {
       handled: false,
       output: '',
+      hasSuccess: false,
+      externalUnavailable: false,
     };
   }
 
@@ -97,11 +177,15 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     return {
       handled: false,
       output: '',
+      hasSuccess: false,
+      externalUnavailable: false,
     };
   }
 
   const lines: string[] = ['요청 결과'];
   let handledAny = false;
+  let hasSuccess = false;
+  let externalUnavailable = false;
   const budget = await getFinopsBudgetStatus(input.guildId).catch(() => null);
   const finopsMode = budget?.mode || 'normal';
   if (budget?.enabled) {
@@ -160,7 +244,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       continue;
     }
 
-    const action = getAction(planned.actionName);
+    const action = getAction(planned.actionName) ?? getDynamicAction(planned.actionName);
     if (!action) {
       continue;
     }
@@ -246,6 +330,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         estimatedCostUsd: 0,
         finopsMode,
       });
+      hasSuccess = true;
       continue;
     }
 
@@ -291,26 +376,106 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       ? Math.min(ACTION_TIMEOUT_MS, ACTION_FINOPS_DEGRADED_TIMEOUT_MS)
       : ACTION_TIMEOUT_MS;
 
+    const cacheEligible = ACTION_CACHE_ENABLED && isActionCacheable(action.name);
+    const cacheKey = cacheEligible
+      ? buildActionCacheKey({
+        guildId: input.guildId,
+        actionName: action.name,
+        goal: input.goal,
+        args: planned.args || {},
+      })
+      : '';
+
+    if (cacheEligible && cacheKey) {
+      const cached = actionResultCache.get(cacheKey);
+      if (cached) {
+        lines.push(`액션: ${cached.name}`);
+        lines.push(`${cached.summary} (cache hit)`);
+        lines.push(cached.artifacts.length > 0 ? `산출물:\n${cached.artifacts.map((line) => `- ${line}`).join('\n')}` : '산출물: 없음');
+        lines.push(cached.verification.length > 0
+          ? `검증:\n${[...cached.verification, `cache_ttl_ms=${ACTION_CACHE_TTL_MS}`, 'cache_hit=true'].map((line) => `- ${line}`).join('\n')}`
+          : `검증:\n- cache_ttl_ms=${ACTION_CACHE_TTL_MS}\n- cache_hit=true`);
+        lines.push('재시도 횟수: 0');
+        lines.push('소요시간(ms): 0');
+        lines.push('상태: 성공');
+
+        await logActionExecutionEvent({
+          guildId: input.guildId,
+          requestedBy: input.requestedBy,
+          goal: input.goal,
+          actionName: cached.name,
+          ok: true,
+          summary: `${cached.summary} (cache hit)`,
+          artifacts: cached.artifacts,
+          verification: [...cached.verification, `cache_ttl_ms=${ACTION_CACHE_TTL_MS}`, 'cache_hit=true'],
+          durationMs: 0,
+          retryCount: 0,
+          circuitOpen: false,
+          estimatedCostUsd: 0,
+          finopsMode,
+        });
+
+        hasSuccess = true;
+
+        continue;
+      }
+    }
+
     while (attempt <= effectiveRetryMax) {
       attempt += 1;
-      final = await withTimeout(action.execute({
-        goal: input.goal,
-        args: planned.args,
-        guildId: input.guildId,
-        requestedBy: input.requestedBy,
-      }), effectiveTimeoutMs).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+      final = await withTimeout(Promise.resolve().then(() => {
+        const executionInput = normalizeActionInput({
+          actionName: action.name,
+          input: {
+            goal: input.goal,
+            args: planned.args,
+            guildId: input.guildId,
+            requestedBy: input.requestedBy,
+          },
+        });
+        return action.execute(executionInput);
+      }), effectiveTimeoutMs)
+        .then((result) => normalizeActionResult({ actionName: action.name, result }))
+        .catch(async (error) => {
+          const normalized = toWorkerExecutionError(error, 'UNKNOWN_ERROR');
+          await logStructuredError({
+            code: normalized.code,
+            source: 'skills.actionRunner.execute',
+            message: normalized.message,
+            guildId: input.guildId,
+            actionName: action.name,
+            meta: {
+              retryable: normalized.retryable,
+              attempt,
+              retryMax: effectiveRetryMax,
+              ...(normalized.meta || {}),
+            },
+            severity: normalized.retryable ? 'warn' : 'error',
+          }, error);
+
+          const message = normalized.code || normalized.message;
+          const verification = [`error_code=${normalized.code}`];
+          if (!normalized.retryable) {
+            verification.push('retryable=false');
+          }
+
         return {
           ok: false,
           name: action.name,
           summary: '액션 실행 실패',
           artifacts: [],
-          verification: [],
+            verification,
           error: message,
         };
-      });
+        });
 
       if (final.ok) {
+        break;
+      }
+
+      const shouldStopRetry = final.error === 'ACTION_INPUT_INVALID'
+        || final.error === 'ACTION_RESULT_INVALID';
+      if (shouldStopRetry) {
         break;
       }
     }
@@ -323,8 +488,20 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
 
     if (final.ok) {
       recordSuccess(action.name);
+      hasSuccess = true;
+      if (cacheEligible && cacheKey) {
+        actionResultCache.set(cacheKey, {
+          name: final.name,
+          summary: final.summary,
+          artifacts: [...(final.artifacts || [])],
+          verification: [...(final.verification || [])],
+        }, ACTION_CACHE_TTL_MS);
+      }
     } else {
       recordFailure(action.name);
+      if (isExternalUnavailableError(final.error)) {
+        externalUnavailable = true;
+      }
     }
 
     lines.push(`액션: ${final.name}`);
@@ -363,11 +540,15 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     return {
       handled: false,
       output: '',
+      hasSuccess: false,
+      externalUnavailable: false,
     };
   }
 
   return {
     handled: true,
     output: lines.filter(Boolean).join('\n\n'),
+    hasSuccess,
+    externalUnavailable,
   };
 };

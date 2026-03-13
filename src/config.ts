@@ -87,6 +87,15 @@ export const MAX_MANUAL_TRADE_ENTRY_PRICE = parsePositiveNumberEnv(process.env.M
 export const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, 60000);
 
+// ──── Obsidian Headless CLI (RAG Integration) ────
+export const OBSIDIAN_HEADLESS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);
+export const OBSIDIAN_EMAIL = process.env.OBSIDIAN_EMAIL || '';
+export const OBSIDIAN_PASSWORD = process.env.OBSIDIAN_PASSWORD || '';
+export const OBSIDIAN_VAULT_NAME = process.env.OBSIDIAN_VAULT_NAME || 'docs';
+export const OBSIDIAN_RAG_CACHE_TTL_MS = parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3600000);
+export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MAX_DOCS, 10);
+export const OBSIDIAN_RAG_CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_RAG_CACHE_ENABLED, true);
+
 export default {
   PORT,
   FRONTEND_ORIGIN,
@@ -154,4 +163,11 @@ export default {
   MAX_MANUAL_TRADE_ENTRY_PRICE,
   LOG_LEVEL,
   BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS,
+  OBSIDIAN_HEADLESS_ENABLED,
+  OBSIDIAN_EMAIL,
+  OBSIDIAN_PASSWORD,
+  OBSIDIAN_VAULT_NAME,
+  OBSIDIAN_RAG_CACHE_TTL_MS,
+  OBSIDIAN_RAG_MAX_DOCS,
+  OBSIDIAN_RAG_CACHE_ENABLED,
 };

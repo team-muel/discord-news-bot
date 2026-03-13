@@ -1,12 +1,10 @@
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { listActions } from './registry';
 import type { ActionChainPlan, ActionPlan } from './types';
-import { buildFallbackPlan, RAG_INTENT_REGEX } from './plannerRules';
-
-const isRagIntent = (goal: string): boolean => RAG_INTENT_REGEX.test(goal.toLowerCase());
+import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
 
 const applyRagPriority = (plans: ActionPlan[], goal: string): ActionPlan[] => {
-  if (!isRagIntent(goal)) {
+  if (!isRagIntentGoal(goal)) {
     return plans;
   }
 

@@ -18,6 +18,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@core/*": [
+        "./src/*"
+      ],
+      "@discord/*": [
+        "./src/discord/*"
       ]
     },
     "allowImportingTsExtensions": true,

@@ -6,6 +6,7 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 
 - Keep orchestration simple: goal -> skill execution -> session state.
 - Support multiple LLM providers (OpenAI, Gemini) without branching logic in bot commands.
+- Support multiple LLM providers without branching logic in bot commands.
 - Let users choose either:
   - Multi-agent pipeline mode (plan -> execution -> critique)
   - Single skill mode (`skillId` specified)
@@ -18,7 +19,10 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 - Resolution order:
   1. `AI_PROVIDER` if configured and key exists
   2. OpenAI key (`OPENAI_API_KEY`)
-  3. Gemini key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
+  3. Anthropic key (`ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`)
+  4. Gemini key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
+  5. OpenClaw base URL (`OPENCLAW_BASE_URL`)
+  6. Ollama model/base URL (`OLLAMA_MODEL`, `OLLAMA_BASE_URL`)
 
 2. `src/services/skills/registry.ts`
 
@@ -47,11 +51,15 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 - User-facing `/해줘` flow is result-first.
 - Intermediate reasoning/process text is suppressed.
 - Final response should contain deliverable-oriented output, not chain-of-thought style narration.
+- Context engineering strategy for coding actions: `docs/CONTEXT_ENGINEERING_STRATEGY.md`.
+- Harness playbook: `docs/HARNESS_ENGINEERING_PLAYBOOK.md`.
+- Harness release gates: `docs/HARNESS_RELEASE_GATES.md`.
 
 ## Action Execution Path
 
 - `ops-execution` follows a commercial-style action pipeline before LLM fallback:
   1. Action Planner: `src/services/skills/actions/planner.ts`
+     1.1 Planner Rule Source: `docs/SKILL_ACTION_RULES.json` (intent-to-action mapping; editable without code changes)
   2. Action Registry: `src/services/skills/actions/registry.ts`
   3. Action Executor: `src/services/skills/actionRunner.ts`
   4. Action Logging: `src/services/skills/actionExecutionLogService.ts`
@@ -69,6 +77,7 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 
 - Session state machine.
 - Supports pipeline mode and single-skill mode.
+- Queue + retry + deadletter runtime included.
 
 5. `src/services/agentPolicyService.ts`
 
@@ -111,12 +120,17 @@ Muel is now designed as a server-operations agent with a generic skill layer.
   - `skillId` (optional)
   - `priority` (optional: `fast` | `balanced` | `precise`)
 - `POST /api/bot/agent/sessions/:sessionId/cancel`
+- `GET /api/bot/agent/deadletters`
 
 ## Environment
 
-- `AI_PROVIDER` = `openai` or `gemini` (optional)
+- `AI_PROVIDER` = `openai|gemini|anthropic|openclaw|ollama|local` (optional)
 - `OPENAI_API_KEY` (optional)
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY` (optional)
+- `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` (optional)
+- `OPENCLAW_BASE_URL` (optional)
+- `OPENCLAW_API_KEY` (optional)
+- `OLLAMA_MODEL` and `OLLAMA_BASE_URL` (optional)
 - `OPENAI_ANALYSIS_MODEL` / `GEMINI_MODEL` (optional)
 - `OBSIDIAN_VAULT_PATH` (optional)
 - `OBSIDIAN_CLI_ENABLED` (optional)

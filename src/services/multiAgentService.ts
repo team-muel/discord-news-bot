@@ -47,14 +47,57 @@ export type AgentSession = {
 export type AgentRuntimeSnapshot = {
   totalSessions: number;
   runningSessions: number;
+  queuedSessions: number;
   completedSessions: number;
   failedSessions: number;
   cancelledSessions: number;
+  deadletteredSessions: number;
   latestSessionAt: string | null;
 };
 
+type AgentDeadletter = {
+  sessionId: string;
+  guildId: string;
+  requestedBy: string;
+  goal: string;
+  reason: string;
+  failedAt: string;
+};
+
 const MAX_SESSION_HISTORY = Math.max(50, Number(process.env.AGENT_MAX_SESSION_HISTORY || 300));
+const AGENT_SESSION_TIMEOUT_MS = Math.max(20_000, Number(process.env.AGENT_SESSION_TIMEOUT_MS || 180_000));
+const AGENT_STEP_TIMEOUT_MS = Math.max(5_000, Number(process.env.AGENT_STEP_TIMEOUT_MS || 75_000));
+const AGENT_MEMORY_HINT_TIMEOUT_MS = Math.max(500, Number(process.env.AGENT_MEMORY_HINT_TIMEOUT_MS || 5_000));
+const AGENT_QUEUE_POLL_MS = Math.max(100, Number(process.env.AGENT_QUEUE_POLL_MS || 250));
+const AGENT_MAX_QUEUE_SIZE = Math.max(10, Number(process.env.AGENT_MAX_QUEUE_SIZE || 300));
+const AGENT_SESSION_MAX_ATTEMPTS = Math.max(1, Number(process.env.AGENT_SESSION_MAX_ATTEMPTS || 2));
+const AGENT_DEADLETTER_MAX = Math.max(10, Number(process.env.AGENT_DEADLETTER_MAX || 300));
 const sessions = new Map<string, AgentSession>();
+const pendingSessionQueue: string[] = [];
+const runningSessionIds = new Set<string>();
+const sessionAttempts = new Map<string, number>();
+const deadletters: AgentDeadletter[] = [];
+let queueDrainTimer: NodeJS.Timeout | null = null;
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, code: string): Promise<T> => {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(code)), timeoutMs);
+    });
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+};
+
+const ensureSessionBudget = (sessionStartedAtMs: number) => {
+  if (Date.now() - sessionStartedAtMs > AGENT_SESSION_TIMEOUT_MS) {
+    throw new Error('SESSION_TIMEOUT');
+  }
+};
 
 const toPriority = (value?: string | null): AgentPriority => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -284,6 +327,43 @@ const touch = (session: AgentSession) => {
   session.updatedAt = nowIso();
 };
 
+const buildInitialSteps = (
+  requestedSkillId: SkillId | null,
+  priority: AgentPriority,
+  timestamp: string,
+): AgentStep[] => ([
+  {
+    id: crypto.randomUUID(),
+    role: 'planner',
+    title: requestedSkillId ? `스킬 실행: ${requestedSkillId}` : '목표 실행 계획 수립',
+    status: priority === 'fast' && !requestedSkillId ? 'cancelled' : 'pending',
+    startedAt: null,
+    endedAt: priority === 'fast' && !requestedSkillId ? timestamp : null,
+    output: null,
+    error: null,
+  },
+  {
+    id: crypto.randomUUID(),
+    role: 'researcher',
+    title: '실행안/근거 초안 작성',
+    status: requestedSkillId ? 'cancelled' : 'pending',
+    startedAt: null,
+    endedAt: requestedSkillId ? timestamp : null,
+    output: null,
+    error: null,
+  },
+  {
+    id: crypto.randomUUID(),
+    role: 'critic',
+    title: '리스크 검토 및 보완',
+    status: requestedSkillId || priority === 'fast' ? 'cancelled' : 'pending',
+    startedAt: null,
+    endedAt: requestedSkillId || priority === 'fast' ? timestamp : null,
+    output: null,
+    error: null,
+  },
+]);
+
 const cloneSession = (session: AgentSession): AgentSession => ({
   ...session,
   steps: session.steps.map((step) => ({ ...step })),
@@ -324,13 +404,13 @@ const runStep = async (
   touch(session);
 
   try {
-    const result = await executeSkill(skillId, {
+    const result = await withTimeout(executeSkill(skillId, {
       guildId: session.guildId,
       requestedBy: session.requestedBy,
       goal: buildInput(priorOutput),
       memoryHints: session.memoryHints,
       priorOutput,
-    });
+    }), AGENT_STEP_TIMEOUT_MS, `STEP_TIMEOUT:${step.role}`);
 
     const output = result.output;
     if (session.cancelRequested) {
@@ -354,22 +434,25 @@ const runStep = async (
   }
 };
 
-const executeSession = async (sessionId: string) => {
+const executeSession = async (sessionId: string): Promise<AgentSessionStatus> => {
   const session = getSession(sessionId);
   if (!session) {
-    return;
+    return 'failed';
   }
 
   session.status = 'running';
   session.startedAt = nowIso();
   touch(session);
   void persistAgentSession(cloneSession(session));
+  const sessionStartedAtMs = Date.now();
 
   try {
+    ensureSessionBudget(sessionStartedAtMs);
     session.routedIntent = await classifyIntent(session.goal, session.requestedSkillId);
     touch(session);
 
     if (session.routedIntent === 'casual_chat') {
+      ensureSessionBudget(sessionStartedAtMs);
       const timestamp = nowIso();
       cancelAllPendingSteps(session, timestamp);
       const casualReply = await generateCasualChatResult(session.goal);
@@ -377,17 +460,19 @@ const executeSession = async (sessionId: string) => {
         result: casualReply,
         error: null,
       });
-      return;
+      return session.cancelRequested ? 'cancelled' : 'completed';
     }
 
-    session.memoryHints = await buildAgentMemoryHints({
+    ensureSessionBudget(sessionStartedAtMs);
+    session.memoryHints = await withTimeout(buildAgentMemoryHints({
       guildId: session.guildId,
       goal: session.goal,
       maxItems: session.priority === 'fast' ? 4 : session.priority === 'precise' ? 16 : 10,
-    });
+    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []);
     touch(session);
 
     if (session.requestedSkillId) {
+      ensureSessionBudget(sessionStartedAtMs);
       const singleSkillStep = session.steps[0];
       const singleResult = await runStep(
         session,
@@ -401,7 +486,7 @@ const executeSession = async (sessionId: string) => {
         result: formatCitationFirstResult(singleResult, session),
         error: null,
       });
-      return;
+      return session.cancelRequested ? 'cancelled' : 'completed';
     }
 
     const planner = session.steps[0];
@@ -409,6 +494,7 @@ const executeSession = async (sessionId: string) => {
     const critic = session.steps[2];
 
     if (session.priority === 'fast') {
+      ensureSessionBudget(sessionStartedAtMs);
       const fastDraft = await runStep(session, researcher, 'ops-execution', () => [
         '우선순위: 빠름',
         '요구사항: 중간 과정 없이 최종 결과물만 제시',
@@ -420,9 +506,10 @@ const executeSession = async (sessionId: string) => {
         result: formatCitationFirstResult(fastDraft, session),
         error: null,
       });
-      return;
+      return session.cancelRequested ? 'cancelled' : 'completed';
     }
 
+    ensureSessionBudget(sessionStartedAtMs);
     const plan = await runStep(session, planner, 'ops-plan', () => [
       session.priority === 'precise' ? '우선순위: 정밀 (검증과 리스크 완화를 강화)' : '우선순위: 균형',
       '역할: 계획 수립 에이전트',
@@ -431,6 +518,7 @@ const executeSession = async (sessionId: string) => {
       '규칙: 추측과 단정 금지, 실제 실행 가능한 단계 중심',
     ].join('\n'), undefined);
 
+    ensureSessionBudget(sessionStartedAtMs);
     const executionDraft = await runStep(session, researcher, 'ops-execution', () => [
       session.priority === 'precise' ? '우선순위: 정밀 (근거/가드레일을 더 상세히 포함)' : '우선순위: 균형',
       '역할: 실행/리서치 에이전트',
@@ -439,6 +527,7 @@ const executeSession = async (sessionId: string) => {
       '출력: 디스코드 운영자가 바로 수행할 수 있는 실행안/체크리스트/예상 리스크를 한국어로 정리',
     ].join('\n'), plan);
 
+    ensureSessionBudget(sessionStartedAtMs);
     const critique = await runStep(session, critic, 'ops-critique', () => [
       session.priority === 'precise' ? '우선순위: 정밀 (보수적 관점으로 리스크를 촘촘히 점검)' : '우선순위: 균형',
       '역할: 검증 에이전트',
@@ -447,6 +536,7 @@ const executeSession = async (sessionId: string) => {
       '출력: 사실성 위험, 과잉자동화 위험, 개인정보/운영 리스크를 점검하고 보완안을 제시',
     ].join('\n'), executionDraft);
 
+    ensureSessionBudget(sessionStartedAtMs);
     const finalResult = await runStep(session, researcher, 'ops-execution', () => [
       '요구사항: 중간 과정/역할별 산출물 노출 금지',
       `목표: ${session.goal}`,
@@ -460,14 +550,114 @@ const executeSession = async (sessionId: string) => {
       result: formatCitationFirstResult(finalResult, session),
       error: null,
     });
+    return session.cancelRequested ? 'cancelled' : 'completed';
   } catch (error) {
     if (session.cancelRequested || getErrorMessage(error) === 'SESSION_CANCELLED') {
       markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
-      return;
+      return 'cancelled';
+    }
+
+    if (getErrorMessage(error) === 'SESSION_TIMEOUT') {
+      markSessionTerminal(session, 'failed', { error: '처리 시간이 길어져 세션을 종료했습니다. 요청 범위를 줄여 다시 시도해주세요.' });
+      return 'failed';
+    }
+
+    if (getErrorMessage(error).startsWith('STEP_TIMEOUT:')) {
+      const role = getErrorMessage(error).split(':')[1] || 'unknown';
+      markSessionTerminal(session, 'failed', { error: `단계 처리 시간이 초과되었습니다(${role}). 잠시 후 다시 시도해주세요.` });
+      return 'failed';
     }
 
     markSessionTerminal(session, 'failed', { error: getErrorMessage(error) });
+    return 'failed';
   }
+};
+
+const enqueueSession = (sessionId: string) => {
+  if (!pendingSessionQueue.includes(sessionId)) {
+    pendingSessionQueue.push(sessionId);
+  }
+};
+
+const removeFromQueue = (sessionId: string) => {
+  const index = pendingSessionQueue.indexOf(sessionId);
+  if (index >= 0) {
+    pendingSessionQueue.splice(index, 1);
+  }
+};
+
+const pushDeadletter = (session: AgentSession, reason: string) => {
+  deadletters.unshift({
+    sessionId: session.id,
+    guildId: session.guildId,
+    requestedBy: session.requestedBy,
+    goal: session.goal,
+    reason,
+    failedAt: nowIso(),
+  });
+  if (deadletters.length > AGENT_DEADLETTER_MAX) {
+    deadletters.length = AGENT_DEADLETTER_MAX;
+  }
+};
+
+const requeueForRetry = (session: AgentSession) => {
+  session.status = 'queued';
+  session.startedAt = null;
+  session.endedAt = null;
+  session.result = null;
+  session.cancelRequested = false;
+  session.steps = buildInitialSteps(session.requestedSkillId, session.priority, nowIso());
+  touch(session);
+  void persistAgentSession(cloneSession(session));
+  enqueueSession(session.id);
+};
+
+const scheduleQueueDrain = () => {
+  if (queueDrainTimer) {
+    return;
+  }
+
+  queueDrainTimer = setTimeout(() => {
+    queueDrainTimer = null;
+    const maxConcurrent = Math.max(1, getAgentPolicySnapshot().maxConcurrentSessions);
+    while (runningSessionIds.size < maxConcurrent && pendingSessionQueue.length > 0) {
+      const sessionId = pendingSessionQueue.shift() as string;
+      const session = sessions.get(sessionId);
+      if (!session) {
+        continue;
+      }
+
+      if (session.cancelRequested || session.status === 'cancelled') {
+        markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
+        continue;
+      }
+
+      runningSessionIds.add(sessionId);
+      const attempts = (sessionAttempts.get(sessionId) || 0) + 1;
+      sessionAttempts.set(sessionId, attempts);
+
+      void executeSession(sessionId)
+        .then((status) => {
+          const latest = sessions.get(sessionId);
+          if (!latest) {
+            return;
+          }
+
+          if (status === 'failed') {
+            if (attempts < AGENT_SESSION_MAX_ATTEMPTS) {
+              requeueForRetry(latest);
+              return;
+            }
+
+            pushDeadletter(latest, latest.error || 'FAILED');
+          }
+        })
+        .finally(() => {
+          runningSessionIds.delete(sessionId);
+          scheduleQueueDrain();
+        });
+    }
+  }, AGENT_QUEUE_POLL_MS);
 };
 
 const pruneSessions = () => {
@@ -492,7 +682,7 @@ export const startAgentSession = (params: {
   priority?: string | null;
 }) => {
   if (!isAnyLlmConfigured()) {
-    throw new Error('LLM provider is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY.');
+    throw new Error('LLM provider is not configured. Configure OPENAI/GEMINI/ANTHROPIC/OPENCLAW/OLLAMA provider.');
   }
 
   const requestedSkillId = params.skillId && isSkillId(params.skillId)
@@ -500,11 +690,12 @@ export const startAgentSession = (params: {
     : null;
   const priority = toPriority(params.priority);
 
-  const runningSessions = [...sessions.values()].filter((session) =>
-    session.status === 'queued' || session.status === 'running').length;
+  if (pendingSessionQueue.length >= AGENT_MAX_QUEUE_SIZE) {
+    throw new Error(`대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요. (max=${AGENT_MAX_QUEUE_SIZE})`);
+  }
 
   const policy = validateAgentSessionRequest({
-    runningSessions,
+    runningSessions: 0,
     goal: params.goal,
     requestedSkillId,
     isAdmin: true,
@@ -533,44 +724,14 @@ export const startAgentSession = (params: {
     error: null,
     cancelRequested: false,
     memoryHints: [],
-    steps: [
-      {
-        id: crypto.randomUUID(),
-        role: 'planner',
-        title: requestedSkillId ? `스킬 실행: ${requestedSkillId}` : '목표 실행 계획 수립',
-        status: priority === 'fast' && !requestedSkillId ? 'cancelled' : 'pending',
-        startedAt: null,
-        endedAt: priority === 'fast' && !requestedSkillId ? timestamp : null,
-        output: null,
-        error: null,
-      },
-      {
-        id: crypto.randomUUID(),
-        role: 'researcher',
-        title: '실행안/근거 초안 작성',
-        status: requestedSkillId ? 'cancelled' : 'pending',
-        startedAt: null,
-        endedAt: requestedSkillId ? timestamp : null,
-        output: null,
-        error: null,
-      },
-      {
-        id: crypto.randomUUID(),
-        role: 'critic',
-        title: '리스크 검토 및 보완',
-        status: requestedSkillId || priority === 'fast' ? 'cancelled' : 'pending',
-        startedAt: null,
-        endedAt: requestedSkillId || priority === 'fast' ? timestamp : null,
-        output: null,
-        error: null,
-      },
-    ],
+    steps: buildInitialSteps(requestedSkillId, priority, timestamp),
   };
 
   sessions.set(session.id, session);
   pruneSessions();
   void persistAgentSession(cloneSession(session));
-  void executeSession(session.id);
+  enqueueSession(session.id);
+  scheduleQueueDrain();
   return cloneSession(session);
 };
 
@@ -585,6 +746,12 @@ export const cancelAgentSession = (sessionId: string): { ok: boolean; message: s
   }
 
   session.cancelRequested = true;
+  if (session.status === 'queued') {
+    removeFromQueue(sessionId);
+    markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
+    return { ok: true, message: '대기열에서 중지했습니다.' };
+  }
+
   touch(session);
   return { ok: true, message: '중지 요청을 수락했습니다.' };
 };
@@ -603,6 +770,15 @@ export const listGuildAgentSessions = (guildId: string, limit = 10): AgentSessio
     .map((session) => cloneSession(session));
 };
 
+export const listAgentDeadletters = (params?: { guildId?: string; limit?: number }) => {
+  const limit = Math.max(1, Math.min(200, Math.trunc(params?.limit ?? 30)));
+  const guildId = String(params?.guildId || '').trim();
+  return deadletters
+    .filter((row) => (!guildId || row.guildId === guildId))
+    .slice(0, limit)
+    .map((row) => ({ ...row }));
+};
+
 export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
   const all = [...sessions.values()];
   const latest = all
@@ -611,10 +787,12 @@ export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
 
   return {
     totalSessions: all.length,
-    runningSessions: all.filter((session) => session.status === 'queued' || session.status === 'running').length,
+    runningSessions: runningSessionIds.size,
+    queuedSessions: pendingSessionQueue.length,
     completedSessions: all.filter((session) => session.status === 'completed').length,
     failedSessions: all.filter((session) => session.status === 'failed').length,
     cancelledSessions: all.filter((session) => session.status === 'cancelled').length,
+    deadletteredSessions: deadletters.length,
     latestSessionAt: latest,
   };
 };

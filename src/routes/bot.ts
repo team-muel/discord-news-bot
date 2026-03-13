@@ -13,6 +13,7 @@ import {
   cancelAgentSession,
   getAgentSession,
   getAgentPolicy,
+  listAgentDeadletters,
   getMultiAgentRuntimeSnapshot,
   listAgentSkills,
   listGuildAgentSessions,
@@ -211,6 +212,17 @@ export function createBotRouter(): Router {
       runtime: getMultiAgentRuntimeSnapshot(),
       skills: listAgentSkills(),
       sessions,
+    });
+  });
+
+  router.get('/agent/deadletters', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
+    const deadletters = listAgentDeadletters({ guildId, limit });
+    return res.json({
+      runtime: getMultiAgentRuntimeSnapshot(),
+      deadletters,
+      guildScope: guildId || 'all',
     });
   });
 
@@ -613,6 +625,12 @@ export function createBotRouter(): Router {
       const message = error instanceof Error ? error.message : String(error);
       if (message === 'SUPABASE_NOT_CONFIGURED') {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      if (message.startsWith('OBSIDIAN_SANITIZER_BLOCKED:')) {
+        return res.status(422).json({ ok: false, error: 'SANITIZER', message });
+      }
+      if (message === 'MEMORY_CONTENT_BLOCKED_BY_POISON_GUARD') {
+        return res.status(422).json({ ok: false, error: 'POISON_GUARD', message: 'content blocked by poison guard' });
       }
       return res.status(500).json({ ok: false, error: 'MEMORY_CREATE_FAILED', message });
     }

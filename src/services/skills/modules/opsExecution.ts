@@ -28,8 +28,28 @@ export const executeOpsExecutionSkill = async (context: SkillContext): Promise<S
     guildId: context.guildId,
     requestedBy: context.requestedBy,
   });
-  if (actionResult.handled) {
+  if (actionResult.handled && actionResult.hasSuccess) {
     return { skillId: 'ops-execution', output: actionResult.output };
+  }
+
+  if (actionResult.handled && !actionResult.hasSuccess && actionResult.externalUnavailable) {
+    const fallback = await runSkillText({
+      context,
+      systemLines: [
+        '너는 서버 운영 실행 담당 에이전트다.',
+        '외부 크롤링/워커가 불가할 때는 기존 기억 힌트를 우선 사용해 답변한다.',
+        '확인되지 않은 외부 최신 사실은 단정하지 않는다.',
+      ],
+      rules: [
+        '첫 문장에 다음 안내를 그대로 포함: 현재 외부 정보를 불러올 수 없어, 제가 가진 기존 기억(옵시디언)으로만 답변드릴게요.',
+        '그 다음 문단부터 memory hints 기반으로 실행 가능한 요약/권장 조치를 작성',
+        '출처가 불충분한 항목은 불확실성으로 명시',
+      ],
+      temperature: 0.2,
+      maxTokens: 900,
+    });
+
+    return { skillId: 'ops-execution', output: fallback };
   }
 
   const youtubeDirectResult = maybeBuildYouTubeResult(context.goal);

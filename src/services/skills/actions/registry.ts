@@ -1,4 +1,5 @@
 import { investmentAnalysisAction } from './analysis';
+import { codeGenerateAction } from './code';
 import { communitySearchAction } from './community';
 import { dbSupabaseReadAction } from './db';
 import { newsGoogleSearchAction } from './news';
@@ -11,6 +12,7 @@ import { youtubeSearchFirstAction } from './youtube';
 import { youtubeSearchWebhookAction } from './youtubeWebhook';
 
 const ACTIONS: ActionDefinition[] = [
+  codeGenerateAction,
   youtubeSearchWebhookAction,
   youtubeSearchFirstAction,
   stockChartAction,

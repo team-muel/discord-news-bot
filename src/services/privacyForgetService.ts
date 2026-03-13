@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../logger';
+import { withObsidianFileLock } from '../utils/obsidianFileLock';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type ForgetTableCounts = Record<string, number>;
@@ -35,6 +36,30 @@ type ForgetResult = {
 
 const FORGET_OBSIDIAN_ENABLED = String(process.env.FORGET_OBSIDIAN_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const OBSIDIAN_VAULT_ROOT = String(process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
+
+const sanitizeDiscordId = (value: unknown): string => {
+  const text = String(value || '').trim();
+  if (!/^\d{6,30}$/.test(text)) {
+    return '';
+  }
+  return text;
+};
+
+const resolveInsideVault = (...segments: string[]): string | null => {
+  if (!OBSIDIAN_VAULT_ROOT) {
+    return null;
+  }
+
+  const root = path.resolve(OBSIDIAN_VAULT_ROOT);
+  const resolved = path.resolve(root, ...segments);
+  const withSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (resolved === root || resolved.startsWith(withSep)) {
+    return resolved;
+  }
+  return null;
+};
+
+const getGuildLockKey = (guildId: string): string => `obsidian:guild:${guildId}`;
 
 const isMissingTableError = (error: any): boolean => {
   const code = String(error?.code || '').trim();
@@ -121,7 +146,12 @@ const removeIfExists = async (targetPath: string): Promise<boolean> => {
 };
 
 const loadGuildFolderCandidates = async (guildId: string): Promise<string[]> => {
-  const byMap = new Set<string>([guildId]);
+  const safeGuildId = sanitizeDiscordId(guildId);
+  if (!safeGuildId) {
+    return [];
+  }
+
+  const byMap = new Set<string>([safeGuildId]);
   const mapJson = String(process.env.OBSIDIAN_SYNC_GUILD_MAP_JSON || '').trim();
   const mapFile = String(process.env.OBSIDIAN_SYNC_GUILD_MAP_FILE || '').trim();
 
@@ -130,8 +160,11 @@ const loadGuildFolderCandidates = async (guildId: string): Promise<string[]> => 
       return;
     }
     for (const [folderName, mappedGuild] of Object.entries(raw as Record<string, unknown>)) {
-      if (String(mappedGuild || '').trim() === guildId) {
-        byMap.add(String(folderName || '').trim());
+      if (String(mappedGuild || '').trim() === safeGuildId) {
+        const folder = String(folderName || '').trim();
+        if (/^[0-9A-Za-z._-]{1,120}$/.test(folder)) {
+          byMap.add(folder);
+        }
       }
     }
   };
@@ -161,17 +194,29 @@ const deleteGuildObsidian = async (guildId: string): Promise<string[]> => {
     return [];
   }
 
-  const folderCandidates = await loadGuildFolderCandidates(guildId);
-  const removed: string[] = [];
-
-  for (const folderName of folderCandidates) {
-    const guildPath = path.join(OBSIDIAN_VAULT_ROOT, 'guilds', folderName);
-    if (await removeIfExists(guildPath)) {
-      removed.push(guildPath);
-    }
+  const safeGuildId = sanitizeDiscordId(guildId);
+  if (!safeGuildId) {
+    return [];
   }
 
-  return removed;
+  return withObsidianFileLock({
+    vaultRoot: OBSIDIAN_VAULT_ROOT,
+    key: getGuildLockKey(safeGuildId),
+    task: async () => {
+      const folderCandidates = await loadGuildFolderCandidates(safeGuildId);
+      const removed: string[] = [];
+
+      for (const folderName of folderCandidates) {
+        const guildPath = resolveInsideVault('guilds', folderName);
+        if (!guildPath) continue;
+        if (await removeIfExists(guildPath)) {
+          removed.push(guildPath);
+        }
+      }
+
+      return removed;
+    },
+  });
 };
 
 const getGuildObsidianCandidates = async (guildId: string): Promise<string[]> => {
@@ -179,9 +224,15 @@ const getGuildObsidianCandidates = async (guildId: string): Promise<string[]> =>
     return [];
   }
 
-  const folderCandidates = await loadGuildFolderCandidates(guildId);
+  const safeGuildId = sanitizeDiscordId(guildId);
+  if (!safeGuildId) {
+    return [];
+  }
+
+  const folderCandidates = await loadGuildFolderCandidates(safeGuildId);
   return folderCandidates
-    .map((folderName) => path.join(OBSIDIAN_VAULT_ROOT, 'guilds', folderName));
+    .map((folderName) => resolveInsideVault('guilds', folderName))
+    .filter((value): value is string => Boolean(value));
 };
 
 const deleteUserObsidian = async (params: { guildId?: string; userId: string }): Promise<string[]> => {
@@ -189,27 +240,44 @@ const deleteUserObsidian = async (params: { guildId?: string; userId: string }):
     return [];
   }
 
-  const removed: string[] = [];
-  const candidatePaths = new Set<string>([
-    path.join(OBSIDIAN_VAULT_ROOT, 'users', params.userId),
-    path.join(OBSIDIAN_VAULT_ROOT, 'users', `${params.userId}.md`),
-  ]);
-
-  if (params.guildId) {
-    const folderCandidates = await loadGuildFolderCandidates(params.guildId);
-    for (const folderName of folderCandidates) {
-      candidatePaths.add(path.join(OBSIDIAN_VAULT_ROOT, 'guilds', folderName, 'users', params.userId));
-      candidatePaths.add(path.join(OBSIDIAN_VAULT_ROOT, 'guilds', folderName, 'users', `${params.userId}.md`));
-    }
+  const safeUserId = sanitizeDiscordId(params.userId);
+  if (!safeUserId) {
+    return [];
   }
 
-  for (const targetPath of candidatePaths) {
-    if (await removeIfExists(targetPath)) {
-      removed.push(targetPath);
-    }
-  }
+  const safeGuildId = params.guildId ? sanitizeDiscordId(params.guildId) : undefined;
 
-  return removed;
+  return withObsidianFileLock({
+    vaultRoot: OBSIDIAN_VAULT_ROOT,
+    key: safeGuildId ? getGuildLockKey(safeGuildId) : `obsidian:user:${safeUserId}`,
+    task: async () => {
+      const removed: string[] = [];
+      const candidatePaths = new Set<string>();
+
+      const usersDir = resolveInsideVault('users', safeUserId);
+      const usersFile = resolveInsideVault('users', `${safeUserId}.md`);
+      if (usersDir) candidatePaths.add(usersDir);
+      if (usersFile) candidatePaths.add(usersFile);
+
+      if (safeGuildId) {
+        const folderCandidates = await loadGuildFolderCandidates(safeGuildId);
+        for (const folderName of folderCandidates) {
+          const guildUserDir = resolveInsideVault('guilds', folderName, 'users', safeUserId);
+          const guildUserFile = resolveInsideVault('guilds', folderName, 'users', `${safeUserId}.md`);
+          if (guildUserDir) candidatePaths.add(guildUserDir);
+          if (guildUserFile) candidatePaths.add(guildUserFile);
+        }
+      }
+
+      for (const targetPath of candidatePaths) {
+        if (await removeIfExists(targetPath)) {
+          removed.push(targetPath);
+        }
+      }
+
+      return removed;
+    },
+  });
 };
 
 const getUserObsidianCandidates = async (params: { guildId?: string; userId: string }): Promise<string[]> => {
@@ -217,16 +285,26 @@ const getUserObsidianCandidates = async (params: { guildId?: string; userId: str
     return [];
   }
 
-  const candidatePaths = new Set<string>([
-    path.join(OBSIDIAN_VAULT_ROOT, 'users', params.userId),
-    path.join(OBSIDIAN_VAULT_ROOT, 'users', `${params.userId}.md`),
-  ]);
+  const safeUserId = sanitizeDiscordId(params.userId);
+  if (!safeUserId) {
+    return [];
+  }
 
-  if (params.guildId) {
-    const folderCandidates = await loadGuildFolderCandidates(params.guildId);
+  const safeGuildId = params.guildId ? sanitizeDiscordId(params.guildId) : undefined;
+
+  const candidatePaths = new Set<string>();
+  const usersDir = resolveInsideVault('users', safeUserId);
+  const usersFile = resolveInsideVault('users', `${safeUserId}.md`);
+  if (usersDir) candidatePaths.add(usersDir);
+  if (usersFile) candidatePaths.add(usersFile);
+
+  if (safeGuildId) {
+    const folderCandidates = await loadGuildFolderCandidates(safeGuildId);
     for (const folderName of folderCandidates) {
-      candidatePaths.add(path.join(OBSIDIAN_VAULT_ROOT, 'guilds', folderName, 'users', params.userId));
-      candidatePaths.add(path.join(OBSIDIAN_VAULT_ROOT, 'guilds', folderName, 'users', `${params.userId}.md`));
+      const guildUserDir = resolveInsideVault('guilds', folderName, 'users', safeUserId);
+      const guildUserFile = resolveInsideVault('guilds', folderName, 'users', `${safeUserId}.md`);
+      if (guildUserDir) candidatePaths.add(guildUserDir);
+      if (guildUserFile) candidatePaths.add(guildUserFile);
     }
   }
 

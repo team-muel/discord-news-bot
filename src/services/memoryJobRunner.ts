@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import logger from '../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
+import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
@@ -240,6 +242,38 @@ const processDurableExtraction = async (params: {
 
   const conflictKey = `content:${crypto.createHash('sha1').update(normalizeText(content)).digest('hex').slice(0, 16)}`;
 
+  const sanitized = sanitizeForObsidianWrite({
+    title,
+    summary,
+    content,
+    sourceRef: typeof input.sourceRef === 'string' ? input.sourceRef : null,
+    excerpt: typeof input.excerpt === 'string' ? input.excerpt : null,
+  });
+  if (!sanitized.ok) {
+    return {
+      inserted: false,
+      reason: 'OBSIDIAN_SANITIZER_BLOCKED',
+      sanitizerReasons: sanitized.reasons,
+      conflictKey,
+    };
+  }
+
+  const poisonAssessment = assessMemoryPoisonRisk({
+    title: sanitized.cleaned.title,
+    summary: sanitized.cleaned.summary,
+    content: sanitized.cleaned.content,
+    sourceRef: sanitized.cleaned.sourceRef,
+  });
+  if (poisonAssessment.blocked) {
+    return {
+      inserted: false,
+      reason: 'CONTENT_POISON_BLOCKED',
+      poisonRisk: Number(poisonAssessment.riskScore.toFixed(3)),
+      poisonReasons: poisonAssessment.reasons,
+      conflictKey,
+    };
+  }
+
   const { data: existing, error: existingError } = await client
     .from('memory_items')
     .select('id')
@@ -260,20 +294,26 @@ const processDurableExtraction = async (params: {
     };
   }
 
+  const poisonTags = buildPoisonTags(poisonAssessment);
   const row = {
     id: `mem_${crypto.randomUUID()}`,
     guild_id: params.guildId,
     owner_user_id: toMaybeUserId(input.ownerUserId) || toMaybeUserId(input.sourceAuthorId),
     type,
-    title,
-    content,
-    summary,
-    confidence: clampConfidence(input.confidence, 0.58),
+    title: sanitized.cleaned.title,
+    content: sanitized.cleaned.content,
+    summary: sanitized.cleaned.summary,
+    confidence: poisonAssessment.reviewRequired
+      ? Math.min(0.45, clampConfidence(input.confidence, 0.58))
+      : clampConfidence(input.confidence, 0.58),
     created_by: 'memory-job-runner',
     updated_by: 'memory-job-runner',
     source_count: 1,
     conflict_key: conflictKey,
-    tags: Array.isArray(input.tags) ? input.tags.map((tag) => String(tag || '').trim()).filter(Boolean) : [],
+    tags: [
+      ...(Array.isArray(input.tags) ? input.tags.map((tag) => String(tag || '').trim()).filter(Boolean) : []),
+      ...poisonTags,
+    ],
   };
 
   const { error: insertError } = await client.from('memory_items').insert(row);
@@ -283,7 +323,9 @@ const processDurableExtraction = async (params: {
 
   return {
     inserted: true,
-    reason: 'INSERTED',
+    reason: poisonAssessment.reviewRequired ? 'INSERTED_REVIEW_REQUIRED' : 'INSERTED',
+    poisonRisk: Number(poisonAssessment.riskScore.toFixed(3)),
+    poisonReasons: poisonAssessment.reasons,
     conflictKey,
     memoryItemId: row.id,
   };

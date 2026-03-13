@@ -86,9 +86,24 @@ if (aiProvider === 'gemini') {
     add('ERROR', 'GEMINI_API_KEY|GOOGLE_API_KEY', 'AI_PROVIDER=gemini 선택 시 필요');
   }
 }
+if (aiProvider === 'anthropic' || aiProvider === 'claude') {
+  if (!read('ANTHROPIC_API_KEY') && !read('CLAUDE_API_KEY')) {
+    add('ERROR', 'ANTHROPIC_API_KEY|CLAUDE_API_KEY', 'AI_PROVIDER=anthropic(또는 claude) 선택 시 필요');
+  }
+}
+if (aiProvider === 'openclaw') {
+  if (!read('OPENCLAW_BASE_URL') && !read('OPENCLAW_API_BASE_URL') && !read('OPENCLAW_URL')) {
+    add('ERROR', 'OPENCLAW_BASE_URL|OPENCLAW_API_BASE_URL|OPENCLAW_URL', 'AI_PROVIDER=openclaw 선택 시 필요');
+  }
+}
+if (aiProvider === 'ollama' || aiProvider === 'local') {
+  recommendNonEmpty('OLLAMA_MODEL', 'AI_PROVIDER=ollama/local 선택 시 모델명을 지정하면 예측 가능성이 높아집니다.');
+}
 if (!aiProvider) {
-  if (!read('OPENAI_API_KEY') && !read('GEMINI_API_KEY') && !read('GOOGLE_API_KEY')) {
-    add('WARN', 'AI_PROVIDER/OPENAI_API_KEY/GEMINI_API_KEY', 'LLM 키가 없으면 /해줘, 에이전트 세션이 실패합니다.');
+  const hasOpenClaw = Boolean(read('OPENCLAW_BASE_URL') || read('OPENCLAW_API_BASE_URL') || read('OPENCLAW_URL'));
+  const hasOllama = Boolean(read('OLLAMA_MODEL'));
+  if (!read('OPENAI_API_KEY') && !read('GEMINI_API_KEY') && !read('GOOGLE_API_KEY') && !read('ANTHROPIC_API_KEY') && !read('CLAUDE_API_KEY') && !hasOpenClaw && !hasOllama) {
+    add('WARN', 'AI_PROVIDER/OPENAI_API_KEY/GEMINI_API_KEY/ANTHROPIC_API_KEY/OPENCLAW_BASE_URL/OLLAMA_MODEL', 'LLM 설정이 없으면 /해줘, 에이전트 세션이 실패합니다.');
   }
 }
 

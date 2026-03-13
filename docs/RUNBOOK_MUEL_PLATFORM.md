@@ -42,6 +42,10 @@ Open these first when verifying behavior:
 
 - Runtime architecture index: `docs/ARCHITECTURE_INDEX.md`
 - 24/7 runtime ops: `docs/OPERATIONS_24_7.md`
+- Operator decision matrix: `docs/OPERATOR_SOP_DECISION_TABLE.md`
+- Harness playbook: `docs/HARNESS_ENGINEERING_PLAYBOOK.md`
+- Harness manifest template: `docs/HARNESS_MANIFEST.example.yaml`
+- Harness release gates: `docs/HARNESS_RELEASE_GATES.md`
 - Frontend contract and CORS/auth details: `docs/FRONTEND_INTEGRATION.md`
 - Supabase schema: `docs/SUPABASE_SCHEMA.sql`
 - Obsidian sync operations: `docs/OBSIDIAN_SUPABASE_SYNC.md`
@@ -169,6 +173,24 @@ Severity model (suggested):
 - Upstream provider timeout/rate limiting
 - Obsidian sync worker not running or vault path inaccessible
 
+### 6.3 Operator Decision Matrix (Who/When/Threshold/Action)
+
+Use `docs/OPERATOR_SOP_DECISION_TABLE.md` as the default decision source during active operations.
+
+Mandatory execution sequence:
+
+1. Query four signals first: Health, FinOps budget, Memory quality, Go/No-Go.
+2. Determine decision state from threshold tables (normal/degraded/blocked or SEV level).
+3. Execute automatic action first, then complete role-specific manual SOP within SLA.
+4. Record evidence in `docs/ONCALL_INCIDENT_TEMPLATE.md` and communicate via `docs/ONCALL_COMMS_PLAYBOOK.md` cadence.
+
+Decision priority when multiple thresholds trigger:
+
+1. SEV-1 safety and availability
+2. FinOps `blocked` controls
+3. Memory quality degradation controls
+4. Optimization and routine operations
+
 ## 7) Recovery and Backfill
 
 ### 7.1 Supabase Recovery
@@ -222,6 +244,14 @@ npm run mcp:dev
 npm run worker:crawler
 npm run sync:obsidian-lore:dry
 npm run sync:obsidian-lore
+```
+
+Harness release commands:
+
+```bash
+npm run lint
+npm run docs:check
+npm run smoke:api
 ```
 
 ## 10.1) Generic Action Runtime (Commercial Readiness)
@@ -362,6 +392,32 @@ Operational checks:
 2. Review `memory_retrieval_logs` latency and returned-count trends
 3. If empty retrieval persists, verify guild ingest/sync freshness and query wording
 
+## 10.3) Harness Runtime Operations
+
+Harness references:
+
+- `docs/HARNESS_ENGINEERING_PLAYBOOK.md`
+- `docs/HARNESS_MANIFEST.example.yaml`
+- `docs/HARNESS_RELEASE_GATES.md`
+
+Runtime deadletter and recovery APIs:
+
+- `GET /api/bot/agent/deadletters?guildId=<id>&limit=<n>`
+- `GET /api/bot/agent/memory/jobs/deadletters?guildId=<id>&limit=<n>`
+- `POST /api/bot/agent/memory/jobs/deadletters/:deadletterId/requeue`
+
+Recommended pre-release sequence:
+
+1. Run Gate 1 checks (`lint`, `docs:check`).
+2. Run Gate 2 health APIs (`/health`, `/ready`, `/api/bot/status`).
+3. Verify deadletters are triaged and not growing unexpectedly.
+4. Apply Go/No-Go decision from `docs/OPERATOR_SOP_DECISION_TABLE.md`.
+
+Provider harness note:
+
+- Current runtime supports `openai`, `gemini`, `anthropic`, `openclaw`, `ollama`.
+- If provider is unavailable, session creation fails by design to avoid silent degraded outputs.
+
 PM2 commands:
 
 ```bash
@@ -400,3 +456,4 @@ Suggested lifecycle:
 2. Mitigation phase: continuously update timeline and mitigation log
 3. Resolution phase: complete validation and handover notes
 4. Within 24h: publish postmortem with tracked action items
+5. If thresholds were crossed, update `docs/OPERATOR_SOP_DECISION_TABLE.md` within 24h for rule accuracy

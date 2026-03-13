@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
+import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
@@ -68,6 +70,7 @@ const ensureSupabase = () => {
 };
 
 const safeLike = (value: string): string => value.replace(/[%,]/g, ' ').trim();
+const MEMORY_RETRIEVE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE || 0.35)));
 
 const toMaybeUserId = (value: unknown): string | null => {
   const text = String(value || '').trim();
@@ -183,7 +186,17 @@ export async function searchGuildMemory(params: SearchParams) {
     const confidence = Number(item.confidence ?? 0.5);
     const recency = recencyScore(String(item.updated_at || ''));
     const pinnedBoost = item.pinned ? 1 : 0;
-    const score = Math.max(0, Math.min(1, 0.55 * confidence + 0.30 * recency + 0.15 * pinnedBoost));
+    const citations = citationsById.get(id) || [];
+    const poisonAssessment = assessMemoryPoisonRisk({
+      title: String(item.title || ''),
+      summary: String(item.summary || ''),
+      content: String(item.content || ''),
+      sourceRef: citations[0]?.sourceRef || null,
+    });
+
+    const poisonPenalty = poisonAssessment.reviewRequired ? 0.2 : 0;
+    const scoreBase = 0.55 * confidence + 0.30 * recency + 0.15 * pinnedBoost - poisonPenalty;
+    const score = Math.max(0, Math.min(1, scoreBase));
 
     return {
       id,
@@ -194,9 +207,23 @@ export async function searchGuildMemory(params: SearchParams) {
       confidence,
       pinned: Boolean(item.pinned),
       score,
-      citations: citationsById.get(id) || [],
+      citations,
+      poisonRisk: Number(poisonAssessment.riskScore.toFixed(3)),
+      reviewRequired: poisonAssessment.reviewRequired,
+      blockedByPoisonGuard: poisonAssessment.blocked,
       updatedAt: String(item.updated_at || ''),
     };
+  }).filter((item) => {
+    if (item.pinned) {
+      return true;
+    }
+    if (item.blockedByPoisonGuard) {
+      return false;
+    }
+    if (item.confidence < MEMORY_RETRIEVE_MIN_CONFIDENCE) {
+      return false;
+    }
+    return true;
   });
 
   const avgScore = responseItems.length > 0
@@ -230,7 +257,30 @@ export async function searchGuildMemory(params: SearchParams) {
 export async function createMemoryItem(params: CreateMemoryParams) {
   const client = ensureSupabase();
   const id = `mem_${crypto.randomUUID()}`;
-  const confidence = Number.isFinite(params.confidence) ? Math.max(0, Math.min(1, Number(params.confidence))) : 0.5;
+  const sanitized = sanitizeForObsidianWrite({
+    title: params.title,
+    summary: null,
+    content: params.content,
+    sourceRef: params.source?.sourceRef,
+    excerpt: params.source?.excerpt,
+  });
+  if (!sanitized.ok) {
+    throw new Error(`OBSIDIAN_SANITIZER_BLOCKED:${sanitized.reasons.join(',') || 'policy'}`);
+  }
+
+  const poisonAssessment = assessMemoryPoisonRisk({
+    title: sanitized.cleaned.title,
+    summary: null,
+    content: sanitized.cleaned.content,
+    sourceRef: sanitized.cleaned.sourceRef || null,
+  });
+  if (poisonAssessment.blocked) {
+    throw new Error('MEMORY_CONTENT_BLOCKED_BY_POISON_GUARD');
+  }
+
+  const confidenceInput = Number.isFinite(params.confidence) ? Math.max(0, Math.min(1, Number(params.confidence))) : 0.5;
+  const confidence = poisonAssessment.reviewRequired ? Math.min(0.45, confidenceInput) : confidenceInput;
+  const poisonTags = buildPoisonTags(poisonAssessment);
 
   const insertRow = {
     id,
@@ -240,9 +290,9 @@ export async function createMemoryItem(params: CreateMemoryParams) {
       || toMaybeUserId(params.source?.sourceAuthorId)
       || toMaybeUserId(params.actorId),
     type: params.type,
-    title: params.title || null,
-    content: params.content,
-    tags: (params.tags || []).filter(Boolean),
+    title: sanitized.cleaned.title || null,
+    content: sanitized.cleaned.content,
+    tags: [...(params.tags || []).filter(Boolean), ...poisonTags],
     confidence,
     created_by: params.actorId,
     updated_by: params.actorId,
@@ -262,8 +312,8 @@ export async function createMemoryItem(params: CreateMemoryParams) {
       source_kind: params.source.sourceKind || 'admin_edit',
       source_message_id: params.source.sourceMessageId || null,
       source_author_id: params.source.sourceAuthorId || null,
-      source_ref: params.source.sourceRef || null,
-      excerpt: params.source.excerpt || null,
+      source_ref: sanitized.cleaned.sourceRef || null,
+      excerpt: sanitized.cleaned.excerpt || null,
       source_ts: new Date().toISOString(),
     };
 
