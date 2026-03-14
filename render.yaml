@@ -38,6 +38,10 @@ services:
         value: "1200"
       - key: YOUTUBE_MONITOR_INTERVAL_MS
         value: "300000"
+      - key: YOUTUBE_MONITOR_MCP_STRICT
+        value: "false"
+      - key: NEWS_MONITOR_MCP_STRICT
+        value: "false"
       - key: DISCORD_TOKEN
         sync: false
       - key: SUPABASE_URL
