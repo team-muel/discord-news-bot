@@ -269,20 +269,53 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  const requestUrl = `${baseUrl}/v1/chat/completions`;
-  const response = await fetchWithTimeout(requestUrl, {
+  const payload = JSON.stringify({
+    model: params.model || process.env.OPENCLAW_MODEL || 'openclaw',
+    temperature: params.temperature ?? 0.2,
+    max_tokens: params.maxTokens ?? 1000,
+    messages: [
+      { role: 'system', content: params.system },
+      { role: 'user', content: params.user },
+    ],
+  });
+
+  let requestUrl = `${baseUrl}/v1/chat/completions`;
+  let response = await fetchWithTimeout(requestUrl, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model: params.model || process.env.OPENCLAW_MODEL || 'openclaw',
-      temperature: params.temperature ?? 0.2,
-      max_tokens: params.maxTokens ?? 1000,
-      messages: [
-        { role: 'system', content: params.system },
-        { role: 'user', content: params.user },
-      ],
-    }),
+    body: payload,
   });
+
+  if (response.status === 404) {
+    const firstBody = await response.text();
+    const fallbackUrl = `${baseUrl}/chat/completions`;
+    const fallbackResponse = await fetchWithTimeout(fallbackUrl, {
+      method: 'POST',
+      headers,
+      body: payload,
+    });
+
+    if (fallbackResponse.ok) {
+      requestUrl = fallbackUrl;
+      response = fallbackResponse;
+    } else {
+      const fallbackBody = await fallbackResponse.text();
+      await logStructuredError({
+        code: 'LLM_REQUEST_FAILED',
+        source: 'llmClient.requestOpenClaw',
+        message: `OPENCLAW_REQUEST_FAILED status=${fallbackResponse.status}`,
+        meta: {
+          provider: 'openclaw',
+          status: fallbackResponse.status,
+          requestUrl,
+          fallbackUrl,
+          bodyPreview: firstBody.slice(0, 300),
+          fallbackBodyPreview: fallbackBody.slice(0, 300),
+        },
+      });
+      throw new Error(`OPENCLAW_REQUEST_FAILED: ${fallbackBody.slice(0, 300)}`);
+    }
+  }
 
   if (!response.ok) {
     const body = await response.text();
