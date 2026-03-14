@@ -1,6 +1,6 @@
 # Schema to Service Map
 
-- Generated at: 2026-03-13T17:19:23.982Z
+- Generated at: 2026-03-14T08:56:19.970Z
 - Source schema: docs/SUPABASE_SCHEMA.sql
 - Source scan: src/services/**/*.ts
 - Notes: static string matching for .from(...) and .rpc(...) usage.
@@ -12,8 +12,11 @@
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
 | agent_action_logs | src/services/finopsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts |
 | agent_action_policies | - |
+| agent_runtime_policies | src/services/agentPolicyService.ts |
 | agent_sessions | src/services/agentSessionStore.ts<br/>src/services/privacyForgetService.ts |
+| agent_skill_catalog | src/services/skills/registry.ts |
 | agent_steps | src/services/agentSessionStore.ts |
+| agent_workflow_profiles | src/services/agentWorkflowService.ts |
 | alert_slots | - |
 | api_rate_limits | - |
 | bot_state | - |
@@ -34,6 +37,13 @@
 | memory_retrieval_logs | src/services/agentMemoryStore.ts<br/>src/services/finopsService.ts<br/>src/services/memoryQualityMetricsService.ts |
 | memory_sources | src/services/agentMemoryService.ts<br/>src/services/agentMemoryStore.ts<br/>src/services/memoryJobRunner.ts<br/>src/services/privacyForgetService.ts |
 | news_sentiment | src/services/newsSentimentMonitor.ts |
+| retrieval_eval_cases | src/services/retrievalEvalService.ts |
+| retrieval_eval_results | src/services/retrievalEvalService.ts |
+| retrieval_eval_runs | src/services/retrievalEvalService.ts |
+| retrieval_eval_sets | src/services/retrievalEvalService.ts |
+| retrieval_eval_targets | src/services/retrievalEvalService.ts |
+| retrieval_ranker_active_profiles | src/services/retrievalEvalService.ts |
+| retrieval_ranker_experiments | src/services/retrievalEvalService.ts |
 | settings | - |
 | sources | src/services/crawlerRuntimeRegistry.ts<br/>src/services/goNoGoService.ts<br/>src/services/newsChannelStore.ts<br/>src/services/newsSentimentMonitor.ts<br/>src/services/sourceMonitorStore.ts<br/>src/services/youtubeSubscriptionStore.ts<br/>src/services/youtubeSubscriptionsMonitor.ts |
 | system_error_events | - |
@@ -42,6 +52,7 @@
 | trading_signals | - |
 | user_roles | - |
 | users | src/services/newsChannelStore.ts |
+| worker_approvals | - |
 
 ## RPC Functions
 

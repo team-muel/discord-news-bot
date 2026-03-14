@@ -1,25 +1,25 @@
 # Dependency Graph
 
-- Generated at: 2026-03-13T17:19:23.640Z
+- Generated at: 2026-03-14T08:56:19.670Z
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 128
+- Nodes: 148
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/services/supabaseClient.ts | 29 |
-| src/logger.ts | 24 |
-| src/services/skills/actions/types.ts | 17 |
+| src/services/supabaseClient.ts | 37 |
+| src/logger.ts | 29 |
+| src/utils/env.ts | 21 |
+| src/services/skills/actions/types.ts | 20 |
 | src/config.ts | 16 |
-| src/utils/env.ts | 16 |
 | src/services/skills/types.ts | 12 |
-| src/services/llmClient.ts | 8 |
+| src/discord/messages.ts | 11 |
+| src/services/llmClient.ts | 11 |
+| src/discord/ui.ts | 8 |
 | src/services/multiAgentService.ts | 8 |
-| src/discord/ui.ts | 7 |
+| src/services/skills/actions/queryUtils.ts | 8 |
 | src/middleware/auth.ts | 7 |
-| src/services/automationBot.ts | 6 |
-| src/services/skills/actions/queryUtils.ts | 6 |
 
 ## Mermaid
 
@@ -28,6 +28,7 @@ graph LR
   "bot.ts" --> "src/bot.ts"
   "bot.ts" --> "src/init.ts"
   "bot.ts" --> "src/logger.ts"
+  "bot.ts" --> "src/services/obsidianRagService.ts"
   "server.ts" --> "src/app.ts"
   "server.ts" --> "src/bot.ts"
   "server.ts" --> "src/config.ts"
@@ -53,24 +54,31 @@ graph LR
   "src/bot.ts" --> "src/discord/commandDefinitions.ts"
   "src/bot.ts" --> "src/discord/commands/admin.ts"
   "src/bot.ts" --> "src/discord/commands/agent.ts"
+  "src/bot.ts" --> "src/discord/commands/docs.ts"
   "src/bot.ts" --> "src/discord/commands/market.ts"
   "src/bot.ts" --> "src/discord/commands/subscribe.ts"
   "src/bot.ts" --> "src/discord/commands/vibe.ts"
   "src/bot.ts" --> "src/discord/lifecycle.ts"
+  "src/bot.ts" --> "src/discord/messages.ts"
   "src/bot.ts" --> "src/discord/session.ts"
   "src/bot.ts" --> "src/discord/ui.ts"
   "src/bot.ts" --> "src/logger.ts"
   "src/bot.ts" --> "src/services/adminAllowlistService.ts"
+  "src/bot.ts" --> "src/services/agentMemoryStore.ts"
   "src/bot.ts" --> "src/services/agentOpsService.ts"
   "src/bot.ts" --> "src/services/automationBot.ts"
   "src/bot.ts" --> "src/services/llmClient.ts"
   "src/bot.ts" --> "src/services/multiAgentService.ts"
+  "src/bot.ts" --> "src/services/obsidianRagService.ts"
   "src/bot.ts" --> "src/services/privacyForgetService.ts"
+  "src/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/bot.ts" --> "src/services/stockService.ts"
   "src/bot.ts" --> "src/services/supabaseClient.ts"
+  "src/bot.ts" --> "src/services/userLearningPrefsService.ts"
   "src/bot.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/bot.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/bot.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
+  "src/bot.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
   "src/bot.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/bot.ts" --> "src/utils/codeThread.ts"
   "src/bot.ts" --> "src/utils/sessionArtifactStore.ts"
@@ -84,28 +92,47 @@ graph LR
   "src/discord/auth.ts" --> "src/services/adminAllowlistService.ts"
   "src/discord/auth.ts" --> "src/services/discordLoginSessionStore.ts"
   "src/discord/commandDefinitions.ts" --> "src/utils/env.ts"
+  "src/discord/commands/admin.ts" --> "src/discord/messages.ts"
   "src/discord/commands/admin.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/admin.ts" --> "src/services/adminAllowlistService.ts"
   "src/discord/commands/admin.ts" --> "src/services/llmClient.ts"
+  "src/discord/commands/admin.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/commands/admin.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/discord/commands/admin.ts" --> "src/services/stockService.ts"
   "src/discord/commands/admin.ts" --> "src/services/supabaseClient.ts"
+  "src/discord/commands/agent.ts" --> "src/discord/messages.ts"
   "src/discord/commands/agent.ts" --> "src/discord/ui.ts"
   "src/discord/commands/agent.ts" --> "src/services/agentOpsService.ts"
   "src/discord/commands/agent.ts" --> "src/services/multiAgentService.ts"
+  "src/discord/commands/agent.ts" --> "src/services/skills/actionGovernanceStore.ts"
+  "src/discord/commands/agent.ts" --> "src/services/userLearningPrefsService.ts"
+  "src/discord/commands/docs.ts" --> "src/discord/auth.ts"
+  "src/discord/commands/docs.ts" --> "src/discord/messages.ts"
+  "src/discord/commands/docs.ts" --> "src/discord/ui.ts"
+  "src/discord/commands/docs.ts" --> "src/services/llmClient.ts"
+  "src/discord/commands/docs.ts" --> "src/services/obsidianRagService.ts"
+  "src/discord/commands/market.ts" --> "src/discord/messages.ts"
   "src/discord/commands/market.ts" --> "src/discord/ui.ts"
   "src/discord/commands/market.ts" --> "src/services/investmentAnalysisService.ts"
   "src/discord/commands/market.ts" --> "src/services/stockService.ts"
   "src/discord/commands/subscribe.ts" --> "src/discord/auth.ts"
+  "src/discord/commands/subscribe.ts" --> "src/discord/messages.ts"
   "src/discord/commands/subscribe.ts" --> "src/discord/ui.ts"
   "src/discord/commands/subscribe.ts" --> "src/services/newsChannelStore.ts"
   "src/discord/commands/subscribe.ts" --> "src/services/youtubeSubscriptionStore.ts"
+  "src/discord/commands/vibe.ts" --> "src/discord/auth.ts"
+  "src/discord/commands/vibe.ts" --> "src/discord/messages.ts"
   "src/discord/commands/vibe.ts" --> "src/discord/ui.ts"
   "src/discord/commands/vibe.ts" --> "src/services/multiAgentService.ts"
+  "src/discord/lifecycle.ts" --> "src/discord/messages.ts"
   "src/discord/lifecycle.ts" --> "src/logger.ts"
   "src/discord/lifecycle.ts" --> "src/services/agentOpsService.ts"
   "src/discord/lifecycle.ts" --> "src/services/automationBot.ts"
   "src/discord/lifecycle.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/messages.ts":::file
+  "src/discord/session.ts" --> "src/discord/messages.ts"
   "src/discord/session.ts" --> "src/services/multiAgentService.ts"
-  "src/discord/ui.ts":::file
+  "src/discord/ui.ts" --> "src/discord/messages.ts"
   "src/init.ts" --> "src/logger.ts"
   "src/logger.ts":::file
   "src/middleware/auth.ts" --> "src/config.ts"
@@ -136,9 +163,13 @@ graph LR
   "src/routes/bot.ts" --> "src/services/memoryQualityMetricsService.ts"
   "src/routes/bot.ts" --> "src/services/multiAgentService.ts"
   "src/routes/bot.ts" --> "src/services/privacyForgetService.ts"
+  "src/routes/bot.ts" --> "src/services/retrievalEvalService.ts"
   "src/routes/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
+  "src/routes/bot.ts" --> "src/services/skills/actionRunner.ts"
   "src/routes/bot.ts" --> "src/services/skills/actions/registry.ts"
   "src/routes/bot.ts" --> "src/services/supabaseClient.ts"
+  "src/routes/bot.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/routes/bot.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
   "src/routes/bot.ts" --> "src/utils/validation.ts"
   "src/routes/fred.ts" --> "src/utils/validation.ts"
   "src/routes/health.ts" --> "src/bot.ts"
@@ -169,9 +200,10 @@ graph LR
   "src/services/adminAllowlistService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentMemoryService.ts" --> "src/logger.ts"
   "src/services/agentMemoryService.ts" --> "src/services/memoryPoisonGuard.ts"
-  "src/services/agentMemoryService.ts" --> "src/services/structuredErrorLogService.ts"
+  "src/services/agentMemoryService.ts" --> "src/services/obsidian/router.ts"
   "src/services/agentMemoryService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentMemoryService.ts" --> "src/utils/env.ts"
+  "src/services/agentMemoryService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/agentMemoryService.ts" --> "src/utils/obsidianFileLock.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/memoryPoisonGuard.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/obsidianSanitizationWorker.ts"
@@ -180,10 +212,14 @@ graph LR
   "src/services/agentOpsService.ts" --> "src/services/agentMemoryStore.ts"
   "src/services/agentOpsService.ts" --> "src/services/multiAgentService.ts"
   "src/services/agentOpsService.ts" --> "src/utils/env.ts"
+  "src/services/agentPolicyService.ts" --> "src/services/skills/registry.ts"
   "src/services/agentPolicyService.ts" --> "src/services/skills/types.ts"
+  "src/services/agentPolicyService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentPolicyService.ts" --> "src/utils/env.ts"
   "src/services/agentSessionStore.ts" --> "src/services/multiAgentService.ts"
   "src/services/agentSessionStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/agentWorkflowService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/agentWorkflowService.ts" --> "src/utils/env.ts"
   "src/services/aiTradingClient.ts" --> "src/config.ts"
   "src/services/aiTradingClient.ts" --> "src/contracts/trade.ts"
   "src/services/aiTradingClient.ts" --> "src/services/localAiTradingClient.ts"
@@ -229,10 +265,13 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/agentMemoryService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentSessionStore.ts"
+  "src/services/multiAgentService.ts" --> "src/services/agentWorkflowService.ts"
   "src/services/multiAgentService.ts" --> "src/services/llmClient.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/engine.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/registry.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/types.ts"
+  "src/services/newsCaptureDedupService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/newsCaptureDedupService.ts" --> "src/utils/ttlCache.ts"
   "src/services/newsChannelStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/newsMonitorWorkerClient.ts" --> "src/services/mcpWorkerClient.ts"
   "src/services/newsMonitorWorkerClient.ts" --> "src/utils/env.ts"
@@ -241,11 +280,39 @@ graph LR
   "src/services/newsSentimentMonitor.ts" --> "src/services/sourceMonitorStore.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/services/supabaseClient.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/utils/network.ts"
+  "src/services/obsidian/adapters/headlessCliAdapter.ts" --> "src/services/obsidian/types.ts"
+  "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/services/obsidian/types.ts"
+  "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/utils/env.ts"
+  "src/services/obsidian/adapters/scriptCliAdapter.ts" --> "src/services/obsidian/types.ts"
+  "src/services/obsidian/adapters/scriptCliAdapter.ts" --> "src/utils/env.ts"
+  "src/services/obsidian/authoring.ts" --> "src/logger.ts"
+  "src/services/obsidian/authoring.ts" --> "src/services/obsidian/router.ts"
+  "src/services/obsidian/router.ts" --> "src/logger.ts"
+  "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/headlessCliAdapter.ts"
+  "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/localFsAdapter.ts"
+  "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/scriptCliAdapter.ts"
+  "src/services/obsidian/router.ts" --> "src/services/obsidian/types.ts"
+  "src/services/obsidian/router.ts" --> "src/utils/env.ts"
+  "src/services/obsidian/types.ts":::file
+  "src/services/obsidianCacheService.ts" --> "src/logger.ts"
+  "src/services/obsidianCacheService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/obsidianHeadlessService.ts" --> "src/logger.ts"
+  "src/services/obsidianHeadlessService.ts" --> "src/services/obsidian/router.ts"
+  "src/services/obsidianHeadlessService.ts" --> "src/services/obsidian/types.ts"
+  "src/services/obsidianHeadlessService.ts" --> "src/utils/obsidianEnv.ts"
+  "src/services/obsidianRagService.ts" --> "src/logger.ts"
+  "src/services/obsidianRagService.ts" --> "src/services/llmClient.ts"
+  "src/services/obsidianRagService.ts" --> "src/services/obsidianCacheService.ts"
+  "src/services/obsidianRagService.ts" --> "src/services/obsidianHeadlessService.ts"
   "src/services/obsidianSanitizationWorker.ts" --> "src/utils/env.ts"
   "src/services/privacyForgetService.ts" --> "src/logger.ts"
   "src/services/privacyForgetService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/privacyForgetService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/privacyForgetService.ts" --> "src/utils/obsidianFileLock.ts"
   "src/services/researchPresetStore.ts" --> "src/contracts/researchPreset.ts"
+  "src/services/retrievalEvalService.ts" --> "src/services/obsidian/router.ts"
+  "src/services/retrievalEvalService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/retrievalEvalService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/automationBot.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/runtime-alerts/types.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/tradingEngine.ts"
@@ -261,7 +328,9 @@ graph LR
   "src/services/skills/actionExecutionLogService.ts" --> "src/services/supabaseClient.ts"
   "src/services/skills/actionGovernanceStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/skills/actionGovernanceStore.ts" --> "src/utils/env.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/agentMemoryStore.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/finopsService.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/newsCaptureDedupService.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actionExecutionLogService.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actions/planner.ts"
@@ -290,6 +359,13 @@ graph LR
   "src/services/skills/actions/news.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
   "src/services/skills/actions/news.ts" --> "src/services/skills/actions/queryUtils.ts"
   "src/services/skills/actions/news.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/newsVerify.ts" --> "src/services/skills/actions/policy.ts"
+  "src/services/skills/actions/newsVerify.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/newsVerify.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/obsidian.ts" --> "src/services/llmClient.ts"
+  "src/services/skills/actions/obsidian.ts" --> "src/services/obsidian/authoring.ts"
+  "src/services/skills/actions/obsidian.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/obsidian.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/skills/actions/planner.ts" --> "src/services/llmClient.ts"
   "src/services/skills/actions/planner.ts" --> "src/services/skills/actions/plannerRules.ts"
   "src/services/skills/actions/planner.ts" --> "src/services/skills/actions/registry.ts"
@@ -308,11 +384,14 @@ graph LR
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/community.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/db.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/news.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/newsVerify.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/obsidian.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/privacy.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/rag.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/stock.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/web.ts"
+  "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/webSearch.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/youtube.ts"
   "src/services/skills/actions/registry.ts" --> "src/services/skills/actions/youtubeWebhook.ts"
   "src/services/skills/actions/stock.ts" --> "src/services/skills/actions/types.ts"
@@ -322,6 +401,9 @@ graph LR
   "src/services/skills/actions/web.ts" --> "src/services/skills/actions/policy.ts"
   "src/services/skills/actions/web.ts" --> "src/services/skills/actions/queryUtils.ts"
   "src/services/skills/actions/web.ts" --> "src/services/skills/actions/types.ts"
+  "src/services/skills/actions/webSearch.ts" --> "src/services/skills/actions/policy.ts"
+  "src/services/skills/actions/webSearch.ts" --> "src/services/skills/actions/queryUtils.ts"
+  "src/services/skills/actions/webSearch.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/youtube.ts" --> "src/services/skills/actions/mcpDelegatedAction.ts"
   "src/services/skills/actions/youtube.ts" --> "src/services/skills/actions/queryUtils.ts"
   "src/services/skills/actions/youtube.ts" --> "src/services/skills/actions/types.ts"
@@ -335,6 +417,7 @@ graph LR
   "src/services/skills/engine.ts" --> "src/services/skills/modules/opsExecution.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/modules/opsPlan.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/modules/webhook.ts"
+  "src/services/skills/engine.ts" --> "src/services/skills/registry.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/casualChat.ts" --> "src/services/llmClient.ts"
   "src/services/skills/modules/casualChat.ts" --> "src/services/skills/types.ts"
@@ -354,6 +437,8 @@ graph LR
   "src/services/skills/modules/webhook.ts" --> "src/services/skills/modules/common.ts"
   "src/services/skills/modules/webhook.ts" --> "src/services/skills/types.ts"
   "src/services/skills/registry.ts" --> "src/services/skills/types.ts"
+  "src/services/skills/registry.ts" --> "src/services/supabaseClient.ts"
+  "src/services/skills/registry.ts" --> "src/utils/env.ts"
   "src/services/skills/types.ts":::file
   "src/services/sourceMonitorStore.ts" --> "src/logger.ts"
   "src/services/sourceMonitorStore.ts" --> "src/services/supabaseClient.ts"
@@ -382,14 +467,17 @@ graph LR
   "src/services/tradingStrategyService.ts" --> "src/contracts/tradingStrategy.ts"
   "src/services/tradingStrategyService.ts" --> "src/logger.ts"
   "src/services/tradingStrategyService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/userLearningPrefsService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/userLearningPrefsService.ts" --> "src/utils/ttlCache.ts"
   "src/services/workerExecution.ts" --> "src/services/skills/actions/types.ts"
   "src/services/workerGeneration/dynamicWorkerRegistry.ts" --> "src/logger.ts"
   "src/services/workerGeneration/dynamicWorkerRegistry.ts" --> "src/services/skills/actions/types.ts"
-  "src/services/workerGeneration/workerApprovalStore.ts":::file
+  "src/services/workerGeneration/workerApprovalStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/logger.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/llmClient.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerSandbox.ts"
+  "src/services/workerGeneration/workerProposalMetrics.ts":::file
   "src/services/workerGeneration/workerSandbox.ts":::file
   "src/services/youtubeMonitorWorkerClient.ts" --> "src/services/mcpWorkerClient.ts"
   "src/services/youtubeMonitorWorkerClient.ts" --> "src/utils/env.ts"
@@ -401,10 +489,12 @@ graph LR
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/utils/async.ts"
   "src/types/auth.ts":::file
   "src/utils/async.ts":::file
+  "src/utils/codeThread.ts" --> "src/discord/messages.ts"
   "src/utils/codeThread.ts" --> "src/services/multiAgentService.ts"
   "src/utils/codeThread.ts" --> "src/utils/sessionArtifactStore.ts"
   "src/utils/env.ts":::file
   "src/utils/network.ts":::file
+  "src/utils/obsidianEnv.ts":::file
   "src/utils/obsidianFileLock.ts":::file
   "src/utils/sessionArtifactStore.ts":::file
   "src/utils/ttlCache.ts":::file
