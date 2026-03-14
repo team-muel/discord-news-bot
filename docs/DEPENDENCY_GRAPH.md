@@ -12,9 +12,9 @@
 | src/utils/env.ts | 21 |
 | src/services/skills/actions/types.ts | 20 |
 | src/config.ts | 16 |
+| src/services/llmClient.ts | 12 |
 | src/services/skills/types.ts | 12 |
 | src/discord/messages.ts | 11 |
-| src/services/llmClient.ts | 11 |
 | src/discord/ui.ts | 8 |
 | src/services/multiAgentService.ts | 8 |
 | src/services/skills/actions/queryUtils.ts | 8 |
@@ -175,6 +175,7 @@ graph LR
   "src/routes/health.ts" --> "src/config.ts"
   "src/routes/health.ts" --> "src/contracts/bot.ts"
   "src/routes/health.ts" --> "src/services/automationBot.ts"
+  "src/routes/health.ts" --> "src/services/llmClient.ts"
   "src/routes/quant.ts":::file
   "src/routes/research.ts" --> "src/contracts/researchPreset.ts"
   "src/routes/research.ts" --> "src/middleware/auth.ts"

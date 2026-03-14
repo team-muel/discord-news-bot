@@ -5,7 +5,7 @@
 
 | Method | Path | Auth | Admin | Rate Limit | Source |
 | --- | --- | --- | --- | --- | --- |
-| GET | / | no | no | no | src/routes/health.ts:72 |
+| GET | / | no | no | no | src/routes/health.ts:77 |
 | GET | /api/auth/callback | no | no | yes | src/routes/auth.ts:263 |
 | GET | /api/auth/invite | no | no | no | src/routes/auth.ts:252 |
 | GET | /api/auth/login | no | no | yes | src/routes/auth.ts:236 |
@@ -61,7 +61,7 @@
 | POST | /api/research/preset/:presetKey | no | yes | no | src/routes/research.ts:36 |
 | GET | /api/research/preset/:presetKey/history | yes | no | no | src/routes/research.ts:25 |
 | POST | /api/research/preset/:presetKey/restore/:historyId | no | yes | no | src/routes/research.ts:58 |
-| GET | /api/status | no | no | no | src/routes/health.ts:68 |
+| GET | /api/status | no | no | no | src/routes/health.ts:73 |
 | GET | /api/trades/ | yes | no | no | src/routes/trades.ts:49 |
 | POST | /api/trades/ | no | yes | no | src/routes/trades.ts:66 |
 | GET | /api/trading/position | yes | yes | no | src/routes/trading.ts:99 |
@@ -73,6 +73,6 @@
 | GET | /api/trading/strategy | yes | yes | no | src/routes/trading.ts:29 |
 | PUT | /api/trading/strategy | yes | yes | yes | src/routes/trading.ts:39 |
 | POST | /api/trading/strategy/reset | yes | yes | yes | src/routes/trading.ts:50 |
-| GET | /health | no | no | no | src/routes/health.ts:25 |
-| GET | /ready | no | no | no | src/routes/health.ts:50 |
+| GET | /health | no | no | no | src/routes/health.ts:26 |
+| GET | /ready | no | no | no | src/routes/health.ts:55 |
 
