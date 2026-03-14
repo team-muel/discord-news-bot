@@ -95,11 +95,9 @@ const main = async () => {
     return a.path.localeCompare(b.path);
   });
 
-  const generatedAt = new Date().toISOString();
   const lines = [
     '# Routes Inventory',
     '',
-    `- Generated at: ${generatedAt}`,
     '- Source: src/app.ts + src/routes/*.ts',
     '- Notes: middleware detection is static and best-effort for requireAuth/requireAdmin/rate limiter usage.',
     '',

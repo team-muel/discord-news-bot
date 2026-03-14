@@ -58,13 +58,11 @@ const main = async () => {
 
   const graph = result.obj();
   const fanIn = topFanIn(graph);
-  const generatedAt = new Date().toISOString();
-
   const lines = [
     '# Dependency Graph',
     '',
-    `- Generated at: ${generatedAt}`,
     `- Entrypoints: ${ENTRYPOINTS.join(', ')}`,
+
     `- Nodes: ${Object.keys(graph).length}`,
     '',
     '## Top Fan-In (Most Imported Modules)',

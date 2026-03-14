@@ -1,6 +1,5 @@
 # Routes Inventory
 
-- Generated at: 2026-03-14T08:56:17.988Z
 - Source: src/app.ts + src/routes/*.ts
 - Notes: middleware detection is static and best-effort for requireAuth/requireAdmin/rate limiter usage.
 

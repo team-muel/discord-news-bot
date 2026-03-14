@@ -1,6 +1,5 @@
 # Schema to Service Map
 
-- Generated at: 2026-03-14T08:56:19.970Z
 - Source schema: docs/SUPABASE_SCHEMA.sql
 - Source scan: src/services/**/*.ts
 - Notes: static string matching for .from(...) and .rpc(...) usage.

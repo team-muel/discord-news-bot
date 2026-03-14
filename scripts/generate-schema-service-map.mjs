@@ -60,11 +60,9 @@ const main = async () => {
     }
   }
 
-  const generatedAt = new Date().toISOString();
   const lines = [
     '# Schema to Service Map',
     '',
-    `- Generated at: ${generatedAt}`,
     '- Source schema: docs/SUPABASE_SCHEMA.sql',
     '- Source scan: src/services/**/*.ts',
     '- Notes: static string matching for .from(...) and .rpc(...) usage.',
