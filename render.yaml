@@ -51,7 +51,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENCLAW_BASE_URL
-        sync: false
+        value: https://muel-litellm-proxy.onrender.com
       - key: OPENCLAW_API_KEY
         sync: false
       - key: JWT_SECRET
@@ -76,7 +76,7 @@ services:
         value: "4"
 
   - type: web
-    name: muel-litellm-gateway
+    name: muel-litellm-proxy
     env: docker
     plan: starter
     autoDeploy: true
