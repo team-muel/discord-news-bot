@@ -48,6 +48,15 @@ const fetchWithTimeout = async (input: string, init: RequestInit): Promise<Respo
       }, error);
       throw new Error('API_TIMEOUT');
     }
+    await logStructuredError({
+      code: 'LLM_NETWORK_ERROR',
+      source: 'llmClient.fetchWithTimeout',
+      message: `LLM network error: ${String(error?.message || 'unknown')}`,
+      meta: {
+        url: input,
+        errorName: String(error?.name || ''),
+      },
+    }, error);
     throw error;
   } finally {
     clearTimeout(timer);
@@ -238,6 +247,18 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
   const baseUrl = getOpenClawBaseUrl();
   if (!baseUrl) {
     throw new Error('OPENCLAW_BASE_URL_NOT_CONFIGURED');
+  }
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    await logStructuredError({
+      code: 'OPENCLAW_BASE_URL_INVALID',
+      source: 'llmClient.requestOpenClaw',
+      message: 'OPENCLAW_BASE_URL must start with http:// or https://',
+      meta: {
+        provider: 'openclaw',
+        baseUrlPreview: baseUrl.slice(0, 120),
+      },
+    });
+    throw new Error('OPENCLAW_BASE_URL_INVALID');
   }
 
   const apiKey = getOpenClawApiKey();
