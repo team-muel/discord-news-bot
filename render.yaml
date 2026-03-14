@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: starter
     autoDeploy: true
-    buildCommand: npm ci --no-audit --no-fund; npm run build
+    buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build
     startCommand: npm run start
     healthCheckPath: /health
     envVars:
@@ -21,7 +21,9 @@ services:
       - key: AUTOMATION_NEWS_ENABLED
         value: "false"
       - key: AI_PROVIDER
-        value: openai
+        value: openclaw
+      - key: OPENCLAW_MODEL
+        value: muel-balanced
       - key: AGENT_AUTO_ONBOARDING_ENABLED
         value: "true"
       - key: AGENT_DAILY_LEARNING_ENABLED
@@ -44,6 +46,10 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENCLAW_BASE_URL
+        sync: false
+      - key: OPENCLAW_API_KEY
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: SERPER_API_KEY
@@ -60,3 +66,23 @@ services:
         value: "72"
       - key: NEWS_VERIFY_SOURCE_LIMIT
         value: "4"
+
+  - type: web
+    name: muel-litellm-gateway
+    env: docker
+    plan: starter
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile.litellm
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: LITELLM_MASTER_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false

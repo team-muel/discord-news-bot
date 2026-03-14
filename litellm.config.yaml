@@ -1,0 +1,25 @@
+model_list:
+  - model_name: muel-fast
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: muel-balanced
+    litellm_params:
+      model: gemini/gemini-1.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: muel-precise
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-latest
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: muel-local
+    litellm_params:
+      model: ollama/qwen2.5:7b-instruct
+      api_base: os.environ/OLLAMA_BASE_URL
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  disable_spend_logs: false
+  enforce_user_param: false
