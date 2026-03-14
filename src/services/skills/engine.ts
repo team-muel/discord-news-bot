@@ -6,10 +6,11 @@ import { executeOpsCritiqueSkill } from './modules/opsCritique';
 import { executeGuildOnboardingBlueprintSkill } from './modules/guildOnboardingBlueprint';
 import { executeIncidentReviewSkill } from './modules/incidentReview';
 import type { SkillContext, SkillExecutionResult, SkillId } from './types';
+import { getSkillExecutorKey } from './registry';
 
 type SkillExecutor = (context: SkillContext) => Promise<SkillExecutionResult>;
 
-const SKILL_EXECUTOR_MAP: Record<SkillId, SkillExecutor> = {
+const EXECUTOR_MAP: Record<string, SkillExecutor> = {
   casual_chat: executeCasualChatSkill,
   'ops-plan': executeOpsPlanSkill,
   'ops-execution': executeOpsExecutionSkill,
@@ -23,7 +24,8 @@ export const executeSkill = async (
   skillId: SkillId,
   context: SkillContext,
 ): Promise<SkillExecutionResult> => {
-  const executor = SKILL_EXECUTOR_MAP[skillId];
+  const executorKey = getSkillExecutorKey(skillId);
+  const executor = EXECUTOR_MAP[executorKey] || EXECUTOR_MAP[skillId];
   if (!executor) {
     return {
       skillId,

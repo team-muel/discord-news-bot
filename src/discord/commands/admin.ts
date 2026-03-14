@@ -106,7 +106,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
   const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
     const publicCommands = [
       '`/ping` : 봇 응답/지연 상태 확인',
-      '`/로그인` : 내 계정 권한 및 기능 사용 가능 여부 확인',
+      '`/로그인` : 내 계정 권한/세션 진단 및 수동 갱신',
       '`/뮤엘` 또는 `@Muel` : 자연어로 대화/요청',
       '`/구독` : 영상/게시글/뉴스 구독 (링크만 넣으면 현재 채널 자동 등록)',
       '`/해줘` : 실행형 요청(미구현/코드성은 `/만들어줘` 흐름으로 연결)',

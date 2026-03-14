@@ -10,7 +10,7 @@ import {
   EMBED_ERROR,
   EMBED_SUCCESS,
 } from '../ui';
-import { hasFeatureAccess } from '../auth';
+import { ensureFeatureAccess } from '../auth';
 import {
   createYouTubeSubscription,
   deleteYouTubeSubscription,
@@ -67,13 +67,15 @@ const handleSubscribeYouTubeCommand = async (
   interaction: ChatInputCommandInteraction,
   kind: 'videos' | 'posts',
 ): Promise<void> => {
-  if (!(await hasFeatureAccess(interaction))) {
+  const access = await ensureFeatureAccess(interaction);
+  if (!access.ok) {
     await interaction.reply({
       ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
+  const accessNotice = access.autoLoggedIn ? `\n\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
   if (!interaction.guildId) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
@@ -108,7 +110,7 @@ const handleSubscribeYouTubeCommand = async (
     await interaction.editReply(
       buildSimpleEmbed(
         DISCORD_MESSAGES.subscribe.titleSubscribeResult,
-        `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})`,
+        `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})${accessNotice}`,
         EMBED_SUCCESS,
       ),
     );
@@ -120,13 +122,15 @@ const handleSubscribeYouTubeCommand = async (
 const handleSubscribeNewsCommand = async (
   interaction: ChatInputCommandInteraction,
 ): Promise<void> => {
-  if (!(await hasFeatureAccess(interaction))) {
+  const access = await ensureFeatureAccess(interaction);
+  if (!access.ok) {
     await interaction.reply({
       ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
+  const accessNotice = access.autoLoggedIn ? `\n\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
   if (!interaction.guildId) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
@@ -149,7 +153,7 @@ const handleSubscribeNewsCommand = async (
     await interaction.editReply(
       buildSimpleEmbed(
         DISCORD_MESSAGES.subscribe.titleNewsSubscribe,
-        `${state}: news -> <#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})`,
+        `${state}: news -> <#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})${accessNotice}`,
         EMBED_SUCCESS,
       ),
     );
@@ -218,13 +222,15 @@ const handleUnsubscribeCommand = async (
   interaction: ChatInputCommandInteraction,
   forcedKind?: 'videos' | 'posts' | 'news',
 ): Promise<void> => {
-  if (!(await hasFeatureAccess(interaction))) {
+  const access = await ensureFeatureAccess(interaction);
+  if (!access.ok) {
     await interaction.reply({
       ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
       ephemeral: true,
     });
     return;
   }
+  const accessNotice = access.autoLoggedIn ? `\n\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
   if (!interaction.guildId) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
@@ -271,8 +277,8 @@ const handleUnsubscribeCommand = async (
         buildSimpleEmbed(
           result.deleted ? DISCORD_MESSAGES.subscribe.titleUnsubscribeDone : DISCORD_MESSAGES.subscribe.titleUnsubscribe,
           result.deleted
-            ? `해제 완료: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`
-            : `해제 대상이 없습니다: news -> <#${targetChannel.id}>`,
+            ? `해제 완료: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})${accessNotice}`
+            : `해제 대상이 없습니다: news -> <#${targetChannel.id}>${accessNotice}`,
           result.deleted ? EMBED_SUCCESS : EMBED_WARN,
         ),
       );
@@ -296,8 +302,8 @@ const handleUnsubscribeCommand = async (
       buildSimpleEmbed(
         result.deleted ? DISCORD_MESSAGES.subscribe.titleUnsubscribeDone : DISCORD_MESSAGES.subscribe.titleUnsubscribe,
         result.deleted
-          ? `해제 완료: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`
-          : `해제 대상이 없습니다: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`,
+          ? `해제 완료: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>${accessNotice}`
+          : `해제 대상이 없습니다: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>${accessNotice}`,
         result.deleted ? EMBED_SUCCESS : EMBED_WARN,
       ),
     );

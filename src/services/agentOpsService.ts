@@ -51,6 +51,7 @@ export const triggerGuildOnboardingSession = (params: {
     requestedBy: params.requestedBy,
     goal,
     skillId: 'guild-onboarding-blueprint',
+    isAdmin: true,
   });
 
   logger.info('[AGENT-OPS] onboarding session started guild=%s session=%s', params.guildId, session.id);
@@ -91,6 +92,7 @@ const runDailyLearningForGuildIds = (guildIds: string[]) => {
         requestedBy: 'system-daily-learning',
         goal,
         skillId: 'incident-review',
+        isAdmin: true,
       });
       started += 1;
     } catch {

@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ActionPlan } from './types';
 import logger from '../../../logger';
@@ -124,9 +124,9 @@ const normalizeIntentRuleConfig = (input: unknown): IntentRuleConfig | null => {
   return { id, pattern, plans, conditionalPlans };
 };
 
-const loadPlannerRulesConfig = (): PlannerRulesConfig => {
+const loadPlannerRulesConfig = async (): Promise<PlannerRulesConfig> => {
   try {
-    const raw = fs.readFileSync(RULES_DOC_PATH, 'utf8');
+    const raw = await fs.readFile(RULES_DOC_PATH, 'utf8');
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const ragIntentPattern = String(parsed.ragIntentPattern || '').trim() || DEFAULT_RAG_INTENT_PATTERN;
     const rules = Array.isArray(parsed.rules)
@@ -169,17 +169,35 @@ const compileIntentRuleSpecs = (configRules: IntentRuleConfig[]): IntentRuleSpec
   return compiled;
 };
 
-const loadedRulesConfig = loadPlannerRulesConfig();
-const RAG_INTENT_REGEX = new RegExp(loadedRulesConfig.ragIntentPattern, 'i');
-const INTENT_RULE_SPECS: IntentRuleSpec[] = compileIntentRuleSpecs(loadedRulesConfig.rules);
+let compiledRulesPromise: Promise<{ ragIntentRegex: RegExp; intentRuleSpecs: IntentRuleSpec[] }> | null = null;
 
-export const isRagIntentGoal = (goal: string): boolean => RAG_INTENT_REGEX.test(String(goal || '').toLowerCase());
+const getCompiledRules = async (): Promise<{ ragIntentRegex: RegExp; intentRuleSpecs: IntentRuleSpec[] }> => {
+  if (compiledRulesPromise) {
+    return compiledRulesPromise;
+  }
 
-export const buildFallbackPlan = (goal: string): ActionPlan[] => {
+  compiledRulesPromise = (async () => {
+    const loadedRulesConfig = await loadPlannerRulesConfig();
+    return {
+      ragIntentRegex: new RegExp(loadedRulesConfig.ragIntentPattern, 'i'),
+      intentRuleSpecs: compileIntentRuleSpecs(loadedRulesConfig.rules),
+    };
+  })();
+
+  return compiledRulesPromise;
+};
+
+export const isRagIntentGoal = async (goal: string): Promise<boolean> => {
+  const rules = await getCompiledRules();
+  return rules.ragIntentRegex.test(String(goal || '').toLowerCase());
+};
+
+export const buildFallbackPlan = async (goal: string): Promise<ActionPlan[]> => {
+  const rules = await getCompiledRules();
   const lower = goal.toLowerCase();
   const plans: ActionPlan[] = [];
 
-  for (const rule of INTENT_RULE_SPECS) {
+  for (const rule of rules.intentRuleSpecs) {
     if (!rule.pattern.test(lower)) {
       continue;
     }

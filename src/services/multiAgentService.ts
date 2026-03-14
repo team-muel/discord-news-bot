@@ -1,17 +1,18 @@
 import crypto from 'crypto';
 import { buildAgentMemoryHints } from './agentMemoryService';
-import { getAgentPolicySnapshot, validateAgentSessionRequest } from './agentPolicyService';
+import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agentPolicyService';
 import { persistAgentSession } from './agentSessionStore';
 import { generateText, isAnyLlmConfigured } from './llmClient';
 import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillId } from './skills/types';
+import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
 
 export type AgentRole = 'planner' | 'researcher' | 'critic';
 export type AgentPriority = 'fast' | 'balanced' | 'precise';
 export type AgentSessionStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type AgentStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type AgentIntent = 'task' | 'casual_chat';
+export type AgentIntent = 'task' | 'casual_chat' | 'uncertain';
 
 export type AgentStep = {
   id: string;
@@ -165,35 +166,6 @@ const toConclusion = (raw: string): string => {
   return compact.slice(0, 280);
 };
 
-const TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|계획|검토|실행|보여|조회|생성|추천|계산|설계|요청|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|review|check)/i;
-const EXPLICIT_TASK_PATTERN = /(찾아줘|검색해줘|분석해줘|요약해줘|정리해줘|작성해줘|만들어줘|계획해줘|검토해줘|조회해줘|search for|find me|analyze this|summarize this)/i;
-const CASUAL_HINT_PATTERN = /(우울|슬퍼|힘들|불안|외로|짜증|피곤|배고|졸려|심심|기분|오늘|방금|아까|그냥|ㅋㅋ|ㅎㅎ|하하|lol|lmao|thanks|고마워|고맙|안녕|반가)/i;
-
-const classifyIntentHeuristically = (goal: string): AgentIntent | null => {
-  const text = String(goal || '').trim();
-  if (!text) {
-    return 'task';
-  }
-
-  if (CASUAL_HINT_PATTERN.test(text) && text.length <= 180 && !EXPLICIT_TASK_PATTERN.test(text)) {
-    return 'casual_chat';
-  }
-
-  if (TASK_HINT_PATTERN.test(text)) {
-    return 'task';
-  }
-
-  if (CASUAL_HINT_PATTERN.test(text) && text.length <= 140) {
-    return 'casual_chat';
-  }
-
-  if (text.length <= 24 && /[?？]$/.test(text)) {
-    return 'casual_chat';
-  }
-
-  return null;
-};
-
 const parseIntentFromLlm = (raw: string): AgentIntent | null => {
   const text = String(raw || '');
   const start = text.indexOf('{');
@@ -211,6 +183,9 @@ const parseIntentFromLlm = (raw: string): AgentIntent | null => {
     if (intent === 'casual_chat') {
       return 'casual_chat';
     }
+    if (intent === 'uncertain') {
+      return 'uncertain';
+    }
   } catch {
     return null;
   }
@@ -218,41 +193,94 @@ const parseIntentFromLlm = (raw: string): AgentIntent | null => {
   return null;
 };
 
-const classifyIntent = async (goal: string, requestedSkillId: SkillId | null): Promise<AgentIntent> => {
+const classifyIntent = async (params: {
+  guildId: string;
+  goal: string;
+  requestedSkillId: SkillId | null;
+  intentHints: string[];
+}): Promise<AgentIntent> => {
+  const { goal, requestedSkillId, intentHints } = params;
   if (requestedSkillId) {
     return 'task';
   }
 
-  const heuristic = classifyIntentHeuristically(goal);
-  if (heuristic) {
-    return heuristic;
+  const text = String(goal || '').trim();
+  if (!text) {
+    return 'task';
   }
+
+  const hintLines = intentHints
+    .filter((line) => !line.startsWith('현재 목표:'))
+    .slice(0, 4)
+    .map((line) => `- ${String(line || '').slice(0, 180)}`);
+  const hintBlock = hintLines.length > 0
+    ? hintLines.join('\n')
+    : '- 없음';
 
   try {
     const raw = await generateText({
       system: [
-        '너는 라우팅 분류기다.',
-        '입력을 보고 intent를 task 또는 casual_chat 중 하나로만 분류한다.',
-        '감정 호소/짧은 일상 발화는 task 신호가 일부 보여도 casual_chat을 우선한다.',
-        '명시적 작업 동사(찾아줘, 검색해줘, 분석해줘, 요약해줘 등)가 있을 때만 task로 분류한다.',
+        '너는 대화 의도 분류기다.',
+        'task: 정보/방법 요청, 기술 설정·연동·구성, 작업 실행, 검색·분석·생성, "~하고 싶어(목적·기능)", "알려줘야", "어떻게", "방법" 등 무언가를 얻거나 이루려는 모든 발화.',
+        'casual_chat: 순수 감정 토로(우울해, 힘들어), 단순 인사, 목적 없는 잡담. 기술/작업 맥락이 조금이라도 있으면 task.',
+        'uncertain: 문장이 짧거나 모호해서 task/casual_chat 판별 신뢰가 낮은 경우. 정책/권한/관리 이슈가 섞였지만 목표가 불명확한 경우도 uncertain.',
         '출력은 반드시 JSON 한 줄만 사용한다.',
       ].join('\n'),
       user: [
-        '다음 문장을 분류하세요.',
-        '기준:',
-        '- task: 정보 검색/분석/실행 등 명확한 작업 요청',
-        '- casual_chat: 감정 표현, 안부, 잡담, 짧은 반응',
-        '- 감정 표현이 핵심이면 과거 DB/메모리 조회보다 공감형 핑퐁을 우선한다',
-        '출력 형식: {"intent":"task|casual_chat"}',
-        `문장: ${String(goal || '').trim()}`,
+        '참고 메모리 힌트(길드 정책/맥락):',
+        hintBlock,
+        `문장: ${text}`,
+        '출력 형식: {"intent":"task|casual_chat|uncertain"}',
       ].join('\n'),
       temperature: 0,
-      maxTokens: 80,
+      maxTokens: 40,
     });
 
-    return parseIntentFromLlm(raw) || 'task';
+    return parseIntentFromLlm(raw) || 'uncertain';
   } catch {
-    return 'task';
+    return 'uncertain';
+  }
+};
+
+const buildIntentClarificationFallback = (goal: string): string => {
+  const text = String(goal || '').trim();
+  if (!text) {
+    return '요청을 정확히 처리하려면 원하는 결과를 한 줄로 알려주세요. 예: "공지 채널 하나 만들어줘" 또는 "그냥 오늘 힘들었어"';
+  }
+  return '요청을 안전하게 처리하려고 확인이 필요해요. 지금 원하는 게 작업 실행인지, 그냥 대화/상담인지 한 줄로 알려주세요.';
+};
+
+const generateIntentClarificationResult = async (goal: string, hints: string[]): Promise<string> => {
+  const hintLines = hints
+    .filter((line) => !line.startsWith('현재 목표:'))
+    .slice(0, 3)
+    .map((line) => `- ${String(line || '').slice(0, 180)}`);
+  const hintBlock = hintLines.length > 0
+    ? hintLines.join('\n')
+    : '- 없음';
+
+  try {
+    const output = await generateText({
+      system: [
+        '너는 디스코드 운영 봇의 안전 라우팅 어시스턴트다.',
+        '목표가 모호할 때는 자동 실행을 시작하지 말고 확인 질문 1개만 한다.',
+        '출력은 짧은 한국어 1~2문장으로 작성한다.',
+      ].join('\n'),
+      user: [
+        '아래 사용자 발화는 의도가 모호하다.',
+        `사용자 발화: ${String(goal || '').trim()}`,
+        '참고 메모리 힌트:',
+        hintBlock,
+        '작업 실행 vs 일반 대화 중 무엇을 원하는지 확인하는 질문을 작성해라.',
+      ].join('\n'),
+      temperature: 0.2,
+      maxTokens: 120,
+    });
+
+    const text = String(output || '').trim();
+    return text || buildIntentClarificationFallback(goal);
+  } catch {
+    return buildIntentClarificationFallback(goal);
   }
 };
 
@@ -328,41 +356,37 @@ const touch = (session: AgentSession) => {
 };
 
 const buildInitialSteps = (
+  guildId: string,
   requestedSkillId: SkillId | null,
   priority: AgentPriority,
   timestamp: string,
-): AgentStep[] => ([
-  {
-    id: crypto.randomUUID(),
-    role: 'planner',
-    title: requestedSkillId ? `스킬 실행: ${requestedSkillId}` : '목표 실행 계획 수립',
-    status: priority === 'fast' && !requestedSkillId ? 'cancelled' : 'pending',
-    startedAt: null,
-    endedAt: priority === 'fast' && !requestedSkillId ? timestamp : null,
-    output: null,
-    error: null,
-  },
-  {
-    id: crypto.randomUUID(),
-    role: 'researcher',
-    title: '실행안/근거 초안 작성',
-    status: requestedSkillId ? 'cancelled' : 'pending',
-    startedAt: null,
-    endedAt: requestedSkillId ? timestamp : null,
-    output: null,
-    error: null,
-  },
-  {
-    id: crypto.randomUUID(),
-    role: 'critic',
-    title: '리스크 검토 및 보완',
-    status: requestedSkillId || priority === 'fast' ? 'cancelled' : 'pending',
-    startedAt: null,
-    endedAt: requestedSkillId || priority === 'fast' ? timestamp : null,
-    output: null,
-    error: null,
-  },
-]);
+): AgentStep[] => {
+  primeWorkflowProfileCache();
+  const templates = getWorkflowStepTemplates({
+    guildId,
+    priority,
+    hasRequestedSkill: Boolean(requestedSkillId),
+  });
+
+  return templates.map((template) => {
+    const cancelled = Boolean(
+      (priority === 'fast' && template.skipWhenFast)
+      || (requestedSkillId && template.skipWhenRequestedSkill),
+    );
+    return {
+      id: crypto.randomUUID(),
+      role: template.role,
+      title: requestedSkillId && template.role === 'planner'
+        ? `스킬 실행: ${requestedSkillId}`
+        : template.title,
+      status: cancelled ? 'cancelled' : 'pending',
+      startedAt: null,
+      endedAt: cancelled ? timestamp : null,
+      output: null,
+      error: null,
+    };
+  });
+};
 
 const cloneSession = (session: AgentSession): AgentSession => ({
   ...session,
@@ -448,7 +472,17 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
 
   try {
     ensureSessionBudget(sessionStartedAtMs);
-    session.routedIntent = await classifyIntent(session.goal, session.requestedSkillId);
+    const intentHints = await withTimeout(buildAgentMemoryHints({
+      guildId: session.guildId,
+      goal: session.goal,
+      maxItems: 4,
+    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_HINT_TIMEOUT').catch(() => []);
+    session.routedIntent = await classifyIntent({
+      guildId: session.guildId,
+      goal: session.goal,
+      requestedSkillId: session.requestedSkillId,
+      intentHints,
+    });
     touch(session);
 
     if (session.routedIntent === 'casual_chat') {
@@ -458,6 +492,18 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       const casualReply = await generateCasualChatResult(session.goal);
       markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
         result: casualReply,
+        error: null,
+      });
+      return session.cancelRequested ? 'cancelled' : 'completed';
+    }
+
+    if (session.routedIntent === 'uncertain') {
+      ensureSessionBudget(sessionStartedAtMs);
+      const timestamp = nowIso();
+      cancelAllPendingSteps(session, timestamp);
+      const clarification = await generateIntentClarificationResult(session.goal, intentHints);
+      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+        result: clarification,
         error: null,
       });
       return session.cancelRequested ? 'cancelled' : 'completed';
@@ -606,7 +652,7 @@ const requeueForRetry = (session: AgentSession) => {
   session.endedAt = null;
   session.result = null;
   session.cancelRequested = false;
-  session.steps = buildInitialSteps(session.requestedSkillId, session.priority, nowIso());
+  session.steps = buildInitialSteps(session.guildId, session.requestedSkillId, session.priority, nowIso());
   touch(session);
   void persistAgentSession(cloneSession(session));
   enqueueSession(session.id);
@@ -680,6 +726,7 @@ export const startAgentSession = (params: {
   goal: string;
   skillId?: string | null;
   priority?: string | null;
+  isAdmin?: boolean;
 }) => {
   if (!isAnyLlmConfigured()) {
     throw new Error('LLM provider is not configured. Configure OPENAI/GEMINI/ANTHROPIC/OPENCLAW/OLLAMA provider.');
@@ -689,16 +736,19 @@ export const startAgentSession = (params: {
     ? params.skillId
     : null;
   const priority = toPriority(params.priority);
+  primeAgentPolicyCache();
+  primeWorkflowProfileCache();
 
   if (pendingSessionQueue.length >= AGENT_MAX_QUEUE_SIZE) {
     throw new Error(`대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요. (max=${AGENT_MAX_QUEUE_SIZE})`);
   }
 
   const policy = validateAgentSessionRequest({
-    runningSessions: 0,
+    guildId: params.guildId,
+    runningSessions: runningSessionIds.size,
     goal: params.goal,
     requestedSkillId,
-    isAdmin: true,
+    isAdmin: params.isAdmin === true,
   });
 
   if (!policy.ok) {
@@ -724,7 +774,7 @@ export const startAgentSession = (params: {
     error: null,
     cancelRequested: false,
     memoryHints: [],
-    steps: buildInitialSteps(requestedSkillId, priority, timestamp),
+    steps: buildInitialSteps(params.guildId, requestedSkillId, priority, timestamp),
   };
 
   sessions.set(session.id, session);

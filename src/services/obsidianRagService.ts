@@ -18,7 +18,6 @@ import {
   searchObsidianVault,
   readObsidianFile,
   getObsidianGraphMetadata,
-  parseObsidianFrontmatter,
 } from './obsidianHeadlessService';
 import {
   initObsidianCache,
@@ -208,10 +207,13 @@ async function findRelatedDocuments(
   const results = new Set<string>();
 
   try {
-    // Search by tag
-    for (const tag of routes.tags) {
-      const tagResults = await searchObsidianVault(`tag:${tag}`, Math.ceil(limit / routes.tags.length));
-      tagResults.forEach(r => results.add(r.filePath));
+    // Search by tag in parallel to reduce total query latency.
+    const perTagLimit = Math.max(1, Math.ceil(limit / Math.max(1, routes.tags.length)));
+    const searches = routes.tags.map((tag) => searchObsidianVault(`tag:${tag}`, perTagLimit));
+    const tagResultsList = await Promise.all(searches);
+
+    for (const tagResults of tagResultsList) {
+      tagResults.forEach((r: { filePath: string }) => results.add(r.filePath));
     }
 
     // Limit results

@@ -1,8 +1,43 @@
-import type { Client, Guild } from 'discord.js';
+import { ChannelType, PermissionFlagsBits, type Client, type Guild } from 'discord.js';
 import logger from '../logger';
 import { onGuildJoined, startAgentDailyLearningLoop } from '../services/agentOpsService';
 import { isAutomationEnabled, startAutomationModules } from '../services/automationBot';
 import { forgetGuildRagData } from '../services/privacyForgetService';
+import { DISCORD_MESSAGES } from './messages';
+
+const resolveWelcomeChannel = (guild: Guild) => {
+  const me = guild.members.me;
+  const system = guild.systemChannel;
+  if (system && me?.permissionsIn(system).has(PermissionFlagsBits.SendMessages)) {
+    return system;
+  }
+
+  for (const channel of guild.channels.cache.values()) {
+    const isTextLike = channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement;
+    if (!isTextLike) {
+      continue;
+    }
+    if (me?.permissionsIn(channel).has(PermissionFlagsBits.SendMessages)) {
+      return channel;
+    }
+  }
+
+  return null;
+};
+
+const notifyGuildOnboarding = async (guild: Guild, sessionId: string | null) => {
+  try {
+    const channel = resolveWelcomeChannel(guild);
+    if (!channel || !(channel as any).send) {
+      return;
+    }
+    await (channel as any).send({
+      content: DISCORD_MESSAGES.bot.onboardingWelcomeLines(sessionId).join('\n'),
+    });
+  } catch (error) {
+    logger.debug('[AGENT-OPS] onboarding welcome skipped guild=%s reason=%s', guild.id, error instanceof Error ? error.message : String(error));
+  }
+};
 
 export const registerSlashCommands = async (params: {
   client: Client;
@@ -80,6 +115,7 @@ export const attachBaseLifecycleHandlers = (params: {
   client.on('guildCreate', (guild) => {
     const result = onGuildJoined(guild);
     logger.info('[AGENT-OPS] guildCreate onboarding guild=%s ok=%s message=%s', guild.id, String(result.ok), result.message);
+    void notifyGuildOnboarding(guild, result.ok ? String(result.sessionId || '') : null);
   });
 
   client.on('guildDelete', (guild) => {

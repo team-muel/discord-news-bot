@@ -1,10 +1,27 @@
 import { parseIntegerEnv } from '../utils/env';
 import type { SkillId } from './skills/types';
+import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { listSkills } from './skills/registry';
 
 const AGENT_MAX_CONCURRENT_SESSIONS = Math.max(1, parseIntegerEnv(process.env.AGENT_MAX_CONCURRENT_SESSIONS, 4));
 const AGENT_MAX_GOAL_LENGTH = Math.max(40, parseIntegerEnv(process.env.AGENT_MAX_GOAL_LENGTH, 1200));
+const AGENT_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_POLICY_CACHE_TTL_MS, 60_000));
 
-const restrictedSkills = new Set<SkillId>(['incident-review']);
+type AgentPolicyCacheRow = {
+  maxConcurrentSessions: number;
+  maxGoalLength: number;
+  restrictedSkills: SkillId[];
+};
+
+const DEFAULT_POLICY: AgentPolicyCacheRow = {
+  maxConcurrentSessions: AGENT_MAX_CONCURRENT_SESSIONS,
+  maxGoalLength: AGENT_MAX_GOAL_LENGTH,
+  restrictedSkills: [],
+};
+
+let policyCache = new Map<string, AgentPolicyCacheRow>();
+let cacheLoadedAt = 0;
+let cacheLoading: Promise<void> | null = null;
 
 export type AgentPolicySnapshot = {
   maxConcurrentSessions: number;
@@ -17,34 +34,109 @@ export type AgentPolicyValidationResult = {
   message: string;
 };
 
-export const getAgentPolicySnapshot = (): AgentPolicySnapshot => ({
-  maxConcurrentSessions: AGENT_MAX_CONCURRENT_SESSIONS,
-  maxGoalLength: AGENT_MAX_GOAL_LENGTH,
-  restrictedSkills: [...restrictedSkills],
-});
+const isCacheFresh = () => Date.now() - cacheLoadedAt < AGENT_POLICY_CACHE_TTL_MS;
+
+const toBoundedInt = (value: unknown, fallback: number, min: number): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+  return Math.max(min, Math.trunc(n));
+};
+
+export const refreshAgentPolicyCache = async (): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    policyCache = new Map();
+    cacheLoadedAt = Date.now();
+    return;
+  }
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('agent_runtime_policies')
+    .select('guild_id, max_concurrent_sessions, max_goal_length, restricted_skills, enabled')
+    .eq('enabled', true)
+    .limit(300);
+
+  if (error) {
+    return;
+  }
+
+  const nextCache = new Map<string, AgentPolicyCacheRow>();
+  for (const raw of data || []) {
+    const row = raw as Record<string, unknown>;
+    const guildId = String(row.guild_id || '').trim() || '*';
+    const restrictedSkills = Array.isArray(row.restricted_skills)
+      ? row.restricted_skills.map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+
+    nextCache.set(guildId, {
+      maxConcurrentSessions: toBoundedInt(row.max_concurrent_sessions, AGENT_MAX_CONCURRENT_SESSIONS, 1),
+      maxGoalLength: toBoundedInt(row.max_goal_length, AGENT_MAX_GOAL_LENGTH, 40),
+      restrictedSkills,
+    });
+  }
+
+  policyCache = nextCache;
+  cacheLoadedAt = Date.now();
+};
+
+export const primeAgentPolicyCache = (): void => {
+  if (cacheLoading || isCacheFresh()) {
+    return;
+  }
+
+  cacheLoading = refreshAgentPolicyCache()
+    .catch(() => undefined)
+    .finally(() => {
+      cacheLoading = null;
+    });
+};
+
+export const getAgentPolicySnapshot = (guildId?: string): AgentPolicySnapshot => {
+  primeAgentPolicyCache();
+
+  const key = String(guildId || '').trim();
+  const cached = (key && policyCache.get(key)) || policyCache.get('*') || DEFAULT_POLICY;
+  return {
+    maxConcurrentSessions: cached.maxConcurrentSessions,
+    maxGoalLength: cached.maxGoalLength,
+    restrictedSkills: [...cached.restrictedSkills],
+  };
+};
 
 export const validateAgentSessionRequest = (params: {
+  guildId?: string;
   runningSessions: number;
   goal: string;
   requestedSkillId: SkillId | null;
   isAdmin: boolean;
 }): AgentPolicyValidationResult => {
+  const snapshot = getAgentPolicySnapshot(params.guildId);
+  const adminOnlySkills = listSkills()
+    .filter((skill) => skill.adminOnly)
+    .map((skill) => skill.id);
+  const restrictedSkills = new Set<SkillId>([
+    ...snapshot.restrictedSkills,
+    ...adminOnlySkills,
+  ]);
+
   const goal = String(params.goal || '').trim();
   if (!goal) {
     return { ok: false, message: '목표가 비어 있습니다.' };
   }
 
-  if (goal.length > AGENT_MAX_GOAL_LENGTH) {
+  if (goal.length > snapshot.maxGoalLength) {
     return {
       ok: false,
-      message: `목표 길이가 너무 깁니다. 최대 ${AGENT_MAX_GOAL_LENGTH}자까지 허용됩니다.`,
+      message: `목표 길이가 너무 깁니다. 최대 ${snapshot.maxGoalLength}자까지 허용됩니다.`,
     };
   }
 
-  if (params.runningSessions >= AGENT_MAX_CONCURRENT_SESSIONS) {
+  if (params.runningSessions >= snapshot.maxConcurrentSessions) {
     return {
       ok: false,
-      message: `동시 실행 세션 한도를 초과했습니다. 현재 한도: ${AGENT_MAX_CONCURRENT_SESSIONS}`,
+      message: `동시 실행 세션 한도를 초과했습니다. 현재 한도: ${snapshot.maxConcurrentSessions}`,
     };
   }
 

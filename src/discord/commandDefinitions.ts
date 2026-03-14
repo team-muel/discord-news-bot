@@ -56,7 +56,7 @@ export const WORKER_APPROVAL_CHANNEL_ID = String(
 
 const CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC = !['0', 'false', 'no', 'off']
   .includes(
-    String(process.env.DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC || 'true').toLowerCase(),
+    String(process.env.DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC || 'false').toLowerCase(),
   );
 export { CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC };
 

@@ -3,6 +3,7 @@ import type { RAGQueryResult } from '../../services/obsidianRagService';
 import type { LlmTextRequest } from '../../services/llmClient';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
+import { ensureFeatureAccess } from '../auth';
 
 const DISCORD_MSG_LIMIT = 1900;
 
@@ -19,13 +20,22 @@ export const createDocsHandlers = (deps: DocsDeps) => {
    * /물어봐 <질문> — RAG 검색 후 LLM이 문서 기반으로 답변
    */
   const handleAskCommand = async (interaction: ChatInputCommandInteraction) => {
-    if (!interaction.guildId) {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
       await interaction.reply({
         ...buildUserCard(DISCORD_MESSAGES.docs.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN),
         ephemeral: true,
       });
       return;
     }
+    if (!access.ok) {
+      await interaction.reply({
+        ...buildUserCard(DISCORD_MESSAGES.docs.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
+        ephemeral: true,
+      });
+      return;
+    }
+    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
 
     const shared = deps.getReplyVisibility(interaction) === 'public';
     await interaction.deferReply({ ephemeral: !shared });
@@ -97,6 +107,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       sources || DISCORD_MESSAGES.docs.noSource,
       '',
       DISCORD_MESSAGES.docs.summaryLine(ragResult.intent, ragResult.executionTimeMs, ragResult.cacheStatus.hits),
+      accessNotice,
     ].join('\n');
 
     await interaction.editReply(
@@ -108,13 +119,22 @@ export const createDocsHandlers = (deps: DocsDeps) => {
    * /문서 <검색어> — RAG 문서 목록 조회 (LLM 없이 빠른 참조)
    */
   const handleDocsCommand = async (interaction: ChatInputCommandInteraction) => {
-    if (!interaction.guildId) {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
       await interaction.reply({
         ...buildUserCard(DISCORD_MESSAGES.docs.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN),
         ephemeral: true,
       });
       return;
     }
+    if (!access.ok) {
+      await interaction.reply({
+        ...buildUserCard(DISCORD_MESSAGES.docs.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
+        ephemeral: true,
+      });
+      return;
+    }
+    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
 
     const shared = deps.getReplyVisibility(interaction) === 'public';
     await interaction.deferReply({ ephemeral: !shared });
@@ -153,6 +173,9 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
     lines.push('');
     lines.push(DISCORD_MESSAGES.docs.cacheLine(ragResult.cacheStatus.hits, ragResult.cacheStatus.misses));
+    if (accessNotice) {
+      lines.push(accessNotice);
+    }
 
     const body = lines.join('\n');
     await interaction.editReply(

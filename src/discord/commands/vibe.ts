@@ -3,6 +3,7 @@ import type { AgentSession } from '../../services/multiAgentService';
 import { getAgentSession } from '../../services/multiAgentService';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
+import { ensureFeatureAccess } from '../auth';
 
 type VibeDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
@@ -94,10 +95,21 @@ const parseVibeRequestFromMessage = (message: Message): string => {
 
 export const createVibeHandlers = (deps: VibeDeps) => {
   const handleVibeCommand = async (interaction: ChatInputCommandInteraction) => {
-    if (!interaction.guildId) {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
       await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
       return;
     }
+    if (!access.ok) {
+      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN), ephemeral: true });
+      return;
+    }
+    const guildId = interaction.guildId;
+    if (!guildId) {
+      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
+      return;
+    }
+    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
 
     const shared = deps.getReplyVisibility(interaction) === 'public';
     await interaction.deferReply({ ephemeral: !shared });
@@ -118,13 +130,13 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     let session: AgentSession;
     try {
-      session = deps.startVibeSession(interaction.guildId, interaction.user.id, runtimeGoal);
+      session = deps.startVibeSession(guildId, interaction.user.id, runtimeGoal);
     } catch (error) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
-    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleAccepted, DISCORD_MESSAGES.vibe.acceptedLines(session.id, request).join('\n'), EMBED_INFO));
+    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleAccepted, `${DISCORD_MESSAGES.vibe.acceptedLines(session.id, request).join('\n')}${accessNotice}`, EMBED_INFO));
 
     await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleProgress, content, EMBED_INFO)) }, session.id, runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
 
@@ -149,7 +161,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
         try {
           const replyMsg = await interaction.fetchReply();
           if (replyMsg && 'startThread' in replyMsg) {
-            await deps.tryPostCodeThread(replyMsg as Message, completed, interaction.guildId).catch(() => undefined);
+            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch(() => undefined);
           }
         } catch { /* best-effort */ }
       }
@@ -157,10 +169,21 @@ export const createVibeHandlers = (deps: VibeDeps) => {
   };
 
   const handleMakeCommand = async (interaction: ChatInputCommandInteraction) => {
-    if (!interaction.guildId) {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
       await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
       return;
     }
+    if (!access.ok) {
+      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN), ephemeral: true });
+      return;
+    }
+    const guildId = interaction.guildId;
+    if (!guildId) {
+      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
+      return;
+    }
+    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
 
     const shared = deps.getReplyVisibility(interaction) === 'public';
     await interaction.deferReply({ ephemeral: !shared });
@@ -175,13 +198,13 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     let session: AgentSession;
     try {
-      session = deps.startVibeSession(interaction.guildId, interaction.user.id, codeGoal);
+      session = deps.startVibeSession(guildId, interaction.user.id, codeGoal);
     } catch (error) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
-    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeStart, DISCORD_MESSAGES.vibe.codeStartLines(session.id, request, shared).join('\n'), EMBED_INFO));
+    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeStart, `${DISCORD_MESSAGES.vibe.codeStartLines(session.id, request, shared).join('\n')}${accessNotice}`, EMBED_INFO));
 
     await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeProgress, content, EMBED_INFO)) }, session.id, codeGoal, { showDebugBlocks: false, maxLinks: 2 });
 
@@ -191,7 +214,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
         try {
           const replyMsg = await interaction.fetchReply();
           if (replyMsg && 'startThread' in replyMsg) {
-            await deps.tryPostCodeThread(replyMsg as Message, completed, interaction.guildId).catch(() => undefined);
+            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch(() => undefined);
           }
         } catch { /* best-effort */ }
       }

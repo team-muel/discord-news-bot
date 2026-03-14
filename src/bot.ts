@@ -698,6 +698,7 @@ const attachCommandHandlers = () => {
             goal: target.goal,
             skillId: target.requestedSkillId,
             priority: target.priority,
+            isAdmin: true,
           });
           await interaction.reply({ content: DISCORD_MESSAGES.bot.sessionRunStarted(replay.id), ephemeral: true });
         } catch (error) {

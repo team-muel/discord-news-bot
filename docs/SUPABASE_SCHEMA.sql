@@ -885,6 +885,395 @@ end
 $$;
 
 -- ==========================================
+-- 19. Agent runtime config (de-hardcoding)
+-- ==========================================
+
+create table if not exists public.agent_runtime_policies (
+  guild_id text primary key,
+  enabled boolean not null default true,
+  max_concurrent_sessions integer not null default 4,
+  max_goal_length integer not null default 1200,
+  restricted_skills text[] not null default '{}',
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (max_concurrent_sessions >= 1),
+  check (max_goal_length >= 40)
+);
+
+create index if not exists idx_agent_runtime_policies_enabled
+  on public.agent_runtime_policies (enabled, updated_at desc);
+
+drop trigger if exists trg_agent_runtime_policies_updated_at on public.agent_runtime_policies;
+create trigger trg_agent_runtime_policies_updated_at
+before update on public.agent_runtime_policies
+for each row
+execute function public.set_updated_at();
+
+insert into public.agent_runtime_policies (guild_id, enabled, max_concurrent_sessions, max_goal_length, restricted_skills)
+values ('*', true, 4, 1200, '{}')
+on conflict (guild_id) do nothing;
+
+create table if not exists public.agent_skill_catalog (
+  guild_id text not null default '*',
+  skill_id text not null,
+  enabled boolean not null default true,
+  title text not null,
+  description text not null,
+  input_guide text not null,
+  output_guide text not null,
+  system_prompt text not null,
+  executor_key text not null,
+  admin_only boolean not null default false,
+  temperature numeric(4, 3),
+  max_tokens integer,
+  sort_order integer not null default 100,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, skill_id),
+  check (max_tokens is null or max_tokens >= 32),
+  check (temperature is null or (temperature >= 0 and temperature <= 2))
+);
+
+create index if not exists idx_agent_skill_catalog_enabled
+  on public.agent_skill_catalog (guild_id, enabled, sort_order asc, updated_at desc);
+
+drop trigger if exists trg_agent_skill_catalog_updated_at on public.agent_skill_catalog;
+create trigger trg_agent_skill_catalog_updated_at
+before update on public.agent_skill_catalog
+for each row
+execute function public.set_updated_at();
+
+insert into public.agent_skill_catalog (
+  guild_id, skill_id, enabled, title, description, input_guide, output_guide, system_prompt, executor_key, admin_only, temperature, max_tokens, sort_order
+) values
+  ('*', 'casual_chat', true, '일상 대화 응답', '감정 표현/잡담 입력을 공감형 자연어로 응답합니다.', '감정 표현, 안부, 짧은 일상 발화', '도구 없이 공감 + 필요 시 1개 되묻기', '너는 공감형 한국어 대화 파트너다.', 'casual_chat', false, 0.5, 220, 10),
+  ('*', 'ops-plan', true, '운영 계획 수립', '목표를 실행 가능한 단계로 분해하고 우선순위를 제안합니다.', '운영 목표, 제한사항, 기간, 성공조건', '단계별 실행계획 + 실패시 대안 + 우선순위', '너는 디스코드 서버 운영 자동화 계획가다.', 'ops-plan', false, 0.2, 900, 20),
+  ('*', 'ops-execution', true, '운영 실행안 생성', '계획을 실제 운영자가 사용할 수 있는 체크리스트로 변환합니다.', '목표 + 계획안 + 리소스 제약', '즉시 실행 체크리스트 + 자동화 포인트 + 관찰 지표', '너는 서버 운영 실행 담당 에이전트다.', 'ops-execution', false, 0.25, 1000, 30),
+  ('*', 'ops-critique', true, '운영 리스크 검토', '실행안의 리스크와 보완책을 검토합니다.', '목표 + 실행안', '리스크 목록 + 완화안 + 즉시 적용 가드레일', '너는 운영 품질/보안 검토 에이전트다.', 'ops-critique', false, 0.1, 800, 40),
+  ('*', 'guild-onboarding-blueprint', true, '길드 온보딩 설계', '서버 초대 후 온보딩 절차와 동의 기반 학습 플로우를 설계합니다.', '서버 성격, 권한 정책, 수집 범위', '온보딩 상태머신 + 동의 UX + 초기 데이터 수집 전략', '너는 디스코드 길드 온보딩 아키텍트다.', 'guild-onboarding-blueprint', false, 0.2, 1200, 50),
+  ('*', 'incident-review', true, '장애/오답 회고', '장애나 오답 사례를 회고하고 재발 방지 규칙을 도출합니다.', '사건 요약, 영향, 현재 대응', '원인 가설 + 검증 절차 + 재발 방지 체크리스트', '너는 운영 회고 에이전트다.', 'incident-review', true, 0.15, 900, 60),
+  ('*', 'webhook', true, '웹훅 설계/운영', '웹훅 이벤트 계약, 검증, 재시도, 운영 가드레일까지 포함한 실행안을 생성합니다.', '이벤트 종류, 공급자, 인증 방식, 처리 목표, 실패 정책', '엔드포인트 계약 + 검증/보안 + 재시도/멱등성 + 운영 체크리스트', '너는 웹훅 통합 아키텍트다.', 'webhook', false, 0.2, 1200, 70)
+on conflict (guild_id, skill_id) do nothing;
+
+create table if not exists public.agent_workflow_profiles (
+  guild_id text not null default '*',
+  priority text not null,
+  enabled boolean not null default true,
+  steps jsonb not null,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, priority),
+  check (priority in ('fast', 'balanced', 'precise')),
+  check (jsonb_typeof(steps) = 'array')
+);
+
+create index if not exists idx_agent_workflow_profiles_enabled
+  on public.agent_workflow_profiles (guild_id, enabled, updated_at desc);
+
+drop trigger if exists trg_agent_workflow_profiles_updated_at on public.agent_workflow_profiles;
+create trigger trg_agent_workflow_profiles_updated_at
+before update on public.agent_workflow_profiles
+for each row
+execute function public.set_updated_at();
+
+insert into public.agent_workflow_profiles (guild_id, priority, enabled, steps)
+values
+  ('*', 'fast', true, '[{"role":"planner","title":"목표 실행 계획 수립","skipWhenFast":true,"skipWhenRequestedSkill":false},{"role":"researcher","title":"실행안/근거 초안 작성","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"리스크 검토 및 보완","skipWhenFast":true,"skipWhenRequestedSkill":true}]'::jsonb),
+  ('*', 'balanced', true, '[{"role":"planner","title":"목표 실행 계획 수립","skipWhenFast":false,"skipWhenRequestedSkill":false},{"role":"researcher","title":"실행안/근거 초안 작성","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"리스크 검토 및 보완","skipWhenFast":false,"skipWhenRequestedSkill":true}]'::jsonb),
+  ('*', 'precise', true, '[{"role":"planner","title":"목표 실행 계획 수립","skipWhenFast":false,"skipWhenRequestedSkill":false},{"role":"researcher","title":"실행안/근거 초안 작성","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"리스크 검토 및 보완","skipWhenFast":false,"skipWhenRequestedSkill":true}]'::jsonb)
+on conflict (guild_id, priority) do nothing;
+
+alter table public.agent_runtime_policies enable row level security;
+alter table public.agent_skill_catalog enable row level security;
+alter table public.agent_workflow_profiles enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_runtime_policies' and policyname='agent_runtime_policies_guild_all'
+  ) then
+    create policy agent_runtime_policies_guild_all on public.agent_runtime_policies
+      for all
+      using (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'))
+      with check (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_skill_catalog' and policyname='agent_skill_catalog_guild_all'
+  ) then
+    create policy agent_skill_catalog_guild_all on public.agent_skill_catalog
+      for all
+      using (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'))
+      with check (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_workflow_profiles' and policyname='agent_workflow_profiles_guild_all'
+  ) then
+    create policy agent_workflow_profiles_guild_all on public.agent_workflow_profiles
+      for all
+      using (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'))
+      with check (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'));
+  end if;
+end
+$$;
+
+-- ==========================================
+-- 18. Retrieval eval / shadow / auto-tuning
+-- ==========================================
+
+create table if not exists public.retrieval_eval_sets (
+  id bigint generated by default as identity primary key,
+  guild_id text not null,
+  name text not null,
+  description text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (guild_id, name)
+);
+
+create index if not exists idx_retrieval_eval_sets_guild_updated
+  on public.retrieval_eval_sets (guild_id, updated_at desc);
+
+drop trigger if exists trg_retrieval_eval_sets_updated_at on public.retrieval_eval_sets;
+create trigger trg_retrieval_eval_sets_updated_at
+before update on public.retrieval_eval_sets
+for each row
+execute function public.set_updated_at();
+
+create table if not exists public.retrieval_eval_cases (
+  id bigint generated by default as identity primary key,
+  eval_set_id bigint not null references public.retrieval_eval_sets(id) on delete cascade,
+  guild_id text not null,
+  query text not null,
+  intent text,
+  difficulty text not null default 'normal',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (difficulty in ('easy', 'normal', 'hard'))
+);
+
+create index if not exists idx_retrieval_eval_cases_set_updated
+  on public.retrieval_eval_cases (eval_set_id, updated_at desc);
+
+create index if not exists idx_retrieval_eval_cases_guild_enabled
+  on public.retrieval_eval_cases (guild_id, enabled, updated_at desc);
+
+drop trigger if exists trg_retrieval_eval_cases_updated_at on public.retrieval_eval_cases;
+create trigger trg_retrieval_eval_cases_updated_at
+before update on public.retrieval_eval_cases
+for each row
+execute function public.set_updated_at();
+
+create table if not exists public.retrieval_eval_targets (
+  id bigint generated by default as identity primary key,
+  case_id bigint not null references public.retrieval_eval_cases(id) on delete cascade,
+  target_file_path text not null,
+  gain numeric(5, 2) not null default 1,
+  created_at timestamptz not null default now(),
+  unique (case_id, target_file_path),
+  check (gain > 0)
+);
+
+create index if not exists idx_retrieval_eval_targets_case
+  on public.retrieval_eval_targets (case_id, gain desc);
+
+create table if not exists public.retrieval_eval_runs (
+  id bigint generated by default as identity primary key,
+  guild_id text not null,
+  eval_set_id bigint references public.retrieval_eval_sets(id) on delete set null,
+  requested_by text,
+  status text not null default 'running',
+  top_k integer not null default 5,
+  variants text[] not null default '{baseline}',
+  case_count integer not null default 0,
+  result_count integer not null default 0,
+  summary jsonb,
+  error text,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (status in ('running', 'completed', 'failed', 'canceled')),
+  check (top_k >= 1 and top_k <= 50)
+);
+
+create index if not exists idx_retrieval_eval_runs_guild_created
+  on public.retrieval_eval_runs (guild_id, created_at desc);
+
+create index if not exists idx_retrieval_eval_runs_status_started
+  on public.retrieval_eval_runs (status, started_at desc);
+
+drop trigger if exists trg_retrieval_eval_runs_updated_at on public.retrieval_eval_runs;
+create trigger trg_retrieval_eval_runs_updated_at
+before update on public.retrieval_eval_runs
+for each row
+execute function public.set_updated_at();
+
+create table if not exists public.retrieval_eval_results (
+  id bigint generated by default as identity primary key,
+  run_id bigint not null references public.retrieval_eval_runs(id) on delete cascade,
+  guild_id text not null,
+  case_id bigint not null references public.retrieval_eval_cases(id) on delete cascade,
+  variant text not null,
+  query text not null,
+  executed_query text,
+  top_k integer not null,
+  recall_at_k numeric(6, 4) not null,
+  mrr numeric(6, 4) not null,
+  ndcg numeric(6, 4) not null,
+  hit_at_k integer not null,
+  latency_ms integer not null,
+  retrieved_paths jsonb not null default '[]'::jsonb,
+  expected_paths jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  check (top_k >= 1 and top_k <= 50),
+  check (recall_at_k >= 0 and recall_at_k <= 1),
+  check (mrr >= 0 and mrr <= 1),
+  check (ndcg >= 0 and ndcg <= 1),
+  check (hit_at_k in (0, 1)),
+  check (latency_ms >= 0)
+);
+
+create index if not exists idx_retrieval_eval_results_run_variant
+  on public.retrieval_eval_results (run_id, variant, created_at asc);
+
+create index if not exists idx_retrieval_eval_results_case
+  on public.retrieval_eval_results (case_id, created_at desc);
+
+create table if not exists public.retrieval_ranker_experiments (
+  id bigint generated by default as identity primary key,
+  guild_id text not null,
+  run_id bigint references public.retrieval_eval_runs(id) on delete set null,
+  requested_by text,
+  baseline_variant text not null default 'baseline',
+  candidate_variant text not null,
+  baseline_ndcg numeric(6, 4) not null,
+  candidate_ndcg numeric(6, 4) not null,
+  ndcg_delta numeric(6, 4) not null,
+  baseline_latency_ms numeric(10, 2),
+  candidate_latency_ms numeric(10, 2),
+  latency_delta_ms numeric(10, 2),
+  decision text not null default 'recommended',
+  meta jsonb,
+  created_at timestamptz not null default now(),
+  check (decision in ('recommended', 'applied', 'rejected'))
+);
+
+create index if not exists idx_retrieval_ranker_experiments_guild_created
+  on public.retrieval_ranker_experiments (guild_id, created_at desc);
+
+create table if not exists public.retrieval_ranker_active_profiles (
+  guild_id text primary key,
+  active_variant text not null default 'baseline',
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists trg_retrieval_ranker_active_profiles_updated_at on public.retrieval_ranker_active_profiles;
+create trigger trg_retrieval_ranker_active_profiles_updated_at
+before update on public.retrieval_ranker_active_profiles
+for each row
+execute function public.set_updated_at();
+
+alter table public.retrieval_eval_sets enable row level security;
+alter table public.retrieval_eval_cases enable row level security;
+alter table public.retrieval_eval_targets enable row level security;
+alter table public.retrieval_eval_runs enable row level security;
+alter table public.retrieval_eval_results enable row level security;
+alter table public.retrieval_ranker_experiments enable row level security;
+alter table public.retrieval_ranker_active_profiles enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_eval_sets' and policyname='retrieval_eval_sets_guild_all'
+  ) then
+    create policy retrieval_eval_sets_guild_all on public.retrieval_eval_sets
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_eval_cases' and policyname='retrieval_eval_cases_guild_all'
+  ) then
+    create policy retrieval_eval_cases_guild_all on public.retrieval_eval_cases
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_eval_targets' and policyname='retrieval_eval_targets_all'
+  ) then
+    create policy retrieval_eval_targets_all on public.retrieval_eval_targets
+      for all
+      using (
+        auth.role() = 'service_role'
+        or exists (
+          select 1
+          from public.retrieval_eval_cases c
+          where c.id = retrieval_eval_targets.case_id
+            and c.guild_id = coalesce(auth.jwt() ->> 'guild_id', '')
+        )
+      )
+      with check (
+        auth.role() = 'service_role'
+        or exists (
+          select 1
+          from public.retrieval_eval_cases c
+          where c.id = retrieval_eval_targets.case_id
+            and c.guild_id = coalesce(auth.jwt() ->> 'guild_id', '')
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_eval_runs' and policyname='retrieval_eval_runs_guild_all'
+  ) then
+    create policy retrieval_eval_runs_guild_all on public.retrieval_eval_runs
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_eval_results' and policyname='retrieval_eval_results_guild_all'
+  ) then
+    create policy retrieval_eval_results_guild_all on public.retrieval_eval_results
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_ranker_experiments' and policyname='retrieval_ranker_experiments_guild_all'
+  ) then
+    create policy retrieval_ranker_experiments_guild_all on public.retrieval_ranker_experiments
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='retrieval_ranker_active_profiles' and policyname='retrieval_ranker_active_profiles_guild_all'
+  ) then
+    create policy retrieval_ranker_active_profiles_guild_all on public.retrieval_ranker_active_profiles
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+end
+$$;
+
+-- ==========================================
 -- 17. Dynamic worker approvals persistence
 -- ==========================================
 

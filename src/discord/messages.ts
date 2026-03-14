@@ -7,6 +7,7 @@ export const DISCORD_MESSAGES = {
   common: {
     adminPermissionRequired: 'Admin permission is required.',
     guildOnly: '서버 채널에서만 사용할 수 있습니다.',
+    autoLoginActivated: '처음 사용이라 권한 세션을 자동으로 준비했습니다. 다음부터는 바로 사용됩니다.',
     unknownCommand: '지원되지 않는 명령입니다.',
     unknownSubcommand: '지원되지 않는 서브커맨드입니다.',
     saveFailedRetry: '설정 저장에 실패했습니다. 잠시 후 다시 시도해주세요.',
@@ -178,6 +179,7 @@ export const DISCORD_MESSAGES = {
     titleForumInfo: '포럼 정보',
   },
   vibe: {
+    titlePermissionError: '권한 오류',
     titleUsageError: '사용 위치 오류',
     titleInputError: '입력 오류',
     titleStartFailed: '작업 시작 실패',
@@ -219,6 +221,7 @@ export const DISCORD_MESSAGES = {
     utilityOnlyPrompt: '이 채널은 AI 유틸리티 채널입니다. 작업형 요청으로 입력해주세요. 예: `뉴스 요약해줘`, `고양이 영상 찾아줘`',
   },
   docs: {
+    titlePermissionError: '권한 오류',
     titleUsageError: '사용 위치 오류',
     titleInputError: '입력 오류',
     titleSearching: '검색 중',
@@ -229,7 +232,7 @@ export const DISCORD_MESSAGES = {
       `"${query}"에 관련된 문서를 찾지 못했습니다.`,
       `감지된 의도: \`${intent}\``,
       '',
-      '힌트: Obsidian vault 경로(OBSIDIAN_VAULT_PATH)가 올바르게 설정되어 있는지 확인해주세요.',
+      '힌트: Obsidian vault 경로(OBSIDIAN_SYNC_VAULT_PATH 또는 OBSIDIAN_VAULT_PATH)가 올바르게 설정되어 있는지 확인해주세요.',
     ],
     llmNotConfigured: '(LLM 미설정 — 아래 문서를 직접 참고하세요)',
     llmFallbackSuffix: '\n...(LLM 오류로 전체 컨텍스트 표시 생략)',
@@ -292,6 +295,12 @@ export const DISCORD_MESSAGES = {
       `세션: \`${sessionId}\``,
       `파일 ${count}개 생성됨.`,
       '아래 버튼으로 재생성·리팩터·테스트 추가를 이어서 할 수 있습니다.',
+    ],
+    onboardingWelcomeLines: (sessionId: string | null) => [
+      '안녕하세요, Muel입니다. 이 서버에서 바로 사용할 수 있어요.',
+      '먼저 `/로그인`으로 권한 진단을 확인하거나, 바로 `/뮤엘` 또는 `/해줘`를 사용해보세요.',
+      '구독/자동화는 `/구독`과 `/정책`에서 관리할 수 있습니다.',
+      sessionId ? `자동 온보딩 세션 시작됨: ${sessionId}` : '자동 온보딩 세션은 조건 충족 시 백그라운드로 실행됩니다.',
     ],
   },
 } as const;

@@ -157,7 +157,7 @@ export const createAgentHandlers = (deps: AgentDeps) => {
 
       let session: AgentSession;
       try {
-        session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal, skillId: skillId || null, priority });
+        session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal, skillId: skillId || null, priority, isAdmin: true });
       } catch (error) {
         await interaction.editReply(buildAdminCard(DISCORD_MESSAGES.agent.titleSessionStartFailed, deps.getErrorMessage(error), [`guild=${interaction.guildId}`], EMBED_ERROR));
         return;
@@ -180,7 +180,7 @@ export const createAgentHandlers = (deps: AgentDeps) => {
       const customGoal = (interaction.options.getString('목표') || '').trim();
       if (customGoal) {
         try {
-          const session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal: customGoal, skillId: 'incident-review', priority: 'balanced' });
+          const session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal: customGoal, skillId: 'incident-review', priority: 'balanced', isAdmin: true });
           await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titleLearningStarted, DISCORD_MESSAGES.agent.onboardingSession(session.id), EMBED_SUCCESS));
         } catch (error) {
           await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titleLearningRunFailed, deps.getErrorMessage(error), EMBED_ERROR));

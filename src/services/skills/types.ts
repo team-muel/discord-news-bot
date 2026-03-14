@@ -1,11 +1,4 @@
-export type SkillId =
-  | 'casual_chat'
-  | 'ops-plan'
-  | 'ops-execution'
-  | 'ops-critique'
-  | 'guild-onboarding-blueprint'
-  | 'incident-review'
-  | 'webhook';
+export type SkillId = string;
 
 export type SkillContext = {
   guildId: string;
@@ -22,6 +15,9 @@ export type SkillDefinition = {
   inputGuide: string;
   outputGuide: string;
   systemPrompt: string;
+  executorKey?: string;
+  adminOnly?: boolean;
+  enabled?: boolean;
   temperature?: number;
   maxTokens?: number;
 };

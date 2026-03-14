@@ -167,6 +167,17 @@
           "queryArg": "none"
         }
       ]
+    },
+    {
+      "id": "obsidian-write-intent",
+      "pattern": "옵시디언|obsidian|문서\\s*저장|노트\\s*저장|기록\\s*해줘|정리\\s*해줘",
+      "plans": [
+        {
+          "actionName": "obsidian.guild_doc.upsert",
+          "reason": "obsidian-write-intent",
+          "queryArg": "goal"
+        }
+      ]
     }
   ]
 }

@@ -1,8 +1,13 @@
 import type { SkillDefinition, SkillId } from './types';
+import { parseIntegerEnv } from '../../utils/env';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+
+const SKILL_CATALOG_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_TTL_MS, 60_000));
 
 const BUILTIN_SKILLS: SkillDefinition[] = [
   {
     id: 'casual_chat',
+    executorKey: 'casual_chat',
     title: '일상 대화 응답',
     description: '감정 표현/잡담 입력을 공감형 자연어로 응답합니다.',
     inputGuide: '감정 표현, 안부, 짧은 일상 발화',
@@ -17,6 +22,7 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
   {
     id: 'ops-plan',
+    executorKey: 'ops-plan',
     title: '운영 계획 수립',
     description: '목표를 실행 가능한 단계로 분해하고 우선순위를 제안합니다.',
     inputGuide: '운영 목표, 제한사항, 기간, 성공조건',
@@ -31,6 +37,7 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
   {
     id: 'ops-execution',
+    executorKey: 'ops-execution',
     title: '운영 실행안 생성',
     description: '계획을 실제 운영자가 사용할 수 있는 체크리스트로 변환합니다.',
     inputGuide: '목표 + 계획안 + 리소스 제약',
@@ -45,6 +52,7 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
   {
     id: 'ops-critique',
+    executorKey: 'ops-critique',
     title: '운영 리스크 검토',
     description: '실행안의 리스크와 보완책을 검토합니다.',
     inputGuide: '목표 + 실행안',
@@ -59,6 +67,7 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
   {
     id: 'guild-onboarding-blueprint',
+    executorKey: 'guild-onboarding-blueprint',
     title: '길드 온보딩 설계',
     description: '서버 초대 후 온보딩 절차와 동의 기반 학습 플로우를 설계합니다.',
     inputGuide: '서버 성격, 권한 정책, 수집 범위',
@@ -72,6 +81,8 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
   {
     id: 'incident-review',
+    executorKey: 'incident-review',
+    adminOnly: true,
     title: '장애/오답 회고',
     description: '장애나 오답 사례를 회고하고 재발 방지 규칙을 도출합니다.',
     inputGuide: '사건 요약, 영향, 현재 대응',
@@ -85,6 +96,7 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
   {
     id: 'webhook',
+    executorKey: 'webhook',
     title: '웹훅 설계/운영',
     description: '웹훅 이벤트 계약, 검증, 재시도, 운영 가드레일까지 포함한 실행안을 생성합니다.',
     inputGuide: '이벤트 종류, 공급자, 인증 방식, 처리 목표, 실패 정책',
@@ -99,16 +111,115 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
   },
 ];
 
-const SKILL_MAP = new Map<SkillId, SkillDefinition>(BUILTIN_SKILLS.map((skill) => [skill.id, skill]));
+let dynamicSkills = new Map<SkillId, SkillDefinition>();
+let catalogLoadedAt = 0;
+let catalogLoading: Promise<void> | null = null;
 
-export const listSkills = (): SkillDefinition[] => BUILTIN_SKILLS.map((skill) => ({ ...skill }));
+const cloneSkill = (skill: SkillDefinition): SkillDefinition => ({ ...skill });
+
+const getMergedSkillMap = (): Map<SkillId, SkillDefinition> => {
+  const map = new Map<SkillId, SkillDefinition>(BUILTIN_SKILLS.map((skill) => [skill.id, cloneSkill(skill)]));
+  for (const [id, skill] of dynamicSkills.entries()) {
+    map.set(id, cloneSkill(skill));
+  }
+  return map;
+};
+
+const isCatalogFresh = () => Date.now() - catalogLoadedAt < SKILL_CATALOG_CACHE_TTL_MS;
+
+const toBoundedNumber = (value: unknown, fallback: number): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+  return n;
+};
+
+export const refreshSkillCatalogCache = async (): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    dynamicSkills = new Map();
+    catalogLoadedAt = Date.now();
+    return;
+  }
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('agent_skill_catalog')
+    .select('guild_id, skill_id, title, description, input_guide, output_guide, system_prompt, executor_key, admin_only, enabled, temperature, max_tokens')
+    .eq('enabled', true)
+    .or('guild_id.eq.*,guild_id.is.null')
+    .limit(1000);
+
+  if (error) {
+    return;
+  }
+
+  const next = new Map<SkillId, SkillDefinition>();
+  for (const raw of data || []) {
+    const row = raw as Record<string, unknown>;
+    const skillId = String(row.skill_id || '').trim();
+    if (!skillId) {
+      continue;
+    }
+
+    const title = String(row.title || '').trim() || skillId;
+    const description = String(row.description || '').trim() || '동적 스킬';
+    const inputGuide = String(row.input_guide || '').trim() || '입력값';
+    const outputGuide = String(row.output_guide || '').trim() || '출력값';
+    const systemPrompt = String(row.system_prompt || '').trim() || '도구형 스킬 실행';
+    const executorKey = String(row.executor_key || '').trim() || skillId;
+
+    next.set(skillId, {
+      id: skillId,
+      title,
+      description,
+      inputGuide,
+      outputGuide,
+      systemPrompt,
+      executorKey,
+      adminOnly: Boolean(row.admin_only),
+      enabled: row.enabled !== false,
+      temperature: toBoundedNumber(row.temperature, 0.2),
+      maxTokens: Math.max(64, Math.trunc(toBoundedNumber(row.max_tokens, 700))),
+    });
+  }
+
+  dynamicSkills = next;
+  catalogLoadedAt = Date.now();
+};
+
+export const primeSkillCatalogCache = (): void => {
+  if (catalogLoading || isCatalogFresh()) {
+    return;
+  }
+
+  catalogLoading = refreshSkillCatalogCache()
+    .catch(() => undefined)
+    .finally(() => {
+      catalogLoading = null;
+    });
+};
+
+export const listSkills = (): SkillDefinition[] => {
+  primeSkillCatalogCache();
+  return [...getMergedSkillMap().values()].map((skill) => cloneSkill(skill));
+};
 
 export const getSkill = (skillId: SkillId): SkillDefinition => {
-  const skill = SKILL_MAP.get(skillId);
+  primeSkillCatalogCache();
+  const skill = getMergedSkillMap().get(skillId);
   if (!skill) {
     throw new Error(`UNKNOWN_SKILL: ${skillId}`);
   }
-  return { ...skill };
+  return cloneSkill(skill);
 };
 
-export const isSkillId = (value: string): value is SkillId => SKILL_MAP.has(value as SkillId);
+export const isSkillId = (value: string): value is SkillId => {
+  primeSkillCatalogCache();
+  return getMergedSkillMap().has(String(value || '').trim());
+};
+
+export const getSkillExecutorKey = (skillId: SkillId): string => {
+  const skill = getSkill(skillId);
+  return String(skill.executorKey || skill.id || '').trim();
+};

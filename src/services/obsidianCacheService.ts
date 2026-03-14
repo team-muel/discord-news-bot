@@ -150,13 +150,19 @@ export async function loadDocumentsWithCache(
   const docs = new Map<string, CachedDocument>();
   const uncached: string[] = [];
 
-  // Phase 1: Check cache
-  for (const path of filePaths) {
-    const cached = await getCachedDocument(path);
-    if (cached) {
-      docs.set(path, cached);
+  // Phase 1: Check cache in parallel
+  const cachedRows = await Promise.all(
+    filePaths.map(async (path) => ({
+      path,
+      cached: await getCachedDocument(path),
+    }))
+  );
+
+  for (const row of cachedRows) {
+    if (row.cached) {
+      docs.set(row.path, row.cached);
     } else {
-      uncached.push(path);
+      uncached.push(row.path);
     }
   }
 

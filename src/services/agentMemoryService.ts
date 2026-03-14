@@ -1,24 +1,14 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { parseIntegerEnv } from '../utils/env';
+import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { withObsidianFileLock } from '../utils/obsidianFileLock';
 import { assessMemoryPoisonRisk } from './memoryPoisonGuard';
-import { logStructuredError } from './structuredErrorLogService';
+import { readObsidianLoreWithAdapter } from './obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
-const OBSIDIAN_VAULT_PATH = String(process.env.OBSIDIAN_VAULT_PATH || '').trim();
-const OBSIDIAN_CLI_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_CLI_ENABLED, true);
-const OBSIDIAN_CLI_COMMAND = String(process.env.OBSIDIAN_CLI_COMMAND || '').trim();
-const OBSIDIAN_CLI_ARGS_JSON = String(process.env.OBSIDIAN_CLI_ARGS_JSON || '').trim();
-const OBSIDIAN_CLI_TIMEOUT_MS = Math.max(500, parseIntegerEnv(process.env.OBSIDIAN_CLI_TIMEOUT_MS, 4_000));
-const OBSIDIAN_CLI_MAX_HINTS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.OBSIDIAN_CLI_MAX_HINTS, 8)));
+const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();
 const OBSIDIAN_INPUT_MAX_LENGTH = Math.max(40, Math.min(1200, parseIntegerEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320)));
 const MEMORY_HINT_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_HINT_MIN_CONFIDENCE || 0.35)));
-
-const execFileAsync = promisify(execFile);
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -42,21 +32,6 @@ const sanitizeGuildId = (value: unknown): string => {
   return candidate;
 };
 
-const resolveUnderRoot = (rootPath: string, ...segments: string[]): string | null => {
-  if (!rootPath) {
-    return null;
-  }
-
-  const root = path.resolve(rootPath);
-  const resolved = path.resolve(root, ...segments);
-  const withSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-  if (resolved === root || resolved.startsWith(withSep)) {
-    return resolved;
-  }
-
-  return null;
-};
-
 const safeGoalTerms = (goal: string): string[] =>
   sanitizeUntrustedText(goal)
     .toLowerCase()
@@ -65,109 +40,6 @@ const safeGoalTerms = (goal: string): string[] =>
     .map((term) => term.trim())
     .filter((term) => term.length >= 2)
     .slice(0, 6);
-
-const buildObsidianCliArgs = (params: { guildId: string; goal: string; vaultPath: string }) => {
-  const safeGuildId = sanitizeGuildId(params.guildId);
-  const safeGoal = sanitizeUntrustedText(params.goal);
-  const safeVaultPath = path.resolve(params.vaultPath || '.');
-  if (!safeGuildId || !safeGoal) {
-    return [];
-  }
-
-  if (!OBSIDIAN_CLI_ARGS_JSON) {
-    return [
-      '--guild-id',
-      safeGuildId,
-      '--goal',
-      safeGoal,
-      '--vault-path',
-      safeVaultPath,
-    ];
-  }
-
-  try {
-    const parsed = JSON.parse(OBSIDIAN_CLI_ARGS_JSON);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    const substituted = parsed
-      .map((value) => String(value || ''))
-      .filter((value) => value.length > 0)
-      .map((value) => value
-        .replaceAll('{guildId}', safeGuildId)
-        .replaceAll('{goal}', safeGoal)
-        .replaceAll('{vaultPath}', safeVaultPath));
-
-    return substituted.map((value) => sanitizeUntrustedText(value, 280));
-  } catch (error) {
-    logger.warn('[AGENT-MEMORY] OBSIDIAN_CLI_ARGS_JSON parse failed: %s', error instanceof Error ? error.message : String(error));
-    void logStructuredError({
-      code: 'CLI_IO_ERROR',
-      source: 'agentMemoryService.buildObsidianCliArgs',
-      message: 'OBSIDIAN_CLI_ARGS_JSON parse failed',
-      meta: { hasArgsJson: Boolean(OBSIDIAN_CLI_ARGS_JSON) },
-      severity: 'warn',
-    }, error);
-    return [
-      '--guild-id',
-      safeGuildId,
-      '--goal',
-      safeGoal,
-      '--vault-path',
-      safeVaultPath,
-    ];
-  }
-};
-
-const readObsidianLoreByCli = async (params: { guildId: string; goal: string }): Promise<string[]> => {
-  if (!OBSIDIAN_CLI_ENABLED || !OBSIDIAN_CLI_COMMAND || !OBSIDIAN_VAULT_PATH) {
-    return [];
-  }
-
-  try {
-    const safeGuildId = sanitizeGuildId(params.guildId);
-    const safeGoal = sanitizeUntrustedText(params.goal);
-    if (!safeGuildId || !safeGoal) {
-      logger.warn('[AGENT-MEMORY] obsidian cli skipped due to invalid untrusted input');
-      return [];
-    }
-
-    const safeVaultPath = path.resolve(OBSIDIAN_VAULT_PATH);
-    const args = buildObsidianCliArgs({
-      guildId: safeGuildId,
-      goal: safeGoal,
-      vaultPath: safeVaultPath,
-    });
-    if (args.length === 0) {
-      return [];
-    }
-
-    const { stdout } = await execFileAsync(OBSIDIAN_CLI_COMMAND, args, {
-      timeout: OBSIDIAN_CLI_TIMEOUT_MS,
-      windowsHide: true,
-      maxBuffer: 512 * 1024,
-    });
-
-    return String(stdout || '')
-      .split(/\r?\n/)
-      .map((line) => toSingleLine(line))
-      .filter(Boolean)
-      .slice(0, OBSIDIAN_CLI_MAX_HINTS)
-      .map((line) => `[obsidian-cli] ${line}`);
-  } catch (error) {
-    logger.warn('[AGENT-MEMORY] obsidian cli execution failed: %s', error instanceof Error ? error.message : String(error));
-    void logStructuredError({
-      code: 'CLI_IO_ERROR',
-      source: 'agentMemoryService.readObsidianLoreByCli',
-      message: 'Obsidian CLI execution failed',
-      guildId: params.guildId,
-      meta: { command: OBSIDIAN_CLI_COMMAND },
-      severity: 'warn',
-    }, error);
-    return [];
-  }
-};
 
 const readObsidianLore = async (params: { guildId: string; goal: string }): Promise<string[]> => {
   const safeGuildId = sanitizeGuildId(params.guildId);
@@ -181,39 +53,15 @@ const readObsidianLore = async (params: { guildId: string; goal: string }): Prom
     vaultRoot: OBSIDIAN_VAULT_PATH,
     key: `obsidian:guild:${safeGuildId}`,
     task: async () => {
-      const cliHints = await readObsidianLoreByCli({ guildId: safeGuildId, goal: safeGoal });
-      if (cliHints.length > 0) {
-        return cliHints;
-      }
-
       if (!OBSIDIAN_VAULT_PATH) {
         return [];
       }
 
-      const candidateFiles = ['Guild_Lore.md', 'Server_History.md', 'Decision_Log.md']
-        .map((name) => resolveUnderRoot(OBSIDIAN_VAULT_PATH, 'guilds', safeGuildId, name))
-        .filter((filePath): filePath is string => Boolean(filePath));
-
-      const hints: string[] = [];
-      for (const filePath of candidateFiles) {
-        try {
-          const raw = await fs.readFile(filePath, 'utf-8');
-          const lines = raw
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter((line) => line && !line.startsWith('#'))
-            .slice(0, 6)
-            .map((line) => toSingleLine(line));
-          if (lines.length > 0) {
-            const basename = path.basename(filePath);
-            hints.push(`[${basename}] ${lines.join(' | ')}`);
-          }
-        } catch {
-          // Ignore missing files.
-        }
-      }
-
-      return hints;
+      return readObsidianLoreWithAdapter({
+        guildId: safeGuildId,
+        goal: safeGoal,
+        vaultPath: OBSIDIAN_VAULT_PATH,
+      });
     },
   });
 };

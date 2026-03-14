@@ -3,8 +3,8 @@ import { listActions } from './registry';
 import type { ActionChainPlan, ActionPlan } from './types';
 import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
 
-const applyRagPriority = (plans: ActionPlan[], goal: string): ActionPlan[] => {
-  if (!isRagIntentGoal(goal)) {
+const applyRagPriority = async (plans: ActionPlan[], goal: string): Promise<ActionPlan[]> => {
+  if (!(await isRagIntentGoal(goal))) {
     return plans;
   }
 
@@ -20,7 +20,7 @@ const applyRagPriority = (plans: ActionPlan[], goal: string): ActionPlan[] => {
   ];
 };
 
-const fallbackPlan = (goal: string): ActionPlan[] => buildFallbackPlan(goal);
+const fallbackPlan = async (goal: string): Promise<ActionPlan[]> => buildFallbackPlan(goal);
 
 const pushUnique = (plans: ActionPlan[], next: ActionPlan) => {
   if (plans.some((plan) => plan.actionName === next.actionName)) {
@@ -72,7 +72,7 @@ const normalizePlan = (input: unknown): ActionPlan[] => {
 
 export const planActions = async (goal: string): Promise<ActionChainPlan> => {
   if (!isAnyLlmConfigured()) {
-    return { actions: fallbackPlan(goal) };
+    return { actions: await fallbackPlan(goal) };
   }
 
   const actions = listActions();
@@ -103,16 +103,16 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     const jsonStart = raw.indexOf('{');
     const jsonEnd = raw.lastIndexOf('}');
     if (jsonStart < 0 || jsonEnd <= jsonStart) {
-      return { actions: fallbackPlan(goal) };
+      return { actions: await fallbackPlan(goal) };
     }
 
     const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
-    const normalized = applyRagPriority(normalizePlan(parsed), goal).slice(0, 3);
+    const normalized = (await applyRagPriority(normalizePlan(parsed), goal)).slice(0, 3);
     if (normalized.length === 0) {
-      return { actions: fallbackPlan(goal) };
+      return { actions: await fallbackPlan(goal) };
     }
     return { actions: normalized };
   } catch {
-    return { actions: fallbackPlan(goal) };
+    return { actions: await fallbackPlan(goal) };
   }
 };

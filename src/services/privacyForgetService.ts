@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../logger';
+import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { withObsidianFileLock } from '../utils/obsidianFileLock';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
@@ -35,7 +36,7 @@ type ForgetResult = {
 };
 
 const FORGET_OBSIDIAN_ENABLED = String(process.env.FORGET_OBSIDIAN_ENABLED || 'true').trim().toLowerCase() !== 'false';
-const OBSIDIAN_VAULT_ROOT = String(process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
+const OBSIDIAN_VAULT_ROOT = getObsidianVaultRoot();
 const FORGET_GUILD_TABLES = [
   'memory_feedback',
   'memory_conflicts',

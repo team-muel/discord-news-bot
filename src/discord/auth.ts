@@ -26,6 +26,8 @@ export const LOGIN_SESSION_CLEANUP_INTERVAL_MS = Math.max(
   60 * 1000,
   Number(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS || 30 * 60 * 1000),
 );
+export const AUTO_LOGIN_ON_FIRST_COMMAND = !['0', 'false', 'no', 'off']
+  .includes(String(process.env.DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND || 'true').toLowerCase());
 
 // ─── In-process cache ────────────────────────────────────────────────────────
 export const loggedInUsersByGuild = new Map<string, Map<string, number>>();
@@ -146,6 +148,51 @@ export const hasFeatureAccess = async (
   if (await hasAdminPermission(interaction)) return true;
   if (!interaction.guildId) return false;
   return hasValidLoginSession(interaction.guildId, interaction.user.id);
+};
+
+export type FeatureAccessResult =
+  | {
+      ok: true;
+      autoLoggedIn: boolean;
+      mode?: 'persisted' | 'memory-only';
+    }
+  | {
+      ok: false;
+      reason: 'guild_only' | 'login_required';
+    };
+
+export const ensureFeatureAccess = async (
+  interaction: ChatInputCommandInteraction,
+): Promise<FeatureAccessResult> => {
+  if (await hasAdminPermission(interaction)) {
+    return { ok: true, autoLoggedIn: false };
+  }
+
+  if (!interaction.guildId) {
+    return { ok: false, reason: 'guild_only' };
+  }
+
+  if (await hasValidLoginSession(interaction.guildId, interaction.user.id)) {
+    return { ok: true, autoLoggedIn: false };
+  }
+
+  if (!AUTO_LOGIN_ON_FIRST_COMMAND) {
+    return { ok: false, reason: 'login_required' };
+  }
+
+  try {
+    const mode = await markUserLoggedIn(interaction.guildId, interaction.user.id);
+    logger.info('[AUTH] Auto-bootstrapped login session guild=%s user=%s mode=%s', interaction.guildId, interaction.user.id, mode);
+    return { ok: true, autoLoggedIn: true, mode };
+  } catch (error) {
+    logger.warn(
+      '[AUTH] Failed to auto-bootstrap login session guild=%s user=%s: %s',
+      interaction.guildId,
+      interaction.user.id,
+      getErrorMessage(error),
+    );
+    return { ok: false, reason: 'login_required' };
+  }
 };
 
 // ─── Cleanup loop ─────────────────────────────────────────────────────────────

@@ -937,6 +937,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
 
     if (effectiveRunMode === 'approval_required') {
       recordFailureCategory('ACTION_APPROVAL_REQUIRED');
+      handledAny = true;
       const request = await createActionApprovalRequest({
         guildId: input.guildId,
         requestedBy: input.requestedBy,

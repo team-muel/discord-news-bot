@@ -29,6 +29,7 @@
     "sync:obsidian-lore:dry": "tsx scripts/sync-obsidian-lore.ts --dry-run",
     "privacy:backfill-memory-owner": "tsx scripts/backfill-memory-owner-user.ts",
     "seed:research-presets": "tsx scripts/seed-research-presets.ts",
+    "bench:obsidian-search": "tsx scripts/bench-obsidian-search.ts",
     "smoke:api": "node scripts/smoke-api.mjs",
     "docs:routes": "node scripts/generate-route-inventory.mjs",
     "docs:deps": "node scripts/generate-dependency-graph.mjs",
@@ -62,6 +63,7 @@
     "madge": "^8.0.0",
     "rimraf": "^5.0.0",
     "typescript": "~5.8.2",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "vitest-mock-extended": "^3.1.0"
   }
 }

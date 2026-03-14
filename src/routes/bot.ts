@@ -54,6 +54,14 @@ import {
   requeueDeadletterJob,
 } from '../services/memoryJobRunner';
 import { getMemoryQualityMetrics } from '../services/memoryQualityMetricsService';
+import {
+  createRetrievalEvalSet,
+  getRetrievalEvalRun,
+  listRetrievalEvalCases,
+  runRetrievalAutoTuning,
+  runRetrievalEval,
+  upsertRetrievalEvalCase,
+} from '../services/retrievalEvalService';
 import { buildGoNoGoReport } from '../services/goNoGoService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../services/finopsService';
 import { isUserAdmin } from '../services/adminAllowlistService';
@@ -588,6 +596,7 @@ export function createBotRouter(): Router {
         goal,
         skillId: skillId || null,
         priority,
+        isAdmin: true,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -950,6 +959,176 @@ export function createBotRouter(): Router {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
       }
       return res.status(500).json({ ok: false, error: 'MEMORY_QUALITY_METRICS_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/retrieval-eval/sets', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const name = toStringParam(req.body?.name);
+    const description = toStringParam(req.body?.description);
+    if (!guildId || !name) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and name are required' });
+    }
+
+    try {
+      const createdBy = toStringParam(req.user?.id) || 'api';
+      const evalSet = await createRetrievalEvalSet({ guildId, name, description, createdBy });
+      return res.status(201).json({ ok: true, evalSet });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid payload' });
+      }
+      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_SET_CREATE_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/retrieval-eval/cases', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const evalSetId = toBoundedInt(req.body?.evalSetId, -1, { min: -1 });
+    const query = toStringParam(req.body?.query);
+    const intent = toStringParam(req.body?.intent);
+    const difficulty = toStringParam(req.body?.difficulty);
+    const enabled = req.body?.enabled !== false;
+    const targets = Array.isArray(req.body?.targets) ? req.body.targets : [];
+
+    if (!guildId || evalSetId < 0 || !query) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId, evalSetId, query are required' });
+    }
+
+    try {
+      const evalCase = await upsertRetrievalEvalCase({
+        guildId,
+        evalSetId,
+        query,
+        intent,
+        difficulty,
+        enabled,
+        targets: targets.map((target: Record<string, unknown>) => ({
+          filePath: toStringParam(target?.filePath),
+          gain: Number(target?.gain || 1),
+        })),
+      });
+      return res.status(201).json({ ok: true, evalCase });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid payload' });
+      }
+      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_CASE_UPSERT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/retrieval-eval/cases', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const evalSetId = toBoundedInt(req.query?.evalSetId, -1, { min: -1 });
+    const limit = toBoundedInt(req.query?.limit, 200, { min: 1, max: 1000 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const cases = await listRetrievalEvalCases({
+        guildId,
+        evalSetId: evalSetId >= 0 ? evalSetId : undefined,
+        limit,
+      });
+      return res.json({ ok: true, cases, count: cases.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_CASE_LIST_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/retrieval-eval/runs', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const evalSetId = toBoundedInt(req.body?.evalSetId, -1, { min: -1 });
+    const topK = toBoundedInt(req.body?.topK, 5, { min: 1, max: 20 });
+    const variants = Array.isArray(req.body?.variants)
+      ? req.body.variants.map((v: unknown) => toStringParam(v)).filter(Boolean)
+      : undefined;
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const requestedBy = toStringParam(req.user?.id) || 'api';
+      const result = await runRetrievalEval({
+        guildId,
+        evalSetId: evalSetId >= 0 ? evalSetId : undefined,
+        requestedBy,
+        topK,
+        variants,
+      });
+      return res.status(202).json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      if (message === 'OBSIDIAN_VAULT_PATH_MISSING') {
+        return res.status(400).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_RUN_FAILED', message });
+    }
+  });
+
+  router.get('/agent/memory/retrieval-eval/runs/:runId', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const runId = toBoundedInt(req.params.runId, -1, { min: -1 });
+    if (!guildId || runId < 0) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and runId are required' });
+    }
+
+    try {
+      const run = await getRetrievalEvalRun({ runId, guildId });
+      return res.json({ ok: true, run });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'RETRIEVAL_EVAL_RUN_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_RUN_READ_FAILED', message });
+    }
+  });
+
+  router.post('/agent/memory/retrieval-eval/runs/:runId/tune', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const runId = toBoundedInt(req.params.runId, -1, { min: -1 });
+    const applyIfBetter = Boolean(req.body?.applyIfBetter);
+    if (!guildId || runId < 0) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and runId are required' });
+    }
+
+    try {
+      const requestedBy = toStringParam(req.user?.id) || 'api';
+      const result = await runRetrievalAutoTuning({
+        guildId,
+        runId,
+        requestedBy,
+        applyIfBetter,
+      });
+      return res.status(202).json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'RETRIEVAL_AUTO_TUNING_FAILED', message });
     }
   });
 
