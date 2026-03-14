@@ -3,6 +3,7 @@ import type { HealthResponse } from '../contracts/bot';
 import { getBotRuntimeSnapshot } from '../bot';
 import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
+import { resolveLlmProvider } from '../services/llmClient';
 
 export function createHealthRouter(): Router {
   const router = Router();
@@ -44,7 +45,11 @@ export function createHealthRouter(): Router {
       automation,
     };
 
-    return res.status(200).json(payload);
+    return res.status(200).json({
+      ...payload,
+      llmProvider: resolveLlmProvider() ?? 'none',
+      openclawConfigured: Boolean(process.env.OPENCLAW_BASE_URL),
+    });
   });
 
   router.get('/ready', (_req, res) => {
