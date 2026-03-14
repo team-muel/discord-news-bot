@@ -269,7 +269,8 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  const response = await fetchWithTimeout(`${baseUrl}/v1/chat/completions`, {
+  const requestUrl = `${baseUrl}/v1/chat/completions`;
+  const response = await fetchWithTimeout(requestUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -289,7 +290,7 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
       code: 'LLM_REQUEST_FAILED',
       source: 'llmClient.requestOpenClaw',
       message: `OPENCLAW_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'openclaw', status: response.status, bodyPreview: body.slice(0, 300) },
+      meta: { provider: 'openclaw', status: response.status, requestUrl, bodyPreview: body.slice(0, 300) },
     });
     throw new Error(`OPENCLAW_REQUEST_FAILED: ${body.slice(0, 300)}`);
   }
