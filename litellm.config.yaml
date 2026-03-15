@@ -26,5 +26,5 @@ model_list:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  disable_spend_logs: false
+  disable_spend_logs: true
   enforce_user_param: false

@@ -92,5 +92,7 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: HF_TOKEN
+        sync: false
       - key: OLLAMA_BASE_URL
         sync: false
