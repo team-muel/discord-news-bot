@@ -60,6 +60,8 @@ import {
   listMemoryJobDeadletters,
   requeueDeadletterJob,
 } from '../services/memoryJobRunner';
+import { getObsidianLoreSyncLoopStats } from '../services/obsidianLoreSyncService';
+import { getRetrievalEvalLoopStats } from '../services/retrievalEvalLoopService';
 import { getMemoryQualityMetrics } from '../services/memoryQualityMetricsService';
 import {
   createRetrievalEvalSet,
@@ -1025,6 +1027,16 @@ export function createBotRouter(): Router {
       }
       return res.status(500).json({ ok: false, error: 'MEMORY_JOB_STATS_FAILED', message });
     }
+  });
+
+  router.get('/agent/runtime/loops', requireAdmin, async (_req, res) => {
+    return res.json({
+      ok: true,
+      memoryJobRunner: getMemoryJobRunnerStats(),
+      obsidianLoreSyncLoop: getObsidianLoreSyncLoopStats(),
+      retrievalEvalLoop: getRetrievalEvalLoopStats(),
+      generatedAt: new Date().toISOString(),
+    });
   });
 
   router.get('/agent/memory/jobs/deadletters', requireAdmin, async (req, res) => {

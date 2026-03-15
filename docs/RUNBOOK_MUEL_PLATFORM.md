@@ -134,6 +134,37 @@ Operational meaning:
    - `npm run sync:obsidian-lore`
 3. Schedule recurring sync (Windows Task Scheduler recommended).
 
+### 3.5 Server-Only Autonomous Mode (local PC off)
+
+목표: 로컬 PC가 꺼져 있어도 Discord Bot + Render + LiteLLM + Obsidian Headless 경로만으로 서비스 지속.
+
+1. Provider를 프록시 단일 경로로 고정:
+
+- `AI_PROVIDER=openclaw`
+- `OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>`
+- `OPENCLAW_API_KEY=<secret>`
+
+2. Obsidian headless 읽기 경로 활성화:
+
+- `OBSIDIAN_HEADLESS_ENABLED=true`
+- `OBSIDIAN_HEADLESS_COMMAND=ob`
+- `OBSIDIAN_VAULT_NAME=<vault-name>`
+- `OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli,local-fs`
+- `OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli,local-fs`
+- `OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli,local-fs`
+- `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli,local-fs`
+
+3. 쓰기 전략 분리:
+
+- 문서/지식 업데이트는 `memory_items`, `guild_lore_docs` 등 DB 경로를 주 경로로 사용
+- 파일 직접 쓰기는 fallback 경로로만 운영 (`OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=local-fs,script-cli`)
+
+4. 배포 후 필수 검증:
+
+- `GET /api/bot/agent/obsidian/runtime` 확인
+- `GET /ready` 확인
+- `memory_retrieval_logs`, `agent_tot_candidate_pairs` 누적 확인
+
 ## 4) Day 1 Go-Live Verification
 
 Run in order:

@@ -43,6 +43,23 @@ const buildProgressSummaryForPersistence = (session: AgentSession) => {
     riskScore: Number.isFinite(session.riskScore) ? Number(session.riskScore) : 0,
     policyDecision: session.policyGate?.decision || 'allow',
     policyReasons: [...(session.policyGate?.reasons || [])],
+    ormScore: Number.isFinite(session.ormAssessment?.score) ? Number(session.ormAssessment?.score) : null,
+    ormVerdict: session.ormAssessment?.verdict || null,
+    ormReasons: [...(session.ormAssessment?.reasons || [])],
+    evidenceBundleId: session.ormAssessment?.evidenceBundleId || null,
+    totShadowEnabled: session.totShadowAssessment?.enabled || false,
+    totShadowStrategy: session.totShadowAssessment?.strategy || null,
+    totShadowExploredBranches: Number.isFinite(session.totShadowAssessment?.exploredBranches)
+      ? Number(session.totShadowAssessment?.exploredBranches)
+      : 0,
+    totShadowBestScore: Number.isFinite(session.totShadowAssessment?.bestScore)
+      ? Number(session.totShadowAssessment?.bestScore)
+      : null,
+    totShadowBestEvidenceBundleId: session.totShadowAssessment?.bestEvidenceBundleId || null,
+    totShadowSelectedByRouter: session.totShadowAssessment?.selectedByRouter ?? null,
+    totShadowScoreGainVsBaseline: Number.isFinite(session.totShadowAssessment?.scoreGainVsBaseline)
+      ? Number(session.totShadowAssessment?.scoreGainVsBaseline)
+      : null,
   };
 };
 

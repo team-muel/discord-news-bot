@@ -8,6 +8,9 @@ export type AgentOutcome = {
   summary: string;
   retryable: boolean;
   confidence: 'high' | 'medium' | 'low';
+  score?: number;
+  reasons?: string[];
+  evidenceBundleId?: string;
 };
 
 const DEGRADED_ERROR_CODES = new Set([

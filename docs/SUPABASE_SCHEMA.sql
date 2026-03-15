@@ -1078,11 +1078,166 @@ before update on public.agent_privacy_gate_samples
 for each row
 execute function public.set_updated_at();
 
+create table if not exists public.agent_tot_policies (
+  guild_id text primary key,
+  enabled boolean not null default true,
+  strategy text not null default 'bfs',
+  branch_angles jsonb,
+  adaptive_sampling_enabled boolean not null default true,
+  sampling_temp_min numeric(5, 4) not null default 0.1200,
+  sampling_temp_max numeric(5, 4) not null default 0.4500,
+  sampling_top_p_min numeric(5, 4) not null default 0.8200,
+  sampling_top_p_max numeric(5, 4) not null default 0.9800,
+  local_search_enabled boolean not null default true,
+  local_search_mutations integer not null default 1,
+  replay_enabled boolean not null default true,
+  replay_top_k integer not null default 2,
+  shadow_enabled boolean not null default false,
+  max_branches integer not null default 3,
+  keep_top integer not null default 1,
+  active_enabled boolean not null default false,
+  active_allow_fast boolean not null default false,
+  active_min_goal_length integer not null default 60,
+  active_min_score_gain integer not null default 4,
+  active_min_beam_gain numeric(6, 4) not null default 0.0300,
+  active_require_non_pass boolean not null default false,
+  auto_tune_enabled boolean not null default true,
+  auto_tune_interval_hours integer not null default 24,
+  auto_tune_min_samples integer not null default 40,
+  last_auto_tuned_at timestamptz,
+  last_auto_tune_summary text,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (strategy in ('bfs', 'dfs')),
+  check (sampling_temp_min >= 0 and sampling_temp_min <= 1),
+  check (sampling_temp_max >= 0 and sampling_temp_max <= 1),
+  check (sampling_top_p_min >= 0 and sampling_top_p_min <= 1),
+  check (sampling_top_p_max >= 0 and sampling_top_p_max <= 1),
+  check (sampling_temp_min <= sampling_temp_max),
+  check (sampling_top_p_min <= sampling_top_p_max),
+  check (local_search_mutations >= 0 and local_search_mutations <= 3),
+  check (replay_top_k >= 0 and replay_top_k <= 5),
+  check (max_branches >= 2 and max_branches <= 6),
+  check (keep_top >= 1 and keep_top <= 3),
+  check (active_min_goal_length >= 20),
+  check (active_min_score_gain >= 0 and active_min_score_gain <= 30),
+  check (active_min_beam_gain >= 0 and active_min_beam_gain <= 1),
+  check (auto_tune_interval_hours >= 1 and auto_tune_interval_hours <= 168),
+  check (auto_tune_min_samples >= 10)
+);
+
+alter table public.agent_tot_policies add column if not exists active_min_beam_gain numeric(6, 4) not null default 0.0300;
+alter table public.agent_tot_policies add column if not exists branch_angles jsonb;
+alter table public.agent_tot_policies add column if not exists adaptive_sampling_enabled boolean not null default true;
+alter table public.agent_tot_policies add column if not exists sampling_temp_min numeric(5, 4) not null default 0.1200;
+alter table public.agent_tot_policies add column if not exists sampling_temp_max numeric(5, 4) not null default 0.4500;
+alter table public.agent_tot_policies add column if not exists sampling_top_p_min numeric(5, 4) not null default 0.8200;
+alter table public.agent_tot_policies add column if not exists sampling_top_p_max numeric(5, 4) not null default 0.9800;
+alter table public.agent_tot_policies add column if not exists local_search_enabled boolean not null default true;
+alter table public.agent_tot_policies add column if not exists local_search_mutations integer not null default 1;
+alter table public.agent_tot_policies add column if not exists replay_enabled boolean not null default true;
+alter table public.agent_tot_policies add column if not exists replay_top_k integer not null default 2;
+
+create index if not exists idx_agent_tot_policies_enabled
+  on public.agent_tot_policies (enabled, updated_at desc);
+
+drop trigger if exists trg_agent_tot_policies_updated_at on public.agent_tot_policies;
+create trigger trg_agent_tot_policies_updated_at
+before update on public.agent_tot_policies
+for each row
+execute function public.set_updated_at();
+
+insert into public.agent_tot_policies (
+  guild_id,
+  enabled,
+  strategy,
+  branch_angles,
+  adaptive_sampling_enabled,
+  sampling_temp_min,
+  sampling_temp_max,
+  sampling_top_p_min,
+  sampling_top_p_max,
+  local_search_enabled,
+  local_search_mutations,
+  replay_enabled,
+  replay_top_k,
+  shadow_enabled,
+  max_branches,
+  keep_top,
+  active_enabled,
+  active_allow_fast,
+  active_min_goal_length,
+  active_min_score_gain,
+  active_min_beam_gain,
+  active_require_non_pass,
+  auto_tune_enabled,
+  auto_tune_interval_hours,
+  auto_tune_min_samples
+) values ('*', true, 'bfs', null, true, 0.1200, 0.4500, 0.8200, 0.9800, true, 1, true, 2, false, 3, 1, false, false, 60, 4, 0.0300, false, true, 24, 40)
+on conflict (guild_id) do nothing;
+
+create table if not exists public.agent_tot_candidate_pairs (
+  id bigint generated by default as identity primary key,
+  guild_id text not null,
+  session_id text not null,
+  strategy text not null,
+  baseline_score integer not null,
+  candidate_score integer not null,
+  score_gain integer not null,
+  beam_gain numeric(7, 4) not null default 0,
+  promoted boolean not null default false,
+  baseline_probability numeric(6, 4),
+  baseline_probability_source text,
+  baseline_correctness numeric(6, 4),
+  baseline_beam_score numeric(6, 4),
+  candidate_probability numeric(6, 4),
+  candidate_probability_source text,
+  candidate_correctness numeric(6, 4),
+  candidate_beam_score numeric(6, 4),
+  baseline_evidence_bundle_id text,
+  candidate_evidence_bundle_id text,
+  baseline_result text,
+  candidate_result text,
+  created_at timestamptz not null default now(),
+  check (strategy in ('bfs', 'dfs')),
+  check (baseline_score >= 0 and baseline_score <= 100),
+  check (candidate_score >= 0 and candidate_score <= 100),
+  check (score_gain >= -100 and score_gain <= 100),
+  check (beam_gain >= -1 and beam_gain <= 1),
+  check (baseline_probability is null or (baseline_probability >= 0 and baseline_probability <= 1)),
+  check (baseline_probability_source is null or baseline_probability_source in ('provider_logprob', 'self_eval', 'fallback')),
+  check (baseline_correctness is null or (baseline_correctness >= 0 and baseline_correctness <= 1)),
+  check (baseline_beam_score is null or (baseline_beam_score >= 0 and baseline_beam_score <= 1)),
+  check (candidate_probability is null or (candidate_probability >= 0 and candidate_probability <= 1)),
+  check (candidate_probability_source is null or candidate_probability_source in ('provider_logprob', 'self_eval', 'fallback')),
+  check (candidate_correctness is null or (candidate_correctness >= 0 and candidate_correctness <= 1)),
+  check (candidate_beam_score is null or (candidate_beam_score >= 0 and candidate_beam_score <= 1))
+);
+
+alter table public.agent_tot_candidate_pairs add column if not exists beam_gain numeric(7, 4) not null default 0;
+alter table public.agent_tot_candidate_pairs add column if not exists baseline_probability numeric(6, 4);
+alter table public.agent_tot_candidate_pairs add column if not exists baseline_probability_source text;
+alter table public.agent_tot_candidate_pairs add column if not exists baseline_correctness numeric(6, 4);
+alter table public.agent_tot_candidate_pairs add column if not exists baseline_beam_score numeric(6, 4);
+alter table public.agent_tot_candidate_pairs add column if not exists candidate_probability numeric(6, 4);
+alter table public.agent_tot_candidate_pairs add column if not exists candidate_probability_source text;
+alter table public.agent_tot_candidate_pairs add column if not exists candidate_correctness numeric(6, 4);
+alter table public.agent_tot_candidate_pairs add column if not exists candidate_beam_score numeric(6, 4);
+
+create index if not exists idx_agent_tot_candidate_pairs_guild_created
+  on public.agent_tot_candidate_pairs (guild_id, created_at desc);
+
+create index if not exists idx_agent_tot_candidate_pairs_guild_promoted
+  on public.agent_tot_candidate_pairs (guild_id, promoted, created_at desc);
+
 alter table public.agent_runtime_policies enable row level security;
 alter table public.agent_skill_catalog enable row level security;
 alter table public.agent_workflow_profiles enable row level security;
 alter table public.agent_privacy_policies enable row level security;
 alter table public.agent_privacy_gate_samples enable row level security;
+alter table public.agent_tot_policies enable row level security;
+alter table public.agent_tot_candidate_pairs enable row level security;
 
 do $$
 begin
@@ -1126,6 +1281,24 @@ begin
     select 1 from pg_policies where schemaname='public' and tablename='agent_privacy_gate_samples' and policyname='agent_privacy_gate_samples_guild_all'
   ) then
     create policy agent_privacy_gate_samples_guild_all on public.agent_privacy_gate_samples
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_tot_policies' and policyname='agent_tot_policies_guild_all'
+  ) then
+    create policy agent_tot_policies_guild_all on public.agent_tot_policies
+      for all
+      using (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'))
+      with check (auth.role() = 'service_role' or guild_id in (coalesce(auth.jwt() ->> 'guild_id', ''), '*'));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_tot_candidate_pairs' and policyname='agent_tot_candidate_pairs_guild_all'
+  ) then
+    create policy agent_tot_candidate_pairs_guild_all on public.agent_tot_candidate_pairs
       for all
       using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
       with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));

@@ -53,6 +53,9 @@ import {
   triggerGuildOnboardingSession,
 } from './services/agentOpsService';
 import { forgetGuildRagData, forgetUserRagData } from './services/privacyForgetService';
+import { startMemoryJobRunner } from './services/memoryJobRunner';
+import { startObsidianLoreSyncLoop } from './services/obsidianLoreSyncService';
+import { startRetrievalEvalLoop } from './services/retrievalEvalLoopService';
 import {
   getArtifact,
   getChain,
@@ -1257,6 +1260,9 @@ client.on('clientReady', () => {
 
   startAgentDailyLearningLoop(client);
   startLoginSessionCleanupLoop();
+  startMemoryJobRunner();
+  startObsidianLoreSyncLoop();
+  startRetrievalEvalLoop(client);
 
   void autoSyncGuildTopologiesOnReady(client.guilds.cache.values()).catch((error) => {
     logger.debug('[DISCORD-TOPOLOGY] ready sweep skipped reason=%s', getErrorMessage(error));

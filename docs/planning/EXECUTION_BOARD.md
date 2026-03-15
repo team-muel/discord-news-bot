@@ -11,6 +11,10 @@
 5. Runbook/SOP/Control Tower 상충 항목 정리 완료
 6. Discord UX 이벤트(버튼/리액션/스레드) 운영 지표 수집 고정
 7. 반복 CS 시나리오 20개 자동 분류/응답 템플릿 표준화
+8. Vertical baseline lock + 조건부 consensus 실험 플래그 분리
+9. AgentBench-style 업무 시나리오 세트(30+) 구축
+10. CA-style 공격 시나리오 세트(20+) 구축
+11. 효율 지표(time/token/tool-steps/retry) 대시보드 고정
 
 ## Next (D31-D60: Autonomous Loops)
 
@@ -21,6 +25,8 @@
 5. 라벨 기반 recall@k 품질 검증 도입
 6. 사용자 요청 -> 기능 제안 -> 구현 티켓화 루프 자동화 v1
 7. CS 자동 완결률/인간 이관률 대시보드 도입
+8. A/B 실험(Vertical vs Hybrid) 2주 배치 운영
+9. 정량 + 정성 동시 게이트로 승격/롤백 자동화
 
 ## Later (D61-D90: Frontier Hardening)
 

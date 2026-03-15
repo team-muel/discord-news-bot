@@ -283,6 +283,47 @@ OBSIDIAN_ADAPTER_STRICT=false
 - 응답에서 `selectedByCapability.read_lore|search_vault|read_file|graph_metadata`가 `headless-cli`인지 확인
 - 응답에서 `selectedByCapability.write_note`가 `local-fs`인지 확인
 
+## 9.2) 무인 운영 프로파일 (로컬 PC 오프 전제)
+
+목표: 개인 PC가 꺼져 있어도 Render + Discord Bot + LiteLLM 프록시 + Headless로 지속 운영.
+
+원칙:
+
+- 읽기/검색/그래프는 Headless 경로 고정
+- 쓰기는 Obsidian 파일 직접 쓰기보다 Supabase 메모리 테이블(memory_items, guild_lore_docs) 우선
+- 모델 라우팅은 LiteLLM 프록시 단일 엔드포인트로 고정
+
+권장 env 프로파일:
+
+```bash
+AI_PROVIDER=openclaw
+OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>
+OPENCLAW_API_KEY=<secret>
+
+OBSIDIAN_HEADLESS_ENABLED=true
+OBSIDIAN_HEADLESS_COMMAND=ob
+OBSIDIAN_VAULT_NAME=<vault-name>
+
+OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=local-fs,script-cli
+OBSIDIAN_ADAPTER_STRICT=false
+```
+
+운영 체크:
+
+- `GET /api/bot/agent/obsidian/runtime`에서 read/search/read_file/graph가 `headless-cli`인지 확인
+- `GET /ready`에서 provider 미구성/adapter 미가용 경고가 없는지 확인
+- memory retrieval 로그(`memory_retrieval_logs`)와 ToT 후보 로그(`agent_tot_candidate_pairs`)가 지속 누적되는지 확인
+
+주의:
+
+- 현재 headless adapter는 읽기 중심(capability: read_lore/search_vault/read_file/graph_metadata)이며 write_note는 직접 제공하지 않습니다.
+- 따라서 문서 업데이트 자동화는 Supabase 메모리-파이프라인을 주 경로로 두고, 파일 쓰기는 보조 경로로 운영하는 것이 안전합니다.
+
 ## 10) Sourcetrail 스타일 코드 조망 (함수/클래스 + 백링크)
 
 개인 Obsidian Vault에서 전체 코드를 함수/클래스 단위로 조망하려면 아래 명령을 사용합니다.

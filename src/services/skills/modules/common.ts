@@ -31,11 +31,14 @@ export const runSkillText = async (params: {
   rules: string[];
   temperature?: number;
   maxTokens?: number;
+  topP?: number;
 }) => {
+  const contextOverrides = params.context.generationOptions || {};
   return generateText({
     system: params.systemLines.join('\n'),
     user: buildSkillPrompt(params.context, params.rules),
-    temperature: params.temperature ?? 0.2,
-    maxTokens: params.maxTokens ?? 1000,
+    temperature: contextOverrides.temperature ?? params.temperature ?? 0.2,
+    maxTokens: contextOverrides.maxTokens ?? params.maxTokens ?? 1000,
+    topP: contextOverrides.topP ?? params.topP,
   });
 };

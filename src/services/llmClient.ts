@@ -10,9 +10,16 @@ export type LlmTextRequest = {
   system: string;
   user: string;
   temperature?: number;
+  topP?: number;
   maxTokens?: number;
   provider?: LlmProvider;
   model?: string;
+};
+
+export type LlmTextWithMetaResponse = {
+  text: string;
+  provider: LlmProvider;
+  avgLogprob?: number;
 };
 
 const getOpenAiKey = () => String(process.env.OPENAI_API_KEY || '').trim();
@@ -122,6 +129,14 @@ export const resolveLlmProvider = (): LlmProvider | null => {
 };
 
 const requestOpenAi = async (params: LlmTextRequest): Promise<string> => {
+  const response = await requestOpenAiWithMeta(params, false);
+  return response.text;
+};
+
+const requestOpenAiWithMeta = async (
+  params: LlmTextRequest,
+  includeLogprobs: boolean,
+): Promise<LlmTextWithMetaResponse> => {
   const apiKey = getOpenAiKey();
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY_NOT_CONFIGURED');
@@ -136,7 +151,9 @@ const requestOpenAi = async (params: LlmTextRequest): Promise<string> => {
     body: JSON.stringify({
       model: params.model || process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini',
       temperature: params.temperature ?? 0.2,
+      top_p: params.topP,
       max_tokens: params.maxTokens ?? 1000,
+      ...(includeLogprobs ? { logprobs: true } : {}),
       messages: [
         { role: 'system', content: params.system },
         { role: 'user', content: params.user },
@@ -156,7 +173,21 @@ const requestOpenAi = async (params: LlmTextRequest): Promise<string> => {
   }
 
   const data = (await response.json()) as Record<string, any>;
-  return String(data?.choices?.[0]?.message?.content || '').trim();
+  const text = String(data?.choices?.[0]?.message?.content || '').trim();
+  const tokenLogprobs = Array.isArray(data?.choices?.[0]?.logprobs?.content)
+    ? data.choices[0].logprobs.content
+        .map((item: Record<string, unknown>) => Number(item?.logprob))
+        .filter((n: number) => Number.isFinite(n))
+    : [];
+  const avgLogprob = tokenLogprobs.length > 0
+    ? tokenLogprobs.reduce((acc: number, n: number) => acc + n, 0) / tokenLogprobs.length
+    : undefined;
+
+  return {
+    text,
+    provider: 'openai',
+    avgLogprob,
+  };
 };
 
 const requestGemini = async (params: LlmTextRequest): Promise<string> => {
@@ -185,6 +216,7 @@ const requestGemini = async (params: LlmTextRequest): Promise<string> => {
       ],
       generationConfig: {
         temperature: params.temperature ?? 0.2,
+        topP: params.topP,
         maxOutputTokens: params.maxTokens ?? 1000,
       },
     }),
@@ -222,6 +254,7 @@ const requestAnthropic = async (params: LlmTextRequest): Promise<string> => {
     body: JSON.stringify({
       model: params.model || process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-3-5-haiku-latest',
       temperature: params.temperature ?? 0.2,
+      top_p: params.topP,
       max_tokens: params.maxTokens ?? 1000,
       system: params.system,
       messages: [{ role: 'user', content: params.user }],
@@ -330,6 +363,7 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
     const payload = JSON.stringify({
       model,
       temperature: params.temperature ?? 0.2,
+      top_p: params.topP,
       max_tokens: params.maxTokens ?? 1000,
       messages: [
         { role: 'system', content: params.system },
@@ -431,6 +465,7 @@ const requestOllama = async (params: LlmTextRequest): Promise<string> => {
       stream: false,
       options: {
         temperature: params.temperature ?? 0.2,
+        top_p: params.topP,
         num_predict: params.maxTokens ?? 1000,
       },
       messages: [
@@ -456,26 +491,33 @@ const requestOllama = async (params: LlmTextRequest): Promise<string> => {
 };
 
 export const generateText = async (params: LlmTextRequest): Promise<string> => {
+  const response = await generateTextWithMeta(params);
+  return response.text;
+};
+
+export const generateTextWithMeta = async (
+  params: LlmTextRequest & { includeLogprobs?: boolean },
+): Promise<LlmTextWithMetaResponse> => {
   const provider = params.provider || resolveLlmProvider();
   if (!provider) {
     throw new Error('LLM_PROVIDER_NOT_CONFIGURED');
   }
 
   if (provider === 'openai') {
-    return requestOpenAi(params);
+    return requestOpenAiWithMeta(params, Boolean(params.includeLogprobs));
   }
 
   if (provider === 'anthropic') {
-    return requestAnthropic(params);
+    return { text: await requestAnthropic(params), provider };
   }
 
   if (provider === 'openclaw') {
-    return requestOpenClaw(params);
+    return { text: await requestOpenClaw(params), provider };
   }
 
   if (provider === 'ollama') {
-    return requestOllama(params);
+    return { text: await requestOllama(params), provider };
   }
 
-  return requestGemini(params);
+  return { text: await requestGemini(params), provider: 'gemini' };
 };

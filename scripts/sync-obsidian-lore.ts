@@ -1,8 +1,9 @@
 /* eslint-disable no-console */
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 type SyncTarget = {
   folderName: string;
@@ -229,8 +230,14 @@ const globToRegExp = (glob: string): RegExp => {
     const next = normalized[i + 1];
 
     if (char === '*' && next === '*') {
-      pattern += '.*';
-      i += 2;
+      // consume optional trailing slash so '**/' matches root-level files too
+      if (normalized[i + 2] === '/') {
+        pattern += '(?:.*/)?';
+        i += 3;
+      } else {
+        pattern += '.*';
+        i += 2;
+      }
       continue;
     }
 
@@ -400,6 +407,44 @@ const notifyDiscordWebhook = async (stats: SyncStats): Promise<void> => {
   }
 };
 
+const lorMemoryItemId = (guildId: string, source: string): string => {
+  const hash = createHash('sha1').update(`${guildId}:${source}`).digest('hex').slice(0, 20);
+  return `lore_${hash}`;
+};
+
+const upsertLoreMemoryItem = async (
+  supabase: SupabaseClient<any>,
+  doc: LoreDoc,
+): Promise<void> => {
+  const id = lorMemoryItemId(doc.guildId, doc.source);
+  const row = {
+    id,
+    guild_id: doc.guildId,
+    type: 'semantic',
+    scope: 'guild',
+    title: doc.title,
+    content: doc.content,
+    summary: doc.summary,
+    tags: [] as string[],
+    status: 'active',
+    confidence: 0.700,
+    priority: 60,
+    pinned: false,
+    source_count: 1,
+    conflict_key: `lore:${doc.source}`,
+    created_by: 'sync-obsidian-lore',
+    updated_by: 'sync-obsidian-lore',
+  };
+  const { error } = await supabase
+    .from('memory_items')
+    .upsert(row, { onConflict: 'id' });
+  if (error) {
+    throw new Error(
+      `[obsidian-sync] memory_items upsert failed guild=${doc.guildId} source=${doc.source}: ${error.message}`,
+    );
+  }
+};
+
 const main = async () => {
   const {
     guildIds: requestedGuildIds,
@@ -526,6 +571,7 @@ const main = async () => {
         stats.insertedRows += 1;
       }
 
+      await upsertLoreMemoryItem(supabase, doc);
       stats.touchedRows += 1;
       console.log(`[obsidian-sync] folder=${doc.folderName} guild=${doc.guildId} path=${doc.relativePath} source=${doc.source} synced`);
     }

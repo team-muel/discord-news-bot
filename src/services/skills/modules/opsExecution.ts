@@ -1,6 +1,9 @@
 import type { SkillExecutionResult, SkillContext } from '../types';
 import { runSkillText } from './common';
 import { runGoalActions } from '../actionRunner';
+import { parseBooleanEnv } from '../../../utils/env';
+
+const REACT_REFLECT_ON_ACTION_FAILURE_ENABLED = parseBooleanEnv(process.env.REACT_REFLECT_ON_ACTION_FAILURE_ENABLED, true);
 
 const maybeBuildYouTubeResult = (goal: string): string | null => {
   const lower = goal.toLowerCase();
@@ -50,6 +53,28 @@ export const executeOpsExecutionSkill = async (context: SkillContext): Promise<S
     });
 
     return { skillId: 'ops-execution', output: fallback };
+  }
+
+  if (actionResult.handled && !actionResult.hasSuccess && REACT_REFLECT_ON_ACTION_FAILURE_ENABLED) {
+    const reflected = await runSkillText({
+      context: {
+        ...context,
+        priorOutput: actionResult.output,
+      },
+      systemLines: [
+        '너는 ReAct 반성 응답기다.',
+        '관측(실행 로그)을 근거로 실패 원인과 다음 행동을 간결하게 제시한다.',
+      ],
+      rules: [
+        '첫 문단: 실패 원인 요약(최대 2문장)',
+        '둘째 문단: 즉시 실행 가능한 다음 단계 3개 이내',
+        '미확인 사실은 추정으로 표시',
+      ],
+      temperature: 0.2,
+      maxTokens: 900,
+    });
+
+    return { skillId: 'ops-execution', output: reflected };
   }
 
   const youtubeDirectResult = maybeBuildYouTubeResult(context.goal);

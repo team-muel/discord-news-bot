@@ -11,6 +11,7 @@ const fallback = (goal: string): string => {
 
 export const executeCasualChatSkill = async (context: SkillContext): Promise<SkillExecutionResult> => {
   try {
+    const overrides = context.generationOptions || {};
     const output = await generateText({
       system: [
         '너는 공감형 한국어 대화 파트너다.',
@@ -21,8 +22,9 @@ export const executeCasualChatSkill = async (context: SkillContext): Promise<Ski
         '짧고 자연스럽게 답하고 필요하면 한 가지 질문만 한다.',
       ].join('\n'),
       user: `사용자 발화: ${String(context.goal || '').trim()}`,
-      temperature: 0.5,
-      maxTokens: 220,
+      temperature: overrides.temperature ?? 0.5,
+      maxTokens: overrides.maxTokens ?? 220,
+      topP: overrides.topP,
     });
 
     return {

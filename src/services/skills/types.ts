@@ -6,6 +6,11 @@ export type SkillContext = {
   goal: string;
   memoryHints?: string[];
   priorOutput?: string;
+  generationOptions?: {
+    temperature?: number;
+    maxTokens?: number;
+    topP?: number;
+  };
 };
 
 export type SkillDefinition = {
