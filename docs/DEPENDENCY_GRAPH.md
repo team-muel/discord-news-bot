@@ -314,6 +314,7 @@ graph LR
   "src/services/retrievalEvalService.ts" --> "src/services/supabaseClient.ts"
   "src/services/retrievalEvalService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/automationBot.ts"
+  "src/services/runtime-alerts/checks.ts" --> "src/services/runtime-alerts/config.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/runtime-alerts/types.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/tradingEngine.ts"
   "src/services/runtime-alerts/config.ts":::file

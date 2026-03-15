@@ -23,6 +23,8 @@ const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MOD
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
+const OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS = Math.max(1_000, Number(process.env.OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS || 45_000));
+const openclawModelCooldownUntilMs = new Map<string, number>();
 const getOpenClawBaseUrl = () => String(
   process.env.OPENCLAW_BASE_URL
     || process.env.OPENCLAW_API_BASE_URL
@@ -288,6 +290,21 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
       || normalized.includes('exceeded your current quota');
   };
 
+  const parseRetryDelayMs = (body: string): number => {
+    const text = String(body || '');
+    const retryDelayMatch = text.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
+    if (retryDelayMatch?.[1]) {
+      return Math.max(1_000, Number(retryDelayMatch[1]) * 1000);
+    }
+
+    const pleaseRetryMatch = text.match(/Please retry in\s*([0-9.]+)s/i);
+    if (pleaseRetryMatch?.[1]) {
+      return Math.max(1_000, Math.round(Number(pleaseRetryMatch[1]) * 1000));
+    }
+
+    return OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS;
+  };
+
   type FailedAttempt = {
     model: string;
     status: number;
@@ -299,6 +316,17 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
 
   for (let index = 0; index < modelsToTry.length; index += 1) {
     const model = modelsToTry[index];
+    const cooldownUntil = openclawModelCooldownUntilMs.get(model) || 0;
+    if (cooldownUntil > Date.now()) {
+      attempts.push({
+        model,
+        status: 429,
+        requestUrl: `${baseUrl}/v1/chat/completions`,
+        body: `MODEL_COOLDOWN_ACTIVE until=${new Date(cooldownUntil).toISOString()}`,
+      });
+      continue;
+    }
+
     const payload = JSON.stringify({
       model,
       temperature: params.temperature ?? 0.2,
@@ -338,6 +366,10 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
         body: `${firstBody.slice(0, 200)}\n${fallbackBody.slice(0, 200)}`,
       });
 
+      if (isRetryableQuotaError(fallbackResponse.status, fallbackBody)) {
+        openclawModelCooldownUntilMs.set(model, Date.now() + parseRetryDelayMs(fallbackBody));
+      }
+
       const canRetry = index < modelsToTry.length - 1 && isRetryableQuotaError(fallbackResponse.status, fallbackBody);
       if (canRetry) {
         continue;
@@ -348,6 +380,9 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
     if (!response.ok) {
       const body = await response.text();
       attempts.push({ model, status: response.status, requestUrl, body: body.slice(0, 300) });
+      if (isRetryableQuotaError(response.status, body)) {
+        openclawModelCooldownUntilMs.set(model, Date.now() + parseRetryDelayMs(body));
+      }
       const canRetry = index < modelsToTry.length - 1 && isRetryableQuotaError(response.status, body);
       if (canRetry) {
         continue;
