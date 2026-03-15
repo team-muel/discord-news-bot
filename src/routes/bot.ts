@@ -63,6 +63,7 @@ import {
   upsertRetrievalEvalCase,
 } from '../services/retrievalEvalService';
 import { buildGoNoGoReport } from '../services/goNoGoService';
+import { buildAgentRuntimeReadinessReport } from '../services/agentRuntimeReadinessService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../services/finopsService';
 import { isUserAdmin } from '../services/adminAllowlistService';
 import {
@@ -1145,6 +1146,28 @@ export function createBotRouter(): Router {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
       }
       return res.status(500).json({ ok: false, error: 'GO_NO_GO_REPORT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/readiness', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const windowDays = toBoundedInt(req.query?.windowDays, 30, { min: 1, max: 180 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const report = await buildAgentRuntimeReadinessReport({ guildId, windowDays });
+      return res.json({ ok: true, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_READINESS_REPORT_FAILED', message });
     }
   });
 

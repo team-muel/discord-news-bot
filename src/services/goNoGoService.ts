@@ -2,18 +2,26 @@ import { getMemoryJobQueueStats } from './memoryJobRunner';
 import { getMemoryQualityMetrics } from './memoryQualityMetricsService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
+const toNumberEnv = (value: string | undefined, fallback: number, min: number, max: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+};
+
 type GoNoGoParams = {
   guildId?: string;
   days: number;
 };
 
 const DEFAULT_THRESHOLDS = {
-  minCitationRate: 0.95,
-  maxUnresolvedConflictRate: 0.05,
-  maxJobFailureRate: 0.10,
-  minRecallAt5: 0.60,
-  minPilotGuilds: 3,
-  maxCorrectionSlaP95Minutes: 5,
+  minCitationRate: toNumberEnv(process.env.GO_NO_GO_MIN_CITATION_RATE, 0.95, 0, 1),
+  maxUnresolvedConflictRate: toNumberEnv(process.env.GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE, 0.05, 0, 1),
+  maxJobFailureRate: toNumberEnv(process.env.GO_NO_GO_MAX_JOB_FAILURE_RATE, 0.10, 0, 1),
+  minRecallAt5: toNumberEnv(process.env.GO_NO_GO_MIN_RECALL_AT_5, 0.60, 0, 1),
+  minPilotGuilds: Math.max(1, Math.trunc(toNumberEnv(process.env.GO_NO_GO_MIN_PILOT_GUILDS, 3, 1, 10_000))),
+  maxCorrectionSlaP95Minutes: toNumberEnv(process.env.GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN, 5, 0.1, 24 * 60),
 };
 
 const toStatus = (ok: boolean): 'pass' | 'fail' => (ok ? 'pass' : 'fail');

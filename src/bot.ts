@@ -70,6 +70,7 @@ import {
   recordWorkerProposalClick,
 } from './services/workerGeneration/workerProposalMetrics';
 import { cleanupSandbox } from './services/workerGeneration/workerSandbox';
+import { evaluateWorkerActivationGate } from './services/agentRuntimeReadinessService';
 // ─── Discord layer modules ────────────────────────────────────────────────────
 import {
   buildSimpleEmbed,
@@ -810,6 +811,23 @@ const attachCommandHandlers = () => {
           await interaction.followUp({ content: `⚠️ 이 워커는 검증에 실패했습니다: ${appr.validationErrors.join(', ')}`, ephemeral: true });
           return;
         }
+
+        const gate = await evaluateWorkerActivationGate({
+          guildId: appr.guildId,
+          actorId: interaction.user.id,
+        }).catch(() => null);
+
+        if (gate && !gate.allowed) {
+          const details = gate.reasons.length > 0
+            ? `\n- ${gate.reasons.join('\n- ')}`
+            : '';
+          await interaction.followUp({
+            content: `🚫 현재 운영 준비도 게이트를 통과하지 못해 워커 활성화를 차단했습니다.${details}\n\n관리자 API /api/bot/agent/runtime/readiness 로 상태를 먼저 확인해주세요.`,
+            ephemeral: true,
+          });
+          return;
+        }
+
         let loadResult = appr.sandboxFilePath
           ? await loadDynamicWorkerFromFile(appr.sandboxFilePath, appr.id)
           : { ok: false, error: 'missing sandbox file path' };
