@@ -19,6 +19,10 @@ const getOpenAiKey = () => String(process.env.OPENAI_API_KEY || '').trim();
 const getGeminiKey = () => String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 const getAnthropicKey = () => String(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
 const getOpenClawApiKey = () => String(process.env.OPENCLAW_API_KEY || process.env.OPENCLAW_KEY || '').trim();
+const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MODELS || '')
+  .split(',')
+  .map((model) => model.trim())
+  .filter(Boolean);
 const getOpenClawBaseUrl = () => String(
   process.env.OPENCLAW_BASE_URL
     || process.env.OPENCLAW_API_BASE_URL
@@ -269,67 +273,113 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  const payload = JSON.stringify({
-    model: params.model || process.env.OPENCLAW_MODEL || 'openclaw',
-    temperature: params.temperature ?? 0.2,
-    max_tokens: params.maxTokens ?? 1000,
-    messages: [
-      { role: 'system', content: params.system },
-      { role: 'user', content: params.user },
-    ],
-  });
+  const primaryModel = params.model || process.env.OPENCLAW_MODEL || 'openclaw';
+  const fallbackModels = getOpenClawFallbackModels().filter((model) => model !== primaryModel);
+  const modelsToTry = [primaryModel, ...fallbackModels];
 
-  let requestUrl = `${baseUrl}/v1/chat/completions`;
-  let response = await fetchWithTimeout(requestUrl, {
-    method: 'POST',
-    headers,
-    body: payload,
-  });
+  const isRetryableQuotaError = (status: number, body: string): boolean => {
+    if (status === 429) {
+      return true;
+    }
+    const normalized = String(body || '').toLowerCase();
+    return normalized.includes('quota')
+      || normalized.includes('rate limit')
+      || normalized.includes('resource_exhausted')
+      || normalized.includes('exceeded your current quota');
+  };
 
-  if (response.status === 404) {
-    const firstBody = await response.text();
-    const fallbackUrl = `${baseUrl}/chat/completions`;
-    const fallbackResponse = await fetchWithTimeout(fallbackUrl, {
+  type FailedAttempt = {
+    model: string;
+    status: number;
+    requestUrl: string;
+    body: string;
+  };
+
+  const attempts: FailedAttempt[] = [];
+
+  for (let index = 0; index < modelsToTry.length; index += 1) {
+    const model = modelsToTry[index];
+    const payload = JSON.stringify({
+      model,
+      temperature: params.temperature ?? 0.2,
+      max_tokens: params.maxTokens ?? 1000,
+      messages: [
+        { role: 'system', content: params.system },
+        { role: 'user', content: params.user },
+      ],
+    });
+
+    let requestUrl = `${baseUrl}/v1/chat/completions`;
+    let response = await fetchWithTimeout(requestUrl, {
       method: 'POST',
       headers,
       body: payload,
     });
 
-    if (fallbackResponse.ok) {
-      requestUrl = fallbackUrl;
-      response = fallbackResponse;
-    } else {
-      const fallbackBody = await fallbackResponse.text();
-      await logStructuredError({
-        code: 'LLM_REQUEST_FAILED',
-        source: 'llmClient.requestOpenClaw',
-        message: `OPENCLAW_REQUEST_FAILED status=${fallbackResponse.status}`,
-        meta: {
-          provider: 'openclaw',
-          status: fallbackResponse.status,
-          requestUrl,
-          fallbackUrl,
-          bodyPreview: firstBody.slice(0, 300),
-          fallbackBodyPreview: fallbackBody.slice(0, 300),
-        },
+    if (response.status === 404) {
+      const firstBody = await response.text();
+      const fallbackUrl = `${baseUrl}/chat/completions`;
+      const fallbackResponse = await fetchWithTimeout(fallbackUrl, {
+        method: 'POST',
+        headers,
+        body: payload,
       });
-      throw new Error(`OPENCLAW_REQUEST_FAILED: ${fallbackBody.slice(0, 300)}`);
+
+      if (fallbackResponse.ok) {
+        const data = (await fallbackResponse.json()) as Record<string, any>;
+        return String(data?.choices?.[0]?.message?.content || '').trim();
+      }
+
+      const fallbackBody = await fallbackResponse.text();
+      attempts.push({
+        model,
+        status: fallbackResponse.status,
+        requestUrl: fallbackUrl,
+        body: `${firstBody.slice(0, 200)}\n${fallbackBody.slice(0, 200)}`,
+      });
+
+      const canRetry = index < modelsToTry.length - 1 && isRetryableQuotaError(fallbackResponse.status, fallbackBody);
+      if (canRetry) {
+        continue;
+      }
+      break;
     }
+
+    if (!response.ok) {
+      const body = await response.text();
+      attempts.push({ model, status: response.status, requestUrl, body: body.slice(0, 300) });
+      const canRetry = index < modelsToTry.length - 1 && isRetryableQuotaError(response.status, body);
+      if (canRetry) {
+        continue;
+      }
+      break;
+    }
+
+    const data = (await response.json()) as Record<string, any>;
+    return String(data?.choices?.[0]?.message?.content || '').trim();
   }
 
-  if (!response.ok) {
-    const body = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: 'llmClient.requestOpenClaw',
-      message: `OPENCLAW_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'openclaw', status: response.status, requestUrl, bodyPreview: body.slice(0, 300) },
-    });
-    throw new Error(`OPENCLAW_REQUEST_FAILED: ${body.slice(0, 300)}`);
-  }
+  const last = attempts[attempts.length - 1] || {
+    model: primaryModel,
+    status: 500,
+    requestUrl: `${baseUrl}/v1/chat/completions`,
+    body: 'unknown_error',
+  };
 
-  const data = (await response.json()) as Record<string, any>;
-  return String(data?.choices?.[0]?.message?.content || '').trim();
+  await logStructuredError({
+    code: 'LLM_REQUEST_FAILED',
+    source: 'llmClient.requestOpenClaw',
+    message: `OPENCLAW_REQUEST_FAILED status=${last.status}`,
+    meta: {
+      provider: 'openclaw',
+      status: last.status,
+      requestUrl: last.requestUrl,
+      model: last.model,
+      attempts: attempts.map((item) => ({ model: item.model, status: item.status, requestUrl: item.requestUrl })),
+      bodyPreview: String(last.body || '').slice(0, 300),
+    },
+  });
+  throw new Error(`OPENCLAW_REQUEST_FAILED: ${String(last.body || '').slice(0, 300)}`);
 };
 
 const requestOllama = async (params: LlmTextRequest): Promise<string> => {
