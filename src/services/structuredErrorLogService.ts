@@ -12,7 +12,9 @@ export type StructuredErrorCode =
   | 'MCP_TIMEOUT'
   | 'MCP_HTTP_ERROR'
   | 'MCP_WORKER_NOT_CONFIGURED'
+  | 'LLM_NETWORK_ERROR'
   | 'LLM_REQUEST_FAILED'
+  | 'OPENCLAW_BASE_URL_INVALID'
   | 'UNKNOWN_ERROR';
 
 type StructuredErrorInput = {
