@@ -1,20 +1,20 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 165
+- Nodes: 172
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/logger.ts | 45 |
+| src/logger.ts | 48 |
 | src/services/supabaseClient.ts | 41 |
 | src/utils/env.ts | 38 |
 | src/services/skills/actions/types.ts | 21 |
 | src/config.ts | 16 |
+| src/discord/messages.ts | 13 |
 | src/services/llmClient.ts | 12 |
 | src/services/skills/types.ts | 12 |
-| src/discord/messages.ts | 11 |
 | src/services/multiAgentService.ts | 10 |
 | src/utils/obsidianEnv.ts | 10 |
 | src/discord/ui.ts | 8 |
@@ -59,28 +59,24 @@ graph LR
   "src/bot.ts" --> "src/discord/commands/vibe.ts"
   "src/bot.ts" --> "src/discord/lifecycle.ts"
   "src/bot.ts" --> "src/discord/messages.ts"
+  "src/bot.ts" --> "src/discord/runtime/buttonInteractions.ts"
+  "src/bot.ts" --> "src/discord/runtime/guildLifecycle.ts"
+  "src/bot.ts" --> "src/discord/runtime/passiveMemoryCapture.ts"
+  "src/bot.ts" --> "src/discord/runtime/readyWorkloads.ts"
   "src/bot.ts" --> "src/discord/session.ts"
   "src/bot.ts" --> "src/discord/ui.ts"
   "src/bot.ts" --> "src/logger.ts"
   "src/bot.ts" --> "src/services/adminAllowlistService.ts"
-  "src/bot.ts" --> "src/services/agentMemoryStore.ts"
   "src/bot.ts" --> "src/services/agentOpsService.ts"
   "src/bot.ts" --> "src/services/agentRuntimeReadinessService.ts"
   "src/bot.ts" --> "src/services/automationBot.ts"
-  "src/bot.ts" --> "src/services/discordChannelTelemetryService.ts"
   "src/bot.ts" --> "src/services/discordReactionRewardService.ts"
-  "src/bot.ts" --> "src/services/discordTopologySyncService.ts"
   "src/bot.ts" --> "src/services/llmClient.ts"
-  "src/bot.ts" --> "src/services/memoryJobRunner.ts"
   "src/bot.ts" --> "src/services/multiAgentService.ts"
-  "src/bot.ts" --> "src/services/obsidianLoreSyncService.ts"
   "src/bot.ts" --> "src/services/obsidianRagService.ts"
   "src/bot.ts" --> "src/services/privacyForgetService.ts"
-  "src/bot.ts" --> "src/services/retrievalEvalLoopService.ts"
-  "src/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/bot.ts" --> "src/services/stockService.ts"
   "src/bot.ts" --> "src/services/supabaseClient.ts"
-  "src/bot.ts" --> "src/services/userLearningPrefsService.ts"
   "src/bot.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/bot.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/bot.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
@@ -142,6 +138,38 @@ graph LR
   "src/discord/lifecycle.ts" --> "src/services/automationBot.ts"
   "src/discord/lifecycle.ts" --> "src/services/privacyForgetService.ts"
   "src/discord/messages.ts":::file
+  "src/discord/runtime/buttonInteractions.ts" --> "src/discord/messages.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/discord/runtime/sessionControl.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/adminAllowlistService.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/agentRuntimeReadinessService.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/multiAgentService.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerSandbox.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/utils/codeThread.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/utils/sessionArtifactStore.ts"
+  "src/discord/runtime/guildLifecycle.ts" --> "src/logger.ts"
+  "src/discord/runtime/guildLifecycle.ts" --> "src/services/agentOpsService.ts"
+  "src/discord/runtime/guildLifecycle.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/runtime/passiveMemoryCapture.ts" --> "src/logger.ts"
+  "src/discord/runtime/passiveMemoryCapture.ts" --> "src/services/agentMemoryStore.ts"
+  "src/discord/runtime/passiveMemoryCapture.ts" --> "src/services/discordChannelTelemetryService.ts"
+  "src/discord/runtime/passiveMemoryCapture.ts" --> "src/services/skills/actionGovernanceStore.ts"
+  "src/discord/runtime/passiveMemoryCapture.ts" --> "src/services/userLearningPrefsService.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/discord/auth.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/logger.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/services/agentOpsService.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/services/automationBot.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/services/discordTopologySyncService.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/services/memoryJobRunner.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/services/obsidianLoreSyncService.ts"
+  "src/discord/runtime/readyWorkloads.ts" --> "src/services/retrievalEvalLoopService.ts"
+  "src/discord/runtime/sessionControl.ts" --> "src/discord/messages.ts"
+  "src/discord/runtime/sessionControl.ts" --> "src/services/adminAllowlistService.ts"
+  "src/discord/runtime/sessionControl.ts" --> "src/services/multiAgentService.ts"
   "src/discord/runtimePolicy.ts" --> "src/utils/env.ts"
   "src/discord/session.ts" --> "src/discord/messages.ts"
   "src/discord/session.ts" --> "src/services/multiAgentService.ts"
@@ -247,13 +275,14 @@ graph LR
   "src/services/agentPrivacyPolicyService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentPrivacyPolicyService.ts" --> "src/utils/env.ts"
   "src/services/agentPrivacyTuningService.ts" --> "src/services/agentPrivacyPolicyService.ts"
-  "src/services/agentPrivacyTuningService.ts" --> "src/services/multiAgentService.ts"
+  "src/services/agentPrivacyTuningService.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/agentPrivacyTuningService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentRuntimeReadinessService.ts" --> "src/services/goNoGoService.ts"
   "src/services/agentRuntimeReadinessService.ts" --> "src/services/skills/actionRunner.ts"
   "src/services/agentRuntimeReadinessService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentRuntimeReadinessService.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
   "src/services/agentRuntimeReadinessService.ts" --> "src/utils/env.ts"
+  "src/services/agentRuntimeTypes.ts":::file
   "src/services/agentSessionStore.ts" --> "src/services/multiAgentService.ts"
   "src/services/agentSessionStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentTotPolicyService.ts" --> "src/logger.ts"
@@ -308,7 +337,7 @@ graph LR
   "src/services/goNoGoService.ts" --> "src/services/supabaseClient.ts"
   "src/services/investmentAnalysisService.ts":::file
   "src/services/langgraph/stateContract.ts" --> "src/services/agentOutcomeContract.ts"
-  "src/services/langgraph/stateContract.ts" --> "src/services/multiAgentService.ts"
+  "src/services/langgraph/stateContract.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/promptCompiler.ts"
   "src/services/llmClient.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/localAiTradingClient.ts" --> "src/config.ts"
@@ -322,15 +351,18 @@ graph LR
   "src/services/memoryJobRunner.ts" --> "src/utils/env.ts"
   "src/services/memoryPoisonGuard.ts":::file
   "src/services/memoryQualityMetricsService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/multiAgentRuntimeQueue.ts":::file
   "src/services/multiAgentService.ts" --> "src/services/agentMemoryService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentPrivacyPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentPrivacyTuningService.ts"
+  "src/services/multiAgentService.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentSessionStore.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentTotPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentWorkflowService.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/multiAgentService.ts" --> "src/services/llmClient.ts"
+  "src/services/multiAgentService.ts" --> "src/services/multiAgentRuntimeQueue.ts"
   "src/services/multiAgentService.ts" --> "src/services/promptCompiler.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/engine.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/registry.ts"
