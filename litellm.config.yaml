@@ -29,3 +29,13 @@ general_settings:
   disable_spend_logs: true
   disable_spend_updates: true
   enforce_user_param: false
+
+litellm_settings:
+  # Gemini free-tier quota exhaustion 시 HF/OpenAI/Anthropic 순으로 즉시 폴백
+  fallbacks:
+    - {"muel-balanced": ["muel-hf", "muel-fast", "muel-precise"]}
+
+router_settings:
+  # quota limit(429)에서 동일 모델 재시도는 실효성이 낮아 즉시 fallback으로 전환
+  retry_policy:
+    RateLimitErrorRetries: 0
