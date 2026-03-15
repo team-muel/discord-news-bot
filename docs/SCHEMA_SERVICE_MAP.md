@@ -17,6 +17,8 @@
 | agent_sessions | src/services/agentSessionStore.ts<br/>src/services/privacyForgetService.ts |
 | agent_skill_catalog | src/services/skills/registry.ts |
 | agent_steps | src/services/agentSessionStore.ts |
+| agent_tot_candidate_pairs | src/services/agentTotPolicyService.ts |
+| agent_tot_policies | src/services/agentTotPolicyService.ts |
 | agent_workflow_profiles | src/services/agentWorkflowService.ts |
 | alert_slots | - |
 | api_rate_limits | - |

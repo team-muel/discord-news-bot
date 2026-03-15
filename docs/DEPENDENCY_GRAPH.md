@@ -1,15 +1,15 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 162
+- Nodes: 165
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/logger.ts | 42 |
-| src/services/supabaseClient.ts | 40 |
-| src/utils/env.ts | 34 |
+| src/logger.ts | 45 |
+| src/services/supabaseClient.ts | 41 |
+| src/utils/env.ts | 38 |
 | src/services/skills/actions/types.ts | 21 |
 | src/config.ts | 16 |
 | src/services/llmClient.ts | 12 |
@@ -71,9 +71,12 @@ graph LR
   "src/bot.ts" --> "src/services/discordReactionRewardService.ts"
   "src/bot.ts" --> "src/services/discordTopologySyncService.ts"
   "src/bot.ts" --> "src/services/llmClient.ts"
+  "src/bot.ts" --> "src/services/memoryJobRunner.ts"
   "src/bot.ts" --> "src/services/multiAgentService.ts"
+  "src/bot.ts" --> "src/services/obsidianLoreSyncService.ts"
   "src/bot.ts" --> "src/services/obsidianRagService.ts"
   "src/bot.ts" --> "src/services/privacyForgetService.ts"
+  "src/bot.ts" --> "src/services/retrievalEvalLoopService.ts"
   "src/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/bot.ts" --> "src/services/stockService.ts"
   "src/bot.ts" --> "src/services/supabaseClient.ts"
@@ -177,8 +180,10 @@ graph LR
   "src/routes/bot.ts" --> "src/services/memoryQualityMetricsService.ts"
   "src/routes/bot.ts" --> "src/services/multiAgentService.ts"
   "src/routes/bot.ts" --> "src/services/obsidian/router.ts"
+  "src/routes/bot.ts" --> "src/services/obsidianLoreSyncService.ts"
   "src/routes/bot.ts" --> "src/services/obsidianQualityService.ts"
   "src/routes/bot.ts" --> "src/services/privacyForgetService.ts"
+  "src/routes/bot.ts" --> "src/services/retrievalEvalLoopService.ts"
   "src/routes/bot.ts" --> "src/services/retrievalEvalService.ts"
   "src/routes/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/routes/bot.ts" --> "src/services/skills/actionRunner.ts"
@@ -251,6 +256,9 @@ graph LR
   "src/services/agentRuntimeReadinessService.ts" --> "src/utils/env.ts"
   "src/services/agentSessionStore.ts" --> "src/services/multiAgentService.ts"
   "src/services/agentSessionStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/agentTotPolicyService.ts" --> "src/logger.ts"
+  "src/services/agentTotPolicyService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/agentTotPolicyService.ts" --> "src/utils/env.ts"
   "src/services/agentWorkflowService.ts" --> "src/logger.ts"
   "src/services/agentWorkflowService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentWorkflowService.ts" --> "src/utils/env.ts"
@@ -319,6 +327,7 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/agentPrivacyPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentPrivacyTuningService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentSessionStore.ts"
+  "src/services/multiAgentService.ts" --> "src/services/agentTotPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentWorkflowService.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/multiAgentService.ts" --> "src/services/llmClient.ts"
@@ -362,6 +371,8 @@ graph LR
   "src/services/obsidianHeadlessService.ts" --> "src/services/obsidian/router.ts"
   "src/services/obsidianHeadlessService.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidianHeadlessService.ts" --> "src/utils/obsidianEnv.ts"
+  "src/services/obsidianLoreSyncService.ts" --> "src/logger.ts"
+  "src/services/obsidianLoreSyncService.ts" --> "src/utils/env.ts"
   "src/services/obsidianQualityService.ts":::file
   "src/services/obsidianRagService.ts" --> "src/logger.ts"
   "src/services/obsidianRagService.ts" --> "src/services/llmClient.ts"
@@ -374,6 +385,9 @@ graph LR
   "src/services/privacyForgetService.ts" --> "src/utils/obsidianFileLock.ts"
   "src/services/promptCompiler.ts" --> "src/utils/env.ts"
   "src/services/researchPresetStore.ts" --> "src/contracts/researchPreset.ts"
+  "src/services/retrievalEvalLoopService.ts" --> "src/logger.ts"
+  "src/services/retrievalEvalLoopService.ts" --> "src/services/retrievalEvalService.ts"
+  "src/services/retrievalEvalLoopService.ts" --> "src/utils/env.ts"
   "src/services/retrievalEvalService.ts" --> "src/services/obsidian/router.ts"
   "src/services/retrievalEvalService.ts" --> "src/services/supabaseClient.ts"
   "src/services/retrievalEvalService.ts" --> "src/utils/obsidianEnv.ts"
@@ -505,6 +519,7 @@ graph LR
   "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/actionRunner.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/modules/common.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/types.ts"
+  "src/services/skills/modules/opsExecution.ts" --> "src/utils/env.ts"
   "src/services/skills/modules/opsPlan.ts" --> "src/services/skills/modules/common.ts"
   "src/services/skills/modules/opsPlan.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/webhook.ts" --> "src/services/skills/modules/common.ts"

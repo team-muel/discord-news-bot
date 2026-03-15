@@ -5,7 +5,7 @@ import { persistAgentSession } from './agentSessionStore';
 import { generateText, generateTextWithMeta, isAnyLlmConfigured } from './llmClient';
 import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
-import type { SkillId } from './skills/types';
+import type { SkillExecutionResult, SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
 import { compilePromptGoal } from './promptCompiler';
 import { appendTrace, createInitialLangGraphState, type LangGraphState } from './langgraph/stateContract';
@@ -1040,7 +1040,7 @@ const runLeastToMostExecutionDraft = async (params: {
       }
 
       const subgoal = subgoals[index];
-      const result = await withTimeout(executeSkill('ops-execution', {
+      const result: SkillExecutionResult = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
         goal: [
@@ -1056,7 +1056,7 @@ const runLeastToMostExecutionDraft = async (params: {
         priorOutput: prior,
       }), AGENT_STEP_TIMEOUT_MS, 'STEP_TIMEOUT:researcher');
 
-      const output = String(result.output || '').trim();
+      const output: string = String(result.output || '').trim();
       if (output) {
         drafts.push(`- [${index + 1}] ${output}`);
         prior = output;
