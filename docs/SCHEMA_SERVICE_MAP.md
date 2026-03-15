@@ -11,6 +11,8 @@
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
 | agent_action_logs | src/services/finopsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts |
 | agent_action_policies | - |
+| agent_privacy_gate_samples | src/services/agentPrivacyTuningService.ts |
+| agent_privacy_policies | src/services/agentPrivacyPolicyService.ts |
 | agent_runtime_policies | src/services/agentPolicyService.ts |
 | agent_sessions | src/services/agentSessionStore.ts<br/>src/services/privacyForgetService.ts |
 | agent_skill_catalog | src/services/skills/registry.ts |
@@ -38,7 +40,7 @@
 | news_sentiment | src/services/newsSentimentMonitor.ts |
 | retrieval_eval_cases | src/services/retrievalEvalService.ts |
 | retrieval_eval_results | src/services/retrievalEvalService.ts |
-| retrieval_eval_runs | src/services/retrievalEvalService.ts |
+| retrieval_eval_runs | src/services/agentRuntimeReadinessService.ts<br/>src/services/retrievalEvalService.ts |
 | retrieval_eval_sets | src/services/retrievalEvalService.ts |
 | retrieval_eval_targets | src/services/retrievalEvalService.ts |
 | retrieval_ranker_active_profiles | src/services/retrievalEvalService.ts |
