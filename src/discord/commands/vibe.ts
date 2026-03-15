@@ -19,6 +19,28 @@ type VibeDeps = {
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
 const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
 const fallbackRequestCache = new Map<string, string>();
+const PROCESSED_MESSAGE_TTL_MS = Math.max(30_000, Number(process.env.VIBE_MESSAGE_DEDUP_TTL_MS || 5 * 60_000));
+const processedMessageUntilMs = new Map<string, number>();
+
+const shouldProcessMessage = (messageId: string): boolean => {
+  const now = Date.now();
+  const expiresAt = processedMessageUntilMs.get(messageId) || 0;
+  if (expiresAt > now) {
+    return false;
+  }
+
+  // Opportunistic cleanup to keep the map bounded.
+  if (processedMessageUntilMs.size > 500) {
+    for (const [id, until] of processedMessageUntilMs.entries()) {
+      if (until <= now) {
+        processedMessageUntilMs.delete(id);
+      }
+    }
+  }
+
+  processedMessageUntilMs.set(messageId, now + PROCESSED_MESSAGE_TTL_MS);
+  return true;
+};
 
 const extractDiagnosticCount = (resultText: string, key: string): number => {
   const regex = new RegExp(`${key}=([0-9]+)`, 'i');
@@ -231,6 +253,10 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
   const handleVibeMessage = async (message: Message) => {
     if (!message.guildId || message.author.bot || !message.client.user) return;
+
+    if (!shouldProcessMessage(message.id)) {
+      return;
+    }
 
     const raw = String(message.content || '').trim();
     const channelMode = inferChannelModeFromName(message);
