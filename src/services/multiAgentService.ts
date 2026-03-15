@@ -19,14 +19,18 @@ import {
   recordTotCandidatePair,
   type AgentTotPolicySnapshot,
 } from './agentTotPolicyService';
+import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
+import type {
+  AgentRole,
+  AgentPriority,
+  AgentIntent,
+  AgentDeliberationMode,
+  AgentPolicyGateDecision,
+} from './agentRuntimeTypes';
 
-export type AgentRole = 'planner' | 'researcher' | 'critic';
-export type AgentPriority = 'fast' | 'balanced' | 'precise';
+export type { AgentRole, AgentPriority, AgentIntent, AgentDeliberationMode, AgentPolicyGateDecision };
 export type AgentSessionStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type AgentStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type AgentIntent = 'task' | 'casual_chat' | 'uncertain';
-export type AgentDeliberationMode = 'direct' | 'plan_act' | 'deliberate' | 'guarded';
-export type AgentPolicyGateDecision = 'allow' | 'review' | 'block';
 
 export type AgentStep = {
   id: string;
@@ -131,15 +135,6 @@ export type AgentSessionApiView = Omit<AgentSession, 'shadowGraph'> & {
   shadowGraph?: LangGraphState | null;
 };
 
-type AgentDeadletter = {
-  sessionId: string;
-  guildId: string;
-  requestedBy: string;
-  goal: string;
-  reason: string;
-  failedAt: string;
-};
-
 type BeamEvaluation = {
   probability: number;
   correctness: number;
@@ -170,11 +165,7 @@ const TOT_SELF_EVAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.TOT
 const TOT_SELF_EVAL_TEMPERATURE = Math.max(0, Math.min(1, Number(process.env.TOT_SELF_EVAL_TEMPERATURE || 0.1) || 0.1));
 const TOT_PROVIDER_LOGPROB_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.TOT_PROVIDER_LOGPROB_ENABLED || 'true').trim());
 const sessions = new Map<string, AgentSession>();
-const pendingSessionQueue: string[] = [];
-const runningSessionIds = new Set<string>();
-const sessionAttempts = new Map<string, number>();
-const deadletters: AgentDeadletter[] = [];
-let queueDrainTimer: NodeJS.Timeout | null = null;
+const queueRuntime = new MultiAgentRuntimeQueue<AgentSession>();
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, code: string): Promise<T> => {
   let timer: NodeJS.Timeout | null = null;
@@ -2058,33 +2049,6 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
   }
 };
 
-const enqueueSession = (sessionId: string) => {
-  if (!pendingSessionQueue.includes(sessionId)) {
-    pendingSessionQueue.push(sessionId);
-  }
-};
-
-const removeFromQueue = (sessionId: string) => {
-  const index = pendingSessionQueue.indexOf(sessionId);
-  if (index >= 0) {
-    pendingSessionQueue.splice(index, 1);
-  }
-};
-
-const pushDeadletter = (session: AgentSession, reason: string) => {
-  deadletters.unshift({
-    sessionId: session.id,
-    guildId: session.guildId,
-    requestedBy: session.requestedBy,
-    goal: session.goal,
-    reason,
-    failedAt: nowIso(),
-  });
-  if (deadletters.length > AGENT_DEADLETTER_MAX) {
-    deadletters.length = AGENT_DEADLETTER_MAX;
-  }
-};
-
 const requeueForRetry = (session: AgentSession) => {
   const privacyPolicy = getAgentPrivacyPolicySnapshot(session.guildId);
   session.status = 'queued';
@@ -2101,55 +2065,23 @@ const requeueForRetry = (session: AgentSession) => {
   session.shadowGraph = null;
   touch(session);
   void persistAgentSession(cloneSession(session));
-  enqueueSession(session.id);
+  queueRuntime.enqueueSession(session.id);
 };
 
 const scheduleQueueDrain = () => {
-  if (queueDrainTimer) {
-    return;
-  }
-
-  queueDrainTimer = setTimeout(() => {
-    queueDrainTimer = null;
-    const maxConcurrent = Math.max(1, getAgentPolicySnapshot().maxConcurrentSessions);
-    while (runningSessionIds.size < maxConcurrent && pendingSessionQueue.length > 0) {
-      const sessionId = pendingSessionQueue.shift() as string;
-      const session = sessions.get(sessionId);
-      if (!session) {
-        continue;
-      }
-
-      if (session.cancelRequested || session.status === 'cancelled') {
-        markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
-        continue;
-      }
-
-      runningSessionIds.add(sessionId);
-      const attempts = (sessionAttempts.get(sessionId) || 0) + 1;
-      sessionAttempts.set(sessionId, attempts);
-
-      void executeSession(sessionId)
-        .then((status) => {
-          const latest = sessions.get(sessionId);
-          if (!latest) {
-            return;
-          }
-
-          if (status === 'failed') {
-            if (attempts < AGENT_SESSION_MAX_ATTEMPTS) {
-              requeueForRetry(latest);
-              return;
-            }
-
-            pushDeadletter(latest, latest.error || 'FAILED');
-          }
-        })
-        .finally(() => {
-          runningSessionIds.delete(sessionId);
-          scheduleQueueDrain();
-        });
-    }
-  }, AGENT_QUEUE_POLL_MS);
+  queueRuntime.scheduleDrain({
+    pollMs: AGENT_QUEUE_POLL_MS,
+    maxAttempts: AGENT_SESSION_MAX_ATTEMPTS,
+    maxDeadletters: AGENT_DEADLETTER_MAX,
+    nowIso,
+    getMaxConcurrent: () => Math.max(1, getAgentPolicySnapshot().maxConcurrentSessions),
+    getSession: (sessionId) => sessions.get(sessionId),
+    executeSession,
+    markCancelled: (session) => {
+      markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
+    },
+    requeueForRetry,
+  });
 };
 
 const pruneSessions = () => {
@@ -2188,13 +2120,13 @@ export const startAgentSession = (params: {
   primeWorkflowProfileCache();
   primeAgentTotPolicyCache();
 
-  if (pendingSessionQueue.length >= AGENT_MAX_QUEUE_SIZE) {
+  if (queueRuntime.getQueuedCount() >= AGENT_MAX_QUEUE_SIZE) {
     throw new Error(`대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요. (max=${AGENT_MAX_QUEUE_SIZE})`);
   }
 
   const policy = validateAgentSessionRequest({
     guildId: params.guildId,
-    runningSessions: runningSessionIds.size,
+    runningSessions: queueRuntime.getRunningCount(),
     goal: params.goal,
     requestedSkillId,
     isAdmin: params.isAdmin === true,
@@ -2235,7 +2167,7 @@ export const startAgentSession = (params: {
   sessions.set(session.id, session);
   pruneSessions();
   void persistAgentSession(cloneSession(session));
-  enqueueSession(session.id);
+  queueRuntime.enqueueSession(session.id);
   scheduleQueueDrain();
   return cloneSession(session);
 };
@@ -2252,7 +2184,7 @@ export const cancelAgentSession = (sessionId: string): { ok: boolean; message: s
 
   session.cancelRequested = true;
   if (session.status === 'queued') {
-    removeFromQueue(sessionId);
+    queueRuntime.removeFromQueue(sessionId);
     markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
     return { ok: true, message: '대기열에서 중지했습니다.' };
   }
@@ -2276,12 +2208,7 @@ export const listGuildAgentSessions = (guildId: string, limit = 10): AgentSessio
 };
 
 export const listAgentDeadletters = (params?: { guildId?: string; limit?: number }) => {
-  const limit = Math.max(1, Math.min(200, Math.trunc(params?.limit ?? 30)));
-  const guildId = String(params?.guildId || '').trim();
-  return deadletters
-    .filter((row) => (!guildId || row.guildId === guildId))
-    .slice(0, limit)
-    .map((row) => ({ ...row }));
+  return queueRuntime.listDeadletters(params);
 };
 
 const toElapsedMs = (session: AgentSession): number | null => {
@@ -2402,12 +2329,12 @@ export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
 
   return {
     totalSessions: all.length,
-    runningSessions: runningSessionIds.size,
-    queuedSessions: pendingSessionQueue.length,
+    runningSessions: queueRuntime.getRunningCount(),
+    queuedSessions: queueRuntime.getQueuedCount(),
     completedSessions: all.filter((session) => session.status === 'completed').length,
     failedSessions: all.filter((session) => session.status === 'failed').length,
     cancelledSessions: all.filter((session) => session.status === 'cancelled').length,
-    deadletteredSessions: deadletters.length,
+    deadletteredSessions: queueRuntime.getDeadletterCount(),
     latestSessionAt: latest,
   };
 };
@@ -2417,14 +2344,6 @@ export const listAgentSkills = () => listSkills();
 export const getAgentPolicy = () => getAgentPolicySnapshot();
 
 export const __resetAgentRuntimeForTests = (): void => {
-  if (queueDrainTimer) {
-    clearTimeout(queueDrainTimer);
-    queueDrainTimer = null;
-  }
-
+  queueRuntime.reset();
   sessions.clear();
-  pendingSessionQueue.length = 0;
-  runningSessionIds.clear();
-  sessionAttempts.clear();
-  deadletters.length = 0;
 };

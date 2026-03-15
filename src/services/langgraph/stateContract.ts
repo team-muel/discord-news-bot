@@ -1,4 +1,4 @@
-import type { AgentIntent, AgentPriority } from '../multiAgentService';
+import type { AgentIntent, AgentPriority } from '../agentRuntimeTypes';
 import type { PromptCompileResult } from '../promptCompiler';
 import type { AgentOutcome } from '../agentOutcomeContract';
 
