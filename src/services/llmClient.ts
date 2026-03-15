@@ -19,7 +19,7 @@ const getOpenAiKey = () => String(process.env.OPENAI_API_KEY || '').trim();
 const getGeminiKey = () => String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 const getAnthropicKey = () => String(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
 const getOpenClawApiKey = () => String(process.env.OPENCLAW_API_KEY || process.env.OPENCLAW_KEY || '').trim();
-const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MODELS || '')
+const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MODELS || 'muel-fast,muel-precise')
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
