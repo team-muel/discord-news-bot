@@ -1,8 +1,19 @@
 import type { SkillDefinition, SkillId } from './types';
 import { parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import logger from '../../logger';
 
 const SKILL_CATALOG_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_TTL_MS, 60_000));
+const SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const SUPPORTED_EXECUTOR_KEYS = new Set([
+  'casual_chat',
+  'ops-plan',
+  'ops-execution',
+  'ops-critique',
+  'guild-onboarding-blueprint',
+  'incident-review',
+  'webhook',
+]);
 
 const BUILTIN_SKILLS: SkillDefinition[] = [
   {
@@ -114,6 +125,7 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
 let dynamicSkills = new Map<SkillId, SkillDefinition>();
 let catalogLoadedAt = 0;
 let catalogLoading: Promise<void> | null = null;
+let lastSkillCatalogErrorLogAt = 0;
 
 const cloneSkill = (skill: SkillDefinition): SkillDefinition => ({ ...skill });
 
@@ -168,6 +180,10 @@ export const refreshSkillCatalogCache = async (): Promise<void> => {
     const outputGuide = String(row.output_guide || '').trim() || '출력값';
     const systemPrompt = String(row.system_prompt || '').trim() || '도구형 스킬 실행';
     const executorKey = String(row.executor_key || '').trim() || skillId;
+    if (!SUPPORTED_EXECUTOR_KEYS.has(executorKey)) {
+      logger.warn('[SKILL-REGISTRY] skip skill_id=%s unsupported executor_key=%s', skillId, executorKey || '(empty)');
+      continue;
+    }
 
     next.set(skillId, {
       id: skillId,
@@ -194,7 +210,13 @@ export const primeSkillCatalogCache = (): void => {
   }
 
   catalogLoading = refreshSkillCatalogCache()
-    .catch(() => undefined)
+    .catch((error) => {
+      const nowMs = Date.now();
+      if (nowMs - lastSkillCatalogErrorLogAt >= SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS) {
+        lastSkillCatalogErrorLogAt = nowMs;
+        logger.warn('[SKILL-REGISTRY] catalog refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+      }
+    })
     .finally(() => {
       catalogLoading = null;
     });

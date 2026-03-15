@@ -7,12 +7,18 @@ import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
+import { compilePromptGoal } from './promptCompiler';
+import { appendTrace, createInitialLangGraphState, type LangGraphState } from './langgraph/stateContract';
+import { getAgentPrivacyPolicySnapshot, primeAgentPrivacyPolicyCache } from './agentPrivacyPolicyService';
+import { recordPrivacyGateSample } from './agentPrivacyTuningService';
 
 export type AgentRole = 'planner' | 'researcher' | 'critic';
 export type AgentPriority = 'fast' | 'balanced' | 'precise';
 export type AgentSessionStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type AgentStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type AgentIntent = 'task' | 'casual_chat' | 'uncertain';
+export type AgentDeliberationMode = 'direct' | 'plan_act' | 'deliberate' | 'guarded';
+export type AgentPolicyGateDecision = 'allow' | 'review' | 'block';
 
 export type AgentStep = {
   id: string;
@@ -41,8 +47,15 @@ export type AgentSession = {
   result: string | null;
   error: string | null;
   cancelRequested: boolean;
+  deliberationMode?: AgentDeliberationMode;
+  riskScore?: number;
+  policyGate?: {
+    decision: AgentPolicyGateDecision;
+    reasons: string[];
+  };
   memoryHints: string[];
   steps: AgentStep[];
+  shadowGraph: LangGraphState | null;
 };
 
 export type AgentRuntimeSnapshot = {
@@ -54,6 +67,43 @@ export type AgentRuntimeSnapshot = {
   cancelledSessions: number;
   deadletteredSessions: number;
   latestSessionAt: string | null;
+};
+
+export type AgentSessionShadowSummary = {
+  traceLength: number;
+  lastNode: string | null;
+  intent: AgentIntent | null;
+  hasError: boolean;
+  elapsedMs: number | null;
+  uniqueNodeCount: number;
+  traceTail: Array<{
+    node: string;
+    at: string;
+    note?: string;
+  }>;
+};
+
+export type AgentSessionProgressSummary = {
+  totalSteps: number;
+  doneSteps: number;
+  completedSteps: number;
+  failedSteps: number;
+  cancelledSteps: number;
+  runningSteps: number;
+  pendingSteps: number;
+  progressPercent: number;
+};
+
+export type AgentSessionApiView = Omit<AgentSession, 'shadowGraph'> & {
+  shadowGraphSummary: AgentSessionShadowSummary | null;
+  progressSummary: AgentSessionProgressSummary;
+  privacySummary: {
+    deliberationMode: AgentDeliberationMode;
+    riskScore: number;
+    decision: AgentPolicyGateDecision;
+    reasons: string[];
+  };
+  shadowGraph?: LangGraphState | null;
 };
 
 type AgentDeadletter = {
@@ -158,12 +208,80 @@ const toConfidenceLabel = (priority: AgentPriority, citationCount: number): stri
   return 'low';
 };
 
+const SECTION_LABEL_ONLY_PATTERN = /^(?:#+\s*)?(?:deliverable|verification|confidence)\s*:?$/i;
+const DEBUG_LINE_PATTERN = /^(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
+
+const sanitizeDeliverableText = (raw: string): string => {
+  return String(raw || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .split(/\r?\n/)
+    .map((line) => String(line || '').trim())
+    .filter(Boolean)
+    .filter((line) => !SECTION_LABEL_ONLY_PATTERN.test(line))
+    .filter((line) => !DEBUG_LINE_PATTERN.test(line))
+    .map((line) => line.replace(/^#+\s*(deliverable|verification|confidence)\s*:?\s*/i, '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+};
+
 const toConclusion = (raw: string): string => {
-  const compact = String(raw || '').replace(/\s+/g, ' ').trim();
+  const compact = sanitizeDeliverableText(raw);
   if (!compact) {
     return '현재 시점에서 확정할 수 있는 결론을 생성하지 못했습니다.';
   }
   return compact.slice(0, 280);
+};
+
+const evaluatePolicyGate = (goal: string, guildId: string): {
+  mode: AgentDeliberationMode;
+  score: number;
+  decision: AgentPolicyGateDecision;
+  reasons: string[];
+} => {
+  const text = String(goal || '').trim();
+  const policy = getAgentPrivacyPolicySnapshot(guildId);
+  let score = policy.modeDefault === 'guarded' ? 55 : 10;
+  const reasons: string[] = policy.modeDefault === 'guarded' ? ['privacy_guarded_default'] : [];
+
+  for (const rule of policy.reviewRules) {
+    if (rule.re.test(text)) {
+      score += rule.score;
+      reasons.push(rule.reason);
+    }
+  }
+
+  for (const rule of policy.blockRules) {
+    if (rule.re.test(text)) {
+      score += rule.score;
+      reasons.push(rule.reason);
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  if (score >= policy.blockScore) {
+    return { mode: 'guarded', score, decision: 'block', reasons: reasons.length > 0 ? reasons : ['privacy_block_threshold'] };
+  }
+  if (score >= policy.reviewScore) {
+    return { mode: 'guarded', score, decision: 'review', reasons: reasons.length > 0 ? reasons : ['privacy_review_threshold'] };
+  }
+  if (score >= 45) {
+    return { mode: policy.modeDefault === 'guarded' ? 'guarded' : 'deliberate', score, decision: 'allow', reasons: reasons.length > 0 ? reasons : ['risk_moderate'] };
+  }
+  if (score >= 25) {
+    return { mode: policy.modeDefault === 'guarded' ? 'guarded' : 'plan_act', score, decision: 'allow', reasons: reasons.length > 0 ? reasons : ['risk_low'] };
+  }
+  return { mode: policy.modeDefault === 'guarded' ? 'guarded' : 'direct', score, decision: 'allow', reasons: reasons.length > 0 ? reasons : ['risk_minimal'] };
+};
+
+const buildPolicyBlockMessage = (reasons: string[]): string => {
+  const joined = reasons.slice(0, 4).join(', ') || 'privacy_policy';
+  return [
+    '개인정보 보호 정책상 이 요청은 자동 실행할 수 없습니다.',
+    '민감정보를 제거한 최소 목적 질문으로 다시 요청해주세요.',
+    `정책 사유: ${joined}`,
+  ].join(' ');
 };
 
 const parseIntentFromLlm = (raw: string): AgentIntent | null => {
@@ -391,11 +509,50 @@ const buildInitialSteps = (
 const cloneSession = (session: AgentSession): AgentSession => ({
   ...session,
   steps: session.steps.map((step) => ({ ...step })),
+  shadowGraph: session.shadowGraph
+    ? {
+      ...session.shadowGraph,
+      memoryHints: [...session.shadowGraph.memoryHints],
+      plans: session.shadowGraph.plans.map((plan) => ({ ...plan, args: { ...plan.args } })),
+      outcomes: session.shadowGraph.outcomes.map((outcome) => ({ ...outcome })),
+      trace: session.shadowGraph.trace.map((entry) => ({ ...entry })),
+    }
+    : null,
 });
 
 const getSession = (sessionId: string): AgentSession => sessions.get(sessionId) as AgentSession;
 
+const ensureShadowGraph = (session: AgentSession): LangGraphState => {
+  if (!session.shadowGraph) {
+    session.shadowGraph = createInitialLangGraphState({
+      sessionId: session.id,
+      guildId: session.guildId,
+      requestedBy: session.requestedBy,
+      priority: session.priority,
+      goal: session.goal,
+    });
+  }
+  return session.shadowGraph;
+};
+
+const traceShadowNode = (
+  session: AgentSession,
+  node: Parameters<typeof appendTrace>[1],
+  note?: string,
+) => {
+  session.shadowGraph = appendTrace(ensureShadowGraph(session), node, note);
+};
+
 const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, patch?: Partial<AgentSession>) => {
+  const nextResult = patch?.result !== undefined ? patch.result : session.result;
+  const nextError = patch?.error !== undefined ? patch.error : session.error;
+
+  session.shadowGraph = appendTrace({
+    ...ensureShadowGraph(session),
+    finalText: nextResult ?? null,
+    errorCode: nextError ? String(nextError) : null,
+  }, 'persist_and_emit', status);
+
   session.status = status;
   session.endedAt = nowIso();
   if (patch?.result !== undefined) {
@@ -458,12 +615,191 @@ const runStep = async (
   }
 };
 
+type SessionBranchResult = AgentSessionStatus | null;
+
+const handleNonTaskIntentBranch = async (params: {
+  session: AgentSession;
+  sessionStartedAtMs: number;
+  intentHints: string[];
+}): Promise<SessionBranchResult> => {
+  const { session, sessionStartedAtMs, intentHints } = params;
+  if (session.routedIntent === 'casual_chat') {
+    ensureSessionBudget(sessionStartedAtMs);
+    const timestamp = nowIso();
+    cancelAllPendingSteps(session, timestamp);
+    traceShadowNode(session, 'compose_response', 'casual_chat');
+    const casualReply = await generateCasualChatResult(session.goal);
+    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+      result: casualReply,
+      error: null,
+    });
+    return session.cancelRequested ? 'cancelled' : 'completed';
+  }
+
+  if (session.routedIntent === 'uncertain') {
+    ensureSessionBudget(sessionStartedAtMs);
+    const timestamp = nowIso();
+    cancelAllPendingSteps(session, timestamp);
+    traceShadowNode(session, 'compose_response', 'intent_clarification');
+    const clarification = await generateIntentClarificationResult(session.goal, intentHints);
+    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+      result: clarification,
+      error: null,
+    });
+    return session.cancelRequested ? 'cancelled' : 'completed';
+  }
+
+  return null;
+};
+
+const handleRequestedSkillBranch = async (params: {
+  session: AgentSession;
+  sessionStartedAtMs: number;
+  taskGoal: string;
+  forceFullReview: boolean;
+}): Promise<SessionBranchResult> => {
+  const { session, sessionStartedAtMs, taskGoal, forceFullReview } = params;
+  if (!session.requestedSkillId) {
+    return null;
+  }
+  if (forceFullReview) {
+    return null;
+  }
+
+  ensureSessionBudget(sessionStartedAtMs);
+  const singleSkillStep = session.steps[0];
+  traceShadowNode(session, 'plan_actions', `requested_skill=${session.requestedSkillId}`);
+  const singleResult = await runStep(
+    session,
+    singleSkillStep,
+    session.requestedSkillId,
+    () => taskGoal,
+    undefined,
+  );
+  traceShadowNode(session, 'execute_actions', session.requestedSkillId);
+  traceShadowNode(session, 'compose_response', 'single_skill');
+
+  markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+    result: formatCitationFirstResult(singleResult, session),
+    error: null,
+  });
+  return session.cancelRequested ? 'cancelled' : 'completed';
+};
+
+const handleFastPriorityBranch = async (params: {
+  session: AgentSession;
+  sessionStartedAtMs: number;
+  taskGoal: string;
+  researcher: AgentStep;
+  forceFullReview: boolean;
+}): Promise<SessionBranchResult> => {
+  const {
+    session,
+    sessionStartedAtMs,
+    taskGoal,
+    researcher,
+    forceFullReview,
+  } = params;
+  if (session.priority !== 'fast') {
+    return null;
+  }
+  if (forceFullReview) {
+    return null;
+  }
+
+  ensureSessionBudget(sessionStartedAtMs);
+  traceShadowNode(session, 'execute_actions', 'fast_path');
+  const fastDraft = await runStep(session, researcher, 'ops-execution', () => [
+    '우선순위: 빠름',
+    '요구사항: 중간 과정 없이 최종 결과물만 제시',
+    `목표: ${taskGoal}`,
+    '출력: 바로 사용할 수 있는 결과물 텍스트',
+  ].join('\n'), undefined);
+  traceShadowNode(session, 'compose_response', 'fast_path');
+
+  markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+    result: formatCitationFirstResult(fastDraft, session),
+    error: null,
+  });
+  return session.cancelRequested ? 'cancelled' : 'completed';
+};
+
+const handleBalancedOrPreciseBranch = async (params: {
+  session: AgentSession;
+  sessionStartedAtMs: number;
+  taskGoal: string;
+  planner: AgentStep;
+  researcher: AgentStep;
+  critic: AgentStep;
+}): Promise<AgentSessionStatus> => {
+  const {
+    session,
+    sessionStartedAtMs,
+    taskGoal,
+    planner,
+    researcher,
+    critic,
+  } = params;
+
+  ensureSessionBudget(sessionStartedAtMs);
+  traceShadowNode(session, 'plan_actions', 'planner');
+  const plan = await runStep(session, planner, 'ops-plan', () => [
+    session.priority === 'precise' ? '우선순위: 정밀 (검증과 리스크 완화를 강화)' : '우선순위: 균형',
+    '역할: 계획 수립 에이전트',
+    `목표: ${taskGoal}`,
+    '출력: 1) 실행 단계 2) 필요한 근거 3) 실패시 대안 을 간결한 한국어 문단으로 작성',
+    '규칙: 추측과 단정 금지, 실제 실행 가능한 단계 중심',
+  ].join('\n'), undefined);
+  session.shadowGraph = {
+    ...ensureShadowGraph(session),
+    plans: [{ actionName: 'ops-plan', args: { goal: taskGoal }, reason: String(plan || '').slice(0, 300) }],
+  };
+
+  ensureSessionBudget(sessionStartedAtMs);
+  traceShadowNode(session, 'execute_actions', 'researcher_execution');
+  const executionDraft = await runStep(session, researcher, 'ops-execution', () => [
+    session.priority === 'precise' ? '우선순위: 정밀 (근거/가드레일을 더 상세히 포함)' : '우선순위: 균형',
+    '역할: 실행/리서치 에이전트',
+    `목표: ${taskGoal}`,
+    `계획안: ${plan}`,
+    '출력: 디스코드 운영자가 바로 수행할 수 있는 실행안/체크리스트/예상 리스크를 한국어로 정리',
+  ].join('\n'), plan);
+
+  ensureSessionBudget(sessionStartedAtMs);
+  traceShadowNode(session, 'critic_review', 'ops-critique');
+  const critique = await runStep(session, critic, 'ops-critique', () => [
+    session.priority === 'precise' ? '우선순위: 정밀 (보수적 관점으로 리스크를 촘촘히 점검)' : '우선순위: 균형',
+    '역할: 검증 에이전트',
+    `목표: ${taskGoal}`,
+    `실행안: ${executionDraft}`,
+    '출력: 사실성 위험, 과잉자동화 위험, 개인정보/운영 리스크를 점검하고 보완안을 제시',
+  ].join('\n'), executionDraft);
+
+  ensureSessionBudget(sessionStartedAtMs);
+  traceShadowNode(session, 'compose_response', 'final_output');
+  const finalResult = await runStep(session, researcher, 'ops-execution', () => [
+    '요구사항: 중간 과정/역할별 산출물 노출 금지',
+    `목표: ${taskGoal}`,
+    `계획 참고: ${plan}`,
+    `검증 참고: ${critique}`,
+    `초안 참고: ${executionDraft}`,
+    '출력: 사용자에게 전달할 최종 결과물만 간결하게 작성',
+  ].join('\n'), critique);
+
+  markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+    result: formatCitationFirstResult(finalResult, session),
+    error: null,
+  });
+  return session.cancelRequested ? 'cancelled' : 'completed';
+};
+
 const executeSession = async (sessionId: string): Promise<AgentSessionStatus> => {
   const session = getSession(sessionId);
   if (!session) {
     return 'failed';
   }
 
+  traceShadowNode(session, 'ingest', `priority=${session.priority}`);
   session.status = 'running';
   session.startedAt = nowIso();
   touch(session);
@@ -471,132 +807,128 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
   const sessionStartedAtMs = Date.now();
 
   try {
+    const compiledPrompt = compilePromptGoal(session.goal);
+    const taskGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || session.goal;
+    session.shadowGraph = {
+      ...ensureShadowGraph(session),
+      compiledPrompt,
+      executionGoal: taskGoal,
+    };
+    traceShadowNode(
+      session,
+      'compile_prompt',
+      compiledPrompt.directives.length > 0 || compiledPrompt.intentTags.length > 0 ? 'structured_directive' : 'plain_goal',
+    );
+
     ensureSessionBudget(sessionStartedAtMs);
     const intentHints = await withTimeout(buildAgentMemoryHints({
       guildId: session.guildId,
-      goal: session.goal,
+      goal: taskGoal,
       maxItems: 4,
     }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_HINT_TIMEOUT').catch(() => []);
     session.routedIntent = await classifyIntent({
       guildId: session.guildId,
-      goal: session.goal,
+      goal: compiledPrompt.normalizedGoal || taskGoal,
       requestedSkillId: session.requestedSkillId,
       intentHints,
     });
-    touch(session);
+    session.shadowGraph = {
+      ...ensureShadowGraph(session),
+      intent: session.routedIntent,
+    };
+    traceShadowNode(session, 'route_intent', session.routedIntent);
 
-    if (session.routedIntent === 'casual_chat') {
-      ensureSessionBudget(sessionStartedAtMs);
-      const timestamp = nowIso();
-      cancelAllPendingSteps(session, timestamp);
-      const casualReply = await generateCasualChatResult(session.goal);
-      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-        result: casualReply,
-        error: null,
+    if (session.routedIntent === 'task') {
+      const gate = evaluatePolicyGate(taskGoal, session.guildId);
+      session.deliberationMode = gate.mode;
+      session.riskScore = gate.score;
+      session.policyGate = {
+        decision: gate.decision,
+        reasons: [...gate.reasons],
+      };
+      traceShadowNode(session, 'policy_gate', `${gate.decision}:${gate.score}`);
+      void recordPrivacyGateSample({
+        guildId: session.guildId,
+        sessionId: session.id,
+        mode: gate.mode,
+        decision: gate.decision,
+        riskScore: gate.score,
+        reasons: gate.reasons,
+        goal: taskGoal,
       });
-      return session.cancelRequested ? 'cancelled' : 'completed';
+
+      if (gate.decision === 'block') {
+        const timestamp = nowIso();
+        cancelAllPendingSteps(session, timestamp);
+        markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+          result: buildPolicyBlockMessage(gate.reasons),
+          error: null,
+        });
+        return session.cancelRequested ? 'cancelled' : 'completed';
+      }
+    } else {
+      session.deliberationMode = 'direct';
+      session.riskScore = 0;
+      session.policyGate = { decision: 'allow', reasons: ['non_task_intent'] };
     }
 
-    if (session.routedIntent === 'uncertain') {
-      ensureSessionBudget(sessionStartedAtMs);
-      const timestamp = nowIso();
-      cancelAllPendingSteps(session, timestamp);
-      const clarification = await generateIntentClarificationResult(session.goal, intentHints);
-      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-        result: clarification,
-        error: null,
-      });
-      return session.cancelRequested ? 'cancelled' : 'completed';
+    touch(session);
+
+    const nonTaskResult = await handleNonTaskIntentBranch({
+      session,
+      sessionStartedAtMs,
+      intentHints,
+    });
+    if (nonTaskResult) {
+      return nonTaskResult;
     }
 
     ensureSessionBudget(sessionStartedAtMs);
     session.memoryHints = await withTimeout(buildAgentMemoryHints({
       guildId: session.guildId,
-      goal: session.goal,
+      goal: taskGoal,
       maxItems: session.priority === 'fast' ? 4 : session.priority === 'precise' ? 16 : 10,
     }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []);
+    session.shadowGraph = {
+      ...ensureShadowGraph(session),
+      memoryHints: [...session.memoryHints],
+    };
+    traceShadowNode(session, 'hydrate_memory', `count=${session.memoryHints.length}`);
     touch(session);
 
-    if (session.requestedSkillId) {
-      ensureSessionBudget(sessionStartedAtMs);
-      const singleSkillStep = session.steps[0];
-      const singleResult = await runStep(
-        session,
-        singleSkillStep,
-        session.requestedSkillId,
-        () => session.goal,
-        undefined,
-      );
-
-      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-        result: formatCitationFirstResult(singleResult, session),
-        error: null,
-      });
-      return session.cancelRequested ? 'cancelled' : 'completed';
+    const requestedSkillResult = await handleRequestedSkillBranch({
+      session,
+      sessionStartedAtMs,
+      taskGoal,
+      forceFullReview: session.policyGate?.decision === 'review',
+    });
+    if (requestedSkillResult) {
+      return requestedSkillResult;
     }
 
     const planner = session.steps[0];
     const researcher = session.steps[1];
     const critic = session.steps[2];
 
-    if (session.priority === 'fast') {
-      ensureSessionBudget(sessionStartedAtMs);
-      const fastDraft = await runStep(session, researcher, 'ops-execution', () => [
-        '우선순위: 빠름',
-        '요구사항: 중간 과정 없이 최종 결과물만 제시',
-        `목표: ${session.goal}`,
-        '출력: 바로 사용할 수 있는 결과물 텍스트',
-      ].join('\n'), undefined);
-
-      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-        result: formatCitationFirstResult(fastDraft, session),
-        error: null,
-      });
-      return session.cancelRequested ? 'cancelled' : 'completed';
+    const fastResult = await handleFastPriorityBranch({
+      session,
+      sessionStartedAtMs,
+      taskGoal,
+      researcher,
+      forceFullReview: session.policyGate?.decision === 'review',
+    });
+    if (fastResult) {
+      return fastResult;
     }
 
-    ensureSessionBudget(sessionStartedAtMs);
-    const plan = await runStep(session, planner, 'ops-plan', () => [
-      session.priority === 'precise' ? '우선순위: 정밀 (검증과 리스크 완화를 강화)' : '우선순위: 균형',
-      '역할: 계획 수립 에이전트',
-      `목표: ${session.goal}`,
-      '출력: 1) 실행 단계 2) 필요한 근거 3) 실패시 대안 을 간결한 한국어 문단으로 작성',
-      '규칙: 추측과 단정 금지, 실제 실행 가능한 단계 중심',
-    ].join('\n'), undefined);
-
-    ensureSessionBudget(sessionStartedAtMs);
-    const executionDraft = await runStep(session, researcher, 'ops-execution', () => [
-      session.priority === 'precise' ? '우선순위: 정밀 (근거/가드레일을 더 상세히 포함)' : '우선순위: 균형',
-      '역할: 실행/리서치 에이전트',
-      `목표: ${session.goal}`,
-      `계획안: ${plan}`,
-      '출력: 디스코드 운영자가 바로 수행할 수 있는 실행안/체크리스트/예상 리스크를 한국어로 정리',
-    ].join('\n'), plan);
-
-    ensureSessionBudget(sessionStartedAtMs);
-    const critique = await runStep(session, critic, 'ops-critique', () => [
-      session.priority === 'precise' ? '우선순위: 정밀 (보수적 관점으로 리스크를 촘촘히 점검)' : '우선순위: 균형',
-      '역할: 검증 에이전트',
-      `목표: ${session.goal}`,
-      `실행안: ${executionDraft}`,
-      '출력: 사실성 위험, 과잉자동화 위험, 개인정보/운영 리스크를 점검하고 보완안을 제시',
-    ].join('\n'), executionDraft);
-
-    ensureSessionBudget(sessionStartedAtMs);
-    const finalResult = await runStep(session, researcher, 'ops-execution', () => [
-      '요구사항: 중간 과정/역할별 산출물 노출 금지',
-      `목표: ${session.goal}`,
-      `계획 참고: ${plan}`,
-      `검증 참고: ${critique}`,
-      `초안 참고: ${executionDraft}`,
-      '출력: 사용자에게 전달할 최종 결과물만 간결하게 작성',
-    ].join('\n'), critique);
-
-    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-      result: formatCitationFirstResult(finalResult, session),
-      error: null,
+    return await handleBalancedOrPreciseBranch({
+      session,
+      sessionStartedAtMs,
+      taskGoal,
+      planner,
+      researcher,
+      critic,
     });
-    return session.cancelRequested ? 'cancelled' : 'completed';
   } catch (error) {
     if (session.cancelRequested || getErrorMessage(error) === 'SESSION_CANCELLED') {
       markSessionTerminal(session, 'cancelled', { error: '사용자 요청으로 중지되었습니다.' });
@@ -647,12 +979,19 @@ const pushDeadletter = (session: AgentSession, reason: string) => {
 };
 
 const requeueForRetry = (session: AgentSession) => {
+  const privacyPolicy = getAgentPrivacyPolicySnapshot(session.guildId);
   session.status = 'queued';
   session.startedAt = null;
   session.endedAt = null;
   session.result = null;
   session.cancelRequested = false;
+  session.deliberationMode = privacyPolicy.modeDefault;
+  session.riskScore = privacyPolicy.modeDefault === 'guarded' ? 55 : 0;
+  session.policyGate = privacyPolicy.modeDefault === 'guarded'
+    ? { decision: 'review', reasons: ['privacy_guarded_default'] }
+    : { decision: 'allow', reasons: ['legacy_default'] };
   session.steps = buildInitialSteps(session.guildId, session.requestedSkillId, session.priority, nowIso());
+  session.shadowGraph = null;
   touch(session);
   void persistAgentSession(cloneSession(session));
   enqueueSession(session.id);
@@ -735,8 +1074,10 @@ export const startAgentSession = (params: {
   const requestedSkillId = params.skillId && isSkillId(params.skillId)
     ? params.skillId
     : null;
+  const privacyPolicy = getAgentPrivacyPolicySnapshot(params.guildId);
   const priority = toPriority(params.priority);
   primeAgentPolicyCache();
+  primeAgentPrivacyPolicyCache();
   primeWorkflowProfileCache();
 
   if (pendingSessionQueue.length >= AGENT_MAX_QUEUE_SIZE) {
@@ -773,8 +1114,14 @@ export const startAgentSession = (params: {
     result: null,
     error: null,
     cancelRequested: false,
+    deliberationMode: privacyPolicy.modeDefault,
+    riskScore: privacyPolicy.modeDefault === 'guarded' ? 55 : 0,
+    policyGate: privacyPolicy.modeDefault === 'guarded'
+      ? { decision: 'review', reasons: ['privacy_guarded_default'] }
+      : { decision: 'allow', reasons: ['legacy_default'] },
     memoryHints: [],
     steps: buildInitialSteps(params.guildId, requestedSkillId, priority, timestamp),
+    shadowGraph: null,
   };
 
   sessions.set(session.id, session);
@@ -829,6 +1176,116 @@ export const listAgentDeadletters = (params?: { guildId?: string; limit?: number
     .map((row) => ({ ...row }));
 };
 
+const toElapsedMs = (session: AgentSession): number | null => {
+  if (!session.startedAt) {
+    return null;
+  }
+
+  const startedMs = Date.parse(session.startedAt);
+  if (!Number.isFinite(startedMs)) {
+    return null;
+  }
+
+  const endBase = session.endedAt || session.updatedAt || nowIso();
+  const endedMs = Date.parse(endBase);
+  if (!Number.isFinite(endedMs)) {
+    return null;
+  }
+
+  return Math.max(0, endedMs - startedMs);
+};
+
+const toTraceTailLimit = (raw?: number): number => {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return 5;
+  }
+  return Math.max(0, Math.min(20, Math.trunc(value)));
+};
+
+const buildShadowSummary = (
+  shadowGraph: LangGraphState | null,
+  session: AgentSession,
+  traceTailLimit: number,
+): AgentSessionShadowSummary | null => {
+  if (!shadowGraph) {
+    return null;
+  }
+
+  const uniqueNodeCount = new Set(shadowGraph.trace.map((entry) => entry.node)).size;
+  const traceTail = traceTailLimit > 0
+    ? shadowGraph.trace
+      .slice(-traceTailLimit)
+      .map((entry) => ({ node: entry.node, at: entry.at, note: entry.note }))
+    : [];
+
+  const lastNode = shadowGraph.trace.length > 0
+    ? shadowGraph.trace[shadowGraph.trace.length - 1].node
+    : null;
+
+  return {
+    traceLength: shadowGraph.trace.length,
+    lastNode,
+    intent: shadowGraph.intent,
+    hasError: Boolean(shadowGraph.errorCode),
+    elapsedMs: toElapsedMs(session),
+    uniqueNodeCount,
+    traceTail,
+  };
+};
+
+const buildProgressSummary = (session: AgentSession): AgentSessionProgressSummary => {
+  const totalSteps = session.steps.length;
+  const completedSteps = session.steps.filter((step) => step.status === 'completed').length;
+  const failedSteps = session.steps.filter((step) => step.status === 'failed').length;
+  const cancelledSteps = session.steps.filter((step) => step.status === 'cancelled').length;
+  const runningSteps = session.steps.filter((step) => step.status === 'running').length;
+  const pendingSteps = session.steps.filter((step) => step.status === 'pending').length;
+  const doneSteps = completedSteps + failedSteps + cancelledSteps;
+  const progressPercent = totalSteps > 0
+    ? Math.round((doneSteps / totalSteps) * 100)
+    : 100;
+
+  return {
+    totalSteps,
+    doneSteps,
+    completedSteps,
+    failedSteps,
+    cancelledSteps,
+    runningSteps,
+    pendingSteps,
+    progressPercent,
+  };
+};
+
+const buildPrivacySummary = (session: AgentSession) => {
+  return {
+    deliberationMode: session.deliberationMode || 'direct',
+    riskScore: Number.isFinite(session.riskScore) ? Number(session.riskScore) : 0,
+    decision: session.policyGate?.decision || 'allow',
+    reasons: [...(session.policyGate?.reasons || [])],
+  };
+};
+
+export const serializeAgentSessionForApi = (
+  session: AgentSession,
+  options?: { includeShadowGraph?: boolean; traceTailLimit?: number },
+): AgentSessionApiView => {
+  const includeShadowGraph = options?.includeShadowGraph === true;
+  const traceTailLimit = toTraceTailLimit(options?.traceTailLimit);
+  const cloned = cloneSession(session);
+  const shadowGraph = cloned.shadowGraph;
+
+  return {
+    ...cloned,
+    shadowGraphSummary: buildShadowSummary(shadowGraph, cloned, traceTailLimit),
+    progressSummary: buildProgressSummary(cloned),
+    privacySummary: buildPrivacySummary(cloned),
+    ...(includeShadowGraph ? { shadowGraph } : {}),
+    ...(includeShadowGraph ? {} : { shadowGraph: undefined }),
+  };
+};
+
 export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
   const all = [...sessions.values()];
   const latest = all
@@ -850,3 +1307,16 @@ export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
 export const listAgentSkills = () => listSkills();
 
 export const getAgentPolicy = () => getAgentPolicySnapshot();
+
+export const __resetAgentRuntimeForTests = (): void => {
+  if (queueDrainTimer) {
+    clearTimeout(queueDrainTimer);
+    queueDrainTimer = null;
+  }
+
+  sessions.clear();
+  pendingSessionQueue.length = 0;
+  runningSessionIds.clear();
+  sessionAttempts.clear();
+  deadletters.length = 0;
+};

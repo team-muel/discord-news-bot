@@ -2,7 +2,7 @@ import { getActionRunnerDiagnosticsSnapshot } from './skills/actionRunner';
 import { getWorkerProposalMetricsSnapshot } from './workerGeneration/workerProposalMetrics';
 import { buildGoNoGoReport } from './goNoGoService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../utils/env';
 
 type ReadinessStatus = 'pass' | 'fail' | 'warn';
 
@@ -18,16 +18,23 @@ type ReadinessCheck = {
 
 const AGENT_READINESS_WINDOW_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_WINDOW_DAYS, 30));
 const AGENT_READINESS_FAIL_OPEN = parseBooleanEnv(process.env.AGENT_READINESS_FAIL_OPEN, false);
+const AGENT_READINESS_ALLOW_WARN = parseBooleanEnv(process.env.AGENT_READINESS_ALLOW_WARN, false);
+const AGENT_READINESS_IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const AGENT_READINESS_EFFECTIVE_FAIL_OPEN = !AGENT_READINESS_IS_PRODUCTION && AGENT_READINESS_FAIL_OPEN;
 const AGENT_READINESS_REQUIRE_RETRIEVAL_EVAL = parseBooleanEnv(process.env.AGENT_READINESS_REQUIRE_RETRIEVAL_EVAL, true);
 const AGENT_READINESS_RETRIEVAL_MAX_AGE_HOURS = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_RETRIEVAL_MAX_AGE_HOURS, 24 * 7));
-const AGENT_READINESS_MIN_RETRIEVAL_NDCG = Math.max(0, Math.min(1, Number(process.env.AGENT_READINESS_MIN_RETRIEVAL_NDCG || 0.45)));
-const AGENT_READINESS_MAX_ACTION_FAILURE_RATE = Math.max(0, Math.min(1, Number(process.env.AGENT_READINESS_MAX_ACTION_FAILURE_RATE || 0.35)));
+const AGENT_READINESS_MIN_RETRIEVAL_NDCG = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_RETRIEVAL_NDCG, 0.45, 0, 1);
+const AGENT_READINESS_MAX_ACTION_FAILURE_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MAX_ACTION_FAILURE_RATE, 0.35, 0, 1);
 const AGENT_READINESS_MAX_ACTION_MISSING_TOTAL = Math.max(0, parseIntegerEnv(process.env.AGENT_READINESS_MAX_ACTION_MISSING_TOTAL, 5));
-const AGENT_READINESS_MAX_ACTION_POLICY_BLOCK_RATE = Math.max(0, Math.min(1, Number(process.env.AGENT_READINESS_MAX_ACTION_POLICY_BLOCK_RATE || 0.5)));
+const AGENT_READINESS_MAX_ACTION_POLICY_BLOCK_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MAX_ACTION_POLICY_BLOCK_RATE, 0.5, 0, 1);
 const AGENT_READINESS_MIN_OBSERVED_RUNS = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_MIN_OBSERVED_RUNS, 5));
-const AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE = Math.max(0, Math.min(1, Number(process.env.AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE || 0.4)));
-const AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE = Math.max(0, Math.min(1, Number(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE || 0.3)));
+const AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE, 0.4, 0, 1);
+const AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE, 0.3, 0, 1);
 const AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES, 3));
+
+if (AGENT_READINESS_IS_PRODUCTION && AGENT_READINESS_FAIL_OPEN) {
+  throw new Error('AGENT_READINESS_FAIL_OPEN must be false in production');
+}
 
 const toStatus = (ok: boolean): ReadinessStatus => (ok ? 'pass' : 'fail');
 
@@ -224,12 +231,12 @@ export const buildAgentRuntimeReadinessReport = async (params: {
   });
 
   const failedChecks = checks.filter((check) => check.status === 'fail');
-  const decision = failedChecks.length === 0 ? 'pass' : AGENT_READINESS_FAIL_OPEN ? 'warn' : 'block';
+  const decision = failedChecks.length === 0 ? 'pass' : AGENT_READINESS_EFFECTIVE_FAIL_OPEN ? 'warn' : 'block';
 
   return {
     guildId,
     decision,
-    failOpen: AGENT_READINESS_FAIL_OPEN,
+    failOpen: AGENT_READINESS_EFFECTIVE_FAIL_OPEN,
     generatedAt: new Date().toISOString(),
     windowDays,
     checks,
@@ -248,9 +255,9 @@ export const evaluateWorkerActivationGate = async (params: {
   actorId: string;
 }) => {
   const report = await buildAgentRuntimeReadinessReport({ guildId: params.guildId });
-  const allowed = report.decision !== 'block';
+  const allowed = report.decision === 'pass' || (report.decision === 'warn' && AGENT_READINESS_ALLOW_WARN);
   const reasons = report.checks
-    .filter((check) => check.status === 'fail')
+    .filter((check) => check.status === 'fail' || (check.status === 'warn' && !AGENT_READINESS_ALLOW_WARN))
     .map((check) => `${check.id}: ${check.label}`)
     .slice(0, 5);
 

@@ -35,6 +35,12 @@ const ACTION_APPROVAL_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTI
 const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
 const ACTION_POLICY_DEFAULT_RUN_MODE = String(process.env.ACTION_POLICY_DEFAULT_RUN_MODE || 'approval_required').trim();
 const ACTION_POLICY_FAIL_OPEN_ON_ERROR = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);
+const ACTION_POLICY_IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const ACTION_POLICY_EFFECTIVE_FAIL_OPEN = !ACTION_POLICY_IS_PRODUCTION && ACTION_POLICY_FAIL_OPEN_ON_ERROR;
+
+if (ACTION_POLICY_IS_PRODUCTION && ACTION_POLICY_FAIL_OPEN_ON_ERROR) {
+  throw new Error('ACTION_POLICY_FAIL_OPEN_ON_ERROR must be false in production');
+}
 
 const memoryPolicies = new Map<string, GuildActionPolicy>();
 const memoryApprovals = new Map<string, ActionApprovalRequest>();
@@ -124,7 +130,7 @@ export const getGuildActionPolicy = async (guildId: string, actionName: string):
       .maybeSingle();
 
     if (error) {
-      return ACTION_POLICY_FAIL_OPEN_ON_ERROR ? failOpenFallback : fallback;
+      return ACTION_POLICY_EFFECTIVE_FAIL_OPEN ? failOpenFallback : fallback;
     }
 
     if (!data) {
@@ -133,7 +139,7 @@ export const getGuildActionPolicy = async (guildId: string, actionName: string):
 
     return normalizePolicyRow(data);
   } catch {
-    return ACTION_POLICY_FAIL_OPEN_ON_ERROR ? failOpenFallback : fallback;
+    return ACTION_POLICY_EFFECTIVE_FAIL_OPEN ? failOpenFallback : fallback;
   }
 };
 

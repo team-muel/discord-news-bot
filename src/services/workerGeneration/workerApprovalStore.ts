@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import logger from '../../logger';
+import { parseIntegerEnv } from '../../utils/env';
 
 export type WorkerApprovalStatus = 'pending' | 'approved' | 'rejected' | 'refactor_requested';
 
@@ -49,11 +51,13 @@ const APPROVAL_STORE_MODE = APPROVAL_STORE_MODE_RAW === 'supabase' || APPROVAL_S
   ? APPROVAL_STORE_MODE_RAW
   : 'auto';
 const APPROVAL_DB_TABLE = String(process.env.WORKER_APPROVAL_DB_TABLE || 'worker_approvals').trim() || 'worker_approvals';
+const WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
 let loaded = false;
 let saveChain: Promise<void> = Promise.resolve();
 let supabaseStoreDisabled = false;
 let activeBackend: 'supabase' | 'file' | 'unknown' = 'unknown';
 let lastStoreError: string | null = null;
+let lastSaveChainErrorLogAt = 0;
 
 const now = (): string => new Date().toISOString();
 
@@ -187,10 +191,23 @@ const saveStore = async (): Promise<void> => {
 };
 
 const saveStoreBestEffort = async (): Promise<void> => {
+  const logSaveWarning = (scope: string, error: unknown) => {
+    const nowMs = Date.now();
+    if (nowMs - lastSaveChainErrorLogAt < WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS) {
+      return;
+    }
+    lastSaveChainErrorLogAt = nowMs;
+    logger.warn('[WORKER-APPROVAL] %s (throttled): %s', scope, error instanceof Error ? error.message : String(error));
+  };
+
   saveChain = saveChain
-    .catch(() => undefined)
+    .catch((error) => {
+      logSaveWarning('previous save chain failed', error);
+    })
     .then(() => saveStore())
-    .catch(() => undefined);
+    .catch((error) => {
+      logSaveWarning('saveStore failed', error);
+    });
   await saveChain;
 };
 

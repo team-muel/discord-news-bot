@@ -82,8 +82,8 @@ export const newsGoogleSearchAction: ActionDefinition = {
           name: 'news.google.search',
           summary: `뉴스 RSS 조회 실패(status=${response.status})`,
           artifacts: [rssUrl],
-          verification: ['worker unavailable', 'rss fetch non-2xx'],
-          error: 'WORKER_UNAVAILABLE',
+          verification: ['worker fallback path', `rss fetch non-2xx status=${response.status}`],
+          error: 'RSS_FETCH_FAILED',
         };
       }
 
@@ -95,8 +95,8 @@ export const newsGoogleSearchAction: ActionDefinition = {
           name: 'news.google.search',
           summary: '뉴스 RSS에서 결과를 파싱하지 못했습니다.',
           artifacts: [rssUrl],
-          verification: ['worker unavailable', 'rss parse empty'],
-          error: 'WORKER_UNAVAILABLE',
+          verification: ['worker fallback path', 'rss parse empty'],
+          error: 'RSS_PARSE_EMPTY',
         };
       }
 
@@ -105,7 +105,7 @@ export const newsGoogleSearchAction: ActionDefinition = {
         name: 'news.google.search',
         summary: `워커 없이 RSS 폴백으로 뉴스 ${items.length}건 수집`,
         artifacts: items,
-        verification: ['worker unavailable', 'rss fallback fetch+parse success'],
+        verification: ['worker fallback path', 'rss fallback fetch+parse success'],
       };
     } catch (error) {
       return {
@@ -113,8 +113,8 @@ export const newsGoogleSearchAction: ActionDefinition = {
         name: 'news.google.search',
         summary: '뉴스 워커/폴백 조회 모두 실패했습니다.',
         artifacts: [rssUrl],
-        verification: ['worker unavailable', 'rss fallback failed'],
-        error: error instanceof Error ? error.message : String(error),
+        verification: ['worker fallback path', 'rss fallback failed'],
+        error: 'RSS_FALLBACK_FAILED',
       };
     }
   },

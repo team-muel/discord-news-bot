@@ -17,6 +17,7 @@ Primary operations entrypoint:
 - `docs/planning/mcp/MCP_TOOL_SPEC.md` (MCP tool contract)
 - `docs/planning/mcp/MCP_ROLLOUT_1W.md` (MCP rollout plan)
 - `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md` (core-worker split)
+- `docs/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (LangGraph migration-ready state graph blueprint)
 
 ## Runtime Entrypoints
 

@@ -7,8 +7,9 @@
 
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import logger from '../logger';
+import { parseIntegerEnv } from '../utils/env';
 
-const CACHE_TTL_MS = parseInt(process.env.OBSIDIAN_RAG_CACHE_TTL_MS || '3600000', 10);
+const CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3_600_000));
 const CACHE_ENABLED = process.env.OBSIDIAN_RAG_CACHE_ENABLED !== 'false';
 
 export interface CachedDocument {

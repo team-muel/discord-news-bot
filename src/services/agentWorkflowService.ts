@@ -1,5 +1,6 @@
 import { parseIntegerEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import logger from '../logger';
 
 export type WorkflowPriority = 'fast' | 'balanced' | 'precise';
 export type WorkflowRole = 'planner' | 'researcher' | 'critic';
@@ -12,6 +13,7 @@ export type WorkflowStepTemplate = {
 };
 
 const WORKFLOW_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_WORKFLOW_CACHE_TTL_MS, 60_000));
+const WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
 
 const DEFAULT_STEPS: Record<WorkflowPriority, WorkflowStepTemplate[]> = {
   fast: [
@@ -63,6 +65,7 @@ const DEFAULT_STEPS: Record<WorkflowPriority, WorkflowStepTemplate[]> = {
 let workflowCache = new Map<string, WorkflowStepTemplate[]>();
 let cacheLoadedAt = 0;
 let cacheLoading: Promise<void> | null = null;
+let lastWorkflowCacheErrorLogAt = 0;
 
 const normalizePriority = (value: string): WorkflowPriority => {
   const lowered = String(value || '').trim().toLowerCase();
@@ -155,7 +158,13 @@ export const primeWorkflowProfileCache = (): void => {
   }
 
   cacheLoading = refreshWorkflowProfileCache()
-    .catch(() => undefined)
+    .catch((error) => {
+      const nowMs = Date.now();
+      if (nowMs - lastWorkflowCacheErrorLogAt >= WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS) {
+        lastWorkflowCacheErrorLogAt = nowMs;
+        logger.warn('[AGENT-WORKFLOW] cache refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+      }
+    })
     .finally(() => {
       cacheLoading = null;
     });

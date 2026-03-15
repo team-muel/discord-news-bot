@@ -16,6 +16,8 @@ import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStat
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
 import { createMemoryItem } from '../agentMemoryStore';
+import { compilePromptGoal } from '../promptCompiler';
+import logger from '../../logger';
 
 type FailureDiagnostics = {
   totalFailures: number;
@@ -103,6 +105,7 @@ const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = Math.max(6, Math.min(24 * 30, parseInt
 const ACTION_NEWS_CAPTURE_MAX_ITEMS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5)));
 const ACTION_NEWS_CAPTURE_SOURCE = String(process.env.ACTION_NEWS_CAPTURE_SOURCE || 'google_news_rss').trim() || 'google_news_rss';
 const ACTION_RUNNER_TREND_WINDOW_RUNS = Math.max(4, Math.min(50, parseIntegerEnv(process.env.ACTION_RUNNER_TREND_WINDOW_RUNS, 10)));
+const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000));
 const DEFAULT_CACHEABLE_ACTIONS = [
   'code.generate',
   'rag.retrieve',
@@ -136,6 +139,23 @@ const actionResultCache = new TtlCache<{
 }>(ACTION_CACHE_MAX_ENTRIES);
 
 const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
+let lastFinopsBudgetFetchErrorLogAt = 0;
+
+const getFinopsBudgetStatusSafely = async (guildId: string) => {
+  try {
+    return await getFinopsBudgetStatus(guildId);
+  } catch (error) {
+    const now = Date.now();
+    if (now - lastFinopsBudgetFetchErrorLogAt >= FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS) {
+      lastFinopsBudgetFetchErrorLogAt = now;
+      logger.warn(
+        '[ACTION-RUNNER] FinOps budget lookup failed; fallback to normal mode (throttled): %s',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return null;
+  }
+};
 
 const createEmptyDiagnostics = (): FailureDiagnostics => ({
   totalFailures: 0,
@@ -744,11 +764,17 @@ const classifyFailureCode = (code: string | undefined): 'missingAction' | 'polic
   if (error === 'ACTION_NOT_ALLOWED' || error === 'ACTION_DISABLED_BY_POLICY' || error === 'ACTION_APPROVAL_REQUIRED') {
     return 'policyBlocked';
   }
+  if (error === 'ALLOWLIST_BLOCKED') {
+    return 'policyBlocked';
+  }
   if (error === 'ACTION_POLICY_UNAVAILABLE') {
     return 'governanceUnavailable';
   }
   if (error.includes('FINOPS') || error.includes('BUDGET')) {
     return 'finopsBlocked';
+  }
+  if (error.startsWith('RSS_')) {
+    return 'externalFailures';
   }
   if (isExternalUnavailableError(error)) {
     return 'externalFailures';
@@ -782,7 +808,11 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     });
   }
 
-  const chain = await planActions(input.goal);
+  const compiledPrompt = compilePromptGoal(input.goal);
+  const planningGoal = compiledPrompt.compiledGoal || input.goal;
+  const executionGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || input.goal;
+
+  const chain = await planActions(planningGoal);
   if (!chain.actions || chain.actions.length === 0) {
     return finish({
       handled: false,
@@ -794,10 +824,18 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
   }
 
   const lines: string[] = ['요청 결과'];
+  if (compiledPrompt.droppedNoise || compiledPrompt.intentTags.length > 0 || compiledPrompt.directives.length > 0) {
+    lines.push([
+      '[프롬프트 컴파일]',
+      `- dropped_noise=${compiledPrompt.droppedNoise ? 'true' : 'false'}`,
+      `- intent_tags=${compiledPrompt.intentTags.join(',') || 'none'}`,
+      `- directives=${compiledPrompt.directives.join(',') || 'none'}`,
+    ].join('\n'));
+  }
   let handledAny = false;
   let hasSuccess = false;
   let externalUnavailable = false;
-  const budget = await getFinopsBudgetStatus(input.guildId).catch(() => null);
+  const budget = await getFinopsBudgetStatusSafely(input.guildId);
   const finopsMode = budget?.mode || 'normal';
   if (budget?.enabled) {
     lines.push(`FinOps 모드: ${budget.mode} (daily=${budget.daily.spendUsd.toFixed(4)}/${budget.daily.budgetUsd.toFixed(2)}, monthly=${budget.monthly.spendUsd.toFixed(4)}/${budget.monthly.budgetUsd.toFixed(2)})`);
@@ -1043,7 +1081,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       ? buildActionCacheKey({
         guildId: input.guildId,
         actionName: action.name,
-        goal: input.goal,
+        goal: executionGoal,
         args: planned.args || {},
       })
       : '';
@@ -1089,7 +1127,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         const executionInput = normalizeActionInput({
           actionName: action.name,
           input: {
-            goal: input.goal,
+            goal: executionGoal,
             args: planned.args,
             guildId: input.guildId,
             requestedBy: input.requestedBy,
@@ -1155,7 +1193,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         await captureExternalNewsMemory({
           guildId: input.guildId,
           requestedBy: input.requestedBy,
-          goal: input.goal,
+          goal: executionGoal,
           artifacts: final.artifacts,
         });
       }

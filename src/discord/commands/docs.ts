@@ -4,8 +4,14 @@ import type { LlmTextRequest } from '../../services/llmClient';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
-
-const DISCORD_MSG_LIMIT = 1900;
+import {
+  DISCORD_DOCS_ANSWER_LIMIT,
+  DISCORD_DOCS_ANSWER_TARGET_CHARS,
+  DISCORD_DOCS_CONTEXT_LIMIT,
+  DISCORD_DOCS_FALLBACK_CONTEXT_LIMIT,
+  DISCORD_DOCS_LLM_MAX_TOKENS,
+  DISCORD_DOCS_MESSAGE_LIMIT,
+} from '../runtimePolicy';
 
 type DocsDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
@@ -77,24 +83,26 @@ export const createDocsHandlers = (deps: DocsDeps) => {
           '당신은 한국어로 답변하는 전문 AI 어시스턴트입니다.',
           '아래 제공된 문서 컨텍스트를 기반으로 사용자의 질문에 정확하고 명확하게 답변하세요.',
           '컨텍스트에 없는 정보는 추론하지 마세요. 없으면 "관련 정보가 문서에 없습니다"라고 솔직하게 답하세요.',
-          '답변은 400자 내외로 간결하게 작성하세요.',
+          `답변은 ${DISCORD_DOCS_ANSWER_TARGET_CHARS}자 내외로 간결하게 작성하세요.`,
         ].join('\n');
 
         const user = [
           `질문: ${question}`,
           '',
           '=== 참고 문서 컨텍스트 ===',
-          ragResult.documentContext.slice(0, 4000),
+          ragResult.documentContext.slice(0, DISCORD_DOCS_CONTEXT_LIMIT),
         ].join('\n');
 
-        answer = await deps.generateText({ system, user, maxTokens: 700 });
+        answer = await deps.generateText({ system, user, maxTokens: DISCORD_DOCS_LLM_MAX_TOKENS });
       } catch {
         // LLM 실패 시 원본 컨텍스트 일부를 그대로 표시
-        answer = ragResult.documentContext.slice(0, 600) + DISCORD_MESSAGES.docs.llmFallbackSuffix;
+        answer = ragResult.documentContext.slice(0, DISCORD_DOCS_FALLBACK_CONTEXT_LIMIT) + DISCORD_MESSAGES.docs.llmFallbackSuffix;
       }
     }
 
-    const truncatedAnswer = answer.length > 1400 ? `${answer.slice(0, 1397)}...` : answer;
+    const truncatedAnswer = answer.length > DISCORD_DOCS_ANSWER_LIMIT
+      ? `${answer.slice(0, Math.max(0, DISCORD_DOCS_ANSWER_LIMIT - 3))}...`
+      : answer;
     const sources = ragResult.sourceFiles
       .slice(0, 8)
       .map((f) => `• \`${f.split('/').pop() || f}\``)
@@ -111,7 +119,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     ].join('\n');
 
     await interaction.editReply(
-      buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_MSG_LIMIT), EMBED_INFO),
+      buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
     );
   };
 
@@ -179,7 +187,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
     const body = lines.join('\n');
     await interaction.editReply(
-      buildUserCard(DISCORD_MESSAGES.docs.docsTitle(keyword.slice(0, 30)), body.slice(0, DISCORD_MSG_LIMIT), EMBED_INFO),
+      buildUserCard(DISCORD_MESSAGES.docs.docsTitle(keyword.slice(0, 30)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
     );
   };
 

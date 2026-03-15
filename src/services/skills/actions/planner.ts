@@ -2,6 +2,11 @@ import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { listActions } from './registry';
 import type { ActionChainPlan, ActionPlan } from './types';
 import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../../utils/env';
+
+const PLANNER_SELF_CONSISTENCY_ENABLED = parseBooleanEnv(process.env.PLANNER_SELF_CONSISTENCY_ENABLED, true);
+const PLANNER_SELF_CONSISTENCY_SAMPLES = Math.max(1, Math.min(5, parseIntegerEnv(process.env.PLANNER_SELF_CONSISTENCY_SAMPLES, 3)));
+const PLANNER_SELF_CONSISTENCY_TEMPERATURE = parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_TEMPERATURE, 0.35, 0, 1);
 
 const applyRagPriority = async (plans: ActionPlan[], goal: string): Promise<ActionPlan[]> => {
   if (!(await isRagIntentGoal(goal))) {
@@ -70,6 +75,67 @@ const normalizePlan = (input: unknown): ActionPlan[] => {
   return out;
 };
 
+const planSignature = (actions: ActionPlan[]): string => actions.map((action) => action.actionName).join(' > ');
+
+export const selectConsensusActions = (candidates: ActionPlan[][]): ActionPlan[] => {
+  const scoreBySignature = new Map<string, { count: number; firstIndex: number; sample: ActionPlan[] }>();
+
+  candidates.forEach((candidate, index) => {
+    if (!candidate || candidate.length === 0) {
+      return;
+    }
+
+    const signature = planSignature(candidate);
+    const existing = scoreBySignature.get(signature);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+
+    scoreBySignature.set(signature, {
+      count: 1,
+      firstIndex: index,
+      sample: candidate,
+    });
+  });
+
+  const ranked = [...scoreBySignature.values()].sort((a, b) => {
+    if (b.count !== a.count) {
+      return b.count - a.count;
+    }
+    return a.firstIndex - b.firstIndex;
+  });
+
+  return ranked[0]?.sample ? ranked[0].sample.slice(0, 3) : [];
+};
+
+const requestPlanCandidate = async (params: {
+  goal: string;
+  prompt: string;
+  temperature: number;
+}): Promise<ActionPlan[] | null> => {
+  try {
+    const raw = await generateText({
+      system: '너는 액션 체인 플래너다. 지정 스키마 JSON만 출력한다.',
+      user: params.prompt,
+      temperature: params.temperature,
+      maxTokens: 260,
+    });
+
+    const jsonStart = raw.indexOf('{');
+    const jsonEnd = raw.lastIndexOf('}');
+    if (jsonStart < 0 || jsonEnd <= jsonStart) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
+    const normalized = (await applyRagPriority(normalizePlan(parsed), params.goal)).slice(0, 3);
+    return normalized.length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
+};
+
 export const planActions = async (goal: string): Promise<ActionChainPlan> => {
   if (!isAnyLlmConfigured()) {
     return { actions: await fallbackPlan(goal) };
@@ -92,27 +158,23 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     `목표: ${goal}`,
   ].join('\n');
 
-  try {
-    const raw = await generateText({
-      system: '너는 액션 체인 플래너다. 지정 스키마 JSON만 출력한다.',
-      user: prompt,
-      temperature: 0,
-      maxTokens: 260,
-    });
-
-    const jsonStart = raw.indexOf('{');
-    const jsonEnd = raw.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart) {
+  if (!PLANNER_SELF_CONSISTENCY_ENABLED || PLANNER_SELF_CONSISTENCY_SAMPLES <= 1) {
+    const single = await requestPlanCandidate({ goal, prompt, temperature: 0 });
+    if (!single || single.length === 0) {
       return { actions: await fallbackPlan(goal) };
     }
+    return { actions: single };
+  }
 
-    const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
-    const normalized = (await applyRagPriority(normalizePlan(parsed), goal)).slice(0, 3);
-    if (normalized.length === 0) {
-      return { actions: await fallbackPlan(goal) };
-    }
-    return { actions: normalized };
-  } catch {
+  const temperatures = Array.from({ length: PLANNER_SELF_CONSISTENCY_SAMPLES }, (_, index) => (
+    index === 0 ? 0 : PLANNER_SELF_CONSISTENCY_TEMPERATURE
+  ));
+  const candidates = await Promise.all(temperatures.map((temperature) => requestPlanCandidate({ goal, prompt, temperature })));
+  const validCandidates = candidates.filter((candidate): candidate is ActionPlan[] => Boolean(candidate && candidate.length > 0));
+  const consensus = selectConsensusActions(validCandidates);
+  if (consensus.length === 0) {
     return { actions: await fallbackPlan(goal) };
   }
+
+  return { actions: consensus };
 };

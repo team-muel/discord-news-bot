@@ -2,10 +2,12 @@ import { parseIntegerEnv } from '../utils/env';
 import type { SkillId } from './skills/types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { listSkills } from './skills/registry';
+import logger from '../logger';
 
 const AGENT_MAX_CONCURRENT_SESSIONS = Math.max(1, parseIntegerEnv(process.env.AGENT_MAX_CONCURRENT_SESSIONS, 4));
 const AGENT_MAX_GOAL_LENGTH = Math.max(40, parseIntegerEnv(process.env.AGENT_MAX_GOAL_LENGTH, 1200));
 const AGENT_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_POLICY_CACHE_TTL_MS, 60_000));
+const AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
 
 type AgentPolicyCacheRow = {
   maxConcurrentSessions: number;
@@ -22,6 +24,7 @@ const DEFAULT_POLICY: AgentPolicyCacheRow = {
 let policyCache = new Map<string, AgentPolicyCacheRow>();
 let cacheLoadedAt = 0;
 let cacheLoading: Promise<void> | null = null;
+let lastPolicyCacheErrorLogAt = 0;
 
 export type AgentPolicySnapshot = {
   maxConcurrentSessions: number;
@@ -87,7 +90,13 @@ export const primeAgentPolicyCache = (): void => {
   }
 
   cacheLoading = refreshAgentPolicyCache()
-    .catch(() => undefined)
+    .catch((error) => {
+      const now = Date.now();
+      if (now - lastPolicyCacheErrorLogAt >= AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS) {
+        lastPolicyCacheErrorLogAt = now;
+        logger.warn('[AGENT-POLICY] cache refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+      }
+    })
     .finally(() => {
       cacheLoading = null;
     });

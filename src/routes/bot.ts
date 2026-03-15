@@ -17,8 +17,15 @@ import {
   getMultiAgentRuntimeSnapshot,
   listAgentSkills,
   listGuildAgentSessions,
+  serializeAgentSessionForApi,
   startAgentSession,
 } from '../services/multiAgentService';
+import { getAgentPrivacyPolicySnapshot, upsertAgentPrivacyPolicy } from '../services/agentPrivacyPolicyService';
+import {
+  buildPrivacyTuningRecommendation,
+  listPrivacyGateSamples,
+  reviewPrivacyGateSample,
+} from '../services/agentPrivacyTuningService';
 import { listActions } from '../services/skills/actions/registry';
 import {
   decideActionApprovalRequest,
@@ -74,6 +81,9 @@ import {
 } from '../services/privacyForgetService';
 import { getWorkerApprovalStoreSnapshot } from '../services/workerGeneration/workerApprovalStore';
 import { getWorkerProposalMetricsSnapshot } from '../services/workerGeneration/workerProposalMetrics';
+import { getObsidianAdapterRuntimeStatus } from '../services/obsidian/router';
+import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidianQualityService';
+import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 
 let lastBotStatusBenchmarkAt = 0;
 
@@ -292,10 +302,12 @@ export function createBotRouter(): Router {
 
     const limit = Number(req.query?.limit || 10);
     const sessions = listGuildAgentSessions(guildId, Number.isFinite(limit) ? limit : 10);
+    const includeShadowGraph = String(req.query?.includeShadowGraph || '').trim().toLowerCase() === 'true';
+    const traceTailLimit = toBoundedInt(req.query?.traceTailLimit, 5, { min: 0, max: 20 });
     return res.json({
       runtime: getMultiAgentRuntimeSnapshot(),
       skills: listAgentSkills(),
-      sessions,
+      sessions: sessions.map((session) => serializeAgentSessionForApi(session, { includeShadowGraph, traceTailLimit })),
     });
   });
 
@@ -316,6 +328,131 @@ export function createBotRouter(): Router {
 
   router.get('/agent/policy', requireAdmin, async (_req, res) => {
     return res.json({ policy: getAgentPolicy(), ops: getAgentOpsSnapshot() });
+  });
+
+  router.get('/agent/privacy/policy', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || '*';
+    const policy = getAgentPrivacyPolicySnapshot(guildId);
+    return res.json({ guildId, policy });
+  });
+
+  router.put('/agent/privacy/policy', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId) || '*';
+    const modeDefault = toStringParam(req.body?.modeDefault) as 'direct' | 'plan_act' | 'deliberate' | 'guarded';
+    const reviewScore = toBoundedInt(req.body?.reviewScore, 60, { min: 0, max: 100 });
+    const blockScore = toBoundedInt(req.body?.blockScore, 80, { min: 0, max: 100 });
+    const reviewPatterns = Array.isArray(req.body?.reviewPatterns) ? req.body.reviewPatterns : [];
+    const blockPatterns = Array.isArray(req.body?.blockPatterns) ? req.body.blockPatterns : [];
+
+    if (!isOneOf(modeDefault, ['direct', 'plan_act', 'deliberate', 'guarded'])) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'modeDefault invalid' });
+    }
+    if (blockScore <= reviewScore) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'blockScore must be greater than reviewScore' });
+    }
+
+    try {
+      const updatedBy = toStringParam(req.user?.id) || 'api';
+      const row = await upsertAgentPrivacyPolicy({
+        guildId,
+        modeDefault,
+        reviewScore,
+        blockScore,
+        reviewPatterns,
+        blockPatterns,
+        enabled: req.body?.enabled !== false,
+        updatedBy,
+      });
+      return res.json({ ok: true, policy: row });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'PRIVACY_POLICY_UPSERT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/privacy/tuning/samples', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+    const status = toStringParam(req.query?.status) as 'reviewed' | 'unreviewed' | '';
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (status && !isOneOf(status, ['reviewed', 'unreviewed'])) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'status must be reviewed|unreviewed' });
+    }
+
+    try {
+      const items = await listPrivacyGateSamples({ guildId, limit, status: status || undefined });
+      return res.json({ ok: true, items });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'PRIVACY_TUNING_SAMPLES_FAILED', message });
+    }
+  });
+
+  router.post('/agent/privacy/tuning/samples/:sampleId/review', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const sampleId = toBoundedInt(req.params.sampleId, 0, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const expectedDecision = toStringParam(req.body?.expectedDecision) as 'allow' | 'review' | 'block';
+    if (!isOneOf(expectedDecision, ['allow', 'review', 'block'])) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'expectedDecision must be allow|review|block' });
+    }
+
+    try {
+      const reviewedBy = toStringParam(req.user?.id) || 'api';
+      const row = await reviewPrivacyGateSample({
+        sampleId,
+        expectedDecision,
+        reviewedBy,
+        note: toStringParam(req.body?.note) || undefined,
+      });
+      return res.json({ ok: true, sample: row });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'PRIVACY_TUNING_REVIEW_FAILED', message });
+    }
+  });
+
+  router.get('/agent/privacy/tuning/recommendation', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const lookbackDays = toBoundedInt(req.query?.lookbackDays, 7, { min: 1, max: 90 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const recommendation = await buildPrivacyTuningRecommendation({ guildId, lookbackDays });
+      return res.json({ ok: true, recommendation });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'PRIVACY_TUNING_RECOMMENDATION_FAILED', message });
+    }
+  });
+
+  router.get('/agent/obsidian/runtime', requireAdmin, async (_req, res) => {
+    return res.json({
+      vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+      adapterRuntime: getObsidianAdapterRuntimeStatus(),
+    });
+  });
+
+  router.get('/agent/obsidian/quality', requireAdmin, async (_req, res) => {
+    const snapshot = await getLatestObsidianGraphAuditSnapshot();
+    return res.json({
+      vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+      snapshot,
+    });
   });
 
   router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, async (req, res) => {
@@ -576,7 +713,10 @@ export function createBotRouter(): Router {
       return res.status(404).json({ error: 'SESSION_NOT_FOUND' });
     }
 
-    return res.json({ session });
+    const includeShadowGraph = String(req.query?.includeShadowGraph || '').trim().toLowerCase() === 'true';
+    const traceTailLimit = toBoundedInt(req.query?.traceTailLimit, 5, { min: 0, max: 20 });
+
+    return res.json({ session: serializeAgentSessionForApi(session, { includeShadowGraph, traceTailLimit }) });
   });
 
   router.post('/agent/sessions', requireAdmin, adminActionRateLimiter, async (req, res) => {
@@ -604,7 +744,7 @@ export function createBotRouter(): Router {
       return res.status(409).json({ ok: false, message });
     }
 
-    return res.status(202).json({ ok: true, session });
+    return res.status(202).json({ ok: true, session: serializeAgentSessionForApi(session) });
   });
 
   router.post('/agent/sessions/:sessionId/cancel', requireAdmin, adminActionRateLimiter, async (req, res) => {

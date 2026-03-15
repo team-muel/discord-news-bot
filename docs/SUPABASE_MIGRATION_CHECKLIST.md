@@ -18,10 +18,8 @@ Apply this checklist when enabling Muel server-ops runtime tables.
 
 Run quick checks:
 
-- `select count(*) from public.guild_lore_docs;`
-- `select count(*) from public.agent_sessions;`
-- `select count(*) from public.agent_steps;`
-- `select count(*) from public.discord_login_sessions;`
+- `select count(*) from public.agent_privacy_policies;`
+- `select count(*) from public.agent_privacy_gate_samples;`
 
 Expected: queries succeed (counts may be 0 initially).
 
@@ -31,15 +29,20 @@ Expected: queries succeed (counts may be 0 initially).
 - Check `idx_agent_sessions_guild_updated_at` exists.
 - Check `idx_agent_steps_session_updated_at` exists.
 - Check `trg_agent_sessions_updated_at` exists.
+
+5.  Confirm `public.agent_privacy_gate_samples` has decision audit rows for new task sessions.
+
 - Check `idx_discord_login_sessions_expires_at` exists.
 - Check `trg_discord_login_sessions_updated_at` exists.
 
 ## 5. Runtime Smoke Test
 
-1. Restart service.
-2. Run `/해줘 목표:테스트` in a guild.
+- `GET /api/bot/agent/privacy/policy?guildId=<guildId>`
+- `GET /api/bot/agent/privacy/tuning/recommendation?guildId=<guildId>`
+
 3. Confirm session appears in `public.agent_sessions` and steps in `public.agent_steps`.
-4. Run `/상태` and confirm response renders normally.
+4. Confirm `public.agent_sessions.shadow_graph_summary` and `public.agent_sessions.progress_summary` are populated for the latest run.
+5. Run `/상태` and confirm response renders normally.
 
 ## 5-1. Login Session Persistence Smoke Test
 

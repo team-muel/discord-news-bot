@@ -35,10 +35,10 @@ export const youtubeSearchFirstAction: ActionDefinition = {
     return {
       ok: false,
       name: 'youtube.search.first',
-      summary: 'YouTube 워커 호출 실패로 검색 링크만 제공합니다.',
+      summary: 'YouTube 워커 호출 실패로 검색 링크만 제공합니다(강등 응답).',
       artifacts: [searchUrl],
-      verification: ['local heavy parser removed; worker-first design'],
-      error: 'WORKER_UNAVAILABLE',
+      verification: ['degraded_fallback', 'worker unavailable', 'local heavy parser removed; worker-first design'],
+      error: 'YOUTUBE_WORKER_UNAVAILABLE',
     };
   },
 };

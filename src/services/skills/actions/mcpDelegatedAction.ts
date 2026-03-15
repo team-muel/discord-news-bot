@@ -1,5 +1,6 @@
 import type { ActionExecutionResult } from './types';
 import { callMcpWorkerTool, getMcpWorkerUrl, isMcpStrictRouting, parseMcpTextBlocks } from './mcpDelegate';
+import { appendOutcomeSignalVerification, type OutcomeSignal } from '../../observability/outcomeSignal';
 
 type WorkerKind = 'youtube' | 'news' | 'community' | 'web';
 
@@ -18,10 +19,35 @@ type RunDelegatedActionOptions = {
   onWorkerError?: (error: unknown) => ActionExecutionResult | null;
 };
 
+const withOutcomeSignal = (
+  result: ActionExecutionResult,
+  outcome: OutcomeSignal,
+  workerKind: WorkerKind,
+  toolName: string,
+): ActionExecutionResult => {
+  return {
+    ...result,
+    verification: appendOutcomeSignalVerification(result.verification, {
+      scope: 'action',
+      component: 'action',
+      outcome,
+      path: 'mcp-delegated',
+      extra: {
+        worker_kind: workerKind,
+        tool: toolName,
+      },
+    }),
+  };
+};
+
 export const runDelegatedAction = async (options: RunDelegatedActionOptions): Promise<ActionExecutionResult | null> => {
   const workerUrl = getMcpWorkerUrl(options.workerKind);
   if (!workerUrl) {
-    return options.onWorkerMissing?.() || null;
+    const missing = options.onWorkerMissing?.() || null;
+    if (!missing) {
+      return null;
+    }
+    return withOutcomeSignal(missing, missing.ok ? 'degraded' : 'failure', options.workerKind, options.toolName);
   }
 
   try {
@@ -33,28 +59,36 @@ export const runDelegatedAction = async (options: RunDelegatedActionOptions): Pr
 
     const blocks = parseMcpTextBlocks(payload);
     if (!payload.isError && blocks.length > 0) {
-      return {
+      return withOutcomeSignal({
         ok: true,
         name: options.actionName,
         summary: options.successSummary(blocks),
         artifacts: blocks,
         verification: ['mcp delegated tool success'],
-      };
+      }, 'success', options.workerKind, options.toolName);
     }
 
-    return options.onEmptyResult?.(blocks) || null;
+    const empty = options.onEmptyResult?.(blocks) || null;
+    if (!empty) {
+      return null;
+    }
+    return withOutcomeSignal(empty, empty.ok ? 'degraded' : 'failure', options.workerKind, options.toolName);
   } catch (error) {
     if ((options.respectStrictRouting ?? true) && isMcpStrictRouting()) {
-      return {
+      return withOutcomeSignal({
         ok: false,
         name: options.actionName,
         summary: options.strictFailureSummary,
         artifacts: [],
         verification: options.strictFailureVerification || ['strict routing enabled'],
         error: options.strictFailureError || (error instanceof Error ? error.message : String(error)),
-      };
+      }, 'failure', options.workerKind, options.toolName);
     }
 
-    return options.onWorkerError?.(error) || null;
+    const workerError = options.onWorkerError?.(error) || null;
+    if (!workerError) {
+      return null;
+    }
+    return withOutcomeSignal(workerError, workerError.ok ? 'degraded' : 'failure', options.workerKind, options.toolName);
   }
 };

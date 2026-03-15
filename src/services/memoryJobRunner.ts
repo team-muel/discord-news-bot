@@ -479,9 +479,7 @@ const processJobByType = async (job: {
     };
   }
 
-  return {
-    note: 'unsupported job type',
-  };
+  throw new Error(`UNSUPPORTED_JOB_TYPE:${job.job_type}`);
 };
 
 const processQueuedJob = async () => {

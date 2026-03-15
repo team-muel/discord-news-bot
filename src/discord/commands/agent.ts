@@ -14,6 +14,7 @@ import { listGuildAllowedDomains, upsertGuildDomainPolicy } from '../../services
 import { isUserLearningEnabled, setUserLearningEnabled } from '../../services/userLearningPrefsService';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildAdminCard, buildSimpleEmbed, EMBED_ERROR, EMBED_INFO, EMBED_SUCCESS, EMBED_WARN } from '../ui';
+import { DISCORD_AGENT_RESULT_PREVIEW_LIMIT } from '../runtimePolicy';
 
 export const formatAgentSessionLine = (session: AgentSession) => {
   const safeGoal = String(session.goal || '').replace(/\s+/g, ' ').slice(0, 48);
@@ -245,7 +246,7 @@ export const createAgentHandlers = (deps: AgentDeps) => {
           session.error ? `오류: ${session.error}` : '',
           '',
           '[결과]',
-          session.result ? `결과 요약:\n${session.result.slice(0, 1200)}` : DISCORD_MESSAGES.agent.resultPending,
+          session.result ? `결과 요약:\n${session.result.slice(0, DISCORD_AGENT_RESULT_PREVIEW_LIMIT)}` : DISCORD_MESSAGES.agent.resultPending,
           '',
           '[런타임 요약]',
           DISCORD_MESSAGES.agent.runtimeSummary(runtime.runningSessions, runtime.completedSessions, runtime.failedSessions),

@@ -6,6 +6,25 @@ import type { AgentSession } from '../services/multiAgentService';
 import { getAgentSession, startAgentSession } from '../services/multiAgentService';
 import { DISCORD_MESSAGES } from './messages';
 
+const parsePositiveIntEnv = (value: string | undefined, fallback: number, min = 1): number => {
+  const parsed = Number(value || '');
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.floor(parsed));
+};
+
+const FEEDBACK_PROMPT_ENABLED = (() => {
+  const raw = String(process.env.DISCORD_ENABLE_FEEDBACK_PROMPT || 'true').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+})();
+const FEEDBACK_PROMPT_LINE = String(process.env.DISCORD_FEEDBACK_PROMPT_LINE || '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.').trim();
+const SESSION_PROGRESS_TIMEOUT_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_TIMEOUT_MS, 8 * 60 * 1000, 10_000);
+const SESSION_PROGRESS_INTERVAL_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_INTERVAL_MS, 2200, 500);
+const SESSION_PROGRESS_UPDATE_BUCKET_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS, 10_000, 1000);
+const SESSION_RESULT_CLIP_LIMIT_DEBUG = parsePositiveIntEnv(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_DEBUG, 1700, 200);
+const SESSION_RESULT_CLIP_LIMIT_USER = parsePositiveIntEnv(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_USER, 1200, 200);
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type ProgressSink = {
   update: (content: string) => Promise<unknown>;
@@ -143,7 +162,15 @@ const toUserFacingResult = (session: AgentSession, options: ProgressRenderOption
     .trim();
   const deLabeled = removeSectionLabelLeaks(stripped);
   const linkLimited = limitLinks(deLabeled, options.maxLinks);
-  return linkLimited || DISCORD_MESSAGES.session.noDisplayableResult;
+
+  const base = linkLimited || DISCORD_MESSAGES.session.noDisplayableResult;
+  if (!FEEDBACK_PROMPT_ENABLED || !FEEDBACK_PROMPT_LINE || options.showDebugBlocks) {
+    return base;
+  }
+  if (base.includes(FEEDBACK_PROMPT_LINE)) {
+    return base;
+  }
+  return `${base}\n\n${FEEDBACK_PROMPT_LINE}`;
 };
 
 const toUserFacingFailureMessage = (session: AgentSession): string => {
@@ -219,7 +246,7 @@ export const buildSessionProgressText = (
 
   const content = toUserFacingResult(session, options);
   const wrapped = content;
-  const clipLimit = options.showDebugBlocks ? 1700 : 1200;
+  const clipLimit = options.showDebugBlocks ? SESSION_RESULT_CLIP_LIMIT_DEBUG : SESSION_RESULT_CLIP_LIMIT_USER;
   return wrapped.length > clipLimit ? `${wrapped.slice(0, clipLimit)}\n...` : wrapped;
 };
 
@@ -230,9 +257,9 @@ export const streamSessionProgress = async (
   options: ProgressRenderOptions,
 ): Promise<void> => {
   const startedAt = Date.now();
-  const timeoutMs = 8 * 60 * 1000;
-  const intervalMs = 2200;
-  const updateBucketMs = 10_000;
+  const timeoutMs = SESSION_PROGRESS_TIMEOUT_MS;
+  const intervalMs = SESSION_PROGRESS_INTERVAL_MS;
+  const updateBucketMs = SESSION_PROGRESS_UPDATE_BUCKET_MS;
   let previous = '';
   let previousBucket = -1;
 

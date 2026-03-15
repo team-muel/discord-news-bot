@@ -60,7 +60,7 @@ describe('newsVerifyAction', () => {
     expect(hasVerdict).toBe(true);
   });
 
-  it('fetch 실패 시에도 RSS 소스 정보를 artifact로 포함한다', async () => {
+  it('fetch 실패로 UNVERIFIED가 되면 non-success와 에러 코드를 반환한다', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, text: async () => MOCK_RSS }) // RSS ok
       .mockRejectedValue(new Error('source fetch failed')); // 소스 fetch 실패
@@ -68,7 +68,8 @@ describe('newsVerifyAction', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await newsVerifyAction.execute({ goal: '애플 검증' });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('UNVERIFIED_CONTENT');
     expect(result.artifacts.length).toBeGreaterThan(0);
   });
 });

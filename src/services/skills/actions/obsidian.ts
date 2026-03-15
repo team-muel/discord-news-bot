@@ -1,6 +1,11 @@
 import { upsertObsidianGuildDocument } from '../../obsidian/authoring';
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { getObsidianVaultRoot } from '../../../utils/obsidianEnv';
+import {
+  getObsidianGraphMetadataWithAdapter,
+  readObsidianFileWithAdapter,
+  searchObsidianVaultWithAdapter,
+} from '../../obsidian/router';
 import type { ActionDefinition } from './types';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
@@ -181,6 +186,93 @@ const toProperties = (args?: Record<string, unknown>): Record<string, string | n
   return out;
 };
 
+const REQUIRED_FRONTMATTER_KEYS = ['schema', 'source', 'guild_id', 'title', 'category', 'updated_at'];
+
+const parseFrontmatterKeys = (markdown: string): Set<string> => {
+  const match = String(markdown || '').match(/^---\n([\s\S]*?)\n---/);
+  if (!match) {
+    return new Set();
+  }
+
+  const keys = match[1]
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.includes(':'))
+    .map((line) => line.split(':', 1)[0]?.trim())
+    .filter(Boolean) as string[];
+
+  return new Set(keys);
+};
+
+const parseBooleanEnv = (value: string | undefined, defaultValue: boolean): boolean => {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+};
+
+const runPostWriteVerification = async (params: {
+  vaultPath: string;
+  filePath: string;
+  fileName: string;
+}): Promise<{ verification: string[]; failed: boolean }> => {
+  const verification: string[] = [];
+  let failed = false;
+
+  const markdown = await readObsidianFileWithAdapter({
+    vaultPath: params.vaultPath,
+    filePath: params.filePath,
+  });
+
+  if (!markdown) {
+    verification.push('post_verify:read_failed');
+    return { verification, failed: true };
+  }
+
+  verification.push('post_verify:read_ok');
+
+  const fmKeys = parseFrontmatterKeys(markdown);
+  const missingKeys = REQUIRED_FRONTMATTER_KEYS.filter((key) => !fmKeys.has(key));
+  if (missingKeys.length > 0) {
+    verification.push(`post_verify:missing_props=${missingKeys.join(',')}`);
+    failed = true;
+  } else {
+    verification.push('post_verify:props_ok');
+  }
+
+  const searchResults = await searchObsidianVaultWithAdapter({
+    vaultPath: params.vaultPath,
+    query: stripMarkdownExtension(params.fileName),
+    limit: 20,
+  });
+
+  const searchHit = searchResults.some((item) => String(item.filePath || '').trim() === params.filePath);
+  if (!searchHit) {
+    verification.push('post_verify:search_miss');
+    failed = true;
+  } else {
+    verification.push('post_verify:search_hit');
+  }
+
+  const graph = await getObsidianGraphMetadataWithAdapter({ vaultPath: params.vaultPath });
+  if (!graph[params.filePath]) {
+    verification.push('post_verify:graph_missing');
+    failed = true;
+  } else {
+    verification.push('post_verify:graph_ok');
+  }
+
+  return { verification, failed };
+};
+
 export const obsidianGuildDocUpsertAction: ActionDefinition = {
   name: 'obsidian.guild_doc.upsert',
   description: '길드 문서를 Obsidian vault에 기록하거나 갱신합니다.',
@@ -255,12 +347,35 @@ export const obsidianGuildDocUpsertAction: ActionDefinition = {
       };
     }
 
+    const postVerify = await runPostWriteVerification({
+      vaultPath,
+      filePath: result.path,
+      fileName,
+    });
+
+    const strictPostVerify = parseBooleanEnv(process.env.OBSIDIAN_POST_WRITE_VERIFY_STRICT, false);
+    if (strictPostVerify && postVerify.failed) {
+      return {
+        ok: false,
+        name: 'obsidian.guild_doc.upsert',
+        summary: 'Obsidian 문서 저장 후 정합성 검증 실패',
+        artifacts: [result.path],
+        verification: ['adapter write_note', ...postVerify.verification],
+        error: 'POST_WRITE_VERIFY_FAILED',
+      };
+    }
+
     return {
       ok: true,
       name: 'obsidian.guild_doc.upsert',
       summary: 'Obsidian 문서 저장 완료',
       artifacts: [result.path],
-      verification: ['adapter write_note', `auto_tags=${tags.join(',')}`, `category=${String(properties.category || 'general')}`],
+      verification: [
+        'adapter write_note',
+        ...postVerify.verification,
+        `auto_tags=${tags.join(',')}`,
+        `category=${String(properties.category || 'general')}`,
+      ],
     };
   },
 };

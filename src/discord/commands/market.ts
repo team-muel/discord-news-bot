@@ -20,6 +20,7 @@ import {
   isInvestmentAnalysisEnabled,
 } from '../../services/investmentAnalysisService';
 import { DISCORD_MESSAGES } from '../messages';
+import { DISCORD_MARKET_ANALYSIS_LIMIT } from '../runtimePolicy';
 
 export const handleStockPriceCommand = async (
   interaction: ChatInputCommandInteraction,
@@ -93,7 +94,7 @@ export const handleAnalyzeCommand = async (
   const answer = await generateInvestmentAnalysis(query);
   const title = isInvestmentAnalysisEnabled() ? '📊 AI 투자 분석' : '📊 투자 분석 (제한 모드)';
   await interaction.editReply({
-    embeds: [{ title, description: answer.slice(0, 3900), color: 0x3498db }],
+    embeds: [{ title, description: answer.slice(0, DISCORD_MARKET_ANALYSIS_LIMIT), color: 0x3498db }],
   });
 };
 

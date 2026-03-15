@@ -3,6 +3,8 @@ import logger from '../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
 import { queueMemoryJob } from './agentMemoryStore';
 import { listGuildAgentSessions, startAgentSession } from './multiAgentService';
+import { autoBootstrapGuildKnowledgeOnJoin } from './obsidianBootstrapService';
+import { autoSyncGuildTopologyOnJoin } from './discordTopologySyncService';
 
 const AGENT_AUTO_ONBOARDING_ENABLED = parseBooleanEnv(process.env.AGENT_AUTO_ONBOARDING_ENABLED, true);
 const AGENT_DAILY_LEARNING_ENABLED = parseBooleanEnv(process.env.AGENT_DAILY_LEARNING_ENABLED, true);
@@ -169,6 +171,18 @@ export const getAgentOpsSnapshot = () => ({
 });
 
 export const onGuildJoined = (guild: Guild) => {
+  void autoSyncGuildTopologyOnJoin(guild).catch((error) => {
+    logger.warn('[AGENT-OPS] topology sync failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+  });
+
+  void autoBootstrapGuildKnowledgeOnJoin({
+    guildId: guild.id,
+    guildName: guild.name,
+    reason: 'guildCreate',
+  }).catch((error) => {
+    logger.warn('[AGENT-OPS] obsidian bootstrap failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+  });
+
   return triggerGuildOnboardingSession({
     guildId: guild.id,
     guildName: guild.name,

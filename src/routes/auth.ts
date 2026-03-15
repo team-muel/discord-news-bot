@@ -104,6 +104,24 @@ type DiscordTokenExchange = {
   refreshToken: string | null;
 };
 
+const parseResponseJsonObject = async (
+  response: Response,
+  errorCode: string,
+): Promise<Record<string, unknown>> => {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(`${errorCode}:INVALID_JSON`);
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    throw new Error(`${errorCode}:INVALID_PAYLOAD`);
+  }
+
+  return payload as Record<string, unknown>;
+};
+
 async function exchangeDiscordCodeForToken(code: string): Promise<DiscordTokenExchange> {
   const base = DISCORD_OAUTH_API_BASE.replace(/\/+$/, '');
   const body = new URLSearchParams({
@@ -120,8 +138,8 @@ async function exchangeDiscordCodeForToken(code: string): Promise<DiscordTokenEx
     body,
   });
 
-  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!response.ok || !payload || typeof payload.access_token !== 'string') {
+  const payload = await parseResponseJsonObject(response, 'DISCORD_TOKEN_EXCHANGE_FAILED');
+  if (!response.ok || typeof payload.access_token !== 'string') {
     throw new Error('DISCORD_TOKEN_EXCHANGE_FAILED');
   }
 
@@ -139,8 +157,8 @@ async function fetchDiscordUser(accessToken: string): Promise<JwtUser> {
     },
   });
 
-  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!response.ok || !payload) {
+  const payload = await parseResponseJsonObject(response, 'DISCORD_USER_FETCH_FAILED');
+  if (!response.ok) {
     throw new Error('DISCORD_USER_FETCH_FAILED');
   }
 

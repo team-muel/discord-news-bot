@@ -65,8 +65,9 @@ export const communitySearchAction: ActionDefinition = {
         name: 'community.search',
         summary: '커뮤니티 워커 호출 실패: 수동 검색 링크를 제공합니다.',
         artifacts: fallbackArtifacts,
-        verification: ['delegated tool call failed', 'fallback links returned'],
-        error: error instanceof Error ? error.message : String(error),
+        verification: error instanceof Error
+          ? ['delegated tool call failed', `worker_error=${error.message}`, 'fallback links returned']
+          : ['delegated tool call failed', 'fallback links returned'],
       }),
     });
     if (delegated) {
@@ -79,7 +80,6 @@ export const communitySearchAction: ActionDefinition = {
       summary: '커뮤니티 워커 호출 실패: 수동 검색 링크를 제공합니다.',
       artifacts: fallbackArtifacts,
       verification: ['delegated tool call failed', 'fallback links returned'],
-      error: 'COMMUNITY_WORKER_CALL_FAILED',
     };
   },
 };

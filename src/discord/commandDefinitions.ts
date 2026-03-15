@@ -9,6 +9,10 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { parseBooleanEnv } from '../utils/env';
+import {
+  AUTOMATION_INTENT_PATTERN as RUNTIME_AUTOMATION_INTENT_PATTERN,
+  CODING_INTENT_PATTERN as RUNTIME_CODING_INTENT_PATTERN,
+} from './runtimePolicy';
 
 export const SIMPLE_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED || 'true').toLowerCase());
@@ -46,10 +50,8 @@ export const CODE_THREAD_ENABLED = parseBooleanEnv(
   process.env.CODE_THREAD_ENABLED,
   true,
 );
-export const CODING_INTENT_PATTERN =
-  /(코드|코딩|구현|함수|클래스|버그|리팩터|script|typescript|javascript|python|sql|api\s*만들|코드\s*짜|만들어|짜줘|작성해줘)/i;
-export const AUTOMATION_INTENT_PATTERN =
-  /(자동화|봇|워커|연동|알림|크롤|webhook|api.*만들|자동.*전송|데이터.*수집|주기적|스케줄)/i;
+export const CODING_INTENT_PATTERN = RUNTIME_CODING_INTENT_PATTERN;
+export const AUTOMATION_INTENT_PATTERN = RUNTIME_AUTOMATION_INTENT_PATTERN;
 export const WORKER_APPROVAL_CHANNEL_ID = String(
   process.env.WORKER_APPROVAL_CHANNEL_ID || '',
 ).trim();

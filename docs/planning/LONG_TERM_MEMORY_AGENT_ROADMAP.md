@@ -1,5 +1,19 @@
 # 고맥락 장기기억 에이전트 로드맵 (6주)
 
+## 현재 기준선 (2026-03-15)
+
+아래 항목은 이미 구현/운영 가능한 상태입니다.
+
+- 길드별 Obsidian 지식 트리 자동 bootstrap
+- Manifest 기반 재귀 문서 동기화
+- All-guilds ops-loop 자동 발견/순회
+- Discord topology 스냅샷 자동 반영
+- 채널/유저 활동 텔레메트리 자동 반영
+- 리액션 보상 신호 자동 반영
+- timeout/retry/failure-rate 게이트 및 lock 기반 중복 실행 방지
+
+로드맵의 다음 단계는 위 기준선 위에서 planner/tool routing의 자기개선 루프를 얹는 것입니다.
+
 ## 목표
 
 - 디스코드 서버(길드)별 맥락을 장기적으로 학습/참조하는 에이전트 구현
@@ -118,3 +132,23 @@
 3. 스키마 마이그레이션 계획 확정
 4. 내부 테스트 시나리오셋 작성
 5. 파일럿 길드 선정
+
+## 다음 2주 확장 트랙 (Tool learning / Retrieve-aware)
+
+### Week 7: Planner 자기개선 루프
+
+- 작업
+- 액션 실행 로그에서 성공/실패/비용/지연을 묶은 학습 샘플 추출
+- Planner priors(액션 우선순위) 보정 규칙 추가
+- 완료 기준
+- 재시도 평균 횟수 감소
+- 실패 코드 상위 점유율 감소
+
+### Week 8: Tool Retrieval 정확도 루프
+
+- 작업
+- tool metadata 인덱스 구축(설명/입력 형식/제약)
+- 요청-정답 액션 벤치셋으로 정기 오프라인 평가
+- 완료 기준
+- action selection 정확도 상승
+- strict routing 실패율 감소

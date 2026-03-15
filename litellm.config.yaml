@@ -33,7 +33,7 @@ general_settings:
 litellm_settings:
   # Gemini free-tier quota exhaustion 시 HF/OpenAI/Anthropic 순으로 즉시 폴백
   fallbacks:
-    - {"muel-balanced": ["muel-hf", "muel-fast", "muel-precise"]}
+    - { "muel-balanced": ["muel-hf", "muel-fast", "muel-precise"] }
 
 router_settings:
   # quota limit(429)에서 동일 모델 재시도는 실효성이 낮아 즉시 fallback으로 전환

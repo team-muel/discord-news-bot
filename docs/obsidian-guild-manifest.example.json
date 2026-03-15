@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "includeGlobs": [
+    "memory/**/*.md",
+    "policy/**/*.md",
+    "playbooks/**/*.md",
+    "experiments/**/*.md",
+    "events/ingest/**/*.md"
+  ],
+  "excludeGlobs": [
+    ".obsidian/**",
+    ".trash/**",
+    "templates/**",
+    "ops/state/**",
+    "index/**"
+  ],
+  "maxFiles": 600,
+  "sourcePrefix": "knowledge"
+}

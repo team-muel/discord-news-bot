@@ -6,6 +6,7 @@ import {
   ChatInputCommandInteraction,
   Client,
   GatewayIntentBits,
+  Partials,
   type Guild,
   type Message,
   PermissionFlagsBits,
@@ -36,6 +37,9 @@ import {
   startAgentSession,
 } from './services/multiAgentService';
 import { createMemoryItem } from './services/agentMemoryStore';
+import { recordDiscordChannelMessageSignal } from './services/discordChannelTelemetryService';
+import { recordReactionRewardSignal } from './services/discordReactionRewardService';
+import { autoSyncGuildTopologiesOnReady } from './services/discordTopologySyncService';
 import { getGuildActionPolicy } from './services/skills/actionGovernanceStore';
 import { isUserLearningEnabled } from './services/userLearningPrefsService';
 import { isAnyLlmConfigured } from './services/llmClient';
@@ -138,8 +142,9 @@ import { isStockFeatureEnabled } from './services/stockService';
 export const client = new Client({ intents: [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildMessages,
+  GatewayIntentBits.GuildMessageReactions,
   GatewayIntentBits.MessageContent,
-] });
+], partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 
 const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(
   process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS
@@ -591,7 +596,9 @@ const attachCommandHandlers = () => {
     try {
       const ch = await client.channels.fetch(WORKER_APPROVAL_CHANNEL_ID);
       if (ch && 'send' in ch) await (ch as any).send(message);
-    } catch { /* best-effort */ }
+    } catch (error) {
+      logger.debug('[BOT] dynamic worker admin notify skipped: %s', getErrorMessage(error));
+    }
   });
 
   client.on('interactionCreate', async (interaction) => {
@@ -782,7 +789,9 @@ const attachCommandHandlers = () => {
               adminChId = targetChId;
             }
           }
-        } catch { /* best-effort */ }
+        } catch (error) {
+          logger.debug('[BOT] worker approval admin channel send skipped: %s', getErrorMessage(error));
+        }
 
         await updateApprovalStatus(appr.id, 'pending', { adminMessageId: adminMsgId, adminChannelId: adminChId });
         await interaction.editReply(
@@ -812,10 +821,20 @@ const attachCommandHandlers = () => {
           return;
         }
 
-        const gate = await evaluateWorkerActivationGate({
-          guildId: appr.guildId,
-          actorId: interaction.user.id,
-        }).catch(() => null);
+        let gate: Awaited<ReturnType<typeof evaluateWorkerActivationGate>> | null = null;
+        try {
+          gate = await evaluateWorkerActivationGate({
+            guildId: appr.guildId,
+            actorId: interaction.user.id,
+          });
+        } catch (error) {
+          logger.warn('[BOT] worker activation gate check failed; fail-closed: %s', getErrorMessage(error));
+          await interaction.followUp({
+            content: '🚫 운영 준비도 게이트 확인 중 오류가 발생해 워커 활성화를 차단했습니다. 잠시 후 다시 시도하거나 관리자 API /api/bot/agent/runtime/readiness 를 확인해주세요.',
+            ephemeral: true,
+          });
+          return;
+        }
 
         if (gate && !gate.allowed) {
           const details = gate.reasons.length > 0
@@ -844,7 +863,9 @@ const attachCommandHandlers = () => {
           try {
             const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
             await interaction.message.edit({ content: `${prev}\n\n✅ **워커 활성화 완료** (승인자: <@${interaction.user.id}>)\n액션: \`${appr.actionName}\``, components: [] });
-          } catch { /* best-effort */ }
+          } catch (error) {
+            logger.debug('[BOT] worker approval message edit skipped: %s', getErrorMessage(error));
+          }
         } else {
           await interaction.followUp({ content: `❌ 워커 로드 실패: ${loadResult.error}`, ephemeral: true });
         }
@@ -859,7 +880,9 @@ const attachCommandHandlers = () => {
         try {
           const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
           await interaction.message.edit({ content: `${prev}\n\n❌ **반려됨** (처리자: <@${interaction.user.id}>)`, components: [] });
-        } catch { /* best-effort */ }
+        } catch (error) {
+          logger.debug('[BOT] worker reject message edit skipped: %s', getErrorMessage(error));
+        }
         return;
       }
 
@@ -900,7 +923,9 @@ const attachCommandHandlers = () => {
             ].join('\n').slice(0, 1950),
             components: [newRow],
           });
-        } catch { /* best-effort */ }
+        } catch (error) {
+          logger.debug('[BOT] worker refactor message edit skipped: %s', getErrorMessage(error));
+        }
         await interaction.editReply('🔧 리팩토링이 완료됐습니다. 관리자 메시지를 확인해주세요.');
         return;
       }
@@ -996,8 +1021,13 @@ const attachCommandHandlers = () => {
             } else {
               await thread.send(safe);
             }
-          } catch {
-            try { await thread.send(safe); } catch { /* ignore */ }
+          } catch (error) {
+            logger.debug('[BOT] code block send retry after failure: %s', getErrorMessage(error));
+            try {
+              await thread.send(safe);
+            } catch (retryError) {
+              logger.debug('[BOT] code block send retry skipped: %s', getErrorMessage(retryError));
+            }
           }
         }
       }
@@ -1142,9 +1172,13 @@ const attachCommandHandlers = () => {
       logger.error('[BOT] interaction handler failed: %o', error);
       const message = DISCORD_MESSAGES.bot.executionFailedBody;
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR)).catch(() => undefined);
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR)).catch((replyError) => {
+          logger.debug('[BOT] interaction error editReply skipped: %s', getErrorMessage(replyError));
+        });
       } else {
-        await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR), ephemeral: true }).catch(() => undefined);
+        await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR), ephemeral: true }).catch((replyError) => {
+          logger.debug('[BOT] interaction error reply skipped: %s', getErrorMessage(replyError));
+        });
       }
     }
   });
@@ -1156,7 +1190,20 @@ const attachCommandHandlers = () => {
     }
 
     try {
-      await vibeHandlers.handleVibeMessage(message);
+      try {
+        await vibeHandlers.handleVibeMessage(message);
+      } catch (error) {
+        logger.warn('[BOT] vibe message handling failed: %o', error);
+      }
+
+      if (message.guildId && !message.author.bot) {
+        recordDiscordChannelMessageSignal({
+          guildId: message.guildId,
+          channelId: message.channelId,
+          channelName: (message.channel as any)?.name || 'unknown',
+          authorId: message.author.id,
+        });
+      }
 
       // Optional passive memory capture by guild policy + user preference
       if (message.guildId && !message.author.bot) {
@@ -1188,7 +1235,7 @@ const attachCommandHandlers = () => {
         }
       }
     } catch (error) {
-      logger.warn('[BOT] vibe message handling failed: %o', error);
+      logger.warn('[BOT] messageCreate handler failed: %o', error);
     }
   });
 
@@ -1210,6 +1257,10 @@ client.on('clientReady', () => {
 
   startAgentDailyLearningLoop(client);
   startLoginSessionCleanupLoop();
+
+  void autoSyncGuildTopologiesOnReady(client.guilds.cache.values()).catch((error) => {
+    logger.debug('[DISCORD-TOPOLOGY] ready sweep skipped reason=%s', getErrorMessage(error));
+  });
 });
 
 client.on('guildCreate', (guild) => {
@@ -1241,6 +1292,66 @@ client.on('guildDelete', (guild) => {
       logger.error('[PRIVACY-FORGET] guildDelete purge failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
     }
   })();
+});
+
+client.on('messageReactionAdd', async (reaction, user) => {
+  try {
+    if (user.bot) {
+      return;
+    }
+
+    if (reaction.partial) {
+      await reaction.fetch();
+    }
+
+    const guildId = reaction.message.guildId;
+    const channelId = reaction.message.channelId;
+    const messageId = reaction.message.id;
+    if (!guildId || !channelId || !messageId) {
+      return;
+    }
+
+    recordReactionRewardSignal({
+      guildId,
+      channelId,
+      messageId,
+      userId: user.id,
+      emoji: reaction.emoji.name || '',
+      direction: 'add',
+    });
+  } catch (error) {
+    logger.debug('[REACTION-REWARD] add skipped reason=%s', getErrorMessage(error));
+  }
+});
+
+client.on('messageReactionRemove', async (reaction, user) => {
+  try {
+    if (user.bot) {
+      return;
+    }
+
+    if (reaction.partial) {
+      await reaction.fetch();
+    }
+
+    const guildId = reaction.message.guildId;
+    const channelId = reaction.message.channelId;
+    const messageId = reaction.message.id;
+    if (!guildId || !channelId || !messageId) {
+      return;
+    }
+
+    recordReactionRewardSignal({
+      guildId,
+      channelId,
+      messageId,
+      userId: user.id,
+      emoji: reaction.emoji.name || '',
+      direction: 'remove',
+    });
+  } catch (error) {
+    logger.debug('[REACTION-REWARD] remove skipped reason=%s', getErrorMessage(error));
+  }
 });
 
 client.on('shardDisconnect', (event) => {

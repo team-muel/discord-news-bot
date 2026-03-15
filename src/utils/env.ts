@@ -18,3 +18,18 @@ export const parseIntegerEnv = (value: string | undefined, fallback: number): nu
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+export const parseNumberEnv = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value ?? '');
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+export const parseBoundedNumberEnv = (
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number => {
+  const parsed = parseNumberEnv(value, fallback);
+  return Math.max(min, Math.min(max, parsed));
+};

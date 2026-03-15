@@ -10,9 +10,10 @@
 import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { compactText, extractQuery } from './queryUtils';
+import { parseIntegerEnv } from '../../../utils/env';
 
 const SERPER_API_KEY = process.env.SERPER_API_KEY || '';
-const MAX_RESULTS = parseInt(process.env.WEB_SEARCH_MAX_RESULTS || '5', 10);
+const MAX_RESULTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.WEB_SEARCH_MAX_RESULTS, 5)));
 const FETCH_TIMEOUT_MS = 8_000;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -184,12 +185,18 @@ export const webSearchAction: ActionDefinition = {
     });
 
     const source = SERPER_API_KEY ? 'Serper' : 'DuckDuckGo';
-    const usedResults = allowed.length > 0 ? allowed : results;
-    const filteredNote = allowed.length === 0 && results.length > 0
-      ? ' (도메인 필터 미통과, 전체 결과 반환)'
-      : '';
+    if (allowed.length === 0) {
+      return {
+        ok: false,
+        name: 'web.search',
+        summary: `"${query}" 검색 결과가 허용 도메인 정책을 통과하지 못했습니다.`,
+        artifacts: [],
+        verification: [`검색 성공(${source})`, 'allowlist filter blocked all results'],
+        error: 'ALLOWLIST_BLOCKED',
+      };
+    }
 
-    const artifacts = usedResults.flatMap((r) => [
+    const artifacts = allowed.flatMap((r) => [
       `[${r.title}] ${r.link}`,
       ...(r.snippet ? [`  > ${r.snippet}`] : []),
     ]);
@@ -197,9 +204,9 @@ export const webSearchAction: ActionDefinition = {
     return {
       ok: true,
       name: 'web.search',
-      summary: `"${query}" 검색 완료 — ${usedResults.length}건${filteredNote} (via ${source})`,
+      summary: `"${query}" 검색 완료 — ${allowed.length}건 (via ${source})`,
       artifacts,
-      verification: [`검색 성공(${source})`, `결과 ${usedResults.length}건`, `query="${query}"`],
+      verification: [`검색 성공(${source})`, `allowlist 통과 ${allowed.length}건`, `query="${query}"`],
     };
   },
 };

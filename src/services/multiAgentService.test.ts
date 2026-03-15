@@ -32,6 +32,8 @@ vi.mock('./supabaseClient', () => ({
 
 import * as llmClient from './llmClient';
 import {
+  __resetAgentRuntimeForTests,
+  type AgentSession,
   cancelAgentSession,
   getAgentPolicy,
   getAgentSession,
@@ -39,8 +41,14 @@ import {
   listAgentDeadletters,
   listAgentSkills,
   listGuildAgentSessions,
+  serializeAgentSessionForApi,
   startAgentSession,
 } from './multiAgentService';
+import { appendTrace, createInitialLangGraphState } from './langgraph/stateContract';
+
+beforeEach(() => {
+  __resetAgentRuntimeForTests();
+});
 
 // ──────────────────────────────────────────────────────────
 describe('getMultiAgentRuntimeSnapshot (초기 상태)', () => {
@@ -213,4 +221,220 @@ describe('startAgentSession', () => {
     expect(criticStep?.status).toBe('cancelled');
   });
 
+});
+
+describe('serializeAgentSessionForApi', () => {
+  it('기본값에서는 shadowGraph 원문을 숨기고 summary만 반환한다', () => {
+    const baseState = createInitialLangGraphState({
+      sessionId: 's-1',
+      guildId: 'g-1',
+      requestedBy: 'u-1',
+      priority: 'balanced',
+      goal: '테스트',
+    });
+    const tracedState = appendTrace(
+      {
+        ...baseState,
+        intent: 'task',
+      },
+      'compose_response',
+      'unit-test',
+    );
+    const tracedState2 = appendTrace(tracedState, 'persist_and_emit', 'done');
+
+    const session: AgentSession = {
+      id: 's-1',
+      guildId: 'g-1',
+      requestedBy: 'u-1',
+      goal: 'goal',
+      priority: 'balanced',
+      requestedSkillId: null,
+      routedIntent: 'task',
+      status: 'completed',
+      createdAt: '2026-03-15T00:00:00.000Z',
+      updatedAt: '2026-03-15T00:00:05.000Z',
+      startedAt: '2026-03-15T00:00:01.000Z',
+      endedAt: '2026-03-15T00:00:04.000Z',
+      result: 'ok',
+      error: null,
+      cancelRequested: false,
+      memoryHints: [],
+      steps: [
+        {
+          id: 'step-completed',
+          role: 'planner',
+          title: 'completed-step',
+          status: 'completed',
+          startedAt: '2026-03-15T00:00:01.000Z',
+          endedAt: '2026-03-15T00:00:02.000Z',
+          output: 'ok',
+          error: null,
+        },
+        {
+          id: 'step-running',
+          role: 'researcher',
+          title: 'running-step',
+          status: 'running',
+          startedAt: '2026-03-15T00:00:02.000Z',
+          endedAt: null,
+          output: null,
+          error: null,
+        },
+      ],
+      shadowGraph: tracedState2,
+    };
+
+    const view = serializeAgentSessionForApi(session);
+    expect(view.shadowGraph).toBeUndefined();
+    expect(view.shadowGraphSummary).toMatchObject({
+      traceLength: 2,
+      lastNode: 'persist_and_emit',
+      intent: 'task',
+      hasError: false,
+      elapsedMs: 3000,
+      uniqueNodeCount: 2,
+    });
+    expect(view.shadowGraphSummary?.traceTail).toHaveLength(2);
+    expect(view.shadowGraphSummary?.traceTail[0]?.node).toBe('compose_response');
+    expect(view.shadowGraphSummary?.traceTail[1]?.node).toBe('persist_and_emit');
+    expect(view.progressSummary).toMatchObject({
+      totalSteps: 2,
+      doneSteps: 1,
+      completedSteps: 1,
+      failedSteps: 0,
+      cancelledSteps: 0,
+      runningSteps: 1,
+      pendingSteps: 0,
+      progressPercent: 50,
+    });
+    expect(view.privacySummary).toMatchObject({
+      deliberationMode: expect.any(String),
+      riskScore: expect.any(Number),
+      decision: expect.any(String),
+      reasons: expect.any(Array),
+    });
+  });
+
+  it('옵션 활성화 시 shadowGraph 원문을 포함한다', () => {
+    const state = createInitialLangGraphState({
+      sessionId: 's-2',
+      guildId: 'g-2',
+      requestedBy: 'u-2',
+      priority: 'fast',
+      goal: '테스트2',
+    });
+
+    const session: AgentSession = {
+      id: 's-2',
+      guildId: 'g-2',
+      requestedBy: 'u-2',
+      goal: 'goal2',
+      priority: 'fast',
+      requestedSkillId: null,
+      routedIntent: 'task',
+      status: 'running',
+      createdAt: '2026-03-15T00:00:00.000Z',
+      updatedAt: '2026-03-15T00:00:01.000Z',
+      startedAt: '2026-03-15T00:00:00.500Z',
+      endedAt: null,
+      result: null,
+      error: null,
+      cancelRequested: false,
+      memoryHints: [],
+      steps: [],
+      shadowGraph: state,
+    };
+
+    const view = serializeAgentSessionForApi(session, { includeShadowGraph: true });
+    expect(view.shadowGraph).toBeTruthy();
+    expect(view.shadowGraphSummary?.lastNode).toBeNull();
+    expect(view.progressSummary).toMatchObject({
+      totalSteps: 0,
+      doneSteps: 0,
+      progressPercent: 100,
+    });
+    expect(view.privacySummary).toBeTruthy();
+  });
+
+  it('traceTailLimit 옵션으로 traceTail 길이를 제어한다', () => {
+    const baseState = createInitialLangGraphState({
+      sessionId: 's-3',
+      guildId: 'g-3',
+      requestedBy: 'u-3',
+      priority: 'balanced',
+      goal: '테스트3',
+    });
+    const traced1 = appendTrace(baseState, 'ingest', '1');
+    const traced2 = appendTrace(traced1, 'compile_prompt', '2');
+    const traced3 = appendTrace(traced2, 'route_intent', '3');
+
+    const session: AgentSession = {
+      id: 's-3',
+      guildId: 'g-3',
+      requestedBy: 'u-3',
+      goal: 'goal3',
+      priority: 'balanced',
+      requestedSkillId: null,
+      routedIntent: 'task',
+      status: 'running',
+      createdAt: '2026-03-15T00:00:00.000Z',
+      updatedAt: '2026-03-15T00:00:03.000Z',
+      startedAt: '2026-03-15T00:00:01.000Z',
+      endedAt: null,
+      result: null,
+      error: null,
+      cancelRequested: false,
+      memoryHints: [],
+      steps: [],
+      shadowGraph: traced3,
+    };
+
+    const view = serializeAgentSessionForApi(session, { traceTailLimit: 1 });
+    expect(view.shadowGraphSummary?.traceLength).toBe(3);
+    expect(view.shadowGraphSummary?.traceTail).toHaveLength(1);
+    expect(view.shadowGraphSummary?.traceTail[0]?.node).toBe('route_intent');
+  });
+});
+
+describe('executeSession integration path', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(llmClient.isAnyLlmConfigured).mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('requested skill 세션은 queue drain 후 완료되고 shadow trace를 남긴다', async () => {
+    const created = startAgentSession({
+      guildId: 'guild-integration-1',
+      requestedBy: 'user-integration-1',
+      goal: '스킬 실행 통합 경로 테스트',
+      skillId: 'ops-execution',
+      priority: 'balanced',
+      isAdmin: true,
+    });
+
+    for (let i = 0; i < 6; i += 1) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+    }
+
+    const completed = getAgentSession(created.id);
+    expect(completed).not.toBeNull();
+    expect(completed?.status).toBe('completed');
+    expect(completed?.shadowGraph).toBeTruthy();
+
+    const nodes = (completed?.shadowGraph?.trace || []).map((entry) => entry.node);
+    expect(nodes).toContain('ingest');
+    expect(nodes).toContain('compile_prompt');
+    expect(nodes).toContain('route_intent');
+    expect(nodes).toContain('policy_gate');
+    expect(nodes).toContain('hydrate_memory');
+    expect(nodes).toContain('plan_actions');
+    expect(nodes).toContain('execute_actions');
+    expect(nodes).toContain('compose_response');
+    expect(nodes).toContain('persist_and_emit');
+  });
 });

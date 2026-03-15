@@ -4,6 +4,8 @@ import { getAgentSession } from '../../services/multiAgentService';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
+import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP } from '../runtimePolicy';
+import logger from '../../logger';
 
 type VibeDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
@@ -22,6 +24,10 @@ const fallbackRequestCache = new Map<string, string>();
 const PROCESSED_MESSAGE_TTL_MS = Math.max(30_000, Number(process.env.VIBE_MESSAGE_DEDUP_TTL_MS || 5 * 60_000));
 const processedMessageUntilMs = new Map<string, number>();
 
+const logVibeNonCritical = (scope: string, error: unknown, getErrorMessage: (error: unknown) => string): void => {
+  logger.debug('[VIBE] %s: %s', scope, getErrorMessage(error));
+};
+
 const shouldProcessMessage = (messageId: string): boolean => {
   const now = Date.now();
   const expiresAt = processedMessageUntilMs.get(messageId) || 0;
@@ -30,7 +36,7 @@ const shouldProcessMessage = (messageId: string): boolean => {
   }
 
   // Opportunistic cleanup to keep the map bounded.
-  if (processedMessageUntilMs.size > 500) {
+  if (processedMessageUntilMs.size > DISCORD_VIBE_DEDUP_MAX_ENTRIES) {
     for (const [id, until] of processedMessageUntilMs.entries()) {
       if (until <= now) {
         processedMessageUntilMs.delete(id);
@@ -76,7 +82,7 @@ const shouldSuggestPolicyGuidance = (resultText: string): boolean => {
 const buildWorkerProposalRow = (sessionId: string, request: string) => {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`worker_propose:${sessionId}:${encodeURIComponent(request.slice(0, 200))}`)
+      .setCustomId(`worker_propose:${sessionId}:${encodeURIComponent(request.slice(0, DISCORD_VIBE_WORKER_REQUEST_CLIP))}`)
       .setLabel('🚀 자동화 워커로 등록')
       .setStyle(ButtonStyle.Secondary),
   );
@@ -168,14 +174,14 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       await interaction.followUp({
         content: `⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`,
         ephemeral: true,
-      }).catch(() => undefined);
+      }).catch((error) => logVibeNonCritical('followUp(policy hint) failed', error, deps.getErrorMessage));
     }
     if (shouldSuggestWorkerProposal(request, resultText)) {
       await interaction.followUp({
         content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
         components: [buildWorkerProposalRow(session.id, request)],
         ephemeral: true,
-      }).catch(() => undefined);
+      }).catch((error) => logVibeNonCritical('followUp(worker hint) failed', error, deps.getErrorMessage));
     }
 
     if (deps.codeThreadEnabled && shared) {
@@ -183,9 +189,13 @@ export const createVibeHandlers = (deps: VibeDeps) => {
         try {
           const replyMsg = await interaction.fetchReply();
           if (replyMsg && 'startThread' in replyMsg) {
-            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch(() => undefined);
+            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch((error) => {
+              logger.debug('[VIBE] code thread posting failed (ask command): %s', deps.getErrorMessage(error));
+            });
           }
-        } catch { /* best-effort */ }
+        } catch (error) {
+          logger.debug('[VIBE] fetchReply/startThread failed (ask command): %s', deps.getErrorMessage(error));
+        }
       }
     }
   };
@@ -236,9 +246,13 @@ export const createVibeHandlers = (deps: VibeDeps) => {
         try {
           const replyMsg = await interaction.fetchReply();
           if (replyMsg && 'startThread' in replyMsg) {
-            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch(() => undefined);
+            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch((error) => {
+              logger.debug('[VIBE] code thread posting failed (make command): %s', deps.getErrorMessage(error));
+            });
           }
-        } catch { /* best-effort */ }
+        } catch (error) {
+          logger.debug('[VIBE] fetchReply/startThread failed (make command): %s', deps.getErrorMessage(error));
+        }
       }
     }
 
@@ -296,18 +310,24 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     const completed = getAgentSession(session.id);
     const resultText = String(completed?.result || '');
     if (shouldSuggestPolicyGuidance(resultText)) {
-      await message.reply(`⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`).catch(() => undefined);
+      await message.reply(`⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`).catch((error) => {
+        logVibeNonCritical('message.reply(policy hint) failed', error, deps.getErrorMessage);
+      });
     }
     if (shouldSuggestWorkerProposal(request, resultText)) {
       await message.reply({
         content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
         components: [buildWorkerProposalRow(session.id, request)],
-      }).catch(() => undefined);
+      }).catch((error) => {
+        logVibeNonCritical('message.reply(worker hint) failed', error, deps.getErrorMessage);
+      });
     }
 
     if (deps.codeThreadEnabled) {
       if (completed?.status === 'completed') {
-        await deps.tryPostCodeThread(progressMessage, completed, message.guildId).catch(() => undefined);
+        await deps.tryPostCodeThread(progressMessage, completed, message.guildId).catch((error) => {
+          logVibeNonCritical('code thread posting failed (message mode)', error, deps.getErrorMessage);
+        });
       }
     }
   };

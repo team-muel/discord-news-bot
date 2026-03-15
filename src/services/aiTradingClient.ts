@@ -54,10 +54,16 @@ const buildUrl = (pathValue: string): string => {
   return `${normalizeBaseUrl(AI_TRADING_BASE_URL)}${sanitizePath(pathValue)}`;
 };
 
-const parseJsonObject = async (response: Response): Promise<Record<string, unknown>> => {
-  const payload = (await response.json().catch(() => null)) as unknown;
+const parseJsonObject = async (response: Response, errorCode: string): Promise<Record<string, unknown>> => {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(`${errorCode}:INVALID_JSON`);
+  }
+
   if (!payload || typeof payload !== 'object') {
-    return {};
+    throw new Error(`${errorCode}:INVALID_PAYLOAD`);
   }
 
   return payload as Record<string, unknown>;
@@ -83,7 +89,7 @@ export async function executeAiTradingOrder(input: TradeExecutionRequest): Promi
     AI_TRADING_TIMEOUT_MS,
   );
 
-  const payload = await parseJsonObject(response);
+  const payload = await parseJsonObject(response, 'AI_TRADING_ORDER_PARSE_FAILED');
   if (!response.ok) {
     const reason = typeof payload.message === 'string' ? payload.message : `HTTP_${response.status}`;
     throw new Error(`AI_TRADING_ORDER_FAILED:${reason}`);
@@ -114,7 +120,7 @@ export async function getAiTradingPosition(symbol: string): Promise<Record<strin
     AI_TRADING_TIMEOUT_MS,
   );
 
-  const payload = await parseJsonObject(response);
+  const payload = await parseJsonObject(response, 'AI_TRADING_POSITION_PARSE_FAILED');
   if (!response.ok) {
     const reason = typeof payload.message === 'string' ? payload.message : `HTTP_${response.status}`;
     throw new Error(`AI_TRADING_POSITION_FAILED:${reason}`);

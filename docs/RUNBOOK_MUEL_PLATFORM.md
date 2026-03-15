@@ -30,6 +30,15 @@ Suggested ownership model:
 - Frontend owner: Vercel app and OAuth UX
 - On-call: first response, mitigation, escalation
 
+Single-operator mode (current):
+
+- This platform can be operated by one developer.
+- Primary risk framing is operator context overload and decision latency, not cross-team communication.
+- Mitigation baseline:
+  - Keep runbooks and changelog synchronized on every architecture-significant change.
+  - Keep go/no-go gates and operational thresholds explicit and versioned.
+  - Prefer automation with fail-closed defaults for high-impact operations.
+
 Suggested baseline SLO (adjust as needed):
 
 - API availability: 99.5%
@@ -54,6 +63,28 @@ Open these first when verifying behavior:
 - Lightweight worker split: `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md`
 - Generated route map: `docs/ROUTES_INVENTORY.md`
 - Schema-service map: `docs/SCHEMA_SERVICE_MAP.md`
+
+## 2.1) Current Progress Snapshot (2026-03-15)
+
+This snapshot captures what is already running in production-oriented flow.
+
+- Guild onboarding automation:
+  - New guild join can auto-bootstrap Obsidian knowledge tree.
+  - Optional first ops-cycle can run immediately after bootstrap.
+- Obsidian sync model:
+  - Sync moved from fixed 3-document mode to manifest-driven recursive collection.
+  - All-guild discovery mode is supported for periodic loops.
+- Continuous context ingestion:
+  - Discord category/channel topology snapshots are persisted to guild knowledge tree.
+  - Channel/user activity telemetry snapshots are persisted periodically.
+  - Reaction reward snapshots (thumbs-up/thumbs-down) are persisted periodically.
+- User feedback loop:
+  - User-facing response footer prompt can be enabled for lightweight quality signal.
+
+Operational meaning:
+
+- Current stage is no longer static memory sync.
+- Current stage is an autonomous guild-context operating loop with safety gates.
 
 ## 3) Day 0 Provisioning Checklist
 
@@ -131,6 +162,9 @@ Run in order:
 - Watch for missing schema fallback warnings.
 - Verify memory pipelines continue to persist and retrieve expected rows.
 - Confirm `guild_lore_docs` freshness is within expected sync window.
+- Confirm ops-loop lock behavior is healthy (`.runtime/obsidian-ops-loop.lock` is not stale).
+- Confirm aggregate loop failure rate remains below configured threshold (`OBSIDIAN_OPS_MAX_FAILURE_RATE`).
+- Confirm reward/telemetry snapshots are generated on schedule for active guilds.
 
 ### 5.3 Deployment Hygiene
 
@@ -228,6 +262,12 @@ For any change touching routes, persistence, runtime controls, or auth:
 2. If architecture meaning changed, update `docs/ARCHITECTURE_INDEX.md` and `docs/CHANGELOG-ARCH.md`.
 3. Regenerate and verify generated docs with `npm run docs:build` / `npm run docs:check`.
 4. Record rollback strategy before release.
+
+For memory/agent loop changes specifically:
+
+1. Update `docs/OBSIDIAN_SUPABASE_SYNC.md` when bootstrap/sync/loop/reward behavior changes.
+2. Update `docs/planning/LONG_TERM_MEMORY_AGENT_ROADMAP.md` when stage milestones or success metrics change.
+3. Add an entry to `docs/CHANGELOG-ARCH.md` for architecture-significant automation changes.
 
 ## 10) Command Reference
 

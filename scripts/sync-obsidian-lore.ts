@@ -13,9 +13,18 @@ type LoreDoc = {
   folderName: string;
   guildId: string;
   source: string;
+  relativePath: string;
   title: string;
   summary: string;
   content: string;
+};
+
+type GuildKnowledgeManifest = {
+  version?: number;
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+  maxFiles?: number;
+  sourcePrefix?: string;
 };
 
 type SyncStats = {
@@ -29,9 +38,24 @@ type SyncStats = {
   duplicateRowsDeleted: number;
 };
 
-const LORE_BASENAMES = ['Guild_Lore', 'Server_History', 'Decision_Log'] as const;
+const DEFAULT_INCLUDE_GLOBS = String(process.env.OBSIDIAN_SYNC_DEFAULT_INCLUDE_GLOBS || '**/*.md')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+const DEFAULT_EXCLUDE_GLOBS = String(process.env.OBSIDIAN_SYNC_DEFAULT_EXCLUDE_GLOBS || '.obsidian/**,.trash/**,templates/**,ops/state/**,index/**')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+const DEFAULT_SOURCE_PREFIX = 'knowledge';
 const CONTENT_MAX_LEN = 12000;
 const SUMMARY_MAX_LEN = 220;
+const DEFAULT_MAX_FILES_PER_GUILD = (() => {
+  const parsed = Number(process.env.OBSIDIAN_SYNC_DEFAULT_MAX_FILES || 600);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 600;
+  }
+  return Math.floor(parsed);
+})();
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -179,26 +203,6 @@ const extractTitle = (filename: string, raw: string): string => {
   return filename.replace(/\.md$/i, '');
 };
 
-const readLoreFileContent = async (guildPath: string, baseName: string): Promise<{ raw: string; sourceName: string } | null> => {
-  const candidates = [`${baseName}.md`, baseName];
-
-  for (const filename of candidates) {
-    const filePath = path.join(guildPath, filename);
-    try {
-      const raw = await fs.readFile(filePath, 'utf-8');
-      return {
-        raw,
-        // Keep source key stable as .md for dedup/updates regardless of actual local extension.
-        sourceName: `${baseName}.md`,
-      };
-    } catch {
-      // Try next candidate.
-    }
-  }
-
-  return null;
-};
-
 const extractSummary = (raw: string): string => {
   const body = raw
     .split(/\r?\n/)
@@ -210,27 +214,153 @@ const extractSummary = (raw: string): string => {
   return truncate(toSingleLine(body), SUMMARY_MAX_LEN);
 };
 
+const toPosix = (value: string): string => value.split(path.sep).join('/').replace(/^\/+/, '');
+
+const globToRegExp = (glob: string): RegExp => {
+  let normalized = toPosix(String(glob || '').trim());
+  if (!normalized) {
+    normalized = '**/*';
+  }
+
+  let pattern = '';
+  let i = 0;
+  while (i < normalized.length) {
+    const char = normalized[i];
+    const next = normalized[i + 1];
+
+    if (char === '*' && next === '*') {
+      pattern += '.*';
+      i += 2;
+      continue;
+    }
+
+    if (char === '*') {
+      pattern += '[^/]*';
+      i += 1;
+      continue;
+    }
+
+    if (char === '?') {
+      pattern += '[^/]';
+      i += 1;
+      continue;
+    }
+
+    const escaped = char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    pattern += escaped;
+    i += 1;
+  }
+
+  return new RegExp(`^${pattern}$`, 'i');
+};
+
+const normalizeManifest = (input: GuildKnowledgeManifest | null): Required<GuildKnowledgeManifest> => {
+  const includeGlobs = (input?.includeGlobs || DEFAULT_INCLUDE_GLOBS)
+    .map((item) => toPosix(String(item || '').trim()))
+    .filter(Boolean);
+
+  const excludeGlobs = (input?.excludeGlobs || DEFAULT_EXCLUDE_GLOBS)
+    .map((item) => toPosix(String(item || '').trim()))
+    .filter(Boolean);
+
+  const maxFilesRaw = Number(input?.maxFiles ?? DEFAULT_MAX_FILES_PER_GUILD);
+  const maxFiles = Number.isFinite(maxFilesRaw) && maxFilesRaw > 0
+    ? Math.floor(maxFilesRaw)
+    : DEFAULT_MAX_FILES_PER_GUILD;
+
+  const sourcePrefix = String(input?.sourcePrefix || DEFAULT_SOURCE_PREFIX).trim() || DEFAULT_SOURCE_PREFIX;
+
+  return {
+    version: Number(input?.version || 1),
+    includeGlobs,
+    excludeGlobs,
+    maxFiles,
+    sourcePrefix,
+  };
+};
+
+const readGuildManifest = async (guildPath: string): Promise<Required<GuildKnowledgeManifest>> => {
+  const candidates = [
+    path.join(guildPath, 'index', 'manifest.json'),
+    path.join(guildPath, 'manifest.json'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const raw = await fs.readFile(candidate, 'utf-8');
+      const parsed = JSON.parse(raw) as GuildKnowledgeManifest;
+      return normalizeManifest(parsed);
+    } catch {
+      // Continue probing next candidate.
+    }
+  }
+
+  return normalizeManifest(null);
+};
+
+const listMarkdownFilesRecursive = async (rootPath: string): Promise<string[]> => {
+  const output: string[] = [];
+
+  const walk = async (current: string): Promise<void> => {
+    let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }> = [];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolute);
+        continue;
+      }
+      if (entry.isFile() && /\.md$/i.test(entry.name)) {
+        output.push(absolute);
+      }
+    }
+  };
+
+  await walk(rootPath);
+  return output;
+};
+
 const collectLoreDocs = async (vaultPath: string, target: SyncTarget): Promise<LoreDoc[]> => {
   const guildPath = path.join(vaultPath, 'guilds', target.folderName);
   const docs: LoreDoc[] = [];
 
-  for (const baseName of LORE_BASENAMES) {
-    const loaded = await readLoreFileContent(guildPath, baseName);
-    if (!loaded) {
+  const manifest = await readGuildManifest(guildPath);
+  const includePatterns = manifest.includeGlobs.map((glob) => globToRegExp(glob));
+  const excludePatterns = manifest.excludeGlobs.map((glob) => globToRegExp(glob));
+
+  const files = await listMarkdownFilesRecursive(guildPath);
+  const selected = files
+    .map((absolute) => ({ absolute, relative: toPosix(path.relative(guildPath, absolute)) }))
+    .filter(({ relative }) => includePatterns.some((pattern) => pattern.test(relative)))
+    .filter(({ relative }) => !excludePatterns.some((pattern) => pattern.test(relative)))
+    .slice(0, manifest.maxFiles);
+
+  for (const file of selected) {
+    let raw = '';
+    try {
+      raw = await fs.readFile(file.absolute, 'utf-8');
+    } catch {
       continue;
     }
 
-    const content = truncate(loaded.raw.trim(), CONTENT_MAX_LEN);
+    const content = truncate(raw.trim(), CONTENT_MAX_LEN);
     if (!content) {
       continue;
     }
 
+    const source = `obsidian-sync:${manifest.sourcePrefix}/${file.relative}`;
     docs.push({
       folderName: target.folderName,
       guildId: target.guildId,
-      source: `obsidian-sync:${loaded.sourceName}`,
-      title: extractTitle(loaded.sourceName, loaded.raw),
-      summary: extractSummary(loaded.raw),
+      source,
+      relativePath: file.relative,
+      title: extractTitle(file.relative, raw),
+      summary: extractSummary(raw),
       content,
     });
   }
@@ -317,7 +447,7 @@ const main = async () => {
     const docs = await collectLoreDocs(vaultPath, target);
     if (docs.length === 0) {
       stats.skippedTargets += 1;
-      console.log(`[obsidian-sync] folder=${target.folderName} guild=${target.guildId} no lore markdown found`);
+      console.log(`[obsidian-sync] folder=${target.folderName} guild=${target.guildId} no matched markdown found`);
       continue;
     }
 
@@ -339,7 +469,7 @@ const main = async () => {
 
       if (dryRun) {
         const mode = primaryId ? 'update' : 'insert';
-        console.log(`[obsidian-sync] dry-run folder=${doc.folderName} guild=${doc.guildId} source=${doc.source} mode=${mode}`);
+        console.log(`[obsidian-sync] dry-run folder=${doc.folderName} guild=${doc.guildId} path=${doc.relativePath} source=${doc.source} mode=${mode}`);
         stats.touchedRows += 1;
         if (mode === 'insert') {
           stats.insertedRows += 1;
@@ -397,7 +527,7 @@ const main = async () => {
       }
 
       stats.touchedRows += 1;
-      console.log(`[obsidian-sync] folder=${doc.folderName} guild=${doc.guildId} source=${doc.source} synced`);
+      console.log(`[obsidian-sync] folder=${doc.folderName} guild=${doc.guildId} path=${doc.relativePath} source=${doc.source} synced`);
     }
   }
 

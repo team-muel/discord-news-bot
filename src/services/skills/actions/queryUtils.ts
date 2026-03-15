@@ -2,6 +2,9 @@ const GOAL_NOISE_REGEXES: RegExp[] = [
   /세션 스킬 실행:[^\n]*/g,
   /요청:\s*/g,
   /목표:\s*/g,
+  /\[intent-tags\][^|\n]*/gi,
+  /\[response-directives\][^|\n]*/gi,
+  /\s*\|\s*/g,
 ];
 
 export const compactText = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();

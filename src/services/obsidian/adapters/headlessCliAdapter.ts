@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import type {
+  ObsidianLoreQuery,
   ObsidianNode,
   ObsidianReadFileQuery,
   ObsidianSearchQuery,
@@ -21,6 +22,22 @@ const getVaultName = (): string => {
 
 const isHeadlessEnabled = (): boolean => {
   return String(process.env.OBSIDIAN_HEADLESS_ENABLED || '').trim().toLowerCase() === 'true';
+};
+
+const getHeadlessLoreMaxHints = (): number => {
+  const raw = Number(process.env.OBSIDIAN_HEADLESS_LORE_MAX_HINTS ?? 6);
+  if (!Number.isFinite(raw)) {
+    return 6;
+  }
+  return Math.max(1, Math.min(12, Math.trunc(raw)));
+};
+
+const getHeadlessLoreMaxChars = (): number => {
+  const raw = Number(process.env.OBSIDIAN_HEADLESS_LORE_MAX_CHARS ?? 220);
+  if (!Number.isFinite(raw)) {
+    return 220;
+  }
+  return Math.max(80, Math.min(600, Math.trunc(raw)));
 };
 
 const sanitizeArg = (value: unknown, maxLen = 300): string => String(value || '')
@@ -130,6 +147,83 @@ const parseGraphMetadata = (output: string): Record<string, ObsidianNode> => {
   }
 };
 
+const toLoreHint = (filePath: string, markdown: string): string | null => {
+  const maxChars = getHeadlessLoreMaxChars();
+  const joined = String(markdown || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'))
+    .slice(0, 5)
+    .join(' | ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!joined) {
+    return null;
+  }
+
+  return `[obsidian-headless] ${filePath} :: ${joined.slice(0, maxChars)}`;
+};
+
+const readLore = async (params: ObsidianLoreQuery): Promise<string[]> => {
+  const safeGuildId = sanitizeArg(params.guildId, 80);
+  const safeGoal = sanitizeArg(params.goal, 220);
+  if (!safeGoal) {
+    return [];
+  }
+
+  const maxHints = getHeadlessLoreMaxHints();
+  const searchResults = await searchVault({
+    vaultPath: params.vaultPath,
+    query: safeGoal,
+    limit: Math.max(maxHints * 2, 8),
+  });
+
+  if (searchResults.length === 0) {
+    return [];
+  }
+
+  const guildPrefix = safeGuildId ? `guilds/${safeGuildId}/` : '';
+  const ranked = [...searchResults].sort((a, b) => {
+    if (!guildPrefix) {
+      return b.score - a.score;
+    }
+    const aGuild = a.filePath.includes(guildPrefix) ? 1 : 0;
+    const bGuild = b.filePath.includes(guildPrefix) ? 1 : 0;
+    if (aGuild !== bGuild) {
+      return bGuild - aGuild;
+    }
+    return b.score - a.score;
+  });
+
+  const out: string[] = [];
+  const visited = new Set<string>();
+  for (const item of ranked) {
+    if (out.length >= maxHints) {
+      break;
+    }
+    if (visited.has(item.filePath)) {
+      continue;
+    }
+    visited.add(item.filePath);
+
+    const markdown = await readFileFromVault({
+      vaultPath: params.vaultPath,
+      filePath: item.filePath,
+    });
+    if (!markdown) {
+      continue;
+    }
+
+    const hint = toLoreHint(item.filePath, markdown);
+    if (hint) {
+      out.push(hint);
+    }
+  }
+
+  return out;
+};
+
 const searchVault = async (params: ObsidianSearchQuery): Promise<ObsidianSearchResult[]> => {
   const safeQuery = sanitizeArg(params.query, 220);
   const safeLimit = Math.max(1, Math.min(50, Math.trunc(params.limit)));
@@ -210,8 +304,9 @@ const getGraphMetadata = async (): Promise<Record<string, ObsidianNode>> => {
 
 export const headlessCliObsidianAdapter: ObsidianVaultAdapter = {
   id: 'headless-cli',
-  capabilities: ['search_vault', 'read_file', 'graph_metadata'],
+  capabilities: ['read_lore', 'search_vault', 'read_file', 'graph_metadata'],
   isAvailable: () => isHeadlessEnabled() && getHeadlessCommand().length > 0,
+  readLore,
   searchVault,
   readFile: readFileFromVault,
   getGraphMetadata,

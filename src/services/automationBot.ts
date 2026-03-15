@@ -95,7 +95,7 @@ export const startAutomationModules = (client: Client) => {
 export const triggerAutomationJob = async (jobName: AutomationJobName, context?: AutomationTriggerContext) => {
   const state = jobStates[jobName];
   if (!state) {
-    return { ok: false, message: 'Unsupported job' };
+    return { ok: false, message: `Unsupported job: ${String(jobName || '(unknown)')}` };
   }
 
   if (!state.enabled) {

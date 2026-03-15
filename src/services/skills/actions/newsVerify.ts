@@ -13,9 +13,11 @@
 import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { compactText, extractQuery } from './queryUtils';
+import logger from '../../../logger';
+import { parseIntegerEnv } from '../../../utils/env';
 
 const FETCH_TIMEOUT_MS = 7_000;
-const VERIFY_SOURCE_LIMIT = parseInt(process.env.NEWS_VERIFY_SOURCE_LIMIT || '4', 10);
+const VERIFY_SOURCE_LIMIT = Math.max(2, Math.min(10, parseIntegerEnv(process.env.NEWS_VERIFY_SOURCE_LIMIT, 4)));
 
 // ── Text extraction ──────────────────────────────────────────────────────────
 
@@ -123,7 +125,9 @@ export const newsVerifyAction: ActionDefinition = {
         const xml = await rssRes.text();
         candidates = parseNewsRssLinks(xml, VERIFY_SOURCE_LIMIT);
       }
-    } catch { /* ignore */ }
+    } catch (error) {
+      logger.debug('[ACTION][news.verify] rss fetch failed: %s', error instanceof Error ? error.message : String(error));
+    }
 
     if (candidates.length < 2) {
       return {
@@ -180,18 +184,32 @@ export const newsVerifyAction: ActionDefinition = {
       }),
     ];
 
+    const summary = `"${query}" 교차 검증 — ${candidates.length}개 소스, 본문 ${fetchedCount}건 수집 → ${verdict}`;
+    const verification = [
+      `query="${query}"`,
+      `sources=${candidates.length}`,
+      `fetched=${fetchedCount}`,
+      `avgSimilarity=${(avgSim * 100).toFixed(1)}%`,
+      `verdict=${verdict}`,
+    ];
+
+    if (verdict === 'UNVERIFIED') {
+      return {
+        ok: false,
+        name: 'news.verify',
+        summary,
+        artifacts,
+        verification,
+        error: 'UNVERIFIED_CONTENT',
+      };
+    }
+
     return {
       ok: true,
       name: 'news.verify',
-      summary: `"${query}" 교차 검증 — ${candidates.length}개 소스, 본문 ${fetchedCount}건 수집 → ${verdict}`,
+      summary,
       artifacts,
-      verification: [
-        `query="${query}"`,
-        `sources=${candidates.length}`,
-        `fetched=${fetchedCount}`,
-        `avgSimilarity=${(avgSim * 100).toFixed(1)}%`,
-        `verdict=${verdict}`,
-      ],
+      verification,
     };
   },
 };

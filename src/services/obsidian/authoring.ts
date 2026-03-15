@@ -14,6 +14,54 @@ const sanitizeFileName = (value: unknown): string => {
   return candidate || 'Untitled';
 };
 
+const stripMarkdownExtension = (value: string): string => {
+  return String(value || '').trim().replace(/\.md$/i, '');
+};
+
+const canonicalizeLoreDocName = (rawName: string): string => {
+  const normalized = stripMarkdownExtension(rawName)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_')
+    .trim();
+
+  if (normalized === 'guild_lore' || normalized === 'lore') {
+    return 'Guild_Lore';
+  }
+  if (normalized === 'server_history' || normalized === 'history') {
+    return 'Server_History';
+  }
+  if (normalized === 'decision_log' || normalized === 'decisions' || normalized === 'decision') {
+    return 'Decision_Log';
+  }
+
+  return sanitizeFileName(stripMarkdownExtension(rawName));
+};
+
+const normalizeNestedRelativePath = (rawPath: string): string => {
+  const normalized = stripMarkdownExtension(rawPath)
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+
+  const segments = normalized
+    .split('/')
+    .map((segment) => sanitizeFileName(segment))
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+
+  return segments.join('/');
+};
+
+const toGuildRelativePath = (guildId: string, fileName: string): string => {
+  const nested = normalizeNestedRelativePath(fileName);
+  if (nested.includes('/')) {
+    return `guilds/${guildId}/${nested}.md`;
+  }
+
+  const baseName = canonicalizeLoreDocName(nested || fileName);
+  return `guilds/${guildId}/${baseName}.md`;
+};
+
 const normalizeTags = (tags?: string[]): string[] => {
   return (tags || [])
     .map((tag) => String(tag || '').trim().replace(/^#/, '').toLowerCase())
@@ -47,7 +95,7 @@ export const upsertObsidianGuildDocument = async (params: {
   const result = await writeObsidianNoteWithAdapter({
     guildId,
     vaultPath,
-    fileName: sanitizeFileName(params.fileName),
+    fileName: toGuildRelativePath(guildId, params.fileName),
     content,
     tags: normalizeTags(params.tags),
     properties: params.properties || {},

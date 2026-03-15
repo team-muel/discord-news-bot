@@ -4,6 +4,11 @@
  */
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { DISCORD_MESSAGES } from './messages';
+import {
+  DISCORD_ADMIN_DETAILS_LIMIT,
+  DISCORD_ADMIN_SUMMARY_LIMIT,
+  DISCORD_EMBED_DESCRIPTION_LIMIT,
+} from './runtimePolicy';
 
 // ─── Colour palette ───────────────────────────────────────────────────────────
 export const EMBED_INFO    = 0x2f80ed;
@@ -16,7 +21,7 @@ export const buildSimpleEmbed = (title: string, description: string, color = EMB
   embeds: [
     {
       title,
-      description: String(description || '').slice(0, 3900),
+      description: String(description || '').slice(0, DISCORD_EMBED_DESCRIPTION_LIMIT),
       color,
     },
   ],
@@ -26,7 +31,7 @@ export const buildUserCard = (title: string, description: string, color = EMBED_
   embeds: [
     {
       title,
-      description: String(description || '').slice(0, 3900),
+      description: String(description || '').slice(0, DISCORD_EMBED_DESCRIPTION_LIMIT),
       color,
       footer: { text: DISCORD_MESSAGES.ui.footerUser },
     },
@@ -43,10 +48,10 @@ export const buildAdminCard = (
     {
       title,
       color,
-      description: String(summary || '').slice(0, 2000),
+      description: String(summary || '').slice(0, DISCORD_ADMIN_SUMMARY_LIMIT),
       fields:
         details.length > 0
-          ? [{ name: DISCORD_MESSAGES.ui.detailsFieldTitle, value: details.join('\n').slice(0, 1000) }]
+          ? [{ name: DISCORD_MESSAGES.ui.detailsFieldTitle, value: details.join('\n').slice(0, DISCORD_ADMIN_DETAILS_LIMIT) }]
           : undefined,
       footer: { text: DISCORD_MESSAGES.ui.footerAdmin },
     },
