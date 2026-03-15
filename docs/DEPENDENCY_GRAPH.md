@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 148
+- Nodes: 149
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -479,8 +479,11 @@ graph LR
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/services/workerGeneration/workerProposalMetrics.ts":::file
   "src/services/workerGeneration/workerSandbox.ts":::file
+  "src/services/youtubeCommunityScraper.ts" --> "src/utils/network.ts"
   "src/services/youtubeMonitorWorkerClient.ts" --> "src/services/mcpWorkerClient.ts"
+  "src/services/youtubeMonitorWorkerClient.ts" --> "src/services/youtubeCommunityScraper.ts"
   "src/services/youtubeMonitorWorkerClient.ts" --> "src/utils/env.ts"
+  "src/services/youtubeMonitorWorkerClient.ts" --> "src/utils/network.ts"
   "src/services/youtubeSubscriptionStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/logger.ts"
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/services/sourceMonitorStore.ts"
