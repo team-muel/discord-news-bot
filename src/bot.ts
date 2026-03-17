@@ -33,6 +33,7 @@ import {
   listGuildAgentSessions,
   startAgentSession,
 } from './services/multiAgentService';
+import { recordCommunityInteractionEvent } from './services/communityGraphService';
 import { recordReactionRewardSignal } from './services/discordReactionRewardService';
 import { isAnyLlmConfigured } from './services/llmClient';
 import { queryObsidianRAG, initObsidianRAG } from './services/obsidianRagService';
@@ -62,6 +63,7 @@ import {
   recordWorkerApprovalDecision,
   recordWorkerGenerationResult,
   recordWorkerProposalClick,
+  getWorkerProposalMetricsSnapshot,
 } from './services/workerGeneration/workerProposalMetrics';
 import { cleanupSandbox } from './services/workerGeneration/workerSandbox';
 import { evaluateWorkerActivationGate } from './services/agentRuntimeReadinessService';
@@ -82,9 +84,6 @@ import {
   commandDefinitions,
   SIMPLE_COMMANDS_ENABLED,
   SIMPLE_COMMAND_ALLOWLIST,
-  LEGACY_SESSION_COMMANDS_ENABLED,
-  LEGACY_SESSION_COMMAND_NAMES,
-  LEGACY_SUBSCRIBE_COMMAND_ENABLED,
   CODE_THREAD_ENABLED,
   CODING_INTENT_PATTERN,
   AUTOMATION_INTENT_PATTERN,
@@ -123,7 +122,7 @@ import { createAdminHandlers } from './discord/commands/admin';
 import { createAgentHandlers } from './discord/commands/agent';
 import { createVibeHandlers } from './discord/commands/vibe';
 import { createDocsHandlers } from './discord/commands/docs';
-import { registerSlashCommands as registerSlashCommandsFromLifecycle } from './discord/lifecycle';
+import { createPersonaHandlers } from './discord/commands/persona';
 import { startDiscordReadyWorkloads } from './discord/runtime/readyWorkloads';
 import { processPassiveMemoryCapture } from './discord/runtime/passiveMemoryCapture';
 import { handleButtonInteraction } from './discord/runtime/buttonInteractions';
@@ -279,28 +278,6 @@ export type ManualReconnectRequestResult = {
   message: string;
 };
 
-const replyLegacySessionRedirect = async (interaction: ChatInputCommandInteraction) => {
-  await interaction.reply({
-    ...buildSimpleEmbed(
-      DISCORD_MESSAGES.bot.titleLegacySessionGuide,
-      DISCORD_MESSAGES.bot.legacySessionGuideBody,
-      EMBED_INFO,
-    ),
-    ephemeral: true,
-  });
-};
-
-const replyLegacySubscribeRedirect = async (interaction: ChatInputCommandInteraction) => {
-  await interaction.reply({
-    ...buildSimpleEmbed(
-      '명령 통합 안내',
-      '구독 기능은 /세션 구독으로 통합되었습니다.\n사용 예: /세션 구독 동작:추가 종류:뉴스',
-      EMBED_INFO,
-    ),
-    ephemeral: true,
-  });
-};
-
 const getManualReconnectCooldownRemainingSec = () => {
   if (!botRuntimeState.lastManualReconnectAt) {
     return 0;
@@ -370,12 +347,51 @@ const getGuildUsageSummaryLine = async (guildId: string | null): Promise<string 
 };
 
 const registerSlashCommands = async () => {
-  await registerSlashCommandsFromLifecycle({
-    client,
-    commandDefinitions,
-    discordCommandGuildId: DISCORD_COMMAND_GUILD_ID,
-    clearGuildScopedCommandsOnGlobalSync: CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC,
-  });
+  if (!client.application) {
+    logger.warn('[BOT] Discord application context unavailable, skipping slash command sync');
+    return;
+  }
+
+  try {
+    let targetGuildIdForFastSync: string | null = null;
+    if (DISCORD_COMMAND_GUILD_ID) {
+      let guild: Guild | undefined;
+      try {
+        guild = await client.guilds.fetch(DISCORD_COMMAND_GUILD_ID);
+      } catch (fetchError) {
+        logger.error('[BOT] Failed to fetch target guild %s for slash sync: %o', DISCORD_COMMAND_GUILD_ID, fetchError);
+      }
+
+      if (guild) {
+        await guild.commands.set(commandDefinitions);
+        logger.info('[BOT] Slash commands synced to guild=%s (%d commands)', DISCORD_COMMAND_GUILD_ID, commandDefinitions.length);
+        targetGuildIdForFastSync = DISCORD_COMMAND_GUILD_ID;
+      }
+
+      if (!guild) {
+        logger.warn('[BOT] Falling back to global slash command sync because target guild is unavailable');
+      }
+    }
+
+    await client.application.commands.set(commandDefinitions);
+    logger.info('[BOT] Slash commands synced globally (%d commands)', commandDefinitions.length);
+
+    if (CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC) {
+      let cleared = 0;
+      for (const guild of client.guilds.cache.values()) {
+        if (targetGuildIdForFastSync && guild.id === targetGuildIdForFastSync) continue;
+        try {
+          await guild.commands.set([]);
+          cleared += 1;
+        } catch (clearError) {
+          logger.warn('[BOT] Failed to clear guild-scoped commands for guild=%s: %o', guild.id, clearError);
+        }
+      }
+      logger.info('[BOT] Cleared stale guild-scoped commands for %d guild(s)', cleared);
+    }
+  } catch (error) {
+    logger.error('[BOT] Failed to sync slash commands: %o', error);
+  }
 };
 
 export const forceRegisterSlashCommands = async () => {
@@ -521,8 +537,6 @@ const adminHandlers = createAdminHandlers({
   loginSessionRefreshWindowMs: LOGIN_SESSION_REFRESH_WINDOW_MS,
   loginSessionCleanupIntervalMs: LOGIN_SESSION_CLEANUP_INTERVAL_MS,
   simpleCommandsEnabled: SIMPLE_COMMANDS_ENABLED,
-  legacySubscribeCommandEnabled: LEGACY_SUBSCRIBE_COMMAND_ENABLED,
-  legacySessionCommandsEnabled: LEGACY_SESSION_COMMANDS_ENABLED,
   getUsageSummaryLine,
   getGuildUsageSummaryLine,
   forceRegisterSlashCommands,
@@ -531,6 +545,145 @@ const adminHandlers = createAdminHandlers({
   hasActiveToken: () => Boolean(activeToken),
   requestManualReconnect: runManualReconnect,
 });
+
+const normalizePromotionGoal = (input: string): string =>
+  String(input || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+const toActionLogRow = (row: unknown): {
+  requestedBy: string;
+  goal: string;
+  status: string;
+  actionName: string;
+  summary: string;
+  artifacts: Array<Record<string, unknown>>;
+} => {
+  const raw = (row && typeof row === 'object' && !Array.isArray(row))
+    ? row as Record<string, unknown>
+    : {};
+  const artifacts = Array.isArray(raw.artifacts)
+    ? raw.artifacts.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+
+  return {
+    requestedBy: String(raw.requested_by || '').trim(),
+    goal: String(raw.goal || '').trim(),
+    status: String(raw.status || '').trim().toLowerCase(),
+    actionName: String(raw.action_name || '').trim(),
+    summary: String(raw.summary || '').trim(),
+    artifacts,
+  };
+};
+
+const evaluateAutoProposalPromotionGate = async (params: {
+  guildId: string;
+  request: string;
+  windowDays: number;
+  minFrequency: number;
+  minDistinctRequesters: number;
+  minOutcomeScore: number;
+  maxPolicyBlockRate: number;
+}): Promise<{
+  ok: boolean;
+  frequency: number;
+  distinctRequesters: number;
+  avgOutcomeScore: number;
+  policyBlockRate: number;
+}> => {
+  if (!isSupabaseConfigured()) {
+    return {
+      ok: true,
+      frequency: params.minFrequency,
+      distinctRequesters: params.minDistinctRequesters,
+      avgOutcomeScore: 1,
+      policyBlockRate: 0,
+    };
+  }
+
+  const normalizedRequest = normalizePromotionGoal(params.request);
+  if (!normalizedRequest) {
+    return {
+      ok: false,
+      frequency: 0,
+      distinctRequesters: 0,
+      avgOutcomeScore: 0,
+      policyBlockRate: 0,
+    };
+  }
+
+  const sinceIso = new Date(Date.now() - params.windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('agent_action_logs')
+    .select('requested_by, goal, status, action_name, summary, artifacts, created_at')
+    .eq('guild_id', params.guildId)
+    .in('action_name', ['task_routing_vibe', 'task_routing_docs', 'task_routing_feedback'])
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(5000);
+
+  if (error) {
+    return {
+      ok: false,
+      frequency: 0,
+      distinctRequesters: 0,
+      avgOutcomeScore: 0,
+      policyBlockRate: 1,
+    };
+  }
+
+  const rows = (data || []).map((row) => toActionLogRow(row));
+  const routingRows = rows.filter((row) => {
+    if (row.actionName !== 'task_routing_vibe' && row.actionName !== 'task_routing_docs') {
+      return false;
+    }
+    return normalizePromotionGoal(row.goal) === normalizedRequest;
+  });
+
+  const frequency = routingRows.length;
+  const distinctRequesters = new Set(routingRows.map((row) => row.requestedBy).filter(Boolean)).size;
+
+  const feedbackRows = rows.filter((row) => row.actionName === 'task_routing_feedback' && normalizePromotionGoal(row.goal) === normalizedRequest);
+  const outcomeScores = feedbackRows
+    .map((row) => Number(row.artifacts[0]?.outcomeScore))
+    .filter((value) => Number.isFinite(value))
+    .map((value) => Math.max(0, Math.min(1, value)));
+
+  const avgOutcomeScore = outcomeScores.length > 0
+    ? outcomeScores.reduce((acc, value) => acc + value, 0) / outcomeScores.length
+    : (routingRows.length > 0
+      ? routingRows.filter((row) => row.status === 'success').length / routingRows.length
+      : 0);
+
+  const policyBlockedCount = feedbackRows.filter((row) => {
+    const artifact = row.artifacts[0];
+    const blockedByArtifact = Number(
+      (artifact as Record<string, unknown> | undefined)?.policyBlocked
+      ?? (artifact as Record<string, unknown> | undefined)?.policy_blocked
+      ?? 0,
+    );
+    if (Number.isFinite(blockedByArtifact) && blockedByArtifact > 0) {
+      return true;
+    }
+
+    const summary = String(row.summary || '').toLowerCase();
+    return /policy[_\s-]?blocked\s*=\s*([1-9]\d*)/.test(summary)
+      || (summary.includes('policy') && (summary.includes('block') || summary.includes('차단')));
+  }).length;
+  const policyBlockRate = feedbackRows.length > 0 ? policyBlockedCount / feedbackRows.length : 0;
+
+  const ok = frequency >= params.minFrequency
+    && distinctRequesters >= params.minDistinctRequesters
+    && avgOutcomeScore >= params.minOutcomeScore
+    && policyBlockRate <= params.maxPolicyBlockRate;
+
+  return {
+    ok,
+    frequency,
+    distinctRequesters,
+    avgOutcomeScore,
+    policyBlockRate,
+  };
+};
 
 const vibeHandlers = createVibeHandlers({
   getReplyVisibility,
@@ -541,6 +694,101 @@ const vibeHandlers = createVibeHandlers({
   codingIntentPattern: CODING_INTENT_PATTERN,
   automationIntentPattern: AUTOMATION_INTENT_PATTERN,
   getErrorMessage,
+  autoProposeWorker: async ({ guildId, requestedBy, request }) => {
+    const AUTO_PROPOSAL_PROMOTION_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROMOTION_ENABLED || 'true').trim());
+    const AUTO_PROPOSAL_PROMOTION_MIN_FREQUENCY = Math.max(1, Number(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_FREQUENCY || 5));
+    const AUTO_PROPOSAL_PROMOTION_WINDOW_DAYS = Math.max(1, Number(process.env.VIBE_AUTO_WORKER_PROMOTION_WINDOW_DAYS || 7));
+    const AUTO_PROPOSAL_PROMOTION_MIN_DISTINCT_REQUESTERS = Math.max(1, Number(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_DISTINCT_REQUESTERS || 3));
+    const AUTO_PROPOSAL_PROMOTION_MIN_OUTCOME_SCORE = Math.min(1, Math.max(0, Number(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_OUTCOME_SCORE || 0.65)));
+    const AUTO_PROPOSAL_PROMOTION_MAX_POLICY_BLOCK_RATE = Math.min(1, Math.max(0, Number(process.env.VIBE_AUTO_WORKER_PROMOTION_MAX_POLICY_BLOCK_RATE || 0.10)));
+    const AUTO_PROPOSAL_DAILY_CAP_PER_GUILD = Math.max(1, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_DAILY_CAP_PER_GUILD || 10));
+    const AUTO_PROPOSAL_DUPLICATE_WINDOW_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_DUPLICATE_WINDOW_MS || 24 * 60 * 60_000));
+    const AUTO_PROPOSAL_MIN_SUCCESS_RATE = Math.min(1, Math.max(0, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_MIN_SUCCESS_RATE || 0.45)));
+    const AUTO_PROPOSAL_MIN_SAMPLES = Math.max(3, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_MIN_SAMPLES || 6));
+
+    const nowMs = Date.now();
+    const dayAgoIso = new Date(nowMs - 24 * 60 * 60_000).toISOString();
+    const dedupSinceMs = nowMs - AUTO_PROPOSAL_DUPLICATE_WINDOW_MS;
+    const normalizeGoal = (input: string): string => String(input || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+    const allApprovals = await listApprovals({ status: 'all' });
+    const guildRecentApprovals = allApprovals.filter((entry) => entry.guildId === guildId && entry.createdAt >= dayAgoIso);
+    if (guildRecentApprovals.length >= AUTO_PROPOSAL_DAILY_CAP_PER_GUILD) {
+      return {
+        ok: false,
+        error: `AUTO_PROPOSAL_DAILY_CAP_REACHED:${AUTO_PROPOSAL_DAILY_CAP_PER_GUILD}`,
+      };
+    }
+
+    const normalizedRequest = normalizeGoal(request);
+    const hasRecentDuplicate = allApprovals.some((entry) => {
+      if (entry.guildId !== guildId) {
+        return false;
+      }
+      const createdAtMs = Date.parse(entry.createdAt);
+      if (!Number.isFinite(createdAtMs) || createdAtMs < dedupSinceMs) {
+        return false;
+      }
+      return normalizeGoal(entry.goal) === normalizedRequest;
+    });
+    if (hasRecentDuplicate) {
+      return {
+        ok: false,
+        error: 'AUTO_PROPOSAL_DUPLICATE_RECENT',
+      };
+    }
+
+    if (AUTO_PROPOSAL_PROMOTION_ENABLED) {
+      const promotion = await evaluateAutoProposalPromotionGate({
+        guildId,
+        request,
+        windowDays: AUTO_PROPOSAL_PROMOTION_WINDOW_DAYS,
+        minFrequency: AUTO_PROPOSAL_PROMOTION_MIN_FREQUENCY,
+        minDistinctRequesters: AUTO_PROPOSAL_PROMOTION_MIN_DISTINCT_REQUESTERS,
+        minOutcomeScore: AUTO_PROPOSAL_PROMOTION_MIN_OUTCOME_SCORE,
+        maxPolicyBlockRate: AUTO_PROPOSAL_PROMOTION_MAX_POLICY_BLOCK_RATE,
+      });
+
+      if (!promotion.ok) {
+        return {
+          ok: false,
+          error: [
+            'AUTO_PROPOSAL_PROMOTION_THRESHOLD',
+            `freq=${promotion.frequency}/${AUTO_PROPOSAL_PROMOTION_MIN_FREQUENCY}`,
+            `distinct=${promotion.distinctRequesters}/${AUTO_PROPOSAL_PROMOTION_MIN_DISTINCT_REQUESTERS}`,
+            `outcome=${promotion.avgOutcomeScore.toFixed(3)}/${AUTO_PROPOSAL_PROMOTION_MIN_OUTCOME_SCORE.toFixed(3)}`,
+            `policy_block=${promotion.policyBlockRate.toFixed(3)}/${AUTO_PROPOSAL_PROMOTION_MAX_POLICY_BLOCK_RATE.toFixed(3)}`,
+          ].join(':'),
+        };
+      }
+    }
+
+    const metrics = getWorkerProposalMetricsSnapshot();
+    if (metrics.generationRequested >= AUTO_PROPOSAL_MIN_SAMPLES && metrics.generationSuccessRate < AUTO_PROPOSAL_MIN_SUCCESS_RATE) {
+      return {
+        ok: false,
+        error: `AUTO_PROPOSAL_QUALITY_GUARD:${metrics.generationSuccessRate.toFixed(3)}<${AUTO_PROPOSAL_MIN_SUCCESS_RATE.toFixed(3)}`,
+      };
+    }
+
+    const pipeResult = await runWorkerGenerationPipeline({
+      goal: request,
+      guildId,
+      requestedBy,
+    });
+    recordWorkerGenerationResult(pipeResult.ok, pipeResult.ok ? undefined : pipeResult.error);
+    if (!pipeResult.ok) {
+      return {
+        ok: false,
+        error: pipeResult.error,
+      };
+    }
+
+    return {
+      ok: true,
+      approvalId: pipeResult.approval.id,
+    };
+  },
 });
 
 const agentHandlers = createAgentHandlers({
@@ -560,6 +808,13 @@ const docsHandlers = createDocsHandlers({
   queryObsidianRAG,
   generateText,
   isAnyLlmConfigured,
+  getErrorMessage,
+});
+
+const personaHandlers = createPersonaHandlers({
+  getReplyVisibility,
+  hasAdminPermission,
+  hasValidLoginSession,
   getErrorMessage,
 });
 
@@ -593,6 +848,40 @@ const attachCommandHandlers = () => {
       startVibeSession,
       streamSessionProgress,
     });
+  });
+
+  client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isUserContextMenuCommand()) {
+      return;
+    }
+
+    try {
+      if (interaction.commandName === '유저 프로필 보기' || interaction.commandName === '유저 메모 추가') {
+        await personaHandlers.handleUserContextCommand(interaction);
+      }
+    } catch (error) {
+      logger.error('[BOT] user context interaction handler failed: %o', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
+      }
+    }
+  });
+
+  client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isModalSubmit()) {
+      return;
+    }
+
+    try {
+      if (interaction.customId.startsWith('persona_note_modal:')) {
+        await personaHandlers.handleUserNoteModal(interaction);
+      }
+    } catch (error) {
+      logger.error('[BOT] modal interaction handler failed: %o', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
+      }
+    }
   });
 
   client.on('interactionCreate', async (interaction) => {
@@ -639,10 +928,6 @@ const attachCommandHandlers = () => {
           return;
         }
         case '구독': {
-          if (!LEGACY_SUBSCRIBE_COMMAND_ENABLED) {
-            await replyLegacySubscribeRedirect(interaction);
-            return;
-          }
           await handleGroupedSubscribeCommand(interaction);
           return;
         }
@@ -666,6 +951,10 @@ const attachCommandHandlers = () => {
           await docsHandlers.handleDocsCommand(interaction);
           return;
         }
+        case '유저': {
+          await personaHandlers.handleUserCommand(interaction);
+          return;
+        }
         case '관리자': {
           await adminHandlers.handleAdminCommand(interaction, {
             handleChannelIdCommand,
@@ -682,10 +971,6 @@ const attachCommandHandlers = () => {
           return;
         }
         case '시작': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
           await agentHandlers.handleAgentCommand(interaction, '시작');
           return;
         }
@@ -694,10 +979,6 @@ const attachCommandHandlers = () => {
           return;
         }
         case '스킬목록': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
           await agentHandlers.handleAgentCommand(interaction, '스킬목록');
           return;
         }
@@ -706,10 +987,6 @@ const attachCommandHandlers = () => {
           return;
         }
         case '온보딩': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
           await agentHandlers.handleAgentCommand(interaction, '온보딩');
           return;
         }
@@ -718,10 +995,6 @@ const attachCommandHandlers = () => {
           return;
         }
         case '중지': {
-          if (!LEGACY_SESSION_COMMANDS_ENABLED) {
-            await replyLegacySessionRedirect(interaction);
-            return;
-          }
           await agentHandlers.handleAgentCommand(interaction, '중지');
           return;
         }
@@ -810,6 +1083,24 @@ client.on('messageReactionAdd', async (reaction, user) => {
       emoji: reaction.emoji.name || '',
       direction: 'add',
     });
+
+    const targetUserId = String(reaction.message.author?.id || '').trim();
+    if (targetUserId && targetUserId !== user.id && !reaction.message.author?.bot) {
+      await recordCommunityInteractionEvent({
+        guildId,
+        actorUserId: user.id,
+        targetUserId,
+        channelId,
+        sourceMessageId: messageId,
+        eventType: 'reaction',
+        eventTs: new Date().toISOString(),
+        weight: 0.4,
+        metadata: {
+          source: 'message_reaction_add',
+          emoji: reaction.emoji.name || '',
+        },
+      });
+    }
   } catch (error) {
     logger.debug('[REACTION-REWARD] add skipped reason=%s', getErrorMessage(error));
   }

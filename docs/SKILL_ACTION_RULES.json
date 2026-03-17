@@ -102,6 +102,17 @@
       ]
     },
     {
+      "id": "opencode-intent",
+      "pattern": "터미널|tui|cli|명령어\\s*실행|자동화\\s*워커|opencode|swe-agent|실행\\s*해줘",
+      "plans": [
+        {
+          "actionName": "opencode.execute",
+          "reason": "opencode-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
       "id": "news-intent",
       "pattern": "뉴스|news|헤드라인|기사",
       "plans": [

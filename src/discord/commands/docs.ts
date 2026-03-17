@@ -1,6 +1,9 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { RAGQueryResult } from '../../services/obsidianRagService';
 import type { LlmTextRequest } from '../../services/llmClient';
+import { getSemanticAnswerCache, putSemanticAnswerCache } from '../../services/semanticAnswerCacheService';
+import { buildRagQueryPlanForGuild } from '../../services/taskRoutingService';
+import { recordTaskRoutingMetric } from '../../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
@@ -8,14 +11,14 @@ import {
   DISCORD_DOCS_ANSWER_LIMIT,
   DISCORD_DOCS_ANSWER_TARGET_CHARS,
   DISCORD_DOCS_CONTEXT_LIMIT,
-  DISCORD_DOCS_FALLBACK_CONTEXT_LIMIT,
   DISCORD_DOCS_LLM_MAX_TOKENS,
   DISCORD_DOCS_MESSAGE_LIMIT,
+  clipDocsFallbackContext,
 } from '../runtimePolicy';
 
 type DocsDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
-  queryObsidianRAG: (question: string, options?: { maxDocs?: number }) => Promise<RAGQueryResult>;
+  queryObsidianRAG: (question: string, options?: { maxDocs?: number; contextMode?: 'full' | 'metadata_first'; guildId?: string }) => Promise<RAGQueryResult>;
   generateText: (params: LlmTextRequest) => Promise<string>;
   isAnyLlmConfigured: () => boolean;
   getErrorMessage: (error: unknown) => string;
@@ -52,19 +55,78 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       return;
     }
 
+    const ragPlan = await buildRagQueryPlanForGuild(question, interaction.guildId || undefined);
+
     await interaction.editReply(
       buildUserCard(DISCORD_MESSAGES.docs.titleSearching, DISCORD_MESSAGES.docs.searchingFor(question.slice(0, 60)), EMBED_INFO),
     );
 
+    if (interaction.guildId) {
+      const cacheHit = await getSemanticAnswerCache({ guildId: interaction.guildId, question });
+      if (cacheHit) {
+        void recordTaskRoutingMetric({
+          guildId: interaction.guildId,
+          requestedBy: interaction.user.id,
+          goal: question,
+          channel: 'docs',
+          route: ragPlan.route,
+          confidence: ragPlan.confidence,
+          reasons: ragPlan.reasons,
+          overrideUsed: ragPlan.overrideUsed,
+          status: 'success',
+          durationMs: 0,
+          extra: {
+            cacheHit: true,
+            sourceCount: cacheHit.sourceFiles.length,
+          },
+        });
+        const body = [
+          cacheHit.answer.slice(0, DISCORD_DOCS_ANSWER_LIMIT),
+          '',
+          `캐시 응답 (semantic=${cacheHit.similarity})`,
+          cacheHit.intent ? `intent: ${cacheHit.intent}` : '',
+          cacheHit.sourceFiles.length > 0 ? `소스: ${cacheHit.sourceFiles.slice(0, 6).join(', ')}` : '',
+          accessNotice,
+        ].filter(Boolean).join('\n');
+        await interaction.editReply(
+          buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
+        );
+        return;
+      }
+    }
+
     let ragResult: RAGQueryResult;
     try {
-      ragResult = await deps.queryObsidianRAG(question, { maxDocs: 8 });
+      ragResult = await deps.queryObsidianRAG(question, {
+        maxDocs: ragPlan.maxDocs,
+        contextMode: ragPlan.contextMode,
+        guildId: interaction.guildId || undefined,
+      });
     } catch (error) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleSearchError, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
     if (ragResult.documentCount === 0) {
+      if (interaction.guildId) {
+        void recordTaskRoutingMetric({
+          guildId: interaction.guildId,
+          requestedBy: interaction.user.id,
+          goal: question,
+          channel: 'docs',
+          route: ragPlan.route,
+          confidence: ragPlan.confidence,
+          reasons: ragPlan.reasons,
+          overrideUsed: ragPlan.overrideUsed,
+          status: 'failed',
+          durationMs: ragResult.executionTimeMs,
+          extra: {
+            cacheHit: false,
+            documentCount: 0,
+            ragIntent: ragResult.intent,
+          },
+        });
+      }
       await interaction.editReply(
         buildUserCard(
           DISCORD_MESSAGES.docs.titleNoDocument,
@@ -96,7 +158,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
         answer = await deps.generateText({ system, user, maxTokens: DISCORD_DOCS_LLM_MAX_TOKENS });
       } catch {
         // LLM 실패 시 원본 컨텍스트 일부를 그대로 표시
-        answer = ragResult.documentContext.slice(0, DISCORD_DOCS_FALLBACK_CONTEXT_LIMIT) + DISCORD_MESSAGES.docs.llmFallbackSuffix;
+        answer = clipDocsFallbackContext(ragResult.documentContext) + DISCORD_MESSAGES.docs.llmFallbackSuffix;
       }
     }
 
@@ -114,9 +176,45 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       DISCORD_MESSAGES.docs.sourceHeader(ragResult.documentCount),
       sources || DISCORD_MESSAGES.docs.noSource,
       '',
+      `라우팅: ${ragPlan.route}`,
       DISCORD_MESSAGES.docs.summaryLine(ragResult.intent, ragResult.executionTimeMs, ragResult.cacheStatus.hits),
       accessNotice,
     ].join('\n');
+
+    if (interaction.guildId) {
+      void recordTaskRoutingMetric({
+        guildId: interaction.guildId,
+        requestedBy: interaction.user.id,
+        goal: question,
+        channel: 'docs',
+        route: ragPlan.route,
+        confidence: ragPlan.confidence,
+        reasons: ragPlan.reasons,
+        overrideUsed: ragPlan.overrideUsed,
+        status: 'success',
+        durationMs: ragResult.executionTimeMs,
+        extra: {
+          cacheHit: false,
+          documentCount: ragResult.documentCount,
+          ragIntent: ragResult.intent,
+          contextMode: ragResult.contextMode,
+        },
+      });
+    }
+
+    if (interaction.guildId && truncatedAnswer && ragResult.documentCount > 0) {
+      void putSemanticAnswerCache({
+        guildId: interaction.guildId,
+        question,
+        answer: truncatedAnswer,
+        intent: ragResult.intent,
+        sourceFiles: ragResult.sourceFiles,
+        meta: {
+          contextMode: ragResult.contextMode,
+          executionTimeMs: ragResult.executionTimeMs,
+        },
+      });
+    }
 
     await interaction.editReply(
       buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
@@ -153,19 +251,65 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       return;
     }
 
+    const ragPlan = await buildRagQueryPlanForGuild(keyword, interaction.guildId || undefined);
+
     let ragResult: RAGQueryResult;
     try {
-      ragResult = await deps.queryObsidianRAG(keyword, { maxDocs: 12 });
+      ragResult = await deps.queryObsidianRAG(keyword, {
+        maxDocs: Math.max(8, ragPlan.maxDocs),
+        contextMode: ragPlan.contextMode,
+        guildId: interaction.guildId || undefined,
+      });
     } catch (error) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleSearchError, deps.getErrorMessage(error), EMBED_ERROR));
       return;
     }
 
     if (ragResult.documentCount === 0) {
+      if (interaction.guildId) {
+        void recordTaskRoutingMetric({
+          guildId: interaction.guildId,
+          requestedBy: interaction.user.id,
+          goal: keyword,
+          channel: 'docs',
+          route: ragPlan.route,
+          confidence: ragPlan.confidence,
+          reasons: ragPlan.reasons,
+          overrideUsed: ragPlan.overrideUsed,
+          status: 'failed',
+          durationMs: ragResult.executionTimeMs,
+          extra: {
+            cacheHit: false,
+            documentCount: 0,
+            ragIntent: ragResult.intent,
+          },
+        });
+      }
       await interaction.editReply(
         buildUserCard(DISCORD_MESSAGES.docs.titleNoSearchResult, DISCORD_MESSAGES.docs.noSearchResult(keyword.slice(0, 60)), EMBED_WARN),
       );
       return;
+    }
+
+    if (interaction.guildId) {
+      void recordTaskRoutingMetric({
+        guildId: interaction.guildId,
+        requestedBy: interaction.user.id,
+        goal: keyword,
+        channel: 'docs',
+        route: ragPlan.route,
+        confidence: ragPlan.confidence,
+        reasons: ragPlan.reasons,
+        overrideUsed: ragPlan.overrideUsed,
+        status: 'success',
+        durationMs: ragResult.executionTimeMs,
+        extra: {
+          cacheHit: false,
+          documentCount: ragResult.documentCount,
+          ragIntent: ragResult.intent,
+          contextMode: ragResult.contextMode,
+        },
+      });
     }
 
     const lines: string[] = [

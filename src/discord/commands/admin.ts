@@ -47,8 +47,6 @@ type AdminDeps = {
   loginSessionRefreshWindowMs: number;
   loginSessionCleanupIntervalMs: number;
   simpleCommandsEnabled: boolean;
-  legacySubscribeCommandEnabled: boolean;
-  legacySessionCommandsEnabled: boolean;
   getUsageSummaryLine: () => Promise<string>;
   getGuildUsageSummaryLine: (guildId: string | null) => Promise<string | null>;
   forceRegisterSlashCommands: () => Promise<void>;

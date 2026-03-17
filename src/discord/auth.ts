@@ -26,6 +26,11 @@ export const LOGIN_SESSION_CLEANUP_INTERVAL_MS = Math.max(
   60 * 1000,
   Number(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS || 30 * 60 * 1000),
 );
+export type LoginSessionCleanupOwner = 'app' | 'db';
+export const LOGIN_SESSION_CLEANUP_OWNER: LoginSessionCleanupOwner =
+  String(process.env.DISCORD_LOGIN_SESSION_CLEANUP_OWNER || 'db').trim().toLowerCase() === 'app'
+    ? 'app'
+    : 'db';
 export const AUTO_LOGIN_ON_FIRST_COMMAND = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND || 'true').toLowerCase());
 
@@ -197,6 +202,10 @@ export const ensureFeatureAccess = async (
 
 // ─── Cleanup loop ─────────────────────────────────────────────────────────────
 export const startLoginSessionCleanupLoop = (): void => {
+  if (LOGIN_SESSION_CLEANUP_OWNER !== 'app') {
+    logger.info('[AUTH] Login session cleanup app loop skipped (owner=%s)', LOGIN_SESSION_CLEANUP_OWNER);
+    return;
+  }
   if (loginSessionCleanupTimer) return;
   const runCleanup = async () => {
     try {

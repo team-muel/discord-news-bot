@@ -4,6 +4,8 @@
  */
 import type { AgentSession } from '../services/multiAgentService';
 import { getAgentSession, startAgentSession } from '../services/multiAgentService';
+import { buildReasoningGoalForGuild } from '../services/taskRoutingService';
+import { recordTaskRoutingMetric } from '../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from './messages';
 
 const parsePositiveIntEnv = (value: string | undefined, fallback: number, min = 1): number => {
@@ -305,18 +307,39 @@ export const streamSessionProgress = async (
   await sink.update(DISCORD_MESSAGES.session.timeoutUser);
 };
 
-export const startVibeSession = (
+export const startVibeSession = async (
   guildId: string,
   userId: string,
   request: string,
-): AgentSession =>
-  startAgentSession({
-    guildId,
-    requestedBy: userId,
-    goal: request,
-    skillId: null,
-    priority: 'balanced',
-  });
+): Promise<AgentSession> => {
+    const routed = await buildReasoningGoalForGuild(request, guildId);
+    const session = startAgentSession({
+      guildId,
+      requestedBy: userId,
+      goal: routed.goal,
+      skillId: null,
+      priority: routed.route === 'knowledge' ? 'fast' : 'balanced',
+    });
+
+    void recordTaskRoutingMetric({
+      guildId,
+      requestedBy: userId,
+      goal: request,
+      channel: 'vibe',
+      route: routed.route,
+      confidence: routed.confidence,
+      reasons: routed.reasons,
+      overrideUsed: routed.overrideUsed,
+      status: 'success',
+      durationMs: 0,
+      extra: {
+        sessionId: session.id,
+        priority: session.priority,
+      },
+    });
+
+    return session;
+  };
 
 export const inferSessionSkill = (
   text: string,

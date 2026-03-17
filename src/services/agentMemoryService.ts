@@ -3,12 +3,22 @@ import { parseIntegerEnv } from '../utils/env';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { withObsidianFileLock } from '../utils/obsidianFileLock';
 import { assessMemoryPoisonRisk } from './memoryPoisonGuard';
+import { buildSocialContextHints } from './communityGraphService';
 import { readObsidianLoreWithAdapter } from './obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();
 const OBSIDIAN_INPUT_MAX_LENGTH = Math.max(40, Math.min(1200, parseIntegerEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320)));
 const MEMORY_HINT_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_HINT_MIN_CONFIDENCE || 0.35)));
+const MEMORY_HINT_RECENCY_HALF_LIFE_DAYS = Math.max(3, Number(process.env.MEMORY_HINT_RECENCY_HALF_LIFE_DAYS || 30));
+
+type MemoryHintCandidate = {
+  text: string;
+  confidence: number;
+  pinned: boolean;
+  updatedAt: string;
+  ownerUserId: string;
+};
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -30,6 +40,53 @@ const sanitizeGuildId = (value: unknown): string => {
     return '';
   }
   return candidate;
+};
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const parseIsoRecencyScore = (iso: string): number => {
+  const ts = Date.parse(String(iso || ''));
+  if (!Number.isFinite(ts)) {
+    return 0.5;
+  }
+  const ageDays = Math.max(0, (Date.now() - ts) / (24 * 60 * 60 * 1000));
+  return clamp01(Math.exp(-ageDays / MEMORY_HINT_RECENCY_HALF_LIFE_DAYS));
+};
+
+const SOCIAL_USER_PATTERN = /\[social:(?:outbound|inbound)\]\s+user=(\d{6,30})(?:\s+|$)/i;
+const SOCIAL_SCORE_PATTERN = /dynamic_affinity=([0-9]+(?:\.[0-9]+)?)|affinity=([0-9]+(?:\.[0-9]+)?)/gi;
+
+const parseSocialUserScores = (socialHints: string[]): Map<string, number> => {
+  const out = new Map<string, number>();
+  for (const hint of socialHints) {
+    const row = String(hint || '').trim();
+    const userMatch = row.match(SOCIAL_USER_PATTERN);
+    if (!userMatch) {
+      continue;
+    }
+
+    let picked = 0;
+    const matches = row.matchAll(SOCIAL_SCORE_PATTERN);
+    for (const match of matches) {
+      const dynamicAffinity = Number(match[1] || NaN);
+      const affinity = Number(match[2] || NaN);
+      if (Number.isFinite(dynamicAffinity)) {
+        picked = Math.max(picked, dynamicAffinity);
+        continue;
+      }
+      if (Number.isFinite(affinity)) {
+        picked = Math.max(picked, affinity);
+      }
+    }
+
+    const userId = String(userMatch[1] || '').trim();
+    if (!userId) {
+      continue;
+    }
+    const prev = out.get(userId) || 0;
+    out.set(userId, Math.max(prev, clamp01(picked)));
+  }
+  return out;
 };
 
 const safeGoalTerms = (goal: string): string[] =>
@@ -94,7 +151,7 @@ const readSupabaseLore = async (guildId: string): Promise<string[]> => {
   }
 };
 
-const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<string[]> => {
+const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<MemoryHintCandidate[]> => {
   if (!isSupabaseConfigured()) {
     return [];
   }
@@ -105,7 +162,7 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<s
 
     let query = client
       .from('memory_items')
-      .select('id, type, title, content, summary, confidence, pinned, updated_at')
+      .select('id, type, title, content, summary, confidence, pinned, updated_at, owner_user_id')
       .eq('guild_id', guildId)
       .eq('status', 'active')
       .order('pinned', { ascending: false })
@@ -148,9 +205,13 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<s
       const title = toSingleLine(row?.title || row?.summary || '').slice(0, 80);
       const body = toSingleLine(row?.summary || row?.content || '').slice(0, 220);
       const conf = Number(row?.confidence ?? 0.5);
+      const confidenceNumeric = Number.isFinite(conf) ? clamp01(conf) : 0.5;
       const confidence = Number.isFinite(conf) ? conf.toFixed(2) : '0.50';
       const pinnedMark = row?.pinned ? ' pinned' : '';
+      const pinned = Boolean(row?.pinned);
       const sourceCount = sourceCountById.get(id) || 0;
+      const ownerUserId = String(row?.owner_user_id || '').trim();
+      const updatedAt = String(row?.updated_at || '').trim();
       const poison = assessMemoryPoisonRisk({
         title,
         summary: String(row?.summary || ''),
@@ -158,11 +219,17 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<s
       });
 
       if (!row?.pinned && (poison.blocked || Number(conf || 0) < MEMORY_HINT_MIN_CONFIDENCE)) {
-        return '';
+        return null;
       }
 
-      return `[memory:${id}${pinnedMark}] (${type}, conf=${confidence}, src=${sourceCount}) ${title ? `${title}: ` : ''}${body}`;
-    }).filter(Boolean);
+      return {
+        text: `[memory:${id}${pinnedMark}] (${type}, conf=${confidence}, src=${sourceCount}) ${title ? `${title}: ` : ''}${body}`,
+        confidence: confidenceNumeric,
+        pinned,
+        updatedAt,
+        ownerUserId,
+      };
+    }).filter(Boolean) as MemoryHintCandidate[];
   } catch {
     return [];
   }
@@ -172,6 +239,7 @@ export const buildAgentMemoryHints = async (params: {
   guildId: string;
   goal: string;
   maxItems?: number;
+  requesterUserId?: string;
 }): Promise<string[]> => {
   const maxItems = Math.max(1, Math.min(20, Math.trunc(params.maxItems ?? 10)));
   const safeGuildId = sanitizeGuildId(params.guildId);
@@ -185,13 +253,31 @@ export const buildAgentMemoryHints = async (params: {
     return [`현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`].slice(0, maxItems);
   }
 
-  const [memoryHints, supabaseLoreHints, obsidianHints] = await Promise.all([
+  const [socialHints, memoryHints, supabaseLoreHints, obsidianHints] = await Promise.all([
+    buildSocialContextHints({ guildId: safeGuildId, requesterUserId: params.requesterUserId, maxItems: 4 }),
     readSupabaseMemoryItems(safeGuildId, safeGoal),
     readSupabaseLore(safeGuildId),
     readObsidianLore({ guildId: safeGuildId, goal: safeGoal }),
   ]);
 
+  const socialByUser = parseSocialUserScores(socialHints);
+  const rankedMemoryHints = memoryHints
+    .map((item) => {
+      const socialScore = item.ownerUserId ? (socialByUser.get(item.ownerUserId) || 0) : 0;
+      const recencyScore = parseIsoRecencyScore(item.updatedAt);
+      const pinnedBoost = item.pinned ? 0.08 : 0;
+      const rank = clamp01((item.confidence * 0.45) + (recencyScore * 0.35) + (socialScore * 0.20) + pinnedBoost);
+      return {
+        ...item,
+        rank,
+        socialScore,
+        recencyScore,
+      };
+    })
+    .sort((a, b) => b.rank - a.rank)
+    .map((item) => `${item.text} [rank=${item.rank.toFixed(2)} rel=${item.socialScore.toFixed(2)} recency=${item.recencyScore.toFixed(2)}]`);
+
   const goalHint = `현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`;
-  const merged = [goalHint, ...memoryHints, ...supabaseLoreHints, ...obsidianHints].filter(Boolean);
+  const merged = [goalHint, ...socialHints, ...rankedMemoryHints, ...supabaseLoreHints, ...obsidianHints].filter(Boolean);
   return merged.slice(0, maxItems);
 };

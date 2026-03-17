@@ -1,10 +1,27 @@
+import crypto from 'crypto';
 import { logStructuredError } from './structuredErrorLogService';
+import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+const HUGGINGFACE_CHAT_COMPLETIONS_URL = String(process.env.HUGGINGFACE_CHAT_COMPLETIONS_URL || 'https://router.huggingface.co/v1/chat/completions').trim();
 const LLM_API_TIMEOUT_MS = Math.max(1000, Number(process.env.LLM_API_TIMEOUT_MS || 15000));
+const LLM_CALL_LOG_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_CALL_LOG_ENABLED || 'true').trim());
+const LLM_CALL_LOG_TABLE = String(process.env.LLM_CALL_LOG_TABLE || 'agent_llm_call_logs').trim();
+const LLM_EXPERIMENT_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_EXPERIMENT_ENABLED || 'false').trim());
+const LLM_EXPERIMENT_NAME = String(process.env.LLM_EXPERIMENT_NAME || 'hf_ab_v1').trim();
+const LLM_EXPERIMENT_HF_PERCENT = Math.max(0, Math.min(100, Number(process.env.LLM_EXPERIMENT_HF_PERCENT || 20) || 20));
+const LLM_EXPERIMENT_FAIL_OPEN = !/^(0|false|off|no)$/i.test(String(process.env.LLM_EXPERIMENT_FAIL_OPEN || 'true').trim());
+const LLM_EXPERIMENT_GUILD_ALLOWLIST = new Set(
+  String(process.env.LLM_EXPERIMENT_GUILD_ALLOWLIST || '')
+    .split(',')
+    .map((v) => String(v || '').trim())
+    .filter(Boolean),
+);
+const LLM_COST_INPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_INPUT_PER_1K_CHARS_USD || 0.0005) || 0.0005);
+const LLM_COST_OUTPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD || 0.0015) || 0.0015);
 
-export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama';
+export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface';
 
 export type LlmTextRequest = {
   system: string;
@@ -14,17 +31,36 @@ export type LlmTextRequest = {
   maxTokens?: number;
   provider?: LlmProvider;
   model?: string;
+  guildId?: string;
+  sessionId?: string;
+  requestedBy?: string;
+  experimentKey?: string;
+  actionName?: string;
 };
 
 export type LlmTextWithMetaResponse = {
   text: string;
   provider: LlmProvider;
+  model?: string;
+  latencyMs?: number;
+  estimatedCostUsd?: number;
+  experiment?: {
+    name: string;
+    arm: 'control' | 'huggingface';
+    keyHash: string;
+  } | null;
   avgLogprob?: number;
+};
+
+type LlmExperimentDecision = {
+  provider: LlmProvider | null;
+  experiment: LlmTextWithMetaResponse['experiment'];
 };
 
 const getOpenAiKey = () => String(process.env.OPENAI_API_KEY || '').trim();
 const getGeminiKey = () => String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 const getAnthropicKey = () => String(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
+const getHuggingFaceKey = () => String(process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY || '').trim();
 const getOpenClawApiKey = () => String(process.env.OPENCLAW_API_KEY || process.env.OPENCLAW_KEY || '').trim();
 const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MODELS || 'muel-fast,muel-precise')
   .split(',')
@@ -42,6 +78,170 @@ const isOpenClawConfigured = () => Boolean(getOpenClawBaseUrl());
 const getOllamaBaseUrl = () => String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
 const getOllamaModel = () => String(process.env.OLLAMA_MODEL || process.env.LOCAL_LLM_MODEL || '').trim();
 const isOllamaConfigured = () => Boolean(getOllamaModel() || ['ollama', 'local'].includes(String(process.env.AI_PROVIDER || '').trim().toLowerCase()));
+const isHuggingFaceConfigured = () => Boolean(getHuggingFaceKey());
+
+const shortHash = (value: string): string => {
+  return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex').slice(0, 16);
+};
+
+const estimateLlmCallCostUsd = (inputChars: number, outputChars: number): number => {
+  const inCost = (Math.max(0, inputChars) / 1000) * LLM_COST_INPUT_PER_1K_CHARS_USD;
+  const outCost = (Math.max(0, outputChars) / 1000) * LLM_COST_OUTPUT_PER_1K_CHARS_USD;
+  return Number((inCost + outCost).toFixed(8));
+};
+
+const isExperimentGuildAllowed = (guildId?: string): boolean => {
+  const safeGuildId = String(guildId || '').trim();
+  if (!safeGuildId) {
+    return false;
+  }
+  if (LLM_EXPERIMENT_GUILD_ALLOWLIST.size === 0) {
+    return true;
+  }
+  return LLM_EXPERIMENT_GUILD_ALLOWLIST.has(safeGuildId);
+};
+
+const resolveProviderWithoutExperiment = (): LlmProvider | null => {
+  const preferred = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
+  if (preferred === 'gemini' && getGeminiKey()) {
+    return 'gemini';
+  }
+  if (preferred === 'openai' && getOpenAiKey()) {
+    return 'openai';
+  }
+  if (preferred === 'anthropic' && getAnthropicKey()) {
+    return 'anthropic';
+  }
+  if (preferred === 'claude' && getAnthropicKey()) {
+    return 'anthropic';
+  }
+  if ((preferred === 'huggingface' || preferred === 'hf') && isHuggingFaceConfigured()) {
+    return 'huggingface';
+  }
+  if (preferred === 'openclaw' && isOpenClawConfigured()) {
+    return 'openclaw';
+  }
+  if ((preferred === 'ollama' || preferred === 'local') && isOllamaConfigured()) {
+    return 'ollama';
+  }
+
+  if (getOpenAiKey()) {
+    return 'openai';
+  }
+
+  if (getAnthropicKey()) {
+    return 'anthropic';
+  }
+
+  if (getGeminiKey()) {
+    return 'gemini';
+  }
+
+  if (isHuggingFaceConfigured()) {
+    return 'huggingface';
+  }
+
+  if (isOpenClawConfigured()) {
+    return 'openclaw';
+  }
+
+  if (isOllamaConfigured()) {
+    return 'ollama';
+  }
+
+  return null;
+};
+
+const resolveProviderWithExperiment = (params: LlmTextRequest): LlmExperimentDecision => {
+  if (params.provider) {
+    return { provider: params.provider, experiment: null };
+  }
+
+  const baseProvider = resolveProviderWithoutExperiment();
+  if (!baseProvider) {
+    return { provider: null, experiment: null };
+  }
+
+  if (!LLM_EXPERIMENT_ENABLED || !isHuggingFaceConfigured() || !isExperimentGuildAllowed(params.guildId)) {
+    return { provider: baseProvider, experiment: null };
+  }
+
+  if (baseProvider === 'huggingface') {
+    return {
+      provider: 'huggingface',
+      experiment: {
+        name: LLM_EXPERIMENT_NAME,
+        arm: 'huggingface',
+        keyHash: shortHash(params.experimentKey || params.guildId || params.user || ''),
+      },
+    };
+  }
+
+  const bucketSeed = [
+    String(params.experimentKey || '').trim(),
+    String(params.guildId || '').trim(),
+    String(params.sessionId || '').trim(),
+    String(params.requestedBy || '').trim(),
+    String(params.user || '').slice(0, 120),
+  ].filter(Boolean).join('|');
+  const hashHex = crypto.createHash('sha256').update(bucketSeed || 'default', 'utf8').digest('hex').slice(0, 8);
+  const bucket = parseInt(hashHex, 16) % 100;
+  const useHfArm = bucket < LLM_EXPERIMENT_HF_PERCENT;
+  return {
+    provider: useHfArm ? 'huggingface' : baseProvider,
+    experiment: {
+      name: LLM_EXPERIMENT_NAME,
+      arm: useHfArm ? 'huggingface' : 'control',
+      keyHash: shortHash(bucketSeed || 'default'),
+    },
+  };
+};
+
+const persistLlmCallLog = async (params: {
+  request: LlmTextRequest;
+  provider: LlmProvider;
+  model?: string;
+  latencyMs: number;
+  success: boolean;
+  errorCode?: string | null;
+  outputText?: string;
+  avgLogprob?: number;
+  experiment?: LlmTextWithMetaResponse['experiment'];
+  estimatedCostUsd?: number;
+}): Promise<void> => {
+  if (!LLM_CALL_LOG_ENABLED || !isSupabaseConfigured()) {
+    return;
+  }
+
+  try {
+    const inputChars = String(params.request.system || '').length + String(params.request.user || '').length;
+    const outputChars = String(params.outputText || '').length;
+    const client = getSupabaseClient();
+    await client.from(LLM_CALL_LOG_TABLE).insert({
+      guild_id: String(params.request.guildId || '').trim() || null,
+      session_id: String(params.request.sessionId || '').trim() || null,
+      requested_by: String(params.request.requestedBy || '').trim() || null,
+      action_name: String(params.request.actionName || '').trim() || null,
+      provider: params.provider,
+      model: String(params.model || '').trim() || null,
+      experiment_name: String(params.experiment?.name || '').trim() || null,
+      experiment_arm: String(params.experiment?.arm || '').trim() || null,
+      experiment_key_hash: String(params.experiment?.keyHash || '').trim() || null,
+      latency_ms: Math.max(0, Math.trunc(params.latencyMs || 0)),
+      success: params.success,
+      error_code: String(params.errorCode || '').trim() || null,
+      prompt_chars: inputChars,
+      output_chars: outputChars,
+      avg_logprob: params.avgLogprob ?? null,
+      estimated_cost_usd: typeof params.estimatedCostUsd === 'number'
+        ? Math.max(0, Number(params.estimatedCostUsd))
+        : estimateLlmCallCostUsd(inputChars, outputChars),
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    // LLM observability logging is best-effort and must not block runtime flow.
+  }
+};
 
 const fetchWithTimeout = async (input: string, init: RequestInit): Promise<Response> => {
   const controller = new AbortController();
@@ -80,57 +280,13 @@ export const isAnyLlmConfigured = (): boolean => Boolean(
   getOpenAiKey()
     || getGeminiKey()
     || getAnthropicKey()
+    || isHuggingFaceConfigured()
     || isOpenClawConfigured()
     || isOllamaConfigured(),
 );
 
 export const resolveLlmProvider = (): LlmProvider | null => {
-  const preferred = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
-  if (preferred === 'gemini' && getGeminiKey()) {
-    return 'gemini';
-  }
-  if (preferred === 'openai' && getOpenAiKey()) {
-    return 'openai';
-  }
-  if (preferred === 'anthropic' && getAnthropicKey()) {
-    return 'anthropic';
-  }
-  if (preferred === 'claude' && getAnthropicKey()) {
-    return 'anthropic';
-  }
-  if (preferred === 'openclaw' && isOpenClawConfigured()) {
-    return 'openclaw';
-  }
-  if ((preferred === 'ollama' || preferred === 'local') && isOllamaConfigured()) {
-    return 'ollama';
-  }
-
-  if (getOpenAiKey()) {
-    return 'openai';
-  }
-
-  if (getAnthropicKey()) {
-    return 'anthropic';
-  }
-
-  if (getGeminiKey()) {
-    return 'gemini';
-  }
-
-  if (isOpenClawConfigured()) {
-    return 'openclaw';
-  }
-
-  if (isOllamaConfigured()) {
-    return 'ollama';
-  }
-
-  return null;
-};
-
-const requestOpenAi = async (params: LlmTextRequest): Promise<string> => {
-  const response = await requestOpenAiWithMeta(params, false);
-  return response.text;
+  return resolveProviderWithoutExperiment();
 };
 
 const requestOpenAiWithMeta = async (
@@ -280,6 +436,46 @@ const requestAnthropic = async (params: LlmTextRequest): Promise<string> => {
     .join('\n')
     .trim();
   return text;
+};
+
+const requestHuggingFace = async (params: LlmTextRequest): Promise<string> => {
+  const apiKey = getHuggingFaceKey();
+  if (!apiKey) {
+    throw new Error('HUGGINGFACE_API_KEY_NOT_CONFIGURED');
+  }
+
+  const model = params.model || process.env.HUGGINGFACE_MODEL || process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
+  const response = await fetchWithTimeout(HUGGINGFACE_CHAT_COMPLETIONS_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: params.temperature ?? 0.2,
+      top_p: params.topP,
+      max_tokens: params.maxTokens ?? 1000,
+      messages: [
+        { role: 'system', content: params.system },
+        { role: 'user', content: params.user },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    await logStructuredError({
+      code: 'LLM_REQUEST_FAILED',
+      source: 'llmClient.requestHuggingFace',
+      message: `HUGGINGFACE_REQUEST_FAILED status=${response.status}`,
+      meta: { provider: 'huggingface', status: response.status, bodyPreview: body.slice(0, 300) },
+    });
+    throw new Error(`HUGGINGFACE_REQUEST_FAILED: ${body.slice(0, 300)}`);
+  }
+
+  const data = (await response.json()) as Record<string, any>;
+  return String(data?.choices?.[0]?.message?.content || '').trim();
 };
 
 const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
@@ -498,26 +694,100 @@ export const generateText = async (params: LlmTextRequest): Promise<string> => {
 export const generateTextWithMeta = async (
   params: LlmTextRequest & { includeLogprobs?: boolean },
 ): Promise<LlmTextWithMetaResponse> => {
-  const provider = params.provider || resolveLlmProvider();
+  const selection = resolveProviderWithExperiment(params);
+  const provider = selection.provider || resolveLlmProvider();
   if (!provider) {
     throw new Error('LLM_PROVIDER_NOT_CONFIGURED');
   }
 
-  if (provider === 'openai') {
-    return requestOpenAiWithMeta(params, Boolean(params.includeLogprobs));
-  }
+  const startedAt = Date.now();
+  const requestInputChars = String(params.system || '').length + String(params.user || '').length;
 
-  if (provider === 'anthropic') {
-    return { text: await requestAnthropic(params), provider };
-  }
+  const resolveModel = (p: LlmProvider): string | undefined => {
+    if (params.model) return params.model;
+    if (p === 'openai') return process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini';
+    if (p === 'gemini') return process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+    if (p === 'anthropic') return process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-3-5-haiku-latest';
+    if (p === 'huggingface') return process.env.HUGGINGFACE_MODEL || process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
+    if (p === 'openclaw') return process.env.OPENCLAW_MODEL || 'openclaw';
+    if (p === 'ollama') return getOllamaModel() || 'qwen2.5:3b-instruct';
+    return undefined;
+  };
 
-  if (provider === 'openclaw') {
-    return { text: await requestOpenClaw(params), provider };
-  }
+  const callProvider = async (targetProvider: LlmProvider): Promise<LlmTextWithMetaResponse> => {
+    if (targetProvider === 'openai') {
+      const response = await requestOpenAiWithMeta(params, Boolean(params.includeLogprobs));
+      return { ...response, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'anthropic') {
+      return { text: await requestAnthropic(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'huggingface') {
+      return { text: await requestHuggingFace(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'openclaw') {
+      return { text: await requestOpenClaw(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'ollama') {
+      return { text: await requestOllama(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    return { text: await requestGemini(params), provider: 'gemini', model: resolveModel('gemini') };
+  };
 
-  if (provider === 'ollama') {
-    return { text: await requestOllama(params), provider };
-  }
+  try {
+    let response: LlmTextWithMetaResponse;
+    try {
+      response = await callProvider(provider);
+    } catch (error) {
+      const fallbackProvider = resolveProviderWithoutExperiment();
+      const canFallback = LLM_EXPERIMENT_FAIL_OPEN
+        && selection.experiment?.arm === 'huggingface'
+        && provider === 'huggingface'
+        && fallbackProvider
+        && fallbackProvider !== 'huggingface';
 
-  return { text: await requestGemini(params), provider: 'gemini' };
+      if (!canFallback) {
+        throw error;
+      }
+
+      response = await callProvider(fallbackProvider);
+      response.experiment = selection.experiment;
+    }
+
+    const latencyMs = Math.max(0, Date.now() - startedAt);
+    const estimatedCostUsd = estimateLlmCallCostUsd(requestInputChars, String(response.text || '').length);
+    const enriched: LlmTextWithMetaResponse = {
+      ...response,
+      latencyMs,
+      estimatedCostUsd,
+      experiment: selection.experiment || null,
+    };
+
+    void persistLlmCallLog({
+      request: params,
+      provider: enriched.provider,
+      model: enriched.model,
+      latencyMs,
+      success: true,
+      outputText: enriched.text,
+      avgLogprob: enriched.avgLogprob,
+      experiment: enriched.experiment,
+      estimatedCostUsd,
+    });
+
+    return enriched;
+  } catch (error) {
+    const latencyMs = Math.max(0, Date.now() - startedAt);
+    const message = error instanceof Error ? error.message : String(error);
+    void persistLlmCallLog({
+      request: params,
+      provider,
+      model: resolveModel(provider),
+      latencyMs,
+      success: false,
+      errorCode: message.split(':')[0] || 'UNKNOWN',
+      experiment: selection.experiment || null,
+    });
+    throw error;
+  }
 };

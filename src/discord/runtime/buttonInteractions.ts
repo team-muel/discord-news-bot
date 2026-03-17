@@ -61,7 +61,7 @@ export const handleButtonInteraction = async (params: {
   interaction: ButtonInteraction;
   client: Client;
   workerApprovalChannelId: string;
-  startVibeSession: (guildId: string, userId: string, goal: string) => { id: string };
+  startVibeSession: (guildId: string, userId: string, goal: string) => Promise<{ id: string }>;
   streamSessionProgress: (
     sink: { update: (content: string) => Promise<unknown> },
     sessionId: string,
@@ -399,7 +399,7 @@ export const handleButtonInteraction = async (params: {
 
   let newSession: { id: string };
   try {
-    newSession = startVibeSession(interaction.guildId, interaction.user.id, newGoal);
+    newSession = await startVibeSession(interaction.guildId, interaction.user.id, newGoal);
     (newSession as any).__parentSessionId = parentSessionId;
   } catch (error) {
     await thread.send(DISCORD_MESSAGES.bot.codeStartFailed(toErrorMessage(error)));

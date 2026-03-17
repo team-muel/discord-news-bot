@@ -2,7 +2,7 @@ import type { ActionExecutionResult } from './types';
 import { callMcpWorkerTool, getMcpWorkerUrl, isMcpStrictRouting, parseMcpTextBlocks } from './mcpDelegate';
 import { appendOutcomeSignalVerification, type OutcomeSignal } from '../../observability/outcomeSignal';
 
-type WorkerKind = 'youtube' | 'news' | 'community' | 'web';
+type WorkerKind = 'youtube' | 'news' | 'community' | 'web' | 'opencode';
 
 type RunDelegatedActionOptions = {
   actionName: string;

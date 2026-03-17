@@ -4,6 +4,7 @@ import initMonitoring from './src/init';
 import { PORT, START_BOT } from './src/config';
 import { startAutomationJobs } from './src/services/automationBot';
 import { startMemoryJobRunner } from './src/services/memoryJobRunner';
+import { startOpencodePublishWorker } from './src/services/opencodePublishWorker';
 import { startRuntimeAlerts } from './src/services/runtimeAlertService';
 import { startTradingEngine } from './src/services/tradingEngine';
 
@@ -16,6 +17,7 @@ const app = createApp();
 
 startAutomationJobs();
 startMemoryJobRunner();
+startOpencodePublishWorker();
 startTradingEngine();
 startRuntimeAlerts();
 

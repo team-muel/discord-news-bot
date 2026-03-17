@@ -8,26 +8,26 @@
 
 아래 표에서 각 주제별 "단일 기준 문서"를 고정한다.
 
-| 주제 | Canonical 문서 | 보조 문서 | 운영 규칙 |
-| --- | --- | --- | --- |
-| 플랫폼 전체 운영 | docs/RUNBOOK_MUEL_PLATFORM.md | docs/OPERATIONS_24_7.md | 운영 절차 변경은 Runbook 먼저 반영 |
-| 24/7 런타임/배포 | docs/OPERATIONS_24_7.md | docs/RENDER_AGENT_ENV_TEMPLATE.md | 배포/환경 변경은 Ops 문서 우선 |
-| 임계치 기반 의사결정 | docs/OPERATOR_SOP_DECISION_TABLE.md | docs/ONCALL_COMMS_PLAYBOOK.md, docs/ONCALL_INCIDENT_TEMPLATE.md | 임계치 충돌 시 SOP 우선 |
-| 메모리 제품 로드맵 | docs/planning/LONG_TERM_MEMORY_AGENT_ROADMAP.md | docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md | 분기 목표는 Roadmap, 작업은 Backlog |
-| 스프린트 실행 상태 | docs/planning/EXECUTION_BOARD.md | docs/planning/FRONTIER_2026_PROGRAM.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md | Now/Next/Later 외 상태값 금지 |
-| 비용/품질 게이트 | docs/planning/FINOPS_PLAYBOOK.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md | docs/planning/MEMORY_RETRIEVAL_SCORING.md | 배포 전 Go/No-Go 필수 |
-| 데이터/스키마 | docs/SUPABASE_SCHEMA.sql | docs/planning/MEMORY_SCHEMA_MIGRATION_PLAN.md | 스키마 변경 시 SQL + 계획 동시 갱신 |
-| 아키텍처 변경 근거 | docs/adr/*.md | docs/CHANGELOG-ARCH.md | 설계 변경은 ADR 선행 |
+| 주제                      | Canonical 문서                                                             | 보조 문서                                                                               | 운영 규칙                                               |
+| ------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 플랫폼 전체 운영          | docs/RUNBOOK_MUEL_PLATFORM.md                                              | docs/OPERATIONS_24_7.md                                                                 | 운영 절차 변경은 Runbook 먼저 반영                      |
+| 24/7 런타임/배포          | docs/OPERATIONS_24_7.md                                                    | docs/RENDER_AGENT_ENV_TEMPLATE.md                                                       | 배포/환경 변경은 Ops 문서 우선                          |
+| 임계치 기반 의사결정      | docs/OPERATOR_SOP_DECISION_TABLE.md                                        | docs/ONCALL_COMMS_PLAYBOOK.md, docs/ONCALL_INCIDENT_TEMPLATE.md                         | 임계치 충돌 시 SOP 우선                                 |
+| 제품/아키텍처 통합 로드맵 | docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md                         | docs/planning/LONG_TERM_MEMORY_AGENT_ROADMAP.md, docs/planning/FRONTIER_2026_PROGRAM.md | 분기 목표/우선순위는 Unified Roadmap 우선               |
+| 스프린트 실행 상태        | docs/planning/EXECUTION_BOARD.md                                           | docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md  | Now/Next/Later 외 상태값 금지, 항목별 milestone ID 필수 |
+| 비용/품질 게이트          | docs/planning/FINOPS_PLAYBOOK.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md | docs/planning/MEMORY_RETRIEVAL_SCORING.md                                               | 배포 전 Go/No-Go 필수                                   |
+| 데이터/스키마             | docs/SUPABASE_SCHEMA.sql                                                   | docs/planning/MEMORY_SCHEMA_MIGRATION_PLAN.md                                           | 스키마 변경 시 SQL + 계획 동시 갱신                     |
+| 아키텍처 변경 근거        | docs/adr/\*.md                                                             | docs/CHANGELOG-ARCH.md                                                                  | 설계 변경은 ADR 선행                                    |
 
 ## 2) 역할과 책임 (RACI 요약)
 
-| 의사결정 | Driver (R) | Approver (A) | Consulted (C) | Informed (I) |
-| --- | --- | --- | --- | --- |
-| 운영 임계치 변경 | L2 Service Owner | Incident Commander | L2 Data Owner | L1 On-Call |
-| 데이터 스키마 변경 | L2 Data Owner | Service Owner | Incident Commander | L1 On-Call |
-| 스프린트 우선순위 | Product/Service Owner | Incident Commander | Data Owner | On-Call |
-| 배포 Go/No-Go | Service Owner | Incident Commander | Data Owner | On-Call |
-| 런북 개정 | L1 On-Call | Service Owner | Data Owner | 전체 운영자 |
+| 의사결정           | Driver (R)            | Approver (A)       | Consulted (C)      | Informed (I) |
+| ------------------ | --------------------- | ------------------ | ------------------ | ------------ |
+| 운영 임계치 변경   | L2 Service Owner      | Incident Commander | L2 Data Owner      | L1 On-Call   |
+| 데이터 스키마 변경 | L2 Data Owner         | Service Owner      | Incident Commander | L1 On-Call   |
+| 스프린트 우선순위  | Product/Service Owner | Incident Commander | Data Owner         | On-Call      |
+| 배포 Go/No-Go      | Service Owner         | Incident Commander | Data Owner         | On-Call      |
+| 런북 개정          | L1 On-Call            | Service Owner      | Data Owner         | 전체 운영자  |
 
 ## 3) 운영 Cadence
 

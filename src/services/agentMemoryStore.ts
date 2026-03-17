@@ -71,6 +71,7 @@ const ensureSupabase = () => {
 
 const safeLike = (value: string): string => value.replace(/[%,]/g, ' ').trim();
 const MEMORY_RETRIEVE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE || 0.35)));
+const MEMORY_HYBRID_MIN_SIMILARITY = Math.max(0, Math.min(1, Number(process.env.MEMORY_HYBRID_MIN_SIMILARITY || 0.08)));
 
 const toMaybeUserId = (value: unknown): string | null => {
   const text = String(value || '').trim();
@@ -133,29 +134,51 @@ export async function searchGuildMemory(params: SearchParams) {
   const startedAt = Date.now();
   const cleanQuery = safeLike(params.query);
 
-  let query = client
-    .from('memory_items')
-    .select('id, guild_id, channel_id, type, title, content, summary, confidence, pinned, updated_at, status')
-    .eq('guild_id', params.guildId)
-    .eq('status', 'active')
-    .order('pinned', { ascending: false })
-    .order('updated_at', { ascending: false })
-    .limit(params.limit);
+  const runClassicSearch = async (): Promise<Array<Record<string, unknown>>> => {
+    let query = client
+      .from('memory_items')
+      .select('id, guild_id, channel_id, type, title, content, summary, confidence, pinned, updated_at, status')
+      .eq('guild_id', params.guildId)
+      .eq('status', 'active')
+      .order('pinned', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(params.limit);
 
-  if (params.type) {
-    query = query.eq('type', params.type);
+    if (params.type) {
+      query = query.eq('type', params.type);
+    }
+
+    if (cleanQuery) {
+      query = query.or(`content.ilike.%${cleanQuery}%,summary.ilike.%${cleanQuery}%,title.ilike.%${cleanQuery}%`);
+    }
+
+    const classic = await query;
+    if (classic.error) {
+      throw new Error(classic.error.message || 'MEMORY_SEARCH_FAILED');
+    }
+    return (classic.data || []) as Array<Record<string, unknown>>;
+  };
+
+  let items: Array<Record<string, unknown>> = [];
+  const canUseHybridRpc = typeof (client as { rpc?: unknown }).rpc === 'function';
+  if (cleanQuery && canUseHybridRpc) {
+    const hybrid = await client.rpc('search_memory_items_hybrid', {
+      p_guild_id: params.guildId,
+      p_query: cleanQuery,
+      p_type: params.type || null,
+      p_limit: params.limit,
+      p_min_similarity: MEMORY_HYBRID_MIN_SIMILARITY,
+    });
+
+    if (hybrid.error) {
+      items = await runClassicSearch();
+    } else {
+      items = (hybrid.data || []) as Array<Record<string, unknown>>;
+    }
+  } else {
+    items = await runClassicSearch();
   }
 
-  if (cleanQuery) {
-    query = query.or(`content.ilike.%${cleanQuery}%,summary.ilike.%${cleanQuery}%,title.ilike.%${cleanQuery}%`);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    throw new Error(error.message || 'MEMORY_SEARCH_FAILED');
-  }
-
-  const items = (data || []) as Array<Record<string, unknown>>;
   const ids = items.map((item) => String(item.id)).filter(Boolean);
 
   let citationsById = new Map<string, Array<{ sourceKind: string; sourceMessageId: string; sourceRef: string }>>();

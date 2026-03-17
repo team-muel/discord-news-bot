@@ -63,10 +63,26 @@ export interface RAGQueryResult {
   sourceFiles: string[];
   documentContext: string;
   intent: IntentCategory;
+  contextMode: 'full' | 'metadata_first';
   documentCount: number;
   cacheStatus: { hits: number; misses: number };
   executionTimeMs: number;
 }
+
+type GuildScopeMode = 'off' | 'prefer' | 'strict';
+
+const DEFAULT_CONTEXT_MODE: 'full' | 'metadata_first' =
+  String(process.env.OBSIDIAN_RAG_CONTEXT_MODE || 'metadata_first').trim().toLowerCase() === 'full'
+    ? 'full'
+    : 'metadata_first';
+
+const DEFAULT_GUILD_SCOPE_MODE: GuildScopeMode = (() => {
+  const raw = String(process.env.OBSIDIAN_RAG_GUILD_SCOPE_MODE || 'prefer').trim().toLowerCase();
+  if (raw === 'off' || raw === 'strict') {
+    return raw;
+  }
+  return 'prefer';
+})();
 
 let initialized = false;
 
@@ -104,10 +120,11 @@ export async function initObsidianRAG(): Promise<boolean> {
  */
 export async function queryObsidianRAG(
   question: string,
-  options?: { maxDocs?: number; debug?: boolean }
+  options?: { maxDocs?: number; debug?: boolean; contextMode?: 'full' | 'metadata_first'; guildId?: string }
 ): Promise<RAGQueryResult> {
   const startTime = Date.now();
   const maxDocs = options?.maxDocs || 10;
+  const contextMode = options?.contextMode || DEFAULT_CONTEXT_MODE;
   const cacheStatus = { hits: 0, misses: 0 };
 
   try {
@@ -117,7 +134,7 @@ export async function queryObsidianRAG(
 
     // 2. Route to relevant documents
     const routes = INTENT_ROUTES[intent];
-    const documentPaths = await findRelatedDocuments(question, routes, maxDocs);
+    const documentPaths = await findRelatedDocuments(question, routes, maxDocs, options?.guildId);
 
     if (documentPaths.length === 0) {
       logger.warn('[OBSIDIAN-RAG] No relevant documents found for intent=%s', intent);
@@ -125,6 +142,7 @@ export async function queryObsidianRAG(
         sourceFiles: [],
         documentContext: '(No relevant documents found)',
         intent,
+        contextMode,
         documentCount: 0,
         cacheStatus,
         executionTimeMs: Date.now() - startTime,
@@ -144,7 +162,7 @@ export async function queryObsidianRAG(
     const graphMetadata = await getObsidianGraphMetadata();
 
     // 5. Assemble context
-    const contextText = assembleContext(documents, graphMetadata);
+    const contextText = assembleContext(documents, graphMetadata, contextMode);
 
     // Log stats
     const stats = await getCacheStats();
@@ -165,6 +183,7 @@ export async function queryObsidianRAG(
       sourceFiles: Array.from(documents.keys()),
       documentContext: contextText,
       intent,
+      contextMode,
       documentCount: documents.size,
       cacheStatus,
       executionTimeMs: Date.now() - startTime,
@@ -175,6 +194,7 @@ export async function queryObsidianRAG(
       sourceFiles: [],
       documentContext: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
       intent: 'development',
+      contextMode,
       documentCount: 0,
       cacheStatus,
       executionTimeMs: Date.now() - startTime,
@@ -202,9 +222,10 @@ export function inferIntent(question: string): IntentCategory {
 async function findRelatedDocuments(
   question: string,
   routes: typeof INTENT_ROUTES[IntentCategory],
-  limit: number
+  limit: number,
+  guildId?: string,
 ): Promise<string[]> {
-  const results = new Set<string>();
+  const scoredResults = new Map<string, number>();
 
   try {
     // Search by tag in parallel to reduce total query latency.
@@ -213,13 +234,25 @@ async function findRelatedDocuments(
     const tagResultsList = await Promise.all(searches);
 
     for (const tagResults of tagResultsList) {
-      tagResults.forEach((r: { filePath: string }) => results.add(r.filePath));
+      tagResults.forEach((r: { filePath: string; score?: number }) => {
+        const normalizedPath = normalizeResultPath(r.filePath);
+        if (!normalizedPath) {
+          return;
+        }
+        const score = Number.isFinite(r.score) ? Number(r.score) : 0;
+        const prev = scoredResults.get(normalizedPath);
+        if (prev === undefined || score > prev) {
+          scoredResults.set(normalizedPath, score);
+        }
+      });
     }
 
-    // Limit results
-    const paths = Array.from(results).slice(0, limit);
+    const rankedPaths = [...scoredResults.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([filePath]) => filePath);
+    const paths = applyGuildScopeRanking(rankedPaths, guildId, limit);
     
-    logger.debug('[OBSIDIAN-RAG] Found %d documents for intent, returning %d', results.size, paths.length);
+    logger.debug('[OBSIDIAN-RAG] Found %d documents for intent, returning %d', scoredResults.size, paths.length);
     return paths;
   } catch (error) {
     logger.warn('[OBSIDIAN-RAG] Document search failed: %o', error);
@@ -227,12 +260,42 @@ async function findRelatedDocuments(
   }
 }
 
+function normalizeResultPath(filePath: unknown): string {
+  return String(filePath || '').trim().replace(/\\/g, '/');
+}
+
+function sanitizeGuildId(guildId: unknown): string {
+  const value = String(guildId || '').trim();
+  if (!/^\d{6,30}$/.test(value)) {
+    return '';
+  }
+  return value;
+}
+
+function applyGuildScopeRanking(paths: string[], guildId: string | undefined, limit: number): string[] {
+  const safeGuildId = sanitizeGuildId(guildId);
+  const mode = DEFAULT_GUILD_SCOPE_MODE;
+  if (!safeGuildId || mode === 'off') {
+    return paths.slice(0, limit);
+  }
+
+  const guildPrefix = `guilds/${safeGuildId}/`;
+  const guildPaths = paths.filter((filePath) => filePath.startsWith(guildPrefix));
+  if (mode === 'strict') {
+    return guildPaths.slice(0, limit);
+  }
+
+  const globalPaths = paths.filter((filePath) => !filePath.startsWith(guildPrefix));
+  return [...guildPaths, ...globalPaths].slice(0, limit);
+}
+
 /**
  * Assemble context from documents with metadata
  */
 function assembleContext(
   documents: Map<string, { content: string; frontmatter?: Record<string, any> }>,
-  graphMetadata: Record<string, any> = {}
+  graphMetadata: Record<string, any> = {},
+  contextMode: 'full' | 'metadata_first' = DEFAULT_CONTEXT_MODE,
 ): string {
   const parts: string[] = [];
 
@@ -254,7 +317,15 @@ function assembleContext(
       .join(' | ');
 
     parts.push(`## ${header}\n`);
-    parts.push(doc.content);
+    if (contextMode === 'metadata_first') {
+      const snippet = String(doc.content || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 320);
+      parts.push(`요약 스니펫: ${snippet}`);
+    } else {
+      parts.push(doc.content);
+    }
     parts.push('\n');
 
     docIndex++;

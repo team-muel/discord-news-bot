@@ -8,6 +8,7 @@ import { appendBenchmarkEvents } from '../services/benchmarkStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob } from '../services/automationBot';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { createIdempotencyGuard } from '../middleware/idempotency';
 import { isOneOf, toBoundedInt, toStringParam } from '../utils/validation';
 import {
   cancelAgentSession,
@@ -38,8 +39,18 @@ import { getActionRunnerDiagnosticsSnapshot } from '../services/skills/actionRun
 import {
   getAgentOpsSnapshot,
   triggerDailyLearningRun,
+  triggerGotCutoverAutopilotRun,
   triggerGuildOnboardingSession,
 } from '../services/agentOpsService';
+import { getAgentGotPolicySnapshot } from '../services/agentGotPolicyService';
+import {
+  getGotRunById,
+  listGotNodes,
+  listGotRuns,
+  listGotSelectionEvents,
+} from '../services/agentGotStore';
+import { buildGotPerformanceDashboard } from '../services/agentGotAnalyticsService';
+import { getAgentGotCutoverDecision } from '../services/agentGotCutoverService';
 import {
   addMemoryFeedback,
   createMemoryItem,
@@ -73,7 +84,23 @@ import {
 } from '../services/retrievalEvalService';
 import { buildGoNoGoReport } from '../services/goNoGoService';
 import { buildAgentRuntimeReadinessReport } from '../services/agentRuntimeReadinessService';
+import {
+  evaluateGuildSloAndPersistAlerts,
+  evaluateGuildSloReport,
+  listGuildSloAlertEvents,
+} from '../services/agentSloService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../services/finopsService';
+import { getLlmExperimentSummary } from '../services/llmExperimentAnalyticsService';
+import {
+  ensureSupabaseMaintenanceCronJobs,
+  evaluateHypoPgIndexes,
+  getHypoPgCandidates,
+  getSupabaseExtensionOpsSnapshot,
+  listSupabaseCronJobs,
+} from '../services/supabaseExtensionOpsService';
+import { getPlatformLightweightingReport } from '../services/platformLightweightingService';
+import { getRuntimeSchedulerPolicySnapshot } from '../services/runtimeSchedulerPolicyService';
+import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../services/efficiencyOptimizationService';
 import { isUserAdmin } from '../services/adminAllowlistService';
 import {
   forgetGuildRagData,
@@ -86,6 +113,39 @@ import { getWorkerProposalMetricsSnapshot } from '../services/workerGeneration/w
 import { getObsidianAdapterRuntimeStatus } from '../services/obsidian/router';
 import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidianQualityService';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
+import { getAgentTelemetryQueueSnapshot } from '../services/agentTelemetryQueue';
+import { buildTaskRoutingPolicyHints, getTaskRoutingSummary } from '../services/taskRoutingAnalyticsService';
+import { recordTaskRoutingFeedbackMetric } from '../services/taskRoutingMetricsService';
+import {
+  getAgentAnswerQualityReviewSummary,
+  listAgentAnswerQualityReviews,
+  recordAgentAnswerQualityReview,
+} from '../services/agentQualityReviewService';
+import {
+  buildToolLearningWeeklyReport,
+  decideToolLearningCandidate,
+  generateTaskRoutingLearningCandidates,
+  listToolLearningCandidates,
+  listToolLearningRules,
+  recordToolLearningLog,
+} from '../services/toolLearningService';
+import { getOpencodeExecutionSummary } from '../services/opencodeOpsService';
+import {
+  createOpencodeChangeRequest,
+  decideOpencodeChangeRequest,
+  enqueueOpencodePublishJob,
+  isOpencodeChangeRequestStatus,
+  isOpencodePublishJobStatus,
+  listOpencodeChangeRequests,
+  listOpencodePublishJobs,
+  type OpencodeRiskTier,
+  summarizeOpencodeQueueReadiness,
+} from '../services/opencodeGitHubQueueService';
+import {
+  getConversationThreadBySession,
+  listConversationThreads,
+  listConversationTurns,
+} from '../services/conversationTurnService';
 
 let lastBotStatusBenchmarkAt = 0;
 
@@ -96,7 +156,10 @@ export function createBotRouter(): Router {
     max: 20,
     keyPrefix: 'bot-admin-action',
     store: 'supabase',
+    onStoreError: 'reject',
   });
+  const adminIdempotency = createIdempotencyGuard({ scope: 'bot-admin', ttlSec: 86_400, requireHeader: false });
+  const opencodeIdempotency = createIdempotencyGuard({ scope: 'bot-opencode', ttlSec: 86_400, requireHeader: false });
 
   router.get('/status', requireAuth, (_req, res) => {
     return (async () => {
@@ -313,6 +376,77 @@ export function createBotRouter(): Router {
     });
   });
 
+  router.get('/agent/conversations/threads', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const requestedBy = toStringParam(req.query?.requestedBy) || undefined;
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const items = await listConversationThreads({ guildId, requestedBy, limit });
+      return res.json({ ok: true, items, count: items.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'CONVERSATION_THREAD_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/conversations/threads/:threadId/turns', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const threadId = toBoundedInt(req.params.threadId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const limit = toBoundedInt(req.query?.limit, 200, { min: 1, max: 500 });
+    if (!guildId || threadId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and threadId are required' });
+    }
+
+    try {
+      const turns = await listConversationTurns({ guildId, threadId, limit });
+      return res.json({ ok: true, threadId, turns, count: turns.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'CONVERSATION_TURN_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/conversations/by-session/:sessionId', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const sessionId = toStringParam(req.params.sessionId);
+    if (!guildId || !sessionId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and sessionId are required' });
+    }
+
+    try {
+      const item = await getConversationThreadBySession({ guildId, sessionId });
+      if (!item) {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'conversation thread not found for session' });
+      }
+      return res.json({ ok: true, ...item, count: item.turns.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'CONVERSATION_BY_SESSION_FAILED', message });
+    }
+  });
+
   router.get('/agent/deadletters', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
@@ -330,6 +464,373 @@ export function createBotRouter(): Router {
 
   router.get('/agent/policy', requireAdmin, async (_req, res) => {
     return res.json({ policy: getAgentPolicy(), ops: getAgentOpsSnapshot() });
+  });
+
+  router.get('/agent/runtime/telemetry-queue', requireAdmin, async (_req, res) => {
+    return res.json({ ok: true, queue: getAgentTelemetryQueueSnapshot() });
+  });
+
+  router.get('/agent/runtime/unattended-health', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    try {
+      const telemetry = getAgentTelemetryQueueSnapshot();
+      const readiness = guildId
+        ? await summarizeOpencodeQueueReadiness({ guildId })
+        : null;
+      return res.json({
+        ok: true,
+        timestamp: new Date().toISOString(),
+        telemetry,
+        opencodeReadiness: readiness,
+        notes: {
+          guildScoped: Boolean(guildId),
+          publishLock: {
+            enabled: String(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED || 'true').trim(),
+            failOpen: String(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN || 'false').trim(),
+          },
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'UNATTENDED_HEALTH_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/supabase/extensions', requireAdmin, async (req, res) => {
+    const includeTopQueries = String(req.query?.includeTopQueries || 'true').trim().toLowerCase() !== 'false';
+    const topLimit = toBoundedInt(req.query?.topLimit, 10, { min: 1, max: 50 });
+    try {
+      const snapshot = await getSupabaseExtensionOpsSnapshot({ includeTopQueries, topLimit });
+      return res.json({ ok: true, snapshot });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'SUPABASE_EXTENSION_RUNTIME_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/supabase/cron-jobs', requireAdmin, async (_req, res) => {
+    try {
+      const jobs = await listSupabaseCronJobs();
+      return res.json({ ok: true, jobs, count: jobs.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'SUPABASE_CRON_JOBS_LIST_FAILED', message });
+    }
+  });
+
+  router.post('/agent/runtime/supabase/cron-jobs/ensure-maintenance', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const llmRetentionDays = toBoundedInt(req.body?.llmRetentionDays, 30, { min: 1, max: 365 });
+    try {
+      const installed = await ensureSupabaseMaintenanceCronJobs({ llmRetentionDays });
+      return res.status(202).json({ ok: true, llmRetentionDays, installed, count: installed.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'SUPABASE_CRON_ENSURE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/supabase/hypopg/candidates', requireAdmin, async (_req, res) => {
+    try {
+      const candidates = await getHypoPgCandidates();
+      return res.json({ ok: true, candidates, count: candidates.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'HYPOPG_CANDIDATES_FAILED', message });
+    }
+  });
+
+  router.post('/agent/runtime/supabase/hypopg/evaluate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const ddls = Array.isArray(req.body?.ddls)
+      ? req.body.ddls.map((item: unknown) => toStringParam(item)).filter(Boolean)
+      : [];
+    if (ddls.length === 0) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'ddls array is required' });
+    }
+
+    try {
+      const evaluations = await evaluateHypoPgIndexes(ddls);
+      return res.status(202).json({ ok: true, evaluations, count: evaluations.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'HYPOPG_EVALUATION_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/lightweighting-plan', requireAdmin, async (_req, res) => {
+    try {
+      const report = await getPlatformLightweightingReport();
+      return res.json({ ok: true, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'LIGHTWEIGHTING_PLAN_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/scheduler-policy', requireAdmin, async (_req, res) => {
+    try {
+      const snapshot = await getRuntimeSchedulerPolicySnapshot();
+      return res.json({ ok: true, snapshot });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'SCHEDULER_POLICY_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/efficiency', requireAdmin, async (_req, res) => {
+    try {
+      const snapshot = await getEfficiencySnapshot();
+      return res.json({ ok: true, snapshot });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'EFFICIENCY_SNAPSHOT_FAILED', message });
+    }
+  });
+
+  router.post('/agent/runtime/efficiency/quick-wins', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const dryRun = String(req.body?.dryRun ?? 'true').trim().toLowerCase() !== 'false';
+    const llmRetentionDays = toBoundedInt(req.body?.llmRetentionDays, 30, { min: 1, max: 365 });
+    const evaluateHypopgTop = toBoundedInt(req.body?.evaluateHypopgTop, 2, { min: 1, max: 10 });
+
+    try {
+      const result = await runEfficiencyQuickWins({
+        dryRun,
+        llmRetentionDays,
+        evaluateHypopgTop,
+      });
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'EFFICIENCY_QUICK_WINS_FAILED', message });
+    }
+  });
+
+  router.get('/agent/got/policy', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    return res.json({ ok: true, guildId: guildId || '*', policy: getAgentGotPolicySnapshot(guildId) });
+  });
+
+  router.get('/agent/got/runs', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const runs = await listGotRuns({ guildId, limit });
+      return res.json({ ok: true, runs, count: runs.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_GOT_RUN_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/got/runs/:runId', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const runId = toBoundedInt(req.params.runId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    if (!guildId || runId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and runId are required' });
+    }
+
+    try {
+      const run = await getGotRunById({ guildId, runId });
+      return res.json({ ok: true, run });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'AGENT_GOT_RUN_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_GOT_RUN_READ_FAILED', message });
+    }
+  });
+
+  router.get('/agent/got/runs/:runId/nodes', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const runId = toBoundedInt(req.params.runId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const limit = toBoundedInt(req.query?.limit, 200, { min: 1, max: 500 });
+    if (!guildId || runId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and runId are required' });
+    }
+
+    try {
+      const nodes = await listGotNodes({ guildId, runId, limit });
+      return res.json({ ok: true, nodes, count: nodes.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_GOT_NODE_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/got/runs/:runId/selection-events', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const runId = toBoundedInt(req.params.runId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const limit = toBoundedInt(req.query?.limit, 200, { min: 1, max: 500 });
+    if (!guildId || runId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and runId are required' });
+    }
+
+    try {
+      const events = await listGotSelectionEvents({ guildId, runId, limit });
+      return res.json({ ok: true, events, count: events.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_GOT_SELECTION_EVENT_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/got/dashboard/performance', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const dashboard = await buildGotPerformanceDashboard({ guildId, days });
+      return res.json({ ok: true, dashboard });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_GOT_DASHBOARD_FAILED', message });
+    }
+  });
+
+  router.get('/agent/got/cutover-decision', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const sessionId = toStringParam(req.query?.sessionId) || undefined;
+    const forceRefresh = String(req.query?.forceRefresh || '').trim().toLowerCase() === 'true';
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const decision = await getAgentGotCutoverDecision({ guildId, sessionId, forceRefresh });
+      return res.json({ ok: true, decision });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'AGENT_GOT_CUTOVER_DECISION_FAILED', message });
+    }
+  });
+
+  router.post('/agent/quality/reviews', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const reviewerId = toStringParam(req.body?.reviewerId);
+    const strategyRaw = String(req.body?.strategy || '').trim().toLowerCase();
+    const strategy = strategyRaw === 'got' || strategyRaw === 'tot' ? strategyRaw : 'baseline';
+    const isHallucination = req.body?.isHallucination === true;
+    if (!guildId || !reviewerId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and reviewerId are required' });
+    }
+
+    try {
+      await recordAgentAnswerQualityReview({
+        guildId,
+        reviewerId,
+        strategy,
+        isHallucination,
+        sessionId: toStringParam(req.body?.sessionId) || undefined,
+        question: toStringParam(req.body?.question) || undefined,
+        answerExcerpt: toStringParam(req.body?.answerExcerpt) || undefined,
+        labelConfidence: Number(req.body?.labelConfidence),
+        reviewNote: toStringParam(req.body?.reviewNote) || undefined,
+      });
+      return res.json({ ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_QUALITY_REVIEW_INSERT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/quality/reviews', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const rows = await listAgentAnswerQualityReviews({ guildId, days, limit });
+      return res.json({ ok: true, rows, count: rows.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_QUALITY_REVIEW_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/quality/reviews/summary', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const summary = await getAgentAnswerQualityReviewSummary({ guildId, days });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_QUALITY_REVIEW_SUMMARY_FAILED', message });
+    }
   });
 
   router.get('/agent/privacy/policy', requireAdmin, async (req, res) => {
@@ -680,7 +1181,323 @@ export function createBotRouter(): Router {
     return res.json({ ok: true, request: updated });
   });
 
-  router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/opencode/bootstrap-policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const runMode = toStringParam(req.body?.runMode) || 'approval_required';
+    const enabledRaw = req.body?.enabled;
+    const enabled = typeof enabledRaw === 'boolean' ? enabledRaw : String(enabledRaw || '').trim() !== 'false';
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (!isActionRunMode(runMode)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'runMode must be auto|approval_required|disabled' });
+    }
+    if (!listActions().some((action) => action.name === 'opencode.execute')) {
+      return res.status(500).json({ ok: false, error: 'CONFIG', message: 'opencode.execute action is not registered' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const policy = await upsertGuildActionPolicy({
+        guildId,
+        actionName: 'opencode.execute',
+        enabled,
+        runMode,
+        actorId,
+      });
+      return res.status(202).json({ ok: true, policy });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'OPENCODE_POLICY_BOOTSTRAP_FAILED', message });
+    }
+  });
+
+  router.get('/agent/self-growth/policy', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    const policies = await listGuildActionPolicies(guildId);
+    const opencodePolicy = policies.find((item) => item.actionName === 'opencode.execute') || null;
+    const effectiveRunMode = opencodePolicy?.runMode || 'approval_required';
+    const profile = effectiveRunMode === 'auto'
+      ? 'conditional_auto'
+      : effectiveRunMode === 'disabled'
+        ? 'disabled'
+        : 'human_gate';
+
+    return res.json({
+      ok: true,
+      guildId,
+      profile,
+      effective: {
+        actionName: 'opencode.execute',
+        runMode: effectiveRunMode,
+        enabled: opencodePolicy?.enabled ?? true,
+      },
+      note: 'self-growth profile currently controls opencode.execute governance mode',
+    });
+  });
+
+  router.post('/agent/self-growth/policy/apply', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const profile = toStringParam(req.body?.profile || req.query?.profile).toLowerCase();
+    if (!guildId || !isOneOf(profile, ['human_gate', 'conditional_auto', 'disabled'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and profile(human_gate|conditional_auto|disabled) are required' });
+    }
+
+    const runMode = profile === 'conditional_auto'
+      ? 'auto'
+      : profile === 'disabled'
+        ? 'disabled'
+        : 'approval_required';
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const policy = await upsertGuildActionPolicy({
+        guildId,
+        actionName: 'opencode.execute',
+        enabled: profile !== 'disabled',
+        runMode,
+        actorId,
+      });
+      return res.status(202).json({ ok: true, guildId, profile, policy });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'SELF_GROWTH_POLICY_APPLY_FAILED', message });
+    }
+  });
+
+  router.get('/agent/opencode/summary', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 7, { min: 1, max: 90 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const summary = await getOpencodeExecutionSummary({ guildId, days });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_SUMMARY_FAILED', message });
+    }
+  });
+
+  router.post('/agent/opencode/change-requests', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const title = toStringParam(req.body?.title);
+    const riskTierRaw = toStringParam(req.body?.riskTier).toLowerCase();
+    if (!guildId || !title) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and title are required' });
+    }
+    if (riskTierRaw && !isOneOf(riskTierRaw, ['low', 'medium', 'high', 'critical'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'riskTier must be low|medium|high|critical' });
+    }
+
+    try {
+      const requestedBy = toStringParam(req.user?.id) || 'api';
+      const created = await createOpencodeChangeRequest({
+        guildId,
+        requestedBy,
+        title,
+        summary: toStringParam(req.body?.summary) || undefined,
+        targetBaseBranch: toStringParam(req.body?.targetBaseBranch) || undefined,
+        proposedBranch: toStringParam(req.body?.proposedBranch) || undefined,
+        sourceActionLogId: Number(req.body?.sourceActionLogId),
+        riskTier: (riskTierRaw || undefined) as OpencodeRiskTier | undefined,
+        scoreCard: req.body?.scoreCard && typeof req.body.scoreCard === 'object' && !Array.isArray(req.body.scoreCard)
+          ? req.body.scoreCard as Record<string, unknown>
+          : undefined,
+        evidenceBundleId: toStringParam(req.body?.evidenceBundleId) || undefined,
+        files: Array.isArray(req.body?.files)
+          ? req.body.files.map((item: unknown) => toStringParam(item)).filter(Boolean)
+          : undefined,
+        diffPatch: toStringParam(req.body?.diffPatch) || undefined,
+        metadata: req.body?.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
+          ? req.body.metadata as Record<string, unknown>
+          : undefined,
+      });
+      return res.status(201).json({ ok: true, item: created });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid payload' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_CHANGE_REQUEST_CREATE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/opencode/change-requests', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const statusRaw = toStringParam(req.query?.status).toLowerCase();
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (statusRaw && !isOpencodeChangeRequestStatus(statusRaw)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid status' });
+    }
+
+    try {
+      const items = await listOpencodeChangeRequests({
+        guildId,
+        status: statusRaw ? (statusRaw as 'draft' | 'review_pending' | 'approved' | 'rejected' | 'queued_for_publish' | 'published' | 'failed') : undefined,
+        limit,
+      });
+      return res.json({ ok: true, items, count: items.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_CHANGE_REQUEST_LIST_FAILED', message });
+    }
+  });
+
+  router.post('/agent/opencode/change-requests/:changeRequestId/decision', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const changeRequestId = toBoundedInt(req.params.changeRequestId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const decision = toStringParam(req.body?.decision).toLowerCase();
+
+    if (!guildId || changeRequestId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and changeRequestId are required' });
+    }
+    if (!isOneOf(decision, ['approve', 'reject', 'published', 'failed'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'decision must be approve|reject|published|failed' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const updated = await decideOpencodeChangeRequest({
+        guildId,
+        changeRequestId,
+        decision: decision as 'approve' | 'reject' | 'published' | 'failed',
+        actorId,
+        note: toStringParam(req.body?.note) || undefined,
+        publishUrl: toStringParam(req.body?.publishUrl) || undefined,
+      });
+      return res.json({ ok: true, item: updated });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'OPENCODE_CHANGE_REQUEST_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_CHANGE_REQUEST_DECIDE_FAILED', message });
+    }
+  });
+
+  router.post('/agent/opencode/change-requests/:changeRequestId/queue-publish', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const changeRequestId = toBoundedInt(req.params.changeRequestId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    if (!guildId || changeRequestId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and changeRequestId are required' });
+    }
+
+    try {
+      const requestedBy = toStringParam(req.user?.id) || 'api';
+      const payload = req.body?.payload && typeof req.body.payload === 'object' && !Array.isArray(req.body.payload)
+        ? req.body.payload as Record<string, unknown>
+        : undefined;
+      const job = await enqueueOpencodePublishJob({
+        guildId,
+        changeRequestId,
+        requestedBy,
+        provider: toStringParam(req.body?.provider) || undefined,
+        payload,
+      });
+      const deduplicated = Boolean((job as Record<string, unknown>).deduplicated);
+      return res.status(202).json({ ok: true, job, deduplicated });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'OPENCODE_CHANGE_REQUEST_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
+      }
+      if (message === 'OPENCODE_CHANGE_REQUEST_NOT_APPROVED') {
+        return res.status(409).json({ ok: false, error: 'CONFLICT', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_PUBLISH_QUEUE_ENQUEUE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/opencode/publish-queue', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const statusRaw = toStringParam(req.query?.status).toLowerCase();
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (statusRaw && !isOpencodePublishJobStatus(statusRaw)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid status' });
+    }
+
+    try {
+      const items = await listOpencodePublishJobs({
+        guildId,
+        status: statusRaw ? (statusRaw as 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled') : undefined,
+        limit,
+      });
+      return res.json({ ok: true, items, count: items.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_PUBLISH_QUEUE_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/opencode/readiness', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const readiness = await summarizeOpencodeQueueReadiness({ guildId });
+      return res.json({ ok: true, readiness });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'OPENCODE_READINESS_FAILED', message });
+    }
+  });
+
+  router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     if (!guildId) {
       return res.status(400).json({ error: 'guildId is required' });
@@ -698,9 +1515,15 @@ export function createBotRouter(): Router {
     return res.status(result.ok ? 202 : 409).json(result);
   });
 
-  router.post('/agent/learning/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/learning/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const result = triggerDailyLearningRun(client, guildId || undefined);
+    return res.status(result.ok ? 202 : 409).json(result);
+  });
+
+  router.post('/agent/got/cutover/autopilot/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const result = await triggerGotCutoverAutopilotRun(client, guildId || undefined);
     return res.status(result.ok ? 202 : 409).json(result);
   });
 
@@ -721,7 +1544,7 @@ export function createBotRouter(): Router {
     return res.json({ session: serializeAgentSessionForApi(session, { includeShadowGraph, traceTailLimit }) });
   });
 
-  router.post('/agent/sessions', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const goal = toStringParam(req.body?.goal);
     const skillId = toStringParam(req.body?.skillId);
@@ -749,7 +1572,7 @@ export function createBotRouter(): Router {
     return res.status(202).json({ ok: true, session: serializeAgentSessionForApi(session) });
   });
 
-  router.post('/agent/sessions/:sessionId/cancel', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/sessions/:sessionId/cancel', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const sessionId = toStringParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
@@ -1323,6 +2146,72 @@ export function createBotRouter(): Router {
     }
   });
 
+  router.get('/agent/runtime/slo/report', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const report = await evaluateGuildSloReport({ guildId });
+      return res.json({ ok: true, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_SLO_REPORT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/slo/alerts', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const limit = toBoundedInt(req.query?.limit, 100, { min: 1, max: 500 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const alerts = await listGuildSloAlertEvents({ guildId, limit });
+      return res.json({ ok: true, guildId, alerts, count: alerts.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_SLO_ALERT_LIST_FAILED', message });
+    }
+  });
+
+  router.post('/agent/runtime/slo/evaluate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const force = String(req.body?.force || req.query?.force || '').trim().toLowerCase() === 'true';
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const actorId = toStringParam(req.user?.id) || 'api';
+      const report = await evaluateGuildSloAndPersistAlerts({ guildId, actorId, force });
+      return res.status(202).json({ ok: true, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'AGENT_SLO_EVALUATION_FAILED', message });
+    }
+  });
+
   router.get('/agent/finops/summary', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
@@ -1371,6 +2260,267 @@ export function createBotRouter(): Router {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ ok: false, error: 'FINOPS_BUDGET_FAILED', message });
+    }
+  });
+
+  router.get('/agent/llm/experiments/summary', requireAdmin, async (req, res) => {
+    const experimentName = toStringParam(req.query?.experimentName || req.query?.name || process.env.LLM_EXPERIMENT_NAME || 'hf_ab_v1');
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 180 });
+    if (!experimentName) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'experimentName is required' });
+    }
+
+    try {
+      const summary = await getLlmExperimentSummary({ experimentName, guildId, days });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'LLM_EXPERIMENT_SUMMARY_FAILED', message });
+    }
+  });
+
+  router.get('/agent/task-routing/summary', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const days = toBoundedInt(req.query?.days, 7, { min: 1, max: 90 });
+
+    try {
+      const summary = await getTaskRoutingSummary({ guildId, days });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TASK_ROUTING_SUMMARY_FAILED', message });
+    }
+  });
+
+  router.post('/agent/task-routing/feedback', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const route = toStringParam(req.body?.route).toLowerCase();
+    const channel = toStringParam(req.body?.channel).toLowerCase();
+    const outcomeScore = Number(req.body?.outcomeScore);
+    const reason = toStringParam(req.body?.reason || '');
+    const relatedGoal = toStringParam(req.body?.relatedGoal || '');
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (!isOneOf(route, ['knowledge', 'execution', 'mixed', 'casual'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'route must be one of knowledge|execution|mixed|casual' });
+    }
+    if (!isOneOf(channel, ['docs', 'vibe'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'channel must be one of docs|vibe' });
+    }
+    if (!Number.isFinite(outcomeScore) || outcomeScore < 0 || outcomeScore > 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'outcomeScore must be in [0,1]' });
+    }
+
+    await recordTaskRoutingFeedbackMetric({
+      guildId,
+      requestedBy: toStringParam(req.user?.id) || 'api',
+      route,
+      channel,
+      outcomeScore,
+      reason,
+      relatedGoal,
+    });
+
+    void recordToolLearningLog({
+      guildId,
+      requestedBy: toStringParam(req.user?.id) || 'api',
+      scope: 'task_routing',
+      toolName: `task_routing_${channel}`,
+      inputText: relatedGoal,
+      outputSummary: `route=${route} channel=${channel}`,
+      outcomeScore,
+      reason,
+      metadata: {
+        route,
+        channel,
+      },
+    });
+
+    return res.status(202).json({ ok: true });
+  });
+
+  router.get('/agent/task-routing/policy-hints', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || undefined;
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
+
+    try {
+      const summary = await getTaskRoutingSummary({ guildId, days });
+      const hints = buildTaskRoutingPolicyHints(summary);
+      return res.json({ ok: true, hints });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TASK_ROUTING_POLICY_HINTS_FAILED', message });
+    }
+  });
+
+  router.post('/agent/learning/task-routing/candidates/generate', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const days = toBoundedInt(req.body?.days, 14, { min: 1, max: 90 });
+    const minSamples = toBoundedInt(req.body?.minSamples, 4, { min: 2, max: 100 });
+    const minOutcomeScoreRaw = Number(req.body?.minOutcomeScore);
+    const minOutcomeScore = Number.isFinite(minOutcomeScoreRaw)
+      ? Math.max(0, Math.min(1, minOutcomeScoreRaw))
+      : 0.65;
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const result = await generateTaskRoutingLearningCandidates({
+        guildId,
+        days,
+        minSamples,
+        minOutcomeScore,
+        actorId: toStringParam(req.user?.id) || 'api',
+      });
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_CANDIDATE_GENERATE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/learning/task-routing/candidates', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const status = toStringParam(req.query?.status).toLowerCase();
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (status && !isOneOf(status, ['pending', 'approved', 'rejected', 'applied'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'status must be one of pending|approved|rejected|applied' });
+    }
+
+    try {
+      const items = await listToolLearningCandidates({
+        guildId,
+        status: status ? (status as 'pending' | 'approved' | 'rejected' | 'applied') : undefined,
+        limit,
+      });
+      return res.json({ ok: true, items, count: items.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_CANDIDATE_LIST_FAILED', message });
+    }
+  });
+
+  router.post('/agent/learning/task-routing/candidates/:candidateId/decision', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
+    const candidateId = toBoundedInt(req.params.candidateId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const decision = toStringParam(req.body?.decision).toLowerCase();
+    const applyNow = req.body?.applyNow === true;
+
+    if (!guildId || candidateId < 1) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and candidateId are required' });
+    }
+    if (!isOneOf(decision, ['approved', 'rejected', 'applied'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'decision must be one of approved|rejected|applied' });
+    }
+
+    try {
+      const result = await decideToolLearningCandidate({
+        guildId,
+        candidateId,
+        decision: decision as 'approved' | 'rejected' | 'applied',
+        actorId: toStringParam(req.user?.id) || 'api',
+        applyNow,
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
+      }
+      if (message === 'TOOL_LEARNING_CANDIDATE_NOT_FOUND') {
+        return res.status(404).json({ ok: false, error: message, message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_CANDIDATE_DECISION_FAILED', message });
+    }
+  });
+
+  router.get('/agent/learning/task-routing/rules', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const status = toStringParam(req.query?.status).toLowerCase();
+    const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (status && !isOneOf(status, ['active', 'inactive'] as const)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'status must be one of active|inactive' });
+    }
+
+    try {
+      const items = await listToolLearningRules({
+        guildId,
+        status: status ? (status as 'active' | 'inactive') : undefined,
+        limit,
+      });
+      return res.json({ ok: true, items, count: items.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_RULE_LIST_FAILED', message });
+    }
+  });
+
+  router.get('/agent/learning/task-routing/weekly-report', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 7, { min: 1, max: 90 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const report = await buildToolLearningWeeklyReport({ guildId, days });
+      return res.json({ ok: true, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_WEEKLY_REPORT_FAILED', message });
     }
   });
 

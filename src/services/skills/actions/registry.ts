@@ -5,6 +5,7 @@ import { dbSupabaseReadAction } from './db';
 import { newsGoogleSearchAction } from './news';
 import { newsVerifyAction } from './newsVerify';
 import { obsidianGuildDocUpsertAction } from './obsidian';
+import { opencodeExecuteAction } from './opencode';
 import { privacyForgetGuildAction, privacyForgetUserAction } from './privacy';
 import { ragRetrieveAction } from './rag';
 import { stockChartAction, stockQuoteAction } from './stock';
@@ -26,6 +27,7 @@ const ACTIONS: ActionDefinition[] = [
   investmentAnalysisAction,
   newsGoogleSearchAction,
   newsVerifyAction,
+  opencodeExecuteAction,
   obsidianGuildDocUpsertAction,
   communitySearchAction,
   webSearchAction,

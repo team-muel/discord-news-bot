@@ -1,6 +1,7 @@
 import { getMemoryJobQueueStats } from './memoryJobRunner';
 import { getMemoryQualityMetrics } from './memoryQualityMetricsService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
 
 const toNumberEnv = (value: string | undefined, fallback: number, min: number, max: number): number => {
   const parsed = Number(value);
@@ -22,6 +23,8 @@ const DEFAULT_THRESHOLDS = {
   minRecallAt5: toNumberEnv(process.env.GO_NO_GO_MIN_RECALL_AT_5, 0.60, 0, 1),
   minPilotGuilds: Math.max(1, Math.trunc(toNumberEnv(process.env.GO_NO_GO_MIN_PILOT_GUILDS, 3, 1, 10_000))),
   maxCorrectionSlaP95Minutes: toNumberEnv(process.env.GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN, 5, 0.1, 24 * 60),
+  maxTelemetryQueueDroppedTotal: Math.max(0, Math.trunc(toNumberEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0, 0, 1_000_000))),
+  maxTelemetryQueueDropRate: toNumberEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE, 0.02, 0, 1),
 };
 
 const toStatus = (ok: boolean): 'pass' | 'fail' => (ok ? 'pass' : 'fail');
@@ -29,6 +32,9 @@ const toStatus = (ok: boolean): 'pass' | 'fail' => (ok ? 'pass' : 'fail');
 export const buildGoNoGoReport = async (params: GoNoGoParams) => {
   const metrics = await getMemoryQualityMetrics({ guildId: params.guildId, days: params.days });
   const queue = await getMemoryJobQueueStats(params.guildId);
+  const telemetryQueue = getAgentTelemetryQueueSnapshot();
+  const telemetryAttempted = Math.max(1, telemetryQueue.processed + telemetryQueue.dropped);
+  const telemetryDropRate = Number((telemetryQueue.dropped / telemetryAttempted).toFixed(4));
 
   let pilotGuilds = 0;
   if (isSupabaseConfigured()) {
@@ -100,6 +106,20 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
       threshold: 0,
       status: toStatus(queue.deadlettered <= 0),
     },
+    {
+      id: 'telemetry-queue-dropped-total',
+      label: 'telemetry queue dropped total should stay low',
+      actual: telemetryQueue.dropped,
+      threshold: DEFAULT_THRESHOLDS.maxTelemetryQueueDroppedTotal,
+      status: toStatus(telemetryQueue.dropped <= DEFAULT_THRESHOLDS.maxTelemetryQueueDroppedTotal),
+    },
+    {
+      id: 'telemetry-queue-drop-rate',
+      label: 'telemetry queue drop rate should stay low',
+      actual: telemetryDropRate,
+      threshold: DEFAULT_THRESHOLDS.maxTelemetryQueueDropRate,
+      status: toStatus(telemetryDropRate <= DEFAULT_THRESHOLDS.maxTelemetryQueueDropRate),
+    },
   ];
 
   const failed = checks.filter((check) => check.status === 'fail');
@@ -112,6 +132,7 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
     failedChecks: failed.map((check) => check.id),
     metrics,
     queue,
+    telemetryQueue,
     assumptions: [
       'recall@k is computed as proxy from retrieval logs (no human-labeled relevance set).',
       'pilot guild count is estimated from active sources by distinct guild_id.',

@@ -50,6 +50,7 @@ Suggested baseline SLO (adjust as needed):
 Open these first when verifying behavior:
 
 - Runtime architecture index: `docs/ARCHITECTURE_INDEX.md`
+- Unified roadmap (canonical): `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`
 - 24/7 runtime ops: `docs/OPERATIONS_24_7.md`
 - Operator decision matrix: `docs/OPERATOR_SOP_DECISION_TABLE.md`
 - Platform document control tower: `docs/planning/PLATFORM_CONTROL_TOWER.md`
@@ -81,10 +82,29 @@ This snapshot captures what is already running in production-oriented flow.
 - User feedback loop:
   - User-facing response footer prompt can be enabled for lightweight quality signal.
 
+- Social graph memory plane:
+  - `community_interaction_events`, `community_relationship_edges`, `community_actor_profiles` are active schema targets.
+  - reply/mention/co_presence/reaction signals are ingested and aggregated.
+  - requester-aware social hints are merged into memory hint pipeline.
+  - user/guild forget scope includes social graph data.
+
 Operational meaning:
 
 - Current stage is no longer static memory sync.
 - Current stage is an autonomous guild-context operating loop with safety gates.
+
+## 2.2) Document Governance (Roadmap/Runbook/Backlog Sync)
+
+For roadmap and operations coherence, use this order:
+
+1. `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`: direction, priorities, milestone IDs
+2. `docs/planning/EXECUTION_BOARD.md`: current state (Now/Next/Later)
+3. `docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md`: task-level implementation units
+4. `docs/RUNBOOK_MUEL_PLATFORM.md`: operational execution procedures
+
+Sync rule:
+
+- If roadmap priority changes, update the four documents above in the same change set.
 
 ## 3) Day 0 Provisioning Checklist
 
@@ -340,6 +360,7 @@ Current runtime supports a controlled generic action layer via `ops-execution`:
 - `privacy.forget.guild` (guild-scoped full purge, confirm token required)
 - `web.fetch` (host allowlist required)
 - `db.supabase.read` (read-only, table allowlist, row limit)
+- `opencode.execute` (MCP-delegated sandbox terminal execution, policy-first)
 
 Safety controls (must be set explicitly in production):
 
@@ -361,6 +382,21 @@ Admin APIs for tenant-level governance:
 - `GET /api/bot/agent/actions/approvals?guildId=<id>&status=pending`
 - `POST /api/bot/agent/actions/approvals/:requestId/decision`
   - body: `{ decision: 'approve'|'reject', reason? }`
+- `POST /api/bot/agent/opencode/bootstrap-policy`
+  - body: `{ guildId, runMode?, enabled? }` (default runMode=`approval_required`)
+- `GET /api/bot/agent/opencode/summary?guildId=<id>&days=7`
+- `POST /api/bot/agent/opencode/change-requests`
+  - body: `{ guildId, title, summary?, files?, diffPatch?, targetBaseBranch?, proposedBranch?, sourceActionLogId? }`
+- `GET /api/bot/agent/opencode/change-requests?guildId=<id>&status=review_pending`
+- `POST /api/bot/agent/opencode/change-requests/:changeRequestId/decision`
+  - body: `{ guildId, decision: 'approve'|'reject'|'published'|'failed', note?, publishUrl? }`
+- `POST /api/bot/agent/opencode/change-requests/:changeRequestId/queue-publish`
+  - body: `{ guildId, provider?, payload? }`
+- `GET /api/bot/agent/opencode/publish-queue?guildId=<id>&status=queued`
+- `GET /api/bot/agent/opencode/readiness?guildId=<id>`
+- `GET /api/bot/agent/conversations/threads?guildId=<id>&requestedBy=<userId?>&limit=50`
+- `GET /api/bot/agent/conversations/threads/:threadId/turns?guildId=<id>&limit=200`
+- `GET /api/bot/agent/conversations/by-session/:sessionId?guildId=<id>`
 
 Recommended production baseline:
 
@@ -378,6 +414,9 @@ MCP delegation controls:
 - `MCP_NEWS_WORKER_URL`
 - `MCP_COMMUNITY_WORKER_URL`
 - `MCP_WEB_WORKER_URL`
+- `MCP_OPENCODE_WORKER_URL`
+- `MCP_OPENCODE_TOOL_NAME`
+- `AGENT_CONVERSATION_THREAD_IDLE_MS`
 - `MCP_YOUTUBE_DEFAULT_WEBHOOK_URL`
 - `CRAWLER_WORKER_WEB_ALLOWED_HOSTS`
 - `CRAWLER_WORKER_FETCH_TIMEOUT_MS`
@@ -489,6 +528,288 @@ Provider harness note:
 
 - Current runtime supports `openai`, `gemini`, `anthropic`, `openclaw`, `ollama`.
 - If provider is unavailable, session creation fails by design to avoid silent degraded outputs.
+
+## 10.4) Full Executor Profile (Alternative 2: Permissive-License Stack)
+
+Goal:
+
+- Build a Full Executor without depending on restrictive licenses, using permissive-license components (MIT/Apache-2.0 class).
+- Keep existing action-governance and approval controls in this platform as the control plane.
+
+Important interpretation of "self-replication":
+
+- Do not operate uncontrolled self-replication behavior.
+- Use controlled self-expansion only:
+  - dynamic worker proposal -> approval -> bounded activation
+  - fail-closed defaults and automatic rollback on instability
+
+Relationship with `opencode.execute`:
+
+- `opencode.execute` remains a stable action contract and API surface.
+- Alternative 2 replaces the backend executor worker, not the platform interface.
+- Operationally:
+  - Keep policy/approval/queue endpoints unchanged
+  - Swap worker implementation behind `MCP_OPENCODE_WORKER_URL`
+  - Preserve action logs and governance history continuity
+
+Result:
+
+- Opencode does not become "unused".
+- The channel remains active as an executor abstraction; only its backend engine changes.
+
+### 10.4.1) Recommended Operating Mode
+
+1. Interface freeze:
+
+- Keep `opencode.execute` action name and payload contract stable.
+- Keep admin APIs under `/api/bot/agent/opencode/*` for backward-compatible operations.
+
+2. Worker replacement:
+
+- Deploy permissive-license executor worker and connect it to `MCP_OPENCODE_WORKER_URL`.
+- Keep `MCP_OPENCODE_TOOL_NAME=opencode.run` unless contract migration is completed.
+
+3. Governance first:
+
+- Start with `runMode=approval_required`.
+- Expand to `auto` only for low-risk guilds/scopes after error-rate review.
+
+### 10.4.2) Controlled Self-Expansion Loop
+
+Use this bounded loop for "autonomous growth" in production:
+
+1. Detect missing capability from action/runtime failures.
+2. Generate worker proposal with scope and test plan.
+3. Require approval (human or policy gate).
+4. Activate in shadow/canary guild scope.
+5. Promote to wider scope only when SLO and failure thresholds pass.
+6. Auto-disable and rollback on threshold breach.
+
+Mandatory controls:
+
+- Max concurrent dynamic workers per guild
+- TTL for newly activated workers
+- Budget cap and timeout cap per worker/task
+- Deadletter/requeue visibility for every failed run
+- Hard deny for destructive operations unless explicit break-glass mode is enabled
+- For multi-instance deployments, enable distributed lock for publish worker and keep fail-open disabled by default.
+- Keep admin action rate-limit in fail-closed mode when distributed limiter backend is unavailable.
+
+Recommended promotion defaults (Two-Track):
+
+- Keep one-off capabilities in ephemeral path by default (no registry activation).
+- Promote to persistent worker/proposal queue only when all thresholds pass in the recent 7-day window:
+  - Request frequency >= 5
+  - Distinct requesters >= 3
+  - Average outcome score >= 0.65
+  - Policy-block rate <= 0.10
+- Start conservative; tune per guild after weekly report review.
+
+### 10.4.3) Break-Glass for Near-Unrestricted Execution
+
+If near-unrestricted execution is needed:
+
+1. Use isolated runtime (ephemeral container/VM per high-risk task).
+2. Issue short-lived credentials only.
+3. Enable full audit logging and session replay.
+4. Enforce two-step approval for break-glass token issuance.
+5. Auto-expire token and destroy runtime after completion.
+
+This provides "Full Executor" experience while keeping platform-level safety and incident recoverability.
+
+### 10.4.4) Publish Worker Cutover (Code Improvement Completion)
+
+To complete actual code-improvement automation, implement and enable the publish worker described in:
+
+- `docs/planning/OPENCODE_PUBLISH_WORKER_MIN_SPEC.md`
+
+Current implementation note:
+
+- Backend bootstrap includes publish worker loop startup when `OPENCODE_PUBLISH_WORKER_ENABLED=true`.
+
+Execution sequence (minimum):
+
+1. Apply latest schema and confirm queue tables are healthy.
+2. Configure GitHub credentials and target repo env values.
+3. Enable worker in shadow mode (no real PR creation).
+4. Run canary guild cutover with approval-required policy.
+5. Validate E2E path:
+
+- change request create -> approve -> queue publish -> PR created
+
+6. Promote scope only after failure-rate and queue-latency checks pass.
+
+Operational answer:
+
+- If only MCP executor worker is added, execution automation is available but code publish remains pending.
+- If publish worker is added too, the platform supports closed-loop code improvement (execution + PR publication).
+
+## 10.5) Formal Turn Model (Conversation Threads)
+
+Purpose:
+
+- Persist user/assistant interaction history as ordered turns for replay, debugging, and quality review.
+
+Current model:
+
+- Thread table: `agent_conversation_threads`
+- Turn table: `agent_conversation_turns`
+- Session linkage: `agent_sessions.conversation_thread_id`, `agent_sessions.conversation_turn_index`
+
+Runtime behavior:
+
+1. Session start records a `user` turn.
+2. Session terminal response records an `assistant` turn.
+3. If the latest thread is idle beyond `AGENT_CONVERSATION_THREAD_IDLE_MS`, a new thread is created.
+
+Operational checks:
+
+1. Verify thread growth and last-turn freshness using `/api/bot/agent/conversations/threads`.
+2. Inspect ordered turns for a thread via `/api/bot/agent/conversations/threads/:threadId/turns`.
+3. Trace a session back to conversation history via `/api/bot/agent/conversations/by-session/:sessionId`.
+
+Privacy:
+
+- User/guild forget flow includes conversation thread/turn deletion scope.
+
+## 10.5.1) Unattended GoT Cutover Autopilot
+
+Purpose:
+
+- Reflect dashboard cutover readiness into `agent_got_cutover_profiles` automatically without manual ops.
+
+Env controls:
+
+- `AGENT_GOT_CUTOVER_AUTOPILOT_ENABLED=true`
+- `AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN=60`
+- `AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS=100`
+- `AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT=100`
+- `AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES=20`
+
+Runtime behavior:
+
+1. Loop runs every `AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN` minutes.
+2. For each guild, it evaluates `getAgentGotCutoverDecision(forceRefresh=true)`.
+3. It upserts `agent_got_cutover_profiles`:
+
+- readiness recommended: `rollout_percentage=AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT`
+- readiness not recommended: `rollout_percentage=0`
+
+4. Last run state is visible in `GET /api/bot/agent/policy` under `ops` snapshot.
+
+Manual trigger:
+
+- `POST /api/bot/agent/got/cutover/autopilot/run` (body optional: `guildId`)
+
+## 10.5.2) Unattended Control-Plane Hardening
+
+Purpose:
+
+- Prevent duplicate execution on admin write APIs and survive telemetry backlog during restart/failover.
+
+Runtime controls:
+
+- API idempotency:
+
+1. `API_IDEMPOTENCY_TABLE=api_idempotency_keys`
+2. `API_IDEMPOTENCY_TTL_SEC=86400`
+3. `API_IDEMPOTENCY_REQUIRE_HEADER=false` (운영 안정화 후 true 권장)
+
+- Durable telemetry queue:
+
+1. `AGENT_TELEMETRY_DURABLE_QUEUE_ENABLED=true`
+2. `AGENT_TELEMETRY_DURABLE_TABLE=agent_telemetry_queue_tasks`
+3. `AGENT_TELEMETRY_DURABLE_MAX_ATTEMPTS=5`
+4. `AGENT_TELEMETRY_DURABLE_RETRY_BASE_MS=5000`
+5. `AGENT_TELEMETRY_DURABLE_RETRY_MAX_MS=300000`
+6. `AGENT_TELEMETRY_DURABLE_RECOVERY_BATCH=200`
+7. `AGENT_TELEMETRY_DURABLE_STALE_RUNNING_MS=300000`
+
+Operational checks:
+
+1. `GET /api/bot/agent/runtime/unattended-health?guildId=<id>`로 합성 상태 점검.
+2. `GET /api/bot/agent/runtime/telemetry-queue`에서 `durableEnabled`, `durableHealthy` 확인.
+3. `POST` 관리자 API 호출 시 `Idempotency-Key` 헤더를 붙여 재시도 중복 실행 방지.
+
+Expected behavior:
+
+1. 같은 `Idempotency-Key` + 동일 payload 재요청은 기존 결과를 재생(`Idempotency-Replayed: true`)한다.
+2. 같은 key를 다른 payload에 재사용하면 `409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`가 반환된다.
+3. telemetry task 실행 실패는 지수 백오프로 재시도되고, 최대 시도 초과 시 durable queue에 `failed`로 남는다.
+
+## 10.5.3) LLM Provider A/B + Self-Growth Policy
+
+Purpose:
+
+- Provider 비용/지연/성공률을 같은 지표로 비교하고, HF canary를 안전하게 검증한다.
+- 자동 확장 범위를 운영 정책으로 명시한다.
+
+Runtime controls:
+
+1. `LLM_CALL_LOG_ENABLED=true`
+2. `LLM_CALL_LOG_TABLE=agent_llm_call_logs`
+3. `LLM_EXPERIMENT_ENABLED=true`
+4. `LLM_EXPERIMENT_NAME=hf_ab_v1`
+5. `LLM_EXPERIMENT_HF_PERCENT=20`
+6. `LLM_EXPERIMENT_GUILD_ALLOWLIST=<guild-id-csv>`
+7. `LLM_EXPERIMENT_FAIL_OPEN=true`
+8. `HF_API_KEY=<secret>` (+ `AI_PROVIDER`는 기존 base provider 유지 가능)
+
+Operational checks:
+
+1. `GET /api/bot/agent/llm/experiments/summary?experimentName=hf_ab_v1&guildId=<id>&days=14`
+2. `totals.avgLatencyMs`, `totals.estimatedCostUsd`, arm별 `successRate` 비교
+3. `control` 대비 `huggingface` arm의 실패율/지연 악화 시 `LLM_EXPERIMENT_HF_PERCENT`를 즉시 하향
+
+Self-growth profile (opencode.execute governance):
+
+1. 조회: `GET /api/bot/agent/self-growth/policy?guildId=<id>`
+2. 적용: `POST /api/bot/agent/self-growth/policy/apply` body `{ guildId, profile }`
+3. `profile` 값:
+
+- `human_gate`: `approval_required` (권장 기본값)
+- `conditional_auto`: `auto` (지표 안정 시 제한적으로)
+- `disabled`: 자동 확장 비활성
+
+Recommended rollout:
+
+1. `human_gate` + HF 10~20%로 시작
+2. 7~14일 관측 후 성공률/지연/비용 악화가 없을 때만 `LLM_EXPERIMENT_HF_PERCENT` 확대
+3. 자동 확장 전환(`conditional_auto`)은 정책 차단률과 실패 재시도율이 안정 구간일 때만 승인
+
+## 10.5.4) Supabase Extensions Runtime Verification
+
+When pgvector/pg_trgm/pg_cron/pg_net/pg_graphql/hypopg/pg_stat_statements are enabled:
+
+1. `GET /api/bot/agent/runtime/supabase/extensions?includeTopQueries=true&topLimit=10`
+2. Confirm all target extensions show `installed=true` in `snapshot.extensions`.
+3. If `pg_stat_statements` is active, verify `snapshot.topQueries` is populated and review high `totalExecTime` queries.
+4. Use `snapshot.notes` as migration hints for cron/job offloading and index tuning loops.
+
+Operational utility endpoints:
+
+1. List cron jobs:
+
+- `GET /api/bot/agent/runtime/supabase/cron-jobs`
+
+2. Ensure maintenance jobs (idempotency key cleanup + llm call log retention):
+
+- `POST /api/bot/agent/runtime/supabase/cron-jobs/ensure-maintenance`
+- body: `{ "llmRetentionDays": 30 }`
+
+3. HypoPG candidate list:
+
+- `GET /api/bot/agent/runtime/supabase/hypopg/candidates`
+
+4. HypoPG hypothetical index evaluation:
+
+- `POST /api/bot/agent/runtime/supabase/hypopg/evaluate`
+- body: `{ "ddls": ["create index on ...", "create index on ..."] }`
+
+Memory retrieval hybrid mode (pg_trgm):
+
+1. Set `MEMORY_HYBRID_SEARCH_ENABLED=true` and tune `MEMORY_HYBRID_MIN_SIMILARITY`.
+2. Validate memory search quality and retrieval latency from `/api/bot/agent/memory/search` + `memory_retrieval_logs`.
 
 PM2 commands:
 

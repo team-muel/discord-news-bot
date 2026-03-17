@@ -78,6 +78,10 @@ export const DISCORD_DOCS_FALLBACK_CONTEXT_LIMIT = clamp(
   2000,
 );
 
+export const clipDocsFallbackContext = (value: string): string => {
+  return String(value || '').slice(0, DISCORD_DOCS_FALLBACK_CONTEXT_LIMIT);
+};
+
 export const DISCORD_MARKET_ANALYSIS_LIMIT = clamp(
   parseIntegerEnv(process.env.DISCORD_MARKET_ANALYSIS_LIMIT, 3900),
   500,

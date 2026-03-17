@@ -4,7 +4,9 @@
  * No service imports.
  */
 import {
+  ApplicationCommandType,
   ChannelType,
+  ContextMenuCommandBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
@@ -34,18 +36,10 @@ export const SIMPLE_COMMAND_ALLOWLIST = new Set([
   '관리설정',
   '잊어줘',
   '학습',
+  '유저',
+  '유저 프로필 보기',
+  '유저 메모 추가',
 ]);
-export const LEGACY_SESSION_COMMANDS_ENABLED = parseBooleanEnv(
-  process.env.LEGACY_SESSION_COMMANDS_ENABLED,
-  false,
-);
-export const LEGACY_SESSION_COMMAND_NAMES = new Set([
-  '시작', '스킬목록', '온보딩', '중지',
-]);
-export const LEGACY_SUBSCRIBE_COMMAND_ENABLED = parseBooleanEnv(
-  process.env.LEGACY_SUBSCRIBE_COMMAND_ENABLED,
-  true,
-);
 export const CODE_THREAD_ENABLED = parseBooleanEnv(
   process.env.CODE_THREAD_ENABLED,
   true,
@@ -221,40 +215,6 @@ const ALL_COMMANDS = [
       sub.setName('제거').setDescription('현재 서버에서 작동 중인 세션 제거'),
     ),
   new SlashCommandBuilder()
-    .setName('시작')
-    .setDescription('세션 시작(호환 명령)')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addStringOption((o) =>
-      o.setName('목표').setDescription('예: 온보딩 자동화 정책 설계').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('스킬').setDescription('특정 스킬을 지정해 단일 실행')
-        .addChoices(
-          { name: 'ops-plan', value: 'ops-plan' },
-          { name: 'ops-execution', value: 'ops-execution' },
-          { name: 'ops-critique', value: 'ops-critique' },
-          { name: 'guild-onboarding-blueprint', value: 'guild-onboarding-blueprint' },
-          { name: 'incident-review', value: 'incident-review' },
-          { name: 'webhook', value: 'webhook' },
-        )
-        .setRequired(false),
-    )
-    .addStringOption((o) =>
-      o.setName('우선순위').setDescription('실행 전략: 빠름/균형/정밀')
-        .addChoices(
-          { name: '빠름', value: 'fast' },
-          { name: '균형', value: 'balanced' },
-          { name: '정밀', value: 'precise' },
-        )
-        .setRequired(false),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
     .setName('상태')
     .setDescription('봇과 자동화 런타임 상태를 확인합니다')
     .setDMPermission(false),
@@ -322,11 +282,6 @@ const ALL_COMMANDS = [
       o.setName('확인문구').setDescription('실행 시: FORGET_USER / FORGET_USER_ADMIN / FORGET_GUILD').setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('온보딩')
-    .setDescription('현재 길드 온보딩 분석 실행')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
     .setName('학습')
     .setDescription('내 학습 자동 메모리 저장 설정을 조회하거나 변경합니다')
     .setDMPermission(false)
@@ -340,13 +295,49 @@ const ALL_COMMANDS = [
       sub.setName('비활성화').setDescription('내 대화 내용을 학습 메모리에 저장하지 않습니다 (임시 옵트아웃)'),
     ),
   new SlashCommandBuilder()
-    .setName('중지')
-    .setDescription('실행 중 세션 중지 요청')
+    .setName('유저')
+    .setDescription('유저 프로필 조회와 개인화 메모를 관리합니다')
     .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addStringOption((o) =>
-      o.setName('세션아이디').setDescription('중지할 세션 ID').setRequired(true),
+    .addSubcommand((sub) =>
+      sub.setName('프로필')
+        .setDescription('특정 유저의 관계/기억 기반 프로필 스냅샷을 조회합니다')
+        .addUserOption((o) =>
+          o.setName('유저').setDescription('조회할 대상 유저').setRequired(true),
+        )
+        .addStringOption((o) =>
+          o.setName('공개범위').setDescription('응답 공개 범위')
+            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('메모추가')
+        .setDescription('유저 개인화 코멘트를 추가합니다')
+        .addUserOption((o) => o.setName('유저').setDescription('대상 유저').setRequired(true))
+        .addStringOption((o) => o.setName('코멘트').setDescription('저장할 개인화 코멘트').setRequired(true).setMaxLength(1200))
+        .addStringOption((o) =>
+          o.setName('공개범위').setDescription('코멘트 가시성')
+            .addChoices({ name: '나만 보기', value: 'private' }, { name: '서버 공용 맥락', value: 'public' })
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('메모조회')
+        .setDescription('유저 개인화 코멘트를 조회합니다')
+        .addUserOption((o) => o.setName('유저').setDescription('대상 유저').setRequired(true))
+        .addIntegerOption((o) => o.setName('개수').setDescription('최대 조회 개수(1~8)').setMinValue(1).setMaxValue(8).setRequired(false))
+        .addStringOption((o) =>
+          o.setName('공개범위').setDescription('응답 공개 범위')
+            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+            .setRequired(false),
+        ),
     ),
+  new ContextMenuCommandBuilder()
+    .setName('유저 프로필 보기')
+    .setType(ApplicationCommandType.User),
+  new ContextMenuCommandBuilder()
+    .setName('유저 메모 추가')
+    .setType(ApplicationCommandType.User),
   new SlashCommandBuilder()
     .setName('관리자')
     .setDescription('관리자 도구 모음')
@@ -391,7 +382,5 @@ export const commandDefinitions = ALL_COMMANDS
   .map((d) => d.toJSON())
   .filter((d) => {
     const name = String((d as any).name || '');
-    if (!LEGACY_SUBSCRIBE_COMMAND_ENABLED && name === '구독') return false;
-    if (!LEGACY_SESSION_COMMANDS_ENABLED && LEGACY_SESSION_COMMAND_NAMES.has(name)) return false;
     return !SIMPLE_COMMANDS_ENABLED || SIMPLE_COMMAND_ALLOWLIST.has(name);
   });

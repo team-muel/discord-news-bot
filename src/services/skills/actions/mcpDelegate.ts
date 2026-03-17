@@ -9,14 +9,15 @@ const ACTION_MCP_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_
 
 const toBaseUrl = (raw: string | undefined): string => String(raw || '').trim().replace(/\/+$/, '');
 
-const MCP_WORKER_ENV_BY_KIND: Record<'youtube' | 'news' | 'community' | 'web', string | undefined> = {
+const MCP_WORKER_ENV_BY_KIND: Record<'youtube' | 'news' | 'community' | 'web' | 'opencode', string | undefined> = {
   youtube: process.env.MCP_YOUTUBE_WORKER_URL,
   news: process.env.MCP_NEWS_WORKER_URL,
   community: process.env.MCP_COMMUNITY_WORKER_URL,
   web: process.env.MCP_WEB_WORKER_URL,
+  opencode: process.env.MCP_OPENCODE_WORKER_URL,
 };
 
-export const getMcpWorkerUrl = (kind: 'youtube' | 'news' | 'community' | 'web'): string => {
+export const getMcpWorkerUrl = (kind: 'youtube' | 'news' | 'community' | 'web' | 'opencode'): string => {
   return toBaseUrl(MCP_WORKER_ENV_BY_KIND[kind]);
 };
 

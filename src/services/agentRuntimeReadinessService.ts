@@ -3,6 +3,7 @@ import { getWorkerProposalMetricsSnapshot } from './workerGeneration/workerPropo
 import { buildGoNoGoReport } from './goNoGoService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../utils/env';
+import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
 
 type ReadinessStatus = 'pass' | 'fail' | 'warn';
 
@@ -31,6 +32,8 @@ const AGENT_READINESS_MIN_OBSERVED_RUNS = Math.max(1, parseIntegerEnv(process.en
 const AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE, 0.4, 0, 1);
 const AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE, 0.3, 0, 1);
 const AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES, 3));
+const AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL = Math.max(0, parseIntegerEnv(process.env.AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0));
+const AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROP_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROP_RATE, 0.02, 0, 1);
 
 if (AGENT_READINESS_IS_PRODUCTION && AGENT_READINESS_FAIL_OPEN) {
   throw new Error('AGENT_READINESS_FAIL_OPEN must be false in production');
@@ -117,6 +120,9 @@ export const buildAgentRuntimeReadinessReport = async (params: {
 
   const action = getActionRunnerDiagnosticsSnapshot();
   const worker = getWorkerProposalMetricsSnapshot();
+  const telemetryQueue = getAgentTelemetryQueueSnapshot();
+  const telemetryAttempted = Math.max(1, telemetryQueue.processed + telemetryQueue.dropped);
+  const telemetryDropRate = safeRate(telemetryQueue.dropped, telemetryAttempted);
 
   const checks: ReadinessCheck[] = [];
 
@@ -174,6 +180,25 @@ export const buildAgentRuntimeReadinessReport = async (params: {
     actual: actionFailureRate,
     threshold: AGENT_READINESS_MAX_ACTION_FAILURE_RATE,
     detail: `runs=${action.totalRuns}`,
+  });
+
+  checks.push({
+    id: 'observability-telemetry-queue-dropped-total',
+    category: 'observability',
+    status: toStatus(telemetryQueue.dropped <= AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL),
+    label: 'telemetry queue dropped total',
+    actual: telemetryQueue.dropped,
+    threshold: AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL,
+  });
+
+  checks.push({
+    id: 'observability-telemetry-queue-drop-rate',
+    category: 'observability',
+    status: toStatus(telemetryDropRate <= AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROP_RATE),
+    label: 'telemetry queue drop rate',
+    actual: telemetryDropRate,
+    threshold: AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROP_RATE,
+    detail: `processed=${telemetryQueue.processed}, dropped=${telemetryQueue.dropped}`,
   });
 
   checks.push({
@@ -246,6 +271,7 @@ export const buildAgentRuntimeReadinessReport = async (params: {
       actionDiagnostics: action,
       workerProposal: worker,
       retrievalLatest: retrieval,
+      telemetryQueue,
     },
   };
 };

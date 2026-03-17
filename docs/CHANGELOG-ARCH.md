@@ -19,6 +19,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-17 - Unified Roadmap and Ops Document Integration (Social Ops Baseline)
+
+- Why: Resolve roadmap/runbook/backlog fragmentation and align documentation to current implementation progress (social graph + autonomous loop + reasoning gates).
+- Scope: planning and operations documentation governance layer.
+- Impacted Routes: N/A (documentation integration change)
+- Impacted Services: N/A (no runtime behavior changed in this update)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: No direct runtime regression; planning ambiguity reduced by canonical roadmap and milestone-bound execution board.
+- Validation: `npm run lint`.
+
 ## 2026-03-15 - Autonomous Guild Context Ops Loop Baseline
 
 - Why: Move from static lore sync into autonomous multi-guild context operations with feedback/reward signals.

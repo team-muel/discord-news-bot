@@ -7,6 +7,7 @@ type RateLimitOptions = {
   keyPrefix?: string;
   keyFn?: (req: Request) => string;
   store?: 'memory' | 'supabase';
+  onStoreError?: 'memory-fallback' | 'reject' | 'allow';
 };
 
 type Bucket = {
@@ -27,6 +28,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
   const max = Math.max(1, Math.trunc(options.max));
   const prefix = options.keyPrefix || 'global';
   const store = options.store || 'memory';
+  const onStoreError = options.onStoreError || 'memory-fallback';
 
   const reject = (res: Response, retryAfterSec: number) => {
     res.setHeader('Retry-After', String(retryAfterSec));
@@ -63,6 +65,15 @@ export const createRateLimiter = (options: RateLimitOptions) => {
             reject(res, distributed.retryAfterSec);
             return;
           }
+          next();
+          return;
+        }
+
+        if (onStoreError === 'reject') {
+          return res.status(503).json({ error: 'RATE_LIMIT_STORE_UNAVAILABLE', message: 'Rate limit backend unavailable.' });
+        }
+
+        if (onStoreError === 'allow') {
           next();
           return;
         }

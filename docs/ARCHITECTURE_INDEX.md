@@ -8,6 +8,8 @@ It provides a stable map of runtime flow, domain boundaries, and data boundaries
 Primary operations entrypoint:
 
 - `docs/RUNBOOK_MUEL_PLATFORM.md` (unified DevOps/SRE runbook)
+- `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` (social mapping + autonomous ops canonical roadmap)
+- `docs/planning/EXECUTION_BOARD.md` (milestone-bound now/next/later execution board)
 - `docs/OPERATOR_SOP_DECISION_TABLE.md` (who/when/threshold/action decision matrix)
 - `docs/HARNESS_ENGINEERING_PLAYBOOK.md` (model runtime harness design)
 - `docs/HARNESS_RELEASE_GATES.md` (go/no-go gates for harness quality)
@@ -18,6 +20,7 @@ Primary operations entrypoint:
 - `docs/planning/mcp/MCP_ROLLOUT_1W.md` (MCP rollout plan)
 - `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md` (core-worker split)
 - `docs/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (LangGraph migration-ready state graph blueprint)
+- `docs/GOT_LANGGRAPH_EXECUTION_PLAN.md` (GoT reasoning + LangGraph execution rollout plan)
 
 ## Runtime Entrypoints
 

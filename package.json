@@ -39,6 +39,7 @@
     "seed:retrieval-eval:dry": "tsx scripts/bootstrap-retrieval-eval.ts --dry-run",
     "privacy:backfill-memory-owner": "tsx scripts/backfill-memory-owner-user.ts",
     "seed:research-presets": "tsx scripts/seed-research-presets.ts",
+    "memory:backfill-discord": "tsx scripts/backfill-discord-memory.ts",
     "bench:obsidian-search": "tsx scripts/bench-obsidian-search.ts",
     "smoke:api": "node scripts/smoke-api.mjs",
     "docs:routes": "node scripts/generate-route-inventory.mjs",

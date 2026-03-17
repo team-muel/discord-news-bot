@@ -2,39 +2,37 @@
 
 기준 문서: `docs/planning/FRONTIER_2026_PROGRAM.md`
 
+마일스톤 기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`
+
+표기 규칙:
+
+- 각 항목은 `M-xx` milestone ID를 반드시 포함한다.
+
 ## Now (D1-D30: Foundation Lock)
 
-1. 승인 저장소/동적 워커 레지스트리 영속화
-2. 토론 종료 감지 + durable_extraction 자동 enqueue v1
-3. memory -> obsidian 역동기화 워커 추가
-4. 운영 관측 대시보드 단일화(지연/토큰/품질/비용)
-5. Runbook/SOP/Control Tower 상충 항목 정리 완료
-6. Discord UX 이벤트(버튼/리액션/스레드) 운영 지표 수집 고정
-7. 반복 CS 시나리오 20개 자동 분류/응답 템플릿 표준화
-8. Vertical baseline lock + 조건부 consensus 실험 플래그 분리
-9. AgentBench-style 업무 시나리오 세트(30+) 구축
-10. CA-style 공격 시나리오 세트(20+) 구축
-11. 효율 지표(time/token/tool-steps/retry) 대시보드 고정
+1. [M-01] Runbook/SOP/Control Tower/Execution Board 통합 기준 동기화 완료
+2. [M-02] social graph 신호 수집 안정화(reply/mention/co_presence/reaction) 및 누락 복구 지표 고정
+3. [M-02] social hint 활용률/영향도 운영 지표 대시보드 반영
+4. [M-03] 도구 부재 감지 -> worker proposal 자동 트리거 v1
+5. [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
+6. [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
+7. [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
 
 ## Next (D31-D60: Autonomous Loops)
 
-1. user-topic/user-user/user-time 그래프 추출 파이프라인 v1
-2. 개인화 추천 응답 템플릿 + 근거 로그 연결
-3. 도구 부재 감지 기반 worker propose 자동 트리거
-4. conflict resolve UX 명령/버튼 단일 플로우화
-5. 라벨 기반 recall@k 품질 검증 도입
-6. 사용자 요청 -> 기능 제안 -> 구현 티켓화 루프 자동화 v1
-7. CS 자동 완결률/인간 이관률 대시보드 도입
-8. A/B 실험(Vertical vs Hybrid) 2주 배치 운영
-9. 정량 + 정성 동시 게이트로 승격/롤백 자동화
+1. [M-03] 요청 없음 구간에서도 누락 기능 탐지 -> 제안 큐 자동 생성 강화
+2. [M-05] Opencode executor 파일럿(approval_required 고정)
+3. [M-06] provider dual profile(cost-optimized vs quality-optimized) 운영
+4. [M-07] ToT/GoT + provider별 품질 정규화 계측 도입
+5. [M-07] 라벨 기반 recall@k 및 hallucination review 자동 리포트
 
 ## Later (D61-D90: Frontier Hardening)
 
-1. 멀티길드 스케일 테스트(파일럿 3+)
-2. 실패 주입/보안 주입 테스트 운영화
-3. go/no-go 연속 통과 + 베타 확장 승인
-4. 월간 blocked 0 상태 유지 검증
-5. 신기술/신모델 도입 템플릿으로 개인 테스트베드 고정 운영
+1. [M-08] 멀티길드 스케일 테스트(파일럿 3+) 및 안정화
+2. [M-08] 실패 주입/보안 주입 테스트 운영화
+3. [M-08] Go/No-Go 연속 통과 + 베타 확장 승인
+4. [M-08] 월간 blocked 0 상태 유지 검증
+5. [M-06] 신모델/신도구(Opencode 포함) 도입 템플릿 운영 고정
 
 ## 운영 원칙
 

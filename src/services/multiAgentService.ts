@@ -1,14 +1,23 @@
 import crypto from 'crypto';
+import logger from '../logger';
 import { buildAgentMemoryHints } from './agentMemoryService';
 import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agentPolicyService';
 import { persistAgentSession } from './agentSessionStore';
+import { bindSessionAssistantTurn, bindSessionUserTurn } from './conversationTurnService';
 import { generateText, generateTextWithMeta, isAnyLlmConfigured } from './llmClient';
 import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillExecutionResult, SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
-import { compilePromptGoal } from './promptCompiler';
 import { appendTrace, createInitialLangGraphState, type LangGraphState } from './langgraph/stateContract';
+import { buildTotCandidatePairTelemetryPayload, decideComposePromotion } from './langgraph/nodes/composeNodes';
+import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode } from './langgraph/nodes/coreNodes';
+import {
+  runHydrateMemoryNode,
+  runNonTaskIntentNode,
+  runPersistAndEmitNode,
+  runTaskPolicyGateTransitionNode,
+} from './langgraph/nodes/runtimeNodes';
 import { getAgentPrivacyPolicySnapshot, primeAgentPrivacyPolicyCache } from './agentPrivacyPolicyService';
 import { recordPrivacyGateSample } from './agentPrivacyTuningService';
 import {
@@ -19,6 +28,16 @@ import {
   recordTotCandidatePair,
   type AgentTotPolicySnapshot,
 } from './agentTotPolicyService';
+import {
+  getAgentGotPolicySnapshot,
+  primeAgentGotPolicyCache,
+  resolveGotBudgetForPriority,
+  type AgentGotPolicySnapshot,
+} from './agentGotPolicyService';
+import { getAgentGotCutoverDecision } from './agentGotCutoverService';
+import { recordGotShadowRun } from './agentGotStore';
+import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agentTelemetryQueue';
+import { parseLlmStructuredRecord } from './llmStructuredParseService';
 import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
 import type {
   AgentRole,
@@ -48,6 +67,8 @@ export type AgentSession = {
   guildId: string;
   requestedBy: string;
   goal: string;
+  conversationThreadId?: number | null;
+  conversationTurnIndex?: number | null;
   priority: AgentPriority;
   requestedSkillId: SkillId | null;
   routedIntent: AgentIntent;
@@ -167,6 +188,21 @@ const TOT_PROVIDER_LOGPROB_ENABLED = !/^(0|false|off|no)$/i.test(String(process.
 const sessions = new Map<string, AgentSession>();
 const queueRuntime = new MultiAgentRuntimeQueue<AgentSession>();
 
+const GOT_SHADOW_RECORD_TASK = 'got_shadow_record';
+const TOT_CANDIDATE_PAIR_RECORD_TASK = 'tot_candidate_pair_record';
+
+registerTelemetryTaskHandler(GOT_SHADOW_RECORD_TASK, async (payload) => {
+  await recordGotShadowRun(payload as Parameters<typeof recordGotShadowRun>[0]);
+});
+
+registerTelemetryTaskHandler(TOT_CANDIDATE_PAIR_RECORD_TASK, async (payload) => {
+  await recordTotCandidatePair(payload as Parameters<typeof recordTotCandidatePair>[0]);
+  const guildId = String(payload.guildId || '').trim();
+  if (guildId) {
+    await maybeAutoTuneAgentTotPolicy(guildId);
+  }
+});
+
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, code: string): Promise<T> => {
   let timer: NodeJS.Timeout | null = null;
   try {
@@ -178,6 +214,23 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, code: stri
     if (timer) {
       clearTimeout(timer);
     }
+  }
+};
+
+const enqueueBestEffortTelemetry = (params: {
+  name: string;
+  taskType: string;
+  payload: Record<string, unknown>;
+  guildId?: string;
+}): void => {
+  const accepted = enqueueTelemetryTask({
+    name: params.name,
+    taskType: params.taskType,
+    payload: params.payload,
+    guildId: params.guildId,
+  });
+  if (!accepted) {
+    logger.warn('[AGENT] telemetry queue saturated; dropped task=%s guild=%s', params.name, params.guildId || '');
   }
 };
 
@@ -451,22 +504,15 @@ const clamp01 = (value: unknown, fallback: number): number => {
 };
 
 const parseSelfEvaluationJson = (raw: string): { probability: number; correctness: number } | null => {
-  const text = String(raw || '');
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) {
+  const parsed = parseLlmStructuredRecord(raw);
+  if (!parsed) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-    return {
-      probability: clamp01(parsed.probability, 0.55),
-      correctness: clamp01(parsed.correctness, 0.55),
-    };
-  } catch {
-    return null;
-  }
+  return {
+    probability: clamp01(parsed.probability, 0.55),
+    correctness: clamp01(parsed.correctness, 0.55),
+  };
 };
 
 const evaluateSelfGuidedBeam = async (params: {
@@ -656,6 +702,7 @@ const runSelfRefineLite = async (params: {
 const runToTShadowExploration = async (params: {
   session: AgentSession;
   policy: AgentTotPolicySnapshot;
+  gotPolicy: AgentGotPolicySnapshot;
   taskGoal: string;
   plan: string;
   executionDraft: string;
@@ -756,6 +803,11 @@ const runToTShadowExploration = async (params: {
     ? await getTotReplayCandidates({ guildId: session.guildId, topK: policy.replayTopK })
     : [];
   const scored: Array<{
+    nodeKey: string;
+    nodeType: 'hypothesis' | 'patch';
+    parentNodeKey: string;
+    depth: number;
+    metadata?: Record<string, unknown>;
     rawResult: string;
     score: number;
     beamProbability: number;
@@ -765,7 +817,16 @@ const runToTShadowExploration = async (params: {
     evidenceBundleId: string;
   }> = [];
 
-  const pushScoredCandidate = async (output: string) => {
+  const pushScoredCandidate = async (
+    output: string,
+    meta: {
+      nodeKey: string;
+      nodeType: 'hypothesis' | 'patch';
+      parentNodeKey: string;
+      depth: number;
+      metadata?: Record<string, unknown>;
+    },
+  ) => {
     const trimmed = String(output || '').trim();
     if (!trimmed) {
       return;
@@ -784,6 +845,11 @@ const runToTShadowExploration = async (params: {
       ormScore: orm.score,
     });
     scored.push({
+      nodeKey: meta.nodeKey,
+      nodeType: meta.nodeType,
+      parentNodeKey: meta.parentNodeKey,
+      depth: meta.depth,
+      metadata: meta.metadata,
       rawResult: trimmed,
       score: orm.score,
       beamProbability: beam.probability,
@@ -825,7 +891,18 @@ const runToTShadowExploration = async (params: {
       }), AGENT_STEP_TIMEOUT_MS, 'STEP_TIMEOUT:tot_shadow_branch');
 
       const output = String(candidate.output || '').trim();
-      await pushScoredCandidate(output);
+      const branchNodeKey = `branch_${index + 1}`;
+      await pushScoredCandidate(output, {
+        nodeKey: branchNodeKey,
+        nodeType: 'hypothesis',
+        parentNodeKey: 'root',
+        depth: 1,
+        metadata: {
+          kind: 'branch',
+          angle,
+          branchIndex: index + 1,
+        },
+      });
 
       if (policy.localSearchEnabled && policy.localSearchMutations > 0 && output) {
         const operators = ['근거 강화', '리스크 선제 완화', '실행 단계 단순화'];
@@ -850,7 +927,18 @@ const runToTShadowExploration = async (params: {
             },
           }), AGENT_STEP_TIMEOUT_MS, 'STEP_TIMEOUT:tot_shadow_local_search');
 
-          await pushScoredCandidate(String(mutated.output || '').trim());
+          await pushScoredCandidate(String(mutated.output || '').trim(), {
+            nodeKey: `${branchNodeKey}_mut_${mutateIndex + 1}`,
+            nodeType: 'patch',
+            parentNodeKey: branchNodeKey,
+            depth: 2,
+            metadata: {
+              kind: 'mutation',
+              operator,
+              branchIndex: index + 1,
+              mutateIndex: mutateIndex + 1,
+            },
+          });
         }
       }
     } catch {
@@ -883,7 +971,16 @@ const runToTShadowExploration = async (params: {
           maxTokens: replaySampling.maxTokens,
         },
       }), AGENT_STEP_TIMEOUT_MS, 'STEP_TIMEOUT:tot_shadow_replay');
-      await pushScoredCandidate(String(replayCandidate.output || '').trim());
+      await pushScoredCandidate(String(replayCandidate.output || '').trim(), {
+        nodeKey: `replay_${replayIndex + 1}`,
+        nodeType: 'hypothesis',
+        parentNodeKey: 'root',
+        depth: 1,
+        metadata: {
+          kind: 'replay',
+          replayIndex: replayIndex + 1,
+        },
+      });
     } catch {
       // Replay branch is also best-effort.
     }
@@ -912,6 +1009,47 @@ const runToTShadowExploration = async (params: {
     'execute_actions',
     `tot_shadow:strategy=${policy.strategy},branches=${selectedAngles.length},replay=${replaySeeds.length},candidates=${scored.length},best_orm=${best?.score || 0},best_beam=${(best?.beamScore || 0).toFixed(4)}`,
   );
+
+  if (params.gotPolicy.shadowEnabled && scored.length > 0) {
+    const budget = resolveGotBudgetForPriority(session.priority, params.gotPolicy);
+    const selected = best ? scored.find((candidate) => candidate.nodeKey === best.nodeKey) : undefined;
+    enqueueBestEffortTelemetry({
+      name: 'got_shadow_record',
+      taskType: GOT_SHADOW_RECORD_TASK,
+      guildId: session.guildId,
+      payload: {
+        guildId: session.guildId,
+        sessionId: session.id,
+        rootGoal: taskGoal,
+        strategy: params.gotPolicy.strategy,
+        maxNodes: budget.maxNodes,
+        maxEdges: budget.maxEdges,
+        candidates: scored.map((candidate) => ({
+          nodeKey: candidate.nodeKey,
+          nodeType: candidate.nodeType,
+          content: candidate.rawResult,
+          parentNodeKey: candidate.parentNodeKey,
+          depth: candidate.depth,
+          score: clamp01(candidate.score / 100, 0.5),
+          confidence: clamp01(candidate.beamProbability, 0.5),
+          novelty: null,
+          risk: clamp01(1 - candidate.beamCorrectness, 0.5),
+          grounded: candidate.score >= ORM_RULE_PASS_THRESHOLD,
+          blocked: false,
+          scoreSource: candidate.beamProbabilitySource === 'fallback' ? 'rule' : candidate.beamProbabilitySource,
+          metadata: {
+            ...candidate.metadata,
+            ormScore: candidate.score,
+            beamScore: candidate.beamScore,
+          },
+        })),
+        selectedNodeKey: selected?.nodeKey,
+        selectedScore: selected ? clamp01(selected.score / 100, 0.5) : undefined,
+        selectionReason: selected ? 'tot_shadow_best_candidate' : 'tot_shadow_no_selection',
+      },
+    });
+  }
+
   return best
     ? {
       rawResult: best.rawResult,
@@ -1073,47 +1211,6 @@ const runLeastToMostExecutionDraft = async (params: {
   }
 };
 
-const evaluatePolicyGate = (goal: string, guildId: string): {
-  mode: AgentDeliberationMode;
-  score: number;
-  decision: AgentPolicyGateDecision;
-  reasons: string[];
-} => {
-  const text = String(goal || '').trim();
-  const policy = getAgentPrivacyPolicySnapshot(guildId);
-  let score = policy.modeDefault === 'guarded' ? 55 : 10;
-  const reasons: string[] = policy.modeDefault === 'guarded' ? ['privacy_guarded_default'] : [];
-
-  for (const rule of policy.reviewRules) {
-    if (rule.re.test(text)) {
-      score += rule.score;
-      reasons.push(rule.reason);
-    }
-  }
-
-  for (const rule of policy.blockRules) {
-    if (rule.re.test(text)) {
-      score += rule.score;
-      reasons.push(rule.reason);
-    }
-  }
-
-  score = Math.max(0, Math.min(100, score));
-  if (score >= policy.blockScore) {
-    return { mode: 'guarded', score, decision: 'block', reasons: reasons.length > 0 ? reasons : ['privacy_block_threshold'] };
-  }
-  if (score >= policy.reviewScore) {
-    return { mode: 'guarded', score, decision: 'review', reasons: reasons.length > 0 ? reasons : ['privacy_review_threshold'] };
-  }
-  if (score >= 45) {
-    return { mode: policy.modeDefault === 'guarded' ? 'guarded' : 'deliberate', score, decision: 'allow', reasons: reasons.length > 0 ? reasons : ['risk_moderate'] };
-  }
-  if (score >= 25) {
-    return { mode: policy.modeDefault === 'guarded' ? 'guarded' : 'plan_act', score, decision: 'allow', reasons: reasons.length > 0 ? reasons : ['risk_low'] };
-  }
-  return { mode: policy.modeDefault === 'guarded' ? 'guarded' : 'direct', score, decision: 'allow', reasons: reasons.length > 0 ? reasons : ['risk_minimal'] };
-};
-
 const buildPolicyBlockMessage = (reasons: string[]): string => {
   const joined = reasons.slice(0, 4).join(', ') || 'privacy_policy';
   return [
@@ -1121,82 +1218,6 @@ const buildPolicyBlockMessage = (reasons: string[]): string => {
     '민감정보를 제거한 최소 목적 질문으로 다시 요청해주세요.',
     `정책 사유: ${joined}`,
   ].join(' ');
-};
-
-const parseIntentFromLlm = (raw: string): AgentIntent | null => {
-  const text = String(raw || '');
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-    const intent = String(parsed.intent || '').trim().toLowerCase();
-    if (intent === 'task') {
-      return 'task';
-    }
-    if (intent === 'casual_chat') {
-      return 'casual_chat';
-    }
-    if (intent === 'uncertain') {
-      return 'uncertain';
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-};
-
-const classifyIntent = async (params: {
-  guildId: string;
-  goal: string;
-  requestedSkillId: SkillId | null;
-  intentHints: string[];
-}): Promise<AgentIntent> => {
-  const { goal, requestedSkillId, intentHints } = params;
-  if (requestedSkillId) {
-    return 'task';
-  }
-
-  const text = String(goal || '').trim();
-  if (!text) {
-    return 'task';
-  }
-
-  const hintLines = intentHints
-    .filter((line) => !line.startsWith('현재 목표:'))
-    .slice(0, 4)
-    .map((line) => `- ${String(line || '').slice(0, 180)}`);
-  const hintBlock = hintLines.length > 0
-    ? hintLines.join('\n')
-    : '- 없음';
-
-  try {
-    const raw = await generateText({
-      system: [
-        '너는 대화 의도 분류기다.',
-        'task: 정보/방법 요청, 기술 설정·연동·구성, 작업 실행, 검색·분석·생성, "~하고 싶어(목적·기능)", "알려줘야", "어떻게", "방법" 등 무언가를 얻거나 이루려는 모든 발화.',
-        'casual_chat: 순수 감정 토로(우울해, 힘들어), 단순 인사, 목적 없는 잡담. 기술/작업 맥락이 조금이라도 있으면 task.',
-        'uncertain: 문장이 짧거나 모호해서 task/casual_chat 판별 신뢰가 낮은 경우. 정책/권한/관리 이슈가 섞였지만 목표가 불명확한 경우도 uncertain.',
-        '출력은 반드시 JSON 한 줄만 사용한다.',
-      ].join('\n'),
-      user: [
-        '참고 메모리 힌트(길드 정책/맥락):',
-        hintBlock,
-        `문장: ${text}`,
-        '출력 형식: {"intent":"task|casual_chat|uncertain"}',
-      ].join('\n'),
-      temperature: 0,
-      maxTokens: 40,
-    });
-
-    return parseIntentFromLlm(raw) || 'uncertain';
-  } catch {
-    return 'uncertain';
-  }
 };
 
 const buildIntentClarificationFallback = (goal: string): string => {
@@ -1293,6 +1314,32 @@ const formatCitationFirstResult = (rawResult: string, session: AgentSession): st
   const confidence = toConfidenceLabel(session.priority, citations.length);
   const conclusion = toConclusion(rawResult);
   const evidenceBundleId = buildEvidenceBundleId(session.goal, citations);
+  const routeMatch = String(session.goal || '').match(/\[ROUTE:(knowledge|execution|mixed|casual)\]/i);
+  const route = String(routeMatch?.[1] || 'mixed').toLowerCase();
+  const whyPath = route === 'knowledge'
+    ? '근거 기반 회수 우선 경로를 선택했습니다.'
+    : route === 'execution'
+      ? '실행 가능한 단계/검증 중심 경로를 선택했습니다.'
+      : route === 'casual'
+        ? '대화 맥락 보존 중심 경로를 선택했습니다.'
+        : '근거 요약 후 실행안을 제시하는 혼합 경로를 선택했습니다.';
+
+  const alternatives = route === 'knowledge'
+    ? ['execution: 근거보다 실행 지시가 앞서는 위험', 'casual: 작업형 요청을 대화형으로 축소할 위험']
+    : route === 'execution'
+      ? ['knowledge: 즉시 실행성 저하 가능성', 'casual: 작업 누락 위험']
+      : route === 'casual'
+        ? ['execution: 과도한 자동실행 위험', 'knowledge: 감정/대화 맥락 손실 위험']
+        : ['knowledge-only: 실행안 부재 위험', 'execution-only: 근거 누락 위험'];
+
+  const explanationEnvelope = {
+    version: 1,
+    route,
+    evidenceBundleId,
+    citationCount: citations.length,
+    whyPath,
+    alternatives,
+  };
 
   const citationText = citations.length > 0
     ? citations.map((id) => `- memory:${id}`).join('\n')
@@ -1305,6 +1352,13 @@ const formatCitationFirstResult = (rawResult: string, session: AgentSession): st
     '## Verification',
     `- evidence_bundle_id: ${evidenceBundleId}`,
     citationText,
+    '',
+    '## Why This Path',
+    `- ${whyPath}`,
+    ...alternatives.map((item) => `- rejected: ${item}`),
+    '',
+    '## ExplanationEnvelope',
+    JSON.stringify(explanationEnvelope),
     '',
     `## Confidence: ${confidence}`,
   ].join('\n');
@@ -1385,14 +1439,18 @@ const traceShadowNode = (
 };
 
 const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, patch?: Partial<AgentSession>) => {
-  const nextResult = patch?.result !== undefined ? patch.result : session.result;
-  const nextError = patch?.error !== undefined ? patch.error : session.error;
+  const nodeResult = runPersistAndEmitNode({
+    shadowGraph: ensureShadowGraph(session),
+    status,
+    currentResult: session.result,
+    currentError: session.error,
+    patch: {
+      result: patch?.result,
+      error: patch?.error,
+    },
+  });
 
-  session.shadowGraph = appendTrace({
-    ...ensureShadowGraph(session),
-    finalText: nextResult ?? null,
-    errorCode: nextError ? String(nextError) : null,
-  }, 'persist_and_emit', status);
+  session.shadowGraph = nodeResult.shadowGraph;
 
   session.status = status;
   session.endedAt = nowIso();
@@ -1404,6 +1462,33 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
   }
   touch(session);
   void persistAgentSession(cloneSession(session));
+
+  const assistantPayload = nodeResult.assistantPayload;
+  if (assistantPayload) {
+    void bindSessionAssistantTurn({
+      guildId: session.guildId,
+      requestedBy: session.requestedBy,
+      sessionId: session.id,
+      threadId: session.conversationThreadId,
+      content: assistantPayload,
+      status,
+      error: session.error,
+    }).then((turn) => {
+      if (!turn) {
+        return;
+      }
+      const target = sessions.get(session.id);
+      if (!target) {
+        return;
+      }
+      target.conversationThreadId = turn.threadId;
+      target.conversationTurnIndex = turn.turnIndex;
+      touch(target);
+      void persistAgentSession(cloneSession(target));
+    }).catch(() => {
+      // Best-effort turn logging.
+    });
+  }
 };
 
 const runStep = async (
@@ -1457,41 +1542,6 @@ const runStep = async (
 };
 
 type SessionBranchResult = AgentSessionStatus | null;
-
-const handleNonTaskIntentBranch = async (params: {
-  session: AgentSession;
-  sessionStartedAtMs: number;
-  intentHints: string[];
-}): Promise<SessionBranchResult> => {
-  const { session, sessionStartedAtMs, intentHints } = params;
-  if (session.routedIntent === 'casual_chat') {
-    ensureSessionBudget(sessionStartedAtMs);
-    const timestamp = nowIso();
-    cancelAllPendingSteps(session, timestamp);
-    traceShadowNode(session, 'compose_response', 'casual_chat');
-    const casualReply = await generateCasualChatResult(session.goal);
-    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-      result: casualReply,
-      error: null,
-    });
-    return session.cancelRequested ? 'cancelled' : 'completed';
-  }
-
-  if (session.routedIntent === 'uncertain') {
-    ensureSessionBudget(sessionStartedAtMs);
-    const timestamp = nowIso();
-    cancelAllPendingSteps(session, timestamp);
-    traceShadowNode(session, 'compose_response', 'intent_clarification');
-    const clarification = await generateIntentClarificationResult(session.goal, intentHints);
-    markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-      result: clarification,
-      error: null,
-    });
-    return session.cancelRequested ? 'cancelled' : 'completed';
-  }
-
-  return null;
-};
 
 const handleRequestedSkillBranch = async (params: {
   session: AgentSession;
@@ -1606,6 +1656,26 @@ const handleBalancedOrPreciseBranch = async (params: {
     critic,
   } = params;
   const totPolicy = getAgentTotPolicySnapshot(session.guildId);
+  const gotPolicy = getAgentGotPolicySnapshot(session.guildId);
+  const gotCutoverDecision = gotPolicy.activeEnabled
+    ? await getAgentGotCutoverDecision({ guildId: session.guildId, sessionId: session.id })
+    : {
+      guildId: session.guildId,
+      allowed: false,
+      readinessRecommended: false,
+      rolloutPercentage: 0,
+      selectedByRollout: false,
+      reason: 'got_active_disabled_by_policy',
+      failedReasons: ['got_active_disabled_by_policy'],
+      evaluatedAt: new Date().toISOString(),
+      windowDays: 14,
+    };
+
+  traceShadowNode(
+    session,
+    'policy_gate',
+    `got_cutover:allowed=${gotCutoverDecision.allowed},reason=${gotCutoverDecision.reason}`,
+  );
 
   ensureSessionBudget(sessionStartedAtMs);
   traceShadowNode(session, 'plan_actions', 'planner');
@@ -1693,6 +1763,7 @@ const handleBalancedOrPreciseBranch = async (params: {
     totShadowBest = await runToTShadowExploration({
       session,
       policy: totPolicy,
+      gotPolicy,
       taskGoal,
       plan,
       executionDraft,
@@ -1798,53 +1869,78 @@ const handleBalancedOrPreciseBranch = async (params: {
     };
   }
 
-  if (totPolicy.activeEnabled && !session.cancelRequested) {
-    const priorityEligible = session.priority !== 'fast' || totPolicy.activeAllowFast;
-    const goalEligible = String(taskGoal || '').trim().length >= totPolicy.activeMinGoalLength;
-    if (priorityEligible && goalEligible && baseEval && totEval && totShadowBest?.rawResult && baseBeam && totBeam) {
-      const gain = totEval.orm.score - baseEval.orm.score;
-      const beamGain = totBeam.score - baseBeam.score;
-      const passGate = !totPolicy.activeRequireNonPass || baseEval.orm.verdict !== 'pass';
-      const promote = passGate
-        && gain >= totPolicy.activeMinScoreGain
-        && beamGain >= totPolicy.activeMinBeamGain;
+  if ((totPolicy.activeEnabled || gotCutoverDecision.allowed) && !session.cancelRequested) {
+    const promotion = decideComposePromotion({
+      totPolicyActiveEnabled: totPolicy.activeEnabled,
+      totPolicyActiveAllowFast: totPolicy.activeAllowFast,
+      totPolicyActiveMinGoalLength: totPolicy.activeMinGoalLength,
+      totPolicyActiveRequireNonPass: totPolicy.activeRequireNonPass,
+      totPolicyActiveMinScoreGain: totPolicy.activeMinScoreGain,
+      totPolicyActiveMinBeamGain: totPolicy.activeMinBeamGain,
+      gotCutoverAllowed: gotCutoverDecision.allowed,
+      gotMinSelectedScore: gotPolicy.minSelectedScore,
+      priority: session.priority,
+      taskGoal,
+      base: baseEval
+        ? {
+          ormScore: baseEval.orm.score,
+          ormVerdict: baseEval.orm.verdict,
+          evidenceBundleId: baseEval.orm.evidenceBundleId,
+        }
+        : null,
+      candidate: totEval
+        ? {
+          ormScore: totEval.orm.score,
+          ormVerdict: totEval.orm.verdict,
+          evidenceBundleId: totEval.orm.evidenceBundleId,
+        }
+        : null,
+      baseBeam,
+      candidateBeam: totBeam,
+    });
 
-      if (promote) {
+    if (promotion.shouldEvaluate && baseEval && totEval && totShadowBest?.rawResult && baseBeam && totBeam) {
+      if (promotion.promote) {
         selectedFinalRaw = totShadowBest.rawResult;
       }
 
       if (session.totShadowAssessment) {
-        session.totShadowAssessment.selectedByRouter = promote;
-        session.totShadowAssessment.scoreGainVsBaseline = gain;
+        session.totShadowAssessment.selectedByRouter = promotion.promote;
+        session.totShadowAssessment.scoreGainVsBaseline = promotion.scoreGain;
       }
       traceShadowNode(
         session,
         'compose_response',
-        `tot_active:promote=${promote},base_orm=${baseEval.orm.score},tot_orm=${totEval.orm.score},orm_gain=${gain},beam_gain=${beamGain.toFixed(4)}`,
+        `tot_active:promote=${promotion.promote},tot_route=${promotion.promoteByTotPolicy},got_route=${promotion.promoteByGotCutover},base_orm=${baseEval.orm.score},tot_orm=${totEval.orm.score},orm_gain=${promotion.scoreGain},beam_gain=${promotion.beamGain.toFixed(4)}`,
       );
 
-      void recordTotCandidatePair({
+      enqueueBestEffortTelemetry({
+        name: 'tot_candidate_pair_record',
+        taskType: TOT_CANDIDATE_PAIR_RECORD_TASK,
         guildId: session.guildId,
-        sessionId: session.id,
-        strategy: totPolicy.strategy,
-        baselineScore: baseEval.orm.score,
-        candidateScore: totEval.orm.score,
-        scoreGain: gain,
-        beamGain,
-        promoted: promote,
-        baselineProbability: baseBeam.probability,
-        baselineProbabilitySource: baseBeam.probabilitySource,
-        baselineCorrectness: baseBeam.correctness,
-        baselineBeamScore: baseBeam.score,
-        candidateProbability: totBeam.probability,
-        candidateProbabilitySource: totBeam.probabilitySource,
-        candidateCorrectness: totBeam.correctness,
-        candidateBeamScore: totBeam.score,
-        baselineEvidenceBundleId: baseEval.orm.evidenceBundleId,
-        candidateEvidenceBundleId: totEval.orm.evidenceBundleId,
-        baselineResult: finalRefined,
-        candidateResult: totShadowBest.rawResult,
-      }).then(() => maybeAutoTuneAgentTotPolicy(session.guildId));
+        payload: buildTotCandidatePairTelemetryPayload({
+          guildId: session.guildId,
+          sessionId: session.id,
+          strategy: totPolicy.strategy,
+          base: {
+            ormScore: baseEval.orm.score,
+            ormVerdict: baseEval.orm.verdict,
+            evidenceBundleId: baseEval.orm.evidenceBundleId,
+          },
+          candidate: {
+            ormScore: totEval.orm.score,
+            ormVerdict: totEval.orm.verdict,
+            evidenceBundleId: totEval.orm.evidenceBundleId,
+          },
+          baseBeam,
+          candidateBeam: totBeam,
+          baselineResult: finalRefined,
+          candidateResult: totShadowBest.rawResult,
+          promoted: promotion.promote,
+          scoreGain: promotion.scoreGain,
+          beamGain: promotion.beamGain,
+        }),
+      });
       candidatePairLogged = true;
     } else {
       traceShadowNode(session, 'compose_response', 'tot_active:skipped_by_policy');
@@ -1855,28 +1951,33 @@ const handleBalancedOrPreciseBranch = async (params: {
     const scoreGain = totEval.orm.score - baseEval.orm.score;
     const beamGain = totBeam.score - baseBeam.score;
     const promoted = selectedFinalRaw === totShadowBest.rawResult;
-    void recordTotCandidatePair({
+    enqueueBestEffortTelemetry({
+      name: 'tot_candidate_pair_record',
+      taskType: TOT_CANDIDATE_PAIR_RECORD_TASK,
       guildId: session.guildId,
-      sessionId: session.id,
-      strategy: totPolicy.strategy,
-      baselineScore: baseEval.orm.score,
-      candidateScore: totEval.orm.score,
-      scoreGain,
-      beamGain,
-      promoted,
-      baselineProbability: baseBeam.probability,
-      baselineProbabilitySource: baseBeam.probabilitySource,
-      baselineCorrectness: baseBeam.correctness,
-      baselineBeamScore: baseBeam.score,
-      candidateProbability: totBeam.probability,
-      candidateProbabilitySource: totBeam.probabilitySource,
-      candidateCorrectness: totBeam.correctness,
-      candidateBeamScore: totBeam.score,
-      baselineEvidenceBundleId: baseEval.orm.evidenceBundleId,
-      candidateEvidenceBundleId: totEval.orm.evidenceBundleId,
-      baselineResult: finalRefined,
-      candidateResult: totShadowBest.rawResult,
-    }).then(() => maybeAutoTuneAgentTotPolicy(session.guildId));
+      payload: buildTotCandidatePairTelemetryPayload({
+        guildId: session.guildId,
+        sessionId: session.id,
+        strategy: totPolicy.strategy,
+        base: {
+          ormScore: baseEval.orm.score,
+          ormVerdict: baseEval.orm.verdict,
+          evidenceBundleId: baseEval.orm.evidenceBundleId,
+        },
+        candidate: {
+          ormScore: totEval.orm.score,
+          ormVerdict: totEval.orm.verdict,
+          evidenceBundleId: totEval.orm.evidenceBundleId,
+        },
+        baseBeam,
+        candidateBeam: totBeam,
+        baselineResult: finalRefined,
+        candidateResult: totShadowBest.rawResult,
+        promoted,
+        scoreGain,
+        beamGain,
+      }),
+    });
   }
 
   markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
@@ -1905,7 +2006,7 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
   const sessionStartedAtMs = Date.now();
 
   try {
-    const compiledPrompt = compilePromptGoal(session.goal);
+    const compiledPrompt = runCompilePromptNode(session.goal);
     const taskGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || session.goal;
     session.shadowGraph = {
       ...ensureShadowGraph(session),
@@ -1923,9 +2024,9 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       guildId: session.guildId,
       goal: taskGoal,
       maxItems: 4,
+      requesterUserId: session.requestedBy,
     }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_HINT_TIMEOUT').catch(() => []);
-    session.routedIntent = await classifyIntent({
-      guildId: session.guildId,
+    session.routedIntent = await runRouteIntentNode({
       goal: compiledPrompt.normalizedGoal || taskGoal,
       requestedSkillId: session.requestedSkillId,
       intentHints,
@@ -1936,57 +2037,73 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
     };
     traceShadowNode(session, 'route_intent', session.routedIntent);
 
-    if (session.routedIntent === 'task') {
-      const gate = evaluatePolicyGate(taskGoal, session.guildId);
-      session.deliberationMode = gate.mode;
-      session.riskScore = gate.score;
-      session.policyGate = {
-        decision: gate.decision,
-        reasons: [...gate.reasons],
-      };
-      traceShadowNode(session, 'policy_gate', `${gate.decision}:${gate.score}`);
+    const policyTransition = runTaskPolicyGateTransitionNode({
+      routedIntent: session.routedIntent,
+      guildId: session.guildId,
+      taskGoal,
+      evaluateGate: runPolicyGateNode,
+      buildPolicyBlockMessage,
+    });
+
+    session.deliberationMode = policyTransition.deliberationMode;
+    session.riskScore = policyTransition.riskScore;
+    session.policyGate = {
+      decision: policyTransition.policyGate.decision,
+      reasons: [...policyTransition.policyGate.reasons],
+    };
+    traceShadowNode(session, 'policy_gate', policyTransition.traceNote);
+    if (policyTransition.privacySample) {
       void recordPrivacyGateSample({
         guildId: session.guildId,
         sessionId: session.id,
-        mode: gate.mode,
-        decision: gate.decision,
-        riskScore: gate.score,
-        reasons: gate.reasons,
-        goal: taskGoal,
+        mode: policyTransition.privacySample.mode,
+        decision: policyTransition.privacySample.decision,
+        riskScore: policyTransition.privacySample.riskScore,
+        reasons: policyTransition.privacySample.reasons,
+        goal: policyTransition.privacySample.goal,
       });
+    }
 
-      if (gate.decision === 'block') {
-        const timestamp = nowIso();
-        cancelAllPendingSteps(session, timestamp);
-        markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-          result: buildPolicyBlockMessage(gate.reasons),
-          error: null,
-        });
-        return session.cancelRequested ? 'cancelled' : 'completed';
-      }
-    } else {
-      session.deliberationMode = 'direct';
-      session.riskScore = 0;
-      session.policyGate = { decision: 'allow', reasons: ['non_task_intent'] };
+    if (policyTransition.shouldBlock && policyTransition.blockResult) {
+      const timestamp = nowIso();
+      cancelAllPendingSteps(session, timestamp);
+      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+        result: policyTransition.blockResult,
+        error: null,
+      });
+      return session.cancelRequested ? 'cancelled' : 'completed';
     }
 
     touch(session);
 
-    const nonTaskResult = await handleNonTaskIntentBranch({
-      session,
-      sessionStartedAtMs,
+    ensureSessionBudget(sessionStartedAtMs);
+    const nonTaskOutcome = await runNonTaskIntentNode({
+      routedIntent: session.routedIntent,
+      goal: session.goal,
       intentHints,
+      generateCasualReply: generateCasualChatResult,
+      generateClarification: generateIntentClarificationResult,
     });
-    if (nonTaskResult) {
-      return nonTaskResult;
+    if (nonTaskOutcome) {
+      const timestamp = nowIso();
+      cancelAllPendingSteps(session, timestamp);
+      traceShadowNode(session, 'compose_response', nonTaskOutcome.traceNote);
+      markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
+        result: nonTaskOutcome.result,
+        error: null,
+      });
+      return session.cancelRequested ? 'cancelled' : 'completed';
     }
 
     ensureSessionBudget(sessionStartedAtMs);
-    session.memoryHints = await withTimeout(buildAgentMemoryHints({
+    const hydrateMemory = await runHydrateMemoryNode({
       guildId: session.guildId,
       goal: taskGoal,
-      maxItems: session.priority === 'fast' ? 4 : session.priority === 'precise' ? 16 : 10,
-    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []);
+      priority: session.priority,
+      requestedBy: session.requestedBy,
+      loadHints: (input) => withTimeout(buildAgentMemoryHints(input), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []),
+    });
+    session.memoryHints = hydrateMemory.memoryHints;
     session.shadowGraph = {
       ...ensureShadowGraph(session),
       memoryHints: [...session.memoryHints],
@@ -2107,7 +2224,7 @@ export const startAgentSession = (params: {
   isAdmin?: boolean;
 }) => {
   if (!isAnyLlmConfigured()) {
-    throw new Error('LLM provider is not configured. Configure OPENAI/GEMINI/ANTHROPIC/OPENCLAW/OLLAMA provider.');
+    throw new Error('LLM provider is not configured. Configure OPENAI/GEMINI/ANTHROPIC/HUGGINGFACE/OPENCLAW/OLLAMA provider.');
   }
 
   const requestedSkillId = params.skillId && isSkillId(params.skillId)
@@ -2119,6 +2236,7 @@ export const startAgentSession = (params: {
   primeAgentPrivacyPolicyCache();
   primeWorkflowProfileCache();
   primeAgentTotPolicyCache();
+  primeAgentGotPolicyCache();
 
   if (queueRuntime.getQueuedCount() >= AGENT_MAX_QUEUE_SIZE) {
     throw new Error(`대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요. (max=${AGENT_MAX_QUEUE_SIZE})`);
@@ -2143,6 +2261,8 @@ export const startAgentSession = (params: {
     guildId: params.guildId,
     requestedBy: params.requestedBy,
     goal: params.goal.trim(),
+    conversationThreadId: null,
+    conversationTurnIndex: null,
     priority,
     requestedSkillId,
     routedIntent: 'task',
@@ -2167,6 +2287,27 @@ export const startAgentSession = (params: {
   sessions.set(session.id, session);
   pruneSessions();
   void persistAgentSession(cloneSession(session));
+  void bindSessionUserTurn({
+    guildId: session.guildId,
+    requestedBy: session.requestedBy,
+    sessionId: session.id,
+    goal: session.goal,
+    sourceChannel: requestedSkillId ? 'agent' : 'vibe',
+  }).then((turn) => {
+    if (!turn) {
+      return;
+    }
+    const target = sessions.get(session.id);
+    if (!target) {
+      return;
+    }
+    target.conversationThreadId = turn.threadId;
+    target.conversationTurnIndex = turn.turnIndex;
+    touch(target);
+    void persistAgentSession(cloneSession(target));
+  }).catch(() => {
+    // Best-effort turn logging.
+  });
   queueRuntime.enqueueSession(session.id);
   scheduleQueueDrain();
   return cloneSession(session);

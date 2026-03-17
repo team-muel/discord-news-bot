@@ -9,20 +9,28 @@ import logger from '../../logger';
 
 type VibeDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
-  startVibeSession: (guildId: string, userId: string, request: string) => AgentSession;
+  startVibeSession: (guildId: string, userId: string, request: string) => Promise<AgentSession>;
   streamSessionProgress: (sink: { update: (content: string) => Promise<unknown> }, sessionId: string, goal: string, options: { showDebugBlocks: boolean; maxLinks: number }) => Promise<void>;
   tryPostCodeThread: (sourceMessage: Message, session: AgentSession, guildId: string) => Promise<void>;
   codeThreadEnabled: boolean;
   codingIntentPattern: RegExp;
   automationIntentPattern: RegExp;
   getErrorMessage: (error: unknown) => string;
+  autoProposeWorker?: (params: {
+    guildId: string;
+    requestedBy: string;
+    request: string;
+    sessionId: string;
+  }) => Promise<{ ok: boolean; approvalId?: string; error?: string }>;
 };
 
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
 const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
-const fallbackRequestCache = new Map<string, string>();
 const PROCESSED_MESSAGE_TTL_MS = Math.max(30_000, Number(process.env.VIBE_MESSAGE_DEDUP_TTL_MS || 5 * 60_000));
 const processedMessageUntilMs = new Map<string, number>();
+const AUTO_WORKER_PROPOSAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_ENABLED || 'false').trim());
+const AUTO_WORKER_PROPOSAL_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS || 15 * 60_000));
+const autoWorkerProposalUntilMs = new Map<string, number>();
 
 const logVibeNonCritical = (scope: string, error: unknown, getErrorMessage: (error: unknown) => string): void => {
   logger.debug('[VIBE] %s: %s', scope, getErrorMessage(error));
@@ -71,6 +79,50 @@ const shouldSuggestWorkerProposal = (request: string, resultText: string): boole
   }
 
   return MISSING_TOOL_SIGNAL_PATTERN.test(resultText);
+};
+
+const shouldAutoProposeWorker = (request: string, resultText: string): boolean => {
+  if (!AUTO_WORKER_PROPOSAL_ENABLED) {
+    return false;
+  }
+
+  const missingAction = extractDiagnosticCount(resultText, 'missing_action');
+  if (missingAction > 0) {
+    return true;
+  }
+
+  return MISSING_TOOL_SIGNAL_PATTERN.test(resultText)
+    && /(자동화|integration|worker|툴|tool|api|연동|monitor|status|체크|확인)/i.test(request);
+};
+
+const acquireAutoProposalSlot = (key: string): boolean => {
+  const now = Date.now();
+  const expiresAt = autoWorkerProposalUntilMs.get(key) || 0;
+  if (expiresAt > now) {
+    return false;
+  }
+  autoWorkerProposalUntilMs.set(key, now + AUTO_WORKER_PROPOSAL_COOLDOWN_MS);
+  return true;
+};
+
+const formatAutoProposalError = (error: string): string => {
+  const text = String(error || '').trim();
+  if (!text) {
+    return '알 수 없는 오류';
+  }
+  if (text.startsWith('AUTO_PROPOSAL_DAILY_CAP_REACHED')) {
+    return '오늘 자동 제안 상한에 도달했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  if (text === 'AUTO_PROPOSAL_DUPLICATE_RECENT') {
+    return '동일한 요청에 대한 최근 자동 제안이 이미 존재합니다.';
+  }
+  if (text.startsWith('AUTO_PROPOSAL_PROMOTION_THRESHOLD')) {
+    return '자동 승격 기준(요청 빈도/요청자 다양성/품질/정책 차단률)을 아직 충족하지 않아 이번에는 일회성 처리로 유지합니다.';
+  }
+  if (text.startsWith('AUTO_PROPOSAL_QUALITY_GUARD')) {
+    return '최근 자동 생성 품질이 낮아 자동 제안을 잠시 보류합니다.';
+  }
+  return text;
 };
 
 const shouldSuggestPolicyGuidance = (resultText: string): boolean => {
@@ -148,17 +200,15 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       return;
     }
 
-    const cacheKey = `${interaction.guildId}:${interaction.user.id}`;
     let runtimeGoal = request;
     if (deps.codingIntentPattern.test(request)) {
-      fallbackRequestCache.set(cacheKey, request);
       runtimeGoal = `코드로 구현해줘: ${request}`;
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.tipTitle, DISCORD_MESSAGES.vibe.tipLines.join('\n'), EMBED_INFO));
     }
 
     let session: AgentSession;
     try {
-      session = deps.startVibeSession(guildId, interaction.user.id, runtimeGoal);
+      session = await deps.startVibeSession(guildId, interaction.user.id, runtimeGoal);
     } catch (error) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
       return;
@@ -177,8 +227,24 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       }).catch((error) => logVibeNonCritical('followUp(policy hint) failed', error, deps.getErrorMessage));
     }
     if (shouldSuggestWorkerProposal(request, resultText)) {
+      let autoProposalLine = '';
+      if (deps.autoProposeWorker && shouldAutoProposeWorker(request, resultText)) {
+        const autoKey = `${guildId}:${interaction.user.id}:${request.slice(0, 80).toLowerCase()}`;
+        if (acquireAutoProposalSlot(autoKey)) {
+          const autoResult = await deps.autoProposeWorker({
+            guildId,
+            requestedBy: interaction.user.id,
+            request,
+            sessionId: session.id,
+          }).catch((error) => ({ ok: false, error: deps.getErrorMessage(error) }));
+          autoProposalLine = autoResult.ok
+            ? `\n자동 제안 생성 완료 (승인 ID: \`${('approvalId' in autoResult && autoResult.approvalId) ? autoResult.approvalId : 'n/a'}\`)`
+            : `\n자동 제안 생성 실패: ${formatAutoProposalError(String(autoResult.error || 'unknown'))}`;
+        }
+      }
+
       await interaction.followUp({
-        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
+        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}${autoProposalLine}`,
         components: [buildWorkerProposalRow(session.id, request)],
         ephemeral: true,
       }).catch((error) => logVibeNonCritical('followUp(worker hint) failed', error, deps.getErrorMessage));
@@ -230,7 +296,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     let session: AgentSession;
     try {
-      session = deps.startVibeSession(guildId, interaction.user.id, codeGoal);
+      session = await deps.startVibeSession(guildId, interaction.user.id, codeGoal);
     } catch (error) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
       return;
@@ -297,7 +363,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     let session: AgentSession;
     try {
-      session = deps.startVibeSession(message.guildId, message.author.id, request);
+      session = await deps.startVibeSession(message.guildId, message.author.id, request);
     } catch (error) {
       await progressMessage.edit(DISCORD_MESSAGES.vibe.startFailedInline(deps.getErrorMessage(error)));
       return;
@@ -315,8 +381,24 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       });
     }
     if (shouldSuggestWorkerProposal(request, resultText)) {
+      let autoProposalLine = '';
+      if (deps.autoProposeWorker && shouldAutoProposeWorker(request, resultText)) {
+        const autoKey = `${message.guildId}:${message.author.id}:${request.slice(0, 80).toLowerCase()}`;
+        if (acquireAutoProposalSlot(autoKey)) {
+          const autoResult = await deps.autoProposeWorker({
+            guildId: message.guildId,
+            requestedBy: message.author.id,
+            request,
+            sessionId: session.id,
+          }).catch((error) => ({ ok: false, error: deps.getErrorMessage(error) }));
+          autoProposalLine = autoResult.ok
+            ? `\n자동 제안 생성 완료 (승인 ID: \`${('approvalId' in autoResult && autoResult.approvalId) ? autoResult.approvalId : 'n/a'}\`)`
+            : `\n자동 제안 생성 실패: ${formatAutoProposalError(String(autoResult.error || 'unknown'))}`;
+        }
+      }
+
       await message.reply({
-        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
+        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}${autoProposalLine}`,
         components: [buildWorkerProposalRow(session.id, request)],
       }).catch((error) => {
         logVibeNonCritical('message.reply(worker hint) failed', error, deps.getErrorMessage);

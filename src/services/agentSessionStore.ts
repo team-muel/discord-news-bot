@@ -15,6 +15,10 @@ const isMissingColumnError = (error: any, column: string) => {
   return code === '42703' || message.includes(String(column || '').toLowerCase());
 };
 
+const isConversationColumnMissing = (error: any) => {
+  return isMissingColumnError(error, 'conversation_thread_id') || isMissingColumnError(error, 'conversation_turn_index');
+};
+
 const buildShadowSummaryForPersistence = (session: AgentSession) => {
   const shadow = session.shadowGraph;
   const traceLength = shadow?.trace.length || 0;
@@ -76,6 +80,12 @@ export const persistAgentSession = async (session: AgentSession): Promise<void> 
       requested_by: session.requestedBy,
       goal: session.goal,
       priority: session.priority,
+      conversation_thread_id: Number.isFinite(Number(session.conversationThreadId))
+        ? Number(session.conversationThreadId)
+        : null,
+      conversation_turn_index: Number.isFinite(Number(session.conversationTurnIndex))
+        ? Number(session.conversationTurnIndex)
+        : null,
       requested_skill_id: session.requestedSkillId,
       status: session.status,
       created_at: session.createdAt,
@@ -95,8 +105,22 @@ export const persistAgentSession = async (session: AgentSession): Promise<void> 
       { onConflict: 'id' },
     );
 
-    if (error && (isMissingColumnError(error, 'shadow_graph_summary') || isMissingColumnError(error, 'progress_summary'))) {
-      const fallback = await client.from('agent_sessions').upsert(baseSessionRow, { onConflict: 'id' });
+    if (error && (isMissingColumnError(error, 'shadow_graph_summary') || isMissingColumnError(error, 'progress_summary') || isConversationColumnMissing(error))) {
+      const fallback = await client.from('agent_sessions').upsert({
+        id: session.id,
+        guild_id: session.guildId,
+        requested_by: session.requestedBy,
+        goal: session.goal,
+        priority: session.priority,
+        requested_skill_id: session.requestedSkillId,
+        status: session.status,
+        created_at: session.createdAt,
+        updated_at: session.updatedAt,
+        started_at: session.startedAt,
+        ended_at: session.endedAt,
+        result: session.result,
+        error: session.error,
+      }, { onConflict: 'id' });
       error = fallback.error;
     }
 

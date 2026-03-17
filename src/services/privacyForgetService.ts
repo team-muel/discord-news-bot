@@ -45,8 +45,13 @@ const FORGET_GUILD_TABLES = [
   'memory_retrieval_logs',
   'guild_lore_docs',
   'memory_items',
+  'community_interaction_events',
+  'community_relationship_edges',
+  'community_actor_profiles',
   'agent_action_logs',
   'agent_sessions',
+  'agent_conversation_turns',
+  'agent_conversation_threads',
   'agent_action_policies',
   'agent_action_approval_requests',
 ] as const;
@@ -386,8 +391,15 @@ export const previewForgetUserRagData = async (params: {
     addCount(counts, 'memory_items.user_linked', count);
   }
   addCount(counts, 'memory_feedback.actor_id', await countByColumn('memory_feedback', 'actor_id', userId, guildId));
+  addCount(counts, 'community_interaction_events.actor_user_id', await countByColumn('community_interaction_events', 'actor_user_id', userId, guildId));
+  addCount(counts, 'community_interaction_events.target_user_id', await countByColumn('community_interaction_events', 'target_user_id', userId, guildId));
+  addCount(counts, 'community_relationship_edges.src_user_id', await countByColumn('community_relationship_edges', 'src_user_id', userId, guildId));
+  addCount(counts, 'community_relationship_edges.dst_user_id', await countByColumn('community_relationship_edges', 'dst_user_id', userId, guildId));
+  addCount(counts, 'community_actor_profiles.user_id', await countByColumn('community_actor_profiles', 'user_id', userId, guildId));
   addCount(counts, 'agent_action_logs.requested_by', await countByColumn('agent_action_logs', 'requested_by', userId, guildId));
   addCount(counts, 'agent_sessions.requested_by', await countByColumn('agent_sessions', 'requested_by', userId, guildId));
+  addCount(counts, 'agent_conversation_threads.requested_by', await countByColumn('agent_conversation_threads', 'requested_by', userId, guildId));
+  addCount(counts, 'agent_conversation_turns.created_by', await countByColumn('agent_conversation_turns', 'created_by', userId, guildId));
   addCount(counts, 'agent_action_approval_requests.requested_by', await countByColumn('agent_action_approval_requests', 'requested_by', userId, guildId));
   addCount(counts, 'agent_action_approval_requests.approved_by', await countByColumn('agent_action_approval_requests', 'approved_by', userId, guildId));
 
@@ -546,6 +558,71 @@ export const forgetUserRagData = async (params: {
   }
   addCount(counts, 'memory_feedback', feedbackDeleted);
 
+  let interactionActorDeleteQuery = client
+    .from('community_interaction_events')
+    .delete({ count: 'exact' })
+    .eq('actor_user_id', userId);
+  if (guildId) {
+    interactionActorDeleteQuery = interactionActorDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: interactionActorDeleted, error: interactionActorDeleteError } = await interactionActorDeleteQuery;
+  if (interactionActorDeleteError) {
+    throw new Error(`community_interaction_events:${interactionActorDeleteError.message || 'DELETE_FAILED(actor_user_id)'}`);
+  }
+  addCount(counts, 'community_interaction_events.actor_user_id', interactionActorDeleted);
+
+  let interactionTargetDeleteQuery = client
+    .from('community_interaction_events')
+    .delete({ count: 'exact' })
+    .eq('target_user_id', userId);
+  if (guildId) {
+    interactionTargetDeleteQuery = interactionTargetDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: interactionTargetDeleted, error: interactionTargetDeleteError } = await interactionTargetDeleteQuery;
+  if (interactionTargetDeleteError) {
+    throw new Error(`community_interaction_events:${interactionTargetDeleteError.message || 'DELETE_FAILED(target_user_id)'}`);
+  }
+  addCount(counts, 'community_interaction_events.target_user_id', interactionTargetDeleted);
+
+  let edgeSrcDeleteQuery = client
+    .from('community_relationship_edges')
+    .delete({ count: 'exact' })
+    .eq('src_user_id', userId);
+  if (guildId) {
+    edgeSrcDeleteQuery = edgeSrcDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: edgeSrcDeleted, error: edgeSrcDeleteError } = await edgeSrcDeleteQuery;
+  if (edgeSrcDeleteError) {
+    throw new Error(`community_relationship_edges:${edgeSrcDeleteError.message || 'DELETE_FAILED(src_user_id)'}`);
+  }
+  addCount(counts, 'community_relationship_edges.src_user_id', edgeSrcDeleted);
+
+  let edgeDstDeleteQuery = client
+    .from('community_relationship_edges')
+    .delete({ count: 'exact' })
+    .eq('dst_user_id', userId);
+  if (guildId) {
+    edgeDstDeleteQuery = edgeDstDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: edgeDstDeleted, error: edgeDstDeleteError } = await edgeDstDeleteQuery;
+  if (edgeDstDeleteError) {
+    throw new Error(`community_relationship_edges:${edgeDstDeleteError.message || 'DELETE_FAILED(dst_user_id)'}`);
+  }
+  addCount(counts, 'community_relationship_edges.dst_user_id', edgeDstDeleted);
+
+  let profileDeleteQuery = client
+    .from('community_actor_profiles')
+    .delete({ count: 'exact' })
+    .eq('user_id', userId);
+  if (guildId) {
+    profileDeleteQuery = profileDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: profileDeleted, error: profileDeleteError } = await profileDeleteQuery;
+  if (profileDeleteError) {
+    throw new Error(`community_actor_profiles:${profileDeleteError.message || 'DELETE_FAILED(user_id)'}`);
+  }
+  addCount(counts, 'community_actor_profiles.user_id', profileDeleted);
+
   let actionLogsDeleteQuery = client
     .from('agent_action_logs')
     .delete({ count: 'exact' })
@@ -558,6 +635,61 @@ export const forgetUserRagData = async (params: {
     throw new Error(`agent_action_logs:${actionLogsDeleteError.message || 'DELETE_FAILED'}`);
   }
   addCount(counts, 'agent_action_logs', actionLogsDeleted);
+
+  let conversationThreadsDeleteQuery = client
+    .from('agent_conversation_threads')
+    .delete({ count: 'exact' })
+    .eq('requested_by', userId);
+  if (guildId) {
+    conversationThreadsDeleteQuery = conversationThreadsDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: conversationThreadsDeleted, error: conversationThreadsDeleteError } = await conversationThreadsDeleteQuery;
+  if (conversationThreadsDeleteError) {
+    throw new Error(`agent_conversation_threads:${conversationThreadsDeleteError.message || 'DELETE_FAILED(requested_by)'}`);
+  }
+  addCount(counts, 'agent_conversation_threads.requested_by', conversationThreadsDeleted);
+
+  let conversationTurnsByAuthorDeleteQuery = client
+    .from('agent_conversation_turns')
+    .delete({ count: 'exact' })
+    .eq('created_by', userId);
+  if (guildId) {
+    conversationTurnsByAuthorDeleteQuery = conversationTurnsByAuthorDeleteQuery.eq('guild_id', guildId);
+  }
+  const { count: conversationTurnsByAuthorDeleted, error: conversationTurnsByAuthorDeleteError } = await conversationTurnsByAuthorDeleteQuery;
+  if (conversationTurnsByAuthorDeleteError) {
+    throw new Error(`agent_conversation_turns:${conversationTurnsByAuthorDeleteError.message || 'DELETE_FAILED(created_by)'}`);
+  }
+  addCount(counts, 'agent_conversation_turns.created_by', conversationTurnsByAuthorDeleted);
+
+  let sessionIdsQuery = client
+    .from('agent_sessions')
+    .select('id')
+    .eq('requested_by', userId);
+  if (guildId) {
+    sessionIdsQuery = sessionIdsQuery.eq('guild_id', guildId);
+  }
+  const { data: sessionRows, error: sessionIdsError } = await sessionIdsQuery;
+  if (sessionIdsError) {
+    throw new Error(`agent_sessions:${sessionIdsError.message || 'SELECT_FAILED(ids)'}`);
+  }
+  const sessionIds = (sessionRows || [])
+    .map((row) => String((row as { id?: unknown }).id || '').trim())
+    .filter(Boolean);
+  if (sessionIds.length > 0) {
+    let conversationTurnsBySessionDeleteQuery = client
+      .from('agent_conversation_turns')
+      .delete({ count: 'exact' })
+      .in('session_id', sessionIds);
+    if (guildId) {
+      conversationTurnsBySessionDeleteQuery = conversationTurnsBySessionDeleteQuery.eq('guild_id', guildId);
+    }
+    const { count: conversationTurnsBySessionDeleted, error: conversationTurnsBySessionDeleteError } = await conversationTurnsBySessionDeleteQuery;
+    if (conversationTurnsBySessionDeleteError) {
+      throw new Error(`agent_conversation_turns:${conversationTurnsBySessionDeleteError.message || 'DELETE_FAILED(session_id)'}`);
+    }
+    addCount(counts, 'agent_conversation_turns.session_id', conversationTurnsBySessionDeleted);
+  }
 
   let sessionsDeleteQuery = client
     .from('agent_sessions')

@@ -251,8 +251,6 @@ export const DISCORD_MESSAGES = {
     searchInputRequired: '검색어를 입력해주세요.',
   },
   bot: {
-    titleLegacySessionGuide: '명령 통합 안내',
-    legacySessionGuideBody: '해당 명령은 /세션으로 통합되었습니다.\n사용 예: /세션 추가, /세션 조회, /세션 제거',
     guildOnly: '서버 채널에서만 사용할 수 있습니다.',
     forgetRequesterOnly: '이 확인 버튼은 요청자만 사용할 수 있습니다.',
     forgetCancelled: '삭제 요청이 취소되었습니다.',
