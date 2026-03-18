@@ -38,6 +38,8 @@ const assert = (condition, message) => {
   }
 };
 
+const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 assert(schema && typeof schema === 'object', 'schema must be an object');
 assert(schema.$defs && typeof schema.$defs === 'object', 'schema must include $defs');
 
@@ -179,7 +181,10 @@ while (match) {
 const uniqueDispatchCommands = [...new Set(dispatchCommands)];
 assert(uniqueDispatchCommands.length > 0, 'failed to collect command dispatch cases from src/bot.ts');
 
-const missingFromMapping = uniqueDispatchCommands.filter((command) => !adapterMappingDoc.includes(`| ${command} |`));
+const missingFromMapping = uniqueDispatchCommands.filter((command) => {
+  const pattern = new RegExp(`\\|\\s*${escapeRegExp(command)}\\s*\\|`, 'u');
+  return !pattern.test(adapterMappingDoc);
+});
 const coverage = (uniqueDispatchCommands.length - missingFromMapping.length) / uniqueDispatchCommands.length;
 
 assert(missingFromMapping.length === 0, `adapter-core mapping coverage incomplete: missing [${missingFromMapping.join(', ')}]`);
