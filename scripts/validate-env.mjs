@@ -52,13 +52,50 @@ const startBot = isTruthy(process.env.START_BOT, false);
 const startAutomation = isTruthy(process.env.START_AUTOMATION_JOBS, false);
 const startTrading = isTruthy(process.env.START_TRADING_BOT, false);
 const aiProvider = read('AI_PROVIDER').toLowerCase();
+const deploymentProfile = read('DEPLOYMENT_PROFILE').toLowerCase() || 'auto';
+
+const profileHints = {
+  'api-only': {
+    startBot: false,
+    needsOauth: false,
+  },
+  'bot-only': {
+    startBot: true,
+    needsOauth: false,
+  },
+  'full': {
+    startBot: true,
+    needsOauth: true,
+  },
+  'prod': {
+    startBot: true,
+    needsOauth: true,
+  },
+};
 
 console.log('[env-check] Muel environment validation start');
-console.log(`[env-check] mode START_BOT=${startBot} START_AUTOMATION_JOBS=${startAutomation} START_TRADING_BOT=${startTrading} AI_PROVIDER=${aiProvider || 'auto'}`);
+console.log(`[env-check] mode START_BOT=${startBot} START_AUTOMATION_JOBS=${startAutomation} START_TRADING_BOT=${startTrading} AI_PROVIDER=${aiProvider || 'auto'} DEPLOYMENT_PROFILE=${deploymentProfile}`);
+
+if (deploymentProfile && deploymentProfile !== 'auto' && !profileHints[deploymentProfile]) {
+  add('WARN', 'DEPLOYMENT_PROFILE', '지원값은 auto|api-only|bot-only|full|prod 입니다.');
+}
+
+const activeProfile = profileHints[deploymentProfile] || null;
+if (activeProfile) {
+  if (activeProfile.startBot && !startBot) {
+    add('ERROR', 'START_BOT', `DEPLOYMENT_PROFILE=${deploymentProfile} 에서는 START_BOT=true가 필요합니다.`);
+  }
+  if (!activeProfile.startBot && startBot) {
+    add('WARN', 'START_BOT', `DEPLOYMENT_PROFILE=${deploymentProfile} 에서는 START_BOT=false를 권장합니다.`);
+  }
+}
 
 // Core
 if (!read('NODE_ENV')) {
   add('WARN', 'NODE_ENV', '미설정 시 기본값은 development입니다. 운영 배포는 production을 권장합니다.');
+}
+if (deploymentProfile === 'prod' && read('NODE_ENV') !== 'production') {
+  add('ERROR', 'NODE_ENV', 'DEPLOYMENT_PROFILE=prod 에서는 NODE_ENV=production 이어야 합니다.');
 }
 requireNonEmpty('JWT_SECRET', '인증 토큰 서명');
 
@@ -68,7 +105,7 @@ if (startBot || startAutomation) {
   }
 }
 
-if (startBot) {
+if (startBot && (activeProfile?.needsOauth !== false)) {
   if (!readAny(['DISCORD_OAUTH_CLIENT_ID', 'DISCORD_CLIENT_ID'])) {
     add('ERROR', 'DISCORD_OAUTH_CLIENT_ID|DISCORD_CLIENT_ID', '로그인/초대 링크 생성');
   }
@@ -120,7 +157,7 @@ const publicBaseUrl = read('PUBLIC_BASE_URL') || read('RENDER_EXTERNAL_URL') || 
 if (publicBaseUrl && !isValidUrl(publicBaseUrl)) {
   add('ERROR', 'PUBLIC_BASE_URL', '유효한 http/https URL이어야 합니다.');
 }
-if (startBot) {
+if (startBot && (activeProfile?.needsOauth !== false)) {
   recommendNonEmpty('PUBLIC_BASE_URL', 'Discord OAuth callback 주소 자동 생성');
   if (!readAny(['FRONTEND_ORIGIN', 'CORS_ALLOWLIST', 'OAUTH_REDIRECT_ALLOWLIST'])) {
     add('WARN', 'FRONTEND_ORIGIN|CORS_ALLOWLIST|OAUTH_REDIRECT_ALLOWLIST', 'CORS/로그인 UI 연동');

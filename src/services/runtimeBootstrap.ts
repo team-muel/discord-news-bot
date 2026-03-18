@@ -1,0 +1,80 @@
+import type { Client } from 'discord.js';
+import { isAutomationEnabled, startAutomationJobs, startAutomationModules } from './automationBot';
+import { startMemoryJobRunner } from './memoryJobRunner';
+import { startObsidianLoreSyncLoop } from './obsidianLoreSyncService';
+import { startRetrievalEvalLoop } from './retrievalEvalLoopService';
+import { startAgentSloAlertLoop } from './agentSloService';
+import { startAgentDailyLearningLoop, startGotCutoverAutopilotLoop } from './agentOpsService';
+import { autoSyncGuildTopologiesOnReady } from './discordTopologySyncService';
+import { startRuntimeAlerts } from './runtimeAlertService';
+import { startTradingEngine } from './tradingEngine';
+import { startOpencodePublishWorker } from './opencodePublishWorker';
+import { startLoginSessionCleanupLoop } from '../discord/auth';
+import logger from '../logger';
+
+const runtimeState = {
+  serverStarted: false,
+  discordReadyStarted: false,
+  sharedLoopsStarted: false,
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+const startSharedLoops = () => {
+  if (runtimeState.sharedLoopsStarted) {
+    return;
+  }
+
+  startMemoryJobRunner();
+  runtimeState.sharedLoopsStarted = true;
+};
+
+export const startServerProcessRuntime = (): void => {
+  if (runtimeState.serverStarted) {
+    return;
+  }
+
+  startAutomationJobs();
+  startSharedLoops();
+  startOpencodePublishWorker();
+  startTradingEngine();
+  startRuntimeAlerts();
+
+  runtimeState.serverStarted = true;
+};
+
+export const startDiscordReadyRuntime = (client: Client): void => {
+  if (runtimeState.discordReadyStarted) {
+    return;
+  }
+
+  if (isAutomationEnabled()) {
+    startAutomationModules(client);
+  }
+
+  startAgentDailyLearningLoop(client);
+  startGotCutoverAutopilotLoop(client);
+  startLoginSessionCleanupLoop();
+  startSharedLoops();
+  startObsidianLoreSyncLoop();
+  startRetrievalEvalLoop(client);
+  startAgentSloAlertLoop();
+
+  void autoSyncGuildTopologiesOnReady(client.guilds.cache.values()).catch((error) => {
+    logger.debug('[DISCORD-TOPOLOGY] ready sweep skipped reason=%s', getErrorMessage(error));
+  });
+
+  runtimeState.discordReadyStarted = true;
+};

@@ -2,11 +2,7 @@ import 'dotenv/config';
 import logger from './src/logger';
 import initMonitoring from './src/init';
 import { PORT, START_BOT } from './src/config';
-import { startAutomationJobs } from './src/services/automationBot';
-import { startMemoryJobRunner } from './src/services/memoryJobRunner';
-import { startOpencodePublishWorker } from './src/services/opencodePublishWorker';
-import { startRuntimeAlerts } from './src/services/runtimeAlertService';
-import { startTradingEngine } from './src/services/tradingEngine';
+import { startServerProcessRuntime } from './src/services/runtimeBootstrap';
 
 // Initialize monitoring (Sentry) if configured
 initMonitoring();
@@ -14,12 +10,12 @@ initMonitoring();
 import { createApp } from './src/app';
 
 const app = createApp();
+const HTTP_KEEP_ALIVE_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_KEEP_ALIVE_TIMEOUT_MS || 65_000));
+const HTTP_HEADERS_TIMEOUT_MS = Math.max(10_000, Number(process.env.HTTP_HEADERS_TIMEOUT_MS || 66_000));
+const HTTP_REQUEST_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 120_000));
+const HTTP_SHUTDOWN_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_SHUTDOWN_TIMEOUT_MS || 15_000));
 
-startAutomationJobs();
-startMemoryJobRunner();
-startOpencodePublishWorker();
-startTradingEngine();
-startRuntimeAlerts();
+startServerProcessRuntime();
 
 logger.info('[BOOT] START_BOT=%s START_AUTOMATION_JOBS=%s DISCORD_TOKEN_PRESENT=%s',
   String(START_BOT),
@@ -49,7 +45,40 @@ if (START_BOT) {
 
 // 라우터 등록 및 미들웨어 조립은 createApp 내부 또는 별도 파일에서 수행
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info(`[RENDER_EVENT] SERVER_READY port=${PORT}`);
   logger.info(`Server running on http://localhost:${PORT}`);
 });
+
+server.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT_MS;
+server.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;
+server.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
+
+let shuttingDown = false;
+
+const shutdownServer = (signal: NodeJS.Signals) => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  logger.info('[PROCESS] Received %s, shutting down HTTP server...', signal);
+
+  const forceExitTimer = setTimeout(() => {
+    logger.error('[PROCESS] Graceful shutdown timed out after %dms; forcing exit', HTTP_SHUTDOWN_TIMEOUT_MS);
+    process.exit(1);
+  }, HTTP_SHUTDOWN_TIMEOUT_MS);
+
+  server.close((error) => {
+    clearTimeout(forceExitTimer);
+    if (error) {
+      logger.error('[PROCESS] HTTP server shutdown failed: %o', error);
+      process.exit(1);
+      return;
+    }
+    logger.info('[PROCESS] HTTP server shutdown completed');
+    process.exit(0);
+  });
+};
+
+process.on('SIGINT', () => shutdownServer('SIGINT'));
+process.on('SIGTERM', () => shutdownServer('SIGTERM'));
