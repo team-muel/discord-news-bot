@@ -14,7 +14,7 @@ import { BotAgentRouteDeps } from './types';
 export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
 
-  router.post('/agent/quality/reviews', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/quality/reviews', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const reviewerId = toStringParam(req.body?.reviewerId);
     const strategyRaw = String(req.body?.strategy || '').trim().toLowerCase();
@@ -100,7 +100,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     return res.json({ guildId, policy });
   });
 
-  router.put('/agent/privacy/policy', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.put('/agent/privacy/policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId) || '*';
     const modeDefault = toStringParam(req.body?.modeDefault) as 'direct' | 'plan_act' | 'deliberate' | 'guarded';
     const reviewScore = toBoundedInt(req.body?.reviewScore, 60, { min: 0, max: 100 });
@@ -160,7 +160,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     }
   });
 
-  router.post('/agent/privacy/tuning/samples/:sampleId/review', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/privacy/tuning/samples/:sampleId/review', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const sampleId = toBoundedInt(req.params.sampleId, 0, { min: 1, max: Number.MAX_SAFE_INTEGER });
     const expectedDecision = toStringParam(req.body?.expectedDecision) as 'allow' | 'review' | 'block';
     if (!isOneOf(expectedDecision, ['allow', 'review', 'block'])) {
@@ -219,7 +219,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     });
   });
 
-  router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
     const requester = toStringParam(req.user?.id) || '';
     const targetUserId = toStringParam(req.body?.userId) || requester;
     const guildId = toStringParam(req.body?.guildId) || undefined;
@@ -268,7 +268,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     }
   });
 
-  router.post('/agent/privacy/forget-guild', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/privacy/forget-guild', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const confirm = toStringParam(req.body?.confirm);
     const requester = toStringParam(req.user?.id) || 'api';

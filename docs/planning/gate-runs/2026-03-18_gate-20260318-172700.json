@@ -1,0 +1,33 @@
+{
+  "run_id": "gate-20260318-172700",
+  "stage": "A",
+  "target_scope": "trading-isolation:w4-04-w4-06",
+  "started_at": "2026-03-18T17:26:39.283Z",
+  "ended_at": "2026-03-18T17:26:39.724Z",
+  "operator": "auto",
+  "change_set": "",
+  "final_decision": {
+    "overall": "no-go",
+    "required_actions": [
+      "24h canary 관측을 추가 수행해 llm 샘플(>=10) 확보",
+      "llm p95 latency 기준(<=2000ms) 재검증"
+    ],
+    "rollback_required": true,
+    "rollback_type": "stage",
+    "rollback_deadline_min": "10"
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "pass"
+    },
+    "quality": {
+      "verdict": "fail"
+    },
+    "safety": {
+      "verdict": "pass"
+    },
+    "governance": {
+      "verdict": "pass"
+    }
+  }
+}

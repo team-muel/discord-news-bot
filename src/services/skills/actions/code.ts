@@ -547,6 +547,7 @@ export const codeGenerateAction: ActionDefinition = {
         '출력 형식은 사용자가 요구한 FILE 블록 포맷을 엄수한다.',
       ].join('\n'),
       user: buildPrompt(query, args),
+      actionName: 'action.code.generate',
       temperature: 0.15,
       maxTokens: 1400,
     });

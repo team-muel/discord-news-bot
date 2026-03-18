@@ -3,6 +3,9 @@ import path from 'path';
 
 const ROOT = process.cwd();
 const SCHEMA_PATH = path.join(ROOT, 'docs', 'planning', 'AUTONOMY_CONTRACT_SCHEMAS.json');
+const CORE_INTERFACE_DOC_PATH = path.join(ROOT, 'docs', 'planning', 'CORE_COMMAND_INTERFACE_V1.md');
+const ADAPTER_MAPPING_DOC_PATH = path.join(ROOT, 'docs', 'planning', 'DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md');
+const BOT_DISPATCH_PATH = path.join(ROOT, 'src', 'bot.ts');
 
 const fail = (message) => {
   console.error(`[AUTONOMY-CONTRACTS] ${message}`);
@@ -15,6 +18,15 @@ const readJson = (filePath) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     fail(`failed to parse JSON at ${filePath}: ${message}`);
+  }
+};
+
+const readText = (filePath) => {
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    fail(`failed to read text at ${filePath}: ${message}`);
   }
 };
 
@@ -146,4 +158,31 @@ validateCommandEnvelope(sample.commandEnvelope);
 validatePolicyDecisionRecord(sample.policyDecisionRecord);
 validateEvidenceBundle(sample.evidenceBundle);
 
-console.log('[AUTONOMY-CONTRACTS] validation passed');
+const coreInterfaceDoc = readText(CORE_INTERFACE_DOC_PATH);
+const adapterMappingDoc = readText(ADAPTER_MAPPING_DOC_PATH);
+const botDispatchSource = readText(BOT_DISPATCH_PATH);
+
+assert(coreInterfaceDoc.includes('Core Command v1 Contract'), 'core interface doc missing required contract section');
+assert(adapterMappingDoc.includes('Chat Input Command Mapping'), 'adapter mapping doc missing command mapping section');
+
+const caseRegex = /case\s+'([^']+)'\s*:/g;
+const dispatchCommands = [];
+let match = caseRegex.exec(botDispatchSource);
+while (match) {
+  const command = String(match[1] || '').trim();
+  if (command) {
+    dispatchCommands.push(command);
+  }
+  match = caseRegex.exec(botDispatchSource);
+}
+
+const uniqueDispatchCommands = [...new Set(dispatchCommands)];
+assert(uniqueDispatchCommands.length > 0, 'failed to collect command dispatch cases from src/bot.ts');
+
+const missingFromMapping = uniqueDispatchCommands.filter((command) => !adapterMappingDoc.includes(`| ${command} |`));
+const coverage = (uniqueDispatchCommands.length - missingFromMapping.length) / uniqueDispatchCommands.length;
+
+assert(missingFromMapping.length === 0, `adapter-core mapping coverage incomplete: missing [${missingFromMapping.join(', ')}]`);
+assert(coverage >= 1, `adapter-core mapping coverage must be 100%, got ${(coverage * 100).toFixed(2)}%`);
+
+console.log(`[AUTONOMY-CONTRACTS] validation passed (dispatchCoverage=${(coverage * 100).toFixed(2)}%)`);

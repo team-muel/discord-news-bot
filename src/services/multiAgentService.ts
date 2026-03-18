@@ -9,7 +9,8 @@ import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillExecutionResult, SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
-import { appendTrace, createInitialLangGraphState, type LangGraphState } from './langgraph/stateContract';
+import { appendTrace, createInitialLangGraphState, type LangGraphNodeId, type LangGraphState } from './langgraph/stateContract';
+import { executeLangGraph } from './langgraph/executor';
 import { buildTotCandidatePairTelemetryPayload, decideComposePromotion } from './langgraph/nodes/composeNodes';
 import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode } from './langgraph/nodes/coreNodes';
 import {
@@ -185,6 +186,12 @@ const ORM_RULE_REVIEW_THRESHOLD = Math.max(35, Math.min(90, Number(process.env.O
 const TOT_SELF_EVAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.TOT_SELF_EVAL_ENABLED || 'true').trim());
 const TOT_SELF_EVAL_TEMPERATURE = Math.max(0, Math.min(1, Number(process.env.TOT_SELF_EVAL_TEMPERATURE || 0.1) || 0.1));
 const TOT_PROVIDER_LOGPROB_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.TOT_PROVIDER_LOGPROB_ENABLED || 'true').trim());
+const AGENT_DYNAMIC_REASONING_BUDGET_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.AGENT_DYNAMIC_REASONING_BUDGET_ENABLED || 'true').trim());
+const AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH = Math.max(30, Number(process.env.AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH || 120) || 120);
+const AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH = Math.max(AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH + 20, Number(process.env.AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH || 320) || 320);
+const LANGGRAPH_EXECUTOR_SHADOW_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LANGGRAPH_EXECUTOR_SHADOW_ENABLED || 'false').trim());
+const LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE = Math.max(0, Math.min(1, Number(process.env.LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE || 0.2) || 0.2));
+const LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS = Math.max(5, Math.min(200, Number(process.env.LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS || 60) || 60));
 const sessions = new Map<string, AgentSession>();
 const queueRuntime = new MultiAgentRuntimeQueue<AgentSession>();
 
@@ -238,6 +245,72 @@ const ensureSessionBudget = (sessionStartedAtMs: number) => {
   if (Date.now() - sessionStartedAtMs > AGENT_SESSION_TIMEOUT_MS) {
     throw new Error('SESSION_TIMEOUT');
   }
+};
+
+type ReasoningComplexity = 'low' | 'medium' | 'high';
+
+const estimateReasoningComplexity = (taskGoal: string, priority: AgentPriority): ReasoningComplexity => {
+  const text = String(taskGoal || '').trim();
+  if (!AGENT_DYNAMIC_REASONING_BUDGET_ENABLED) {
+    return priority === 'precise' ? 'high' : priority === 'fast' ? 'low' : 'medium';
+  }
+
+  const length = text.length;
+  const hardKeywords = /(설계|아키텍처|migration|마이그레이션|cutover|rollout|benchmark|성능|지연|보안|privacy|policy|gate|리스크)/i;
+  const lowKeywords = /(요약|짧게|한줄|간단|quick|빠르게)/i;
+
+  if (priority === 'precise' || hardKeywords.test(text) || length >= AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH) {
+    return 'high';
+  }
+  if (priority === 'fast' || lowKeywords.test(text) || length < AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH) {
+    return 'low';
+  }
+  return 'medium';
+};
+
+const resolveFinalSelfConsistencySamples = (session: AgentSession, taskGoal: string): number => {
+  if (!FINAL_SELF_CONSISTENCY_ENABLED) {
+    return 1;
+  }
+  const complexity = estimateReasoningComplexity(taskGoal, session.priority);
+  if (complexity === 'low') {
+    return 1;
+  }
+  if (complexity === 'medium') {
+    return Math.min(FINAL_SELF_CONSISTENCY_SAMPLES, 2);
+  }
+  return FINAL_SELF_CONSISTENCY_SAMPLES;
+};
+
+const resolveTotShadowBudget = (params: {
+  session: AgentSession;
+  taskGoal: string;
+  policy: AgentTotPolicySnapshot;
+}): {
+  maxBranches: number;
+  replayTopK: number;
+  localSearchMutations: number;
+} => {
+  const complexity = estimateReasoningComplexity(params.taskGoal, params.session.priority);
+  if (complexity === 'low') {
+    return {
+      maxBranches: Math.min(params.policy.maxBranches, 1),
+      replayTopK: 0,
+      localSearchMutations: 0,
+    };
+  }
+  if (complexity === 'medium') {
+    return {
+      maxBranches: Math.min(params.policy.maxBranches, 2),
+      replayTopK: Math.min(params.policy.replayTopK, 1),
+      localSearchMutations: Math.min(params.policy.localSearchMutations, 1),
+    };
+  }
+  return {
+    maxBranches: params.policy.maxBranches,
+    replayTopK: params.policy.replayTopK,
+    localSearchMutations: params.policy.localSearchMutations,
+  };
 };
 
 const toPriority = (value?: string | null): AgentPriority => {
@@ -544,6 +617,7 @@ const evaluateSelfGuidedBeam = async (params: {
         `후보: ${String(params.candidate || '').slice(0, 1800)}`,
         '출력 형식: {"probability":0.00,"correctness":0.00}',
       ].join('\n'),
+      actionName: 'tot.self_eval',
       temperature: TOT_SELF_EVAL_TEMPERATURE,
       maxTokens: 120,
       includeLogprobs: TOT_PROVIDER_LOGPROB_ENABLED,
@@ -798,9 +872,10 @@ const runToTShadowExploration = async (params: {
       '장애 대응 우선 관점',
     ];
   const branchAngles = policy.branchAngles.length > 0 ? policy.branchAngles : defaultBranchAngles;
-  const selectedAngles = branchAngles.slice(0, policy.maxBranches);
-  const replaySeeds = policy.replayEnabled && policy.replayTopK > 0
-    ? await getTotReplayCandidates({ guildId: session.guildId, topK: policy.replayTopK })
+  const dynamicBudget = resolveTotShadowBudget({ session, taskGoal, policy });
+  const selectedAngles = branchAngles.slice(0, dynamicBudget.maxBranches);
+  const replaySeeds = policy.replayEnabled && dynamicBudget.replayTopK > 0
+    ? await getTotReplayCandidates({ guildId: session.guildId, topK: dynamicBudget.replayTopK })
     : [];
   const scored: Array<{
     nodeKey: string;
@@ -872,6 +947,7 @@ const runToTShadowExploration = async (params: {
       const candidate = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
+        actionName: 'tot.shadow.branch',
         goal: [
           `역할: Tree-of-Thought shadow branch ${index + 1}/${selectedAngles.length}`,
           `탐색 관점: ${angle}`,
@@ -904,15 +980,16 @@ const runToTShadowExploration = async (params: {
         },
       });
 
-      if (policy.localSearchEnabled && policy.localSearchMutations > 0 && output) {
+      if (policy.localSearchEnabled && dynamicBudget.localSearchMutations > 0 && output) {
         const operators = ['근거 강화', '리스크 선제 완화', '실행 단계 단순화'];
-        for (let mutateIndex = 0; mutateIndex < policy.localSearchMutations; mutateIndex += 1) {
+        for (let mutateIndex = 0; mutateIndex < dynamicBudget.localSearchMutations; mutateIndex += 1) {
           const operator = operators[mutateIndex % operators.length];
           const mutated = await withTimeout(executeSkill('ops-execution', {
             guildId: session.guildId,
             requestedBy: session.requestedBy,
+            actionName: 'tot.shadow.local_search',
             goal: [
-              `역할: ToT local-search mutation ${mutateIndex + 1}/${policy.localSearchMutations}`,
+              `역할: ToT local-search mutation ${mutateIndex + 1}/${dynamicBudget.localSearchMutations}`,
               `변형 연산자: ${operator}`,
               `목표: ${taskGoal}`,
               `기준 후보: ${output}`,
@@ -957,6 +1034,7 @@ const runToTShadowExploration = async (params: {
       const replayCandidate = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
+        actionName: 'tot.shadow.replay',
         goal: [
           `역할: ToT replay branch ${replayIndex + 1}/${replaySeeds.length}`,
           `목표: ${taskGoal}`,
@@ -1122,6 +1200,7 @@ const decomposeGoalLeastToMost = async (params: {
         `출력 형식: {"subgoals":["...","..."]}`,
         `제약: 하위목표는 ${LEAST_TO_MOST_MAX_SUBGOALS}개 이하, 각 항목은 실행 가능한 짧은 문장`,
       ].join('\n'),
+      actionName: 'ltm.decompose',
       temperature: 0,
       maxTokens: 260,
     });
@@ -1172,6 +1251,7 @@ const runLeastToMostExecutionDraft = async (params: {
       const result: SkillExecutionResult = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
+        actionName: 'ltm.execute_subgoal',
         goal: [
           session.priority === 'precise' ? '우선순위: 정밀 (하위목표별 근거/가드레일 포함)' : '우선순위: 균형',
           '역할: 실행/리서치 에이전트',
@@ -1251,6 +1331,7 @@ const generateIntentClarificationResult = async (goal: string, hints: string[]):
         hintBlock,
         '작업 실행 vs 일반 대화 중 무엇을 원하는지 확인하는 질문을 작성해라.',
       ].join('\n'),
+      actionName: 'intent.clarify',
       temperature: 0.2,
       maxTokens: 120,
     });
@@ -1288,6 +1369,7 @@ const generateCasualChatResult = async (goal: string): Promise<string> => {
         '근거/검증/confidence 같은 섹션 제목을 쓰지 않는다.',
         `사용자: ${String(goal || '').trim()}`,
       ].join('\n'),
+      actionName: 'chat.casual',
       temperature: 0.5,
       maxTokens: 220,
     });
@@ -1438,6 +1520,117 @@ const traceShadowNode = (
   session.shadowGraph = appendTrace(ensureShadowGraph(session), node, note);
 };
 
+const LANGGRAPH_NODE_IDS: LangGraphNodeId[] = [
+  'ingest',
+  'compile_prompt',
+  'route_intent',
+  'hydrate_memory',
+  'plan_actions',
+  'execute_actions',
+  'critic_review',
+  'policy_gate',
+  'compose_response',
+  'persist_and_emit',
+];
+
+const isLangGraphNodeId = (value: string): value is LangGraphNodeId => {
+  return (LANGGRAPH_NODE_IDS as string[]).includes(value);
+};
+
+const shouldRunLangGraphExecutorShadow = (sessionId: string): boolean => {
+  if (!LANGGRAPH_EXECUTOR_SHADOW_ENABLED) {
+    return false;
+  }
+  if (LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE >= 1) {
+    return true;
+  }
+  if (LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE <= 0) {
+    return false;
+  }
+
+  const digest = crypto.createHash('sha1').update(sessionId).digest('hex').slice(0, 8);
+  const bucket = Number.parseInt(digest, 16) / 0xffffffff;
+  return bucket < LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE;
+};
+
+const runLangGraphExecutorShadowReplay = async (session: AgentSession, terminalStatus: AgentSessionStatus): Promise<void> => {
+  if (!shouldRunLangGraphExecutorShadow(session.id)) {
+    return;
+  }
+
+  const shadowGraph = session.shadowGraph;
+  if (!shadowGraph || shadowGraph.trace.length === 0) {
+    return;
+  }
+
+  const traceNodes = shadowGraph.trace
+    .map((entry) => String(entry.node || '').trim())
+    .filter(isLangGraphNodeId);
+  if (traceNodes.length === 0) {
+    return;
+  }
+
+  const replayNodes = traceNodes.slice(0, LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS);
+  const handlers = LANGGRAPH_NODE_IDS.reduce((acc, node) => {
+    acc[node] = async ({ state }) => appendTrace(state, node, 'executor_shadow_replay');
+    return acc;
+  }, {} as Record<LangGraphNodeId, (params: { state: LangGraphState; context: {} }) => Promise<LangGraphState>>);
+
+  const initialState: LangGraphState = {
+    ...shadowGraph,
+    trace: [],
+  };
+
+  let cursor = 0;
+  const startedAt = Date.now();
+  try {
+    const replayResult = await executeLangGraph({
+      initialNode: replayNodes[0],
+      initialState,
+      handlers,
+      resolveNext: () => {
+        cursor += 1;
+        return replayNodes[cursor] || null;
+      },
+      options: {
+        context: {},
+        maxSteps: replayNodes.length,
+      },
+    });
+
+    const visited = replayResult.visitedNodes;
+    const firstMismatch = visited.findIndex((node, index) => node !== replayNodes[index]);
+    const matched = firstMismatch < 0 && visited.length === replayNodes.length;
+    const elapsedMs = Date.now() - startedAt;
+
+    if (matched) {
+      logger.info(
+        '[AGENT] langgraph executor shadow match session=%s status=%s nodes=%d elapsedMs=%d traceTruncated=%s',
+        session.id,
+        terminalStatus,
+        visited.length,
+        elapsedMs,
+        traceNodes.length > replayNodes.length,
+      );
+      return;
+    }
+
+    logger.warn(
+      '[AGENT] langgraph executor shadow mismatch session=%s status=%s mismatchAt=%d expected=%s actual=%s expectedNodes=%d visitedNodes=%d elapsedMs=%d',
+      session.id,
+      terminalStatus,
+      firstMismatch,
+      firstMismatch >= 0 ? replayNodes[firstMismatch] : 'n/a',
+      firstMismatch >= 0 ? visited[firstMismatch] : 'n/a',
+      replayNodes.length,
+      visited.length,
+      elapsedMs,
+    );
+  } catch (error) {
+    logger.warn('[AGENT] langgraph executor shadow replay failed session=%s error=%s', session.id, getErrorMessage(error));
+  }
+};
+
 const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, patch?: Partial<AgentSession>) => {
   const nodeResult = runPersistAndEmitNode({
     shadowGraph: ensureShadowGraph(session),
@@ -1489,6 +1682,8 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
       // Best-effort turn logging.
     });
   }
+
+  void runLangGraphExecutorShadowReplay(session, status);
 };
 
 const runStep = async (
@@ -1514,6 +1709,7 @@ const runStep = async (
     const result = await withTimeout(executeSkill(skillId, {
       guildId: session.guildId,
       requestedBy: session.requestedBy,
+      actionName: `skill.${String(skillId || '').replace(/\s+/g, '_')}`,
       goal: buildInput(priorOutput),
       memoryHints: session.memoryHints,
       priorOutput,
@@ -1786,11 +1982,12 @@ const handleBalancedOrPreciseBranch = async (params: {
   const finalResultBase = await runStep(session, researcher, 'ops-execution', () => finalComposeGoal, critique);
   let finalResult = finalResultBase;
 
-  if (FINAL_SELF_CONSISTENCY_ENABLED && FINAL_SELF_CONSISTENCY_SAMPLES > 1 && !session.cancelRequested) {
+  const finalSelfConsistencySamples = resolveFinalSelfConsistencySamples(session, taskGoal);
+  if (finalSelfConsistencySamples > 1 && !session.cancelRequested) {
     const candidates: string[] = [finalResultBase];
     let sampleFailures = 0;
 
-    for (let i = 1; i < FINAL_SELF_CONSISTENCY_SAMPLES; i += 1) {
+    for (let i = 1; i < finalSelfConsistencySamples; i += 1) {
       ensureSessionBudget(sessionStartedAtMs);
       if (session.cancelRequested) {
         throw new Error('SESSION_CANCELLED');
@@ -1798,13 +1995,14 @@ const handleBalancedOrPreciseBranch = async (params: {
       try {
         const variantGoal = [
           finalComposeGoal,
-          `추가 지시: self-consistency 후보 ${i + 1}/${FINAL_SELF_CONSISTENCY_SAMPLES}.`,
+          `추가 지시: self-consistency 후보 ${i + 1}/${finalSelfConsistencySamples}.`,
           '동일 사실을 유지하되 문장 구성은 독립적으로 재작성하라.',
         ].join('\n');
 
         const variant = await withTimeout(executeSkill('ops-execution', {
           guildId: session.guildId,
           requestedBy: session.requestedBy,
+          actionName: 'compose.self_consistency_variant',
           goal: variantGoal,
           memoryHints: session.memoryHints,
           priorOutput: critique,

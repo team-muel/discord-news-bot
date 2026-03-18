@@ -58,7 +58,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/items', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/items', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const channelId = toStringParam(req.body?.channelId);
     const ownerUserId = toStringParam(req.body?.ownerUserId);
@@ -125,7 +125,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/items/:memoryId/feedback', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/items/:memoryId/feedback', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const memoryId = toStringParam(req.params.memoryId);
     const guildId = toStringParam(req.body?.guildId);
     const action = toStringParam(req.body?.action);
@@ -191,7 +191,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/conflicts/:conflictId/resolve', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/conflicts/:conflictId/resolve', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const conflictId = toBoundedInt(req.params.conflictId, -1, { min: 1 });
     const status = toStringParam(req.body?.status) || 'resolved';
@@ -231,7 +231,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/jobs/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/jobs/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const jobType = toStringParam(req.body?.jobType);
     const windowStartedAt = toStringParam(req.body?.windowStartedAt);
@@ -307,7 +307,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/jobs/deadletters/:deadletterId/requeue', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/jobs/deadletters/:deadletterId/requeue', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const deadletterId = toBoundedInt(req.params.deadletterId, -1, { min: -1 });
     if (deadletterId < 0) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid deadletterId' });
@@ -329,7 +329,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/jobs/:jobId/cancel', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/jobs/:jobId/cancel', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const jobId = toStringParam(req.params.jobId);
     if (!jobId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'jobId is required' });
@@ -367,7 +367,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/sets', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/sets', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const name = toStringParam(req.body?.name);
     const description = toStringParam(req.body?.description);
@@ -391,7 +391,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/cases', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/cases', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const evalSetId = toBoundedInt(req.body?.evalSetId, -1, { min: -1 });
     const query = toStringParam(req.body?.query);
@@ -455,7 +455,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/runs', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/runs', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const evalSetId = toBoundedInt(req.body?.evalSetId, -1, { min: -1 });
     const topK = toBoundedInt(req.body?.topK, 5, { min: 1, max: 20 });
@@ -511,7 +511,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/runs/:runId/tune', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/runs/:runId/tune', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const runId = toBoundedInt(req.params.runId, -1, { min: -1 });
     const applyIfBetter = Boolean(req.body?.applyIfBetter);

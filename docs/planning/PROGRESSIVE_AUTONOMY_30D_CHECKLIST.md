@@ -12,6 +12,46 @@
 - Stage 전환은 go/no-go 게이트 4종을 모두 통과해야 한다.
 - 실패 시 즉시 rollback을 수행하고 incident evidence를 기록한다.
 
+## Convergence Mode (우선순위 잠금)
+
+- 신규 축/신규 기능 파일 추가 금지. 기존 워크플로우 강화만 수행한다.
+- 동시 진행 WIP는 최대 3개로 제한한다.
+- 모든 항목은 `코드 반영 + 운영 검증 + 증거 기록` 3요건을 충족해야 완료로 본다.
+- 1~24 항목은 번호 순서대로 처리하되, 선행 항목 미완료 시 후행 항목 착수 금지.
+
+## 1~24 실행 순서 (고정)
+
+1. W1-01 Core command 인터페이스 문서 작성
+2. W1-02 Discord adapter -> core command 매핑 표 작성
+3. W1-03 Event envelope v1 계약 승인
+4. W1-04 Command envelope v1 계약 승인
+5. W1-05 Evidence bundle v1 계약 승인
+6. W1-06 신규 경로 envelope 준수율 100% 검증
+7. W2-01 memory task type 목록 확정
+8. W2-02 enqueue API/producer 경로 확정
+9. W2-03 consumer 처리 순서/재시도 정책 확정
+10. W2-04 deadletter 분류 코드 표준화
+11. W2-05 deadletter 자동 복구 규칙 확정
+12. W2-06 queue lag/retry/deadletter 대시보드 노출
+13. W3-01 read-heavy API 캐시 TTL 표준안 고정
+14. W3-02 admin action idempotency 일관성 점검
+15. W3-03 rate-limit 정책 키/윈도우 기준 통일
+16. W3-04 상태 조회 급증 부하 테스트 실행
+17. W3-05 장애 시 stage rollback 리허설 수행
+18. W4-01 trading read model/write model 경계 문서화
+19. W4-02 distributed lock, kill switch 운영 절차 확정
+20. W4-03 stage/queue/provider rollback 경로 점검
+21. W4-04 canary guild 1개 선정 및 기준선 측정
+22. W4-05 24h canary 관측 후 go/no-go 판정
+23. W4-06 실패 시 10분 내 복귀 리허설 통과
+24. D30 통합 증거 묶음(go/no-go + runbook + execution board) 확정
+
+## 오늘 실행 (즉시 처리 3건)
+
+- T-01: W1-01 문서/계약 경계 확정
+- T-02: W1-02 adapter 매핑표 확정
+- T-03: W1-03 이벤트 envelope 승인 로그/증거 반영
+
 ## Week 1 (D1-D7) - Interface and Contract Freeze
 
 ### 목표
@@ -21,18 +61,18 @@
 
 ### 체크리스트
 
-- [ ] W1-01 Core command 인터페이스 문서 작성
-- [ ] W1-02 Discord adapter -> core command 매핑 표 작성
-- [ ] W1-03 Event envelope v1 계약 승인
-- [ ] W1-04 Command envelope v1 계약 승인
-- [ ] W1-05 Evidence bundle v1 계약 승인
-- [ ] W1-06 신규 경로 envelope 준수율 100% 검증
+- [x] W1-01 Core command 인터페이스 문서 작성
+- [x] W1-02 Discord adapter -> core command 매핑 표 작성
+- [x] W1-03 Event envelope v1 계약 승인
+- [x] W1-04 Command envelope v1 계약 승인
+- [x] W1-05 Evidence bundle v1 계약 승인
+- [x] W1-06 신규 경로 envelope 준수율 100% 검증
 
 ### 산출물
 
-- [ ] contracts JSON schema 파일
-- [ ] mapping 문서
-- [ ] 검증 로그
+- [x] contracts JSON schema 파일
+- [x] mapping 문서
+- [x] 검증 로그
 
 ### 완료 기준
 
@@ -48,12 +88,12 @@
 
 ### 체크리스트
 
-- [ ] W2-01 memory task type 목록 확정
-- [ ] W2-02 enqueue API/producer 경로 확정
-- [ ] W2-03 consumer 처리 순서/재시도 정책 확정
-- [ ] W2-04 deadletter 분류 코드 표준화
-- [ ] W2-05 deadletter 자동 복구 규칙 확정
-- [ ] W2-06 queue lag/retry/deadletter 대시보드 노출
+- [x] W2-01 memory task type 목록 확정
+- [x] W2-02 enqueue API/producer 경로 확정
+- [x] W2-03 consumer 처리 순서/재시도 정책 확정
+- [x] W2-04 deadletter 분류 코드 표준화
+- [x] W2-05 deadletter 자동 복구 규칙 확정
+- [x] W2-06 queue lag/retry/deadletter 대시보드 노출
 
 ### 산출물
 
@@ -75,17 +115,17 @@
 
 ### 체크리스트
 
-- [ ] W3-01 read-heavy API 캐시 TTL 표준안 고정
-- [ ] W3-02 admin action idempotency 일관성 점검
-- [ ] W3-03 rate-limit 정책 키/윈도우 기준 통일
-- [ ] W3-04 상태 조회 급증 부하 테스트 실행
-- [ ] W3-05 장애 시 stage rollback 리허설 수행
+- [x] W3-01 read-heavy API 캐시 TTL 표준안 고정
+- [x] W3-02 admin action idempotency 일관성 점검
+- [x] W3-03 rate-limit 정책 키/윈도우 기준 통일
+- [x] W3-04 상태 조회 급증 부하 테스트 실행
+- [x] W3-05 장애 시 stage rollback 리허설 수행
 
 ### 산출물
 
-- [ ] control plane 정책표
-- [ ] 부하 테스트 결과
-- [ ] rollback 리허설 기록
+- [x] control plane 정책표
+- [x] 부하 테스트 결과
+- [x] rollback 리허설 기록
 
 ### 완료 기준
 
@@ -101,18 +141,18 @@
 
 ### 체크리스트
 
-- [ ] W4-01 trading read model/write model 경계 문서화
-- [ ] W4-02 distributed lock, kill switch 운영 절차 확정
-- [ ] W4-03 stage/queue/provider rollback 경로 점검
-- [ ] W4-04 canary guild 1개 선정 및 기준선 측정
-- [ ] W4-05 24h canary 관측 후 go/no-go 판정
-- [ ] W4-06 실패 시 10분 내 복귀 리허설 통과
+- [x] W4-01 trading read model/write model 경계 문서화
+- [x] W4-02 distributed lock, kill switch 운영 절차 확정
+- [x] W4-03 stage/queue/provider rollback 경로 점검
+- [x] W4-04 canary guild 1개 선정 및 기준선 측정
+- [x] W4-05 24h canary 관측 후 go/no-go 판정
+- [x] W4-06 실패 시 10분 내 복귀 리허설 통과
 
 ### 산출물
 
-- [ ] trading isolation readiness 문서
-- [ ] canary 운영 기록
-- [ ] go/no-go 판정 로그
+- [x] trading isolation readiness 문서
+- [x] canary 운영 기록
+- [x] go/no-go 판정 로그
 
 ### 완료 기준
 

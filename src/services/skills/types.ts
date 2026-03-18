@@ -4,6 +4,7 @@ export type SkillContext = {
   guildId: string;
   requestedBy: string;
   goal: string;
+  actionName?: string;
   memoryHints?: string[];
   priorOutput?: string;
   generationOptions?: {

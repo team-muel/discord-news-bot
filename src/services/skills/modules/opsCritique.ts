@@ -4,6 +4,7 @@ import { runSkillText } from './common';
 export const executeOpsCritiqueSkill = async (context: SkillContext): Promise<SkillExecutionResult> => {
   const output = await runSkillText({
     context,
+    actionName: 'skill.ops-critique',
     systemLines: [
       '너는 운영 품질/보안 검토 에이전트다.',
       '최종 리스크 평가 결과만 제공한다.',

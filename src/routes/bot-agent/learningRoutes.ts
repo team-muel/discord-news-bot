@@ -25,7 +25,7 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/task-routing/feedback', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/task-routing/feedback', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const route = toStringParam(req.body?.route).toLowerCase();
     const channel = toStringParam(req.body?.channel).toLowerCase();
@@ -91,7 +91,7 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/learning/task-routing/candidates/generate', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/learning/task-routing/candidates/generate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const days = toBoundedInt(req.body?.days, 14, { min: 1, max: 90 });
     const minSamples = toBoundedInt(req.body?.minSamples, 4, { min: 2, max: 100 });
@@ -156,7 +156,7 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-  router.post('/agent/learning/task-routing/candidates/:candidateId/decision', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/learning/task-routing/candidates/:candidateId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const candidateId = toBoundedInt(req.params.candidateId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
     const decision = toStringParam(req.body?.decision).toLowerCase();

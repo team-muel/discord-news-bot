@@ -22,6 +22,7 @@ export const executeCasualChatSkill = async (context: SkillContext): Promise<Ski
         '짧고 자연스럽게 답하고 필요하면 한 가지 질문만 한다.',
       ].join('\n'),
       user: `사용자 발화: ${String(context.goal || '').trim()}`,
+      actionName: context.actionName || 'skill.casual_chat',
       temperature: overrides.temperature ?? 0.5,
       maxTokens: overrides.maxTokens ?? 220,
       topP: overrides.topP,

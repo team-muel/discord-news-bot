@@ -128,19 +128,101 @@ if (aiProvider === 'anthropic' || aiProvider === 'claude') {
     add('ERROR', 'ANTHROPIC_API_KEY|CLAUDE_API_KEY', 'AI_PROVIDER=anthropic(또는 claude) 선택 시 필요');
   }
 }
+if (aiProvider === 'huggingface' || aiProvider === 'hf') {
+  if (!readAny(['HF_TOKEN', 'HF_API_KEY', 'HUGGINGFACE_API_KEY'])) {
+    add('ERROR', 'HF_TOKEN|HF_API_KEY|HUGGINGFACE_API_KEY', 'AI_PROVIDER=huggingface(또는 hf) 선택 시 필요');
+  }
+}
 if (aiProvider === 'openclaw') {
   if (!read('OPENCLAW_BASE_URL') && !read('OPENCLAW_API_BASE_URL') && !read('OPENCLAW_URL')) {
     add('ERROR', 'OPENCLAW_BASE_URL|OPENCLAW_API_BASE_URL|OPENCLAW_URL', 'AI_PROVIDER=openclaw 선택 시 필요');
+  }
+  if (!readAny(['OPENCLAW_API_KEY', 'OPENCLAW_KEY'])) {
+    add('WARN', 'OPENCLAW_API_KEY|OPENCLAW_KEY', '프록시가 인증을 요구하면 OpenClaw API 키(예: LiteLLM master/virtual key)가 필요합니다.');
   }
 }
 if (aiProvider === 'ollama' || aiProvider === 'local') {
   recommendNonEmpty('OLLAMA_MODEL', 'AI_PROVIDER=ollama/local 선택 시 모델명을 지정하면 예측 가능성이 높아집니다.');
 }
+
+const providerMaxAttemptsRaw = Number(read('LLM_PROVIDER_MAX_ATTEMPTS') || 2);
+if (Number.isFinite(providerMaxAttemptsRaw) && providerMaxAttemptsRaw > 3) {
+  add('WARN', 'LLM_PROVIDER_MAX_ATTEMPTS', '3보다 크면 장애 시 provider chain 지연이 크게 늘어날 수 있습니다.');
+}
+const providerTotalTimeoutRaw = Number(read('LLM_PROVIDER_TOTAL_TIMEOUT_MS') || 25000);
+if (Number.isFinite(providerTotalTimeoutRaw) && providerTotalTimeoutRaw > 45000) {
+  add('WARN', 'LLM_PROVIDER_TOTAL_TIMEOUT_MS', '45000ms 초과는 인터랙티브 응답 지연 체감이 커질 수 있습니다.');
+}
+const plannerSelfConsistencySamplesRaw = Number(read('PLANNER_SELF_CONSISTENCY_SAMPLES') || 3);
+if (Number.isFinite(plannerSelfConsistencySamplesRaw) && plannerSelfConsistencySamplesRaw > 2) {
+  add('WARN', 'PLANNER_SELF_CONSISTENCY_SAMPLES', '2보다 크면 플래너 단계 LLM 호출 수가 늘어 지연이 커질 수 있습니다.');
+}
+const finalSelfConsistencySamplesRaw = Number(read('FINAL_SELF_CONSISTENCY_SAMPLES') || 3);
+if (Number.isFinite(finalSelfConsistencySamplesRaw) && finalSelfConsistencySamplesRaw > 2) {
+  add('WARN', 'FINAL_SELF_CONSISTENCY_SAMPLES', '2보다 크면 최종 합성 단계 지연이 커질 수 있습니다.');
+}
+const dynamicReasoningLowGoalLengthRaw = Number(read('AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH') || 120);
+const dynamicReasoningHighGoalLengthRaw = Number(read('AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH') || 320);
+if (Number.isFinite(dynamicReasoningLowGoalLengthRaw)
+  && Number.isFinite(dynamicReasoningHighGoalLengthRaw)
+  && dynamicReasoningLowGoalLengthRaw >= dynamicReasoningHighGoalLengthRaw) {
+  add('WARN', 'AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH|AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH', 'LOW 값은 HIGH 값보다 작아야 동적 예산 축소가 의도대로 동작합니다.');
+}
+const langgraphExecutorShadowSampleRateRaw = Number(read('LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE') || 0.2);
+if (Number.isFinite(langgraphExecutorShadowSampleRateRaw)
+  && (langgraphExecutorShadowSampleRateRaw < 0 || langgraphExecutorShadowSampleRateRaw > 1)) {
+  add('ERROR', 'LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE', '0 이상 1 이하 값이어야 합니다.');
+}
+const langgraphExecutorShadowMaxStepsRaw = Number(read('LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS') || 60);
+if (Number.isFinite(langgraphExecutorShadowMaxStepsRaw) && langgraphExecutorShadowMaxStepsRaw > 120) {
+  add('WARN', 'LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS', '120보다 크면 shadow replay 오버헤드가 커질 수 있습니다.');
+}
+const weeklyReportSinksRaw = String(read('LLM_WEEKLY_REPORT_SINKS') || 'supabase,obsidian').trim().toLowerCase();
+const weeklyReportSinks = weeklyReportSinksRaw
+  .split(/[;,]/)
+  .map((item) => item.trim())
+  .filter(Boolean);
+const validWeeklyReportSinks = new Set(['supabase', 'obsidian', 'markdown', 'stdout']);
+if (weeklyReportSinks.length === 0) {
+  add('WARN', 'LLM_WEEKLY_REPORT_SINKS', '비어 있으면 기본값 supabase,obsidian이 적용됩니다.');
+}
+const invalidWeeklyReportSinks = weeklyReportSinks.filter((sink) => !validWeeklyReportSinks.has(sink));
+if (invalidWeeklyReportSinks.length > 0) {
+  add('ERROR', 'LLM_WEEKLY_REPORT_SINKS', `지원하지 않는 sink: ${invalidWeeklyReportSinks.join(', ')}`);
+}
+if (weeklyReportSinks.includes('markdown') && weeklyReportSinks.length === 1) {
+  add('WARN', 'LLM_WEEKLY_REPORT_SINKS', 'markdown 단독 저장은 권장하지 않습니다. supabase 또는 obsidian sink를 함께 사용하세요.');
+}
+const botStatusCacheTtlMsRaw = Number(read('BOT_STATUS_CACHE_TTL_MS') || 5000);
+if (Number.isFinite(botStatusCacheTtlMsRaw) && (botStatusCacheTtlMsRaw < 1000 || botStatusCacheTtlMsRaw > 60000)) {
+  add('WARN', 'BOT_STATUS_CACHE_TTL_MS', '권장 범위는 1000~60000ms 입니다. 너무 짧거나 길면 제어면 상태 API 안정성이 떨어질 수 있습니다.');
+}
+const botStatusRateWindowMsRaw = Number(read('BOT_STATUS_RATE_WINDOW_MS') || 60000);
+if (Number.isFinite(botStatusRateWindowMsRaw) && botStatusRateWindowMsRaw < 1000) {
+  add('ERROR', 'BOT_STATUS_RATE_WINDOW_MS', '1000ms 이상이어야 합니다.');
+}
+const botStatusRateMaxRaw = Number(read('BOT_STATUS_RATE_MAX') || 60);
+if (Number.isFinite(botStatusRateMaxRaw) && botStatusRateMaxRaw < 1) {
+  add('ERROR', 'BOT_STATUS_RATE_MAX', '1 이상이어야 합니다.');
+}
+const botAdminActionRateWindowMsRaw = Number(read('BOT_ADMIN_ACTION_RATE_WINDOW_MS') || 60000);
+if (Number.isFinite(botAdminActionRateWindowMsRaw) && botAdminActionRateWindowMsRaw < 1000) {
+  add('ERROR', 'BOT_ADMIN_ACTION_RATE_WINDOW_MS', '1000ms 이상이어야 합니다.');
+}
+const botAdminActionRateMaxRaw = Number(read('BOT_ADMIN_ACTION_RATE_MAX') || 20);
+if (Number.isFinite(botAdminActionRateMaxRaw) && botAdminActionRateMaxRaw < 1) {
+  add('ERROR', 'BOT_ADMIN_ACTION_RATE_MAX', '1 이상이어야 합니다.');
+}
+const apiIdempotencyTtlSecRaw = Number(read('API_IDEMPOTENCY_TTL_SEC') || 86400);
+if (Number.isFinite(apiIdempotencyTtlSecRaw) && apiIdempotencyTtlSecRaw < 60) {
+  add('ERROR', 'API_IDEMPOTENCY_TTL_SEC', '60초 이상이어야 합니다.');
+}
 if (!aiProvider) {
   const hasOpenClaw = Boolean(read('OPENCLAW_BASE_URL') || read('OPENCLAW_API_BASE_URL') || read('OPENCLAW_URL'));
   const hasOllama = Boolean(read('OLLAMA_MODEL'));
-  if (!read('OPENAI_API_KEY') && !read('GEMINI_API_KEY') && !read('GOOGLE_API_KEY') && !read('ANTHROPIC_API_KEY') && !read('CLAUDE_API_KEY') && !hasOpenClaw && !hasOllama) {
-    add('WARN', 'AI_PROVIDER/OPENAI_API_KEY/GEMINI_API_KEY/ANTHROPIC_API_KEY/OPENCLAW_BASE_URL/OLLAMA_MODEL', 'LLM 설정이 없으면 /해줘, 에이전트 세션이 실패합니다.');
+  const hasHuggingFace = Boolean(readAny(['HF_TOKEN', 'HF_API_KEY', 'HUGGINGFACE_API_KEY']));
+  if (!read('OPENAI_API_KEY') && !read('GEMINI_API_KEY') && !read('GOOGLE_API_KEY') && !read('ANTHROPIC_API_KEY') && !read('CLAUDE_API_KEY') && !hasHuggingFace && !hasOpenClaw && !hasOllama) {
+    add('WARN', 'AI_PROVIDER/OPENAI_API_KEY/GEMINI_API_KEY/ANTHROPIC_API_KEY/HF_TOKEN/OPENCLAW_BASE_URL/OLLAMA_MODEL', 'LLM 설정이 없으면 /해줘, 에이전트 세션이 실패합니다.');
   }
 }
 

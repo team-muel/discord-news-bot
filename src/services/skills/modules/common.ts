@@ -29,6 +29,7 @@ export const runSkillText = async (params: {
   context: SkillContext;
   systemLines: string[];
   rules: string[];
+  actionName?: string;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
@@ -37,6 +38,7 @@ export const runSkillText = async (params: {
   return generateText({
     system: params.systemLines.join('\n'),
     user: buildSkillPrompt(params.context, params.rules),
+    actionName: params.actionName || params.context.actionName,
     temperature: contextOverrides.temperature ?? params.temperature ?? 0.2,
     maxTokens: contextOverrides.maxTokens ?? params.maxTokens ?? 1000,
     topP: contextOverrides.topP ?? params.topP,

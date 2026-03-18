@@ -89,6 +89,44 @@ const toErrorMessage = (error: unknown): string => {
   }
 };
 
+const classifyDeadletterErrorCode = (message: string): string => {
+  const text = String(message || '').toUpperCase();
+  if (!text) {
+    return 'UNKNOWN';
+  }
+  if (text.includes('UNSUPPORTED_JOB_TYPE')) {
+    return 'UNSUPPORTED_JOB_TYPE';
+  }
+  if (text.includes('OBSIDIAN_SANITIZER_BLOCKED')) {
+    return 'OBSIDIAN_SANITIZER_BLOCKED';
+  }
+  if (text.includes('CONTENT_POISON_BLOCKED')) {
+    return 'CONTENT_POISON_BLOCKED';
+  }
+  if (text.includes('QUERY_FAILED')) {
+    return 'QUERY_FAILED';
+  }
+  if (text.includes('INSERT_FAILED')) {
+    return 'INSERT_FAILED';
+  }
+  if (text.includes('COMPLETE_FAILED')) {
+    return 'COMPLETE_FAILED';
+  }
+  if (text.includes('SUPABASE')) {
+    return 'SUPABASE_ERROR';
+  }
+  return 'RUNTIME_ERROR';
+};
+
+const percentile = (values: number[], p: number): number => {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.max(0, Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[index];
+};
+
 const computeBackoffMs = (attempt: number): number => {
   const exp = Math.max(0, attempt - 1);
   const delay = MEMORY_JOBS_BACKOFF_BASE_MS * Math.pow(2, exp);
@@ -704,12 +742,15 @@ export const getMemoryJobQueueStats = async (guildId?: string) => {
       canceled: 0,
       retryScheduled: 0,
       deadlettered: 0,
+      queueLagP50Sec: 0,
+      queueLagP95Sec: 0,
+      oldestQueuedSec: 0,
       total: 0,
     };
   }
 
   const client = getSupabaseClient();
-  let query = client.from('memory_jobs').select('status, next_attempt_at, deadlettered_at').limit(1000);
+  let query = client.from('memory_jobs').select('status, next_attempt_at, deadlettered_at, created_at').limit(1000);
   if (guildId) {
     query = query.eq('guild_id', guildId);
   }
@@ -727,8 +768,13 @@ export const getMemoryJobQueueStats = async (guildId?: string) => {
     canceled: 0,
     retryScheduled: 0,
     deadlettered: 0,
+    queueLagP50Sec: 0,
+    queueLagP95Sec: 0,
+    oldestQueuedSec: 0,
     total: 0,
   };
+
+  const queuedLagSec: number[] = [];
 
   for (const row of (data || []) as Array<Record<string, unknown>>) {
     const status = String(row.status || '').toLowerCase();
@@ -740,10 +786,22 @@ export const getMemoryJobQueueStats = async (guildId?: string) => {
     if (status === 'queued' && row.next_attempt_at && Date.parse(String(row.next_attempt_at)) > Date.now()) {
       stats.retryScheduled += 1;
     }
+    if (status === 'queued') {
+      const createdAtMs = Date.parse(String(row.created_at || ''));
+      if (Number.isFinite(createdAtMs)) {
+        queuedLagSec.push(Math.max(0, Math.floor((Date.now() - createdAtMs) / 1000)));
+      }
+    }
     if (row.deadlettered_at) {
       stats.deadlettered += 1;
     }
     stats.total += 1;
+  }
+
+  if (queuedLagSec.length > 0) {
+    stats.queueLagP50Sec = percentile(queuedLagSec, 50);
+    stats.queueLagP95Sec = percentile(queuedLagSec, 95);
+    stats.oldestQueuedSec = Math.max(...queuedLagSec);
   }
 
   return stats;
@@ -771,6 +829,7 @@ export const listMemoryJobDeadletters = async (params: { guildId?: string; limit
   }
 
   return (data || []).map((row: Record<string, unknown>) => ({
+    errorCode: classifyDeadletterErrorCode(String(row.error || '')),
     id: row.id,
     jobId: String(row.job_id || ''),
     guildId: String(row.guild_id || ''),

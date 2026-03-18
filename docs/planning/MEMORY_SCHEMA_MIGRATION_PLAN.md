@@ -37,8 +37,15 @@
 5. memory_jobs
 
 - 압축/재인덱싱 작업 이력
-- job_type: short_summary | topic_synthesis | durable_extraction | reindex | conflict_scan
+- job_type: short_summary | topic_synthesis | durable_extraction | reindex | conflict_scan | onboarding_snapshot
 - next_attempt_at 기반 재시도 백오프 스케줄링
+
+Queue-first 정책(고정):
+
+- producer: `POST /api/bot/agent/memory/jobs/run` 경로에서 enqueue만 수행
+- consumer: `src/services/memoryJobRunner.ts`가 `status=queued AND next_attempt_at<=now`를 polling 소비
+- retry: `MEMORY_JOBS_MAX_RETRIES`, `MEMORY_JOBS_BACKOFF_BASE_MS`, `MEMORY_JOBS_BACKOFF_MAX_MS`
+- deadletter: 최대 재시도 초과 시 `memory_job_deadletters` 적재 + 수동/자동 requeue 지원
 
 6. memory_job_deadletters
 

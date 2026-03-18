@@ -15,6 +15,7 @@ const clearLlmEnv = () => {
   vi.stubEnv('GOOGLE_API_KEY', '');
   vi.stubEnv('ANTHROPIC_API_KEY', '');
   vi.stubEnv('CLAUDE_API_KEY', '');
+  vi.stubEnv('HF_TOKEN', '');
   vi.stubEnv('HF_API_KEY', '');
   vi.stubEnv('HUGGINGFACE_API_KEY', '');
   vi.stubEnv('OPENCLAW_BASE_URL', '');
@@ -51,6 +52,11 @@ describe('isAnyLlmConfigured', () => {
 
   it('HF_API_KEY가 설정되면 true를 반환한다', () => {
     vi.stubEnv('HF_API_KEY', 'hf_test_key');
+    expect(isAnyLlmConfigured()).toBe(true);
+  });
+
+  it('HF_TOKEN이 설정되면 true를 반환한다', () => {
+    vi.stubEnv('HF_TOKEN', 'hf_token_value');
     expect(isAnyLlmConfigured()).toBe(true);
   });
 });
@@ -100,6 +106,12 @@ describe('resolveLlmProvider', () => {
   it('AI_PROVIDER=hf + HF_API_KEY → huggingface', () => {
     vi.stubEnv('HF_API_KEY', 'hf_test_key');
     vi.stubEnv('AI_PROVIDER', 'hf');
+    expect(resolveLlmProvider()).toBe('huggingface');
+  });
+
+  it('AI_PROVIDER=huggingface + HF_TOKEN → huggingface', () => {
+    vi.stubEnv('HF_TOKEN', 'hf_token_value');
+    vi.stubEnv('AI_PROVIDER', 'huggingface');
     expect(resolveLlmProvider()).toBe('huggingface');
   });
 });

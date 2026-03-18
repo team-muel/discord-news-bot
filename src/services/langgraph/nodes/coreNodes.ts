@@ -73,6 +73,7 @@ export const runRouteIntentNode = async (params: {
         `문장: ${text}`,
         '출력 형식: {"intent":"task|casual_chat|uncertain"}',
       ].join('\n'),
+      actionName: 'intent.route',
       temperature: 0,
       maxTokens: 40,
     });

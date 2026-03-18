@@ -73,6 +73,7 @@ export const runWorkerGenerationPipeline = async (params: {
     rawCode = await generateText({
       system: prompt.system,
       user: prompt.user,
+      actionName: 'worker.generation',
       temperature: 0.1,
       maxTokens: 1800,
     });

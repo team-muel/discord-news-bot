@@ -10,6 +10,7 @@ import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob
 import { createRateLimiter } from '../middleware/rateLimit';
 import { createIdempotencyGuard } from '../middleware/idempotency';
 import { toStringParam } from '../utils/validation';
+import { parseIntegerEnv } from '../utils/env';
 import { getMultiAgentRuntimeSnapshot } from '../services/multiAgentService';
 import { getActionRunnerDiagnosticsSnapshot } from '../services/skills/actionRunner';
 import { getWorkerApprovalStoreSnapshot } from '../services/workerGeneration/workerApprovalStore';
@@ -17,7 +18,11 @@ import { getWorkerProposalMetricsSnapshot } from '../services/workerGeneration/w
 import { registerBotAgentRoutes } from './botAgentRoutes';
 
 let lastBotStatusBenchmarkAt = 0;
-const BOT_STATUS_CACHE_TTL_MS = Math.max(1_000, Number(process.env.BOT_STATUS_CACHE_TTL_MS || 5_000));
+const BOT_STATUS_CACHE_TTL_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_STATUS_CACHE_TTL_MS, 5_000));
+const BOT_STATUS_RATE_WINDOW_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_STATUS_RATE_WINDOW_MS, 60_000));
+const BOT_STATUS_RATE_MAX = Math.max(1, parseIntegerEnv(process.env.BOT_STATUS_RATE_MAX, 60));
+const BOT_ADMIN_ACTION_RATE_WINDOW_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_ADMIN_ACTION_RATE_WINDOW_MS, 60_000));
+const BOT_ADMIN_ACTION_RATE_MAX = Math.max(1, parseIntegerEnv(process.env.BOT_ADMIN_ACTION_RATE_MAX, 20));
 
 let botStatusCache: {
   payload: BotStatusApiResponse | null;
@@ -168,15 +173,15 @@ const buildBotStatusPayload = async (): Promise<BotStatusApiResponse> => {
 export function createBotRouter(): Router {
   const router = Router();
   const botStatusRateLimiter = createRateLimiter({
-    windowMs: 60_000,
-    max: 60,
+    windowMs: BOT_STATUS_RATE_WINDOW_MS,
+    max: BOT_STATUS_RATE_MAX,
     keyPrefix: 'bot-status-read',
     store: 'supabase',
     onStoreError: 'allow',
   });
   const adminActionRateLimiter = createRateLimiter({
-    windowMs: 60_000,
-    max: 20,
+    windowMs: BOT_ADMIN_ACTION_RATE_WINDOW_MS,
+    max: BOT_ADMIN_ACTION_RATE_MAX,
     keyPrefix: 'bot-admin-action',
     store: 'supabase',
     onStoreError: 'reject',
@@ -218,7 +223,7 @@ export function createBotRouter(): Router {
     });
   });
 
-  router.post('/automation/:jobName/run', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/automation/:jobName/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const jobName = String(req.params.jobName || '');
     if (jobName !== 'youtube-monitor' && jobName !== 'news-monitor') {
       return res.status(404).json({ error: 'NOT_FOUND' });
@@ -237,7 +242,7 @@ export function createBotRouter(): Router {
     return res.status(202).json({ ok: true, message: `${jobName} execution started`, guildId });
   });
 
-  router.post('/reconnect', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/reconnect', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const requestedSource = toStringParam(req.body?.reason);
     const source = requestedSource || 'api';
 

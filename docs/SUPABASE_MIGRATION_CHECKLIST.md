@@ -20,6 +20,7 @@ Run quick checks:
 
 - `select count(*) from public.agent_privacy_policies;`
 - `select count(*) from public.agent_privacy_gate_samples;`
+- `select count(*) from public.agent_weekly_reports;`
 
 Expected: queries succeed (counts may be 0 initially).
 
@@ -28,7 +29,9 @@ Expected: queries succeed (counts may be 0 initially).
 - Check `idx_guild_lore_docs_guild_updated_at` exists.
 - Check `idx_agent_sessions_guild_updated_at` exists.
 - Check `idx_agent_steps_session_updated_at` exists.
+- Check `idx_agent_weekly_reports_kind_created` exists.
 - Check `trg_agent_sessions_updated_at` exists.
+- Check `trg_agent_weekly_reports_updated_at` exists.
 
 5.  Confirm `public.agent_privacy_gate_samples` has decision audit rows for new task sessions.
 

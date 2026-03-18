@@ -94,6 +94,9 @@ describe('getMemoryJobQueueStats', () => {
       canceled: 0,
       retryScheduled: 0,
       deadlettered: 0,
+      queueLagP50Sec: 0,
+      queueLagP95Sec: 0,
+      oldestQueuedSec: 0,
       total: 0,
     });
   });

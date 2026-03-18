@@ -49,3 +49,53 @@
 - 대상 memoryId 미존재: NOT_FOUND
 - guild_id 불일치: FORBIDDEN
 - 이미 deprecated 항목 재폐기: NOOP 처리
+
+## Queue-first Memory Job 운영 (W2 고정)
+
+잡 타입 카탈로그:
+
+- short_summary
+- topic_synthesis
+- durable_extraction
+- reindex
+- conflict_scan
+- onboarding_snapshot
+
+Producer(Enqueue) 경로:
+
+- `POST /api/bot/agent/memory/jobs/run`
+- 입력: guildId, jobType, windowStartedAt, windowEndedAt, input
+- 동작: 즉시 실행이 아닌 `memory_jobs(status=queued)` 적재
+
+Consumer/Retry/Deadletter 경로:
+
+- consumer: `src/services/memoryJobRunner.ts`
+- claim 규칙: `status=queued` + `next_attempt_at<=now`
+- retry/backoff: max retries + exponential backoff
+- deadletter: `memory_job_deadletters`
+
+운영 조회/복구 API:
+
+- `GET /api/bot/agent/memory/jobs/stats`
+- `GET /api/bot/agent/memory/jobs/deadletters`
+- `POST /api/bot/agent/memory/jobs/deadletters/:deadletterId/requeue`
+- `POST /api/bot/agent/memory/jobs/:jobId/cancel`
+
+표준 deadletter 분류 코드:
+
+- UNSUPPORTED_JOB_TYPE
+- OBSIDIAN_SANITIZER_BLOCKED
+- CONTENT_POISON_BLOCKED
+- QUERY_FAILED
+- INSERT_FAILED
+- COMPLETE_FAILED
+- SUPABASE_ERROR
+- RUNTIME_ERROR
+
+대시보드 핵심 지표(Queue-first):
+
+- retryScheduled
+- deadlettered
+- queueLagP50Sec
+- queueLagP95Sec
+- oldestQueuedSec

@@ -6,6 +6,9 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const HUGGINGFACE_CHAT_COMPLETIONS_URL = String(process.env.HUGGINGFACE_CHAT_COMPLETIONS_URL || 'https://router.huggingface.co/v1/chat/completions').trim();
 const LLM_API_TIMEOUT_MS = Math.max(1000, Number(process.env.LLM_API_TIMEOUT_MS || 15000));
+const LLM_PROVIDER_TOTAL_TIMEOUT_MS = Math.max(1_000, Number(process.env.LLM_PROVIDER_TOTAL_TIMEOUT_MS || 25_000));
+const LLM_PROVIDER_MAX_ATTEMPTS = Math.max(1, Math.min(6, Number(process.env.LLM_PROVIDER_MAX_ATTEMPTS || 2) || 2));
+const LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED || 'false').trim());
 const LLM_CALL_LOG_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_CALL_LOG_ENABLED || 'true').trim());
 const LLM_CALL_LOG_TABLE = String(process.env.LLM_CALL_LOG_TABLE || 'agent_llm_call_logs').trim();
 const LLM_EXPERIMENT_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_EXPERIMENT_ENABLED || 'false').trim());
@@ -22,6 +25,11 @@ const LLM_COST_INPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_
 const LLM_COST_OUTPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD || 0.0015) || 0.0015);
 
 export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface';
+
+type ProviderPolicyRule = {
+  pattern: string;
+  providers: LlmProvider[];
+};
 
 export type LlmTextRequest = {
   system: string;
@@ -60,7 +68,7 @@ type LlmExperimentDecision = {
 const getOpenAiKey = () => String(process.env.OPENAI_API_KEY || '').trim();
 const getGeminiKey = () => String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 const getAnthropicKey = () => String(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
-const getHuggingFaceKey = () => String(process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY || '').trim();
+const getHuggingFaceKey = () => String(process.env.HF_TOKEN || process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY || '').trim();
 const getOpenClawApiKey = () => String(process.env.OPENCLAW_API_KEY || process.env.OPENCLAW_KEY || '').trim();
 const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MODELS || 'muel-fast,muel-precise')
   .split(',')
@@ -79,6 +87,130 @@ const getOllamaBaseUrl = () => String(process.env.OLLAMA_BASE_URL || 'http://127
 const getOllamaModel = () => String(process.env.OLLAMA_MODEL || process.env.LOCAL_LLM_MODEL || '').trim();
 const isOllamaConfigured = () => Boolean(getOllamaModel() || ['ollama', 'local'].includes(String(process.env.AI_PROVIDER || '').trim().toLowerCase()));
 const isHuggingFaceConfigured = () => Boolean(getHuggingFaceKey());
+
+const normalizeProviderAlias = (value: string): LlmProvider | null => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized === 'hf') {
+    return 'huggingface';
+  }
+  if (normalized === 'claude') {
+    return 'anthropic';
+  }
+  if (normalized === 'local') {
+    return 'ollama';
+  }
+  if (normalized === 'openai' || normalized === 'gemini' || normalized === 'anthropic' || normalized === 'openclaw' || normalized === 'ollama' || normalized === 'huggingface') {
+    return normalized;
+  }
+  return null;
+};
+
+const parseProviderList = (raw: string): LlmProvider[] => {
+  const seen = new Set<LlmProvider>();
+  const providers: LlmProvider[] = [];
+  for (const token of String(raw || '').split(',')) {
+    const provider = normalizeProviderAlias(token);
+    if (!provider || seen.has(provider)) {
+      continue;
+    }
+    seen.add(provider);
+    providers.push(provider);
+  }
+  return providers;
+};
+
+const isProviderConfigured = (provider: LlmProvider): boolean => {
+  if (provider === 'openai') return Boolean(getOpenAiKey());
+  if (provider === 'gemini') return Boolean(getGeminiKey());
+  if (provider === 'anthropic') return Boolean(getAnthropicKey());
+  if (provider === 'huggingface') return isHuggingFaceConfigured();
+  if (provider === 'openclaw') return isOpenClawConfigured();
+  if (provider === 'ollama') return isOllamaConfigured();
+  return false;
+};
+
+const parseActionPolicyRules = (): ProviderPolicyRule[] => {
+  const raw = String(process.env.LLM_PROVIDER_POLICY_ACTIONS || '').trim();
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(/[;\n]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.indexOf('=');
+      if (separatorIndex < 1) {
+        return null;
+      }
+      const pattern = line.slice(0, separatorIndex).trim().toLowerCase();
+      const providers = parseProviderList(line.slice(separatorIndex + 1));
+      if (!pattern || providers.length === 0) {
+        return null;
+      }
+      return { pattern, providers };
+    })
+    .filter((item): item is ProviderPolicyRule => Boolean(item));
+};
+
+const matchActionPattern = (pattern: string, actionName: string): boolean => {
+  const normalizedPattern = String(pattern || '').trim().toLowerCase();
+  const normalizedAction = String(actionName || '').trim().toLowerCase();
+  if (!normalizedPattern || !normalizedAction) {
+    return false;
+  }
+  if (normalizedPattern === normalizedAction) {
+    return true;
+  }
+  if (normalizedPattern.endsWith('*')) {
+    const prefix = normalizedPattern.slice(0, -1);
+    return prefix.length > 0 && normalizedAction.startsWith(prefix);
+  }
+  return normalizedAction.startsWith(`${normalizedPattern}.`);
+};
+
+const ACTION_POLICY_RULES = parseActionPolicyRules();
+const DEFAULT_PROVIDER_FALLBACK_CHAIN = parseProviderList(String(process.env.LLM_PROVIDER_FALLBACK_CHAIN || ''));
+
+const getActionPolicyProviders = (actionName?: string): LlmProvider[] => {
+  const safeActionName = String(actionName || '').trim();
+  if (!safeActionName || ACTION_POLICY_RULES.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<LlmProvider>();
+  const providers: LlmProvider[] = [];
+  for (const rule of ACTION_POLICY_RULES) {
+    if (!matchActionPattern(rule.pattern, safeActionName)) {
+      continue;
+    }
+    for (const provider of rule.providers) {
+      if (seen.has(provider)) {
+        continue;
+      }
+      seen.add(provider);
+      providers.push(provider);
+    }
+  }
+  return providers;
+};
+
+const dedupeProviders = (providers: Array<LlmProvider | null | undefined>): LlmProvider[] => {
+  const seen = new Set<LlmProvider>();
+  const out: LlmProvider[] = [];
+  for (const provider of providers) {
+    if (!provider || seen.has(provider)) {
+      continue;
+    }
+    seen.add(provider);
+    out.push(provider);
+  }
+  return out;
+};
 
 const shortHash = (value: string): string => {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex').slice(0, 16);
@@ -195,6 +327,37 @@ const resolveProviderWithExperiment = (params: LlmTextRequest): LlmExperimentDec
       keyHash: shortHash(bucketSeed || 'default'),
     },
   };
+};
+
+const resolveProviderChain = (
+  params: LlmTextRequest,
+  selectedProvider: LlmProvider,
+  selection: LlmExperimentDecision,
+): LlmProvider[] => {
+  if (params.provider) {
+    return [params.provider];
+  }
+
+  const actionPolicy = getActionPolicyProviders(params.actionName);
+  const automaticFallbackOrder: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'gemini', 'huggingface', 'ollama'];
+  const chain = dedupeProviders([
+    selectedProvider,
+    ...actionPolicy,
+    ...DEFAULT_PROVIDER_FALLBACK_CHAIN,
+    resolveProviderWithoutExperiment(),
+    ...(LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED ? automaticFallbackOrder : []),
+  ]).filter((provider) => isProviderConfigured(provider));
+
+  const isHfExperimentArm = selection.experiment?.arm === 'huggingface' && selectedProvider === 'huggingface';
+  if (isHfExperimentArm && !LLM_EXPERIMENT_FAIL_OPEN) {
+    return ['huggingface'];
+  }
+  if (isHfExperimentArm) {
+    return dedupeProviders(['huggingface', ...chain]).slice(0, LLM_PROVIDER_MAX_ATTEMPTS);
+  }
+
+  const bounded = (chain.length > 0 ? chain : [selectedProvider]).slice(0, LLM_PROVIDER_MAX_ATTEMPTS);
+  return bounded.length > 0 ? bounded : [selectedProvider];
 };
 
 const persistLlmCallLog = async (params: {
@@ -702,6 +865,8 @@ export const generateTextWithMeta = async (
 
   const startedAt = Date.now();
   const requestInputChars = String(params.system || '').length + String(params.user || '').length;
+  const providerChain = resolveProviderChain(params, provider, selection);
+  const providerChainDeadlineMs = startedAt + LLM_PROVIDER_TOTAL_TIMEOUT_MS;
 
   const resolveModel = (p: LlmProvider): string | undefined => {
     if (params.model) return params.model;
@@ -735,29 +900,34 @@ export const generateTextWithMeta = async (
   };
 
   try {
-    let response: LlmTextWithMetaResponse;
-    try {
-      response = await callProvider(provider);
-    } catch (error) {
-      const fallbackProvider = resolveProviderWithoutExperiment();
-      const canFallback = LLM_EXPERIMENT_FAIL_OPEN
-        && selection.experiment?.arm === 'huggingface'
-        && provider === 'huggingface'
-        && fallbackProvider
-        && fallbackProvider !== 'huggingface';
+    let response: LlmTextWithMetaResponse | null = null;
+    let lastError: unknown = null;
+    let finalProvider: LlmProvider = provider;
 
-      if (!canFallback) {
-        throw error;
+    for (const targetProvider of providerChain) {
+      if (Date.now() > providerChainDeadlineMs) {
+        lastError = new Error('LLM_PROVIDER_CHAIN_TIMEOUT');
+        break;
       }
+      try {
+        response = await callProvider(targetProvider);
+        finalProvider = targetProvider;
+        break;
+      } catch (error) {
+        lastError = error;
+        finalProvider = targetProvider;
+      }
+    }
 
-      response = await callProvider(fallbackProvider);
-      response.experiment = selection.experiment;
+    if (!response) {
+      throw (lastError instanceof Error ? lastError : new Error('LLM_REQUEST_FAILED'));
     }
 
     const latencyMs = Math.max(0, Date.now() - startedAt);
     const estimatedCostUsd = estimateLlmCallCostUsd(requestInputChars, String(response.text || '').length);
     const enriched: LlmTextWithMetaResponse = {
       ...response,
+      provider: finalProvider,
       latencyMs,
       estimatedCostUsd,
       experiment: selection.experiment || null,

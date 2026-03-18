@@ -4,6 +4,7 @@ import { runSkillText } from './common';
 export const executeOpsPlanSkill = async (context: SkillContext): Promise<SkillExecutionResult> => {
   const output = await runSkillText({
     context,
+    actionName: 'skill.ops-plan',
     systemLines: [
       '너는 디스코드 서버 운영 계획가다.',
       '불필요한 설명 없이 실행 가능한 최종 계획안만 작성한다.',

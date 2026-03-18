@@ -118,6 +118,7 @@ const requestPlanCandidate = async (params: {
     const raw = await generateText({
       system: '너는 액션 체인 플래너다. 지정 스키마 JSON만 출력한다.',
       user: params.prompt,
+      actionName: 'planner.action_chain',
       temperature: params.temperature,
       maxTokens: 260,
     });

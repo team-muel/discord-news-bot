@@ -38,7 +38,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     });
   });
 
-  router.put('/agent/actions/policies', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.put('/agent/actions/policies', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const actionName = toStringParam(req.body?.actionName);
     const runMode = toStringParam(req.body?.runMode) || 'auto';
@@ -95,7 +95,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     return res.json({ ok: true, items });
   });
 
-  router.post('/agent/actions/approvals/:requestId/decision', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.post('/agent/actions/approvals/:requestId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const requestId = toStringParam(req.params.requestId);
     const decision = toStringParam(req.body?.decision);
     const reason = toStringParam(req.body?.reason);

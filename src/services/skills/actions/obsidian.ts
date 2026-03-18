@@ -61,6 +61,7 @@ const inferAiTaxonomy = async (goal: string, content: string, fileName: string):
         `goal: ${goal}`,
         `content: ${String(content || '').slice(0, 1200)}`,
       ].join('\n'),
+      actionName: 'action.obsidian.taxonomy',
       temperature: 0,
       maxTokens: 160,
     });

@@ -1,0 +1,30 @@
+{
+  "run_id": "gate-20260318-162647",
+  "stage": "A",
+  "target_scope": "memory-queue:w2-04-w2-06",
+  "started_at": "2026-03-18T16:26:47.888Z",
+  "ended_at": "2026-03-18T16:26:47.888Z",
+  "operator": "auto",
+  "change_set": "",
+  "final_decision": {
+    "overall": "go",
+    "required_actions": [],
+    "rollback_required": false,
+    "rollback_type": "none",
+    "rollback_deadline_min": ""
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "pass"
+    },
+    "quality": {
+      "verdict": "pass"
+    },
+    "safety": {
+      "verdict": "pass"
+    },
+    "governance": {
+      "verdict": "pass"
+    }
+  }
+}
