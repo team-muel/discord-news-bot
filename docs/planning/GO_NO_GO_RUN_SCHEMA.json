@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "muel.gonogo.runlog.v1",
+  "title": "Go/No-Go Run Log Schema (Keyset Contract)",
+  "description": "Keyset contract used by scripts/validate-go-no-go-runs.mjs. Semantic constraints are enforced in code.",
+  "requiredKeySets": {
+    "root": [
+      "run_id",
+      "stage",
+      "target_scope",
+      "started_at",
+      "ended_at",
+      "operator",
+      "change_set",
+      "final_decision",
+      "gates"
+    ],
+    "final_decision": [
+      "overall",
+      "required_actions",
+      "rollback_required",
+      "rollback_type",
+      "rollback_deadline_min"
+    ],
+    "gates": [
+      "reliability",
+      "quality",
+      "safety",
+      "governance"
+    ]
+  }
+}

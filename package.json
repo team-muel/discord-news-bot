@@ -43,10 +43,18 @@
     "bench:obsidian-search": "tsx scripts/bench-obsidian-search.ts",
     "smoke:api": "node scripts/smoke-api.mjs",
     "docs:routes": "node scripts/generate-route-inventory.mjs",
+    "routes:check:agent": "node scripts/verify-bot-agent-routes.mjs",
     "docs:deps": "node scripts/generate-dependency-graph.mjs",
     "docs:schema-map": "node scripts/generate-schema-service-map.mjs",
     "docs:build": "npm run docs:routes && npm run docs:deps && npm run docs:schema-map",
-    "docs:check": "npm run docs:build && git diff --exit-code -- docs/ROUTES_INVENTORY.md docs/DEPENDENCY_GRAPH.md docs/SCHEMA_SERVICE_MAP.md"
+    "docs:check": "npm run docs:build && git diff --exit-code -- docs/ROUTES_INVENTORY.md docs/DEPENDENCY_GRAPH.md docs/SCHEMA_SERVICE_MAP.md",
+    "contracts:validate": "node scripts/validate-autonomy-contracts.mjs",
+    "gates:init-log": "node scripts/create-go-no-go-log.mjs",
+    "gates:weekly-report": "node scripts/summarize-go-no-go-runs.mjs",
+    "gates:weekly-report:dry": "node scripts/summarize-go-no-go-runs.mjs --days=7 --dryRun=true",
+    "gates:validate": "node scripts/validate-go-no-go-runs.mjs",
+    "gates:fixtures:check": "node scripts/validate-go-no-go-runs.mjs --dir=docs/planning/gate-runs/fixtures --requireNoGo=true",
+    "test:contracts": "vitest run src/services/autonomyContractSchemas.test.ts"
   },
   "dependencies": {
     "@sentry/node": "^7.59.0",

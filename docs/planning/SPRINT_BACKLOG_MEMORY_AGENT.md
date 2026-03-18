@@ -248,3 +248,58 @@
 - 배포 점검 문서에서 그래프 기반 정책 미충족 시 no-go 처리
 - 검증 명령
 - `npm run lint`
+
+### R-013 Core Decision Engine 경계 고정
+
+- 문제: Discord 계층과 코어 판단 로직 결합도가 높아 채널 독립 확장이 어려움
+- 작업
+- Core Decision Engine 인터페이스 정의
+- Discord adapter -> core command 변환 경로 명세
+- 완료 기준
+- 핵심 명령 경로 1개 이상이 adapter/core 분리 구조로 이전
+- 검증 명령
+- `npm run lint`
+
+### R-014 Event/Command Envelope 버전 계약 도입
+
+- 문제: 이벤트와 명령 포맷이 경로별로 상이하면 점진 분리 시 회귀 위험이 증가
+- 작업
+- event envelope, command envelope 필수 필드 고정
+- event_version 기반 호환성 규칙 문서화
+- 완료 기준
+- 신규 경로 100%가 버전 계약을 따르고, 예외 경로 0건
+- 검증 명령
+- `npm run lint`
+
+### R-015 Memory Queue-first 전환 v1
+
+- 문제: 장주기 memory 루프가 메인 런타임과 리소스를 공유해 장애 파급 가능성이 큼
+- 작업
+- enqueue/consume 분리
+- retry/backoff/deadletter 정책 표준화
+- 완료 기준
+- memory 장주기 작업 70% 이상이 비동기 큐 경유
+- 검증 명령
+- `npm run lint`
+
+### R-016 Go/No-Go 게이트 자동 판정 규칙
+
+- 문제: 단계 전환 판단이 수동 해석에 의존하면 운영 일관성이 저하됨
+- 작업
+- reliability/quality/safety/governance 4게이트 임계치 고정
+- 단계 전환 시 자동 판정 결과 기록
+- 완료 기준
+- 단계 전환 시점마다 근거 로그 1건 이상 자동 생성
+- 검증 명령
+- `npm run lint`
+
+### R-017 Stage Rollback 시나리오 고정
+
+- 문제: 점진 분리 중 장애 시 복귀 절차가 미고정이면 복구 시간이 길어짐
+- 작업
+- stage rollback, queue rollback, provider rollback 절차 문서화
+- 10분 내 복귀 목표 기준 점검표 작성
+- 완료 기준
+- canary 실패 시 10분 내 복귀 리허설 1회 이상 통과
+- 검증 명령
+- `npm run lint`

@@ -17,6 +17,9 @@
 5. [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
 6. [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
 7. [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
+8. [M-01][M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
+9. [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
+10. [M-04][M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
 
 ## Next (D31-D60: Autonomous Loops)
 
@@ -25,6 +28,9 @@
 3. [M-06] provider dual profile(cost-optimized vs quality-optimized) 운영
 4. [M-07] ToT/GoT + provider별 품질 정규화 계측 도입
 5. [M-07] 라벨 기반 recall@k 및 hallucination review 자동 리포트
+6. [M-03][M-08] memory job queue-first 분리 v1(enqueue/consume/retry/deadletter)
+7. [M-08] queue lag/retry/deadletter 운영 SLO 알림 자동화
+8. [M-06][M-07] provider profile 자동 회귀 규칙(quality gate fail 시 fallback) 적용
 
 ## Later (D61-D90: Frontier Hardening)
 
@@ -33,6 +39,8 @@
 3. [M-08] Go/No-Go 연속 통과 + 베타 확장 승인
 4. [M-08] 월간 blocked 0 상태 유지 검증
 5. [M-06] 신모델/신도구(Opencode 포함) 도입 템플릿 운영 고정
+6. [M-08] trading runtime read/write 경계 분리 및 canary cutover 운영화
+7. [M-08] stage rollback runbook 자동 점검 체크리스트 운영화
 
 ## 운영 원칙
 

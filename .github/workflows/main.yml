@@ -49,8 +49,20 @@ jobs:
             echo "::warning::package-lock.json missing in runner context; falling back to npm install"
             npm install --no-audit --no-fund
           fi
+      - name: Verify bot-agent route split integrity
+        run: npm run routes:check:agent
+      - name: Bot-agent route smoke test
+        run: npm run test -- src/routes/botAgentRoutes.smoke.test.ts
       - name: Type check
         run: npm run lint
+      - name: Validate autonomy contracts
+        run: npm run contracts:validate
+      - name: Validate go/no-go run logs
+        run: npm run gates:validate
+      - name: Validate go/no-go fixtures
+        run: npm run gates:fixtures:check
+      - name: Validate go/no-go weekly summary generation
+        run: npm run gates:weekly-report:dry
       - name: API contract smoke test
         env:
           START_BOT: "false"

@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "muel.autonomy.contracts.v1",
+  "title": "Progressive Autonomy Contract Set",
+  "type": "object",
+  "required": [
+    "eventEnvelope",
+    "commandEnvelope",
+    "policyDecisionRecord",
+    "evidenceBundle"
+  ],
+  "properties": {
+    "eventEnvelope": {
+      "$ref": "#/$defs/eventEnvelope"
+    },
+    "commandEnvelope": {
+      "$ref": "#/$defs/commandEnvelope"
+    },
+    "policyDecisionRecord": {
+      "$ref": "#/$defs/policyDecisionRecord"
+    },
+    "evidenceBundle": {
+      "$ref": "#/$defs/evidenceBundle"
+    }
+  },
+  "$defs": {
+    "eventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event_type",
+        "event_version",
+        "occurred_at",
+        "guild_id",
+        "actor_id",
+        "payload",
+        "trace_id"
+      ],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "event_type": { "type": "string", "minLength": 1 },
+        "event_version": { "type": "integer", "minimum": 1 },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "guild_id": { "type": "string", "minLength": 1 },
+        "actor_id": { "type": "string", "minLength": 1 },
+        "payload": { "type": "object" },
+        "trace_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "commandEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "command_type",
+        "requested_by",
+        "requested_at",
+        "idempotency_key",
+        "policy_context",
+        "payload"
+      ],
+      "properties": {
+        "command_id": { "type": "string", "minLength": 1 },
+        "command_type": { "type": "string", "minLength": 1 },
+        "requested_by": { "type": "string", "minLength": 1 },
+        "requested_at": { "type": "string", "format": "date-time" },
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "policy_context": { "type": "object" },
+        "payload": { "type": "object" }
+      }
+    },
+    "policyDecisionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "reasons",
+        "risk_score",
+        "budget_state",
+        "review_required",
+        "approved_by"
+      ],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["allow", "deny", "review"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "risk_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "budget_state": {
+          "type": "string",
+          "enum": ["normal", "warning", "blocked"]
+        },
+        "review_required": { "type": "boolean" },
+        "approved_by": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      }
+    },
+    "evidenceBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok",
+        "summary",
+        "artifacts",
+        "verification",
+        "error",
+        "retry_hint",
+        "runtime_cost"
+      ],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "uri"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string" },
+              "uri": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["check", "status"],
+            "properties": {
+              "check": { "type": "string" },
+              "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+              "details": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "error": {
+          "type": ["string", "null"]
+        },
+        "retry_hint": {
+          "type": ["string", "null"]
+        },
+        "runtime_cost": {
+          "type": "object",
+          "required": ["latency_ms", "token_in", "token_out"],
+          "properties": {
+            "latency_ms": { "type": "number", "minimum": 0 },
+            "token_in": { "type": "number", "minimum": 0 },
+            "token_out": { "type": "number", "minimum": 0 },
+            "usd": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

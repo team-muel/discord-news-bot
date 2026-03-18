@@ -1,0 +1,30 @@
+{
+  "run_id": "gate-20260318-082348",
+  "stage": "A",
+  "target_scope": "guild:demo",
+  "started_at": "2026-03-18T08:23:48.220Z",
+  "ended_at": "2026-03-18T08:23:48.220Z",
+  "operator": "auto",
+  "change_set": "",
+  "final_decision": {
+    "overall": "go",
+    "required_actions": [],
+    "rollback_required": "false",
+    "rollback_type": "none",
+    "rollback_deadline_min": ""
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "pending"
+    },
+    "quality": {
+      "verdict": "pending"
+    },
+    "safety": {
+      "verdict": "pending"
+    },
+    "governance": {
+      "verdict": "pending"
+    }
+  }
+}

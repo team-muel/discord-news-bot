@@ -62,6 +62,9 @@ Open these first when verifying behavior:
 - Obsidian sync operations: `docs/OBSIDIAN_SUPABASE_SYNC.md`
 - MCP tool spec and rollout: `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/planning/mcp/MCP_ROLLOUT_1W.md`
 - Lightweight worker split: `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md`
+- Progressive autonomy 30-day checklist: `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
+- Go/No-Go gate template: `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
+- Autonomy contract schemas: `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
 - Generated route map: `docs/ROUTES_INVENTORY.md`
 - Schema-service map: `docs/SCHEMA_SERVICE_MAP.md`
 
@@ -337,6 +340,109 @@ npm run worker:crawler
 npm run sync:obsidian-lore:dry
 npm run sync:obsidian-lore
 ```
+
+## 11) Progressive Autonomy Evolution Operations
+
+This section defines how to run staged autonomy evolution safely.
+
+### 11.1) Stage Model
+
+1. Stage A: control-plane boundary split (in-process)
+2. Stage B: queue-first split for heavy memory jobs
+3. Stage C: trading runtime isolation readiness and canary
+
+Rule:
+
+- Never advance to next stage unless all gates pass in current stage.
+
+### 11.2) Mandatory Runtime Contracts
+
+All new automation paths must include these records:
+
+1. Event envelope:
+
+- event_id, event_type, event_version, occurred_at, guild_id, actor_id, payload, trace_id
+
+2. Command envelope:
+
+- command_id, command_type, requested_by, requested_at, idempotency_key, policy_context, payload
+
+3. Policy decision record:
+
+- decision, reasons[], risk_score, budget_state, review_required, approved_by
+
+4. Evidence bundle:
+
+- ok, summary, artifacts[], verification[], error, retry_hint, runtime_cost
+
+### 11.3) Go/No-Go Gate Checklist
+
+Template source:
+
+- `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
+
+Execute in this order:
+
+1. Reliability gate
+
+- p95 latency within threshold
+- MTTR within threshold
+- queue lag within threshold
+
+2. Quality gate
+
+- citation_rate within threshold
+- retrieval_hit@k within threshold
+- hallucination_review_fail_rate within threshold
+
+3. Safety gate
+
+- approval_required compliance 100%
+- unapproved auto-deploy count 0
+
+4. Governance gate
+
+- roadmap/execution-board/backlog/runbook/changelog sync completed
+
+Decision:
+
+- If any gate fails: no-go and rollback immediately.
+
+### 11.4) Rollback Operations
+
+1. Stage rollback
+
+- Route traffic back to previous stable path
+- freeze new stage writes until incident review closes
+
+2. Queue rollback
+
+- stop enqueue for impacted task type
+- drain consumers and resume synchronous fallback path
+
+3. Provider rollback
+
+- force quality-optimized profile when quality gate fails
+
+4. Evidence logging
+
+- for every rollback: record cause, impact, mitigation, prevention in incident template
+
+### 11.5) Canary Procedure
+
+1. Select one pilot guild
+2. Enable stage feature flags for canary only
+3. Observe 24h with gate metrics
+4. Expand only if all gates pass twice consecutively
+5. If failed, rollback within 10 minutes and document evidence
+
+Daily execution checklist source:
+
+- `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
+
+Contract validation source:
+
+- `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
 
 Harness release commands:
 
