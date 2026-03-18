@@ -3,7 +3,7 @@
  * Extracted from bot.ts to keep the rendering logic isolated.
  */
 import type { AgentSession } from '../services/multiAgentService';
-import { getAgentSession, startAgentSession } from '../services/multiAgentService';
+import { cancelAgentSession, getAgentSession, startAgentSession } from '../services/multiAgentService';
 import { buildReasoningGoalForGuild } from '../services/taskRoutingService';
 import { recordTaskRoutingMetric } from '../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from './messages';
@@ -21,7 +21,7 @@ const FEEDBACK_PROMPT_ENABLED = (() => {
   return ['1', 'true', 'yes', 'on'].includes(raw);
 })();
 const FEEDBACK_PROMPT_LINE = String(process.env.DISCORD_FEEDBACK_PROMPT_LINE || '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.').trim();
-const SESSION_PROGRESS_TIMEOUT_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_TIMEOUT_MS, 8 * 60 * 1000, 10_000);
+const SESSION_PROGRESS_TIMEOUT_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_TIMEOUT_MS, 3 * 60 * 1000, 10_000);
 const SESSION_PROGRESS_INTERVAL_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_INTERVAL_MS, 2200, 500);
 const SESSION_PROGRESS_UPDATE_BUCKET_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS, 10_000, 1000);
 const SESSION_RESULT_CLIP_LIMIT_DEBUG = parsePositiveIntEnv(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_DEBUG, 1700, 200);
@@ -293,18 +293,23 @@ export const streamSessionProgress = async (
     await sleep(intervalMs);
   }
 
+  const cancelResult = cancelAgentSession(sessionId);
+
   if (options.showDebugBlocks) {
     await sink.update(
       [
         DISCORD_MESSAGES.session.timeoutDebugHeader,
         DISCORD_MESSAGES.session.timeoutDebugSession(sessionId),
+        `중단 결과: ${cancelResult.message}`,
         DISCORD_MESSAGES.session.timeoutDebugHint,
       ].join('\n'),
     );
     return;
   }
 
-  await sink.update(DISCORD_MESSAGES.session.timeoutUser);
+  await sink.update(cancelResult.ok
+    ? DISCORD_MESSAGES.session.timeoutUserCancelled
+    : DISCORD_MESSAGES.session.timeoutUser);
 };
 
 export const startVibeSession = async (

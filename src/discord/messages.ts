@@ -39,6 +39,7 @@ export const DISCORD_MESSAGES = {
     failedDebugError: (error: string) => `오류: ${error}`,
     sessionNotFound: '세션 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
     timeoutUser: '처리가 길어지고 있어요. 계속 진행 중이니 잠시 후 다시 확인해주세요.',
+    timeoutUserCancelled: '처리가 너무 오래 걸려 자동으로 중단했어요. 요청을 더 짧게 나눠 다시 시도해주세요.',
     timeoutDebugHeader: '작업은 계속 진행 중입니다.',
     timeoutDebugSession: (sessionId: string) => `세션: ${sessionId}`,
     timeoutDebugHint: '진행 상황은 /상태 세션아이디:<ID> 로 확인할 수 있습니다.',
