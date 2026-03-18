@@ -8,6 +8,26 @@ const OUTPUT_FILE = path.join(ROOT, 'docs', 'ROUTES_INVENTORY.md');
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 
+const walkRouteFiles = async (dir, prefix = '') => {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const nextPrefix = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const nextPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await walkRouteFiles(nextPath, nextPrefix));
+      continue;
+    }
+    if (!entry.name.endsWith('.ts')) continue;
+    files.push({
+      relPath: nextPrefix,
+      absPath: nextPath,
+    });
+  }
+  return files;
+};
+
 const normalizePath = (basePath, routePath) => {
   if (!basePath) {
     return routePath;
@@ -73,19 +93,32 @@ const parseRouteFile = async (filePath, basePath) => {
   return rows;
 };
 
+const resolveBasePath = (relPath, mounts) => {
+  if (mounts.has(relPath)) {
+    return mounts.get(relPath) || '';
+  }
+  const fileName = path.basename(relPath);
+  if (mounts.has(fileName)) {
+    return mounts.get(fileName) || '';
+  }
+  if (relPath.startsWith('bot-agent/')) {
+    return mounts.get('bot.ts') || '/api/bot';
+  }
+  return '';
+};
+
 const main = async () => {
   const mounts = await readAppMounts();
-  const files = (await fs.readdir(ROUTES_DIR)).filter((name) => name.endsWith('.ts')).sort();
+  const files = (await walkRouteFiles(ROUTES_DIR)).sort((a, b) => a.relPath.localeCompare(b.relPath));
 
   const routeRows = [];
-  for (const name of files) {
-    const basePath = mounts.get(name) || '';
-    const filePath = path.join(ROUTES_DIR, name);
-    const rows = await parseRouteFile(filePath, basePath);
+  for (const file of files) {
+    const basePath = resolveBasePath(file.relPath, mounts);
+    const rows = await parseRouteFile(file.absPath, basePath);
     for (const row of rows) {
       routeRows.push({
         ...row,
-        source: `src/routes/${name}:${row.sourceLine}`,
+        source: `src/routes/${file.relPath}:${row.sourceLine}`,
       });
     }
   }
@@ -98,7 +131,7 @@ const main = async () => {
   const lines = [
     '# Routes Inventory',
     '',
-    '- Source: src/app.ts + src/routes/*.ts',
+    '- Source: src/app.ts + src/routes/**/*.ts',
     '- Notes: middleware detection is static and best-effort for requireAuth/requireAdmin/rate limiter usage.',
     '',
     '| Method | Path | Auth | Admin | Rate Limit | Source |',

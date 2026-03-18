@@ -28,6 +28,9 @@ Primary operations entrypoint:
 - `bot.ts`: Discord bot-only process bootstrap.
 - `src/app.ts`: Express middleware and route composition.
 - `src/bot.ts`: Discord command/event runtime and bot orchestration.
+- `src/routes/bot.ts` + `src/routes/botAgentRoutes.ts`: bot control-plane routes split into core and agent composition boundary.
+- `src/routes/bot-agent/*.ts`: agent domain routes (`core`, `runtime`, `got`, `qualityPrivacy`, `governance`, `memory`, `learning`) registered by composer.
+- `src/services/runtimeBootstrap.ts`: centralized startup boundaries for server process runtime and Discord-ready runtime.
 
 ## Request Flow (HTTP)
 
@@ -87,3 +90,4 @@ When modifying route registration, core service boundaries, or persistence strat
 1. Update this index when structure meaning changes.
 2. Run `npm run docs:build`.
 3. Add an entry in `docs/CHANGELOG-ARCH.md`.
+4. Run `npm run routes:check:agent` to verify duplicated/misplaced agent endpoints across route modules.

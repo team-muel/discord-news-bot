@@ -19,6 +19,86 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-18 - Agent Route Domain Split Completion and Verification Gates
+
+- Why: Complete `/api/bot/agent/*` domain-level route decomposition safely and prevent regressions from future route movement.
+- Scope: moved agent route implementations into `src/routes/bot-agent/*Routes.ts`, converted `src/routes/botAgentRoutes.ts` to composer-only registration, added modular route verification script and route smoke tests, and updated route inventory generator to include nested route files.
+- Impacted Routes: `/api/bot/agent/*` (no contract change; source files moved from monolithic module to domain modules).
+- Impacted Services: `src/routes/botAgentRoutes.ts`, `src/routes/bot-agent/coreRoutes.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/bot-agent/gotRoutes.ts`, `src/routes/bot-agent/qualityPrivacyRoutes.ts`, `src/routes/bot-agent/governanceRoutes.ts`, `src/routes/bot-agent/memoryRoutes.ts`, `src/routes/bot-agent/learningRoutes.ts`, `scripts/verify-bot-agent-routes.mjs`, `scripts/generate-route-inventory.mjs`.
+- Impacted Tables/RPC: N/A (routing surface and tooling only).
+- Risk/Regression Notes: route registration ordering is now explicitly module-driven; duplicate path registration is gate-checked by script and smoke test.
+- Validation: `npm run routes:check:agent`, `npm run docs:routes`, `npm run test -- src/routes/botAgentRoutes.smoke.test.ts`, `npm run lint`.
+
+## 2026-03-18 - Bot Route Modularization and Runtime Bootstrap Consolidation
+
+- Why: Reduce control-plane complexity by splitting oversized bot route composition, clarifying startup boundaries, and lowering env misconfiguration risk.
+- Scope: extracted `/api/bot/agent/*` route registration to dedicated module, introduced centralized runtime bootstrap service, and added deployment-profile-based env validation.
+- Impacted Routes: `/api/bot/agent/*` (no contract change, composition moved), `/api/bot/status`, `/api/bot/automation/:jobName/run`, `/api/bot/reconnect`, `/api/bot/usage`.
+- Impacted Services: `src/routes/bot.ts`, `src/routes/botAgentRoutes.ts`, `src/services/runtimeBootstrap.ts`, `src/discord/runtime/readyWorkloads.ts`, `server.ts`, `scripts/validate-env.mjs`.
+- Impacted Tables/RPC: N/A (no schema/rpc contract changes).
+- Risk/Regression Notes: API behavior is preserved, but route registration order is now split across modules; startup loops are orchestrated through one bootstrap surface to avoid duplicate starts.
+- Validation: `npm run lint`.
+
+## 2026-03-18 - Gate Log Robustness Hardening (JSON Sidecar + Legacy-safe Summary)
+
+- Why: Prevent weekly gate summary corruption from legacy placeholder values and improve machine-readable operability of go/no-go run logs.
+- Scope: go/no-go log generator now writes paired markdown+json outputs; weekly summary parser now prefers json, normalizes legacy placeholders, and sanitizes table cells.
+- Impacted Routes: N/A
+- Impacted Services: N/A (ops scripting and governance reporting only)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: Existing markdown logs remain compatible; legacy entries are normalized as `pending/unknown` instead of producing malformed rows.
+- Validation: `npm run gates:init-log -- --stage=A --scope=guild:demo --operator=auto --decision=go`, `npm run gates:weekly-report -- --days=7`, `npm run test:contracts`, `npm run contracts:validate`, `npm run lint`.
+
+## 2026-03-18 - Full Session-Allowlist Execution (Automation Completion)
+
+- Why: Execute all approved follow-up actions from the session end-to-end: weekly gate reporting, schema-to-test integration, and no-go rollback autofill.
+- Scope: added gate-run weekly summary script, added autonomy contract schema test, enhanced go/no-go log generator with decision-aware rollback autofill, and wired npm commands.
+- Impacted Routes: N/A
+- Impacted Services: N/A (testing/ops automation and documentation only)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: No runtime request-path behavior changed; CI/test strictness increased for contract drift prevention.
+- Validation: `npm run test:contracts`, `npm run gates:init-log -- --stage=B --scope=guild:demo --operator=auto --decision=no-go --rollbackType=queue --rollbackDeadlineMin=10`, `npm run gates:weekly-report -- --days=7`, `npm run lint`.
+
+## 2026-03-18 - Progressive Blueprint Automation Enforcement
+
+- Why: Complete end-to-end execution of progressive autonomy blueprint by adding executable scripts and CI enforcement, not only planning docs.
+- Scope: automation scripts for contract validation and go/no-go run-log creation; npm script wiring; CI gate step addition; planning index update.
+- Impacted Routes: N/A
+- Impacted Services: N/A (no runtime request path changed)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: CI now fails when autonomy contract schema integrity check fails; this is intended fail-closed behavior for governance consistency.
+- Validation: `npm run lint`, `npm run contracts:validate`, `npm run gates:init-log -- --stage=A --scope=guild:demo --operator=auto`.
+
+## 2026-03-18 - Progressive Autonomy Execution Artifacts Finalization
+
+- Why: Convert roadmap-level methodology into operator-ready execution artifacts for immediate stage-based rollout.
+- Scope: added 30-day checklist, go/no-go decision template, and contract JSON schema set; linked from roadmap and unified runbook.
+- Impacted Routes: N/A (documentation and governance artifact update)
+- Impacted Services: N/A (no runtime code path changed)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: No direct runtime regression; execution ambiguity reduced through standardized checklist/template/schema artifacts.
+- Validation: `npm run lint`.
+
+## 2026-03-18 - Progressive Autonomy Evolution Methodology Adoption
+
+- Why: Reduce migration risk while scaling autonomous operations by formalizing strangler-first, queue-first, contract-first, and SLO-driven decomposition into canonical governance docs.
+- Scope: roadmap, execution board, sprint backlog, and unified runbook synchronization for staged evolution operations.
+- Impacted Routes: N/A (documentation and operational governance update)
+- Impacted Services: N/A (no runtime behavior changed in this documentation change set)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: No direct runtime regression; stage gate strictness increased and rollback policy clarified to reduce operational ambiguity.
+- Validation: `npm run lint`.
+
+## 2026-03-18 - Runtime Bottleneck and Reliability Hardening
+
+- Why: Mitigate control-plane read bottlenecks and reduce runtime hang risks from upstream network latency and server shutdown edge cases.
+- Scope: bot status endpoint caching/in-flight dedupe/rate-limit, Supabase fetch timeout wrapper, HTTP server timeout and graceful shutdown controls.
+- Impacted Routes: `/api/bot/status`
+- Impacted Services: `src/routes/bot.ts`, `src/services/supabaseClient.ts`, `server.ts`
+- Impacted Tables/RPC: Indirect impact on Supabase calls through shared client timeout policy.
+- Risk/Regression Notes: Status payload freshness now follows short TTL caching; extreme low-latency dashboards may observe up to cache TTL delay.
+- Validation: `npm run lint`.
+
 ## 2026-03-17 - Unified Roadmap and Ops Document Integration (Social Ops Baseline)
 
 - Why: Resolve roadmap/runbook/backlog fragmentation and align documentation to current implementation progress (social graph + autonomous loop + reasoning gates).

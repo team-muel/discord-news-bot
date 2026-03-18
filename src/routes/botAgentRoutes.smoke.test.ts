@@ -1,0 +1,75 @@
+import { Router, type RequestHandler } from 'express';
+import { describe, expect, it } from 'vitest';
+
+import { registerBotAgentRoutes } from './botAgentRoutes';
+
+const noop: RequestHandler = (_req, _res, next) => next();
+
+type RouteEntry = {
+  method: string;
+  path: string;
+};
+
+const collectRoutes = (router: Router): RouteEntry[] => {
+  const stack = (router as unknown as { stack?: Array<{ route?: { path?: string; methods?: Record<string, boolean> } }> }).stack || [];
+  const routes: RouteEntry[] = [];
+
+  for (const layer of stack) {
+    if (!layer.route || !layer.route.path || !layer.route.methods) continue;
+    const methods = Object.keys(layer.route.methods).filter((m) => layer.route?.methods?.[m]);
+    for (const method of methods) {
+      routes.push({ method: method.toUpperCase(), path: String(layer.route.path) });
+    }
+  }
+
+  return routes;
+};
+
+describe('bot agent route module smoke', () => {
+  it('registers representative endpoints from all domains', () => {
+    const router = Router();
+
+    registerBotAgentRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const routes = collectRoutes(router);
+    const routeKeys = new Set(routes.map((r) => `${r.method} ${r.path}`));
+
+    expect(routeKeys.has('GET /agent/sessions')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/efficiency')).toBe(true);
+    expect(routeKeys.has('GET /agent/got/policy')).toBe(true);
+    expect(routeKeys.has('GET /agent/privacy/policy')).toBe(true);
+    expect(routeKeys.has('GET /agent/actions/policies')).toBe(true);
+    expect(routeKeys.has('GET /agent/memory/search')).toBe(true);
+    expect(routeKeys.has('GET /agent/task-routing/summary')).toBe(true);
+  });
+
+  it('does not register duplicate method/path pairs', () => {
+    const router = Router();
+
+    registerBotAgentRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const routes = collectRoutes(router);
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+
+    for (const route of routes) {
+      const key = `${route.method} ${route.path}`;
+      if (seen.has(key)) {
+        duplicates.push(key);
+      }
+      seen.add(key);
+    }
+
+    expect(duplicates).toEqual([]);
+  });
+});
