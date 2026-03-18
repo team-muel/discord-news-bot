@@ -37,6 +37,7 @@
 | agent_tool_learning_rules | src/services/agentSloService.ts<br/>src/services/taskRoutingService.ts<br/>src/services/toolLearningService.ts |
 | agent_tot_candidate_pairs | src/services/agentGotAnalyticsService.ts<br/>src/services/agentTotPolicyService.ts |
 | agent_tot_policies | src/services/agentTotPolicyService.ts |
+| agent_weekly_reports | - |
 | agent_workflow_profiles | src/services/agentWorkflowService.ts |
 | alert_slots | - |
 | api_idempotency_keys | - |

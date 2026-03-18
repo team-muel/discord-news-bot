@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 211
+- Nodes: 212
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -9,7 +9,7 @@
 | --- | --- |
 | src/services/supabaseClient.ts | 63 |
 | src/logger.ts | 54 |
-| src/utils/env.ts | 49 |
+| src/utils/env.ts | 50 |
 | src/services/skills/actions/types.ts | 22 |
 | src/config.ts | 16 |
 | src/middleware/auth.ts | 14 |
@@ -268,6 +268,7 @@ graph LR
   "src/routes/bot.ts" --> "src/services/supabaseClient.ts"
   "src/routes/bot.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/routes/bot.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
+  "src/routes/bot.ts" --> "src/utils/env.ts"
   "src/routes/bot.ts" --> "src/utils/validation.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/coreRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/gotRoutes.ts"
@@ -424,6 +425,7 @@ graph LR
   "src/services/goNoGoService.ts" --> "src/services/memoryQualityMetricsService.ts"
   "src/services/goNoGoService.ts" --> "src/services/supabaseClient.ts"
   "src/services/investmentAnalysisService.ts":::file
+  "src/services/langgraph/executor.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/langgraph/nodes/composeNodes.ts":::file
   "src/services/langgraph/nodes/coreNodes.ts" --> "src/services/agentPrivacyPolicyService.ts"
   "src/services/langgraph/nodes/coreNodes.ts" --> "src/services/agentRuntimeTypes.ts"
@@ -465,6 +467,7 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/agentTotPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentWorkflowService.ts"
   "src/services/multiAgentService.ts" --> "src/services/conversationTurnService.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/executor.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/composeNodes.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/coreNodes.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/runtimeNodes.ts"

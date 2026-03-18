@@ -107,10 +107,10 @@
 | POST | /api/bot/agent/task-routing/feedback | no | yes | yes | src/routes/bot-agent/learningRoutes.ts:28 |
 | GET | /api/bot/agent/task-routing/policy-hints | no | yes | no | src/routes/bot-agent/learningRoutes.ts:77 |
 | GET | /api/bot/agent/task-routing/summary | no | yes | no | src/routes/bot-agent/learningRoutes.ts:12 |
-| POST | /api/bot/automation/:jobName/run | no | yes | yes | src/routes/bot.ts:221 |
-| POST | /api/bot/reconnect | no | yes | yes | src/routes/bot.ts:240 |
-| GET | /api/bot/status | yes | no | yes | src/routes/bot.ts:187 |
-| GET | /api/bot/usage | no | yes | no | src/routes/bot.ts:284 |
+| POST | /api/bot/automation/:jobName/run | no | yes | yes | src/routes/bot.ts:226 |
+| POST | /api/bot/reconnect | no | yes | yes | src/routes/bot.ts:245 |
+| GET | /api/bot/status | yes | no | yes | src/routes/bot.ts:192 |
+| GET | /api/bot/usage | no | yes | no | src/routes/bot.ts:289 |
 | GET | /api/fred/playground | no | no | no | src/routes/fred.ts:106 |
 | GET | /api/quant/panel | no | no | no | src/routes/quant.ts:53 |
 | GET | /api/research/preset/:presetKey | no | no | no | src/routes/research.ts:16 |
