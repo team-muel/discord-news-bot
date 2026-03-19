@@ -199,6 +199,28 @@ Sync rule:
 - `GET /ready` 확인
 - `memory_retrieval_logs`, `agent_tot_candidate_pairs` 누적 확인
 
+### 3.6 Env Profile Switching (Local vs Production)
+
+목표: `.env` 수동 편집 실수를 줄이고 로컬/운영 프로필 전환을 재현 가능하게 유지한다.
+
+프로필 정의 파일:
+
+- `config/env/local.profile.env`
+- `config/env/production.profile.env`
+
+적용 명령:
+
+- 로컬 개발형 적용: `npm run env:profile:local`
+- 운영형 적용: `npm run env:profile:production`
+- 사전 미리보기(dry-run): `npm run env:profile:local:dry`
+- 사전 미리보기(dry-run): `npm run env:profile:production:dry`
+
+가드레일:
+
+- 적용 스크립트는 기존 `.env`를 `.env.profile-backup`으로 백업한다.
+- 운영형 적용 후에는 `MCP_OPENCODE_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다.
+- 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
+
 ## 4) Day 1 Go-Live Verification
 
 Run in order:
