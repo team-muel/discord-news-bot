@@ -129,7 +129,7 @@ const triggerRenderDeploy = async () => {
     };
   }
 
-  const url = `https://api.render.com/deploy/${serviceFullId}/deploys`;
+  const url = `https://api.render.com/v1/services/${serviceFullId}/deploys`;
   const serviceUrl = `https://api.render.com/v1/services/${serviceFullId}`;
   const maxAttempts = 3;
 
@@ -182,8 +182,13 @@ const triggerRenderDeploy = async () => {
       method: 'POST',
       headers: {
         Accept: 'application/json',
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      body: JSON.stringify({
+        clearCache: 'do_not_clear',
+        deployMode: 'build_and_deploy',
+      }),
     });
 
     if (res.ok) {

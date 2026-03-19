@@ -62,7 +62,7 @@ jobs:
           fi
 
           echo "Triggering deploy for service $SERVICE_FULL_ID"
-          URL="https://api.render.com/deploy/$SERVICE_FULL_ID/deploys"
+          URL="https://api.render.com/v1/services/$SERVICE_FULL_ID/deploys"
 
           max_attempts=3
           attempt=0
@@ -72,7 +72,9 @@ jobs:
             echo "Deploy attempt $attempt"
             resp=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST \
               -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
               -H "Authorization: Bearer $RENDER_API_KEY" \
+              --data '{"clearCache":"do_not_clear","deployMode":"build_and_deploy"}' \
               "$URL")
             if [ "$resp" -ge 200 ] && [ "$resp" -lt 300 ]; then
               echo "Render deploy triggered successfully (HTTP $resp)"
