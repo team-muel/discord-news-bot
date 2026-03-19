@@ -19,8 +19,26 @@ jobs:
             exit 0;
           fi
 
-          echo "Triggering deploy for service $RENDER_SERVICE_ID"
-          URL="https://api.render.com/deploy/srv-$RENDER_SERVICE_ID/deploys"
+          SERVICE_ID="$RENDER_SERVICE_ID"
+          SERVICE_ID="${SERVICE_ID#srv-}"
+          SERVICE_FULL_ID="srv-$SERVICE_ID"
+
+          KEY_PREFIX="${RENDER_API_KEY:0:4}"
+          KEY_LEN=${#RENDER_API_KEY}
+          echo "Render key prefix: ${KEY_PREFIX}*** (len=${KEY_LEN})"
+
+          auth_probe=$(curl -s -o /dev/null -w "%{http_code}" -H "Accept: application/json" -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services?limit=1")
+          if [ "$auth_probe" = "401" ]; then
+            echo "Render API auth probe failed (401). Check RENDER_API_KEY value/workspace.";
+            exit 1;
+          fi
+          if [ "$auth_probe" = "403" ]; then
+            echo "Render API auth probe failed (403). API key lacks access to this workspace/service.";
+            exit 1;
+          fi
+
+          echo "Triggering deploy for service $SERVICE_FULL_ID"
+          URL="https://api.render.com/deploy/$SERVICE_FULL_ID/deploys"
 
           max_attempts=3
           attempt=0

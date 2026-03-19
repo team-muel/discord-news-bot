@@ -117,8 +117,10 @@ const latestGateRun = () => {
 };
 
 const triggerRenderDeploy = async () => {
-  const serviceId = String(process.env.RENDER_SERVICE_ID || '').trim();
+  const serviceIdRaw = String(process.env.RENDER_SERVICE_ID || '').trim();
   const apiKey = String(process.env.RENDER_API_KEY || '').trim();
+  const serviceId = serviceIdRaw.replace(/^srv-/i, '');
+  const serviceFullId = `srv-${serviceId}`;
 
   if (!serviceId || !apiKey) {
     return {
@@ -127,7 +129,7 @@ const triggerRenderDeploy = async () => {
     };
   }
 
-  const url = `https://api.render.com/deploy/srv-${serviceId}/deploys`;
+  const url = `https://api.render.com/deploy/${serviceFullId}/deploys`;
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -144,6 +146,24 @@ const triggerRenderDeploy = async () => {
         status: 'pass',
         http_status: res.status,
         attempt,
+      };
+    }
+
+    if (res.status === 401) {
+      return {
+        status: 'fail',
+        http_status: res.status,
+        attempt,
+        reason: 'Render API unauthorized (check RENDER_API_KEY and workspace ownership)',
+      };
+    }
+
+    if (res.status === 403) {
+      return {
+        status: 'fail',
+        http_status: res.status,
+        attempt,
+        reason: 'Render API forbidden (API key lacks permission for this service/workspace)',
       };
     }
 
