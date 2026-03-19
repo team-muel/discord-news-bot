@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-03-19T18:13:57.754Z",
+  "run_id": "rollback-20260319-181357",
+  "api_base": "http://localhost:3001",
+  "max_recovery_minutes": 10,
+  "elapsed_ms": 440,
+  "elapsed_minutes": 0.007,
+  "within_recovery_target": true,
+  "reconnect_status": 409,
+  "reconnect_replay_status": 409,
+  "replay_header": "true",
+  "overall": "pass",
+  "dry_run": false,
+  "payload": {
+    "timestamp": "2026-03-19T18:13:58.184Z",
+    "base": "http://localhost:3001",
+    "adminUserId": "723525198732853329",
+    "idempotencyKey": "rollback-rehearsal-1773944037834",
+    "statusBefore": 200,
+    "reconnectStatus": 409,
+    "reconnectReplayStatus": 409,
+    "replayHeader": "true",
+    "statusAfter": 200,
+    "beforeGrade": "offline",
+    "afterGrade": "offline",
+    "reconnectPayload": {
+      "ok": false,
+      "message": "재연결이 이미 진행 중입니다."
+    },
+    "replayPayload": {
+      "ok": false,
+      "message": "재연결이 이미 진행 중입니다."
+    }
+  }
+}
