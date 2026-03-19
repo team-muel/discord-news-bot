@@ -130,7 +130,52 @@ const triggerRenderDeploy = async () => {
   }
 
   const url = `https://api.render.com/deploy/${serviceFullId}/deploys`;
+  const serviceUrl = `https://api.render.com/v1/services/${serviceFullId}`;
   const maxAttempts = 3;
+
+  const serviceProbe = await fetch(serviceUrl, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  if (serviceProbe.status === 401) {
+    return {
+      status: 'fail',
+      http_status: serviceProbe.status,
+      attempt: 0,
+      reason: 'Render service probe unauthorized (check RENDER_API_KEY and workspace ownership)',
+    };
+  }
+
+  if (serviceProbe.status === 403) {
+    return {
+      status: 'fail',
+      http_status: serviceProbe.status,
+      attempt: 0,
+      reason: 'Render service probe forbidden (API key lacks permission for this service/workspace)',
+    };
+  }
+
+  if (serviceProbe.status === 404) {
+    return {
+      status: 'fail',
+      http_status: serviceProbe.status,
+      attempt: 0,
+      reason: 'Render service probe not found (RENDER_SERVICE_ID is not valid in this workspace)',
+    };
+  }
+
+  if (!serviceProbe.ok) {
+    return {
+      status: 'fail',
+      http_status: serviceProbe.status,
+      attempt: 0,
+      reason: `Render service probe failed with HTTP ${serviceProbe.status}`,
+    };
+  }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const res = await fetch(url, {

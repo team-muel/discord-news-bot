@@ -28,12 +28,36 @@ jobs:
           echo "Render key prefix: ${KEY_PREFIX}*** (len=${KEY_LEN})"
 
           auth_probe=$(curl -s -o /dev/null -w "%{http_code}" -H "Accept: application/json" -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services?limit=1")
+          echo "Render auth probe HTTP: $auth_probe"
           if [ "$auth_probe" = "401" ]; then
             echo "Render API auth probe failed (401). Check RENDER_API_KEY value/workspace.";
             exit 1;
           fi
           if [ "$auth_probe" = "403" ]; then
             echo "Render API auth probe failed (403). API key lacks access to this workspace/service.";
+            exit 1;
+          fi
+          if [ "$auth_probe" -lt 200 ] || [ "$auth_probe" -ge 300 ]; then
+            echo "Render API auth probe unexpected status ($auth_probe).";
+            exit 1;
+          fi
+
+          service_probe=$(curl -s -o /dev/null -w "%{http_code}" -H "Accept: application/json" -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/$SERVICE_FULL_ID")
+          echo "Render service access probe HTTP: $service_probe ($SERVICE_FULL_ID)"
+          if [ "$service_probe" = "401" ]; then
+            echo "Service access probe failed (401). API key is invalid for this workspace.";
+            exit 1;
+          fi
+          if [ "$service_probe" = "403" ]; then
+            echo "Service access probe failed (403). API key cannot access this service.";
+            exit 1;
+          fi
+          if [ "$service_probe" = "404" ]; then
+            echo "Service access probe failed (404). RENDER_SERVICE_ID does not exist in this workspace.";
+            exit 1;
+          fi
+          if [ "$service_probe" -lt 200 ] || [ "$service_probe" -ge 300 ]; then
+            echo "Service access probe unexpected status ($service_probe).";
             exit 1;
           fi
 
