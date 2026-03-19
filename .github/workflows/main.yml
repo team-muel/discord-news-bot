@@ -59,6 +59,10 @@ jobs:
         run: npm run contracts:validate
       - name: Validate go/no-go run logs
         run: npm run gates:validate
+      - name: Validate go/no-go run logs (strict checklist)
+        run: npm run gates:validate:strict
+      - name: Validate rollback readiness checklist (strict)
+        run: npm run rehearsal:stage-rollback:validate:strict
       - name: Validate go/no-go fixtures
         run: npm run gates:fixtures:check
       - name: Validate go/no-go weekly summary generation

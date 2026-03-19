@@ -19,6 +19,216 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-19 - Remote-Only OpenJarvis Autonomy Baseline Enforcement
+
+- Why: 로컬 의존 0 목표를 운영 기본값으로 고정하고, OpenJarvis unattended 루프가 원격 워커 미연결 상태에서 우회 실행되지 않도록 fail-closed를 강화하기 위함.
+- Scope: unattended workflow env를 remote-only 필수값으로 확장하고, 런타임/런북/env 템플릿을 동일 정책으로 동기화했다.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `.github/workflows/openjarvis-unattended.yml`, `scripts/run-openjarvis-unattended.mjs`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/RENDER_AGENT_ENV_TEMPLATE.md`, `docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`, `docs/planning/README.md`.
+- Impacted Tables/RPC: `public.workflow_sessions`, `public.workflow_steps`, `public.workflow_events`, `public.agent_weekly_reports` (운영 검증 대상으로 명시).
+- Risk/Regression Notes: GitHub Actions에서 신규 secret 미설정 시 unattended run이 실패하도록 변경되어 초기 설정 누락이 즉시 드러난다(의도된 fail-closed).
+- Validation: `npm run -s openjarvis:autonomy:run:dry`, `npm run -s gates:validate:strict`, `npm run -s lint`.
+
+## 2026-03-19 - Stage Rollback Readiness Checklist Auto-Validation Gate
+
+- Why: Later 단계(M-08)의 rollback runbook 자동 점검 체크리스트 운영화를 코드/CI 게이트로 강제해 리허설 증거의 신선도와 10분 목표 준수 여부를 자동 검증하기 위함.
+- Scope: rollback rehearsal weekly summary를 읽어 freshness/fail count/p95 recovery SLA를 검증하는 스크립트를 추가하고 strict 체인/CI에 연결했다.
+- Impacted Routes: N/A (ops automation/CI only)
+- Impacted Services: `scripts/validate-stage-rollback-readiness.mjs`, `package.json`, `.github/workflows/main.yml`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: N/A (markdown artifact validation only)
+- Risk/Regression Notes: 주간 리허설 요약이 오래되면 strict gate가 fail-closed로 차단되며, `allowZeroRuns` 플래그로 무증거 환경에서의 초기 도입 리스크를 완화한다.
+- Validation: `npm run -s rehearsal:stage-rollback:validate:strict`, `npm run -s gates:validate:strict`, `npm run -s lint`.
+
+## 2026-03-19 - M-05 Opencode Pilot Signals in Self-Improvement Weekly Report
+
+- Why: approval_required 고정 파일럿이 운영 중 실제로 준수되는지 주간 루프에서 자동 점검하고, 승인 큐 적체를 패치 제안으로 연결하기 위함.
+- Scope: self-improvement weekly 스크립트가 opencode.execute 실행 로그와 승인 요청 테이블을 집계해 pilot signal 섹션 및 관련 failure pattern을 생성하도록 확장했다.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/generate-self-improvement-weekly.mjs`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads `public.agent_action_logs`, `public.agent_action_approval_requests` (or configured `ACTION_APPROVAL_TABLE`).
+- Risk/Regression Notes: approval table 미존재 시 missing_table 상태로 degrade하여 리포트를 유지하고, 기존 weekly snapshot 필수 입력 계약은 변경하지 않는다.
+- Validation: `npm run -s gates:weekly-report:self-improvement:dry`, `npm run -s lint`.
+
+## 2026-03-19 - M-07 Strategy Quality Normalization Metrics in Go/No-Go Weekly Snapshot
+
+- Why: ToT/GoT + baseline 간 품질 추세를 주간 의사결정 스냅샷에서 직접 비교할 수 있도록 정규화 계측값을 영속화한다.
+- Scope: go-no-go weekly summary 스크립트가 retrieval_eval_runs + answer quality reviews를 집계해 전략별 normalized quality score와 delta를 markdown/weekly payload에 추가한다.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/summarize-go-no-go-runs.mjs`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads `public.retrieval_eval_runs`, `public.agent_answer_quality_reviews`; writes `public.agent_weekly_reports` (`report_kind=go_no_go_weekly`, `baseline_summary.strategy_quality_normalization`).
+- Risk/Regression Notes: quality source table 미존재 시 missing_table/no_supabase_config 상태로 degrade하여 기존 주간 집계 fail-closed 계약을 깨지 않는다.
+- Validation: `npm run -s gates:weekly-report:supabase:dry`, `npm run -s lint`.
+
+## 2026-03-19 - M-07 Labeled Quality Weekly Signals in Self-Improvement Loop
+
+- Why: Next 단계의 M-07 요구사항(라벨 기반 recall@k + hallucination review 자동 리포트)을 기존 주간 self-improvement 체인에 통합해 품질 회귀를 자동 탐지한다.
+- Scope: self-improvement weekly 스크립트가 retrieval eval run summary와 human-labeled answer quality review를 읽어 Labeled Quality Signals 섹션과 신규 failure pattern을 생성하도록 확장했다.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/generate-self-improvement-weekly.mjs`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads `public.retrieval_eval_runs`, `public.agent_answer_quality_reviews`.
+- Risk/Regression Notes: 품질 테이블 미구축 환경에서도 리포트가 중단되지 않도록 missing_table 상태로 degrade 하며, 기존 weekly snapshot 필수 입력(go/llm/hybrid)은 기존 fail-closed를 유지한다.
+- Validation: `npm run -s gates:weekly-report:self-improvement:dry`, `npm run -s lint`.
+
+## 2026-03-19 - No-Request Missing-Action Proposal Queue + Opencode Approval-Required Pilot Lock
+
+- Why: Close M-03/M-05 운영 공백을 줄이기 위해 요청 공백 구간에서도 누락 액션을 자동 제안 큐로 전환하고, Opencode executor를 approval_required로 고정해 safety gate를 강제한다.
+- Scope: bot runtime에 background worker proposal sweep 루프와 opencode policy 자동 보정 로직을 추가했다.
+- Impacted Routes: N/A (runtime automation only)
+- Impacted Services: `src/bot.ts`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads `public.agent_action_logs`; uses worker approval store (`worker_approvals` or file fallback) to dedupe/cooldown/pending cap.
+- Risk/Regression Notes: background sweep은 Supabase 미설정 시 자동 비활성화되며, 생성 품질가드(최근 generation success rate)와 중복/쿨다운 제한으로 과잉 제안을 차단한다.
+- Validation: `npm run -s lint`.
+
+## 2026-03-19 - Memory Queue SLO Alert Auto-Trigger (Incident/Comms Draft)
+
+- Why: Close M-08 operational gap by automatically turning queue lag/retry/deadletter threshold breaches into actionable incident/comms evidence.
+- Scope: extended memory queue weekly report script with SLO breach evaluation, severity/no-go candidate classification, and automatic alert artifact generation for incident/comms drafts.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/report-memory-queue-weekly.mjs`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (`report_kind=memory_queue_weekly` baseline now includes `slo_alert`).
+- Risk/Regression Notes: alerts are artifact-level automation (no external paging side effects); dry-run keeps preview-only behavior.
+- Validation: `npm run -s memory:queue:report:dry`, `npm run -s gates:weekly-report:all:dry`, `npm run -s gates:validate:strict`, `npm run -s lint`.
+
+## 2026-03-19 - Provider Profile Auto-Fallback on Quality Gate Failure
+
+- Why: Close remaining M-06/M-07 gap by making provider profile regression deterministic when weekly quality evidence degrades.
+- Scope: extended go/no-go weekly summary with per-gate verdict counts, added quality override input and provider fallback decision fields in auto-judge, wired weekly auto-judge to trigger fallback when quality fails are present, and added stable-window dual profile hinting (`cost-optimized`) for M-06 operations.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/summarize-go-no-go-runs.mjs`, `scripts/auto-judge-go-no-go.mjs`, `scripts/auto-judge-from-weekly.mjs`, `scripts/generate-self-improvement-weekly.mjs`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads/writes `public.agent_weekly_reports` (`report_kind=go_no_go_weekly` `baseline_summary.gate_verdict_counts` used as weekly auto-judge signal).
+- Risk/Regression Notes: quality override is applied only when weekly aggregation includes gate verdict evidence; weekly quality averages are derived from structured gate metrics and remain nullable when historical logs lack those fields.
+- Validation: `npm run -s gates:weekly-report:supabase`, `npm run -s gates:auto-judge:weekly:pending`, `npm run -s gates:validate:strict`, `npm run -s lint`.
+
+## 2026-03-19 - Auto-Judge Checklist Auto-Close and Weekly Chain Integration
+
+- Why: Remove remaining manual operator step after automated no-go decisions by auto-generating closure evidence and pre-closing post-decision checklist items.
+- Scope: added auto checklist completion and optional closure document creation in auto-judge; weekly-derived auto-judge now enables these options by default; all-weekly pipeline now chains weekly auto-judge at tail.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/auto-judge-go-no-go.mjs`, `scripts/auto-judge-from-weekly.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: N/A (gate md/json artifact generation only for this change)
+- Risk/Regression Notes: checklist auto-close applies only when enabled and skips pending decisions; generated closure files are date-scoped and reusable as evidence references.
+- Validation: `npm run -s gates:auto-judge:weekly:pending`, `npm run -s gates:validate:strict`, `npm run -s lint`.
+
+## 2026-03-19 - CI Strict Gate Enforcement + Weekly-Derived Auto-Judge Profiles
+
+- Why: Reduce governance drift by enforcing strict checklist validation in CI and deriving gate decisions from weekly operational snapshots with stage-aware thresholds.
+- Scope: enabled strict checklist gate in CI workflow, added weekly-derived auto-judge script and npm commands, and upgraded auto-judge with stage/profile presets plus rollback/memory deadletter signals.
+- Impacted Routes: N/A (ops automation/CI/documentation only)
+- Impacted Services: `.github/workflows/main.yml`, `scripts/auto-judge-go-no-go.mjs`, `scripts/auto-judge-from-weekly.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads `public.agent_weekly_reports` for `go_no_go_weekly`, `llm_latency_weekly`, `rollback_rehearsal_weekly`, `memory_queue_weekly`.
+- Risk/Regression Notes: weekly-derived auto-judge may produce fail when upstream weekly snapshots are stale; this is intended fail-closed behavior.
+- Validation: `npm run -s gates:auto-judge:example`, `npm run -s gates:auto-judge:weekly:pending`, `npm run -s lint`, `npm run -s gates:validate:strict`.
+
+## 2026-03-19 - Memory Queue Weekly Snapshot Integration into Hybrid/Self-Improvement
+
+- Why: Extend roadmap automation so queue/deadletter pressure directly influences weekly decision snapshots and patch proposal generation.
+- Scope: expanded memory queue weekly report to support supabase sink (`memory_queue_weekly`), integrated rollback/memory signals into hybrid decision logic, and made self-improvement require/consume rollback+memory snapshots.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/report-memory-queue-weekly.mjs`, `scripts/generate-hybrid-weekly-report.mjs`, `scripts/generate-self-improvement-weekly.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (`report_kind=memory_queue_weekly` read/write; hybrid and self-improvement read path expanded).
+- Risk/Regression Notes: Self-improvement weekly now fails fast if rollback/memory snapshots are missing in the target window, with local markdown fallback used when Supabase snapshots are unavailable; rollback/memory writers can skip upsert when DB report_kind constraint is not yet migrated.
+- Validation: `npm run -s memory:queue:report:dry`, `npm run -s gates:weekly-report:all:dry`, `npm run -s lint`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Go/No-Go Strict Checklist Validation Gate
+
+- Why: Enforce R-008 operational discipline by preventing recent gate runs from passing with incomplete post-decision checklist items.
+- Scope: extended go/no-go validator with optional checklist enforcement window and added strict npm command/docs.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/validate-go-no-go-runs.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: strict mode is opt-in; default validation behavior remains backward compatible for historical fixtures.
+- Validation: `npm run -s gates:validate`, `npm run -s gates:validate:strict`.
+
+## 2026-03-19 - Week2 Queue Deliverables Closure (Policy + Deadletter SOP + Observability)
+
+- Why: Close remaining Week2 checklist artifacts by turning queue/deadletter operations into explicit policy docs and executable weekly observability reporting.
+- Scope: added memory queue policy and deadletter SOP docs, added weekly queue observability report script, and wired npm commands/planning index/checklist.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/report-memory-queue-weekly.mjs`, `package.json`, `docs/planning/MEMORY_QUEUE_POLICY_V1.md`, `docs/planning/MEMORY_DEADLETTER_SOP_V1.md`, `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`.
+- Impacted Tables/RPC: reads `public.memory_jobs`, `public.memory_job_deadletters`.
+- Risk/Regression Notes: reporting is read-only and fail-closed when Supabase credentials are missing (except dry-run preview).
+- Validation: `npm run -s memory:queue:report:dry`, `npm run -s lint`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Stage Rollback Rehearsal Evidence Automation (R-017)
+
+- Why: Close roadmap item R-017 by making rollback rehearsal results reproducible, persisted, and auditable with a 10-minute recovery target check.
+- Scope: added rollback rehearsal recorder and weekly summary scripts; wired npm commands; synchronized runbook/gate docs and migration report_kind allowlist.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/run-stage-rollback-rehearsal.mjs`, `scripts/summarize-rollback-rehearsals.mjs`, `package.json`, `docs/planning/gate-runs/README.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (`report_kind=rollback_rehearsal_weekly`).
+- Risk/Regression Notes: Dry-run mode emits preview artifacts without calling runtime endpoints; real mode remains fail-closed on rehearsal failure.
+- Validation: `npm run -s rehearsal:stage-rollback:record:dry`, `npm run -s gates:weekly-report:rollback:dry`, `npm run -s lint`.
+
+## 2026-03-19 - Go/No-Go Gate Auto-Judge Rule Implementation
+
+- Why: Close roadmap item R-016 by replacing manual-only stage decision interpretation with a reproducible threshold-based auto-judge flow.
+- Scope: added `scripts/auto-judge-go-no-go.mjs`, npm commands (`gates:auto-judge`, `gates:auto-judge:example`), and gate-runs README usage docs.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/auto-judge-go-no-go.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: N/A (writes gate markdown/json logs under docs planning artifacts).
+- Risk/Regression Notes: Missing metric inputs default to fail (or pending with allowPending) to avoid false-positive go decisions.
+- Validation: `npm run -s gates:auto-judge:example`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Self-Improvement Loop v1 Automation (Failure Pattern -> Patch Proposal)
+
+- Why: Operationalize roadmap item M-05 by converting weekly failures into executable patch proposals with explicit regression checks.
+- Scope: added `scripts/generate-self-improvement-weekly.mjs`, new npm commands (`gates:weekly-report:self-improvement`, `gates:weekly-report:self-improvement:dry`), and expanded `gates:weekly-report:all` to include self-improvement generation.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/generate-self-improvement-weekly.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads `public.agent_weekly_reports` snapshots (`go_no_go_weekly`, `llm_latency_weekly`, `hybrid_weekly`) as source signals.
+- Risk/Regression Notes: script fails fast if any source snapshot is missing in the target window to avoid partial/low-confidence proposals.
+- Validation: `npm run -s gates:weekly-report:self-improvement:dry`, `npm run -s gates:weekly-report:all:dry`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Hybrid Weekly Snapshot Automation (go/no-go + latency)
+
+- Why: Consolidate weekly gate and latency outcomes into one decision artifact for roadmap governance and faster operator triage.
+- Scope: added `scripts/generate-hybrid-weekly-report.mjs`, npm commands (`gates:weekly-report:hybrid`, `gates:weekly-report:hybrid:dry`), and promoted `gates:weekly-report:all` to include hybrid snapshot generation.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/generate-hybrid-weekly-report.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (`report_kind=hybrid_weekly`).
+- Risk/Regression Notes: Hybrid report requires both `go_no_go_weekly` and `llm_latency_weekly` source snapshots in the same window; if missing, script fails fast to prevent partial governance evidence.
+- Validation: `npm run -s gates:weekly-report:hybrid:dry`, `npm run -s gates:weekly-report:all:dry`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Go/No-Go Weekly Report Supabase Sink Integration
+
+- Why: Persist governance weekly decision snapshots into Supabase so roadmap/gate evidence can be queried and audited from a single storage plane.
+- Scope: extended `scripts/summarize-go-no-go-runs.mjs` with sink routing (`markdown|supabase|stdout`), optional Supabase upsert to `public.agent_weekly_reports`, and added npm shortcuts/docs for supabase and dry-run paths.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/summarize-go-no-go-runs.mjs`, `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (upsert, `report_kind=go_no_go_weekly`).
+- Risk/Regression Notes: Default behavior remains markdown output; supabase sink is opt-in and fail-safe when table missing under allow-missing mode.
+- Validation: `npm run -s gates:weekly-report:dry`, `npm run -s gates:weekly-report:supabase:dry`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Weekly Report All-Pipeline Default Promotion
+
+- Why: Make roadmap governance snapshots durable by default in weekly automation, not markdown-only best effort.
+- Scope: promoted `gates:weekly-report:all` to execute `gates:weekly-report:supabase` before LLM latency weekly sink run; updated runbook snippet in gate-runs README.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `package.json`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (default weekly write path includes `go_no_go_weekly` + `llm_latency_weekly`).
+- Risk/Regression Notes: Existing dry-run behavior preserved; if table is missing, go/no-go sink follows allow-missing mode and logs explicit skip reason.
+- Validation: `npm run -s gates:weekly-report:all:dry`, `npm run -s gates:validate`.
+
+## 2026-03-19 - Opencode/NemoClaw/OpenDev Execution Plan Integration
+
+- Why: Align newly expanded execution-board milestones with an explicit 3-layer delivery plan and ownership model.
+- Scope: added `docs/planning/OPENCODE_NEMOCLAW_OPENDEV_EXECUTION_PLAN.md`, synchronized planning index, and reflected milestone-level additions in execution board.
+- Impacted Routes: N/A (planning/governance documentation only)
+- Impacted Services: N/A (no runtime code-path changes)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: No runtime regression; planning clarity improved for M-04/M-05/M-06 scope ownership.
+- Validation: `npm run -s gates:validate`, `npm run -s gates:weekly-report -- --days=7`.
+
+## 2026-03-19 - Go/No-Go Weekly Summary Refresh and Stage Evidence Consolidation
+
+- Why: Keep governance reporting in sync with newly accumulated stage evidence and prevent stale operational decisions.
+- Scope: regenerated `docs/planning/gate-runs/WEEKLY_SUMMARY.md` to include recent A-stage and trading-isolation runs.
+- Impacted Routes: N/A (ops reporting artifact only)
+- Impacted Services: `scripts/summarize-go-no-go-runs.mjs`, `scripts/validate-go-no-go-runs.mjs` (execution output sync)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: No runtime behavior changes; operator decision context now reflects latest gate outcomes.
+- Validation: `npm run -s gates:weekly-report -- --days=7`, `npm run -s gates:validate`.
+
 ## 2026-03-18 - Agent Route Domain Split Completion and Verification Gates
 
 - Why: Complete `/api/bot/agent/*` domain-level route decomposition safely and prevent regressions from future route movement.

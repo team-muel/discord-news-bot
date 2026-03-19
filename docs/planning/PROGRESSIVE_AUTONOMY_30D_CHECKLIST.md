@@ -97,9 +97,9 @@
 
 ### 산출물
 
-- [ ] 큐 정책 문서
-- [ ] deadletter 운영 절차
-- [ ] 관측 지표 리포트
+- [x] 큐 정책 문서 (`docs/planning/MEMORY_QUEUE_POLICY_V1.md`)
+- [x] deadletter 운영 절차 (`docs/planning/MEMORY_DEADLETTER_SOP_V1.md`)
+- [x] 관측 지표 리포트 (`npm run memory:queue:report`)
 
 ### 완료 기준
 

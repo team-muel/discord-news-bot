@@ -5,6 +5,15 @@ export type ActionExecutionInput = {
   requestedBy?: string;
 };
 
+export type AgentRole = 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+
+export type ActionHandoff = {
+  fromAgent: AgentRole;
+  toAgent: AgentRole;
+  reason?: string;
+  evidenceId?: string;
+};
+
 export type ActionExecutionResult = {
   ok: boolean;
   name: string;
@@ -13,6 +22,8 @@ export type ActionExecutionResult = {
   verification: string[];
   error?: string;
   durationMs?: number;
+  agentRole?: AgentRole;
+  handoff?: ActionHandoff;
 };
 
 export type ActionDefinition = {

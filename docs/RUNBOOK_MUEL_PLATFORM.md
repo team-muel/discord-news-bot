@@ -65,6 +65,7 @@ Open these first when verifying behavior:
 - Progressive autonomy 30-day checklist: `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
 - Go/No-Go gate template: `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
 - Autonomy contract schemas: `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
+- Remote-only autonomy implementation: `docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
 - Generated route map: `docs/ROUTES_INVENTORY.md`
 - Schema-service map: `docs/SCHEMA_SERVICE_MAP.md`
 
@@ -167,22 +168,32 @@ Sync rule:
 - `OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>`
 - `OPENCLAW_API_KEY=<secret>`
 
-2. Obsidian headless 읽기 경로 활성화:
+2. Obsidian headless 기반 remote-only 경로 활성화:
 
 - `OBSIDIAN_HEADLESS_ENABLED=true`
 - `OBSIDIAN_HEADLESS_COMMAND=ob`
 - `OBSIDIAN_VAULT_NAME=<vault-name>`
-- `OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli,local-fs`
-- `OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli,local-fs`
-- `OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli,local-fs`
-- `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli,local-fs`
+- `OBSIDIAN_ADAPTER_STRICT=true`
+- `OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli`
+- `OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli`
+- `OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli`
+- `OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli`
+- `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli`
+- `OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=script-cli`
 
-3. 쓰기 전략 분리:
+3. OpenJarvis 원격 실행 강제:
+
+- `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
+- `MCP_OPENCODE_WORKER_URL=<remote-worker-url>`
+- `MCP_OPENCODE_TOOL_NAME=opencode.run`
+- `ACTION_MCP_STRICT_ROUTING=true`
+
+4. 쓰기 전략 분리:
 
 - 문서/지식 업데이트는 `memory_items`, `guild_lore_docs` 등 DB 경로를 주 경로로 사용
-- 파일 직접 쓰기는 fallback 경로로만 운영 (`OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=local-fs,script-cli`)
+- 파일 직접 쓰기는 `script-cli` 또는 DB 비동기 경로로만 운영 (`local-fs` 미사용)
 
-4. 배포 후 필수 검증:
+5. 배포 후 필수 검증:
 
 - `GET /api/bot/agent/obsidian/runtime` 확인
 - `GET /ready` 확인
@@ -339,6 +350,8 @@ npm run mcp:dev
 npm run worker:crawler
 npm run sync:obsidian-lore:dry
 npm run sync:obsidian-lore
+npm run memory:queue:report
+npm run memory:queue:report:dry
 ```
 
 ## 11) Progressive Autonomy Evolution Operations
@@ -427,6 +440,7 @@ Decision:
 4. Evidence logging
 
 - for every rollback: record cause, impact, mitigation, prevention in incident template
+- execute `npm run rehearsal:stage-rollback:record -- --maxRecoveryMinutes=10` and keep the generated md/json artifact pair under `docs/planning/gate-runs/rollback-rehearsals/`
 
 ### 11.5) Canary Procedure
 
@@ -435,6 +449,11 @@ Decision:
 3. Observe 24h with gate metrics
 4. Expand only if all gates pass twice consecutively
 5. If failed, rollback within 10 minutes and document evidence
+
+Rollback rehearsal weekly consolidation:
+
+- `npm run gates:weekly-report:rollback`
+- `npm run gates:weekly-report:rollback:dry`
 
 Daily execution checklist source:
 

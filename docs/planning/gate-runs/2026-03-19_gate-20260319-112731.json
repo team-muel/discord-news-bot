@@ -1,0 +1,36 @@
+{
+  "run_id": "gate-20260319-112731",
+  "stage": "A",
+  "target_scope": "weekly:auto:profile-hint",
+  "started_at": "2026-03-19T11:27:31.536Z",
+  "ended_at": "2026-03-19T11:27:31.536Z",
+  "operator": "auto",
+  "change_set": "auto-judge gate decision from metric inputs",
+  "final_decision": {
+    "overall": "pending",
+    "required_actions": [
+      "provider_profile_fallback:quality-optimized"
+    ],
+    "rollback_required": false,
+    "rollback_type": "none",
+    "rollback_deadline_min": "",
+    "provider_profile_fallback_required": false,
+    "provider_profile_target": "quality-optimized",
+    "provider_profile_trigger": "quality_gate_pending",
+    "provider_profile_evidence_template": "docs/planning/runtime-profiles/quality-first.env"
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "pending"
+    },
+    "quality": {
+      "verdict": "pending"
+    },
+    "safety": {
+      "verdict": "pass"
+    },
+    "governance": {
+      "verdict": "pass"
+    }
+  }
+}

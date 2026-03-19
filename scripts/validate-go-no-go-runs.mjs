@@ -21,6 +21,8 @@ const RUNS_DIR = runsDirArg
   ? path.resolve(ROOT, runsDirArg)
   : DEFAULT_RUNS_DIR;
 const REQUIRE_NO_GO = parseBoolArg('requireNoGo', false);
+const REQUIRE_CHECKLIST = parseBoolArg('requireChecklist', false);
+const CHECKLIST_SINCE_DAYS = Math.max(0, Number(parseArg('checklistSinceDays', '0')) || 0);
 
 const fail = (message) => {
   console.error(`[GO-NO-GO][VALIDATE] ${message}`);
@@ -48,6 +50,33 @@ const parseBooleanLike = (value) => {
     return false;
   }
   return null;
+};
+
+const hasCheckedChecklistItem = (markdown, label) => {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^-\\s*\\[x\\]\\s+${escaped}(?:\\s*\\(evidence:\\s*.+\\))?\\s*$`, 'im');
+  return pattern.test(markdown);
+};
+
+const validatePostDecisionChecklist = (mdPathRelative) => {
+  const mdPath = path.join(ROOT, mdPathRelative);
+  if (!fs.existsSync(mdPath)) {
+    fail(`${mdPathRelative} missing for checklist validation`);
+  }
+
+  const markdown = fs.readFileSync(mdPath, 'utf8');
+  const requiredItems = [
+    'incident template 기록 완료',
+    'comms playbook 공지 완료',
+    'next checkpoint 예약 완료',
+    'follow-up owner 지정 완료',
+  ];
+
+  for (const item of requiredItems) {
+    if (!hasCheckedChecklistItem(markdown, item)) {
+      fail(`${mdPathRelative} checklist incomplete: ${item}`);
+    }
+  }
 };
 
 if (!fs.existsSync(RUNS_DIR)) {
@@ -126,6 +155,7 @@ for (const filePath of jsonFiles) {
   const scope = json.target_scope;
   const startedAt = json.started_at;
   const endedAt = json.ended_at;
+  const endedAtMs = Date.parse(String(endedAt || ''));
 
   if (!isNonEmptyString(runId)) {
     fail(`${path.relative(ROOT, filePath)} missing run_id`);
@@ -200,6 +230,16 @@ for (const filePath of jsonFiles) {
     }
   }
 
+  if (REQUIRE_CHECKLIST && overall !== 'pending') {
+    const shouldValidateByWindow = CHECKLIST_SINCE_DAYS <= 0
+      ? true
+      : endedAtMs >= (Date.now() - CHECKLIST_SINCE_DAYS * 24 * 60 * 60 * 1000);
+    if (shouldValidateByWindow) {
+      const mdRelative = path.relative(ROOT, filePath).replace(/\.json$/i, '.md').replace(/\\/g, '/');
+      validatePostDecisionChecklist(mdRelative);
+    }
+  }
+
   const gates = json.gates;
   if (!isObject(gates)) {
     fail(`${path.relative(ROOT, filePath)} missing gates object`);
@@ -226,4 +266,4 @@ if (REQUIRE_NO_GO && noGoCount === 0) {
   fail(`${path.relative(ROOT, RUNS_DIR)} requires at least one no-go run (use --requireNoGo=true)`);
 }
 
-console.log(`[GO-NO-GO][VALIDATE] validated ${validatedCount} JSON run logs (no-go=${noGoCount})`);
+console.log(`[GO-NO-GO][VALIDATE] validated ${validatedCount} JSON run logs (no-go=${noGoCount}) checklist=${REQUIRE_CHECKLIST ? 'on' : 'off'}`);

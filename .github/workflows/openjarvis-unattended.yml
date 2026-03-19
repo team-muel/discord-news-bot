@@ -1,0 +1,80 @@
+name: openjarvis-unattended
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: "Run in dry mode (no external sinks/deploy)"
+        required: false
+        default: "false"
+      autoDeploy:
+        description: "Allow render deploy when gate is go"
+        required: false
+        default: "false"
+      autoCommitReports:
+        description: "Auto-commit generated planning/gate reports"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openjarvis-unattended-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  autonomous-ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets['SUPABASE_SERVICE_ROLE_KEY'] }}
+      AUTONOMY_DRY_RUN: ${{ github.event.inputs.dryRun || 'false' }}
+      AUTONOMY_AUTO_DEPLOY: ${{ github.event.inputs.autoDeploy || 'false' }}
+      AUTONOMY_STRICT: "true"
+      AUTONOMY_AUTO_COMMIT_REPORTS: ${{ github.event.inputs.autoCommitReports || 'true' }}
+      OPENJARVIS_REQUIRE_OPENCODE_WORKER: "true"
+      MCP_OPENCODE_WORKER_URL: ${{ secrets['MCP_OPENCODE_WORKER_URL'] }}
+      MCP_OPENCODE_TOOL_NAME: opencode.run
+      RENDER_SERVICE_ID: ${{ secrets['RENDER_SERVICE_ID'] }}
+      RENDER_API_KEY: ${{ secrets['RENDER_API_KEY'] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unattended autonomous loop
+        run: npm run -s openjarvis:autonomy:run
+
+      - name: Upload autonomy summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjarvis-unattended-summary-${{ github.run_id }}
+          path: tmp/autonomy/openjarvis-unattended-last-run.json
+          if-no-files-found: warn
+
+      - name: Auto-commit generated reports
+        if: ${{ always() && env.AUTONOMY_AUTO_COMMIT_REPORTS == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- docs/planning; then
+            echo "No planning report changes to commit"
+            exit 0
+          fi
+          git add docs/planning
+          git commit -m "chore(autonomy): unattended planning report update"
+          git push

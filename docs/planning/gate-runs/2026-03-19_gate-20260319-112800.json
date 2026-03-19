@@ -1,0 +1,37 @@
+{
+  "run_id": "gate-20260319-112800",
+  "stage": "A",
+  "target_scope": "weekly:auto:profile-hint-pass",
+  "started_at": "2026-03-19T11:28:00.777Z",
+  "ended_at": "2026-03-19T11:28:00.777Z",
+  "operator": "auto",
+  "change_set": "auto-judge gate decision from metric inputs",
+  "final_decision": {
+    "overall": "go",
+    "required_actions": [],
+    "advisory_actions": [
+      "provider_profile_fallback:cost-optimized"
+    ],
+    "rollback_required": false,
+    "rollback_type": "none",
+    "rollback_deadline_min": "",
+    "provider_profile_fallback_required": false,
+    "provider_profile_target": "cost-optimized",
+    "provider_profile_trigger": "profile_hint",
+    "provider_profile_evidence_template": ""
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "pass"
+    },
+    "quality": {
+      "verdict": "pass"
+    },
+    "safety": {
+      "verdict": "pass"
+    },
+    "governance": {
+      "verdict": "pass"
+    }
+  }
+}

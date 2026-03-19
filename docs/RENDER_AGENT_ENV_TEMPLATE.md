@@ -281,3 +281,30 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - Obsidian markdown access is serialized with local file locks to reduce concurrent read/delete collisions when multiple Discord commands run at the same time.
 - Memory ingest/retrieval uses poison-guard heuristics (prompt-injection/ad-spam/link-heavy patterns) to block or down-rank contaminated context before it reaches RAG/LLM prompts.
 - A lightweight rule-based sanitization worker runs before memory persistence (future Obsidian writes included) and blocks malformed/injection-like text early.
+
+## Remote-Only Profile (No Local Dependency)
+
+Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
+
+- AUTONOMY_STRICT=true
+- OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
+- MCP_OPENCODE_WORKER_URL=<required>
+- MCP_OPENCODE_TOOL_NAME=opencode.run
+- ACTION_MCP_DELEGATION_ENABLED=true
+- ACTION_MCP_STRICT_ROUTING=true
+- ACTION_POLICY_FAIL_OPEN_ON_ERROR=false
+- AGENT_READINESS_FAIL_OPEN=false
+- OBSIDIAN_HEADLESS_ENABLED=true
+- OBSIDIAN_HEADLESS_COMMAND=ob
+- OBSIDIAN_ADAPTER_STRICT=true
+- OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli
+- OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli
+- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli
+- OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli
+- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli
+- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=script-cli
+
+운영 규칙:
+
+- 위 프로파일에서는 `local-fs`를 adapter order에서 제거한다.
+- `MCP_OPENCODE_WORKER_URL` 누락 상태는 배포 불가 상태로 간주한다.

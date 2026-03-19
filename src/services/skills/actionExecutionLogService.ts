@@ -1,5 +1,14 @@
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 
+type AgentRole = 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+
+type ActionHandoff = {
+  fromAgent: AgentRole;
+  toAgent: AgentRole;
+  reason?: string;
+  evidenceId?: string;
+};
+
 export type ActionExecutionLogEvent = {
   guildId: string;
   requestedBy: string;
@@ -15,6 +24,46 @@ export type ActionExecutionLogEvent = {
   error?: string;
   estimatedCostUsd?: number;
   finopsMode?: 'normal' | 'degraded' | 'blocked';
+  agentRole?: AgentRole;
+  handoff?: ActionHandoff;
+};
+
+const inferAgentRoleByActionName = (actionName: string): AgentRole => {
+  const normalized = String(actionName || '').trim().toLowerCase();
+  if (normalized.startsWith('opencode.')) {
+    return 'opencode';
+  }
+  if (normalized.startsWith('news.')
+    || normalized.startsWith('web.')
+    || normalized.startsWith('youtube.')
+    || normalized.startsWith('community.')) {
+    return 'nemoclaw';
+  }
+  if (normalized.startsWith('db.')
+    || normalized.startsWith('code.')
+    || normalized.startsWith('rag.')) {
+    return 'opendev';
+  }
+  return 'openjarvis';
+};
+
+const appendRoutingVerification = (event: ActionExecutionLogEvent): string[] => {
+  const lines = [...(Array.isArray(event.verification) ? event.verification : [])];
+  const effectiveRole = event.agentRole || inferAgentRoleByActionName(event.actionName);
+  lines.push(`agent_role=${effectiveRole}`);
+
+  const handoff = event.handoff;
+  if (handoff && handoff.fromAgent && handoff.toAgent) {
+    lines.push(`handoff=${handoff.fromAgent}->${handoff.toAgent}`);
+    if (handoff.reason) {
+      lines.push(`handoff_reason=${String(handoff.reason).slice(0, 120)}`);
+    }
+    if (handoff.evidenceId) {
+      lines.push(`handoff_evidence=${String(handoff.evidenceId).slice(0, 120)}`);
+    }
+  }
+
+  return [...new Set(lines.filter((line) => String(line || '').trim().length > 0))];
 };
 
 export const logActionExecutionEvent = async (event: ActionExecutionLogEvent) => {
@@ -24,6 +73,7 @@ export const logActionExecutionEvent = async (event: ActionExecutionLogEvent) =>
 
   try {
     const client = getSupabaseClient();
+    const verification = appendRoutingVerification(event);
     await client.from('agent_action_logs').insert({
       guild_id: event.guildId,
       requested_by: event.requestedBy,
@@ -32,7 +82,7 @@ export const logActionExecutionEvent = async (event: ActionExecutionLogEvent) =>
       status: event.ok ? 'success' : 'failed',
       summary: String(event.summary || '').slice(0, 1200),
       artifacts: event.artifacts,
-      verification: event.verification,
+      verification,
       duration_ms: Math.max(0, Math.trunc(event.durationMs || 0)),
       retry_count: Math.max(0, Math.trunc(event.retryCount || 0)),
       circuit_open: Boolean(event.circuitOpen),

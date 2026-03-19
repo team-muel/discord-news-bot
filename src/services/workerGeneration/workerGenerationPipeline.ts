@@ -1,7 +1,8 @@
 import logger from '../../logger';
 import { generateText } from '../llmClient';
 import { createApproval, updateApprovalCode, type PendingWorkerApproval } from './workerApprovalStore';
-import { cleanupSandbox, validateSandboxCode, writeSandboxFile } from './workerSandbox';
+import { cleanupSandbox, writeSandboxFile } from './workerSandbox';
+import { runNemoClawDiscoverExecutor, runOpenDevVerifyExecutor } from './workerExecutors';
 
 const compact = (v: unknown): string => String(v || '').replace(/\s+/g, ' ').trim();
 
@@ -85,11 +86,22 @@ export const runWorkerGenerationPipeline = async (params: {
 
   const code = extractWorkerCodeBlock(rawCode);
 
-  // 2. Static validation (security + structure)
-  const validation = validateSandboxCode(code);
-  logger.info('[WORKER-GEN] validation ok=%s errors=%o', validation.ok, validation.errors);
+  // 2. NemoClaw discover stage (sandbox-safe analysis)
+  const discover = runNemoClawDiscoverExecutor({
+    goal: params.goal,
+    actionName,
+    code,
+  });
+  logger.info('[WORKER-GEN][NEMOCLAW] discover ok=%s risk=%s errors=%o', discover.ok, discover.riskLevel, discover.validationErrors);
 
-  // 3. Write to sandbox
+  // 3. OpenDev verify stage (release eligibility + approval policy)
+  const verify = runOpenDevVerifyExecutor({
+    discover,
+    requestedBy: params.requestedBy,
+  });
+  logger.info('[WORKER-GEN][OPENDEV] verify ok=%s releaseEligible=%s reasons=%o', verify.ok, verify.releaseEligible, verify.reasons);
+
+  // 4. Write to sandbox
   let sandbox: { sandboxDir: string; filePath: string };
   try {
     sandbox = await writeSandboxFile(code);
@@ -99,23 +111,36 @@ export const runWorkerGenerationPipeline = async (params: {
     return { ok: false, error: `샌드박스 저장 실패: ${msg}` };
   }
 
-  // 4. Clean up sandbox immediately if validation failed (don't persist bad code)
-  if (!validation.ok) {
+  // 5. Clean up sandbox immediately if discover/verify failed (don't persist bad code)
+  const validationPassed = discover.ok && verify.releaseEligible;
+  if (!validationPassed) {
     await cleanupSandbox(sandbox.sandboxDir);
   }
 
-  // 5. Create approval record
+  // 6. Create approval record
+  const validationErrors = [
+    ...discover.validationErrors,
+    ...verify.reasons.filter((reason) => reason.toLowerCase().includes('failed') || reason.toLowerCase().includes('required')),
+  ];
+  const validationWarnings = [
+    ...discover.validationWarnings,
+    ...verify.reasons.filter((reason) => !validationErrors.includes(reason)),
+    `discover_evidence=${discover.evidenceId}`,
+    `verify_evidence=${verify.evidenceId}`,
+    `risk_level=${discover.riskLevel}`,
+  ];
+
   const approval = await createApproval({
     guildId: params.guildId,
     requestedBy: params.requestedBy,
     goal: params.goal,
     actionName,
     generatedCode: code,
-    sandboxDir: validation.ok ? sandbox.sandboxDir : '',
-    sandboxFilePath: validation.ok ? sandbox.filePath : '',
-    validationPassed: validation.ok,
-    validationErrors: validation.errors,
-    validationWarnings: validation.warnings,
+    sandboxDir: validationPassed ? sandbox.sandboxDir : '',
+    sandboxFilePath: validationPassed ? sandbox.filePath : '',
+    validationPassed,
+    validationErrors,
+    validationWarnings,
   });
 
   return { ok: true, approval };

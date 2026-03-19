@@ -4,6 +4,13 @@ import { appendOutcomeSignalVerification, type OutcomeSignal } from '../../obser
 
 type WorkerKind = 'youtube' | 'news' | 'community' | 'web' | 'opencode';
 
+const toAgentRole = (workerKind: WorkerKind): NonNullable<ActionExecutionResult['agentRole']> => {
+  if (workerKind === 'opencode') {
+    return 'opencode';
+  }
+  return 'nemoclaw';
+};
+
 type RunDelegatedActionOptions = {
   actionName: string;
   workerKind: WorkerKind;
@@ -25,8 +32,16 @@ const withOutcomeSignal = (
   workerKind: WorkerKind,
   toolName: string,
 ): ActionExecutionResult => {
+  const role = result.agentRole || toAgentRole(workerKind);
   return {
     ...result,
+    agentRole: role,
+    handoff: result.handoff || {
+      fromAgent: 'openjarvis',
+      toAgent: role,
+      reason: 'mcp delegated action execution',
+      evidenceId: toolName,
+    },
     verification: appendOutcomeSignalVerification(result.verification, {
       scope: 'action',
       component: 'action',

@@ -24,6 +24,51 @@ const normalizeStringList = (value: unknown): string[] => {
     .filter(Boolean);
 };
 
+const isAgentRole = (value: unknown): value is NonNullable<ActionExecutionResult['agentRole']> => {
+  const role = String(value || '').trim().toLowerCase();
+  return role === 'openjarvis' || role === 'opencode' || role === 'nemoclaw' || role === 'opendev';
+};
+
+const inferAgentRoleByActionName = (actionName: string): NonNullable<ActionExecutionResult['agentRole']> => {
+  const normalized = String(actionName || '').trim().toLowerCase();
+  if (normalized.startsWith('opencode.')) {
+    return 'opencode';
+  }
+  if (normalized.startsWith('news.')
+    || normalized.startsWith('web.')
+    || normalized.startsWith('youtube.')
+    || normalized.startsWith('community.')) {
+    return 'nemoclaw';
+  }
+  if (normalized.startsWith('db.')
+    || normalized.startsWith('code.')
+    || normalized.startsWith('rag.')) {
+    return 'opendev';
+  }
+  return 'openjarvis';
+};
+
+const normalizeHandoff = (value: unknown): ActionExecutionResult['handoff'] => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const fromAgent = isAgentRole(value.fromAgent) ? value.fromAgent : null;
+  const toAgent = isAgentRole(value.toAgent) ? value.toAgent : null;
+  if (!fromAgent || !toAgent) {
+    return undefined;
+  }
+
+  const reason = String(value.reason || '').trim() || undefined;
+  const evidenceId = String(value.evidenceId || '').trim() || undefined;
+  return {
+    fromAgent,
+    toAgent,
+    reason,
+    evidenceId,
+  };
+};
+
 export class WorkerExecutionError extends Error {
   readonly code: WorkerErrorCode;
   readonly retryable: boolean;
@@ -130,6 +175,10 @@ export const normalizeActionResult = (params: {
   const artifacts = normalizeStringList(params.result.artifacts);
   const verification = normalizeStringList(params.result.verification);
   const error = params.result.error === undefined ? undefined : String(params.result.error || '').trim() || undefined;
+  const agentRole = isAgentRole(params.result.agentRole)
+    ? params.result.agentRole
+    : inferAgentRoleByActionName(params.actionName);
+  const handoff = normalizeHandoff(params.result.handoff);
 
   return {
     ok,
@@ -138,6 +187,8 @@ export const normalizeActionResult = (params: {
     artifacts,
     verification,
     error,
+    agentRole,
+    handoff,
   };
 };
 

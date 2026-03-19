@@ -67,6 +67,7 @@ import {
 } from './services/workerGeneration/workerProposalMetrics';
 import { cleanupSandbox } from './services/workerGeneration/workerSandbox';
 import { evaluateWorkerActivationGate } from './services/agentRuntimeReadinessService';
+import { getGuildActionPolicy, upsertGuildActionPolicy } from './services/skills/actionGovernanceStore';
 // ─── Discord layer modules ────────────────────────────────────────────────────
 import {
   buildSimpleEmbed,
@@ -205,6 +206,19 @@ let commandHandlersAttached = false;
 let activeToken: string | null = null;
 let reconnectInProgress = false;
 const DYNAMIC_WORKER_RESTORE_ON_BOOT = String(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT || 'true').trim().toLowerCase() !== 'false';
+const AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED || 'true').trim());
+const AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS = Math.max(5 * 60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS || 30 * 60_000));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS = Math.max(1, Math.min(30, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS || 7)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS = Math.max(1, Math.min(72, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS || 6)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT = Math.max(1, Math.min(20, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT || 2)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS = Math.max(1, Math.min(10, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS || 1)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN = Math.max(1, Math.min(10, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN || 2)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD = Math.max(1, Math.min(20, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD || 5)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS || 7 * 24 * 60 * 60_000));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS || 6 * 60 * 60_000));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = Math.max(6, Math.min(120, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH || 8)));
+let autoWorkerProposalBackgroundTimer: NodeJS.Timeout | null = null;
+let autoWorkerProposalBackgroundRunning = false;
 
 const restoreApprovedDynamicWorkers = async () => {
   if (!DYNAMIC_WORKER_RESTORE_ON_BOOT) {
@@ -685,6 +699,246 @@ const evaluateAutoProposalPromotionGate = async (params: {
   };
 };
 
+const normalizeBackgroundProposalGoal = (goal: string): string =>
+  String(goal || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220);
+
+const enforceOpencodeApprovalRequiredPilot = async (): Promise<void> => {
+  const guildIds = [...client.guilds.cache.keys()];
+  if (guildIds.length === 0) {
+    return;
+  }
+
+  let changed = 0;
+  for (const guildId of guildIds) {
+    try {
+      const policy = await getGuildActionPolicy(guildId, 'opencode.execute');
+      if (policy.enabled && policy.runMode === 'approval_required') {
+        continue;
+      }
+
+      await upsertGuildActionPolicy({
+        guildId,
+        actionName: 'opencode.execute',
+        enabled: true,
+        runMode: 'approval_required',
+        actorId: 'system:opencode-pilot',
+      });
+      changed += 1;
+    } catch (error) {
+      logger.warn('[OPENCODE-PILOT] policy enforce failed guild=%s reason=%s', guildId, getErrorMessage(error));
+    }
+  }
+
+  if (changed > 0) {
+    logger.info('[OPENCODE-PILOT] approval_required enforced guilds=%d', changed);
+  }
+};
+
+const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
+  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED || autoWorkerProposalBackgroundRunning) {
+    return;
+  }
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  autoWorkerProposalBackgroundRunning = true;
+  try {
+    const client = getSupabaseClient();
+    const nowMs = Date.now();
+    const lookbackSinceIso = new Date(nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS * 24 * 60 * 60_000).toISOString();
+    const noRequestSinceIso = new Date(nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS * 60 * 60_000).toISOString();
+    const dedupSinceMs = nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS;
+
+    const [missingRes, recentRequestRes, allApprovals] = await Promise.all([
+      client
+        .from('agent_action_logs')
+        .select('guild_id, requested_by, goal, action_name, error, created_at')
+        .in('error', ['ACTION_NOT_IMPLEMENTED', 'DYNAMIC_WORKER_NOT_FOUND'])
+        .gte('created_at', lookbackSinceIso)
+        .order('created_at', { ascending: false })
+        .limit(5000),
+      client
+        .from('agent_action_logs')
+        .select('guild_id, created_at')
+        .in('action_name', ['task_routing_vibe', 'task_routing_docs'])
+        .gte('created_at', noRequestSinceIso)
+        .order('created_at', { ascending: false })
+        .limit(5000),
+      listApprovals({ status: 'all' }),
+    ]);
+
+    if (missingRes.error) {
+      throw new Error(missingRes.error.message || 'BACKGROUND_MISSING_ACTION_QUERY_FAILED');
+    }
+    if (recentRequestRes.error) {
+      throw new Error(recentRequestRes.error.message || 'BACKGROUND_RECENT_REQUEST_QUERY_FAILED');
+    }
+
+    const recentRequestGuildIds = new Set(
+      ((recentRequestRes.data || []) as Array<Record<string, unknown>>)
+        .map((row) => String(row.guild_id || '').trim())
+        .filter(Boolean),
+    );
+
+    const pendingCountByGuild = new Map<string, number>();
+    const recentApprovalByGuild = new Map<string, number>();
+    const recentGoalApprovalKeys = new Set<string>();
+    for (const approval of allApprovals) {
+      if (approval.status === 'pending') {
+        pendingCountByGuild.set(approval.guildId, (pendingCountByGuild.get(approval.guildId) || 0) + 1);
+      }
+
+      const createdAtMs = Date.parse(approval.createdAt);
+      if (Number.isFinite(createdAtMs) && createdAtMs >= dedupSinceMs) {
+        const goalKey = `${approval.guildId}::${normalizeBackgroundProposalGoal(approval.goal)}`;
+        recentGoalApprovalKeys.add(goalKey);
+
+        const lastCreatedAtMs = recentApprovalByGuild.get(approval.guildId) || 0;
+        if (createdAtMs > lastCreatedAtMs) {
+          recentApprovalByGuild.set(approval.guildId, createdAtMs);
+        }
+      }
+    }
+
+    const groups = new Map<string, {
+      guildId: string;
+      goal: string;
+      normalizedGoal: string;
+      count: number;
+      distinctRequesters: Set<string>;
+      lastSeenAtMs: number;
+      missingActionNames: Set<string>;
+    }>();
+
+    for (const row of (missingRes.data || []) as Array<Record<string, unknown>>) {
+      const guildId = String(row.guild_id || '').trim();
+      if (!guildId || recentRequestGuildIds.has(guildId)) {
+        continue;
+      }
+
+      const goal = String(row.goal || '').trim();
+      if (goal.length < AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH) {
+        continue;
+      }
+
+      const normalizedGoal = normalizeBackgroundProposalGoal(goal);
+      if (!normalizedGoal) {
+        continue;
+      }
+
+      const key = `${guildId}::${normalizedGoal}`;
+      const requestedBy = String(row.requested_by || '').trim();
+      const createdAtMs = Date.parse(String(row.created_at || ''));
+      const actionName = String(row.action_name || '').trim();
+      const existing = groups.get(key);
+
+      if (!existing) {
+        const distinctRequesters = new Set<string>();
+        if (requestedBy) {
+          distinctRequesters.add(requestedBy);
+        }
+        const missingActionNames = new Set<string>();
+        if (actionName) {
+          missingActionNames.add(actionName);
+        }
+
+        groups.set(key, {
+          guildId,
+          goal,
+          normalizedGoal,
+          count: 1,
+          distinctRequesters,
+          lastSeenAtMs: Number.isFinite(createdAtMs) ? createdAtMs : 0,
+          missingActionNames,
+        });
+        continue;
+      }
+
+      existing.count += 1;
+      if (requestedBy) {
+        existing.distinctRequesters.add(requestedBy);
+      }
+      if (actionName) {
+        existing.missingActionNames.add(actionName);
+      }
+      if (Number.isFinite(createdAtMs) && createdAtMs > existing.lastSeenAtMs) {
+        existing.lastSeenAtMs = createdAtMs;
+      }
+    }
+
+    const metrics = getWorkerProposalMetricsSnapshot();
+    const qualityGuardHit = metrics.generationRequested >= 6 && metrics.generationSuccessRate < 0.45;
+    if (qualityGuardHit) {
+      logger.warn('[WORKER-GEN] background sweep skipped by quality guard successRate=%.3f requested=%d', metrics.generationSuccessRate, metrics.generationRequested);
+      return;
+    }
+
+    const candidates = [...groups.values()]
+      .filter((group) => group.count >= AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT)
+      .filter((group) => group.distinctRequesters.size >= AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS)
+      .filter((group) => !recentGoalApprovalKeys.has(`${group.guildId}::${group.normalizedGoal}`))
+      .filter((group) => (pendingCountByGuild.get(group.guildId) || 0) < AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD)
+      .filter((group) => {
+        const lastApprovalAtMs = recentApprovalByGuild.get(group.guildId) || 0;
+        return lastApprovalAtMs <= 0 || (nowMs - lastApprovalAtMs) >= AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS;
+      })
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return b.lastSeenAtMs - a.lastSeenAtMs;
+      })
+      .slice(0, AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN);
+
+    if (candidates.length === 0) {
+      logger.info('[WORKER-GEN] background sweep no candidates (no-request window=%dh)', AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS);
+      return;
+    }
+
+    let generated = 0;
+    for (const candidate of candidates) {
+      const requestText = `${candidate.goal}\n\n[auto-proposal:missing_action count=${candidate.count}, distinct_requesters=${candidate.distinctRequesters.size}, actions=${[...candidate.missingActionNames].slice(0, 5).join(',')}]`;
+      const result = await runWorkerGenerationPipeline({
+        goal: requestText,
+        guildId: candidate.guildId,
+        requestedBy: 'system:auto-proposal-background',
+      });
+
+      recordWorkerGenerationResult(result.ok, result.ok ? undefined : result.error);
+      if (result.ok) {
+        generated += 1;
+      }
+    }
+
+    logger.info('[WORKER-GEN] background sweep completed generated=%d candidates=%d', generated, candidates.length);
+  } catch (error) {
+    logger.warn('[WORKER-GEN] background sweep failed: %s', getErrorMessage(error));
+  } finally {
+    autoWorkerProposalBackgroundRunning = false;
+  }
+};
+
+const startAutoWorkerProposalBackgroundLoop = () => {
+  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED) {
+    return;
+  }
+
+  if (autoWorkerProposalBackgroundTimer) {
+    clearInterval(autoWorkerProposalBackgroundTimer);
+    autoWorkerProposalBackgroundTimer = null;
+  }
+
+  void runBackgroundAutoWorkerProposalSweep();
+  autoWorkerProposalBackgroundTimer = setInterval(() => {
+    void runBackgroundAutoWorkerProposalSweep();
+  }, AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS);
+};
+
 const vibeHandlers = createVibeHandlers({
   getReplyVisibility,
   startVibeSession,
@@ -1047,6 +1301,8 @@ client.on('clientReady', () => {
 
   void registerSlashCommands();
   void restoreApprovedDynamicWorkers();
+  void enforceOpencodeApprovalRequiredPilot();
+  startAutoWorkerProposalBackgroundLoop();
   startDiscordReadyWorkloads(client);
 });
 

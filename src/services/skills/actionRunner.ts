@@ -136,6 +136,13 @@ const actionResultCache = new TtlCache<{
   summary: string;
   artifacts: string[];
   verification: string[];
+  agentRole?: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+  handoff?: {
+    fromAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+    toAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+    reason?: string;
+    evidenceId?: string;
+  };
 }>(ACTION_CACHE_MAX_ENTRIES);
 
 const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
@@ -1066,6 +1073,13 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       verification: string[];
       error?: string;
       durationMs?: number;
+      agentRole?: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+      handoff?: {
+        fromAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+        toAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+        reason?: string;
+        evidenceId?: string;
+      };
     } | null = null;
     const startedAt = Date.now();
 
@@ -1113,6 +1127,8 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
           circuitOpen: false,
           estimatedCostUsd: 0,
           finopsMode,
+          agentRole: cached.agentRole,
+          handoff: cached.handoff,
         });
 
         hasSuccess = true;
@@ -1203,6 +1219,8 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
           summary: final.summary,
           artifacts: [...(final.artifacts || [])],
           verification: [...(final.verification || [])],
+          agentRole: final.agentRole,
+          handoff: final.handoff,
         }, ACTION_CACHE_TTL_MS);
       }
     } else {
@@ -1242,6 +1260,8 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       error: final.error,
       estimatedCostUsd,
       finopsMode,
+      agentRole: final.agentRole,
+      handoff: final.handoff,
     });
   }
 

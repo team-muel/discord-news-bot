@@ -20,6 +20,9 @@
 8. [M-01][M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
 9. [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
 10. [M-04][M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
+11. [M-05][M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
+12. [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
+13. [M-05][M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
 
 ## Next (D31-D60: Autonomous Loops)
 
@@ -31,6 +34,7 @@
 6. [M-03][M-08] memory job queue-first 분리 v1(enqueue/consume/retry/deadletter)
 7. [M-08] queue lag/retry/deadletter 운영 SLO 알림 자동화
 8. [M-06][M-07] provider profile 자동 회귀 규칙(quality gate fail 시 fallback) 적용
+9. [M-05] 실패 패턴 수집 -> 패치 제안 -> 회귀 검증 self-improvement loop v1
 
 ## Later (D61-D90: Frontier Hardening)
 

@@ -26,6 +26,7 @@ import {
   runWorkerGenerationPipeline,
 } from '../../services/workerGeneration/workerGenerationPipeline';
 import { cleanupSandbox } from '../../services/workerGeneration/workerSandbox';
+import { runOpenDevReleaseGate } from '../../services/workerGeneration/workerExecutors';
 import { evaluateWorkerActivationGate } from '../../services/agentRuntimeReadinessService';
 import { DISCORD_MESSAGES } from '../messages';
 import {
@@ -241,6 +242,18 @@ export const handleButtonInteraction = async (params: {
 
     if (action === 'worker_approve') {
       await interaction.deferUpdate();
+      const releaseGate = runOpenDevReleaseGate({
+        approval: appr,
+        actorIsAdmin: true,
+      });
+      if (!releaseGate.releaseEligible) {
+        await interaction.followUp({
+          content: `🚫 OpenDev 릴리스 게이트 차단: ${releaseGate.reasons.join('; ') || 'unknown reason'}`,
+          ephemeral: true,
+        });
+        return true;
+      }
+
       if (!appr.validationPassed) {
         await interaction.followUp({ content: `⚠️ 이 워커는 검증에 실패했습니다: ${appr.validationErrors.join(', ')}`, ephemeral: true });
         return true;

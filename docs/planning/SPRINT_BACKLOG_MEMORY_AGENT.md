@@ -280,6 +280,7 @@
 - 완료 기준
 - memory 장주기 작업 70% 이상이 비동기 큐 경유
 - 검증 명령
+- `npm run memory:queue:report`
 - `npm run lint`
 
 ### R-016 Go/No-Go 게이트 자동 판정 규칙
@@ -299,7 +300,11 @@
 - 작업
 - stage rollback, queue rollback, provider rollback 절차 문서화
 - 10분 내 복귀 목표 기준 점검표 작성
+- 리허설 결과를 md/json 증거 페어로 저장하는 자동화 스크립트 추가
+- 리허설 결과를 주간 집계하여 Supabase에 적재 가능한 리포트 경로 추가
 - 완료 기준
 - canary 실패 시 10분 내 복귀 리허설 1회 이상 통과
 - 검증 명령
+- `npm run rehearsal:stage-rollback:record -- --maxRecoveryMinutes=10`
+- `npm run gates:weekly-report:rollback`
 - `npm run lint`

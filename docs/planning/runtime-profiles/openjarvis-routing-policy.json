@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "classificationPriority": [
+    "recover",
+    "release",
+    "verify",
+    "implement",
+    "discover"
+  ],
+  "agentByClassification": {
+    "discover": "nemoclaw",
+    "implement": "opencode",
+    "verify": "opendev",
+    "release": "opendev",
+    "recover": "opendev"
+  },
+  "workflowSteps": [
+    {
+      "id": "weekly-report-all",
+      "script": "gates:weekly-report:all",
+      "scriptDry": "gates:weekly-report:all:dry",
+      "classification": "implement",
+      "agentRole": "opencode",
+      "handoffFrom": "openjarvis",
+      "handoffTo": "opencode",
+      "reason": "collect weekly artifacts"
+    },
+    {
+      "id": "validate-gates-strict",
+      "script": "gates:validate:strict",
+      "classification": "verify",
+      "agentRole": "opendev",
+      "handoffFrom": "opencode",
+      "handoffTo": "opendev",
+      "reason": "strict release gate validation"
+    },
+    {
+      "id": "rollback-readiness-validate-strict",
+      "script": "rehearsal:stage-rollback:validate:strict",
+      "classification": "discover",
+      "agentRole": "nemoclaw",
+      "handoffFrom": "opendev",
+      "handoffTo": "nemoclaw",
+      "reason": "rollback rehearsal readiness check"
+    }
+  ]
+}
