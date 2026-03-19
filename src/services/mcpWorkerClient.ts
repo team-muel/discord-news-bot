@@ -9,6 +9,11 @@ export type McpCallPayload = {
 };
 
 const toBaseUrl = (raw: string | undefined): string => String(raw || '').trim().replace(/\/+$/, '');
+const MCP_WORKER_AUTH_TOKEN = String(
+  process.env.MCP_WORKER_AUTH_TOKEN
+  || process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN
+  || '',
+).trim();
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   let timer: NodeJS.Timeout | null = null;
@@ -72,12 +77,16 @@ export const callMcpTool = async (params: {
   });
 
   const base = toBaseUrl(params.workerUrl);
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  };
+  if (MCP_WORKER_AUTH_TOKEN) {
+    headers['x-opencode-worker-token'] = MCP_WORKER_AUTH_TOKEN;
+  }
 
   const response = await withTimeout(fetch(`${base}/tools/call`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       name: params.toolName,
       arguments: params.args,

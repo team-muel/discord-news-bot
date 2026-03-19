@@ -26,6 +26,13 @@ const isValidUrl = (value) => {
   }
 };
 
+const VALID_LLM_PROVIDERS = new Set(['openai', 'gemini', 'anthropic', 'huggingface', 'hf', 'openclaw', 'ollama', 'local', 'claude']);
+
+const parseProviderList = (raw) => String(raw || '')
+  .split(/[;,]/)
+  .map((item) => String(item || '').trim().toLowerCase())
+  .filter(Boolean);
+
 const findings = [];
 let hasError = false;
 
@@ -143,6 +150,57 @@ if (aiProvider === 'openclaw') {
 }
 if (aiProvider === 'ollama' || aiProvider === 'local') {
   recommendNonEmpty('OLLAMA_MODEL', 'AI_PROVIDER=ollama/local 선택 시 모델명을 지정하면 예측 가능성이 높아집니다.');
+}
+
+const providerBaseOrder = parseProviderList(read('LLM_PROVIDER_BASE_ORDER'));
+const invalidBaseProviders = providerBaseOrder.filter((provider) => !VALID_LLM_PROVIDERS.has(provider));
+if (invalidBaseProviders.length > 0) {
+  add('ERROR', 'LLM_PROVIDER_BASE_ORDER', `지원하지 않는 provider: ${invalidBaseProviders.join(', ')}`);
+}
+const automaticFallbackOrder = parseProviderList(read('LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER'));
+const invalidAutomaticProviders = automaticFallbackOrder.filter((provider) => !VALID_LLM_PROVIDERS.has(provider));
+if (invalidAutomaticProviders.length > 0) {
+  add('ERROR', 'LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER', `지원하지 않는 provider: ${invalidAutomaticProviders.join(', ')}`);
+}
+const explicitFallbackChain = parseProviderList(read('LLM_PROVIDER_FALLBACK_CHAIN'));
+const invalidFallbackProviders = explicitFallbackChain.filter((provider) => !VALID_LLM_PROVIDERS.has(provider));
+if (invalidFallbackProviders.length > 0) {
+  add('ERROR', 'LLM_PROVIDER_FALLBACK_CHAIN', `지원하지 않는 provider: ${invalidFallbackProviders.join(', ')}`);
+}
+const hasRemoteLlmFallback = Boolean(
+  read('OPENAI_API_KEY')
+  || read('GEMINI_API_KEY')
+  || read('GOOGLE_API_KEY')
+  || read('ANTHROPIC_API_KEY')
+  || read('CLAUDE_API_KEY')
+  || readAny(['HF_TOKEN', 'HF_API_KEY', 'HUGGINGFACE_API_KEY'])
+  || read('OPENCLAW_BASE_URL')
+  || read('OPENCLAW_API_BASE_URL')
+  || read('OPENCLAW_URL'),
+);
+if ((aiProvider === 'ollama' || aiProvider === 'local' || providerBaseOrder[0] === 'ollama' || providerBaseOrder[0] === 'local') && !hasRemoteLlmFallback) {
+  add('WARN', 'OPENCLAW_BASE_URL|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|HF_TOKEN', 'local-first 구성인데 원격 fallback provider가 없습니다. 로컬 LLM 중단 시 세션 실패 가능성이 큽니다.');
+}
+const requireOpencodeWorker = isTruthy(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
+if ((aiProvider === 'ollama' || aiProvider === 'local' || providerBaseOrder[0] === 'ollama' || providerBaseOrder[0] === 'local')
+  && startAutomation
+  && !requireOpencodeWorker) {
+  add('WARN', 'OPENJARVIS_REQUIRE_OPENCODE_WORKER', '로컬 추론 우선 구성이더라도 unattended automation은 원격 worker 강제를 유지하는 편이 안전합니다.');
+}
+if (requireOpencodeWorker && !read('MCP_OPENCODE_WORKER_URL')) {
+  add('ERROR', 'MCP_OPENCODE_WORKER_URL', 'OPENJARVIS_REQUIRE_OPENCODE_WORKER=true 이면 원격 worker URL이 필요합니다.');
+}
+const workerRequireAuth = isTruthy(process.env.OPENCODE_LOCAL_WORKER_REQUIRE_AUTH, false);
+const hasWorkerAuthToken = Boolean(
+  read('MCP_WORKER_AUTH_TOKEN')
+  || read('MCP_OPENCODE_WORKER_AUTH_TOKEN')
+  || read('OPENCODE_LOCAL_WORKER_AUTH_TOKEN'),
+);
+if (requireOpencodeWorker && !hasWorkerAuthToken) {
+  add('WARN', 'MCP_WORKER_AUTH_TOKEN|MCP_OPENCODE_WORKER_AUTH_TOKEN', '원격 worker 사용 시 인증 토큰 설정을 권장합니다. 무인증 endpoint 노출 위험이 있습니다.');
+}
+if (workerRequireAuth && !hasWorkerAuthToken) {
+  add('ERROR', 'OPENCODE_LOCAL_WORKER_REQUIRE_AUTH', 'OPENCODE_LOCAL_WORKER_REQUIRE_AUTH=true 인 경우 worker/client 공용 인증 토큰이 필요합니다.');
 }
 
 const providerMaxAttemptsRaw = Number(read('LLM_PROVIDER_MAX_ATTEMPTS') || 2);

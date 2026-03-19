@@ -4,7 +4,7 @@ import { runDelegatedAction } from './mcpDelegatedAction';
 const OPENCODE_TOOL_NAME = String(process.env.MCP_OPENCODE_TOOL_NAME || 'opencode.run').trim() || 'opencode.run';
 const MAX_TASK_LENGTH = 2400;
 
-const DANGEROUS_COMMAND_PATTERN = /(\brm\s+-rf\b|\bdel\s+\/f\b|\bformat\b|\bmkfs\b|\bshutdown\b|\breboot\b|\bpoweroff\b|\bgit\s+reset\s+--hard\b|\bgit\s+clean\s+-fd\b)/i;
+const DANGEROUS_COMMAND_PATTERN = /(?:\brm\s+-rf\b|\bdel\s+\/f\b|\bformat\b|\bmkfs\b|\bshutdown\b|\breboot\b|\bpoweroff\b|\bgit\s+reset\s+--hard\b|\bgit\s+clean\s+-fd\b|\bRemove-Item\b\s+.*-Recurse|\bStop-Computer\b|\bRestart-Computer\b)/i;
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 

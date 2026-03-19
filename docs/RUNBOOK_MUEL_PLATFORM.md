@@ -71,6 +71,8 @@ Open these first when verifying behavior:
 - Progressive autonomy 30-day checklist: `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
 - Go/No-Go gate template: `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
 - Autonomy contract schemas: `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
+- Local-first hybrid autonomy: `docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md`
+- GCP opencode worker VM deploy: `docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md`
 - Remote-only autonomy implementation: `docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
 - Generated route map: `docs/ROUTES_INVENTORY.md`
 - Schema-service map: `docs/SCHEMA_SERVICE_MAP.md`
@@ -140,14 +142,20 @@ Sync rule:
    - Build: `npm ci; npm run build`
    - Start: `npm run start`
 2. Set required env values:
-   - `NODE_ENV=production`
-   - `START_BOT=true`
-   - `START_AUTOMATION_JOBS=true`
-   - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
-   - `JWT_SECRET`
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_KEY`)
-   - LLM keys (`AI_PROVIDER` + provider key)
+
+    - `NODE_ENV=production`
+    - `START_BOT=true`
+    - `START_AUTOMATION_JOBS=true`
+    - `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`)
+    - `JWT_SECRET`
+    - `SUPABASE_URL`
+    - `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_KEY`)
+    - LLM keys (`AI_PROVIDER` + provider key)
+    - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
+    - `ACTION_MCP_STRICT_ROUTING=true`
+    - `MCP_OPENCODE_WORKER_URL=https://34.56.232.61.sslip.io` (temporary TLS endpoint; replace with custom domain later)
+    - `MCP_OPENCODE_TOOL_NAME=opencode.run`
+
 3. Set web integration env values:
    - `PUBLIC_BASE_URL=https://<render-domain>`
    - `CORS_ALLOWLIST` (include Vercel domain)
@@ -218,13 +226,16 @@ Sync rule:
 프로필 정의 파일:
 
 - `config/env/local.profile.env`
+- `config/env/local-first-hybrid.profile.env`
 - `config/env/production.profile.env`
 
 적용 명령:
 
 - 로컬 개발형 적용: `npm run env:profile:local`
+- 로컬 추론 우선형 적용: `npm run env:profile:local-first-hybrid`
 - 운영형 적용: `npm run env:profile:production`
 - 사전 미리보기(dry-run): `npm run env:profile:local:dry`
+- 사전 미리보기(dry-run): `npm run env:profile:local-first-hybrid:dry`
 - 사전 미리보기(dry-run): `npm run env:profile:production:dry`
 
 가드레일:
@@ -232,6 +243,9 @@ Sync rule:
 - 적용 스크립트는 기존 `.env`를 `.env.profile-backup`으로 백업한다.
 - 운영형 적용 후에는 `MCP_OPENCODE_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다.
 - 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
+- local-first hybrid 적용 직후에는 `npm run env:check:local-hybrid`로 Ollama/worker 공존 readiness를 추가 확인한다.
+- 로컬 worker를 사용하는 경우 `npm run worker:opencode:local`을 먼저 실행한 뒤 hybrid 검증을 수행한다.
+- 원격 worker가 GCP VM일 경우 외부 IP는 정적 IP로 예약하고, `sslip.io`는 임시 도메인으로만 사용한다.
 
 ### 3.7 Bootstrap Profiles and Startup DAG
 
@@ -241,7 +255,7 @@ Sync rule:
 
 - `server.ts`는 항상 `startServerProcessRuntime()`를 먼저 실행한다.
 - `START_BOT=true`이고 토큰이 있을 때만 `src/bot.ts`가 로드되고 Discord ready 워크로드가 시작된다.
-- `config/env/local.profile.env`, `config/env/production.profile.env`는 OpenJarvis 라우팅/worker 강제 정책을 바꾸며, runtime bootstrap DAG 자체는 바꾸지 않는다.
+- `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `config/env/production.profile.env`는 OpenJarvis 라우팅/worker 강제 정책과 LLM provider 우선순위만 바꾸며, runtime bootstrap DAG 자체는 바꾸지 않는다.
 
 Profile A: server-only (`START_BOT=false`)
 

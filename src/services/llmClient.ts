@@ -87,6 +87,8 @@ const getOllamaBaseUrl = () => String(process.env.OLLAMA_BASE_URL || 'http://127
 const getOllamaModel = () => String(process.env.OLLAMA_MODEL || process.env.LOCAL_LLM_MODEL || '').trim();
 const isOllamaConfigured = () => Boolean(getOllamaModel() || ['ollama', 'local'].includes(String(process.env.AI_PROVIDER || '').trim().toLowerCase()));
 const isHuggingFaceConfigured = () => Boolean(getHuggingFaceKey());
+const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openai', 'anthropic', 'gemini', 'huggingface', 'openclaw', 'ollama'];
+const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'gemini', 'huggingface', 'ollama'];
 
 const normalizeProviderAlias = (value: string): LlmProvider | null => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -173,18 +175,30 @@ const matchActionPattern = (pattern: string, actionName: string): boolean => {
   return normalizedAction.startsWith(`${normalizedPattern}.`);
 };
 
-const ACTION_POLICY_RULES = parseActionPolicyRules();
-const DEFAULT_PROVIDER_FALLBACK_CHAIN = parseProviderList(String(process.env.LLM_PROVIDER_FALLBACK_CHAIN || ''));
+const getConfiguredBaseProviderOrder = (): LlmProvider[] => {
+  const configured = parseProviderList(String(process.env.LLM_PROVIDER_BASE_ORDER || '').trim());
+  return configured.length > 0 ? configured : DEFAULT_BASE_PROVIDER_ORDER;
+};
+
+const getAutomaticFallbackOrder = (): LlmProvider[] => {
+  const configured = parseProviderList(String(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER || '').trim());
+  return configured.length > 0 ? configured : DEFAULT_AUTOMATIC_FALLBACK_ORDER;
+};
+
+const getDefaultProviderFallbackChain = (): LlmProvider[] => {
+  return parseProviderList(String(process.env.LLM_PROVIDER_FALLBACK_CHAIN || ''));
+};
 
 const getActionPolicyProviders = (actionName?: string): LlmProvider[] => {
   const safeActionName = String(actionName || '').trim();
-  if (!safeActionName || ACTION_POLICY_RULES.length === 0) {
+  const actionPolicyRules = parseActionPolicyRules();
+  if (!safeActionName || actionPolicyRules.length === 0) {
     return [];
   }
 
   const seen = new Set<LlmProvider>();
   const providers: LlmProvider[] = [];
-  for (const rule of ACTION_POLICY_RULES) {
+  for (const rule of actionPolicyRules) {
     if (!matchActionPattern(rule.pattern, safeActionName)) {
       continue;
     }
@@ -257,28 +271,10 @@ const resolveProviderWithoutExperiment = (): LlmProvider | null => {
     return 'ollama';
   }
 
-  if (getOpenAiKey()) {
-    return 'openai';
-  }
-
-  if (getAnthropicKey()) {
-    return 'anthropic';
-  }
-
-  if (getGeminiKey()) {
-    return 'gemini';
-  }
-
-  if (isHuggingFaceConfigured()) {
-    return 'huggingface';
-  }
-
-  if (isOpenClawConfigured()) {
-    return 'openclaw';
-  }
-
-  if (isOllamaConfigured()) {
-    return 'ollama';
+  for (const provider of getConfiguredBaseProviderOrder()) {
+    if (isProviderConfigured(provider)) {
+      return provider;
+    }
   }
 
   return null;
@@ -339,13 +335,12 @@ const resolveProviderChain = (
   }
 
   const actionPolicy = getActionPolicyProviders(params.actionName);
-  const automaticFallbackOrder: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'gemini', 'huggingface', 'ollama'];
   const chain = dedupeProviders([
     selectedProvider,
     ...actionPolicy,
-    ...DEFAULT_PROVIDER_FALLBACK_CHAIN,
+    ...getDefaultProviderFallbackChain(),
     resolveProviderWithoutExperiment(),
-    ...(LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED ? automaticFallbackOrder : []),
+    ...(LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED ? getAutomaticFallbackOrder() : []),
   ]).filter((provider) => isProviderConfigured(provider));
 
   const isHfExperimentArm = selection.experiment?.arm === 'huggingface' && selectedProvider === 'huggingface';

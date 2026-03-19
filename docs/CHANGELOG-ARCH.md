@@ -19,6 +19,36 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-20 - Static Worker Endpoint Baseline and Cutover Runbooks
+
+- Why: GCP worker를 실제 운영 경로로 붙인 뒤에도 IP 변동과 임시 도메인 의존으로 인한 drift를 줄이고, Render/도메인/원격 추론 분리 절차를 같은 기준으로 남기기 위함.
+- Scope: reserved the current GCP worker IP as static, updated Render deployment env baseline to require the remote worker, corrected architecture-index provider docs, and added domain/inference split runbooks.
+- Impacted Routes: N/A (deployment/docs/config only)
+- Impacted Services: `render.yaml`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/RENDER_AGENT_ENV_TEMPLATE.md`, `docs/ARCHITECTURE_INDEX.md`, `docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md`, `docs/planning/GCP_REMOTE_INFERENCE_NODE.md`, `docs/planning/README.md`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: Render service now has an explicit remote worker dependency in the deployment definition; temporary `sslip.io` usage remains acceptable short-term but should be replaced by a custom domain before broader rollout.
+- Validation: reserved static IP `34.56.232.61` in GCP, verified existing HTTPS worker health, and confirmed local hybrid dry-run remains passing before doc/config sync.
+
+## 2026-03-20 - Local-First Hybrid Inference + Remote Autonomy Guardrails
+
+- Why: 로컬 머신이 켜져 있을 때는 Ollama 우선 추론으로 품질/속도를 높이고, 운영 환경에서는 OpenJarvis unattended autonomy와 원격 worker fail-closed 정책을 동시에 유지하기 위함.
+- Scope: added configurable LLM base provider order, introduced `local-first-hybrid` env profile, extended env validation for hybrid guardrails, and synchronized operator docs/runbook/env template.
+- Impacted Routes: N/A (provider selection / ops profile / docs only)
+- Impacted Services: `src/services/llmClient.ts`, `src/services/llmClient.test.ts`, `scripts/validate-env.mjs`, `scripts/apply-env-profile.mjs`, `config/env/local-first-hybrid.profile.env`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/RENDER_AGENT_ENV_TEMPLATE.md`, `docs/ARCHITECTURE_INDEX.md`, `docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md`, `docs/planning/README.md`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: local-first profile without remote fallback provider or without `MCP_OPENCODE_WORKER_URL` now fails validation earlier, preventing accidental local-only drift in unattended paths.
+- Validation: `npm run -s lint`, `npx vitest run src/services/llmClient.test.ts`, `npm run -s env:profile:local-first-hybrid:dry`, `npm run -s env:check`.
+
+## 2026-03-20 - GCP VM Worker Deployment Baseline
+
+- Why: GCP VM를 이미 확보한 상태에서 `opencode.execute`를 로컬 PC 전원 상태와 분리해 운영하기 위한 최소 배포 아티팩트를 제공하기 위함.
+- Scope: added worker Dockerfile, GCP VM env example, systemd unit example, and deployment runbook for the HTTP opencode worker.
+- Impacted Routes: N/A (deployment artifacts only)
+- Impacted Services: `Dockerfile.opencode-worker`, `config/env/opencode-worker.gcp.env.example`, `config/systemd/opencode-local-worker.service.example`, `docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md`, `docs/planning/README.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `package.json`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: worker remains fail-closed by URL contract; deployment still requires operator-managed firewall, TLS, and process supervision on GCP VM.
+- Validation: `npm run -s lint`.
+
 ## 2026-03-20 - Canonical Document Hierarchy Confirmation
 
 - Why: reduce planning drift by making document ownership explicit at the top of the canonical roadmap, execution board, backlog, runbook, operations, and architecture index.

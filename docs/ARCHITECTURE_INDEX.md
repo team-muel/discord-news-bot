@@ -95,7 +95,8 @@ Provider alias normalization:
 Base provider resolution (when request provider is omitted):
 
 1. `AI_PROVIDER` preferred value if configured
-2. fallback priority: `openai` -> `anthropic` -> `gemini` -> `huggingface` -> `openclaw` -> `ollama`
+2. `LLM_PROVIDER_BASE_ORDER` if configured
+3. default fallback priority: `openai` -> `anthropic` -> `gemini` -> `huggingface` -> `openclaw` -> `ollama`
 
 Fallback chain composition:
 
@@ -103,7 +104,7 @@ Fallback chain composition:
 2. action policy matches (`LLM_PROVIDER_POLICY_ACTIONS`)
 3. `LLM_PROVIDER_FALLBACK_CHAIN`
 4. base resolver provider
-5. automatic fallback order (`openclaw`, `openai`, `anthropic`, `gemini`, `huggingface`, `ollama`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
+5. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openclaw`, `openai`, `anthropic`, `gemini`, `huggingface`, `ollama`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
 
 Guardrails:
 
@@ -161,7 +162,7 @@ flowchart TD
 
 Profile note:
 
-- `config/env/local.profile.env`, `config/env/production.profile.env` tune OpenJarvis routing/worker strictness only.
+- `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `config/env/production.profile.env` tune OpenJarvis routing/worker strictness and LLM provider preference only.
 - Runtime startup DAG is controlled by entrypoint + `START_BOT` + Discord token presence.
 
 ## Request Flow (HTTP)

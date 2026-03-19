@@ -33,7 +33,9 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 
 Provider fallback controls:
 
+- LLM_PROVIDER_BASE_ORDER=openai,anthropic,gemini,huggingface,openclaw,ollama (optional, base provider selection order when AI_PROVIDER is unset)
 - LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false (optional)
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER=openclaw,openai,anthropic,gemini,huggingface,ollama (optional)
 - LLM_PROVIDER_MAX_ATTEMPTS=2 (optional, 1~6)
 - LLM_PROVIDER_FALLBACK_CHAIN=openclaw,openai,anthropic,gemini,huggingface,ollama (optional)
 - LLM_PROVIDER_POLICY_ACTIONS=rag.retrieve=openclaw,openai;code.generate=openclaw,anthropic (optional)
@@ -64,6 +66,7 @@ Provider fallback controls:
 - ACTION_MCP_TIMEOUT_MS=8000 (optional)
 - MCP_OPENCODE_WORKER_URL= (optional, opencode worker base url)
 - MCP_OPENCODE_TOOL_NAME=opencode.run (optional)
+- OPENJARVIS_REQUIRE_OPENCODE_WORKER=false (optional, unattended/production에서는 true 권장)
 - AGENT_CONVERSATION_THREAD_IDLE_MS=21600000 (optional, turn thread reuse idle window; default 6h)
 - OPENCODE_PUBLISH_WORKER_ENABLED=false (optional, true면 queue 소비 + GitHub PR publish 루프 활성화)
 - OPENCODE_PUBLISH_WORKER_INTERVAL_MS=5000 (optional)
@@ -240,6 +243,21 @@ Provider fallback controls:
 - LLM_EXPERIMENT_FAIL_OPEN=true (optional, HF arm failure 시 base provider로 fallback)
 - SUPABASE_MAINTENANCE_CRON_RETENTION_DAYS=30 (optional, cron maintenance 기본 retention)
 
+## Remote Worker Baseline
+
+운영형 Render baseline에서는 아래 값을 명시하는 편이 안전하다.
+
+- OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
+- ACTION_MCP_STRICT_ROUTING=true
+- MCP_OPENCODE_WORKER_URL=worker-url
+- MCP_OPENCODE_TOOL_NAME=opencode.run
+
+주의:
+
+- 현재 임시 endpoint 예시는 [34.56.232.61.sslip.io](https://34.56.232.61.sslip.io) 이다.
+- 장기 운영에서는 정식 도메인으로 교체하고 같은 값을 Render service env에도 반영한다.
+- worker는 public `8787` 직접 노출 대신 `127.0.0.1:8787` + reverse proxy 구성을 유지한다.
+
 ## Automation Defaults
 
 - START_AUTOMATION_JOBS=true (optional)
@@ -282,6 +300,7 @@ Provider fallback controls:
 - If multiple providers are configured, `AI_PROVIDER` selects priority.
 - If no provider configuration exists, `/해줘` and `/시작` session creation fails by design.
 - 비용 최소화가 목표라면 `AI_PROVIDER=ollama`와 소형 모델(예: qwen2.5:3b-instruct) 조합을 권장합니다.
+- local-first hybrid가 목표라면 `AI_PROVIDER=ollama`, `LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface`, `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true` 조합을 권장합니다.
 - `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps command surface minimal (`/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`) and enables mention-first chat UX.
 - `DISCORD_LOGIN_SESSION_TTL_MS` controls how long a non-admin login session stays active for subscription add/remove.
 - `DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS` enables sliding expiration; sessions accessed near expiry are extended.
@@ -324,3 +343,25 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 
 - 위 프로파일에서는 `local-fs`를 adapter order에서 제거한다.
 - `MCP_OPENCODE_WORKER_URL` 누락 상태는 배포 불가 상태로 간주한다.
+
+## Local-First Hybrid Profile (Local Reasoning + Remote Automation)
+
+Use this profile when 로컬 머신이 켜져 있을 때는 Ollama를 우선 사용하되, 운영 unattended autonomy는 원격 worker로 유지하려는 경우:
+
+- AI_PROVIDER=ollama
+- OLLAMA_MODEL=<required>
+- OLLAMA_BASE_URL=http://127.0.0.1:11434
+- LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface
+- LLM_PROVIDER_FALLBACK_CHAIN=openclaw,anthropic,openai,gemini,huggingface
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false
+- OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
+- MCP_OPENCODE_WORKER_URL=http://127.0.0.1:8787 (로컬 worker) 또는 실제 원격 worker URL
+- MCP_OPENCODE_TOOL_NAME=opencode.run
+- ACTION_MCP_DELEGATION_ENABLED=true
+- ACTION_MCP_STRICT_ROUTING=true
+
+운영 규칙:
+
+- 로컬 Ollama는 추론 우선 경로이지만 단일 장애점으로 두지 않는다.
+- 원격 fallback provider를 최소 1개 이상 유지한다.
+- unattended automation은 worker fail-closed를 유지한다. 로컬 worker를 쓰는 경우 PC가 꺼지면 autonomy도 함께 중단된다.

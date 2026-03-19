@@ -22,6 +22,102 @@ import { toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
 
+const parseBool = (value: string | undefined, fallback: boolean): boolean => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+};
+
+const withFetchTimeout = async (url: string, timeoutMs: number): Promise<{ ok: boolean; status: number; error?: string }> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return { ok: response.ok, status: response.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const probeOpencodeWorkerHealth = async () => {
+  const required = parseBool(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
+  const workerUrl = String(process.env.MCP_OPENCODE_WORKER_URL || '').trim();
+  const timeoutMs = Math.max(1000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000));
+  const timestamp = new Date().toISOString();
+
+  if (!required) {
+    return {
+      required,
+      configured: Boolean(workerUrl),
+      reachable: null,
+      latencyMs: null,
+      status: null,
+      endpoint: workerUrl || null,
+      checkedAt: timestamp,
+      reason: 'worker_not_required',
+    };
+  }
+
+  if (!workerUrl) {
+    return {
+      required,
+      configured: false,
+      reachable: false,
+      latencyMs: null,
+      status: null,
+      endpoint: null,
+      checkedAt: timestamp,
+      reason: 'worker_url_missing',
+    };
+  }
+
+  const base = workerUrl.replace(/\/+$/, '');
+  const candidates = [base, `${base}/health`];
+  const startedAt = Date.now();
+  let lastResult: { ok: boolean; status: number; error?: string } = { ok: false, status: 0 };
+
+  for (const target of candidates) {
+    const result = await withFetchTimeout(target, timeoutMs);
+    lastResult = result;
+    if (result.ok) {
+      return {
+        required,
+        configured: true,
+        reachable: true,
+        latencyMs: Date.now() - startedAt,
+        status: result.status,
+        endpoint: target,
+        checkedAt: timestamp,
+      };
+    }
+  }
+
+  return {
+    required,
+    configured: true,
+    reachable: false,
+    latencyMs: Date.now() - startedAt,
+    status: lastResult.status,
+    endpoint: `${base}/health`,
+    checkedAt: timestamp,
+    reason: lastResult.error || 'probe_failed',
+  };
+};
+
 export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
   router.get('/agent/runtime/telemetry-queue', requireAdmin, async (_req, res) => {
@@ -35,11 +131,13 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const readiness = guildId
         ? await summarizeOpencodeQueueReadiness({ guildId })
         : null;
+      const workerHealth = await probeOpencodeWorkerHealth();
       return res.json({
         ok: true,
         timestamp: new Date().toISOString(),
         telemetry,
         opencodeReadiness: readiness,
+        workerHealth,
         notes: {
           guildScoped: Boolean(guildId),
           publishLock: {

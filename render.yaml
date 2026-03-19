@@ -24,6 +24,14 @@ services:
         value: openclaw
       - key: OPENCLAW_MODEL
         value: muel-balanced
+      - key: OPENJARVIS_REQUIRE_OPENCODE_WORKER
+        value: "true"
+      - key: ACTION_MCP_STRICT_ROUTING
+        value: "true"
+      - key: MCP_OPENCODE_WORKER_URL
+        value: https://34.56.232.61.sslip.io
+      - key: MCP_OPENCODE_TOOL_NAME
+        value: opencode.run
       - key: AGENT_AUTO_ONBOARDING_ENABLED
         value: "true"
       - key: AGENT_DAILY_LEARNING_ENABLED

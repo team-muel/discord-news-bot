@@ -24,6 +24,7 @@ const clearLlmEnv = () => {
   vi.stubEnv('OLLAMA_MODEL', '');
   vi.stubEnv('LOCAL_LLM_MODEL', '');
   vi.stubEnv('AI_PROVIDER', '');
+  vi.stubEnv('LLM_PROVIDER_BASE_ORDER', '');
 };
 
 // ──────────────────────────────────────────────────────────
@@ -113,6 +114,19 @@ describe('resolveLlmProvider', () => {
     vi.stubEnv('HF_TOKEN', 'hf_token_value');
     vi.stubEnv('AI_PROVIDER', 'huggingface');
     expect(resolveLlmProvider()).toBe('huggingface');
+  });
+
+  it('AI_PROVIDER=local + OLLAMA_MODEL → ollama', () => {
+    vi.stubEnv('AI_PROVIDER', 'local');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    expect(resolveLlmProvider()).toBe('ollama');
+  });
+
+  it('LLM_PROVIDER_BASE_ORDER가 local-first이면 ollama를 우선 선택한다', () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-primary');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'ollama,openai');
+    expect(resolveLlmProvider()).toBe('ollama');
   });
 });
 

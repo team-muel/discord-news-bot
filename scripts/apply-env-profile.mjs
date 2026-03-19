@@ -8,11 +8,12 @@ const BACKUP_PATH = path.join(ROOT, '.env.profile-backup');
 
 const PROFILE_FILES = {
   local: path.join(ROOT, 'config', 'env', 'local.profile.env'),
+  'local-first-hybrid': path.join(ROOT, 'config', 'env', 'local-first-hybrid.profile.env'),
   production: path.join(ROOT, 'config', 'env', 'production.profile.env'),
 };
 
 const usage = () => {
-  console.log('Usage: node scripts/apply-env-profile.mjs <local|production> [--dry-run]');
+  console.log('Usage: node scripts/apply-env-profile.mjs <local|local-first-hybrid|production> [--dry-run]');
 };
 
 const parseAssignments = (text) => {
