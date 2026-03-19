@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 212
+- Nodes: 213
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -73,6 +73,7 @@ graph LR
   "src/bot.ts" --> "src/services/multiAgentService.ts"
   "src/bot.ts" --> "src/services/obsidianRagService.ts"
   "src/bot.ts" --> "src/services/privacyForgetService.ts"
+  "src/bot.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/bot.ts" --> "src/services/stockService.ts"
   "src/bot.ts" --> "src/services/supabaseClient.ts"
   "src/bot.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
@@ -145,6 +146,7 @@ graph LR
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/privacyForgetService.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerExecutors.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerSandbox.ts"
@@ -751,9 +753,12 @@ graph LR
   "src/services/workerGeneration/workerApprovalStore.ts" --> "src/logger.ts"
   "src/services/workerGeneration/workerApprovalStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/workerGeneration/workerApprovalStore.ts" --> "src/utils/env.ts"
+  "src/services/workerGeneration/workerExecutors.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/services/workerGeneration/workerExecutors.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/logger.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/llmClient.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerExecutors.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/services/workerGeneration/workerProposalMetrics.ts":::file
   "src/services/workerGeneration/workerSandbox.ts":::file
