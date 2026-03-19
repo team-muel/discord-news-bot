@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 213
+- Nodes: 221
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -12,12 +12,12 @@
 | src/utils/env.ts | 50 |
 | src/services/skills/actions/types.ts | 22 |
 | src/config.ts | 16 |
+| src/services/multiAgentService.ts | 15 |
+| src/services/skills/types.ts | 15 |
 | src/middleware/auth.ts | 14 |
 | src/services/llmClient.ts | 13 |
 | src/discord/messages.ts | 12 |
-| src/services/skills/types.ts | 12 |
 | src/utils/validation.ts | 12 |
-| src/services/multiAgentService.ts | 11 |
 | src/utils/obsidianEnv.ts | 10 |
 
 ## Mermaid
@@ -439,6 +439,30 @@ graph LR
   "src/services/langgraph/nodes/coreNodes.ts" --> "src/services/promptCompiler.ts"
   "src/services/langgraph/nodes/runtimeNodes.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/langgraph/nodes/runtimeNodes.ts" --> "src/services/langgraph/stateContract.ts"
+  "src/services/langgraph/nodes/strategyNodes.ts" --> "src/services/agentRuntimeTypes.ts"
+  "src/services/langgraph/nodes/strategyNodes.ts" --> "src/services/skills/types.ts"
+  "src/services/langgraph/runtimeSupport/runtimeBudget.ts":::file
+  "src/services/langgraph/runtimeSupport/runtimeEvaluation.ts" --> "src/services/agentRuntimeTypes.ts"
+  "src/services/langgraph/runtimeSupport/runtimeEvaluation.ts" --> "src/services/langgraph/runtimeSupport/runtimeFormatting.ts"
+  "src/services/langgraph/runtimeSupport/runtimeEvaluation.ts" --> "src/services/llmStructuredParseService.ts"
+  "src/services/langgraph/runtimeSupport/runtimeFormatting.ts" --> "src/services/agentRuntimeTypes.ts"
+  "src/services/langgraph/runtimeSupport/runtimeSessionState.ts" --> "src/services/langgraph/stateContract.ts"
+  "src/services/langgraph/runtimeSupport/runtimeSessionState.ts" --> "src/services/multiAgentService.ts"
+  "src/services/langgraph/sessionRuntime/branchRuntime.ts" --> "src/services/langgraph/nodes/strategyNodes.ts"
+  "src/services/langgraph/sessionRuntime/branchRuntime.ts" --> "src/services/langgraph/runtimeSupport/runtimeBudget.ts"
+  "src/services/langgraph/sessionRuntime/branchRuntime.ts" --> "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts"
+  "src/services/langgraph/sessionRuntime/branchRuntime.ts" --> "src/services/langgraph/sessionRuntime/fullReviewNodes.ts"
+  "src/services/langgraph/sessionRuntime/branchRuntime.ts" --> "src/services/multiAgentService.ts"
+  "src/services/langgraph/sessionRuntime/branchRuntime.ts" --> "src/services/skills/types.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts" --> "src/services/langgraph/nodes/composeNodes.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts" --> "src/services/langgraph/runtimeSupport/runtimeBudget.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts" --> "src/services/langgraph/runtimeSupport/runtimeEvaluation.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts" --> "src/services/langgraph/runtimeSupport/runtimeFormatting.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts" --> "src/services/multiAgentService.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts" --> "src/services/skills/engine.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewNodes.ts" --> "src/services/langgraph/runtimeSupport/runtimeBudget.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewNodes.ts" --> "src/services/multiAgentService.ts"
+  "src/services/langgraph/sessionRuntime/fullReviewNodes.ts" --> "src/services/skills/types.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/agentOutcomeContract.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/promptCompiler.ts"
@@ -473,12 +497,16 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/agentWorkflowService.ts"
   "src/services/multiAgentService.ts" --> "src/services/conversationTurnService.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/executor.ts"
-  "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/composeNodes.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/coreNodes.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/runtimeNodes.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/strategyNodes.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/runtimeSupport/runtimeBudget.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/runtimeSupport/runtimeEvaluation.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/runtimeSupport/runtimeFormatting.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/runtimeSupport/runtimeSessionState.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/sessionRuntime/branchRuntime.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/multiAgentService.ts" --> "src/services/llmClient.ts"
-  "src/services/multiAgentService.ts" --> "src/services/llmStructuredParseService.ts"
   "src/services/multiAgentService.ts" --> "src/services/multiAgentRuntimeQueue.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/engine.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/registry.ts"
@@ -579,8 +607,12 @@ graph LR
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/automationBot.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/obsidianLoreSyncService.ts"
+  "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/opencodePublishWorker.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/retrievalEvalLoopService.ts"
+  "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/runtimeAlertService.ts"
+  "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/runtimeBootstrap.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/supabaseExtensionOpsService.ts"
+  "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/tradingEngine.ts"
   "src/services/semanticAnswerCacheService.ts" --> "src/services/supabaseClient.ts"
   "src/services/semanticAnswerCacheService.ts" --> "src/utils/env.ts"
   "src/services/skills/actionExecutionLogService.ts" --> "src/services/supabaseClient.ts"
