@@ -133,6 +133,7 @@ const main = async () => {
     '',
     '- Source: src/app.ts + src/routes/**/*.ts',
     '- Notes: middleware detection is static and best-effort for requireAuth/requireAdmin/rate limiter usage.',
+    '- Operator control-plane hotspots: /api/bot/status, /api/bot/agent/runtime/scheduler-policy, /api/bot/agent/runtime/loops, /api/bot/agent/runtime/unattended-health, /api/bot/agent/runtime/readiness, /api/bot/agent/runtime/slo/report.',
     '',
     '| Method | Path | Auth | Admin | Rate Limit | Source |',
     '| --- | --- | --- | --- | --- | --- |',
@@ -142,8 +143,7 @@ const main = async () => {
     lines.push(`| ${row.method} | ${row.path} | ${row.auth} | ${row.admin} | ${row.rateLimit} | ${row.source} |`);
   }
 
-  lines.push('');
-  await fs.writeFile(OUTPUT_FILE, `${lines.join('\n')}\n`, 'utf8');
+  await fs.writeFile(OUTPUT_FILE, lines.join('\n'), 'utf8');
   process.stdout.write(`Wrote ${OUTPUT_FILE}\n`);
 };
 

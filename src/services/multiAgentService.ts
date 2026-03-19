@@ -5,13 +5,30 @@ import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequ
 import { persistAgentSession } from './agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn } from './conversationTurnService';
 import { generateText, generateTextWithMeta, isAnyLlmConfigured } from './llmClient';
+import { ensureSessionBudget, getErrorMessage, withTimeout } from './langgraph/runtimeSupport/runtimeBudget';
+import {
+  formatCitationFirstResult,
+} from './langgraph/runtimeSupport/runtimeFormatting';
+import {
+  assessRuleBasedOrm,
+  clamp01,
+  evaluateTaskResultCandidate,
+  extractActionableFeedbackPoints,
+  parseSelfEvaluationJson,
+} from './langgraph/runtimeSupport/runtimeEvaluation';
+import {
+  cancelAllPendingSteps,
+  cloneSession,
+  ensureShadowGraph,
+  touch,
+  traceShadowNode,
+} from './langgraph/runtimeSupport/runtimeSessionState';
 import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillExecutionResult, SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
-import { appendTrace, createInitialLangGraphState, type LangGraphNodeId, type LangGraphState } from './langgraph/stateContract';
+import { appendTrace, type LangGraphNodeId, type LangGraphState } from './langgraph/stateContract';
 import { executeLangGraph } from './langgraph/executor';
-import { buildTotCandidatePairTelemetryPayload, decideComposePromotion } from './langgraph/nodes/composeNodes';
 import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode } from './langgraph/nodes/coreNodes';
 import {
   runHydrateMemoryNode,
@@ -19,6 +36,8 @@ import {
   runPersistAndEmitNode,
   runTaskPolicyGateTransitionNode,
 } from './langgraph/nodes/runtimeNodes';
+import { runSelectExecutionStrategyNode } from './langgraph/nodes/strategyNodes';
+import { executeSessionBranchRuntime } from './langgraph/sessionRuntime/branchRuntime';
 import { getAgentPrivacyPolicySnapshot, primeAgentPrivacyPolicyCache } from './agentPrivacyPolicyService';
 import { recordPrivacyGateSample } from './agentPrivacyTuningService';
 import {
@@ -38,7 +57,6 @@ import {
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { recordGotShadowRun } from './agentGotStore';
 import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agentTelemetryQueue';
-import { parseLlmStructuredRecord } from './llmStructuredParseService';
 import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
 import type {
   AgentRole,
@@ -157,7 +175,7 @@ export type AgentSessionApiView = Omit<AgentSession, 'shadowGraph'> & {
   shadowGraph?: LangGraphState | null;
 };
 
-type BeamEvaluation = {
+export type BeamEvaluation = {
   probability: number;
   correctness: number;
   score: number;
@@ -210,20 +228,6 @@ registerTelemetryTaskHandler(TOT_CANDIDATE_PAIR_RECORD_TASK, async (payload) => 
   }
 });
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, code: string): Promise<T> => {
-  let timer: NodeJS.Timeout | null = null;
-  try {
-    const timeoutPromise = new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(code)), timeoutMs);
-    });
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-};
-
 const enqueueBestEffortTelemetry = (params: {
   name: string;
   taskType: string;
@@ -238,12 +242,6 @@ const enqueueBestEffortTelemetry = (params: {
   });
   if (!accepted) {
     logger.warn('[AGENT] telemetry queue saturated; dropped task=%s guild=%s', params.name, params.guildId || '');
-  }
-};
-
-const ensureSessionBudget = (sessionStartedAtMs: number) => {
-  if (Date.now() - sessionStartedAtMs > AGENT_SESSION_TIMEOUT_MS) {
-    throw new Error('SESSION_TIMEOUT');
   }
 };
 
@@ -326,156 +324,6 @@ const toPriority = (value?: string | null): AgentPriority => {
 
 const nowIso = () => new Date().toISOString();
 
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-};
-
-const extractMemoryCitations = (memoryHints: string[]): string[] => {
-  const out: string[] = [];
-  for (const hint of memoryHints) {
-    const line = String(hint || '');
-    const matches = line.match(/\[memory:([^\]\s]+)/g) || [];
-    for (const match of matches) {
-      const id = match.replace('[memory:', '').replace(']', '').trim();
-      if (!id) continue;
-      if (!out.includes(id)) {
-        out.push(id);
-      }
-      if (out.length >= 6) {
-        return out;
-      }
-    }
-  }
-  return out;
-};
-
-const toConfidenceLabel = (priority: AgentPriority, citationCount: number): string => {
-  if (citationCount >= 2 && priority === 'precise') {
-    return 'high';
-  }
-  if (citationCount >= 1) {
-    return 'medium';
-  }
-  return 'low';
-};
-
-const SECTION_LABEL_ONLY_PATTERN = /^(?:#+\s*)?(?:deliverable|verification|confidence)\s*:?$/i;
-const DEBUG_LINE_PATTERN = /^(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
-
-const sanitizeDeliverableText = (raw: string): string => {
-  return String(raw || '')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .split(/\r?\n/)
-    .map((line) => String(line || '').trim())
-    .filter(Boolean)
-    .filter((line) => !SECTION_LABEL_ONLY_PATTERN.test(line))
-    .filter((line) => !DEBUG_LINE_PATTERN.test(line))
-    .map((line) => line.replace(/^#+\s*(deliverable|verification|confidence)\s*:?\s*/i, '').trim())
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-};
-
-const toConclusion = (raw: string): string => {
-  const compact = sanitizeDeliverableText(raw);
-  if (!compact) {
-    return '현재 시점에서 확정할 수 있는 결론을 생성하지 못했습니다.';
-  }
-  return compact.slice(0, 280);
-};
-
-const shortHash = (value: string): string => {
-  const digest = crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
-  return digest.slice(0, 16);
-};
-
-const hasDebugLeak = (value: string): boolean => {
-  const text = String(value || '');
-  return /(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/.test(text);
-};
-
-const hasBrokenTextPattern = (value: string): boolean => {
-  const text = String(value || '');
-  if (text.includes('�')) {
-    return true;
-  }
-  return /\b[a-f0-9]{40,}\b/i.test(text);
-};
-
-const buildEvidenceBundleId = (taskGoal: string, citations: string[]): string => {
-  const normalizedGoal = String(taskGoal || '').trim().toLowerCase();
-  const normalizedCitations = [...citations].map((id) => String(id || '').trim().toLowerCase()).sort();
-  return shortHash(`${normalizedGoal}|${normalizedCitations.join('|')}`);
-};
-
-const toTokenSet = (value: string): Set<string> => {
-  const tokens = String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣\s]/g, ' ')
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-  return new Set(tokens);
-};
-
-const jaccardSimilarity = (a: string, b: string): number => {
-  const setA = toTokenSet(a);
-  const setB = toTokenSet(b);
-  if (setA.size === 0 && setB.size === 0) {
-    return 1;
-  }
-  if (setA.size === 0 || setB.size === 0) {
-    return 0;
-  }
-
-  let intersection = 0;
-  for (const token of setA) {
-    if (setB.has(token)) {
-      intersection += 1;
-    }
-  }
-  const union = setA.size + setB.size - intersection;
-  return union > 0 ? intersection / union : 0;
-};
-
-const selectConsensusText = (candidates: string[]): string => {
-  const normalized = candidates
-    .map((candidate) => sanitizeDeliverableText(candidate))
-    .map((candidate) => candidate.trim())
-    .filter(Boolean);
-  if (normalized.length <= 1) {
-    return normalized[0] || candidates[0] || '';
-  }
-
-  let bestIndex = 0;
-  let bestScore = -1;
-  for (let i = 0; i < normalized.length; i += 1) {
-    let score = 0;
-    for (let j = 0; j < normalized.length; j += 1) {
-      if (i === j) continue;
-      score += jaccardSimilarity(normalized[i], normalized[j]);
-    }
-    score = score / Math.max(1, normalized.length - 1);
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-  return normalized[bestIndex];
-};
 
 const parseSubgoalsFromLlm = (raw: string): string[] => {
   const text = String(raw || '');
@@ -502,90 +350,6 @@ const parseSubgoalsFromLlm = (raw: string): string[] => {
     .map((line) => line.replace(/^[-*\d).\s]+/, '').trim())
     .filter((line) => line.length >= 4)
     .slice(0, LEAST_TO_MOST_MAX_SUBGOALS);
-};
-
-const assessRuleBasedOrm = (params: {
-  session: AgentSession;
-  taskGoal: string;
-  rawResult: string;
-  formattedResult: string;
-}): {
-  score: number;
-  verdict: 'pass' | 'review' | 'fail';
-  reasons: string[];
-  citationCount: number;
-  evidenceBundleId: string;
-} => {
-  const citations = extractMemoryCitations(params.session.memoryHints);
-  const deliverable = sanitizeDeliverableText(params.rawResult);
-  const reasons: string[] = [];
-  let score = 100;
-
-  if (citations.length === 0) {
-    score -= params.session.priority === 'precise' ? 20 : 10;
-    reasons.push('missing_memory_citation');
-  }
-
-  if (deliverable.length < 80) {
-    score -= 12;
-    reasons.push('deliverable_too_short');
-  }
-
-  if (hasDebugLeak(params.rawResult) || hasDebugLeak(params.formattedResult)) {
-    score -= 15;
-    reasons.push('debug_marker_leak');
-  }
-
-  if (hasBrokenTextPattern(params.rawResult) || hasBrokenTextPattern(params.formattedResult)) {
-    score -= 10;
-    reasons.push('text_integrity_warning');
-  }
-
-  const failedSteps = params.session.steps.filter((step) => step.status === 'failed').length;
-  if (failedSteps > 0) {
-    score -= Math.min(20, failedSteps * 6);
-    reasons.push('step_failure_history');
-  }
-
-  if (/근거 부족/.test(params.formattedResult)) {
-    score -= 8;
-    reasons.push('verification_insufficient');
-  }
-
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  const verdict: 'pass' | 'review' | 'fail' = score >= ORM_RULE_PASS_THRESHOLD
-    ? 'pass'
-    : score >= ORM_RULE_REVIEW_THRESHOLD
-      ? 'review'
-      : 'fail';
-
-  return {
-    score,
-    verdict,
-    reasons,
-    citationCount: citations.length,
-    evidenceBundleId: buildEvidenceBundleId(params.taskGoal, citations),
-  };
-};
-
-const clamp01 = (value: unknown, fallback: number): number => {
-  const n = Number(value);
-  if (!Number.isFinite(n)) {
-    return fallback;
-  }
-  return Math.max(0, Math.min(1, n));
-};
-
-const parseSelfEvaluationJson = (raw: string): { probability: number; correctness: number } | null => {
-  const parsed = parseLlmStructuredRecord(raw);
-  if (!parsed) {
-    return null;
-  }
-
-  return {
-    probability: clamp01(parsed.probability, 0.55),
-    correctness: clamp01(parsed.correctness, 0.55),
-  };
 };
 
 const evaluateSelfGuidedBeam = async (params: {
@@ -650,37 +414,6 @@ const evaluateSelfGuidedBeam = async (params: {
   };
 };
 
-const evaluateTaskResultCandidate = (params: {
-  session: AgentSession;
-  taskGoal: string;
-  rawResult: string;
-}): {
-  formatted: string;
-  orm: ReturnType<typeof assessRuleBasedOrm>;
-} => {
-  const formatted = formatCitationFirstResult(params.rawResult, params.session);
-  const orm = assessRuleBasedOrm({
-    session: params.session,
-    taskGoal: params.taskGoal,
-    rawResult: params.rawResult,
-    formattedResult: formatted,
-  });
-  return { formatted, orm };
-};
-
-const extractActionableFeedbackPoints = (raw: string): string[] => {
-  const text = String(raw || '');
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^[-*\d).\s]+/, '').trim())
-    .filter((line) => line.length >= 8)
-    .slice(0, 8);
-
-  const actionable = lines.filter((line) => /(?:수정|보완|추가|삭제|명확|근거|검증|리스크|가드레일)/.test(line));
-  const picked = (actionable.length > 0 ? actionable : lines).slice(0, 3);
-  return picked;
-};
-
 const runSelfRefineLite = async (params: {
   session: AgentSession;
   taskGoal: string;
@@ -698,7 +431,7 @@ const runSelfRefineLite = async (params: {
   }
 
   for (let pass = 0; pass < SELF_REFINE_LITE_MAX_PASSES; pass += 1) {
-    ensureSessionBudget(params.sessionStartedAtMs);
+    ensureSessionBudget(params.sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
     if (params.session.cancelRequested) {
       throw new Error('SESSION_CANCELLED');
     }
@@ -732,6 +465,8 @@ const runSelfRefineLite = async (params: {
         session: params.session,
         taskGoal: params.taskGoal,
         rawResult: draft,
+        passThreshold: ORM_RULE_PASS_THRESHOLD,
+        reviewThreshold: ORM_RULE_REVIEW_THRESHOLD,
       }).orm.score;
 
       const rewrite = await withTimeout(executeSkill('ops-execution', {
@@ -754,6 +489,8 @@ const runSelfRefineLite = async (params: {
           session: params.session,
           taskGoal: params.taskGoal,
           rawResult: refined,
+          passThreshold: ORM_RULE_PASS_THRESHOLD,
+          reviewThreshold: ORM_RULE_REVIEW_THRESHOLD,
         }).orm.score;
         const gain = refinedScore - baseScore;
         if (gain >= SELF_REFINE_LITE_MIN_SCORE_GAIN) {
@@ -912,6 +649,8 @@ const runToTShadowExploration = async (params: {
       taskGoal,
       rawResult: trimmed,
       formattedResult: formatted,
+      passThreshold: ORM_RULE_PASS_THRESHOLD,
+      reviewThreshold: ORM_RULE_REVIEW_THRESHOLD,
     });
     const beam = await evaluateSelfGuidedBeam({
       session,
@@ -936,7 +675,7 @@ const runToTShadowExploration = async (params: {
   };
 
   for (let index = 0; index < selectedAngles.length; index += 1) {
-    ensureSessionBudget(sessionStartedAtMs);
+    ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
     if (session.cancelRequested) {
       throw new Error('SESSION_CANCELLED');
     }
@@ -1024,7 +763,7 @@ const runToTShadowExploration = async (params: {
   }
 
   for (let replayIndex = 0; replayIndex < replaySeeds.length; replayIndex += 1) {
-    ensureSessionBudget(sessionStartedAtMs);
+    ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
     if (session.cancelRequested) {
       throw new Error('SESSION_CANCELLED');
     }
@@ -1152,6 +891,8 @@ const finalizeTaskResult = (params: {
     session,
     taskGoal,
     rawResult,
+    passThreshold: ORM_RULE_PASS_THRESHOLD,
+    reviewThreshold: ORM_RULE_REVIEW_THRESHOLD,
   });
   session.ormAssessment = orm;
   session.shadowGraph = {
@@ -1242,7 +983,7 @@ const runLeastToMostExecutionDraft = async (params: {
     let prior: string | undefined = plan;
 
     for (let index = 0; index < subgoals.length; index += 1) {
-      ensureSessionBudget(sessionStartedAtMs);
+      ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
       if (session.cancelRequested) {
         throw new Error('SESSION_CANCELLED');
       }
@@ -1381,75 +1122,6 @@ const generateCasualChatResult = async (goal: string): Promise<string> => {
   }
 };
 
-const cancelAllPendingSteps = (session: AgentSession, timestamp: string) => {
-  for (const step of session.steps) {
-    if (step.status === 'pending' || step.status === 'running') {
-      step.status = 'cancelled';
-      step.startedAt = step.startedAt || timestamp;
-      step.endedAt = timestamp;
-    }
-  }
-};
-
-const formatCitationFirstResult = (rawResult: string, session: AgentSession): string => {
-  const citations = extractMemoryCitations(session.memoryHints);
-  const confidence = toConfidenceLabel(session.priority, citations.length);
-  const conclusion = toConclusion(rawResult);
-  const evidenceBundleId = buildEvidenceBundleId(session.goal, citations);
-  const routeMatch = String(session.goal || '').match(/\[ROUTE:(knowledge|execution|mixed|casual)\]/i);
-  const route = String(routeMatch?.[1] || 'mixed').toLowerCase();
-  const whyPath = route === 'knowledge'
-    ? '근거 기반 회수 우선 경로를 선택했습니다.'
-    : route === 'execution'
-      ? '실행 가능한 단계/검증 중심 경로를 선택했습니다.'
-      : route === 'casual'
-        ? '대화 맥락 보존 중심 경로를 선택했습니다.'
-        : '근거 요약 후 실행안을 제시하는 혼합 경로를 선택했습니다.';
-
-  const alternatives = route === 'knowledge'
-    ? ['execution: 근거보다 실행 지시가 앞서는 위험', 'casual: 작업형 요청을 대화형으로 축소할 위험']
-    : route === 'execution'
-      ? ['knowledge: 즉시 실행성 저하 가능성', 'casual: 작업 누락 위험']
-      : route === 'casual'
-        ? ['execution: 과도한 자동실행 위험', 'knowledge: 감정/대화 맥락 손실 위험']
-        : ['knowledge-only: 실행안 부재 위험', 'execution-only: 근거 누락 위험'];
-
-  const explanationEnvelope = {
-    version: 1,
-    route,
-    evidenceBundleId,
-    citationCount: citations.length,
-    whyPath,
-    alternatives,
-  };
-
-  const citationText = citations.length > 0
-    ? citations.map((id) => `- memory:${id}`).join('\n')
-    : '- 근거 부족: memory 힌트에서 직접 인용 가능한 항목을 찾지 못했습니다.';
-
-  return [
-    '## Deliverable',
-    conclusion,
-    '',
-    '## Verification',
-    `- evidence_bundle_id: ${evidenceBundleId}`,
-    citationText,
-    '',
-    '## Why This Path',
-    `- ${whyPath}`,
-    ...alternatives.map((item) => `- rejected: ${item}`),
-    '',
-    '## ExplanationEnvelope',
-    JSON.stringify(explanationEnvelope),
-    '',
-    `## Confidence: ${confidence}`,
-  ].join('\n');
-};
-
-const touch = (session: AgentSession) => {
-  session.updatedAt = nowIso();
-};
-
 const buildInitialSteps = (
   guildId: string,
   requestedSkillId: SkillId | null,
@@ -1483,47 +1155,12 @@ const buildInitialSteps = (
   });
 };
 
-const cloneSession = (session: AgentSession): AgentSession => ({
-  ...session,
-  steps: session.steps.map((step) => ({ ...step })),
-  shadowGraph: session.shadowGraph
-    ? {
-      ...session.shadowGraph,
-      memoryHints: [...session.shadowGraph.memoryHints],
-      plans: session.shadowGraph.plans.map((plan) => ({ ...plan, args: { ...plan.args } })),
-      outcomes: session.shadowGraph.outcomes.map((outcome) => ({ ...outcome })),
-      trace: session.shadowGraph.trace.map((entry) => ({ ...entry })),
-    }
-    : null,
-});
-
 const getSession = (sessionId: string): AgentSession => sessions.get(sessionId) as AgentSession;
-
-const ensureShadowGraph = (session: AgentSession): LangGraphState => {
-  if (!session.shadowGraph) {
-    session.shadowGraph = createInitialLangGraphState({
-      sessionId: session.id,
-      guildId: session.guildId,
-      requestedBy: session.requestedBy,
-      priority: session.priority,
-      goal: session.goal,
-    });
-  }
-  return session.shadowGraph;
-};
-
-const traceShadowNode = (
-  session: AgentSession,
-  node: Parameters<typeof appendTrace>[1],
-  note?: string,
-) => {
-  session.shadowGraph = appendTrace(ensureShadowGraph(session), node, note);
-};
-
 const LANGGRAPH_NODE_IDS: LangGraphNodeId[] = [
   'ingest',
   'compile_prompt',
   'route_intent',
+  'select_execution_strategy',
   'hydrate_memory',
   'plan_actions',
   'execute_actions',
@@ -1737,459 +1374,6 @@ const runStep = async (
   }
 };
 
-type SessionBranchResult = AgentSessionStatus | null;
-
-const handleRequestedSkillBranch = async (params: {
-  session: AgentSession;
-  sessionStartedAtMs: number;
-  taskGoal: string;
-  forceFullReview: boolean;
-}): Promise<SessionBranchResult> => {
-  const { session, sessionStartedAtMs, taskGoal, forceFullReview } = params;
-  if (!session.requestedSkillId) {
-    return null;
-  }
-  if (forceFullReview) {
-    return null;
-  }
-
-  ensureSessionBudget(sessionStartedAtMs);
-  const singleSkillStep = session.steps[0];
-  traceShadowNode(session, 'plan_actions', `requested_skill=${session.requestedSkillId}`);
-  const singleResult = await runStep(
-    session,
-    singleSkillStep,
-    session.requestedSkillId,
-    () => taskGoal,
-    undefined,
-  );
-  const refinedResult = await runSelfRefineLite({
-    session,
-    taskGoal,
-    currentDraft: singleResult,
-    sessionStartedAtMs,
-    traceLabel: 'single_skill',
-  });
-  traceShadowNode(session, 'execute_actions', session.requestedSkillId);
-  traceShadowNode(session, 'compose_response', 'single_skill');
-
-  markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-    result: finalizeTaskResult({
-      session,
-      taskGoal,
-      rawResult: refinedResult,
-      traceLabel: 'single_skill',
-    }),
-    error: null,
-  });
-  return session.cancelRequested ? 'cancelled' : 'completed';
-};
-
-const handleFastPriorityBranch = async (params: {
-  session: AgentSession;
-  sessionStartedAtMs: number;
-  taskGoal: string;
-  researcher: AgentStep;
-  forceFullReview: boolean;
-}): Promise<SessionBranchResult> => {
-  const {
-    session,
-    sessionStartedAtMs,
-    taskGoal,
-    researcher,
-    forceFullReview,
-  } = params;
-  if (session.priority !== 'fast') {
-    return null;
-  }
-  if (forceFullReview) {
-    return null;
-  }
-
-  ensureSessionBudget(sessionStartedAtMs);
-  traceShadowNode(session, 'execute_actions', 'fast_path');
-  const fastDraft = await runStep(session, researcher, 'ops-execution', () => [
-    '우선순위: 빠름',
-    '요구사항: 중간 과정 없이 최종 결과물만 제시',
-    `목표: ${taskGoal}`,
-    '출력: 바로 사용할 수 있는 결과물 텍스트',
-  ].join('\n'), undefined);
-  const fastRefined = await runSelfRefineLite({
-    session,
-    taskGoal,
-    currentDraft: fastDraft,
-    sessionStartedAtMs,
-    traceLabel: 'fast_path',
-  });
-  traceShadowNode(session, 'compose_response', 'fast_path');
-
-  markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-    result: finalizeTaskResult({
-      session,
-      taskGoal,
-      rawResult: fastRefined,
-      traceLabel: 'fast_path',
-    }),
-    error: null,
-  });
-  return session.cancelRequested ? 'cancelled' : 'completed';
-};
-
-const handleBalancedOrPreciseBranch = async (params: {
-  session: AgentSession;
-  sessionStartedAtMs: number;
-  taskGoal: string;
-  planner: AgentStep;
-  researcher: AgentStep;
-  critic: AgentStep;
-}): Promise<AgentSessionStatus> => {
-  const {
-    session,
-    sessionStartedAtMs,
-    taskGoal,
-    planner,
-    researcher,
-    critic,
-  } = params;
-  const totPolicy = getAgentTotPolicySnapshot(session.guildId);
-  const gotPolicy = getAgentGotPolicySnapshot(session.guildId);
-  const gotCutoverDecision = gotPolicy.activeEnabled
-    ? await getAgentGotCutoverDecision({ guildId: session.guildId, sessionId: session.id })
-    : {
-      guildId: session.guildId,
-      allowed: false,
-      readinessRecommended: false,
-      rolloutPercentage: 0,
-      selectedByRollout: false,
-      reason: 'got_active_disabled_by_policy',
-      failedReasons: ['got_active_disabled_by_policy'],
-      evaluatedAt: new Date().toISOString(),
-      windowDays: 14,
-    };
-
-  traceShadowNode(
-    session,
-    'policy_gate',
-    `got_cutover:allowed=${gotCutoverDecision.allowed},reason=${gotCutoverDecision.reason}`,
-  );
-
-  ensureSessionBudget(sessionStartedAtMs);
-  traceShadowNode(session, 'plan_actions', 'planner');
-  const subgoals = await decomposeGoalLeastToMost({
-    taskGoal,
-    priority: session.priority,
-  });
-  if (subgoals.length >= 2) {
-    traceShadowNode(session, 'plan_actions', `least_to_most:subgoals=${subgoals.length}`);
-  }
-  const taskGoalWithSubgoals = subgoals.length >= 2
-    ? [
-      taskGoal,
-      '',
-      '하위목표(Least-to-Most):',
-      ...subgoals.map((subgoal, index) => `${index + 1}. ${subgoal}`),
-    ].join('\n')
-    : taskGoal;
-
-  const plan = await runStep(session, planner, 'ops-plan', () => [
-    session.priority === 'precise' ? '우선순위: 정밀 (검증과 리스크 완화를 강화)' : '우선순위: 균형',
-    '역할: 계획 수립 에이전트',
-    `목표: ${taskGoalWithSubgoals}`,
-    '출력: 1) 실행 단계 2) 필요한 근거 3) 실패시 대안 을 간결한 한국어 문단으로 작성',
-    '규칙: 추측과 단정 금지, 실제 실행 가능한 단계 중심',
-  ].join('\n'), undefined);
-  session.shadowGraph = {
-    ...ensureShadowGraph(session),
-    plans: [{ actionName: 'ops-plan', args: { goal: taskGoal }, reason: String(plan || '').slice(0, 300) }],
-  };
-
-  ensureSessionBudget(sessionStartedAtMs);
-  traceShadowNode(session, 'execute_actions', 'researcher_execution');
-  let executionDraft: string;
-  if (subgoals.length >= 2) {
-    try {
-      executionDraft = await runLeastToMostExecutionDraft({
-        session,
-        step: researcher,
-        taskGoal,
-        plan,
-        subgoals,
-        sessionStartedAtMs,
-      });
-    } catch (error) {
-      traceShadowNode(session, 'execute_actions', `least_to_most:fallback:${getErrorMessage(error)}`);
-      executionDraft = await runStep(session, researcher, 'ops-execution', () => [
-        session.priority === 'precise' ? '우선순위: 정밀 (근거/가드레일을 더 상세히 포함)' : '우선순위: 균형',
-        '역할: 실행/리서치 에이전트',
-        `목표: ${taskGoal}`,
-        `계획안: ${plan}`,
-        '출력: 디스코드 운영자가 바로 수행할 수 있는 실행안/체크리스트/예상 리스크를 한국어로 정리',
-      ].join('\n'), plan);
-    }
-  } else {
-    executionDraft = await runStep(session, researcher, 'ops-execution', () => [
-      session.priority === 'precise' ? '우선순위: 정밀 (근거/가드레일을 더 상세히 포함)' : '우선순위: 균형',
-      '역할: 실행/리서치 에이전트',
-      `목표: ${taskGoal}`,
-      `계획안: ${plan}`,
-      '출력: 디스코드 운영자가 바로 수행할 수 있는 실행안/체크리스트/예상 리스크를 한국어로 정리',
-    ].join('\n'), plan);
-  }
-
-  ensureSessionBudget(sessionStartedAtMs);
-  traceShadowNode(session, 'critic_review', 'ops-critique');
-  const critique = await runStep(session, critic, 'ops-critique', () => [
-    session.priority === 'precise' ? '우선순위: 정밀 (보수적 관점으로 리스크를 촘촘히 점검)' : '우선순위: 균형',
-    '역할: 검증 에이전트',
-    `목표: ${taskGoal}`,
-    `실행안: ${executionDraft}`,
-    '출력: 사실성 위험, 과잉자동화 위험, 개인정보/운영 리스크를 점검하고 보완안을 제시',
-  ].join('\n'), executionDraft);
-
-  let totShadowBest: {
-    rawResult: string;
-    score: number;
-    beamProbability: number;
-    beamCorrectness: number;
-    beamScore: number;
-    beamProbabilitySource: 'provider_logprob' | 'self_eval' | 'fallback';
-    evidenceBundleId: string;
-  } | null = null;
-  if (!session.cancelRequested) {
-    totShadowBest = await runToTShadowExploration({
-      session,
-      policy: totPolicy,
-      gotPolicy,
-      taskGoal,
-      plan,
-      executionDraft,
-      critique,
-      sessionStartedAtMs,
-    });
-  }
-
-  ensureSessionBudget(sessionStartedAtMs);
-  traceShadowNode(session, 'compose_response', 'final_output');
-  const finalComposeGoal = [
-    '요구사항: 중간 과정/역할별 산출물 노출 금지',
-    `목표: ${taskGoal}`,
-    `계획 참고: ${plan}`,
-    `검증 참고: ${critique}`,
-    `초안 참고: ${executionDraft}`,
-    '출력: 사용자에게 전달할 최종 결과물만 간결하게 작성',
-  ].join('\n');
-
-  const finalResultBase = await runStep(session, researcher, 'ops-execution', () => finalComposeGoal, critique);
-  let finalResult = finalResultBase;
-
-  const finalSelfConsistencySamples = resolveFinalSelfConsistencySamples(session, taskGoal);
-  if (finalSelfConsistencySamples > 1 && !session.cancelRequested) {
-    const candidates: string[] = [finalResultBase];
-    let sampleFailures = 0;
-
-    for (let i = 1; i < finalSelfConsistencySamples; i += 1) {
-      ensureSessionBudget(sessionStartedAtMs);
-      if (session.cancelRequested) {
-        throw new Error('SESSION_CANCELLED');
-      }
-      try {
-        const variantGoal = [
-          finalComposeGoal,
-          `추가 지시: self-consistency 후보 ${i + 1}/${finalSelfConsistencySamples}.`,
-          '동일 사실을 유지하되 문장 구성은 독립적으로 재작성하라.',
-        ].join('\n');
-
-        const variant = await withTimeout(executeSkill('ops-execution', {
-          guildId: session.guildId,
-          requestedBy: session.requestedBy,
-          actionName: 'compose.self_consistency_variant',
-          goal: variantGoal,
-          memoryHints: session.memoryHints,
-          priorOutput: critique,
-        }), AGENT_STEP_TIMEOUT_MS, 'STEP_TIMEOUT:researcher');
-
-        const output = String(variant.output || '').trim();
-        if (output) {
-          candidates.push(output);
-        }
-      } catch {
-        sampleFailures += 1;
-      }
-    }
-
-    const consensus = selectConsensusText(candidates);
-    if (consensus) {
-      finalResult = consensus;
-      researcher.output = consensus;
-      touch(session);
-    }
-    traceShadowNode(session, 'compose_response', `self_consistency:candidates=${candidates.length},failures=${sampleFailures}`);
-  }
-
-  const finalRefined = await runSelfRefineLite({
-    session,
-    taskGoal,
-    currentDraft: finalResult,
-    sessionStartedAtMs,
-    traceLabel: 'final_output',
-  });
-
-  let selectedFinalRaw = finalRefined;
-  let baseEval: ReturnType<typeof evaluateTaskResultCandidate> | null = null;
-  let totEval: ReturnType<typeof evaluateTaskResultCandidate> | null = null;
-  let baseBeam: BeamEvaluation | null = null;
-  let totBeam: BeamEvaluation | null = null;
-  let candidatePairLogged = false;
-
-  if (totShadowBest?.rawResult) {
-    baseEval = evaluateTaskResultCandidate({
-      session,
-      taskGoal,
-      rawResult: finalRefined,
-    });
-    totEval = evaluateTaskResultCandidate({
-      session,
-      taskGoal,
-      rawResult: totShadowBest.rawResult,
-    });
-    baseBeam = await evaluateSelfGuidedBeam({
-      session,
-      taskGoal,
-      candidate: finalRefined,
-      ormScore: baseEval.orm.score,
-    });
-    // Reuse shadow-time beam evaluation to avoid re-scoring drift on the same candidate.
-    totBeam = {
-      probability: totShadowBest.beamProbability,
-      correctness: totShadowBest.beamCorrectness,
-      score: totShadowBest.beamScore,
-      probabilitySource: totShadowBest.beamProbabilitySource,
-    };
-  }
-
-  if ((totPolicy.activeEnabled || gotCutoverDecision.allowed) && !session.cancelRequested) {
-    const promotion = decideComposePromotion({
-      totPolicyActiveEnabled: totPolicy.activeEnabled,
-      totPolicyActiveAllowFast: totPolicy.activeAllowFast,
-      totPolicyActiveMinGoalLength: totPolicy.activeMinGoalLength,
-      totPolicyActiveRequireNonPass: totPolicy.activeRequireNonPass,
-      totPolicyActiveMinScoreGain: totPolicy.activeMinScoreGain,
-      totPolicyActiveMinBeamGain: totPolicy.activeMinBeamGain,
-      gotCutoverAllowed: gotCutoverDecision.allowed,
-      gotMinSelectedScore: gotPolicy.minSelectedScore,
-      priority: session.priority,
-      taskGoal,
-      base: baseEval
-        ? {
-          ormScore: baseEval.orm.score,
-          ormVerdict: baseEval.orm.verdict,
-          evidenceBundleId: baseEval.orm.evidenceBundleId,
-        }
-        : null,
-      candidate: totEval
-        ? {
-          ormScore: totEval.orm.score,
-          ormVerdict: totEval.orm.verdict,
-          evidenceBundleId: totEval.orm.evidenceBundleId,
-        }
-        : null,
-      baseBeam,
-      candidateBeam: totBeam,
-    });
-
-    if (promotion.shouldEvaluate && baseEval && totEval && totShadowBest?.rawResult && baseBeam && totBeam) {
-      if (promotion.promote) {
-        selectedFinalRaw = totShadowBest.rawResult;
-      }
-
-      if (session.totShadowAssessment) {
-        session.totShadowAssessment.selectedByRouter = promotion.promote;
-        session.totShadowAssessment.scoreGainVsBaseline = promotion.scoreGain;
-      }
-      traceShadowNode(
-        session,
-        'compose_response',
-        `tot_active:promote=${promotion.promote},tot_route=${promotion.promoteByTotPolicy},got_route=${promotion.promoteByGotCutover},base_orm=${baseEval.orm.score},tot_orm=${totEval.orm.score},orm_gain=${promotion.scoreGain},beam_gain=${promotion.beamGain.toFixed(4)}`,
-      );
-
-      enqueueBestEffortTelemetry({
-        name: 'tot_candidate_pair_record',
-        taskType: TOT_CANDIDATE_PAIR_RECORD_TASK,
-        guildId: session.guildId,
-        payload: buildTotCandidatePairTelemetryPayload({
-          guildId: session.guildId,
-          sessionId: session.id,
-          strategy: totPolicy.strategy,
-          base: {
-            ormScore: baseEval.orm.score,
-            ormVerdict: baseEval.orm.verdict,
-            evidenceBundleId: baseEval.orm.evidenceBundleId,
-          },
-          candidate: {
-            ormScore: totEval.orm.score,
-            ormVerdict: totEval.orm.verdict,
-            evidenceBundleId: totEval.orm.evidenceBundleId,
-          },
-          baseBeam,
-          candidateBeam: totBeam,
-          baselineResult: finalRefined,
-          candidateResult: totShadowBest.rawResult,
-          promoted: promotion.promote,
-          scoreGain: promotion.scoreGain,
-          beamGain: promotion.beamGain,
-        }),
-      });
-      candidatePairLogged = true;
-    } else {
-      traceShadowNode(session, 'compose_response', 'tot_active:skipped_by_policy');
-    }
-  }
-
-  if (!candidatePairLogged && baseEval && totEval && totShadowBest?.rawResult && baseBeam && totBeam) {
-    const scoreGain = totEval.orm.score - baseEval.orm.score;
-    const beamGain = totBeam.score - baseBeam.score;
-    const promoted = selectedFinalRaw === totShadowBest.rawResult;
-    enqueueBestEffortTelemetry({
-      name: 'tot_candidate_pair_record',
-      taskType: TOT_CANDIDATE_PAIR_RECORD_TASK,
-      guildId: session.guildId,
-      payload: buildTotCandidatePairTelemetryPayload({
-        guildId: session.guildId,
-        sessionId: session.id,
-        strategy: totPolicy.strategy,
-        base: {
-          ormScore: baseEval.orm.score,
-          ormVerdict: baseEval.orm.verdict,
-          evidenceBundleId: baseEval.orm.evidenceBundleId,
-        },
-        candidate: {
-          ormScore: totEval.orm.score,
-          ormVerdict: totEval.orm.verdict,
-          evidenceBundleId: totEval.orm.evidenceBundleId,
-        },
-        baseBeam,
-        candidateBeam: totBeam,
-        baselineResult: finalRefined,
-        candidateResult: totShadowBest.rawResult,
-        promoted,
-        scoreGain,
-        beamGain,
-      }),
-    });
-  }
-
-  markSessionTerminal(session, session.cancelRequested ? 'cancelled' : 'completed', {
-    result: finalizeTaskResult({
-      session,
-      taskGoal,
-      rawResult: selectedFinalRaw,
-      traceLabel: 'final_output',
-    }),
-    error: null,
-  });
-  return session.cancelRequested ? 'cancelled' : 'completed';
-};
-
 const executeSession = async (sessionId: string): Promise<AgentSessionStatus> => {
   const session = getSession(sessionId);
   if (!session) {
@@ -2217,7 +1401,7 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       compiledPrompt.directives.length > 0 || compiledPrompt.intentTags.length > 0 ? 'structured_directive' : 'plain_goal',
     );
 
-    ensureSessionBudget(sessionStartedAtMs);
+    ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
     const intentHints = await withTimeout(buildAgentMemoryHints({
       guildId: session.guildId,
       goal: taskGoal,
@@ -2274,7 +1458,7 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
 
     touch(session);
 
-    ensureSessionBudget(sessionStartedAtMs);
+    ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
     const nonTaskOutcome = await runNonTaskIntentNode({
       routedIntent: session.routedIntent,
       goal: session.goal,
@@ -2293,7 +1477,7 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       return session.cancelRequested ? 'cancelled' : 'completed';
     }
 
-    ensureSessionBudget(sessionStartedAtMs);
+    ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
     const hydrateMemory = await runHydrateMemoryNode({
       guildId: session.guildId,
       goal: taskGoal,
@@ -2309,38 +1493,50 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
     traceShadowNode(session, 'hydrate_memory', `count=${session.memoryHints.length}`);
     touch(session);
 
-    const requestedSkillResult = await handleRequestedSkillBranch({
-      session,
-      sessionStartedAtMs,
-      taskGoal,
-      forceFullReview: session.policyGate?.decision === 'review',
-    });
-    if (requestedSkillResult) {
-      return requestedSkillResult;
-    }
-
     const planner = session.steps[0];
     const researcher = session.steps[1];
     const critic = session.steps[2];
 
-    const fastResult = await handleFastPriorityBranch({
-      session,
-      sessionStartedAtMs,
-      taskGoal,
-      researcher,
+    const strategySelection = runSelectExecutionStrategyNode({
+      requestedSkillId: session.requestedSkillId,
+      priority: session.priority,
       forceFullReview: session.policyGate?.decision === 'review',
     });
-    if (fastResult) {
-      return fastResult;
-    }
+    traceShadowNode(session, 'select_execution_strategy', strategySelection.traceNote);
 
-    return await handleBalancedOrPreciseBranch({
+    return await executeSessionBranchRuntime({
+      strategy: strategySelection.strategy,
       session,
       sessionStartedAtMs,
       taskGoal,
       planner,
       researcher,
       critic,
+      dependencies: {
+        traceShadowNode,
+        runStep,
+        runSelfRefineLite,
+        finalizeTaskResult,
+        markSessionTerminal,
+        ensureShadowGraph,
+        decomposeGoalLeastToMost,
+        runLeastToMostExecutionDraft,
+        getAgentTotPolicySnapshot,
+        getAgentGotPolicySnapshot,
+        getAgentGotCutoverDecision,
+        runToTShadowExploration,
+        resolveFinalSelfConsistencySamples,
+        touch,
+        evaluateSelfGuidedBeam,
+        enqueueBestEffortTelemetry,
+      },
+      constants: {
+        sessionTimeoutMs: AGENT_SESSION_TIMEOUT_MS,
+        stepTimeoutMs: AGENT_STEP_TIMEOUT_MS,
+        ormPassThreshold: ORM_RULE_PASS_THRESHOLD,
+        ormReviewThreshold: ORM_RULE_REVIEW_THRESHOLD,
+        totCandidatePairRecordTask: TOT_CANDIDATE_PAIR_RECORD_TASK,
+      },
     });
   } catch (error) {
     if (session.cancelRequested || getErrorMessage(error) === 'SESSION_CANCELLED') {

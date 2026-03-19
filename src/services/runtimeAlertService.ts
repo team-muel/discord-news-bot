@@ -38,3 +38,12 @@ export const stopRuntimeAlerts = () => {
   }
   started = false;
 };
+
+export const getRuntimeAlertsStats = () => ({
+  enabled: RUNTIME_ALERT_ENABLED,
+  started,
+  running: Boolean(timer),
+  intervalMs: RUNTIME_ALERT_SCAN_INTERVAL_MS,
+  cooldownMs: RUNTIME_ALERT_COOLDOWN_MS,
+  webhookConfigured: Boolean(RUNTIME_ALERT_WEBHOOK_URL),
+});

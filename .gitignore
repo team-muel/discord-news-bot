@@ -15,3 +15,11 @@ __pycache__/
 !.env.example
 !**/.env.example
 .cache/
+
+# Runtime-generated artifacts (local state / workflow traces)
+.runtime/worker-approvals.json
+tmp/autonomy/openjarvis-unattended-last-run.json
+tmp/autonomy/workflow-sessions/*.json
+
+# Local benchmark scratch directories
+.tmp-pm-bench*/

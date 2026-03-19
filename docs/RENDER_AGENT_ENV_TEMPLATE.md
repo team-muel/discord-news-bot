@@ -2,6 +2,12 @@
 
 Use this as a baseline for deploying Muel as a server-operations runtime.
 
+## Runtime Artifact VCS Policy
+
+- Runtime artifacts are operational outputs and are not tracked in VCS by default.
+- Incident evidence or test fixture commits are allowed only with minimal scope.
+- Exception commits include purpose, time window, and retention or removal plan in the same change set.
+
 ## Required
 
 - ERROR_LOG_DB_ENABLED=true
@@ -14,7 +20,9 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - OPENAI_API_KEY=<secret> (if openai)
 - GEMINI_API_KEY=<secret> (if gemini)
 - ANTHROPIC_API_KEY=<secret> (if anthropic)
-- HF_API_KEY=<secret> (if huggingface; alias: HUGGINGFACE_API_KEY)
+- HF_TOKEN=<secret> (if huggingface; primary key)
+- HF_API_KEY=<secret> (huggingface alias)
+- HUGGINGFACE_API_KEY=<secret> (huggingface alias)
 - HUGGINGFACE_CHAT_COMPLETIONS_URL=https://router.huggingface.co/v1/chat/completions (optional)
 - HUGGINGFACE_MODEL=<model-id> (optional)
 - OPENCLAW_BASE_URL=<url> (if openclaw)
@@ -22,6 +30,13 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - OLLAMA_MODEL=<model> (if ollama)
 - OLLAMA_BASE_URL=http://127.0.0.1:11434 (optional)
 - OPENAI_ANALYSIS_MODEL / GEMINI_MODEL / ANTHROPIC_MODEL (optional)
+
+Provider fallback controls:
+
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false (optional)
+- LLM_PROVIDER_MAX_ATTEMPTS=2 (optional, 1~6)
+- LLM_PROVIDER_FALLBACK_CHAIN=openclaw,openai,anthropic,gemini,huggingface,ollama (optional)
+- LLM_PROVIDER_POLICY_ACTIONS=rag.retrieve=openclaw,openai;code.generate=openclaw,anthropic (optional)
 
 ## Agent Runtime Controls
 
@@ -235,6 +250,7 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 - WORKER_APPROVAL_STORE_MODE=auto (optional: auto|supabase|file)
 - WORKER_APPROVAL_DB_TABLE=worker_approvals (optional)
 - WORKER_APPROVAL_STORE_PATH=.runtime/worker-approvals.json (optional, file 모드/폴백 경로)
+  - 런타임 산출물 경로이므로 일반 코드 커밋 대상에서 제외 권장
 - VIBE_AUTO_WORKER_PROMOTION_ENABLED=true (optional, true면 자동 제안 전에 승격 임계치 평가)
 - VIBE_AUTO_WORKER_PROMOTION_MIN_FREQUENCY=5 (optional, 최근 window 내 동일 목적 요청 최소 횟수 N)
 - VIBE_AUTO_WORKER_PROMOTION_WINDOW_DAYS=7 (optional, 승격 평가 기간)

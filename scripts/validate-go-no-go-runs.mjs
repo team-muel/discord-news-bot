@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 const ROOT = process.cwd();
 const DEFAULT_RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
@@ -23,6 +24,76 @@ const RUNS_DIR = runsDirArg
 const REQUIRE_NO_GO = parseBoolArg('requireNoGo', false);
 const REQUIRE_CHECKLIST = parseBoolArg('requireChecklist', false);
 const CHECKLIST_SINCE_DAYS = Math.max(0, Number(parseArg('checklistSinceDays', '0')) || 0);
+const REQUIRE_RUNTIME_ARTIFACT_POLICY = parseBoolArg('requireRuntimeArtifactPolicy', false);
+const ALLOW_RUNTIME_ARTIFACT_EXCEPTIONS = parseBoolArg('allowRuntimeArtifactExceptions', false);
+
+const RUNTIME_ARTIFACT_IGNORE_PROBES = [
+  '.runtime/worker-approvals.json',
+  'tmp/autonomy/openjarvis-unattended-last-run.json',
+  'tmp/autonomy/workflow-sessions/_policy-probe.json',
+];
+
+const isRuntimeArtifactTrackedPath = (relativePath) => {
+  const normalized = String(relativePath || '').replace(/\\/g, '/').trim();
+  if (!normalized) {
+    return false;
+  }
+  return normalized === '.runtime/worker-approvals.json'
+    || normalized === 'tmp/autonomy/openjarvis-unattended-last-run.json'
+    || (/^tmp\/autonomy\/workflow-sessions\/.*\.json$/i).test(normalized);
+};
+
+const runGit = (args) => {
+  try {
+    return {
+      ok: true,
+      stdout: execFileSync('git', args, {
+        cwd: ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).toString('utf8').trim(),
+    };
+  } catch (error) {
+    const stdout = error && typeof error === 'object' && 'stdout' in error
+      ? String(error.stdout || '').trim()
+      : '';
+    const stderr = error && typeof error === 'object' && 'stderr' in error
+      ? String(error.stderr || '').trim()
+      : '';
+    return {
+      ok: false,
+      stdout,
+      stderr,
+    };
+  }
+};
+
+const validateRuntimeArtifactPolicy = () => {
+  if (ALLOW_RUNTIME_ARTIFACT_EXCEPTIONS) {
+    warn('runtime artifact policy check bypassed by allowRuntimeArtifactExceptions=true');
+    return;
+  }
+
+  for (const probePath of RUNTIME_ARTIFACT_IGNORE_PROBES) {
+    const probe = runGit(['check-ignore', probePath]);
+    if (!probe.ok) {
+      fail(`runtime artifact path must be gitignored: ${probePath}`);
+    }
+  }
+
+  const tracked = runGit(['ls-files']);
+  if (!tracked.ok) {
+    fail('failed to inspect tracked files for runtime artifact policy');
+  }
+
+  const trackedRuntimeArtifacts = tracked.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => isRuntimeArtifactTrackedPath(line));
+
+  if (trackedRuntimeArtifacts.length > 0) {
+    fail(`runtime artifacts are tracked in VCS: ${trackedRuntimeArtifacts.join(', ')}`);
+  }
+};
 
 const fail = (message) => {
   console.error(`[GO-NO-GO][VALIDATE] ${message}`);
@@ -85,6 +156,10 @@ if (!fs.existsSync(RUNS_DIR)) {
 
 if (!fs.existsSync(SCHEMA_PATH)) {
   fail(`schema not found: ${path.relative(ROOT, SCHEMA_PATH)}`);
+}
+
+if (REQUIRE_RUNTIME_ARTIFACT_POLICY) {
+  validateRuntimeArtifactPolicy();
 }
 
 let schema;
@@ -267,4 +342,4 @@ if (REQUIRE_NO_GO && noGoCount === 0) {
   fail(`${path.relative(ROOT, RUNS_DIR)} requires at least one no-go run (use --requireNoGo=true)`);
 }
 
-console.log(`[GO-NO-GO][VALIDATE] validated ${validatedCount} JSON run logs (no-go=${noGoCount}) checklist=${REQUIRE_CHECKLIST ? 'on' : 'off'}`);
+console.log(`[GO-NO-GO][VALIDATE] validated ${validatedCount} JSON run logs (no-go=${noGoCount}) checklist=${REQUIRE_CHECKLIST ? 'on' : 'off'} runtimeArtifactPolicy=${REQUIRE_RUNTIME_ARTIFACT_POLICY ? 'on' : 'off'}`);

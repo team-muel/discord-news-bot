@@ -5,6 +5,12 @@ This is the single operational runbook for the Muel platform across Discord, Ren
 Use this document as the first entrypoint for DevOps/SRE operations.
 Detailed domain docs are linked where needed, but this runbook is designed to be executable end-to-end.
 
+Document Role:
+
+- Canonical for platform-wide operational procedure.
+- Read first for incident handling, deployment verification, and operator execution.
+- Companion documents may add detail, but they must not override this runbook's operating procedure.
+
 ## 0) System Scope
 
 Platform components:
@@ -68,6 +74,12 @@ Open these first when verifying behavior:
 - Remote-only autonomy implementation: `docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
 - Generated route map: `docs/ROUTES_INVENTORY.md`
 - Schema-service map: `docs/SCHEMA_SERVICE_MAP.md`
+
+Runtime/control-plane verification baseline:
+
+- Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
+- Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze.
+- Distinguish startup phase (`service-init`, `discord-ready`, `database`) from execution ownership (`app`, `db`) during incident triage; not every missing Discord-ready loop is a platform-wide outage.
 
 ## 2.1) Current Progress Snapshot (2026-03-15)
 
@@ -221,6 +233,58 @@ Sync rule:
 - 운영형 적용 후에는 `MCP_OPENCODE_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다.
 - 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
 
+### 3.7 Bootstrap Profiles and Startup DAG
+
+목표: 부팅 경로를 프로파일별로 고정해 장애 triage 시 "무엇이 시작되어야 하는지"를 즉시 판별한다.
+
+공통 규칙:
+
+- `server.ts`는 항상 `startServerProcessRuntime()`를 먼저 실행한다.
+- `START_BOT=true`이고 토큰이 있을 때만 `src/bot.ts`가 로드되고 Discord ready 워크로드가 시작된다.
+- `config/env/local.profile.env`, `config/env/production.profile.env`는 OpenJarvis 라우팅/worker 강제 정책을 바꾸며, runtime bootstrap DAG 자체는 바꾸지 않는다.
+
+Profile A: server-only (`START_BOT=false`)
+
+```mermaid
+flowchart TD
+  A[server.ts] --> B[startServerProcessRuntime]
+  B --> C[startAutomationJobs]
+  B --> D[startMemoryJobRunner]
+  B --> E[startOpencodePublishWorker]
+  B --> F[startTradingEngine]
+  B --> G[startRuntimeAlerts]
+  A --> H[HTTP app listen]
+```
+
+Profile B: unified server+bot (`START_BOT=true` and token present)
+
+```mermaid
+flowchart TD
+  A[server.ts] --> B[startServerProcessRuntime]
+  B --> C[service-init loops]
+  A --> D[import src/bot.ts]
+  D --> E[startBot]
+  E --> F[Discord ready event]
+  F --> G[startDiscordReadyRuntime]
+  G --> H[startAutomationModules]
+  G --> I[startAgentDailyLearningLoop]
+  G --> J[startGotCutoverAutopilotLoop]
+  G --> K[startLoginSessionCleanupLoop]
+  G --> L[startObsidianLoreSyncLoop]
+  G --> M[startRetrievalEvalLoop]
+  G --> N[startAgentSloAlertLoop]
+```
+
+Profile C: bot-only process (`bot.ts` entry)
+
+```mermaid
+flowchart TD
+  A[bot.ts] --> B[startBot]
+  B --> C[Discord ready event]
+  C --> D[startDiscordReadyRuntime]
+  D --> E[discord-ready loops]
+```
+
 ## 4) Day 1 Go-Live Verification
 
 Run in order:
@@ -235,6 +299,31 @@ Run in order:
 8. `guild_lore_docs` has updated rows for active guilds
 
 ## 5) Daily Operations (Day 2)
+
+### 5.0 Runtime Artifacts (Role and VCS Policy)
+
+Runtime artifact files are operational outputs, not source-of-truth code/docs. They are useful for
+diagnostics, replay, and local fallback, but should not be committed as routine code changes.
+
+Primary files:
+
+- `.runtime/worker-approvals.json`
+  - Role: file-backend fallback store for worker approval queue/state.
+  - Producer: `src/services/workerGeneration/workerApprovalStore.ts`
+  - Notes: mutable runtime state; DB backend is preferred in production.
+- `tmp/autonomy/openjarvis-unattended-last-run.json`
+  - Role: latest unattended workflow summary pointer.
+  - Producer: `scripts/run-openjarvis-unattended.mjs`
+- `tmp/autonomy/workflow-sessions/*.json`
+  - Role: per-run state transitions and handoff evidence timeline.
+  - Producer: `scripts/openjarvis-workflow-state.mjs`
+
+VCS policy:
+
+- These files are gitignored by default.
+- Default policy: runtime artifacts are not tracked in VCS.
+- Incident evidence or test fixture commits are allowed only with minimal scope.
+- Exception commits include purpose, time window, and retention or removal plan in the same change set.
 
 ### 5.1 Runtime Health
 
@@ -900,7 +989,25 @@ Runtime controls:
 5. `LLM_EXPERIMENT_HF_PERCENT=20`
 6. `LLM_EXPERIMENT_GUILD_ALLOWLIST=<guild-id-csv>`
 7. `LLM_EXPERIMENT_FAIL_OPEN=true`
-8. `HF_API_KEY=<secret>` (+ `AI_PROVIDER`는 기존 base provider 유지 가능)
+8. `HF_TOKEN=<secret>` 또는 `HF_API_KEY=<secret>` 또는 `HUGGINGFACE_API_KEY=<secret>`
+9. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true|false`
+10. `LLM_PROVIDER_MAX_ATTEMPTS=<1..6>`
+11. `LLM_PROVIDER_FALLBACK_CHAIN=openclaw,openai,...`
+12. `LLM_PROVIDER_POLICY_ACTIONS=<pattern=provider1,provider2;...>`
+
+HF token alias rule (code-aligned):
+
+1. Hugging Face key resolution order는 `HF_TOKEN` -> `HF_API_KEY` -> `HUGGINGFACE_API_KEY`.
+2. 위 3개 중 하나라도 유효하면 Hugging Face provider는 configured 상태로 간주된다.
+3. 운영 템플릿은 `HF_TOKEN`을 표준 키로 사용하고, 나머지 2개는 하위 호환 alias로만 유지한다.
+
+Provider fallback rule (code-aligned):
+
+1. 요청이 `provider`를 명시하면 fallback 없이 해당 provider만 사용한다.
+2. 미지정 시 provider chain 구성 순서는 `selected provider -> action policy -> LLM_PROVIDER_FALLBACK_CHAIN -> base resolver provider -> automatic fallback order(openclaw, openai, anthropic, gemini, huggingface, ollama)`이다.
+3. chain은 중복 제거 후 "configured provider"만 남기고 `LLM_PROVIDER_MAX_ATTEMPTS`로 절단한다.
+4. HF experiment arm에서 `LLM_EXPERIMENT_FAIL_OPEN=false`면 Hugging Face 단일 경로로 고정된다.
+5. HF experiment arm에서 `LLM_EXPERIMENT_FAIL_OPEN=true`면 Hugging Face 우선 후 chain fallback을 허용한다.
 
 Operational checks:
 

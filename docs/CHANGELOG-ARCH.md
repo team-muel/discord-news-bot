@@ -19,6 +19,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-20 - Canonical Document Hierarchy Confirmation
+
+- Why: reduce planning drift by making document ownership explicit at the top of the canonical roadmap, execution board, backlog, runbook, operations, and architecture index.
+- Scope: added document-role labels and canonical navigation order across planning and operations docs; confirmed control tower precedence language.
+- Impacted Routes: N/A (documentation only)
+- Impacted Services: `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/OPERATIONS_24_7.md`, `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `docs/planning/EXECUTION_BOARD.md`, `docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md`, `docs/planning/README.md`, `docs/planning/PLATFORM_CONTROL_TOWER.md`, `docs/ARCHITECTURE_INDEX.md`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: no runtime behavior change; intent is to remove ambiguity about where direction, status, task breakdown, and operating procedure live.
+- Validation: manual hierarchy review against `docs/planning/PLATFORM_CONTROL_TOWER.md` and canonical references in the touched docs.
+
 ## 2026-03-19 - Weekly Governance Normalization (Legacy Pending Exclusion + Required-Action Completion + Quality Sample Guard)
 
 - Why: no-go 원인 분석과 운영 후속조치 추적을 주간 스냅샷에 내장하고, sparse quality sample(0값)로 인한 weekly auto-judge 오판정을 줄이며, legacy pending no-go를 현재 운영 KPI에서 분리하기 위함.

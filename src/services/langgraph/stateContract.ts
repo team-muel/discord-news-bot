@@ -6,6 +6,7 @@ export type LangGraphNodeId =
   | 'ingest'
   | 'compile_prompt'
   | 'route_intent'
+  | 'select_execution_strategy'
   | 'hydrate_memory'
   | 'plan_actions'
   | 'execute_actions'

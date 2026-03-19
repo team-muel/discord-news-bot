@@ -60,6 +60,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate provider and bootstrap docs policy (Gate 7)
+        run: npm run -s gates:validate:docs-policy
+
       - name: Run unattended autonomous loop
         run: npm run -s openjarvis:autonomy:run
 

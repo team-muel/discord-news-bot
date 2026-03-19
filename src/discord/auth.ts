@@ -225,3 +225,13 @@ export const startLoginSessionCleanupLoop = (): void => {
     loginSessionCleanupTimer.unref();
   }
 };
+
+export const getLoginSessionCleanupLoopStats = (): {
+  owner: LoginSessionCleanupOwner;
+  running: boolean;
+  intervalMs: number;
+} => ({
+  owner: LOGIN_SESSION_CLEANUP_OWNER,
+  running: Boolean(loginSessionCleanupTimer),
+  intervalMs: LOGIN_SESSION_CLEANUP_INTERVAL_MS,
+});

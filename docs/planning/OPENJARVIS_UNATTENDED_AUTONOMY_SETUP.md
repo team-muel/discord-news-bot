@@ -9,7 +9,7 @@
 실행 흐름:
 
 1. `gates:weekly-report:all` 실행 (주간 지표/요약 생성)
-2. `gates:validate:strict` 실행 (게이트 로그/체크리스트 검증)
+2. `gates:validate:strict` 실행 (게이트 로그/체크리스트 검증 + Runtime Artifact VCS Policy 강제)
 3. `rehearsal:stage-rollback:validate:strict` 실행 (복귀 준비도 검증)
 4. 최신 게이트가 `go`이고 `autoDeploy=true`면 Render 배포 트리거
 
@@ -54,6 +54,10 @@ GitHub Actions Secrets:
 - strict 모드에서 실패 시 workflow 실패 처리
 - 배포 실패도 실패로 판정
 - 결과 요약은 `tmp/autonomy/openjarvis-unattended-last-run.json`에 저장
+- 세션 타임라인은 `tmp/autonomy/workflow-sessions/*.json`에 저장
+- 위 2개 경로는 런타임 산출물이며 기본 정책은 VCS 비추적이다.
+- 예외는 incident evidence 또는 test fixture 용도로 최소 범위 커밋하는 경우만 허용한다.
+- 예외 커밋에는 목적, 시간 범위, 보존 또는 제거 계획을 동일 변경셋에 기록한다.
 
 ## 5) 운영 명령
 

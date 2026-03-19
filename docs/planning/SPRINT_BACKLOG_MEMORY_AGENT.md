@@ -1,5 +1,11 @@
 # 스프린트 백로그: 고맥락 장기기억 에이전트
 
+문서 역할:
+
+- Canonical for task-sized backlog units and completion criteria.
+- Derive priorities from [docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md](docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md) and active focus from [docs/planning/EXECUTION_BOARD.md](docs/planning/EXECUTION_BOARD.md).
+- Do not redefine roadmap direction or operator procedure here.
+
 ## 운영 규칙
 
 - 우선순위: P0 > P1 > P2

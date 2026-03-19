@@ -1,10 +1,14 @@
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from './automationBot';
-import { LOGIN_SESSION_CLEANUP_INTERVAL_MS, LOGIN_SESSION_CLEANUP_OWNER } from '../discord/auth';
+import { getLoginSessionCleanupLoopStats } from '../discord/auth';
 import { getAgentOpsSnapshot } from './agentOpsService';
 import { getMemoryJobRunnerStats } from './memoryJobRunner';
 import { getObsidianLoreSyncLoopStats } from './obsidianLoreSyncService';
 import { getRetrievalEvalLoopStats } from './retrievalEvalLoopService';
 import { listSupabaseCronJobs } from './supabaseExtensionOpsService';
+import { getRuntimeAlertsStats } from './runtimeAlertService';
+import { getTradingEngineRuntimeSnapshot } from './tradingEngine';
+import { getOpencodePublishWorkerStats } from './opencodePublishWorker';
+import { getRuntimeBootstrapState } from './runtimeBootstrap';
 
 type SchedulerOwner = 'app' | 'db';
 
@@ -41,6 +45,14 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
   const memoryJobs = getMemoryJobRunnerStats();
   const obsidianSync = getObsidianLoreSyncLoopStats();
   const retrievalEval = getRetrievalEvalLoopStats();
+  const loginCleanup = getLoginSessionCleanupLoopStats();
+  const runtimeAlerts = getRuntimeAlertsStats();
+  const trading = getTradingEngineRuntimeSnapshot();
+  const opencodePublish = getOpencodePublishWorkerStats();
+  const runtimeBootstrap = getRuntimeBootstrapState();
+
+  const sharedLoopStartup: RuntimeSchedulerPolicyItem['startup'] =
+    runtimeBootstrap.sharedLoopsSource === 'discord-ready' ? 'discord-ready' : 'service-init';
 
   let cronJobCount = 0;
   let supabaseConfigured = true;
@@ -59,12 +71,12 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
     {
       id: 'login-session-cleanup',
       title: 'Discord login-session cleanup',
-      owner: LOGIN_SESSION_CLEANUP_OWNER,
-      startup: LOGIN_SESSION_CLEANUP_OWNER === 'app' ? 'discord-ready' : 'database',
-      enabled: LOGIN_SESSION_CLEANUP_OWNER === 'app' ? true : cronJobCount > 0,
-      running: LOGIN_SESSION_CLEANUP_OWNER === 'app' ? true : cronJobCount > 0,
-      schedule: LOGIN_SESSION_CLEANUP_OWNER === 'app'
-        ? `every ${Math.max(1, Math.round(LOGIN_SESSION_CLEANUP_INTERVAL_MS / 60000))}m`
+      owner: loginCleanup.owner,
+      startup: loginCleanup.owner === 'app' ? 'discord-ready' : 'database',
+      enabled: loginCleanup.owner === 'app' ? true : cronJobCount > 0,
+      running: loginCleanup.owner === 'app' ? loginCleanup.running : cronJobCount > 0,
+      schedule: loginCleanup.owner === 'app'
+        ? `every ${Math.max(1, Math.round(loginCleanup.intervalMs / 60000))}m`
         : 'daily (pg_cron)',
       source: ['src/discord/auth.ts', 'docs/SUPABASE_SCHEMA.sql', 'src/discord/runtime/readyWorkloads.ts'],
     },
@@ -104,11 +116,45 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
       id: 'memory-job-runner',
       title: 'Memory job queue poll/recovery',
       owner: 'app',
-      startup: 'discord-ready',
+      startup: sharedLoopStartup,
       enabled: Boolean(memoryJobs.enabled),
       running: Boolean(memoryJobs.startedAt),
       schedule: `poll=${memoryJobs.pollIntervalMs}ms recovery=${memoryJobs.deadletterRecoveryIntervalMs}ms`,
-      source: ['src/services/memoryJobRunner.ts', 'src/discord/runtime/readyWorkloads.ts'],
+      source: [
+        'src/services/memoryJobRunner.ts',
+        'src/services/runtimeBootstrap.ts',
+        'src/discord/runtime/readyWorkloads.ts',
+      ],
+    },
+    {
+      id: 'opencode-publish-worker',
+      title: 'Opencode publish queue worker',
+      owner: 'app',
+      startup: 'service-init',
+      enabled: Boolean(opencodePublish.enabled),
+      running: Boolean(opencodePublish.running),
+      schedule: `every ${Math.max(1, Math.round(opencodePublish.intervalMs / 1000))}s`,
+      source: ['src/services/opencodePublishWorker.ts', 'src/services/runtimeBootstrap.ts'],
+    },
+    {
+      id: 'trading-engine',
+      title: 'Trading runtime main loop',
+      owner: 'app',
+      startup: 'service-init',
+      enabled: Boolean(trading.started),
+      running: Boolean(trading.started && !trading.paused),
+      schedule: 'continuous with distributed lease',
+      source: ['src/services/tradingEngine.ts', 'src/services/runtimeBootstrap.ts'],
+    },
+    {
+      id: 'runtime-alerts',
+      title: 'Runtime alert scanner',
+      owner: 'app',
+      startup: 'service-init',
+      enabled: Boolean(runtimeAlerts.enabled),
+      running: Boolean(runtimeAlerts.running),
+      schedule: `every ${Math.max(1, Math.round(runtimeAlerts.intervalMs / 1000))}s`,
+      source: ['src/services/runtimeAlertService.ts', 'src/services/runtimeBootstrap.ts'],
     },
     {
       id: 'obsidian-sync-loop',

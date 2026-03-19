@@ -7,6 +7,12 @@
 
 이 문서는 정책/우선순위의 Canonical Roadmap이다.
 
+문서 역할:
+
+- Canonical for direction, priorities, milestone IDs, and phased rollout intent.
+- Do not track day-to-day status here; status belongs in [docs/planning/EXECUTION_BOARD.md](docs/planning/EXECUTION_BOARD.md).
+- Do not embed operator SOP here; execution procedure belongs in [docs/RUNBOOK_MUEL_PLATFORM.md](docs/RUNBOOK_MUEL_PLATFORM.md).
+
 ## 1) North Star
 
 Muel은 다음 4가지를 동시에 만족하는 길드 운영 에이전트로 진화한다.

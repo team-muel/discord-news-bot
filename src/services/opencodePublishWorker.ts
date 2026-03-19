@@ -910,3 +910,15 @@ export const stopOpencodePublishWorker = () => {
   }
   started = false;
 };
+
+export const getOpencodePublishWorkerStats = () => ({
+  enabled: WORKER_ENABLED,
+  started,
+  inFlight,
+  running: Boolean(timer),
+  intervalMs: WORKER_INTERVAL_MS,
+  batchSize: WORKER_BATCH_SIZE,
+  maxAttempts: WORKER_MAX_ATTEMPTS,
+  distributedLockEnabled: WORKER_LOCK_ENABLED,
+  distributedLockLeaseMs: WORKER_LOCK_LEASE_MS,
+});

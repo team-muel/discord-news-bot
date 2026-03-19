@@ -3,6 +3,12 @@
 This project runs one Discord bot plus automation jobs from the server process (`server.ts`).
 Use PM2 to keep the process alive and auto-restart on failures.
 
+Document Role:
+
+- Canonical for 24/7 runtime, deployment, and environment operation.
+- Subordinate to [docs/RUNBOOK_MUEL_PLATFORM.md](docs/RUNBOOK_MUEL_PLATFORM.md) for overall incident/runbook flow.
+- Use this document when the task is specifically about runtime topology, env setup, PM2/host execution, or unattended process safety.
+
 Related architecture guide:
 
 - `docs/RUNBOOK_MUEL_PLATFORM.md` as the top-level unified runbook (DevOps/SRE entrypoint).
@@ -10,6 +16,59 @@ Related architecture guide:
 - `docs/CONTEXT_ISOLATION.md` for domain-focused review/edit workflow.
 - `docs/MULTI_GUILD_OPERATIONS_CHECKLIST.md` for multi-server rollout checklist and env registration steps.
 - `docs/OBSIDIAN_SUPABASE_SYNC.md` for no-disk periodic Obsidian -> Supabase sync.
+
+## Runtime Topology and Control Plane
+
+Current runtime topology uses two orthogonal dimensions:
+
+- startup phase: when a workload starts (`service-init`, `discord-ready`, `database`)
+- ownership: who owns execution (`app` or `db`)
+
+- `service-init`: starts with the server process before Discord ready.
+- `discord-ready`: starts only after the Discord client is ready.
+- `database`: jobs owned by Supabase cron instead of the app process.
+
+Current app-owned `service-init` loops:
+
+- memory job runner
+- opencode publish worker
+- trading engine
+- runtime alert scanner
+
+Current app-owned `discord-ready` workloads:
+
+- automation monitors (news/youtube)
+- agent daily learning loop
+- GoT cutover autopilot loop
+- Discord login-session cleanup when app-owned
+- Obsidian lore sync loop
+- retrieval eval loop
+- agent SLO alert loop
+
+Current database-owned runtime:
+
+- Supabase maintenance cron jobs
+- Discord login-session cleanup when configured to run via DB/cron path
+
+Scheduler-policy canonical IDs (operator should compare by ID):
+
+- `service-init`: `memory-job-runner`, `opencode-publish-worker`, `trading-engine`, `runtime-alerts`
+- `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `login-session-cleanup`(app-owned), `obsidian-sync-loop`, `retrieval-eval-loop`, `agent-slo-alert-loop`
+- `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned)
+
+Operator control-plane endpoints:
+
+- `GET /api/bot/status`: top-level bot, automation, agent runtime summary
+- `GET /api/bot/agent/runtime/scheduler-policy`: canonical runtime ownership/startup snapshot
+- `GET /api/bot/agent/runtime/loops`: loop health for memory, Obsidian sync, retrieval eval
+- `GET /api/bot/agent/runtime/unattended-health`: unattended execution telemetry and opencode readiness
+- `GET /api/bot/agent/runtime/readiness?guildId=...`: guild-scoped runtime readiness report
+- `GET /api/bot/agent/runtime/slo/report?guildId=...`: guild SLO status
+- `GET /api/bot/agent/runtime/slo/alerts?guildId=...`: recent SLO alert events
+
+Operational rule:
+
+- When runtime behavior and docs disagree, treat `scheduler-policy` plus `runtimeBootstrap.ts` as the immediate source for incident triage, then patch docs in the same change set.
 
 ## 1) Required Environment Variables
 
@@ -189,6 +248,7 @@ The service is healthy when:
 
 - `GET /health` returns `status: "ok"` or expected `degraded` details
 - `GET /api/bot/status` returns bot snapshots with recent successful runtime fields
+- `GET /api/bot/agent/runtime/scheduler-policy` shows expected enabled/running ownership for this deployment mode
 
 Quick checks:
 
@@ -197,11 +257,45 @@ curl -fsS http://localhost:3000/health
 curl -fsS http://localhost:3000/ready
 ```
 
+Admin runtime checks:
+
+```bash
+curl -fsS -H "Cookie: muel_session=<session-token>" http://localhost:3000/api/bot/agent/runtime/scheduler-policy
+curl -fsS -H "Cookie: muel_session=<session-token>" http://localhost:3000/api/bot/agent/runtime/loops
+```
+
+- These endpoints are admin-only and require an authenticated admin session cookie.
+- If `AUTH_COOKIE_NAME` is customized, replace `muel_session` with that configured cookie name.
+
+Automated operator check:
+
+```bash
+npm run ops:runtime:check -- --cookie=<admin-cookie> --guildId=<guild-id>
+```
+
+- `--cookie` accepts either full `name=value` or raw token. Raw token is normalized to `${AUTH_COOKIE_NAME}=<token>` (default cookie name: `muel_session`).
+
+- Use `--strict=false` only for public-endpoint smoke checks when admin session material is not available.
+- Default strict mode fails if admin-only control-plane endpoints cannot be verified.
+
+What to verify:
+
+- If `START_BOT=true`, `discord-ready` workloads should appear after bot ready.
+- If `START_BOT=false`, expect `service-init` loops only; this is not an incident by itself.
+- `memory-job-runner` startup source should reflect whether shared loops were first started by server-process or Discord ready path.
+- `trading-engine` may be enabled but effectively paused; check runtime pause state before escalating.
+- `runtime-alerts` and `opencode-publish-worker` should be present on server-process instances even when Discord automation is disabled.
+- `agent-slo-alert-loop` should only appear in `discord-ready` phase after Discord ready runtime starts.
+- `login-session-cleanup` can legitimately appear in either `discord-ready` (owner=app) or `database` (owner=db), depending on `DISCORD_LOGIN_SESSION_CLEANUP_OWNER`.
+
 ## 6) Common Failure Cases
 
 - `offline` status: `START_BOT` is false or Discord token is missing.
 - automation degraded: YouTube RSS fetch errors or invalid subscription/channel mapping.
 - frequent restarts: inspect logs with `npm run pm2:logs` and verify env vars.
+- scheduler-policy drift: docs or operator expectation say `discord-ready`, but runtime snapshot shows `service-init` or `database`; inspect `src/services/runtimeBootstrap.ts` and current env toggles before restart.
+- unattended path degraded: `/api/bot/agent/runtime/unattended-health` shows queue/readiness issues; inspect approval store fallback, opencode publish worker state, and upstream GitHub queue dependencies.
+- ready-only degradation: `/ready` fails while `/health` stays healthy; isolate Discord gateway/auth issues from server-process loops before rolling back the entire service.
 
 Manual run API note (admin dashboard):
 

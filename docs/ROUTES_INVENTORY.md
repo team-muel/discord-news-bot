@@ -2,6 +2,7 @@
 
 - Source: src/app.ts + src/routes/**/*.ts
 - Notes: middleware detection is static and best-effort for requireAuth/requireAdmin/rate limiter usage.
+- Operator control-plane hotspots: /api/bot/status, /api/bot/agent/runtime/scheduler-policy, /api/bot/agent/runtime/loops, /api/bot/agent/runtime/unattended-health, /api/bot/agent/runtime/readiness, /api/bot/agent/runtime/slo/report.
 
 | Method | Path | Auth | Admin | Rate Limit | Source |
 | --- | --- | --- | --- | --- | --- |
@@ -131,4 +132,3 @@
 | POST | /api/trading/strategy/reset | yes | yes | yes | src/routes/trading.ts:50 |
 | GET | /health | no | no | no | src/routes/health.ts:26 |
 | GET | /ready | no | no | no | src/routes/health.ts:55 |
-

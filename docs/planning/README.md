@@ -1,5 +1,13 @@
 # Planning Docs Index
 
+## Canonical Navigation Order
+
+1. `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` — direction, priorities, milestone IDs
+2. `EXECUTION_BOARD.md` — current state (`Now`, `Next`, `Later`)
+3. `SPRINT_BACKLOG_MEMORY_AGENT.md` — task-sized implementation units
+4. `../RUNBOOK_MUEL_PLATFORM.md` — operator procedure and execution
+5. `PLATFORM_CONTROL_TOWER.md` — tie-breaker for document ownership and canonical scope
+
 ## 문서 목록
 
 - UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md
@@ -28,6 +36,7 @@
 - gate-runs/WEEKLY_SUMMARY.md
 - AGENT_ARCH_EVAL_FRAMEWORK.md
 - AGENT_EVAL_QUERY_PLAYBOOK.md
+- MULTI_AGENT_NODE_EXTRACTION_TARGET_STATE.md
 - FINOPS_PLAYBOOK.md
 - MEMORY_SCHEMA_MIGRATION_PLAN.md
 - MEMORY_API_CONTRACT.md

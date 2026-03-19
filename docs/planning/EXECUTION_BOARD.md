@@ -1,8 +1,16 @@
 # 실행 보드 (Frontier 2026)
 
-기준 문서: `docs/planning/FRONTIER_2026_PROGRAM.md`
+기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` (canonical)
+
+프로그램 보조 문서: `docs/planning/FRONTIER_2026_PROGRAM.md`
 
 마일스톤 기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`
+
+문서 역할:
+
+- Canonical for current execution state only (`Now`, `Next`, `Later`).
+- Every item must bind to roadmap milestone IDs from the unified roadmap.
+- Detailed ticket breakdown belongs in [docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md](docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md).
 
 표기 규칙:
 
@@ -17,12 +25,12 @@
 5. [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
 6. [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
 7. [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
-8. [M-01][M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
+8. [M-01] [M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
 9. [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
-10. [M-04][M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
-11. [M-05][M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
+10. [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
+11. [M-05] [M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
 12. [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
-13. [M-05][M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
+13. [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
 
 ## Next (D31-D60: Autonomous Loops)
 
@@ -31,9 +39,9 @@
 3. [M-06] provider dual profile(cost-optimized vs quality-optimized) 운영
 4. [M-07] ToT/GoT + provider별 품질 정규화 계측 도입
 5. [M-07] 라벨 기반 recall@k 및 hallucination review 자동 리포트
-6. [M-03][M-08] memory job queue-first 분리 v1(enqueue/consume/retry/deadletter)
+6. [M-03] [M-08] memory job queue-first 분리 v1(enqueue/consume/retry/deadletter)
 7. [M-08] queue lag/retry/deadletter 운영 SLO 알림 자동화
-8. [M-06][M-07] provider profile 자동 회귀 규칙(quality gate fail 시 fallback) 적용
+8. [M-06] [M-07] provider profile 자동 회귀 규칙(quality gate fail 시 fallback) 적용
 9. [M-05] 실패 패턴 수집 -> 패치 제안 -> 회귀 검증 self-improvement loop v1
 
 ## Later (D61-D90: Frontier Hardening)

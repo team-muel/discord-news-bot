@@ -4,6 +4,11 @@
 
 이 문서는 새 정책을 추가하는 문서가 아니라, 어떤 문서가 최종 기준인지 결정하는 조정 레이어다.
 
+현재 확정 상태:
+
+- Canonical hierarchy is confirmed around roadmap -> execution board -> backlog -> runbook.
+- When these documents disagree, this control tower decides ownership, and the canonical document must be updated instead of duplicating policy elsewhere.
+
 ## 1) Canonical 문서 계층 (Single Source of Truth)
 
 아래 표에서 각 주제별 "단일 기준 문서"를 고정한다.
@@ -61,7 +66,7 @@
 
 1. Canonical 문서에만 본문 유지
 2. 중복 문서는 5~10줄 요약 + canonical 링크로 축소
-3. 문서 상단에 "Deprecated by <path>" 표기
+3. 문서 상단에 "Deprecated by PATH" 표기
 4. 2주 후 완전 아카이브
 
 ## 6) 30일 정렬 계획

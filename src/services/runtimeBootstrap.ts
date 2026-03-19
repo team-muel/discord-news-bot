@@ -16,6 +16,7 @@ const runtimeState = {
   serverStarted: false,
   discordReadyStarted: false,
   sharedLoopsStarted: false,
+  sharedLoopsSource: null as 'server-process' | 'discord-ready' | null,
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -32,13 +33,14 @@ const getErrorMessage = (error: unknown): string => {
   }
 };
 
-const startSharedLoops = () => {
+const startSharedLoops = (source: 'server-process' | 'discord-ready') => {
   if (runtimeState.sharedLoopsStarted) {
     return;
   }
 
   startMemoryJobRunner();
   runtimeState.sharedLoopsStarted = true;
+  runtimeState.sharedLoopsSource = source;
 };
 
 export const startServerProcessRuntime = (): void => {
@@ -47,7 +49,7 @@ export const startServerProcessRuntime = (): void => {
   }
 
   startAutomationJobs();
-  startSharedLoops();
+  startSharedLoops('server-process');
   startOpencodePublishWorker();
   startTradingEngine();
   startRuntimeAlerts();
@@ -67,7 +69,7 @@ export const startDiscordReadyRuntime = (client: Client): void => {
   startAgentDailyLearningLoop(client);
   startGotCutoverAutopilotLoop(client);
   startLoginSessionCleanupLoop();
-  startSharedLoops();
+  startSharedLoops('discord-ready');
   startObsidianLoreSyncLoop();
   startRetrievalEvalLoop(client);
   startAgentSloAlertLoop();
@@ -78,3 +80,5 @@ export const startDiscordReadyRuntime = (client: Client): void => {
 
   runtimeState.discordReadyStarted = true;
 };
+
+export const getRuntimeBootstrapState = () => ({ ...runtimeState });

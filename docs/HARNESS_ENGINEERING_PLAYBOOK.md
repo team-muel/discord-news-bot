@@ -33,6 +33,11 @@ Already implemented:
 - Runtime queue/deadletter harness:
   - `src/services/multiAgentService.ts`
   - `src/routes/bot.ts` (`/api/bot/agent/deadletters`)
+- Runtime control-plane harness:
+  - `src/services/runtimeBootstrap.ts`
+  - `src/services/runtimeSchedulerPolicyService.ts`
+  - `src/routes/bot-agent/runtimeRoutes.ts`
+  - `scripts/check-runtime-control-plane.mjs`
 
 ## 3) Harness Layers (Muel Standard)
 
@@ -58,6 +63,8 @@ Already implemented:
 
 - Queue size, step/session timeout, retry attempts, deadletter caps are environment-tunable.
 - Track runtime state with queue + deadletter metrics.
+- Distinguish `service-init`, `discord-ready`, and `database` scheduler ownership in operator tooling.
+- Treat scheduler-policy as the control-plane snapshot for runtime ownership, not as a guessed document-only model.
 - Introduce release gates before production promotion.
 
 ## 4) Maturity Levels (Apply All)
@@ -98,7 +105,17 @@ Harness-relevant docs should be maintained together:
    - `/api/bot/agent/deadletters`
    - `/api/bot/agent/memory/jobs/deadletters`
    - `/api/bot/agent/actions/approvals`
-5. Apply go/no-go decision table before rollout.
+5. Validate runtime control-plane with `npm run ops:runtime:check -- --cookie=<admin-session-cookie> --guildId=<guild-id>`.
+6. Confirm `scheduler-policy`, `loops`, and `unattended-health` are reachable and structurally valid.
+7. Confirm `service-init` vs `discord-ready` ownership matches deployment intent.
+8. Apply Gate 6 (`Runtime Artifact VCS Policy`) from `docs/HARNESS_RELEASE_GATES.md` before rollout.
+9. Apply go/no-go decision table before rollout.
+
+Cookie format note:
+
+- `--cookie` should carry authenticated admin session cookie material.
+- Preferred explicit form is `name=value` (example: `muel_session=<token>`).
+- Raw token input is accepted and normalized with `AUTH_COOKIE_NAME` (default `muel_session`).
 
 ## 7) KPIs for Harness Quality
 
@@ -115,4 +132,6 @@ When harness behavior changes:
 1. Update this playbook and `docs/HARNESS_RELEASE_GATES.md`.
 2. Update runbook links and decision criteria.
 3. Regenerate generated docs (`npm run docs:build`).
-4. Add architecture log entry if runtime meaning changed.
+4. If route/control-plane meaning changed, confirm `docs/ROUTES_INVENTORY.md` still advertises the correct operator hotspots.
+5. Add architecture log entry if runtime meaning changed.
+6. If runtime artifact paths or handling changed, re-validate Gate 6 wording matches runbook/unattended/env template policy text.

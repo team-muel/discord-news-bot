@@ -12,6 +12,7 @@
 ## 2) 자동 의사결정 입력 신호 (When)
 
 - Health: `/health`, `/ready`, `/api/bot/status`
+- Runtime control-plane: `/api/bot/agent/runtime/scheduler-policy`, `/api/bot/agent/runtime/loops`, `/api/bot/agent/runtime/unattended-health`
 - 비용: `/api/bot/agent/finops/budget?guildId=...`
 - 품질: `/api/bot/agent/memory/quality?guildId=...&days=...`
 - 출시 게이트: `/api/bot/agent/memory/beta/go-no-go?guildId=...&days=...`
@@ -31,6 +32,17 @@
 | Discord Bot   | `/api/bot/status`에서 bot offline 10분 지속 | SEV-2      | L1 On-Call         | Bot runtime 재기동 절차 시작                 | 토큰/권한/게이트웨이 상태 검증           | 10분 내      |
 | 인증 경로     | `/api/auth/me` 실패율 >= 20% (10분 윈도우)  | SEV-1      | Incident Commander | 사용자 영향 공지 템플릿 전환                 | OAuth 설정/쿠키/CSRF/CORS 드리프트 점검  | 15분 내 완화 |
 | 데이터 무결성 | 핵심 테이블 쓰기 실패가 5분 이상 지속       | SEV-1      | L2 Data Owner      | 쓰기 경로 보호 모드(읽기 중심) 전환          | 스키마 재적용, 키/권한 복구              | 15분 내      |
+
+Runtime control-plane 보조 규칙:
+
+- `scheduler-policy`가 기대 소유 구조와 다르면 SEV-2 후보로 분류하고, L2 Service Owner가 15분 내에 `service-init`/`discord-ready`/`database` 소유 경계와 env 토글을 재검증한다.
+- `unattended-health` 실패 또는 readiness 경고가 10분 이상 지속되면 SEV-2 후보로 분류하고, unattended 변경을 동결한 뒤 opencode publish worker, approval store fallback, 외부 큐 의존성을 점검한다.
+
+Runtime loop 인벤토리(현재 코드 기준, `scheduler-policy` ID):
+
+- `service-init`: `memory-job-runner`, `opencode-publish-worker`, `trading-engine`, `runtime-alerts`
+- `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `login-session-cleanup`(app-owned), `obsidian-sync-loop`, `retrieval-eval-loop`, `agent-slo-alert-loop`
+- `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned)
 
 ## 4) FinOps 자동 의사결정표
 
@@ -62,10 +74,18 @@
 ## 7) 실행 순서 (Operator UX)
 
 1. 먼저 신호 4종(Health/FinOps/Quality/Go-No-Go)을 조회한다.
-2. 표의 임계치와 비교해 자동 판정을 확정한다.
-3. 자동 조치를 즉시 실행한다.
-4. 담당자별 수동 SOP를 SLA 내 완료한다.
-5. `ONCALL_INCIDENT_TEMPLATE`와 `ONCALL_COMMS_PLAYBOOK`에 증적을 남긴다.
+2. runtime control-plane 3종(`scheduler-policy`, `loops`, `unattended-health`)으로 실제 루프 소유/실행 상태를 확인한다.
+3. 표의 임계치와 비교해 자동 판정을 확정한다.
+4. 자동 조치를 즉시 실행한다.
+5. 담당자별 수동 SOP를 SLA 내 완료한다.
+6. `ONCALL_INCIDENT_TEMPLATE`와 `ONCALL_COMMS_PLAYBOOK`에 증적을 남긴다.
+
+Runtime triage rule:
+
+- `service-init` 루프 이상은 서버 프로세스 또는 env/profile 변경을 우선 의심한다.
+- `discord-ready` 루프 이상은 Discord ready, OAuth, gateway, bot token 상태를 먼저 분리한다.
+- `database` 소유 이상은 Supabase cron 설치 여부와 DB 자격 증명을 먼저 확인한다.
+- `login-session-cleanup` 이상은 먼저 owner(`app|db`)를 확인한 뒤 app loop 문제인지 DB cron 문제인지 분기한다.
 
 ## 8) 운영 규칙
 

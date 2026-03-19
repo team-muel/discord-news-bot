@@ -124,6 +124,14 @@ const normalizeRollbackType = (value) => {
 
 const cleanCell = (value) => String(value || '').replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
 
+const toBooleanOrNull = (value) => {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return null;
+};
+
 const extractPostDecisionChecklist = (content) => {
   const marker = '## Post-Decision Checklist';
   const start = content.indexOf(marker);
@@ -139,6 +147,29 @@ const extractPostDecisionChecklist = (content) => {
   const total = checked + unchecked;
 
   return {
+    total,
+    checked,
+    unchecked,
+    complete: total > 0 && unchecked === 0,
+  };
+};
+
+const extractRuntimeLoopEvidenceChecklist = (content) => {
+  const marker = '## Runtime Loop Evidence';
+  const start = content.indexOf(marker);
+  if (start < 0) {
+    return { present: false, total: 0, checked: 0, unchecked: 0, complete: false };
+  }
+
+  const after = content.slice(start + marker.length);
+  const nextHeaderIdx = after.search(/\n##\s+/);
+  const section = nextHeaderIdx >= 0 ? after.slice(0, nextHeaderIdx) : after;
+  const checked = (section.match(/^-\s*\[x\]\s+/gim) || []).length;
+  const unchecked = (section.match(/^-\s*\[\s\]\s+/gim) || []).length;
+  const total = checked + unchecked;
+
+  return {
+    present: true,
     total,
     checked,
     unchecked,
@@ -195,6 +226,39 @@ const runs = files
       ? jsonFinalDecision.required_actions.filter((item) => typeof item === 'string' && item.trim())
       : [];
     const checklist = extractPostDecisionChecklist(content);
+    const runtimeLoopEvidenceChecklist = extractRuntimeLoopEvidenceChecklist(content);
+    const runtimeLoopEvidenceJson = json?.runtime_loop_evidence && typeof json.runtime_loop_evidence === 'object' && !Array.isArray(json.runtime_loop_evidence)
+      ? json.runtime_loop_evidence
+      : null;
+    const runtimeLoopEvidenceJsonFlags = runtimeLoopEvidenceJson
+      ? [
+        toBooleanOrNull(runtimeLoopEvidenceJson.scheduler_policy_items_verified),
+        toBooleanOrNull(runtimeLoopEvidenceJson.service_init_ids_verified),
+        toBooleanOrNull(runtimeLoopEvidenceJson.discord_ready_ids_verified),
+        toBooleanOrNull(runtimeLoopEvidenceJson.database_ids_verified),
+        toBooleanOrNull(runtimeLoopEvidenceJson.loops_snapshot_attached),
+        toBooleanOrNull(runtimeLoopEvidenceJson.unattended_health_snapshot_attached),
+      ]
+      : null;
+    const runtimeLoopEvidence = runtimeLoopEvidenceJson
+      ? {
+        source: 'json',
+        present: true,
+        total: runtimeLoopEvidenceJsonFlags.length,
+        checked: runtimeLoopEvidenceJsonFlags.filter((item) => item === true).length,
+        unchecked: runtimeLoopEvidenceJsonFlags.filter((item) => item !== true).length,
+        complete: runtimeLoopEvidenceJsonFlags.every((item) => item === true),
+        known: runtimeLoopEvidenceJsonFlags.every((item) => item !== null),
+      }
+      : {
+        source: runtimeLoopEvidenceChecklist.present ? 'markdown' : 'none',
+        present: runtimeLoopEvidenceChecklist.present,
+        total: runtimeLoopEvidenceChecklist.total,
+        checked: runtimeLoopEvidenceChecklist.checked,
+        unchecked: runtimeLoopEvidenceChecklist.unchecked,
+        complete: runtimeLoopEvidenceChecklist.complete,
+        known: runtimeLoopEvidenceChecklist.present && runtimeLoopEvidenceChecklist.total > 0,
+      };
     const qualityMetrics = {
       citationRate: toNumber(json?.gates?.quality?.metrics?.citation_rate),
       retrievalHitAtK: toNumber(json?.gates?.quality?.metrics?.retrieval_hit_at_k),
@@ -217,6 +281,7 @@ const runs = files
       gateVerdicts,
       requiredActions,
       checklist,
+      runtimeLoopEvidence,
       qualityMetrics,
       source: json ? 'json+md' : 'md',
     };
@@ -286,6 +351,15 @@ const requiredActionCompletion = {
   required_action_completion_rate: null,
 };
 
+const runtimeLoopEvidenceCompletion = {
+  runs_with_evidence: 0,
+  complete_runs: 0,
+  incomplete_runs: 0,
+  missing_runs: 0,
+  known_runs: 0,
+  completion_rate: null,
+};
+
 for (const run of runsWithFlags) {
   if (String(run.overall || '').toLowerCase() !== 'no-go') {
     continue;
@@ -342,7 +416,25 @@ for (const run of runsForKpi) {
   if (run.qualityMetrics.retrievalHitAtK !== null) qualitySignals.retrievalHitAtK.push(run.qualityMetrics.retrievalHitAtK);
   if (run.qualityMetrics.hallucinationReviewFailRate !== null) qualitySignals.hallucinationReviewFailRate.push(run.qualityMetrics.hallucinationReviewFailRate);
   if (run.qualityMetrics.sessionSuccessRate !== null) qualitySignals.sessionSuccessRate.push(run.qualityMetrics.sessionSuccessRate);
+
+  if (!run.runtimeLoopEvidence.present) {
+    runtimeLoopEvidenceCompletion.missing_runs += 1;
+  } else {
+    runtimeLoopEvidenceCompletion.runs_with_evidence += 1;
+    if (run.runtimeLoopEvidence.known) {
+      runtimeLoopEvidenceCompletion.known_runs += 1;
+    }
+    if (run.runtimeLoopEvidence.complete) {
+      runtimeLoopEvidenceCompletion.complete_runs += 1;
+    } else {
+      runtimeLoopEvidenceCompletion.incomplete_runs += 1;
+    }
+  }
 }
+
+runtimeLoopEvidenceCompletion.completion_rate = runtimeLoopEvidenceCompletion.runs_with_evidence > 0
+  ? Number((runtimeLoopEvidenceCompletion.complete_runs / runtimeLoopEvidenceCompletion.runs_with_evidence).toFixed(4))
+  : null;
 
 const qualitySummary = {
   samples: {
@@ -369,7 +461,12 @@ const recentRows = runsWithFlags
   .map((run) => {
     const rel = path.relative(ROOT, run.filePath).replace(/\\/g, '/');
     const legacyMark = run.legacyPendingNoGo ? ' (legacy-pending)' : '';
-    return `| ${cleanCell(run.runId)}${legacyMark} | ${cleanCell(run.stage)} | ${cleanCell(run.scope)} | ${cleanCell(run.overall)} | ${cleanCell(run.rollbackRequired)} | ${cleanCell(run.rollbackType)} | ${cleanCell(rel)} |`;
+    const runtimeEvidenceStatus = !run.runtimeLoopEvidence.present
+      ? 'missing'
+      : run.runtimeLoopEvidence.complete
+        ? 'complete'
+        : 'incomplete';
+    return `| ${cleanCell(run.runId)}${legacyMark} | ${cleanCell(run.stage)} | ${cleanCell(run.scope)} | ${cleanCell(run.overall)} | ${cleanCell(run.rollbackRequired)} | ${cleanCell(run.rollbackType)} | ${cleanCell(runtimeEvidenceStatus)} | ${cleanCell(rel)} |`;
   })
   .join('\n');
 
@@ -562,7 +659,7 @@ const fetchStrategyQualityNormalization = async () => {
 
 const strategyQualityNormalization = await fetchStrategyQualityNormalization();
 
-const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runsForKpi.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n- legacy_pending_no_go_excluded: ${excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0}\n- legacy_pending_cutoff: ${legacyPendingCutoffRaw || 'n/a'}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## No-Go Root Cause Breakdown\n\n- reliability_quality_dual_fail: ${noGoRootCause.reliability_quality_dual_fail}\n- reliability_only_fail: ${noGoRootCause.reliability_only_fail}\n- quality_only_fail: ${noGoRootCause.quality_only_fail}\n- all_gates_pending: ${noGoRootCause.all_gates_pending}\n- other: ${noGoRootCause.other}\n\n## Required Action Completion (Estimated)\n\n- no_go_runs: ${requiredActionCompletion.no_go_runs}\n- required_actions_total: ${requiredActionCompletion.required_actions_total}\n- required_actions_estimated_completed: ${requiredActionCompletion.required_actions_estimated_completed}\n- required_action_completion_rate: ${requiredActionCompletion.required_action_completion_rate ?? 'n/a'}\n- checklist_complete_runs: ${requiredActionCompletion.checklist_complete_runs}\n- checklist_incomplete_runs: ${requiredActionCompletion.checklist_incomplete_runs}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | File |\n| --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - |'}\n`;
+const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runsForKpi.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n- legacy_pending_no_go_excluded: ${excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0}\n- legacy_pending_cutoff: ${legacyPendingCutoffRaw || 'n/a'}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## No-Go Root Cause Breakdown\n\n- reliability_quality_dual_fail: ${noGoRootCause.reliability_quality_dual_fail}\n- reliability_only_fail: ${noGoRootCause.reliability_only_fail}\n- quality_only_fail: ${noGoRootCause.quality_only_fail}\n- all_gates_pending: ${noGoRootCause.all_gates_pending}\n- other: ${noGoRootCause.other}\n\n## Required Action Completion (Estimated)\n\n- no_go_runs: ${requiredActionCompletion.no_go_runs}\n- required_actions_total: ${requiredActionCompletion.required_actions_total}\n- required_actions_estimated_completed: ${requiredActionCompletion.required_actions_estimated_completed}\n- required_action_completion_rate: ${requiredActionCompletion.required_action_completion_rate ?? 'n/a'}\n- checklist_complete_runs: ${requiredActionCompletion.checklist_complete_runs}\n- checklist_incomplete_runs: ${requiredActionCompletion.checklist_incomplete_runs}\n\n## Runtime Loop Evidence Completion\n\n- runs_with_evidence: ${runtimeLoopEvidenceCompletion.runs_with_evidence}\n- complete_runs: ${runtimeLoopEvidenceCompletion.complete_runs}\n- incomplete_runs: ${runtimeLoopEvidenceCompletion.incomplete_runs}\n- missing_runs: ${runtimeLoopEvidenceCompletion.missing_runs}\n- known_runs: ${runtimeLoopEvidenceCompletion.known_runs}\n- completion_rate: ${runtimeLoopEvidenceCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | File |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - | - |'}\n`;
 
 const buildReportKey = () => {
   const day = generatedAt.slice(0, 10);
@@ -612,6 +709,7 @@ const writeSupabaseArtifact = async () => {
       gate_verdict_counts: gateVerdictCounts,
       no_go_root_cause: noGoRootCause,
       required_action_completion: requiredActionCompletion,
+      runtime_loop_evidence_completion: runtimeLoopEvidenceCompletion,
       quality_summary: qualitySummary,
       strategy_quality_normalization: strategyQualityNormalization,
     },
@@ -631,6 +729,11 @@ const writeSupabaseArtifact = async () => {
         quality_verdict: run.gateVerdicts.quality,
         safety_verdict: run.gateVerdicts.safety,
         governance_verdict: run.gateVerdicts.governance,
+        runtime_loop_evidence_status: !run.runtimeLoopEvidence.present
+          ? 'missing'
+          : run.runtimeLoopEvidence.complete
+            ? 'complete'
+            : 'incomplete',
         citation_rate: run.qualityMetrics.citationRate,
         retrieval_hit_at_k: run.qualityMetrics.retrievalHitAtK,
         hallucination_review_fail_rate: run.qualityMetrics.hallucinationReviewFailRate,
