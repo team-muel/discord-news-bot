@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+﻿/* eslint-disable no-console */
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
@@ -528,9 +528,16 @@ const toPatterns = (reports, qualitySignals, opencodeSignals, agentRoleKpi) => {
   const rollback = reports.rollbackWeekly?.baseline_summary || {};
   const memoryQueue = reports.memoryQueueWeekly?.baseline_summary || {};
   const qualityGate = go?.gate_verdict_counts?.quality || {};
+  const noGoRootCause = go?.no_go_root_cause || {};
+  const requiredActionCompletion = go?.required_action_completion || {};
   const recentRuns = reports.goNoGo?.top_actions?.recent_runs || [];
 
   const noGoCount = asNumber(go.no_go, 0);
+  const dualFailCount = asNumber(noGoRootCause.reliability_quality_dual_fail, 0);
+  const reliabilityOnlyFailCount = asNumber(noGoRootCause.reliability_only_fail, 0);
+  const qualityOnlyFailCount = asNumber(noGoRootCause.quality_only_fail, 0);
+  const pendingNoGoCount = asNumber(noGoRootCause.all_gates_pending, 0);
+  const requiredActionCompletionRate = Number(requiredActionCompletion?.required_action_completion_rate);
   if (noGoCount > 0) {
     const noGoScopes = recentRuns
       .filter((run) => String(run?.overall || '').toLowerCase() === 'no-go')
@@ -543,6 +550,61 @@ const toPatterns = (reports, qualitySignals, opencodeSignals, agentRoleKpi) => {
       detail: noGoScopes.length > 0 ? `no-go scope: ${noGoScopes.join(', ')}` : 'no-go run detected',
       patchProposal: '최근 no-go scope 기준으로 gate threshold/rollback playbook을 보정하고, 실패 scope별 재검증 스모크를 추가한다.',
       regressionChecks: ['npm run -s gates:validate', 'npm run -s gates:weekly-report -- --days=7'],
+    });
+  }
+
+  if (dualFailCount > 0) {
+    patterns.push({
+      id: 'pattern-dual-gate-fail-cluster',
+      severity: dualFailCount >= 3 ? 'high' : 'medium',
+      signal: `reliability+quality 동시 실패 ${dualFailCount}건`,
+      detail: '동시 실패군은 단일 파라미터 조정보다 provider/queue/retrieval 입력 분리가 우선 필요',
+      patchProposal: 'no-go scope를 provider profile, queue pressure, retrieval quality 신호로 분해하는 triage 리포트를 weekly pipeline에 추가한다.',
+      regressionChecks: ['npm run -s gates:weekly-report:normalized', 'npm run -s gates:weekly-report:self-improvement:dry'],
+    });
+  }
+
+  if (reliabilityOnlyFailCount > 0) {
+    patterns.push({
+      id: 'pattern-reliability-only-fail',
+      severity: 'medium',
+      signal: `reliability 단독 실패 ${reliabilityOnlyFailCount}건`,
+      detail: '품질 게이트는 통과했으나 지연/오류율/큐 지표의 임계치 이탈 발생',
+      patchProposal: 'latency/error budget을 action prefix별로 나눠 상위 경로 timeout과 fallback 우선순위를 재조정한다.',
+      regressionChecks: ['npm run -s perf:llm-latency:weekly:dry', 'npm run -s gates:validate:strict'],
+    });
+  }
+
+  if (qualityOnlyFailCount > 0) {
+    patterns.push({
+      id: 'pattern-quality-only-fail',
+      severity: 'medium',
+      signal: `quality 단독 실패 ${qualityOnlyFailCount}건`,
+      detail: '안전/거버넌스/신뢰성은 유지되나 citation/retrieval/session success 품질이 임계치 미달',
+      patchProposal: 'quality-first profile 유지 기간을 강제하고 retrieval eval 샘플 밀도를 늘려 quality gate 재판정 신뢰도를 높인다.',
+      regressionChecks: ['npm run -s gates:auto-judge:weekly:pending', 'npm run -s gates:weekly-report:all:dry'],
+    });
+  }
+
+  if (pendingNoGoCount > 0) {
+    patterns.push({
+      id: 'pattern-legacy-pending-normalization',
+      severity: 'medium',
+      signal: `all-gates-pending no-go ${pendingNoGoCount}건`,
+      detail: 'legacy 런의 메트릭 누락이 현재 KPI를 왜곡할 수 있음',
+      patchProposal: 'normalized weekly report를 기준 KPI로 병행 운영하고, legacy pending 런은 closure evidence와 함께 별도 트랙으로 관리한다.',
+      regressionChecks: ['npm run -s gates:weekly-report:normalized:dry', 'npm run -s gates:weekly-report:normalized'],
+    });
+  }
+
+  if (Number.isFinite(requiredActionCompletionRate) && requiredActionCompletionRate < 0.95) {
+    patterns.push({
+      id: 'pattern-required-action-completion-gap',
+      severity: requiredActionCompletionRate < 0.8 ? 'high' : 'medium',
+      signal: `required action completion rate=${requiredActionCompletionRate}`,
+      detail: 'no-go 후속 액션의 실제 완료 추정치가 목표(>=0.95) 미달',
+      patchProposal: 'post-decision checklist 자동완료 조건을 강화하고 미완료 항목을 다음 체크포인트 blocking rule로 승격한다.',
+      regressionChecks: ['npm run -s gates:validate:strict', 'npm run -s gates:weekly-report -- --days=7'],
     });
   }
 
@@ -728,12 +790,25 @@ const buildMarkdown = (params) => {
 
   const opencode = params.opencodeSignals || {};
   const opencodeApprovalRate = opencode?.executions?.approvalRequiredRate;
+  const goBaseline = params.reports.goNoGo?.baseline_summary || {};
+  const rootCause = goBaseline?.no_go_root_cause || {};
+  const actionCompletion = goBaseline?.required_action_completion || {};
   const roleKpi = params.agentRoleKpi || { availability: 'ok', sampleCount: 0, byRole: {} };
   const roleKpiLines = Object.entries(roleKpi.byRole || {})
     .map(([role, row]) => `- ${role}: total=${asNumber(row?.total, 0)}, failed=${asNumber(row?.failed, 0)}, fail_rate=${row?.failRate ?? 'n/a'}, retry_rate=${row?.retryRate ?? 'n/a'}, p95_duration_ms=${asNumber(row?.p95DurationMs, 0)}`)
     .join('\n');
 
-  return `# Self-Improvement Weekly Proposals\n\n- generated_at: ${params.generatedAt}\n- window_days: ${params.windowDays}\n- guild_id: ${params.guildId || '*'}\n- provider: ${params.provider || '*'}\n- action_prefix: ${params.actionPrefix || '*'}\n\n## Source Snapshots\n\n- go_no_go_weekly: ${goKey}\n- llm_latency_weekly: ${llmKey}\n- hybrid_weekly: ${hybridKey}\n- rollback_rehearsal_weekly: ${rollbackKey}\n- memory_queue_weekly: ${memoryQueueKey}\n\n## Labeled Quality Signals (M-07)\n\n- retrieval_eval_runs_availability: ${retrievalAvailability}\n- retrieval_eval_runs_samples: ${asNumber(retrieval.sampleRuns, 0)}\n- recall_at_k_avg_baseline: ${retrievalBaselineAvg ?? 'n/a'}\n- recall_at_k_avg_tot: ${retrievalTotAvg ?? 'n/a'}\n- recall_at_k_avg_got: ${retrievalGotAvg ?? 'n/a'}\n- recall_at_k_delta_got_vs_baseline: ${retrieval.deltaGotVsBaseline ?? 'n/a'}\n\n- answer_quality_reviews_availability: ${reviewAvailability}\n- answer_quality_reviews_samples: ${asNumber(hallucination.sampleReviews, 0)}\n- hallucination_fail_rate_pct_baseline: ${hallucinationBaselineRate ?? 'n/a'}\n- hallucination_fail_rate_pct_tot: ${hallucinationTotRate ?? 'n/a'}\n- hallucination_fail_rate_pct_got: ${hallucinationGotRate ?? 'n/a'}\n- hallucination_delta_pct_got_vs_baseline: ${hallucination.deltaGotVsBaselinePct ?? 'n/a'}\n\n## Opencode Pilot Signals (M-05)\n\n- action_logs_availability: ${opencode?.availability?.actionLogs || 'ok'}\n- approvals_availability: ${opencode?.availability?.approvals || 'ok'}\n- opencode_executions_total: ${asNumber(opencode?.executions?.total, 0)}\n- opencode_executions_success: ${asNumber(opencode?.executions?.success, 0)}\n- opencode_executions_failed: ${asNumber(opencode?.executions?.failed, 0)}\n- opencode_approval_required_rate: ${opencodeApprovalRate ?? 'n/a'}\n- opencode_approvals_pending: ${asNumber(opencode?.approvals?.pending, 0)}\n- opencode_approvals_approved: ${asNumber(opencode?.approvals?.approved, 0)}\n- opencode_approvals_rejected: ${asNumber(opencode?.approvals?.rejected, 0)}\n- opencode_approvals_expired: ${asNumber(opencode?.approvals?.expired, 0)}\n\n## Agent Role KPI Signals\n\n- availability: ${roleKpi.availability}\n- samples: ${asNumber(roleKpi.sampleCount, 0)}\n${roleKpiLines || '- no agent_role samples'}\n\n## Failure Patterns and Patch Proposals\n\n${rows}\n\n## Execution Gate\n\n- next_step: 승인 가능한 패치 제안을 execution board Next 항목(M-05 self-improvement loop v1)에 연결\n- required_validation:\n  - npm run -s gates:validate\n  - npm run -s gates:weekly-report:all:dry\n`;
+  return `# Self-Improvement Weekly Proposals\n\n- generated_at: ${params.generatedAt}\n- window_days: ${params.windowDays}\n- guild_id: ${params.guildId || '*'}\n- provider: ${params.provider || '*'}\n- action_prefix: ${params.actionPrefix || '*'}\n\n## Source Snapshots\n\n- go_no_go_weekly: ${goKey}\n- llm_latency_weekly: ${llmKey}\n- hybrid_weekly: ${hybridKey}\n- rollback_rehearsal_weekly: ${rollbackKey}\n- memory_queue_weekly: ${memoryQueueKey}\n\n## Labeled Quality Signals (M-07)\n\n- retrieval_eval_runs_availability: ${retrievalAvailability}\n- retrieval_eval_runs_samples: ${asNumber(retrieval.sampleRuns, 0)}\n- recall_at_k_avg_baseline: ${retrievalBaselineAvg ?? 'n/a'}\n- recall_at_k_avg_tot: ${retrievalTotAvg ?? 'n/a'}\n- recall_at_k_avg_got: ${retrievalGotAvg ?? 'n/a'}\n- recall_at_k_delta_got_vs_baseline: ${retrieval.deltaGotVsBaseline ?? 'n/a'}\n\n- answer_quality_reviews_availability: ${reviewAvailability}\n- answer_quality_reviews_samples: ${asNumber(hallucination.sampleReviews, 0)}\n- hallucination_fail_rate_pct_baseline: ${hallucinationBaselineRate ?? 'n/a'}\n- hallucination_fail_rate_pct_tot: ${hallucinationTotRate ?? 'n/a'}\n- hallucination_fail_rate_pct_got: ${hallucinationGotRate ?? 'n/a'}\n- hallucination_delta_pct_got_vs_baseline: ${hallucination.deltaGotVsBaselinePct ?? 'n/a'}\n\n## Opencode Pilot Signals (M-05)\n\n- action_logs_availability: ${opencode?.availability?.actionLogs || 'ok'}\n- approvals_availability: ${opencode?.availability?.approvals || 'ok'}\n- opencode_executions_total: ${asNumber(opencode?.executions?.total, 0)}\n- opencode_executions_success: ${asNumber(opencode?.executions?.success, 0)}\n- opencode_executions_failed: ${asNumber(opencode?.executions?.failed, 0)}\n- opencode_approval_required_rate: ${opencodeApprovalRate ?? 'n/a'}\n- opencode_approvals_pending: ${asNumber(opencode?.approvals?.pending, 0)}\n- opencode_approvals_approved: ${asNumber(opencode?.approvals?.approved, 0)}\n- opencode_approvals_rejected: ${asNumber(opencode?.approvals?.rejected, 0)}\n- opencode_approvals_expired: ${asNumber(opencode?.approvals?.expired, 0)}\n\n## No-Go Root Cause and Action Completion
+
+- no_go_root_reliability_quality_dual_fail: ${asNumber(rootCause?.reliability_quality_dual_fail, 0)}
+- no_go_root_reliability_only_fail: ${asNumber(rootCause?.reliability_only_fail, 0)}
+- no_go_root_quality_only_fail: ${asNumber(rootCause?.quality_only_fail, 0)}
+- no_go_root_all_gates_pending: ${asNumber(rootCause?.all_gates_pending, 0)}
+- required_action_completion_rate: ${Number.isFinite(Number(actionCompletion?.required_action_completion_rate)) ? Number(actionCompletion.required_action_completion_rate) : 'n/a'}
+- required_actions_total: ${asNumber(actionCompletion?.required_actions_total, 0)}
+- checklist_incomplete_runs: ${asNumber(actionCompletion?.checklist_incomplete_runs, 0)}
+
+## Agent Role KPI Signals\n\n- availability: ${roleKpi.availability}\n- samples: ${asNumber(roleKpi.sampleCount, 0)}\n${roleKpiLines || '- no agent_role samples'}\n\n## Failure Patterns and Patch Proposals\n\n${rows}\n\n## Execution Gate\n\n- next_step: 승인 가능한 패치 제안을 execution board Next 항목(M-05 self-improvement loop v1)에 연결\n- required_validation:\n  - npm run -s gates:validate\n  - npm run -s gates:weekly-report:all:dry\n`;
 };
 
 const writeMarkdownArtifact = (params) => {
@@ -892,3 +967,4 @@ main().catch((error) => {
   console.error('[SELF-IMPROVEMENT] FAIL', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
+

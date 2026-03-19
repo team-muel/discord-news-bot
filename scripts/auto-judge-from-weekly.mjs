@@ -67,6 +67,11 @@ async function main() {
   const days = Math.max(1, Number(parseArg('days', '7')) || 7);
   const limit = Math.max(20, Math.min(500, Number(parseArg('limit', '120')) || 120));
   const allowPending = ['1', 'true', 'yes', 'on'].includes(String(parseArg('allowPending', 'false')).toLowerCase());
+  const runAfterFallback = ['1', 'true', 'yes', 'on'].includes(String(parseArg('runAfterFallback', 'true')).toLowerCase());
+  const minQualitySamples = Math.max(
+    1,
+    Number(parseArg('minQualitySamples', process.env.GATE_WEEKLY_MIN_QUALITY_SAMPLES || '3')) || 3,
+  );
 
   const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
   const snapshots = await latestByKind(
@@ -86,14 +91,24 @@ async function main() {
   const rollback = snapshots.rollbackWeekly?.baseline_summary || {};
   const memory = snapshots.memoryQueueWeekly?.baseline_summary || {};
   const qualitySummary = go?.quality_summary?.averages || {};
+  const qualitySamples = go?.quality_summary?.samples || {};
   const qualityGateCounts = go?.gate_verdict_counts?.quality || {};
   const qualityFailCount = asNumber(qualityGateCounts.fail, 0);
   const qualityPendingCount = asNumber(qualityGateCounts.pending, 0);
   const qualityPassCount = asNumber(qualityGateCounts.pass, 0);
+  const qualitySampleCounts = [
+    asNumber(qualitySamples.citation_rate, 0),
+    asNumber(qualitySamples.retrieval_hit_at_k, 0),
+    asNumber(qualitySamples.hallucination_review_fail_rate, 0),
+    asNumber(qualitySamples.session_success_rate, 0),
+  ];
+  const insufficientQualitySamples = qualitySampleCounts.some((count) => (count ?? 0) < minQualitySamples);
 
   let qualityGateOverride = null;
   if (qualityFailCount > 0) {
     qualityGateOverride = 'fail';
+  } else if (insufficientQualitySamples) {
+    qualityGateOverride = 'pending';
   } else if (qualityPendingCount > 0 && qualityPassCount === 0) {
     qualityGateOverride = 'pending';
   } else if (qualityPassCount > 0) {
@@ -115,7 +130,7 @@ async function main() {
     }
   }
 
-  const args = buildArgs({
+  const baseArgs = {
     stage,
     scope,
     operator,
@@ -144,14 +159,35 @@ async function main() {
     providerProfileHint,
     autoCompleteChecklist: true,
     autoCreateClosureDoc: true,
-  });
+  };
 
-  console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] profile=${thresholdProfile} stage=${stage} snapshots=go_no_go_weekly,llm_latency_weekly,rollback_rehearsal_weekly,memory_queue_weekly`);
+  const args = buildArgs(baseArgs);
+
+  console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] profile=${thresholdProfile} stage=${stage} snapshots=go_no_go_weekly,llm_latency_weekly,rollback_rehearsal_weekly,memory_queue_weekly minQualitySamples=${minQualitySamples} insufficientQualitySamples=${insufficientQualitySamples}`);
   execFileSync('node', ['scripts/auto-judge-go-no-go.mjs', ...args], {
     cwd: ROOT,
     stdio: 'inherit',
     env: process.env,
   });
+
+  const shouldRunFallbackRejudge = runAfterFallback && qualityGateOverride === 'fail';
+  if (shouldRunFallbackRejudge) {
+    const fallbackRunId = `gate-post-fallback-${Date.now()}`;
+    const rejudgeArgs = buildArgs({
+      ...baseArgs,
+      scope: `${scope}:post-fallback`,
+      runId: fallbackRunId,
+      qualityGateOverride: null,
+      providerProfileHint: 'quality-optimized',
+    });
+
+    console.log('[GO-NO-GO][AUTO-JUDGE-WEEKLY] post-fallback rejudge triggered (quality-optimized profile)');
+    execFileSync('node', ['scripts/auto-judge-go-no-go.mjs', ...rejudgeArgs], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: process.env,
+    });
+  }
 }
 
 main().catch((error) => {

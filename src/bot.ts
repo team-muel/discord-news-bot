@@ -56,6 +56,7 @@ import {
   extractCodeBlocks,
   tryPostCodeThread,
 } from './utils/codeThread';
+import { runWithConcurrency } from './utils/async';
 import { runWorkerGenerationPipeline, rerunWorkerPipeline } from './services/workerGeneration/workerGenerationPipeline';
 import { getApproval, listApprovals, updateApprovalStatus } from './services/workerGeneration/workerApprovalStore';
 import { loadDynamicWorkerFromCode, loadDynamicWorkerFromFile, setDynamicWorkerAdminNotifier } from './services/workerGeneration/dynamicWorkerRegistry';
@@ -217,6 +218,7 @@ const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD = Math.max(1, Math.m
 const AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS || 7 * 24 * 60 * 60_000));
 const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS || 6 * 60 * 60_000));
 const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = Math.max(6, Math.min(120, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH || 8)));
+const OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY || 4)));
 let autoWorkerProposalBackgroundTimer: NodeJS.Timeout | null = null;
 let autoWorkerProposalBackgroundRunning = false;
 
@@ -713,11 +715,11 @@ const enforceOpencodeApprovalRequiredPilot = async (): Promise<void> => {
   }
 
   let changed = 0;
-  for (const guildId of guildIds) {
+  await runWithConcurrency(guildIds, async (guildId) => {
     try {
       const policy = await getGuildActionPolicy(guildId, 'opencode.execute');
       if (policy.enabled && policy.runMode === 'approval_required') {
-        continue;
+        return;
       }
 
       await upsertGuildActionPolicy({
@@ -731,7 +733,7 @@ const enforceOpencodeApprovalRequiredPilot = async (): Promise<void> => {
     } catch (error) {
       logger.warn('[OPENCODE-PILOT] policy enforce failed guild=%s reason=%s', guildId, getErrorMessage(error));
     }
-  }
+  }, OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY);
 
   if (changed > 0) {
     logger.info('[OPENCODE-PILOT] approval_required enforced guilds=%d', changed);
@@ -1284,7 +1286,9 @@ const attachCommandHandlers = () => {
         logger.warn('[BOT] vibe message handling failed: %o', error);
       }
 
-      await processPassiveMemoryCapture(message);
+      void processPassiveMemoryCapture(message).catch((error) => {
+        logger.debug('[BOT] passive memory capture skipped: %s', getErrorMessage(error));
+      });
     } catch (error) {
       logger.warn('[BOT] messageCreate handler failed: %o', error);
     }

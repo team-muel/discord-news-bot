@@ -47,6 +47,8 @@ export const createWorkflowSession = (params = {}) => {
       dry_run: Boolean(params.dryRun),
       auto_deploy: Boolean(params.autoDeploy),
       strict: Boolean(params.strict),
+      route_mode: sanitize(params.routeMode, 'operations') || 'operations',
+      objective: sanitize(params.objective, 'weekly unattended autonomy cycle') || 'weekly unattended autonomy cycle',
       created_by: 'run-openjarvis-unattended',
     },
     started_at: now,

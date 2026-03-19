@@ -20,6 +20,10 @@ npm run gates:auto-judge -- --stage=A --scope=guild:123 --p95LatencyMs=420 --que
 npm run gates:auto-judge:weekly
 ```
 
+- weekly auto-judge는 기본값으로 `--minQualitySamples=3`을 적용한다.
+- quality sample이 최소치보다 적으면 quality gate를 `pending`으로 보정해 sparse/0값 기반 오판정을 줄인다.
+- weekly auto-judge는 기본값으로 `--runAfterFallback=true`를 적용하며, quality fail일 때 `:post-fallback` scope 재판정을 1회 추가 실행한다.
+
 자동 체크리스트/클로저 증거 문서 생성 포함(기본):
 
 - weekly auto-judge는 no-go일 때 `docs/planning/YYYY-MM-DD_followup-ops-closure.md`를 자동 생성/보장하고
@@ -46,6 +50,15 @@ npm run gates:auto-judge:weekly
 ```bash
 npm run gates:weekly-report -- --days=7
 ```
+
+Legacy pending no-go 보정 집계(예: Stage B 과거 런 제외):
+
+```bash
+npm run gates:weekly-report:normalized
+```
+
+- 기본 출력 파일: `docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md`
+- raw 기준 요약은 계속 `docs/planning/gate-runs/WEEKLY_SUMMARY.md`에 기록된다.
 
 Sink 지정(예: markdown + supabase):
 
@@ -164,6 +177,8 @@ npm run gates:weekly-report:dry
 - incident/comms 문서와 증거 링크를 연결한다.
 - Supabase sink 사용 시 `public.agent_weekly_reports`에 `report_kind=go_no_go_weekly`로 upsert한다.
 - `go_no_go_weekly.baseline_summary`에는 gate verdict 집계(`gate_verdict_counts`)가 포함되며, weekly auto-judge의 quality 회귀 규칙 입력으로 사용한다.
+- `go_no_go_weekly.baseline_summary.no_go_root_cause`에는 no-go 원인군(이중실패/단독실패/pending 기반/기타) 집계가 포함된다.
+- `go_no_go_weekly.baseline_summary.required_action_completion`에는 no-go 후속조치 추정 완료율(체크리스트 기준)이 포함된다.
 - `go_no_go_weekly.baseline_summary.quality_summary`에는 citation/retrieval/hallucination/session 주간 평균이 포함되며, weekly auto-judge의 quality gate 입력값으로 재사용된다.
 - `go_no_go_weekly.baseline_summary.strategy_quality_normalization`에는 M-07 계측값(전략별 recall@k + hallucination fail rate 기반 정규화 점수, baseline 대비 delta)이 포함된다.
 - 하이브리드 주간 스냅샷은 `report_kind=hybrid_weekly`로 upsert한다.

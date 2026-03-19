@@ -41,6 +41,12 @@ GitHub Actions Secrets:
 - `dryRun`: 외부 반영 없는 검증 모드
 - `autoDeploy`: 게이트가 `go`일 때 배포 허용
 - `autoCommitReports`: 생성된 planning 리포트 자동 커밋
+- `routeMode`: `auto | delivery | operations` (기본값 `auto`)
+
+기본 라우팅:
+
+- `OPENJARVIS_ROUTE_MODE=auto`
+- `auto`는 scope/objective 힌트로 delivery/operations를 자동 선택
 
 ## 4) 실패 정책
 

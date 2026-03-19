@@ -1,5 +1,6 @@
 import logger from '../logger';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../utils/env';
+import { runWithConcurrency } from '../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from './goNoGoService';
 import { summarizeOpencodeQueueReadiness } from './opencodeGitHubQueueService';
@@ -59,6 +60,7 @@ const SLO_ALERT_TABLE = String(process.env.AGENT_SLO_ALERT_TABLE || 'agent_slo_a
 const SLO_LOOP_ENABLED = parseBooleanEnv(process.env.AGENT_SLO_ALERT_LOOP_ENABLED, true);
 const SLO_LOOP_INTERVAL_MIN = Math.max(1, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_INTERVAL_MIN, 15));
 const SLO_LOOP_MAX_GUILDS = Math.max(1, Math.min(500, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_MAX_GUILDS, 100)));
+const SLO_LOOP_CONCURRENCY = Math.max(1, Math.min(20, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_CONCURRENCY, 4)));
 
 const DEFAULT_THRESHOLDS: SloThresholds = {
   intelligenceMaxLlmErrorRate: parseBoundedNumberEnv(process.env.AGENT_SLO_INTELLIGENCE_MAX_LLM_ERROR_RATE, 0.08, 0, 1),
@@ -554,14 +556,14 @@ const runSloLoopTick = async () => {
     const guildIds = await listTargetGuildIds();
     let emittedTotal = 0;
 
-    for (const guildId of guildIds) {
+    await runWithConcurrency(guildIds, async (guildId) => {
       try {
         const result = await evaluateGuildSloAndPersistAlerts({ guildId, actorId: 'system:slo-loop' });
         emittedTotal += result.emittedAlerts;
       } catch (error) {
         logger.warn('[AGENT-SLO] evaluation failed guild=%s error=%s', guildId, error instanceof Error ? error.message : String(error));
       }
-    }
+    }, SLO_LOOP_CONCURRENCY);
 
     logger.info('[AGENT-SLO] loop tick completed guilds=%d emittedAlerts=%d', guildIds.length, emittedTotal);
   } catch (error) {

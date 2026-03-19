@@ -1,0 +1,90 @@
+{
+  "run_id": "gate-20260319-135500",
+  "stage": "A",
+  "target_scope": "weekly:auto",
+  "started_at": "2026-03-19T13:55:00.587Z",
+  "ended_at": "2026-03-19T13:55:00.587Z",
+  "operator": "auto",
+  "change_set": "auto-judge gate decision from metric inputs",
+  "final_decision": {
+    "overall": "no-go",
+    "required_actions": [
+      "rollback_execute",
+      "incident_record",
+      "comms_broadcast",
+      "provider_profile_fallback:quality-optimized"
+    ],
+    "advisory_actions": [],
+    "rollback_required": true,
+    "rollback_type": "stage",
+    "rollback_deadline_min": "10",
+    "provider_profile_fallback_required": true,
+    "provider_profile_target": "quality-optimized",
+    "provider_profile_trigger": "quality_gate_fail",
+    "provider_profile_evidence_template": "docs/planning/runtime-profiles/quality-first.env"
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "fail",
+      "metrics": {
+        "p95_latency_ms": 6739,
+        "error_rate_pct": 7,
+        "queue_lag_sec": 0,
+        "rollback_rehearsal_fail_count": 0,
+        "memory_deadletter_pending_count": 0,
+        "memory_deadletter_ignored_count": 0
+      },
+      "reasons": [
+        "p95_latency_ms: 6739 (threshold <= 3500)",
+        "error_rate_pct: 7 (threshold <= 3)"
+      ]
+    },
+    "quality": {
+      "verdict": "fail",
+      "metrics": {
+        "citation_rate": 0,
+        "retrieval_hit_at_k": 0,
+        "hallucination_review_fail_rate": 0,
+        "session_success_rate": 0
+      },
+      "reasons": [
+        "quality gate override applied: fail",
+        "citation_rate: 0 (threshold >= 0.55)",
+        "retrieval_hit_at_k: 0 (threshold >= 0.45)",
+        "session_success_rate: 0 (threshold >= 0.75)"
+      ]
+    },
+    "safety": {
+      "verdict": "pass",
+      "metrics": {
+        "approval_required_compliance_pct": 100,
+        "unapproved_autodeploy_count": 0,
+        "policy_violation_count": 0,
+        "privacy_block_count": 0
+      },
+      "reasons": [
+        "approval_required_compliance_pct: 100 (threshold >= 100)",
+        "unapproved_autodeploy_count: 0 (threshold <= 0)",
+        "policy_violation_count: 0 (threshold <= 0)",
+        "privacy_block_count: 0 (threshold <= 0)"
+      ]
+    },
+    "governance": {
+      "verdict": "pass",
+      "metrics": {
+        "roadmap_synced": true,
+        "execution_board_synced": true,
+        "backlog_synced": true,
+        "runbook_synced": true,
+        "changelog_synced": true
+      },
+      "reasons": [
+        "roadmap_synced: true",
+        "execution_board_synced: true",
+        "backlog_synced: true",
+        "runbook_synced: true",
+        "changelog_synced: true"
+      ]
+    }
+  }
+}

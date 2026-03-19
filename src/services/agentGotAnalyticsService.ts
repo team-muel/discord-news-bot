@@ -20,6 +20,13 @@ const avg = (values: number[]): number | null => {
   return Number((values.reduce((acc, v) => acc + v, 0) / values.length).toFixed(4));
 };
 
+const avgFromSum = (sum: number, count: number): number | null => {
+  if (!Number.isFinite(sum) || !Number.isFinite(count) || count <= 0) {
+    return null;
+  }
+  return Number((sum / count).toFixed(4));
+};
+
 const pct = (n: number, d: number): number | null => {
   if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) {
     return null;
@@ -118,25 +125,32 @@ export const buildGotPerformanceDashboard = async (params: DashboardParams) => {
   const retrievalEvalRows = (retrievalEvalRes.data || []) as Array<Record<string, unknown>>;
   const qualityReviewRows = (qualityReviewRes.data || []) as Array<Record<string, unknown>>;
 
-  const totCandidateScores = totRows
-    .map((row) => Number(row.candidate_score || 0))
-    .filter((v) => Number.isFinite(v));
-  const totBaselineScores = totRows
-    .map((row) => Number(row.baseline_score || 0))
-    .filter((v) => Number.isFinite(v));
+  const totCandidateScores: number[] = [];
+  const totBaselineScores: number[] = [];
+  const gotSelectedScores: number[] = [];
+  const gotLatencySamplesMs: number[] = [];
 
-  const gotSelectedScores = gotRows
-    .map((row) => Number(row.selected_score))
-    .filter((v) => Number.isFinite(v) && v >= 0)
-    .map((v) => Number((v * 100).toFixed(4)));
-
-  const totScoreAvg = avg(totCandidateScores);
-  const gotScoreAvg = avg(gotSelectedScores);
-  const totBaselineAvg = avg(totBaselineScores);
+  let gotCompletedRuns = 0;
+  let totHallucinationCount = 0;
+  let gotHallucinationCount = 0;
 
   // ToT latency proxy: intra-session candidate-pair window (max(created_at)-min(created_at)).
   const totBySession = new Map<string, { min: number; max: number }>();
+
   for (const row of totRows) {
+    const candidateScore = Number(row.candidate_score || 0);
+    if (Number.isFinite(candidateScore)) {
+      totCandidateScores.push(candidateScore);
+      if (candidateScore < ORM_REVIEW_THRESHOLD) {
+        totHallucinationCount += 1;
+      }
+    }
+
+    const baselineScore = Number(row.baseline_score || 0);
+    if (Number.isFinite(baselineScore)) {
+      totBaselineScores.push(baselineScore);
+    }
+
     const sessionId = String(row.session_id || '').trim();
     const ts = Date.parse(String(row.created_at || ''));
     if (!sessionId || !Number.isFinite(ts)) {
@@ -151,12 +165,32 @@ export const buildGotPerformanceDashboard = async (params: DashboardParams) => {
     if (ts > current.max) current.max = ts;
   }
 
+  for (const row of gotRows) {
+    const selectedScore = Number(row.selected_score);
+    if (Number.isFinite(selectedScore) && selectedScore >= 0) {
+      const normalizedScore = Number((selectedScore * 100).toFixed(4));
+      gotSelectedScores.push(normalizedScore);
+      if (normalizedScore < ORM_REVIEW_THRESHOLD) {
+        gotHallucinationCount += 1;
+      }
+    }
+
+    const latencyMs = toMs(row.started_at, row.ended_at);
+    if (latencyMs !== null && Number.isFinite(latencyMs)) {
+      gotLatencySamplesMs.push(latencyMs);
+    }
+
+    if (String(row.status || '') === 'completed') {
+      gotCompletedRuns += 1;
+    }
+  }
+
+  const totScoreAvg = avg(totCandidateScores);
+  const gotScoreAvg = avg(gotSelectedScores);
+  const totBaselineAvg = avg(totBaselineScores);
+
   const totLatencySamplesMs = [...totBySession.values()]
     .map((row) => Math.max(0, row.max - row.min));
-
-  const gotLatencySamplesMs = gotRows
-    .map((row) => toMs(row.started_at, row.ended_at))
-    .filter((v): v is number => Number.isFinite(v));
 
   const totAvgLatencyMs = avg(totLatencySamplesMs);
   const gotAvgLatencyMs = avg(gotLatencySamplesMs);
@@ -164,41 +198,63 @@ export const buildGotPerformanceDashboard = async (params: DashboardParams) => {
     ? Number(((Number(totAvgLatencyMs) - Number(gotAvgLatencyMs))).toFixed(2))
     : null;
 
-  // Hallucination proxy: score below review threshold.
-  const totHallucinationCount = totCandidateScores.filter((score) => score < ORM_REVIEW_THRESHOLD).length;
-  const gotHallucinationCount = gotSelectedScores.filter((score) => score < ORM_REVIEW_THRESHOLD).length;
-
   const totHallucinationRate = pct(totHallucinationCount, totCandidateScores.length);
   const gotHallucinationRate = pct(gotHallucinationCount, gotSelectedScores.length);
 
   const semanticCacheEntries = semanticCacheRows.length;
-  const semanticCacheHitCounts = semanticCacheRows
-    .map((row) => Math.max(0, Math.trunc(Number(row.hit_count || 0))))
-    .filter((v) => Number.isFinite(v));
-  const semanticCacheTotalHits = semanticCacheHitCounts.reduce((acc, v) => acc + v, 0);
-  const semanticCacheReusedEntries = semanticCacheHitCounts.filter((v) => v > 0).length;
+  const semanticCacheHitCounts: number[] = [];
+  let semanticCacheTotalHits = 0;
+  let semanticCacheReusedEntries = 0;
+  for (const row of semanticCacheRows) {
+    const hitCount = Math.max(0, Math.trunc(Number(row.hit_count || 0)));
+    if (!Number.isFinite(hitCount)) {
+      continue;
+    }
+    semanticCacheHitCounts.push(hitCount);
+    semanticCacheTotalHits += hitCount;
+    if (hitCount > 0) {
+      semanticCacheReusedEntries += 1;
+    }
+  }
   const semanticCacheReuseRatePct = pct(semanticCacheReusedEntries, semanticCacheEntries);
-  const semanticCacheAvgHitsPerEntry = avg(semanticCacheHitCounts.map((v) => Number(v)));
+  const semanticCacheAvgHitsPerEntry = avg(semanticCacheHitCounts);
   const estimatedLlmCallsSaved = semanticCacheTotalHits;
 
-  const retrievalBaselineRows = retrievalEvalRows.filter((row) => String(row.variant || '').trim() === 'baseline');
-  const retrievalNdcgAvg = avg(
-    retrievalBaselineRows
-      .map((row) => Number(row.ndcg || 0))
-      .filter((v) => Number.isFinite(v) && v >= 0),
-  );
-  const retrievalHitRatePct = pct(
-    retrievalBaselineRows
-      .map((row) => Number(row.hit_at_k || 0))
-      .filter((v) => Number.isFinite(v) && v > 0)
-      .length,
-    retrievalBaselineRows.length,
-  );
-  const retrievalLatencyMsAvg = avg(
-    retrievalBaselineRows
-      .map((row) => Number(row.latency_ms || 0))
-      .filter((v) => Number.isFinite(v) && v >= 0),
-  );
+  let retrievalBaselineSamples = 0;
+  let retrievalBaselineHitPositiveCount = 0;
+  let retrievalNdcgSum = 0;
+  let retrievalNdcgCount = 0;
+  let retrievalLatencySum = 0;
+  let retrievalLatencyCount = 0;
+
+  for (const row of retrievalEvalRows) {
+    if (String(row.variant || '').trim() !== 'baseline') {
+      continue;
+    }
+
+    retrievalBaselineSamples += 1;
+
+    const ndcg = Number(row.ndcg || 0);
+    if (Number.isFinite(ndcg) && ndcg >= 0) {
+      retrievalNdcgSum += ndcg;
+      retrievalNdcgCount += 1;
+    }
+
+    const hitAtK = Number(row.hit_at_k || 0);
+    if (Number.isFinite(hitAtK) && hitAtK > 0) {
+      retrievalBaselineHitPositiveCount += 1;
+    }
+
+    const latencyMs = Number(row.latency_ms || 0);
+    if (Number.isFinite(latencyMs) && latencyMs >= 0) {
+      retrievalLatencySum += latencyMs;
+      retrievalLatencyCount += 1;
+    }
+  }
+
+  const retrievalNdcgAvg = avgFromSum(retrievalNdcgSum, retrievalNdcgCount);
+  const retrievalHitRatePct = pct(retrievalBaselineHitPositiveCount, retrievalBaselineSamples);
+  const retrievalLatencyMsAvg = avgFromSum(retrievalLatencySum, retrievalLatencyCount);
 
   const gotVsTotScoreDelta = Number.isFinite(Number(gotScoreAvg)) && Number.isFinite(Number(totScoreAvg))
     ? Number((Number(gotScoreAvg) - Number(totScoreAvg)).toFixed(2))
@@ -207,17 +263,36 @@ export const buildGotPerformanceDashboard = async (params: DashboardParams) => {
     ? Number((Number(gotHallucinationRate) - Number(totHallucinationRate)).toFixed(2))
     : null;
 
-  const labeledBaselineRows = qualityReviewRows.filter((row) => String(row.strategy || '').trim() === 'baseline');
-  const labeledGotRows = qualityReviewRows.filter((row) => String(row.strategy || '').trim() === 'got');
-  const labeledBaselineHallucinations = labeledBaselineRows.filter((row) => row.is_hallucination === true).length;
-  const labeledGotHallucinations = labeledGotRows.filter((row) => row.is_hallucination === true).length;
-  const labeledBaselineRatePct = pct(labeledBaselineHallucinations, labeledBaselineRows.length);
-  const labeledGotRatePct = pct(labeledGotHallucinations, labeledGotRows.length);
+  let labeledBaselineSamples = 0;
+  let labeledGotSamples = 0;
+  let labeledBaselineHallucinations = 0;
+  let labeledGotHallucinations = 0;
+
+  for (const row of qualityReviewRows) {
+    const strategy = String(row.strategy || '').trim();
+    if (strategy === 'baseline') {
+      labeledBaselineSamples += 1;
+      if (row.is_hallucination === true) {
+        labeledBaselineHallucinations += 1;
+      }
+      continue;
+    }
+
+    if (strategy === 'got') {
+      labeledGotSamples += 1;
+      if (row.is_hallucination === true) {
+        labeledGotHallucinations += 1;
+      }
+    }
+  }
+
+  const labeledBaselineRatePct = pct(labeledBaselineHallucinations, labeledBaselineSamples);
+  const labeledGotRatePct = pct(labeledGotHallucinations, labeledGotSamples);
   const labeledDeltaPct = Number.isFinite(Number(labeledBaselineRatePct)) && Number.isFinite(Number(labeledGotRatePct))
     ? Number((Number(labeledGotRatePct) - Number(labeledBaselineRatePct)).toFixed(2))
     : null;
-  const hasEnoughLabeledSamples = labeledBaselineRows.length >= GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES
-    && labeledGotRows.length >= GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES;
+  const hasEnoughLabeledSamples = labeledBaselineSamples >= GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES
+    && labeledGotSamples >= GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES;
 
   const effectiveHallucinationDeltaPct = hasEnoughLabeledSamples
     ? labeledDeltaPct
@@ -281,13 +356,13 @@ export const buildGotPerformanceDashboard = async (params: DashboardParams) => {
         estimatedLlmCallsSaved,
       },
       qualityEvidence: {
-        retrievalBaselineSamples: retrievalBaselineRows.length,
+        retrievalBaselineSamples,
         retrievalBaselineNdcgAvg: retrievalNdcgAvg,
         retrievalBaselineHitRatePct: retrievalHitRatePct,
         retrievalBaselineLatencyMsAvg: retrievalLatencyMsAvg,
         labeledHallucination: {
-          baselineSamples: labeledBaselineRows.length,
-          gotSamples: labeledGotRows.length,
+          baselineSamples: labeledBaselineSamples,
+          gotSamples: labeledGotSamples,
           baselineRatePct: labeledBaselineRatePct,
           gotRatePct: labeledGotRatePct,
           deltaPct: labeledDeltaPct,
@@ -314,7 +389,7 @@ export const buildGotPerformanceDashboard = async (params: DashboardParams) => {
       totSessionsForLatency: totLatencySamplesMs.length,
       gotRuns: gotRows.length,
       gotRunsWithLatency: gotLatencySamplesMs.length,
-      gotCompletedRuns: gotRows.filter((row) => String(row.status || '') === 'completed').length,
+      gotCompletedRuns,
       semanticCacheEntries,
       retrievalEvalRows: retrievalEvalRows.length,
       qualityReviewRows: qualityReviewRows.length,

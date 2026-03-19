@@ -1,20 +1,19 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-03-19T13:53:28.659Z
-- total_runs: 23
+- generated_at: 2026-03-19T13:53:29.312Z
+- total_runs: 22
 - go: 11
-- no_go: 7
+- no_go: 6
 - pending: 5
-- legacy_pending_no_go_excluded: 0
-- legacy_pending_cutoff: n/a
+- legacy_pending_no_go_excluded: 1
+- legacy_pending_cutoff: 2026-03-19T00:00:00.000Z
 
 ## Stage Distribution
 
 | Stage | Count |
 | --- | ---: |
 | A | 22 |
-| B | 1 |
 
 ## No-Go Root Cause Breakdown
 
@@ -67,7 +66,7 @@
 | gate-20260319-111443 | A | weekly:auto | no-go | true | stage | docs/planning/gate-runs/2026-03-19_gate-20260319-111443.md |
 | gate-20260319-111442 | A | guild:demo | no-go | true | stage | docs/planning/gate-runs/2026-03-19_gate-20260319-111442.md |
 | gate-20260319-105036 | A | guild:demo | go | false | none | docs/planning/gate-runs/2026-03-19_gate-20260319-105036.md |
-| gate-20260318-081925 | B | guild:demo | no-go | true | queue | docs/planning/gate-runs/2026-03-18_gate-20260318-081925.md |
+| gate-20260318-081925 (legacy-pending) | B | guild:demo | no-go | true | queue | docs/planning/gate-runs/2026-03-18_gate-20260318-081925.md |
 | gate-20260318-172700 | A | trading-isolation:w4-04-w4-06 | no-go | true | stage | docs/planning/gate-runs/2026-03-18_gate-20260318-172700.md |
 | gate-20260318-162647 | A | memory-queue:w2-04-w2-06 | go | false | none | docs/planning/gate-runs/2026-03-18_gate-20260318-162647.md |
 | gate-20260318-161222 | A | memory-queue:w2-01-w2-03 | go | false | none | docs/planning/gate-runs/2026-03-18_gate-20260318-161222.md |

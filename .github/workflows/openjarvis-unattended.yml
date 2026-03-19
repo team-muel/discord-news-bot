@@ -17,6 +17,10 @@ on:
         description: "Auto-commit generated planning/gate reports"
         required: false
         default: "true"
+      routeMode:
+        description: "Routing mode: auto | delivery | operations"
+        required: false
+        default: "auto"
 
 permissions:
   contents: write
@@ -38,6 +42,7 @@ jobs:
       AUTONOMY_STRICT: "true"
       AUTONOMY_AUTO_COMMIT_REPORTS: ${{ github.event.inputs.autoCommitReports || 'true' }}
       OPENJARVIS_REQUIRE_OPENCODE_WORKER: "true"
+      OPENJARVIS_ROUTE_MODE: ${{ github.event.inputs.routeMode || 'auto' }}
       MCP_OPENCODE_WORKER_URL: ${{ secrets['MCP_OPENCODE_WORKER_URL'] }}
       MCP_OPENCODE_TOOL_NAME: opencode.run
       RENDER_SERVICE_ID: ${{ secrets['RENDER_SERVICE_ID'] }}

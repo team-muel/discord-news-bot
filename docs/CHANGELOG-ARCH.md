@@ -19,6 +19,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-19 - Weekly Governance Normalization (Legacy Pending Exclusion + Required-Action Completion + Quality Sample Guard)
+
+- Why: no-go 원인 분석과 운영 후속조치 추적을 주간 스냅샷에 내장하고, sparse quality sample(0값)로 인한 weekly auto-judge 오판정을 줄이며, legacy pending no-go를 현재 운영 KPI에서 분리하기 위함.
+- Scope: go/no-go 주간 집계 스크립트에 no-go root cause 및 required action completion 집계를 추가하고, legacy pending 보정 옵션 + normalized 별도 산출물을 도입했으며, weekly auto-judge에 최소 quality sample 가드와 quality fail 시 post-fallback 재판정 체인을 추가했다. 또한 self-improvement 주간 패턴 생성이 no-go root cause/후속조치 완료율 신호를 사용하도록 확장했다.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/summarize-go-no-go-runs.mjs`, `scripts/auto-judge-from-weekly.mjs`, `scripts/generate-self-improvement-weekly.mjs`, `package.json`, `docs/planning/gate-runs/README.md`, `docs/planning/ROADMAP_STATUS_2026-03-19.md`.
+- Impacted Tables/RPC: `public.agent_weekly_reports` (`report_kind=go_no_go_weekly` baseline summary fields expanded: `no_go_root_cause`, `required_action_completion`, `legacy_pending_*`).
+- Risk/Regression Notes: normalized 모드(`excludeLegacyPendingNoGo`)를 활성화하면 요약 KPI가 raw 집계와 달라질 수 있으므로 cutoff를 명시해 운영자가 비교해야 한다.
+- Validation: `npm run -s gates:weekly-report:dry`, `npm run -s gates:weekly-report:normalized:dry`, `npm run -s gates:weekly-report:supabase`, `npm run -s gates:auto-judge:weekly:pending`, `npm run -s gates:weekly-report:self-improvement:dry`, `npm run -s gates:validate:strict`.
+
 ## 2026-03-19 - Remote-Only OpenJarvis Autonomy Baseline Enforcement
 
 - Why: 로컬 의존 0 목표를 운영 기본값으로 고정하고, OpenJarvis unattended 루프가 원격 워커 미연결 상태에서 우회 실행되지 않도록 fail-closed를 강화하기 위함.

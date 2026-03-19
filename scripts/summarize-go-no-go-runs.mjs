@@ -5,7 +5,6 @@ import { createClient } from '@supabase/supabase-js';
 
 const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
-const OUTPUT = path.join(RUNS_DIR, 'WEEKLY_SUMMARY.md');
 const VALID_SINKS = new Set(['markdown', 'supabase', 'stdout']);
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
@@ -47,7 +46,18 @@ const allowMissingQualityTables = parseBool(
 const guildId = String(parseArg('guildId', '')).trim() || null;
 const provider = String(parseArg('provider', '')).trim() || null;
 const actionPrefix = String(parseArg('actionPrefix', '')).trim() || null;
+const outputArg = String(parseArg('output', '')).trim();
 const windowStartMs = Date.now() - days * 24 * 60 * 60 * 1000;
+const OUTPUT = outputArg
+  ? path.resolve(ROOT, outputArg)
+  : path.join(RUNS_DIR, 'WEEKLY_SUMMARY.md');
+const legacyPendingCutoffRaw = String(parseArg('legacyPendingCutoff', '')).trim();
+const legacyPendingCutoffMs = legacyPendingCutoffRaw ? Date.parse(legacyPendingCutoffRaw) : null;
+const excludeLegacyPendingNoGo = parseBool(parseArg('excludeLegacyPendingNoGo', 'false'));
+
+if (legacyPendingCutoffRaw && Number.isNaN(legacyPendingCutoffMs)) {
+  throw new Error(`invalid --legacyPendingCutoff value: ${legacyPendingCutoffRaw}`);
+}
 
 const readMaybe = (filePath) => {
   try {
@@ -114,6 +124,39 @@ const normalizeRollbackType = (value) => {
 
 const cleanCell = (value) => String(value || '').replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
 
+const extractPostDecisionChecklist = (content) => {
+  const marker = '## Post-Decision Checklist';
+  const start = content.indexOf(marker);
+  if (start < 0) {
+    return { total: 0, checked: 0, unchecked: 0, complete: false };
+  }
+
+  const after = content.slice(start + marker.length);
+  const nextHeaderIdx = after.search(/\n##\s+/);
+  const section = nextHeaderIdx >= 0 ? after.slice(0, nextHeaderIdx) : after;
+  const checked = (section.match(/^-\s*\[x\]\s+/gim) || []).length;
+  const unchecked = (section.match(/^-\s*\[\s\]\s+/gim) || []).length;
+  const total = checked + unchecked;
+
+  return {
+    total,
+    checked,
+    unchecked,
+    complete: total > 0 && unchecked === 0,
+  };
+};
+
+const isAllPendingNoGo = (run) => {
+  if (String(run.overall || '').toLowerCase() !== 'no-go') return false;
+  const verdicts = [
+    run.gateVerdicts.reliability,
+    run.gateVerdicts.quality,
+    run.gateVerdicts.safety,
+    run.gateVerdicts.governance,
+  ];
+  return verdicts.every((value) => String(value || '').toLowerCase() === 'pending');
+};
+
 const files = fs.existsSync(RUNS_DIR)
   ? fs.readdirSync(RUNS_DIR)
       .filter((name) => name.endsWith('.md'))
@@ -140,12 +183,18 @@ const runs = files
     const rollbackType = normalizeRollbackType(
       jsonFinalDecision.rollback_type || parseField(content, 'rollback_type') || 'unknown',
     );
+    const endedAt = String(json?.ended_at || parseField(content, 'ended_at') || '').trim();
+    const endedAtMs = Date.parse(endedAt);
     const gateVerdicts = {
       reliability: String(json?.gates?.reliability?.verdict || '').trim().toLowerCase() || null,
       quality: String(json?.gates?.quality?.verdict || '').trim().toLowerCase() || null,
       safety: String(json?.gates?.safety?.verdict || '').trim().toLowerCase() || null,
       governance: String(json?.gates?.governance?.verdict || '').trim().toLowerCase() || null,
     };
+    const requiredActions = Array.isArray(jsonFinalDecision.required_actions)
+      ? jsonFinalDecision.required_actions.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    const checklist = extractPostDecisionChecklist(content);
     const qualityMetrics = {
       citationRate: toNumber(json?.gates?.quality?.metrics?.citation_rate),
       retrievalHitAtK: toNumber(json?.gates?.quality?.metrics?.retrieval_hit_at_k),
@@ -163,13 +212,33 @@ const runs = files
       overall,
       rollbackRequired,
       rollbackType,
+      endedAt,
+      endedAtMs,
       gateVerdicts,
+      requiredActions,
+      checklist,
       qualityMetrics,
       source: json ? 'json+md' : 'md',
     };
   })
   .filter((run) => run.mtimeMs >= windowStartMs)
   .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+const runsWithFlags = runs.map((run) => {
+  const legacyPendingNoGo = Boolean(
+    legacyPendingCutoffMs
+      && Number.isFinite(run.endedAtMs)
+      && run.endedAtMs < legacyPendingCutoffMs
+      && isAllPendingNoGo(run),
+  );
+  return { ...run, legacyPendingNoGo };
+});
+
+const runsForKpi = excludeLegacyPendingNoGo
+  ? runsWithFlags.filter((run) => !run.legacyPendingNoGo)
+  : runsWithFlags;
+
+const legacyPendingNoGoExcludedCount = runsWithFlags.filter((run) => run.legacyPendingNoGo).length;
 
 const byStage = new Map();
 let goCount = 0;
@@ -200,7 +269,58 @@ const qualitySignals = {
   sessionSuccessRate: [],
 };
 
-for (const run of runs) {
+const noGoRootCause = {
+  reliability_quality_dual_fail: 0,
+  reliability_only_fail: 0,
+  quality_only_fail: 0,
+  all_gates_pending: 0,
+  other: 0,
+};
+
+const requiredActionCompletion = {
+  no_go_runs: 0,
+  required_actions_total: 0,
+  required_actions_estimated_completed: 0,
+  checklist_complete_runs: 0,
+  checklist_incomplete_runs: 0,
+  required_action_completion_rate: null,
+};
+
+for (const run of runsWithFlags) {
+  if (String(run.overall || '').toLowerCase() !== 'no-go') {
+    continue;
+  }
+
+  requiredActionCompletion.no_go_runs += 1;
+  requiredActionCompletion.required_actions_total += run.requiredActions.length;
+  if (run.checklist.complete) {
+    requiredActionCompletion.checklist_complete_runs += 1;
+    requiredActionCompletion.required_actions_estimated_completed += run.requiredActions.length;
+  } else {
+    requiredActionCompletion.checklist_incomplete_runs += 1;
+  }
+
+  const reliabilityFail = run.gateVerdicts.reliability === 'fail';
+  const qualityFail = run.gateVerdicts.quality === 'fail';
+  const allPending = isAllPendingNoGo(run);
+  if (reliabilityFail && qualityFail) {
+    noGoRootCause.reliability_quality_dual_fail += 1;
+  } else if (reliabilityFail) {
+    noGoRootCause.reliability_only_fail += 1;
+  } else if (qualityFail) {
+    noGoRootCause.quality_only_fail += 1;
+  } else if (allPending) {
+    noGoRootCause.all_gates_pending += 1;
+  } else {
+    noGoRootCause.other += 1;
+  }
+}
+
+requiredActionCompletion.required_action_completion_rate = requiredActionCompletion.required_actions_total > 0
+  ? Number((requiredActionCompletion.required_actions_estimated_completed / requiredActionCompletion.required_actions_total).toFixed(4))
+  : null;
+
+for (const run of runsForKpi) {
   const stage = String(run.stage || 'unknown');
   byStage.set(stage, (byStage.get(stage) || 0) + 1);
 
@@ -244,11 +364,12 @@ const stageRows = [...byStage.entries()]
   .map(([stage, count]) => `| ${stage} | ${count} |`)
   .join('\n');
 
-const recentRows = runs
+const recentRows = runsWithFlags
   .slice(0, 15)
   .map((run) => {
     const rel = path.relative(ROOT, run.filePath).replace(/\\/g, '/');
-    return `| ${cleanCell(run.runId)} | ${cleanCell(run.stage)} | ${cleanCell(run.scope)} | ${cleanCell(run.overall)} | ${cleanCell(run.rollbackRequired)} | ${cleanCell(run.rollbackType)} | ${cleanCell(rel)} |`;
+    const legacyMark = run.legacyPendingNoGo ? ' (legacy-pending)' : '';
+    return `| ${cleanCell(run.runId)}${legacyMark} | ${cleanCell(run.stage)} | ${cleanCell(run.scope)} | ${cleanCell(run.overall)} | ${cleanCell(run.rollbackRequired)} | ${cleanCell(run.rollbackType)} | ${cleanCell(rel)} |`;
   })
   .join('\n');
 
@@ -441,7 +562,7 @@ const fetchStrategyQualityNormalization = async () => {
 
 const strategyQualityNormalization = await fetchStrategyQualityNormalization();
 
-const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runs.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | File |\n| --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - |'}\n`;
+const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runsForKpi.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n- legacy_pending_no_go_excluded: ${excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0}\n- legacy_pending_cutoff: ${legacyPendingCutoffRaw || 'n/a'}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## No-Go Root Cause Breakdown\n\n- reliability_quality_dual_fail: ${noGoRootCause.reliability_quality_dual_fail}\n- reliability_only_fail: ${noGoRootCause.reliability_only_fail}\n- quality_only_fail: ${noGoRootCause.quality_only_fail}\n- all_gates_pending: ${noGoRootCause.all_gates_pending}\n- other: ${noGoRootCause.other}\n\n## Required Action Completion (Estimated)\n\n- no_go_runs: ${requiredActionCompletion.no_go_runs}\n- required_actions_total: ${requiredActionCompletion.required_actions_total}\n- required_actions_estimated_completed: ${requiredActionCompletion.required_actions_estimated_completed}\n- required_action_completion_rate: ${requiredActionCompletion.required_action_completion_rate ?? 'n/a'}\n- checklist_complete_runs: ${requiredActionCompletion.checklist_complete_runs}\n- checklist_incomplete_runs: ${requiredActionCompletion.checklist_incomplete_runs}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | File |\n| --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - |'}\n`;
 
 const buildReportKey = () => {
   const day = generatedAt.slice(0, 10);
@@ -464,8 +585,8 @@ const writeSupabaseArtifact = async () => {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_KEY) are required for supabase sink');
   }
 
-  const byStage = [...new Map([...runs.map((run) => [String(run.stage || 'unknown'), 0])])].reduce((acc, [key]) => {
-    acc[key] = runs.filter((run) => String(run.stage || 'unknown') === key).length;
+  const byStage = [...new Map([...runsForKpi.map((run) => [String(run.stage || 'unknown'), 0])])].reduce((acc, [key]) => {
+    acc[key] = runsForKpi.filter((run) => String(run.stage || 'unknown') === key).length;
     return acc;
   }, {});
 
@@ -481,12 +602,16 @@ const writeSupabaseArtifact = async () => {
     candidate_to: null,
     baseline_summary: {
       window_days: days,
-      total_runs: runs.length,
+      total_runs: runsForKpi.length,
       go: goCount,
       no_go: noGoCount,
       pending: pendingCount,
+      legacy_pending_no_go_excluded: excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0,
+      legacy_pending_cutoff: legacyPendingCutoffRaw || null,
       stage_distribution: byStage,
       gate_verdict_counts: gateVerdictCounts,
+      no_go_root_cause: noGoRootCause,
+      required_action_completion: requiredActionCompletion,
       quality_summary: qualitySummary,
       strategy_quality_normalization: strategyQualityNormalization,
     },
@@ -501,6 +626,7 @@ const writeSupabaseArtifact = async () => {
         overall: run.overall,
         rollback_required: run.rollbackRequired,
         rollback_type: run.rollbackType,
+        legacy_pending_no_go: run.legacyPendingNoGo,
         reliability_verdict: run.gateVerdicts.reliability,
         quality_verdict: run.gateVerdicts.quality,
         safety_verdict: run.gateVerdicts.safety,

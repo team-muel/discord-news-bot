@@ -30,17 +30,54 @@ const parseBool = (value, fallback = false) => {
 };
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const VALID_ROUTE_MODES = new Set(['auto', 'delivery', 'operations']);
 
-const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const normalizeRouteMode = (value) => {
+  const mode = String(value || '').trim().toLowerCase();
+  return VALID_ROUTE_MODES.has(mode) ? mode : 'auto';
+};
+
+const inferRouteMode = (params) => {
+  const requestedMode = normalizeRouteMode(params.requestedMode);
+  if (requestedMode === 'delivery' || requestedMode === 'operations') {
+    return requestedMode;
+  }
+
+  const scope = String(params.scope || '').trim().toLowerCase();
+  const objective = String(params.objective || '').trim().toLowerCase();
+  const operationsHints = [
+    'weekly',
+    'incident',
+    'recover',
+    'release',
+    'rollback',
+    'ops',
+    'autonomy',
+    'gate',
+    'runbook',
+  ];
+  const source = `${scope} ${objective}`;
+  return operationsHints.some((token) => source.includes(token)) ? 'operations' : 'delivery';
+};
+
+const npmCmd = 'npm';
 
 const runNpmScript = (scriptName, args = []) => {
   const start = Date.now();
   try {
-    execFileSync(npmCmd, ['run', '-s', scriptName, ...args], {
-      cwd: ROOT,
-      stdio: 'inherit',
-      env: process.env,
-    });
+    if (process.platform === 'win32') {
+      execFileSync('cmd.exe', ['/d', '/s', '/c', npmCmd, 'run', '-s', scriptName, ...args], {
+        cwd: ROOT,
+        stdio: 'inherit',
+        env: process.env,
+      });
+    } else {
+      execFileSync(npmCmd, ['run', '-s', scriptName, ...args], {
+        cwd: ROOT,
+        stdio: 'inherit',
+        env: process.env,
+      });
+    }
     return {
       script: scriptName,
       status: 'pass',
@@ -67,10 +104,19 @@ const runNpmScriptAsWorkflowStep = (sessionPath, params) => {
     details: {
       script: params.scriptName,
       args: params.args || [],
+      classification: params.classification || null,
+      route_mode: params.routeMode || null,
     },
   });
 
-  const result = runNpmScript(params.scriptName, params.args || []);
+  const raw = runNpmScript(params.scriptName, params.args || []);
+  const result = {
+    ...raw,
+    step_name: params.stepName,
+    agent_role: params.agentRole || 'openjarvis',
+    classification: params.classification || null,
+    route_mode: params.routeMode || null,
+  };
   finishWorkflowStep(sessionPath, {
     stepOrder,
     status: result.status === 'pass' ? 'passed' : 'failed',
@@ -238,6 +284,14 @@ async function main() {
   const dryRun = parseBool(parseArg('dryRun', process.env.AUTONOMY_DRY_RUN || 'false'));
   const autoDeploy = parseBool(parseArg('autoDeploy', process.env.AUTONOMY_AUTO_DEPLOY || 'false'));
   const strict = parseBool(parseArg('strict', process.env.AUTONOMY_STRICT || 'true'), true);
+  const objective = String(parseArg('objective', process.env.OPENJARVIS_OBJECTIVE || 'weekly unattended autonomy cycle')).trim();
+  const scope = String(process.env.OPENJARVIS_SCOPE || 'weekly:auto').trim() || 'weekly:auto';
+  const stage = String(process.env.OPENJARVIS_STAGE || 'A').trim() || 'A';
+  const routeMode = inferRouteMode({
+    requestedMode: parseArg('routeMode', process.env.OPENJARVIS_ROUTE_MODE || 'auto'),
+    scope,
+    objective,
+  });
   const requireOpencodeWorker = parseBool(parseArg('requireOpencodeWorker', process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER || 'true'), true);
   const policyLoaded = loadOpenjarvisRoutingPolicy(process.env.OPENJARVIS_ROUTING_POLICY_PATH);
   const policy = policyLoaded.policy;
@@ -245,8 +299,10 @@ async function main() {
     dryRun,
     autoDeploy,
     strict,
-    stage: process.env.OPENJARVIS_STAGE || 'A',
-    scope: process.env.OPENJARVIS_SCOPE || 'weekly:auto',
+    stage,
+    scope,
+    routeMode,
+    objective,
   });
   const sessionPath = sessionState.sessionPath;
 
@@ -272,6 +328,8 @@ async function main() {
       policy_loaded: policyLoaded.loaded,
       policy_path: path.relative(ROOT, policyLoaded.policyPath),
       classification_priority: policy.classificationPriority,
+      route_mode: routeMode,
+      objective,
     },
   });
 
@@ -285,6 +343,8 @@ async function main() {
       dryRun,
       autoDeploy,
       strict,
+      route_mode: routeMode,
+      objective,
       routing_policy_loaded: policyLoaded.loaded,
       routing_policy_path: path.relative(ROOT, policyLoaded.policyPath),
       workflow_step_count: policy.workflowSteps.length,
@@ -303,6 +363,7 @@ async function main() {
       dry_run: dryRun,
       auto_deploy: autoDeploy,
       strict,
+      route_mode: routeMode,
     },
     steps: [],
     latest_gate_run: null,
@@ -322,7 +383,7 @@ async function main() {
     toState: 'executing',
     eventType: 'state.executing',
     handoffFrom: 'openjarvis',
-    handoffTo: policy.agentByClassification.implement || 'opencode',
+    handoffTo: routeMode === 'delivery' ? 'opendev' : (policy.agentByClassification.implement || 'opencode'),
     reason: 'start report and gate execution using routing policy',
     evidenceId: path.relative(ROOT, policyLoaded.policyPath),
   });
@@ -340,6 +401,8 @@ async function main() {
       stepName: step.id,
       scriptName,
       agentRole: step.agentRole,
+      classification: step.classification,
+      routeMode,
       handoffFrom: step.handoffFrom,
       handoffTo: step.handoffTo,
       reason: step.reason,
@@ -434,12 +497,8 @@ async function main() {
   const byRole = {};
   for (const step of result.steps) {
     const scriptName = String(step.script || '').trim().toLowerCase();
-    let role = 'openjarvis';
-    if (scriptName.includes('weekly-report')) {
-      role = 'opencode';
-    } else if (scriptName.includes('validate')) {
-      role = scriptName.includes('rollback') ? 'nemoclaw' : 'opendev';
-    }
+    const role = String(step.agent_role || '').trim().toLowerCase()
+      || (scriptName.includes('weekly-report') ? 'opencode' : (scriptName.includes('rollback') ? 'nemoclaw' : 'openjarvis'));
 
     const current = byRole[role] || {
       total_steps: 0,

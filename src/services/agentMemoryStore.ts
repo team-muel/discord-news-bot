@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { runWithConcurrency } from '../utils/async';
 
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;
@@ -72,6 +73,8 @@ const ensureSupabase = () => {
 const safeLike = (value: string): string => value.replace(/[%,]/g, ' ').trim();
 const MEMORY_RETRIEVE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE || 0.35)));
 const MEMORY_HYBRID_MIN_SIMILARITY = Math.max(0, Math.min(1, Number(process.env.MEMORY_HYBRID_MIN_SIMILARITY || 0.08)));
+const MEMORY_CITATIONS_PER_ITEM = Math.max(1, Math.min(5, Number(process.env.MEMORY_CITATIONS_PER_ITEM || 3)));
+const MEMORY_CITATIONS_REFILL_CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.MEMORY_CITATIONS_REFILL_CONCURRENCY || 4)));
 
 const toMaybeUserId = (value: unknown): string | null => {
   const text = String(value || '').trim();
@@ -183,11 +186,14 @@ export async function searchGuildMemory(params: SearchParams) {
 
   let citationsById = new Map<string, Array<{ sourceKind: string; sourceMessageId: string; sourceRef: string }>>();
   if (ids.length > 0) {
+    const citationsPerItem = MEMORY_CITATIONS_PER_ITEM;
+    const warmupLimit = Math.max(citationsPerItem * ids.length, params.limit * citationsPerItem);
     const { data: sourceRows, error: sourceError } = await client
       .from('memory_sources')
       .select('memory_item_id, source_kind, source_message_id, source_ref')
       .in('memory_item_id', ids)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(warmupLimit);
 
     if (sourceError) {
       throw new Error(sourceError.message || 'MEMORY_SOURCES_FAILED');
@@ -197,10 +203,52 @@ export async function searchGuildMemory(params: SearchParams) {
       const memoryItemId = String(row.memory_item_id || '');
       if (!memoryItemId) continue;
       const current = citationsById.get(memoryItemId) || [];
-      if (current.length < 3) {
+      if (current.length < citationsPerItem) {
         current.push(toCitation(row));
       }
       citationsById.set(memoryItemId, current);
+    }
+
+    const underfilledIds = ids.filter((id) => (citationsById.get(id)?.length || 0) < citationsPerItem);
+    if (underfilledIds.length > 0) {
+      await runWithConcurrency(
+        underfilledIds,
+        async (memoryItemId) => {
+          const existing = citationsById.get(memoryItemId) || [];
+          const existingKeys = new Set(existing.map((citation) => `${citation.sourceMessageId}|${citation.sourceRef}`));
+          const needed = citationsPerItem - existing.length;
+          if (needed <= 0) {
+            return;
+          }
+
+          const { data: refillRows, error: refillError } = await client
+            .from('memory_sources')
+            .select('memory_item_id, source_kind, source_message_id, source_ref')
+            .eq('memory_item_id', memoryItemId)
+            .order('created_at', { ascending: false })
+            .limit(citationsPerItem);
+
+          if (refillError) {
+            throw new Error(refillError.message || 'MEMORY_SOURCES_REFILL_FAILED');
+          }
+
+          for (const row of (refillRows || []) as Array<Record<string, unknown>>) {
+            if (existing.length >= citationsPerItem) {
+              break;
+            }
+            const citation = toCitation(row);
+            const key = `${citation.sourceMessageId}|${citation.sourceRef}`;
+            if (existingKeys.has(key)) {
+              continue;
+            }
+            existing.push(citation);
+            existingKeys.add(key);
+          }
+
+          citationsById.set(memoryItemId, existing);
+        },
+        MEMORY_CITATIONS_REFILL_CONCURRENCY,
+      );
     }
   }
 

@@ -5,6 +5,11 @@
 - OpenJarvis가 작업을 OpenCode/NemoClaw/OpenDev로 일관되게 라우팅한다.
 - 실패 시 재시도/롤백/승인 흐름을 기계적으로 결정한다.
 
+원칙:
+
+- `delivery` 모드(기능/코드 변경): OpenDev -> OpenCode -> NemoClaw -> OpenJarvis 고정 체인
+- `operations` 모드(incident/release/recover): 분류 기반 동적 라우팅
+
 ## 1) 작업 분류 규칙
 
 분류 라벨:
@@ -24,6 +29,15 @@
 5. discover
 
 ## 2) 에이전트 할당 규칙
+
+delivery 모드:
+
+- OpenDev: 스코프/비목표/마일스톤 슬라이스 정의
+- OpenCode: 최소 패치 구현
+- NemoClaw: 회귀/보안/테스트 갭 리뷰
+- OpenJarvis: 운영 게이트/롤백 준비도 검증
+
+operations 모드:
 
 - `discover` -> NemoClaw
 - `implement` -> OpenCode

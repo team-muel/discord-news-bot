@@ -105,7 +105,8 @@ const gatesRequired = Array.isArray(schema.requiredKeySets.gates) ? schema.requi
 
 const mdFiles = fs.readdirSync(RUNS_DIR)
   .filter((name) => name.endsWith('.md'))
-  .filter((name) => name !== 'README.md' && name !== 'WEEKLY_SUMMARY.md');
+  .filter((name) => name !== 'README.md')
+  .filter((name) => !name.startsWith('WEEKLY_SUMMARY'));
 
 const jsonFiles = fs.readdirSync(RUNS_DIR)
   .filter((name) => name.endsWith('.json'))

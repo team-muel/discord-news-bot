@@ -7,6 +7,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
 const MEMORY_JOBS_POLL_INTERVAL_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 20_000));
+const MEMORY_JOBS_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.MEMORY_JOBS_CONCURRENCY, 2)));
 const MEMORY_JOBS_MAX_RETRIES = Math.max(1, parseIntegerEnv(process.env.MEMORY_JOBS_MAX_RETRIES, 3));
 const MEMORY_JOBS_BACKOFF_BASE_MS = Math.max(1_000, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_BASE_MS, 15_000));
 const MEMORY_JOBS_BACKOFF_MAX_MS = Math.max(MEMORY_JOBS_BACKOFF_BASE_MS, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_MAX_MS, 30 * 60_000));
@@ -138,6 +139,40 @@ const toNextAttemptIso = (attempt: number): string => {
   return new Date(Date.now() + delayMs).toISOString();
 };
 
+const compareTagFrequency = (a: { tag: string; count: number }, b: { tag: string; count: number }) => {
+  if (a.count !== b.count) {
+    return b.count - a.count;
+  }
+  return a.tag.localeCompare(b.tag);
+};
+
+const buildTopTags = (tagFrequency: Map<string, number>, limit: number): Array<{ tag: string; count: number }> => {
+  if (limit <= 0 || tagFrequency.size === 0) {
+    return [];
+  }
+
+  const topTags: Array<{ tag: string; count: number }> = [];
+  for (const [tag, count] of tagFrequency.entries()) {
+    const candidate = { tag, count };
+
+    if (topTags.length < limit) {
+      topTags.push(candidate);
+      topTags.sort(compareTagFrequency);
+      continue;
+    }
+
+    const weakest = topTags[topTags.length - 1];
+    if (compareTagFrequency(candidate, weakest) >= 0) {
+      continue;
+    }
+
+    topTags[topTags.length - 1] = candidate;
+    topTags.sort(compareTagFrequency);
+  }
+
+  return topTags;
+};
+
 const buildJobSummary = async (guildId: string) => {
   const client = getSupabaseClient();
   const { count: totalItems } = await client
@@ -245,10 +280,7 @@ const processTopicSynthesis = async (guildId: string) => {
     }
   }
 
-  const topTags = [...tagFrequency.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 8)
-    .map(([tag, count]) => ({ tag, count }));
+  const topTags = buildTopTags(tagFrequency, 8);
 
   return {
     activeItems: rows.length,
@@ -520,7 +552,7 @@ const processJobByType = async (job: {
   throw new Error(`UNSUPPORTED_JOB_TYPE:${job.job_type}`);
 };
 
-const processQueuedJob = async () => {
+const processQueuedJob = async (): Promise<boolean> => {
   const client = getSupabaseClient();
 
   const { data: queuedRows, error: queuedError } = await client
@@ -547,7 +579,7 @@ const processQueuedJob = async () => {
   } | undefined;
 
   if (!queued) {
-    return;
+    return false;
   }
 
   const nextAttempts = Math.max(0, Number(queued.attempts || 0)) + 1;
@@ -565,7 +597,7 @@ const processQueuedJob = async () => {
 
   const claimed = (claimedRows || [])[0] as typeof queued | undefined;
   if (!claimed) {
-    return;
+    return false;
   }
 
   try {
@@ -604,6 +636,7 @@ const processQueuedJob = async () => {
     runnerStats.lastErrorMessage = null;
 
     logger.info('[MEMORY-JOBS] completed job=%s type=%s guild=%s', claimed.id, claimed.job_type, claimed.guild_id);
+    return true;
   } catch (error) {
     const message = toErrorMessage(error);
     const shouldFail = nextAttempts >= MEMORY_JOBS_MAX_RETRIES;
@@ -650,6 +683,7 @@ const processQueuedJob = async () => {
     }
 
     logger.error('[MEMORY-JOBS] job error id=%s type=%s attempt=%d: %s', claimed.id, claimed.job_type, nextAttempts, message);
+    return true;
   }
 };
 
@@ -661,7 +695,15 @@ const tick = async () => {
   runnerStats.lastTickAt = nowIso();
   inFlight = true;
   try {
-    await processQueuedJob();
+    const workers = Array.from({ length: MEMORY_JOBS_CONCURRENCY }, async () => {
+      while (true) {
+        const processed = await processQueuedJob();
+        if (!processed) {
+          return;
+        }
+      }
+    });
+    await Promise.all(workers);
   } catch (error) {
     logger.error('[MEMORY-JOBS] tick error: %o', error);
   } finally {
@@ -721,6 +763,7 @@ export const getMemoryJobRunnerStats = () => {
     inFlight,
     recoveryInFlight,
     pollIntervalMs: MEMORY_JOBS_POLL_INTERVAL_MS,
+    concurrency: MEMORY_JOBS_CONCURRENCY,
     maxRetries: MEMORY_JOBS_MAX_RETRIES,
     backoffBaseMs: MEMORY_JOBS_BACKOFF_BASE_MS,
     backoffMaxMs: MEMORY_JOBS_BACKOFF_MAX_MS,
