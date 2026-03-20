@@ -1,6 +1,15 @@
+import {
+  normalizeAnalysisVerdict,
+  normalizeDiscoveryResult,
+  type AnalysisVerdict,
+  type DiscoveryResult,
+} from './securityCandidateContract';
+
 type StructuredRecord = Record<string, unknown>;
+type StructuredValue = StructuredRecord | unknown[];
 
 const JSON_BRACE_BLOCK = /\{[\s\S]*\}/;
+const JSON_ARRAY_BLOCK = /\[[\s\S]*\]/;
 const KV_LINE_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*)\s*[:=]\s*(.+)$/;
 const KV_INLINE_PATTERN = /([A-Za-z_][A-Za-z0-9_-]*)\s*[:=]\s*([^,;\n]+)/g;
 
@@ -23,7 +32,7 @@ const parseNumericIfPossible = (value: string): unknown => {
   return text;
 };
 
-const parseJsonObject = (raw: string): StructuredRecord | null => {
+const parseJsonValue = (raw: string): StructuredValue | null => {
   const text = String(raw || '').trim();
   if (!text) {
     return null;
@@ -31,22 +40,34 @@ const parseJsonObject = (raw: string): StructuredRecord | null => {
 
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as StructuredRecord;
+    if (parsed && typeof parsed === 'object') {
+      return parsed as StructuredValue;
     }
   } catch {
-    // Try extracting brace block below.
+    // Try extracting object/array block below.
   }
 
-  const block = text.match(JSON_BRACE_BLOCK)?.[0];
-  if (!block) {
+  const objectBlock = text.match(JSON_BRACE_BLOCK)?.[0];
+  if (objectBlock) {
+    try {
+      const parsed = JSON.parse(objectBlock);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as StructuredRecord;
+      }
+    } catch {
+      // Try array block below.
+    }
+  }
+
+  const arrayBlock = text.match(JSON_ARRAY_BLOCK)?.[0];
+  if (!arrayBlock) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(block);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as StructuredRecord;
+    const parsed = JSON.parse(arrayBlock);
+    if (Array.isArray(parsed)) {
+      return parsed;
     }
   } catch {
     return null;
@@ -88,10 +109,48 @@ const parseKeyValueFallback = (raw: string): StructuredRecord | null => {
 };
 
 export const parseLlmStructuredRecord = (raw: string): StructuredRecord | null => {
-  const jsonRecord = parseJsonObject(raw);
-  if (jsonRecord) {
-    return jsonRecord;
+  const parsedValue = parseJsonValue(raw);
+  if (parsedValue && !Array.isArray(parsedValue)) {
+    return parsedValue;
   }
 
   return parseKeyValueFallback(raw);
+};
+
+export const parseLlmStructuredValue = (raw: string): StructuredValue | null => {
+  const parsedValue = parseJsonValue(raw);
+  if (parsedValue) {
+    return parsedValue;
+  }
+
+  return parseKeyValueFallback(raw);
+};
+
+export const parseLlmStructuredArray = (raw: string): unknown[] | null => {
+  const parsedValue = parseJsonValue(raw);
+  if (Array.isArray(parsedValue)) {
+    return parsedValue;
+  }
+  return null;
+};
+
+export const parseLlmNormalized = <T>(raw: string, normalize: (value: unknown) => T): T | null => {
+  const parsedValue = parseLlmStructuredValue(raw);
+  if (!parsedValue) {
+    return null;
+  }
+
+  try {
+    return normalize(parsedValue);
+  } catch {
+    return null;
+  }
+};
+
+export const parseLlmDiscoveryResult = (raw: string): DiscoveryResult | null => {
+  return parseLlmNormalized(raw, normalizeDiscoveryResult);
+};
+
+export const parseLlmAnalysisVerdict = (raw: string): AnalysisVerdict | null => {
+  return parseLlmNormalized(raw, normalizeAnalysisVerdict);
 };

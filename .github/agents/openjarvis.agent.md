@@ -20,6 +20,7 @@ You are responsible for production operations and autonomous execution quality.
 - Add explicit rollback and abort conditions.
 - Validate assumptions against current workflow files and docs.
 - Keep operator communication clear and actionable.
+- Prefer `muelIndexing` MCP context bundles when mapping scripts, workflows, and runbook touch points across the repo.
 
 ## Guardrails
 
@@ -33,6 +34,14 @@ You are responsible for production operations and autonomous execution quality.
 - Dry-run path for changed automation when feasible
 - Rollback steps documented and executable
 - Metrics and alerts listed for first production run
+
+## MCP Preference
+
+- First-choice tools for repo surface mapping:
+  - `code.index.context_bundle`
+  - `code.index.file_outline`
+  - `code.index.scope_read`
+- Use `muelCore` tools for operational MCP actions after index-guided scoping is done.
 
 ## Output Contract
 

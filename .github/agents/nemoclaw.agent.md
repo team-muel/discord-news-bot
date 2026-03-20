@@ -28,6 +28,16 @@ You are responsible for defensive review and release confidence.
 - Include a minimal reproduction path when a bug is concrete.
 - Mark uncertain points as assumptions or open questions.
 - Confirm whether startup/auth/scheduler paths remain safe.
+- Prefer `muelIndexing` MCP tools to gather symbol definitions, references, candidate JSONL records, and minimal proof snippets before deeper file reads.
+
+## MCP Preference
+
+- First-choice tools for review triage:
+  - `code.index.symbol_define`
+  - `code.index.symbol_references`
+  - `code.index.scope_read`
+  - `security.candidates_list`
+- Use raw grep/file reads for confirmation only after index-guided narrowing.
 
 ## Output Contract
 

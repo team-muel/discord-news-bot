@@ -37,6 +37,7 @@
     "worker:opencode:local": "node scripts/opencode-local-worker.mjs",
     "worker:opencode:docker:build": "docker build -f Dockerfile.opencode-worker -t muel-opencode-worker .",
     "mcp:dev": "tsx scripts/mcp-stdio.ts",
+    "mcp:indexing:dev": "tsx scripts/indexing-mcp-stdio.ts",
     "worker:crawler": "tsx scripts/crawler-worker.ts",
     "sync:obsidian-lore": "tsx scripts/sync-obsidian-lore.ts",
     "sync:obsidian-lore:dry": "tsx scripts/sync-obsidian-lore.ts --dry-run",

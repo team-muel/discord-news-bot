@@ -27,12 +27,21 @@ You are responsible for architecture clarity and execution strategy.
 - Sequence milestones so each yields deployable value.
 - Name dependencies, decision owners, and gating assumptions.
 - Keep Obsidian graph-first context strategy explicit in architecture choices.
+- Prefer `muelIndexing` MCP context bundles and file outlines to reason about boundaries before proposing architecture changes.
 
 ## Decision Quality Bar
 
 - Trade-offs include reliability, speed, cost, and operator complexity.
 - Migration plans include rollback and data safety checks.
 - ADR updates are required when boundaries or contracts change.
+
+## MCP Preference
+
+- First-choice tools for architecture discovery:
+  - `code.index.context_bundle`
+  - `code.index.file_outline`
+  - `code.index.symbol_search`
+- Escalate to broader repo reads only when the index does not cover the needed surface.
 
 ## Output Contract
 

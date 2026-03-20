@@ -20,6 +20,8 @@ You are responsible for implementation quality and delivery speed.
 - Preserve existing contracts unless the task explicitly requires change.
 - Verify with tests or type checks after edits.
 - Call out any behavior changes clearly.
+- Prefer `muelIndexing` MCP tools for symbol search, scope reads, file outlines, and context bundles before broad text search.
+- Use `muelCore` tools only when the task needs non-indexing MCP capabilities.
 
 ## Boundaries
 
@@ -32,6 +34,15 @@ You are responsible for implementation quality and delivery speed.
 - Type check and relevant tests for changed paths
 - Failure-path sanity checks for new logic
 - Backward compatibility check for public bot or API behavior
+
+## MCP Preference
+
+- First-choice tools for code navigation:
+  - `code.index.symbol_search`
+  - `code.index.scope_read`
+  - `code.index.file_outline`
+  - `code.index.context_bundle`
+- Fallback to raw file search only when the index result is missing or stale.
 
 ## Output Contract
 
