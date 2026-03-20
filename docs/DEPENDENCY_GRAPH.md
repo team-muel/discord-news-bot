@@ -1,17 +1,17 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 221
+- Nodes: 224
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
 | src/services/supabaseClient.ts | 63 |
-| src/logger.ts | 54 |
+| src/logger.ts | 55 |
 | src/utils/env.ts | 50 |
 | src/services/skills/actions/types.ts | 22 |
-| src/config.ts | 16 |
+| src/config.ts | 17 |
 | src/services/multiAgentService.ts | 15 |
 | src/services/skills/types.ts | 15 |
 | src/middleware/auth.ts | 14 |
@@ -58,6 +58,7 @@ graph LR
   "src/bot.ts" --> "src/discord/messages.ts"
   "src/bot.ts" --> "src/discord/runtime/buttonInteractions.ts"
   "src/bot.ts" --> "src/discord/runtime/guildLifecycle.ts"
+  "src/bot.ts" --> "src/discord/runtime/loginAttempt.ts"
   "src/bot.ts" --> "src/discord/runtime/passiveMemoryCapture.ts"
   "src/bot.ts" --> "src/discord/runtime/readyWorkloads.ts"
   "src/bot.ts" --> "src/discord/session.ts"
@@ -156,6 +157,7 @@ graph LR
   "src/discord/runtime/guildLifecycle.ts" --> "src/logger.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/services/agentOpsService.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/runtime/loginAttempt.ts":::file
   "src/discord/runtime/passiveMemoryCapture.ts" --> "src/logger.ts"
   "src/discord/runtime/passiveMemoryCapture.ts" --> "src/services/agentMemoryStore.ts"
   "src/discord/runtime/passiveMemoryCapture.ts" --> "src/services/communityGraphService.ts"
@@ -397,6 +399,10 @@ graph LR
   "src/services/automationBot.ts" --> "src/services/automation/runtimeState.ts"
   "src/services/automationBot.ts" --> "src/services/automation/types.ts"
   "src/services/benchmarkStore.ts":::file
+  "src/services/botAutoRecoveryService.ts" --> "src/bot.ts"
+  "src/services/botAutoRecoveryService.ts" --> "src/config.ts"
+  "src/services/botAutoRecoveryService.ts" --> "src/contracts/bot.ts"
+  "src/services/botAutoRecoveryService.ts" --> "src/logger.ts"
   "src/services/communityGraphService.ts" --> "src/services/supabaseClient.ts"
   "src/services/conversationTurnService.ts" --> "src/services/supabaseClient.ts"
   "src/services/conversationTurnService.ts" --> "src/utils/env.ts"
@@ -469,7 +475,7 @@ graph LR
   "src/services/llmClient.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/llmClient.ts" --> "src/services/supabaseClient.ts"
   "src/services/llmExperimentAnalyticsService.ts" --> "src/services/supabaseClient.ts"
-  "src/services/llmStructuredParseService.ts":::file
+  "src/services/llmStructuredParseService.ts" --> "src/services/securityCandidateContract.ts"
   "src/services/localAiTradingClient.ts" --> "src/config.ts"
   "src/services/localAiTradingClient.ts" --> "src/contracts/trade.ts"
   "src/services/mcpWorkerClient.ts" --> "src/services/structuredErrorLogService.ts"
@@ -595,6 +601,7 @@ graph LR
   "src/services/runtimeBootstrap.ts" --> "src/services/agentOpsService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/agentSloService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/automationBot.ts"
+  "src/services/runtimeBootstrap.ts" --> "src/services/botAutoRecoveryService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/discordTopologySyncService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/obsidianLoreSyncService.ts"
@@ -613,6 +620,7 @@ graph LR
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/runtimeBootstrap.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/supabaseExtensionOpsService.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/tradingEngine.ts"
+  "src/services/securityCandidateContract.ts":::file
   "src/services/semanticAnswerCacheService.ts" --> "src/services/supabaseClient.ts"
   "src/services/semanticAnswerCacheService.ts" --> "src/utils/env.ts"
   "src/services/skills/actionExecutionLogService.ts" --> "src/services/supabaseClient.ts"
