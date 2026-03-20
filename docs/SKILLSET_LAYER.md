@@ -48,7 +48,7 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 
 ## Output Policy
 
-- User-facing `/해줘` flow is result-first.
+- User-facing Muel request flow is result-first.
 - Intermediate reasoning/process text is suppressed.
 - Final response should contain deliverable-oriented output, not chain-of-thought style narration.
 - Context engineering strategy for coding actions: `docs/CONTEXT_ENGINEERING_STRATEGY.md`.
@@ -97,7 +97,8 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 
 ## Discord Interface
 
-- `/해줘 목표:<text> [스킬:<id>] [우선순위:빠름|균형|정밀] [공개범위]`
+- `뮤엘 <요청>` 또는 `@Muel <요청>`
+- `/해줘 요청:<text> [공개범위]` (호환 명령)
 - `/시작 목표:<text> [스킬:<id>] [우선순위:빠름|균형|정밀] [공개범위]` (호환 명령)
 - `/상태 [세션아이디]`
 - `/스킬목록`

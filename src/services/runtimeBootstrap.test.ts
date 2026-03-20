@@ -13,6 +13,7 @@ const autoSyncGuildTopologiesOnReady = vi.fn(() => Promise.resolve());
 const startRuntimeAlerts = vi.fn();
 const startTradingEngine = vi.fn();
 const startOpencodePublishWorker = vi.fn();
+const startBotAutoRecovery = vi.fn();
 const startLoginSessionCleanupLoop = vi.fn();
 
 vi.mock('./automationBot', () => ({
@@ -32,6 +33,7 @@ vi.mock('./discordTopologySyncService', () => ({ autoSyncGuildTopologiesOnReady 
 vi.mock('./runtimeAlertService', () => ({ startRuntimeAlerts }));
 vi.mock('./tradingEngine', () => ({ startTradingEngine }));
 vi.mock('./opencodePublishWorker', () => ({ startOpencodePublishWorker }));
+vi.mock('./botAutoRecoveryService', () => ({ startBotAutoRecovery }));
 vi.mock('../discord/auth', () => ({ startLoginSessionCleanupLoop }));
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -55,6 +57,7 @@ describe('runtimeBootstrap', () => {
     expect(startOpencodePublishWorker).toHaveBeenCalledTimes(1);
     expect(startTradingEngine).toHaveBeenCalledTimes(1);
     expect(startRuntimeAlerts).toHaveBeenCalledTimes(1);
+    expect(startBotAutoRecovery).toHaveBeenCalledTimes(1);
 
     expect(runtime.getRuntimeBootstrapState()).toMatchObject({
       serverStarted: true,

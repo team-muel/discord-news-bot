@@ -129,6 +129,7 @@ import { startDiscordReadyWorkloads } from './discord/runtime/readyWorkloads';
 import { processPassiveMemoryCapture } from './discord/runtime/passiveMemoryCapture';
 import { handleButtonInteraction } from './discord/runtime/buttonInteractions';
 import { handleGuildCreateLifecycle, handleGuildDeleteLifecycle } from './discord/runtime/guildLifecycle';
+import { loginDiscordClientWithTimeout } from './discord/runtime/loginAttempt';
 import { DISCORD_MESSAGES } from './discord/messages';
 import { isStockFeatureEnabled } from './services/stockService';
 
@@ -1167,10 +1168,6 @@ const attachCommandHandlers = () => {
           await adminHandlers.handleLoginCommand(interaction);
           return;
         }
-        case '뮤엘': {
-          await vibeHandlers.handleVibeCommand(interaction);
-          return;
-        }
         case '주가': {
           await handleStockPriceCommand(interaction);
           return;
@@ -1450,20 +1447,7 @@ export async function startBot(token: string): Promise<void> {
     botRuntimeState.reconnectQueued = attempt > 1;
     try {
       logger.info('[BOT] Attempting login (attempt %d/%d)', attempt, maxRetries);
-      await client.login(token);
-
-      // Wait for clientReady event with configurable timeout
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Discord client ready timeout')), readyTimeout);
-        if (client.isReady()) {
-          clearTimeout(timeout);
-          return resolve();
-        }
-        client.once('clientReady', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
+      await loginDiscordClientWithTimeout(client, token, readyTimeout);
 
       logger.info('[BOT] Discord client logged in');
       botRuntimeState.started = true;

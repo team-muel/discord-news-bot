@@ -23,7 +23,6 @@ export const SIMPLE_COMMAND_ALLOWLIST = new Set([
   'help',
   '도움말',
   '로그인',
-  '뮤엘',
   '구독',
   '해줘',
   '만들어줘',
@@ -73,18 +72,6 @@ const ALL_COMMANDS = [
     .setName('로그인')
     .setDescription('내 계정 권한과 기능 사용 가능 여부를 확인합니다')
     .setDMPermission(false),
-  new SlashCommandBuilder()
-    .setName('뮤엘')
-    .setDescription('Muel에게 자연어로 요청합니다')
-    .setDMPermission(false)
-    .addStringOption((o) =>
-      o.setName('요청').setDescription('예: 오늘 해야 할 일 정리해줘').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
   new SlashCommandBuilder()
     .setName('주가')
     .setDescription('주식 현재 가격을 조회합니다')

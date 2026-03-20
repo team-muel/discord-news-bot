@@ -9,6 +9,7 @@ import { autoSyncGuildTopologiesOnReady } from './discordTopologySyncService';
 import { startRuntimeAlerts } from './runtimeAlertService';
 import { startTradingEngine } from './tradingEngine';
 import { startOpencodePublishWorker } from './opencodePublishWorker';
+import { startBotAutoRecovery } from './botAutoRecoveryService';
 import { startLoginSessionCleanupLoop } from '../discord/auth';
 import logger from '../logger';
 
@@ -53,6 +54,7 @@ export const startServerProcessRuntime = (): void => {
   startOpencodePublishWorker();
   startTradingEngine();
   startRuntimeAlerts();
+  startBotAutoRecovery();
 
   runtimeState.serverStarted = true;
 };

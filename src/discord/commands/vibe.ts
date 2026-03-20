@@ -26,6 +26,7 @@ type VibeDeps = {
 
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
 const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
+const VIBE_MESSAGE_PREFIX_PATTERN = /^뮤엘(?:아)?(?:(?:\s*:\s*)|\s+|$)/;
 const PROCESSED_MESSAGE_TTL_MS = Math.max(30_000, Number(process.env.VIBE_MESSAGE_DEDUP_TTL_MS || 5 * 60_000));
 const processedMessageUntilMs = new Map<string, number>();
 const AUTO_WORKER_PROPOSAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_ENABLED || 'false').trim());
@@ -161,16 +162,24 @@ const inferChannelModeFromName = (message: Message): 'ai_chat' | 'ai_utility' | 
   return null;
 };
 
-const parseVibeRequestFromMessage = (message: Message): string => {
+export const hasVibeMessagePrefix = (text: string): boolean => VIBE_MESSAGE_PREFIX_PATTERN.test(String(text || '').trim());
+
+export const stripVibeMessagePrefix = (text: string): string => {
+  let normalized = String(text || '').trim();
+  if (!normalized) return '';
+  normalized = normalized.replace(VIBE_MESSAGE_PREFIX_PATTERN, '').trim();
+  if (normalized.startsWith(':')) normalized = normalized.slice(1).trim();
+  return normalized;
+};
+
+export const parseVibeRequestFromMessage = (message: Message): string => {
   let text = String(message.content || '').trim();
   if (!text) return '';
   if (message.client.user) {
     const mentionPattern = new RegExp(`^<@!?${message.client.user.id}>\\s*`, 'i');
     text = text.replace(mentionPattern, '').trim();
   }
-  if (text.startsWith('해줘')) text = text.slice('해줘'.length).trim();
-  if (text.startsWith(':')) text = text.slice(1).trim();
-  return text;
+  return stripVibeMessagePrefix(text);
 };
 
 export const createVibeHandlers = (deps: VibeDeps) => {
@@ -345,7 +354,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     const isAiChatChannel = channelMode === 'ai_chat';
     const isMentioned = message.mentions.has(message.client.user.id);
     const isReplyToBot = message.reference?.messageId && message.mentions.repliedUser?.id === message.client.user.id;
-    const isPrefixed = raw.toLowerCase().startsWith('해줘');
+    const isPrefixed = hasVibeMessagePrefix(raw);
     if (!isAiChatChannel && !isMentioned && !isReplyToBot && !isPrefixed) return;
 
     const request = parseVibeRequestFromMessage(message);
