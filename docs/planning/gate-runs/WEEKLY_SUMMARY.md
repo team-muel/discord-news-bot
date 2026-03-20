@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-03-20T07:14:07.591Z
+- generated_at: 2026-03-20T13:34:51.628Z
 - total_runs: 29
 - go: 11
 - no_go: 10
@@ -66,10 +66,12 @@
 
 | Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | File |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| gate-20260319-173500 | A | trading-isolation:w4-01-w4-03 | go | false | none | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-173500.md |
 | gate-post-fallback-1773928500597 | A | weekly:auto:post-fallback | no-go | true | stage | missing | docs/planning/gate-runs/2026-03-19_gate-post-fallback-1773928500597.md |
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
+| gate-20260319-105036 | A | guild:demo | go | false | none | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-105036.md |
 | gate-20260319-111442 | A | guild:demo | no-go | true | stage | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111442.md |
 | gate-20260319-111443 | A | weekly:auto | no-go | true | stage | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111443.md |
 | gate-20260319-111711 | A | weekly:auto | no-go | true | stage | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111711.md |
@@ -79,5 +81,3 @@
 | gate-20260319-112800 | A | weekly:auto:profile-hint-pass | go | false | none | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-112800.md |
 | gate-20260319-112914 | A | weekly:auto | no-go | true | stage | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-112914.md |
 | gate-20260319-134426 | A | weekly:auto | pending | false | none | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-134426.md |
-| gate-20260319-135316 | A | weekly:auto | pending | false | none | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135316.md |
-| gate-20260319-135437 | A | weekly:auto:post-fallback | no-go | true | stage | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135437.md |
