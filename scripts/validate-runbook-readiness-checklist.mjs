@@ -4,7 +4,7 @@ import path from 'path';
 
 const ROOT = process.cwd();
 const ROLLBACK_SUMMARY_PATH = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'rollback-rehearsals', 'WEEKLY_SUMMARY.md');
-const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
+const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'runbook-checklists');
 
 const parseArg = (name, fallback = '') => {
   const prefix = `--${name}=`;
