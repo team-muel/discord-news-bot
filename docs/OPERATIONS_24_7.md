@@ -178,8 +178,15 @@ When deploying as a Render `Web Service`, set commands exactly as below:
 
 - Build Command: `npm ci; npm run build`
 - Start Command: `npm run start`
+- Health Check Path: `/ready`
 
 Why: Node-only runtime no longer installs Python dependencies in the build step.
+
+Bot availability rule for 24/7 operation:
+
+- when `START_BOT=true`, boot must fail closed if Discord token is missing or Discord login never becomes ready
+- `/ready` must be treated as the restart signal, because `/health` stays informative even during degraded runtime
+- this ensures Render/PM2 restarts the process instead of leaving the API alive while the Discord bot is offline
 
 Also verify Runtime Environment Variables in Render:
 

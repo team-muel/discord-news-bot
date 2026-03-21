@@ -15,6 +15,18 @@ const HTTP_HEADERS_TIMEOUT_MS = Math.max(10_000, Number(process.env.HTTP_HEADERS
 const HTTP_REQUEST_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 120_000));
 const HTTP_SHUTDOWN_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_SHUTDOWN_TIMEOUT_MS || 15_000));
 
+const exitForRequiredBotFailure = (message: string, error?: unknown) => {
+  if (error) {
+    logger.error('[BOT] %s: %o', message, error);
+  } else {
+    logger.error('[BOT] %s', message);
+  }
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 25).unref();
+};
+
 startServerProcessRuntime();
 
 logger.info('[BOOT] START_BOT=%s START_AUTOMATION_JOBS=%s DISCORD_TOKEN_PRESENT=%s',
@@ -26,7 +38,7 @@ logger.info('[BOOT] START_BOT=%s START_AUTOMATION_JOBS=%s DISCORD_TOKEN_PRESENT=
 if (START_BOT) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
   if (!token) {
-    logger.error('START_BOT=true but DISCORD token not provided. Bot and automation jobs cannot start without a token.');
+    exitForRequiredBotFailure('START_BOT=true but DISCORD token not provided. Bot and automation jobs cannot start without a token.');
   }
 
   if (token) {
@@ -36,7 +48,7 @@ if (START_BOT) {
         logger.info('[BOT] START_BOT enabled and bot started');
       })
       .catch((err) => {
-        logger.error('[BOT] Failed to start while START_BOT=true: %o', err);
+        exitForRequiredBotFailure('Failed to start while START_BOT=true', err);
       });
   }
 } else {

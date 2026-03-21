@@ -6,7 +6,7 @@ services:
     autoDeploy: true
     buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build
     startCommand: npm run start
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: NODE_VERSION
         value: 22

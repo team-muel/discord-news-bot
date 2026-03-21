@@ -5,6 +5,69 @@ import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { resolveLlmProvider } from '../services/llmClient';
 
+export type RuntimeReadinessState = {
+  botEnabled: boolean;
+  botReady: boolean;
+  automationEnabled: boolean;
+  automationReady: boolean;
+};
+
+export const evaluateRuntimeReadiness = (state: RuntimeReadinessState) => {
+  if (!state.botEnabled && !state.automationEnabled) {
+    return {
+      ok: false,
+      statusCode: 503,
+      detail: 'all_disabled',
+    } as const;
+  }
+
+  if (state.botEnabled && !state.botReady) {
+    return {
+      ok: false,
+      statusCode: 503,
+      detail: 'bot_not_ready',
+    } as const;
+  }
+
+  if (!state.botEnabled && state.automationEnabled && !state.automationReady) {
+    return {
+      ok: false,
+      statusCode: 503,
+      detail: 'automation_not_ready',
+    } as const;
+  }
+
+  if (state.botEnabled && state.botReady && state.automationEnabled && state.automationReady) {
+    return {
+      ok: true,
+      statusCode: 200,
+      detail: 'all_ready',
+    } as const;
+  }
+
+  if (state.botEnabled && state.botReady && state.automationEnabled && !state.automationReady) {
+    return {
+      ok: true,
+      statusCode: 200,
+      detail: 'bot_ready_automation_degraded',
+    } as const;
+  }
+
+  if (state.botEnabled && state.botReady) {
+    return {
+      ok: true,
+      statusCode: 200,
+      detail: 'bot_ready',
+    } as const;
+  }
+
+  return {
+    ok: Boolean(state.automationEnabled && state.automationReady),
+    statusCode: state.automationEnabled && state.automationReady ? 200 : 503,
+    detail: state.automationEnabled && state.automationReady ? 'automation_ready' : 'automation_not_ready',
+  } as const;
+};
+
 export function createHealthRouter(): Router {
   const router = Router();
 
@@ -53,21 +116,18 @@ export function createHealthRouter(): Router {
   });
 
   router.get('/ready', (_req, res) => {
-    const botEnabled = START_BOT;
-    const automationEnabled = isAutomationEnabled();
-    const botReady = botEnabled && getBotRuntimeSnapshot().ready;
-    const automationReady = automationEnabled && getAutomationRuntimeSnapshot().healthy;
+    const readiness = evaluateRuntimeReadiness({
+      botEnabled: START_BOT,
+      botReady: START_BOT && getBotRuntimeSnapshot().ready,
+      automationEnabled: isAutomationEnabled(),
+      automationReady: isAutomationEnabled() && getAutomationRuntimeSnapshot().healthy,
+    });
 
-    if (!botEnabled && !automationEnabled) {
-      return res.status(503).json({ status: 'starting', bot: 'all_disabled' });
+    if (readiness.ok) {
+      return res.status(readiness.statusCode).json({ status: 'ok', bot: readiness.detail });
     }
 
-    if (botReady || automationReady) {
-      const mode = botReady && automationReady ? 'all_ready' : 'partial_ready';
-      return res.json({ status: 'ok', bot: mode });
-    }
-
-    return res.status(503).json({ status: 'starting', bot: 'not_ready' });
+    return res.status(readiness.statusCode).json({ status: 'starting', bot: readiness.detail });
   });
 
   router.get('/api/status', (_req, res) => {
