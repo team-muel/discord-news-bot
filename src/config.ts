@@ -18,6 +18,10 @@ export const DISCORD_READY_TIMEOUT_MS = parseIntegerEnv(
 );
 export const DISCORD_START_RETRIES = parseIntegerEnv(process.env.DISCORD_START_RETRIES, 3);
 export const DISCORD_COMMAND_GUILD_ID = process.env.DISCORD_COMMAND_GUILD_ID || '';
+export const DISCORD_MESSAGE_CONTENT_INTENT_ENABLED = parseBooleanEnv(
+  process.env.DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
+  true,
+);
 
 export const START_BOT = parseBooleanEnv(process.env.START_BOT, false);
 export const BOT_START_FAILURE_EXIT_ENABLED = parseBooleanEnv(
@@ -109,6 +113,7 @@ export default {
   DISCORD_READY_TIMEOUT_MS,
   DISCORD_START_RETRIES,
   DISCORD_COMMAND_GUILD_ID,
+  DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
   START_BOT,
   BOT_START_FAILURE_EXIT_ENABLED,
   JWT_SECRET,

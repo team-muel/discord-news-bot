@@ -18,6 +18,8 @@ services:
         value: "120000"
       - key: DISCORD_START_RETRIES
         value: "5"
+      - key: DISCORD_MESSAGE_CONTENT_INTENT_ENABLED
+        value: "false"
       - key: BOT_START_FAILURE_EXIT_ENABLED
         value: "false"
       - key: START_AUTOMATION_JOBS

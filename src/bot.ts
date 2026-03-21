@@ -15,6 +15,7 @@ import {
 import logger from './logger';
 import {
   DISCORD_COMMAND_GUILD_ID,
+  DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
   DISCORD_READY_TIMEOUT_MS,
   DISCORD_START_RETRIES,
 } from './config';
@@ -134,12 +135,17 @@ import { DISCORD_MESSAGES } from './discord/messages';
 import { isStockFeatureEnabled } from './services/stockService';
 
 
-export const client = new Client({ intents: [
+const discordIntents = [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildMessages,
   GatewayIntentBits.GuildMessageReactions,
-  GatewayIntentBits.MessageContent,
-], partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
+  ...(DISCORD_MESSAGE_CONTENT_INTENT_ENABLED ? [GatewayIntentBits.MessageContent] : []),
+];
+
+export const client = new Client({
+  intents: discordIntents,
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+});
 
 const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(
   process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS
@@ -1425,6 +1431,7 @@ client.on('messageReactionRemove', async (reaction, user) => {
 });
 
 client.on('shardDisconnect', (event) => {
+  logger.warn('[BOT] shardDisconnect code=%d reason=%s', Number(event.code), event.reason || 'unknown');
   botRuntimeState.ready = false;
   botRuntimeState.lastDisconnectAt = new Date().toISOString();
   botRuntimeState.lastDisconnectCode = Number(event.code);
@@ -1435,10 +1442,23 @@ client.on('shardDisconnect', (event) => {
 });
 
 client.on('invalidated', () => {
+  logger.error('[BOT] Gateway session invalidated');
   botRuntimeState.ready = false;
   botRuntimeState.lastInvalidatedAt = new Date().toISOString();
   botRuntimeState.lastAlertAt = botRuntimeState.lastInvalidatedAt;
   botRuntimeState.lastAlertReason = 'Gateway session invalidated';
+});
+
+client.on('shardError', (error) => {
+  logger.error('[BOT] shardError: %o', error);
+});
+
+client.on('error', (error) => {
+  logger.error('[BOT] client error: %o', error);
+});
+
+client.on('warn', (info) => {
+  logger.warn('[BOT] client warn: %s', info);
 });
 
 export function getBotRuntimeSnapshot(): BotRuntimeSnapshot {
@@ -1477,7 +1497,13 @@ export async function startBot(token: string): Promise<void> {
     botRuntimeState.reconnectAttempts = Math.max(0, attempt - 1);
     botRuntimeState.reconnectQueued = attempt > 1;
     try {
-      logger.info('[BOT] Attempting login (attempt %d/%d)', attempt, maxRetries);
+      logger.info(
+        '[BOT] Attempting login (attempt %d/%d, timeoutMs=%d, messageContentIntent=%s)',
+        attempt,
+        maxRetries,
+        readyTimeout,
+        String(DISCORD_MESSAGE_CONTENT_INTENT_ENABLED),
+      );
       await loginDiscordClientWithTimeout(client, token, readyTimeout);
 
       logger.info('[BOT] Discord client logged in');
