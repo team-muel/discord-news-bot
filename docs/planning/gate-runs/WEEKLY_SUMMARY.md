@@ -1,11 +1,11 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-03-21T08:59:37.465Z
-- total_runs: 36
+- generated_at: 2026-03-21T18:54:20.847Z
+- total_runs: 38
 - go: 11
-- no_go: 14
-- pending: 11
+- no_go: 15
+- pending: 12
 - legacy_pending_no_go_excluded: 0
 - legacy_pending_cutoff: n/a
 
@@ -13,13 +13,13 @@
 
 | Stage | Count |
 | --- | ---: |
-| A | 32 |
+| A | 34 |
 | B | 1 |
 | unknown | 3 |
 
 ## No-Go Root Cause Breakdown
 
-- reliability_quality_dual_fail: 11
+- reliability_quality_dual_fail: 12
 - reliability_only_fail: 1
 - quality_only_fail: 1
 - all_gates_pending: 1
@@ -27,76 +27,76 @@
 
 ## Required Action Completion (Estimated)
 
-- no_go_runs: 14
-- required_actions_total: 49
+- no_go_runs: 15
+- required_actions_total: 53
 - required_actions_estimated_completed: 33
-- required_action_completion_rate: 0.6735
+- required_action_completion_rate: 0.6226
 - checklist_complete_runs: 10
-- checklist_incomplete_runs: 4
+- checklist_incomplete_runs: 5
 
 ## Runtime Loop Evidence Completion
 
-- runs_with_evidence: 7
+- runs_with_evidence: 9
 - complete_runs: 4
-- incomplete_runs: 3
+- incomplete_runs: 5
 - missing_runs: 29
-- known_runs: 7
-- completion_rate: 0.5714
+- known_runs: 9
+- completion_rate: 0.4444
 
 ## A-003 Operator Surface Completion
 
 - canonical_endpoint: /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5
-- runs_with_surface: 13
+- runs_with_surface: 15
 - complete_runs: 4
-- incomplete_runs: 9
+- incomplete_runs: 11
 - missing_runs: 23
-- known_runs: 13
+- known_runs: 15
 - runtime_evidence_backfilled_runs: 6
-- completion_rate: 0.3077
+- completion_rate: 0.2667
 
 ## Sandbox Delegation Completion
 
 - verified_runs: 4
-- incomplete_runs: 3
+- incomplete_runs: 5
 - missing_runs: 29
-- known_runs: 7
-- completion_rate: 0.5714
+- known_runs: 9
+- completion_rate: 0.4444
 
 ## Quality Signal Summary
 
-- citation_rate_avg: 0 (samples=13)
-- retrieval_hit_at_k_avg: 0 (samples=13)
-- hallucination_review_fail_rate_avg: 0 (samples=13)
-- session_success_rate_avg: 0 (samples=13)
+- citation_rate_avg: 0 (samples=15)
+- retrieval_hit_at_k_avg: 0.0068 (samples=15)
+- hallucination_review_fail_rate_avg: 0 (samples=15)
+- session_success_rate_avg: 0 (samples=15)
 
 ## Strategy Quality Normalization (M-07)
 
-- retrieval_eval_runs_availability: ok
-- answer_quality_reviews_availability: ok
-- retrieval_eval_runs_samples: 82
+- retrieval_eval_runs_availability: missing_table
+- answer_quality_reviews_availability: missing_table
+- retrieval_eval_runs_samples: 0
 - answer_quality_review_samples: 0
-- baseline_normalized_quality_score: 0.1026
+- baseline_normalized_quality_score: 0
 - tot_normalized_quality_score: 0
 - got_normalized_quality_score: 0
-- delta_tot_vs_baseline: -0.1026
-- delta_got_vs_baseline: -0.1026
+- delta_tot_vs_baseline: 0
+- delta_got_vs_baseline: 0
 
 ## Recent Runs
 
 | Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | Sandbox Delegation | File |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gate-20260321-085933 | A | weekly:auto | pending | false | none | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-085933.md |
-| gate-20260321-085857 | A | weekly:auto | pending | false | none | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-085857.md |
-| gate-post-fallback-1774082910559 | A | weekly:auto:post-fallback | no-go | true | stage | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-post-fallback-1774082910559.md |
-| gate-20260321-084830 | A | weekly:auto | no-go | true | stage | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-084830.md |
-| gate-post-fallback-1774082881983 | A | weekly:auto:post-fallback | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-post-fallback-1774082881983.md |
-| gate-20260321-084801 | A | weekly:auto | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-084801.md |
-| gate-20260321-083944 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-083944.md |
-| WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
-| MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
+| gate-20260319-173500 | A | trading-isolation:w4-01-w4-03 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-173500.md |
 | gate-post-fallback-1773928500597 | A | weekly:auto:post-fallback | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-post-fallback-1773928500597.md |
-| gate-20260319-135500 | A | weekly:auto | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135500.md |
-| gate-20260319-135437 | A | weekly:auto:post-fallback | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135437.md |
+| gate-20260321-083944 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-083944.md |
+| gate-20260321-084801 | A | weekly:auto | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-084801.md |
+| gate-20260321-084830 | A | weekly:auto | no-go | true | stage | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-084830.md |
+| gate-20260321-085857 | A | weekly:auto | pending | false | none | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-085857.md |
+| gate-20260321-085933 | A | weekly:auto | pending | false | none | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-085933.md |
+| gate-20260321-091717 | A | weekly:auto | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-091717.md |
+| gate-20260321-092102 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-092102.md |
+| gate-post-fallback-1774082881983 | A | weekly:auto:post-fallback | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-post-fallback-1774082881983.md |
+| gate-post-fallback-1774082910559 | A | weekly:auto:post-fallback | no-go | true | stage | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-post-fallback-1774082910559.md |
+| MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
+| WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
-| gate-20260319-135316 | A | weekly:auto | pending | false | none | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135316.md |
-| gate-20260319-134426 | A | weekly:auto | pending | false | none | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-134426.md |
+| gate-20260318-081523 | A | guild:demo | pending | unknown | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081523.md |
