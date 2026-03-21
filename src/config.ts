@@ -14,12 +14,16 @@ export const PUBLIC_BASE_URL =
 
 export const DISCORD_READY_TIMEOUT_MS = parseIntegerEnv(
   process.env.DISCORD_READY_TIMEOUT_MS || process.env.DISCORD_LOGIN_TIMEOUT_MS,
-  15000,
+  45000,
 );
 export const DISCORD_START_RETRIES = parseIntegerEnv(process.env.DISCORD_START_RETRIES, 3);
 export const DISCORD_COMMAND_GUILD_ID = process.env.DISCORD_COMMAND_GUILD_ID || '';
 
 export const START_BOT = parseBooleanEnv(process.env.START_BOT, false);
+export const BOT_START_FAILURE_EXIT_ENABLED = parseBooleanEnv(
+  process.env.BOT_START_FAILURE_EXIT_ENABLED,
+  NODE_ENV === 'production',
+);
 const JWT_SECRET_FALLBACK = 'dev-jwt-secret-change-in-production';
 const JWT_SECRET_FROM_ENV = process.env.JWT_SECRET || process.env.SESSION_SECRET || '';
 if (NODE_ENV === 'production' && (!JWT_SECRET_FROM_ENV || JWT_SECRET_FROM_ENV === JWT_SECRET_FALLBACK)) {
@@ -106,6 +110,7 @@ export default {
   DISCORD_START_RETRIES,
   DISCORD_COMMAND_GUILD_ID,
   START_BOT,
+  BOT_START_FAILURE_EXIT_ENABLED,
   JWT_SECRET,
   AUTH_COOKIE_NAME,
   AUTH_CSRF_COOKIE_NAME,

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import logger from './src/logger';
 import initMonitoring from './src/init';
-import { PORT, START_BOT } from './src/config';
+import { BOT_START_FAILURE_EXIT_ENABLED, PORT, START_BOT } from './src/config';
 import { startServerProcessRuntime } from './src/services/runtimeBootstrap';
 
 // Initialize monitoring (Sentry) if configured
@@ -20,6 +20,11 @@ const exitForRequiredBotFailure = (message: string, error?: unknown) => {
     logger.error('[BOT] %s: %o', message, error);
   } else {
     logger.error('[BOT] %s', message);
+  }
+
+  if (!BOT_START_FAILURE_EXIT_ENABLED) {
+    logger.warn('[BOT] Startup failure exit is disabled; keeping API process alive for manual/auto recovery');
+    return;
   }
 
   setTimeout(() => {
