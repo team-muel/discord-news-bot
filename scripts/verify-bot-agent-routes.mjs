@@ -14,7 +14,7 @@ const EXPECTED_PREFIX_RULES = {
   runtimeRoutes: ['/agent/runtime/', '/agent/finops/', '/agent/llm/'],
   gotRoutes: ['/agent/got/'],
   qualityPrivacyRoutes: ['/agent/quality/', '/agent/privacy/', '/agent/obsidian/'],
-  governanceRoutes: ['/agent/actions/', '/agent/opencode/', '/agent/self-growth/'],
+  governanceRoutes: ['/agent/actions/', '/agent/opencode/', '/agent/self-growth/', '/agent/super/'],
   memoryRoutes: ['/agent/memory/'],
   learningRoutes: ['/agent/task-routing/', '/agent/learning/task-routing/'],
 };

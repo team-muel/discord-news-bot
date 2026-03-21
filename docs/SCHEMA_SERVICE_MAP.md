@@ -4,14 +4,8 @@
 - Source scan: src/services/**/*.ts
 - Notes: static string matching for .from(...) and .rpc(...) usage.
 
-Boundary note:
-
-- 테이블명이나 서비스명에 포함된 `opencode`, `openjarvis`, `opendev`, `nemoclaw` 등의 문자열은 저장소 내부 스키마 및 서비스 식별자다.
-- 이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 판단한다.
-
 ## Tables
 
-<!-- markdownlint-disable MD033 -->
 | Table | Services |
 | --- | --- |
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
@@ -30,6 +24,7 @@ Boundary note:
 | agent_opencode_publish_queue | - |
 | agent_privacy_gate_samples | src/services/agentPrivacyTuningService.ts |
 | agent_privacy_policies | src/services/agentPrivacyPolicyService.ts |
+| agent_retention_policies | - |
 | agent_runtime_policies | src/services/agentPolicyService.ts |
 | agent_semantic_answer_cache | src/services/agentGotAnalyticsService.ts<br/>src/services/semanticAnswerCacheService.ts |
 | agent_sessions | src/services/agentSessionStore.ts<br/>src/services/conversationTurnService.ts<br/>src/services/privacyForgetService.ts |
@@ -43,6 +38,7 @@ Boundary note:
 | agent_tool_learning_rules | src/services/agentSloService.ts<br/>src/services/taskRoutingService.ts<br/>src/services/toolLearningService.ts |
 | agent_tot_candidate_pairs | src/services/agentGotAnalyticsService.ts<br/>src/services/agentTotPolicyService.ts |
 | agent_tot_policies | src/services/agentTotPolicyService.ts |
+| agent_user_privacy_preferences | - |
 | agent_weekly_reports | - |
 | agent_workflow_profiles | src/services/agentWorkflowService.ts |
 | alert_slots | - |
@@ -98,4 +94,4 @@ Boundary note:
 | get_platform_hypopg_candidates | src/services/supabaseExtensionOpsService.ts |
 | get_platform_pg_statements_top | src/services/supabaseExtensionOpsService.ts |
 | search_memory_items_hybrid | src/services/agentMemoryStore.ts |
-<!-- markdownlint-enable MD033 -->
+

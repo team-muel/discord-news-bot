@@ -15,6 +15,7 @@ import {
   summarizeOpencodeQueueReadiness,
   type OpencodeRiskTier,
 } from '../../services/opencodeGitHubQueueService';
+import { getSuperAgentCapabilities, recommendSuperAgent, startSuperAgentSessionFromTask } from '../../services/superAgentService';
 import { isOneOf, toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
@@ -63,6 +64,56 @@ const toCatalogEntry = (action: ReturnType<typeof listActions>[number], policy?:
 
 export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
+
+  router.get('/agent/super/capabilities', requireAdmin, async (_req, res) => {
+    return res.json({ ok: true, capabilities: getSuperAgentCapabilities() });
+  });
+
+  router.post('/agent/super/recommend', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guild_id) || toStringParam(req.body?.guildId);
+    const objective = toStringParam(req.body?.objective);
+    if (!guildId || !objective) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guild_id and objective are required' });
+    }
+
+    try {
+      const recommendation = recommendSuperAgent({
+        ...req.body,
+        guild_id: guildId,
+        objective,
+      });
+      return res.json({ ok: true, recommendation });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(400).json({ ok: false, error: 'SUPER_AGENT_RECOMMEND_FAILED', message });
+    }
+  });
+
+  router.post('/agent/super/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guild_id) || toStringParam(req.body?.guildId);
+    const objective = toStringParam(req.body?.objective);
+    if (!guildId || !objective) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guild_id and objective are required' });
+    }
+
+    const requestedBy = toStringParam(req.user?.id) || 'api';
+    try {
+      const result = await startSuperAgentSessionFromTask({
+        ...req.body,
+        guild_id: guildId,
+        objective,
+        requestedBy,
+        isAdmin: true,
+      });
+      return res.status(202).json({ ok: true, ...result, approvalPending: Boolean(result.pendingApproval) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('PRIVACY_PREFLIGHT_BLOCKED:')) {
+        return res.status(403).json({ ok: false, error: 'PRIVACY_PREFLIGHT_BLOCKED', message: message.slice('PRIVACY_PREFLIGHT_BLOCKED:'.length) || 'privacy policy blocked this request' });
+      }
+      return res.status(409).json({ ok: false, error: 'SUPER_AGENT_SESSION_START_FAILED', message });
+    }
+  });
 
   router.get('/agent/actions/catalog', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId) || null;
