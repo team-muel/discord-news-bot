@@ -76,6 +76,7 @@ const loadTradingEngine = async (params?: {
   const createTrade = vi.fn(async (_payload: Record<string, unknown>) => undefined);
 
   const nowMs = params?.nowMs ?? Date.now();
+  vi.spyOn(Date, 'now').mockReturnValue(nowMs);
   const candles = params?.candles ?? [];
   const stateRows = params?.stateRows ?? [];
   const trades = params?.trades ?? [];
@@ -163,6 +164,7 @@ const loadTradingEngine = async (params?: {
 
 describe('tradingEngine', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
