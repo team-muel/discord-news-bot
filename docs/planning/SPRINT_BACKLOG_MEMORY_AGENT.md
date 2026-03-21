@@ -20,40 +20,10 @@
 
 ## Execution Board Binding
 
-- `EXECUTION_BOARD.md`의 Active Now 1번은 `A-001`만 소유한다.
-- `EXECUTION_BOARD.md`의 Active Now 2번은 `A-002`만 소유한다.
-- `EXECUTION_BOARD.md`의 Active Now 3번은 `A-003`만 소유한다.
+- `EXECUTION_BOARD.md`의 Active Now 1번은 `A-003`만 소유한다.
 - `Queued Now` 항목은 아래 `A-001`~`A-003` owner map에 배정된 경우에만 승격 후보가 된다.
 
 ## Current Active Pack (Aligned to Active Now)
-
-### A-001 [M-01] [M-03] Control Tower + Core Decision Contract Convergence
-
-- 문제: 실행 기준 문서와 이벤트/명령 계약이 여러 문서에 분산되어 컨텍스트 과부하가 발생한다.
-- 작업
-- Control Tower, Execution Board, Backlog 간 용어와 범위 일치화
-- Core Decision Engine 인터페이스와 event/command envelope의 canonical 참조점 고정
-- evidence bundle 표준 필드와 문서 연결 규칙 고정
-- 완료 기준
-- planning 문서에서 현재 실행 기준 문서가 4개 이하로 유지됨
-- 계약 변경 시 갱신 대상 문서가 명시됨
-- 검증 명령
-- `npm run lint`
-
-### A-002 [M-02] [M-07] Social Graph + Quality Telemetry Consolidation
-
-- 문제: social graph 운영 지표와 quality telemetry가 분리되어 운영 판단이 느리다.
-- 작업
-- social ingestion/hint 활용률 지표를 품질 지표와 함께 본다
-- citation/retrieval/hallucination/task success를 단일 판정 입력으로 정리
-- metric source 결측 시 fail-closed 또는 degrade 해석 규칙을 문서화
-- 현재 구현 규칙: admin snapshot에서 citation/retrieval/hallucination/task success 임계치 위반은 blocked, social/retrieval/review/action source 결측은 degraded로 판정
-- 현재 구현 진입점: `/agent/runtime/social-quality-snapshot?guildId=...&days=...`
-- 완료 기준
-- 운영자가 단일 주간 스냅샷으로 M-02/M-07 상태를 판단할 수 있음
-- 결측 데이터 처리 규칙이 문서에 명시됨
-- 검증 명령
-- `npm run lint`
 
 ### A-003 [M-04] [M-05] [M-06] Worker Gate + Approval + Model Binding Hardening
 
@@ -68,20 +38,25 @@
 - 검증 명령
 - `npm run lint`
 
+## Recently Closed
+
+### A-001 [M-01] [M-03] Control Tower + Core Decision Contract Convergence
+
+- 상태: Closed on 2026-03-21
+- 종료 근거
+- canonical 실행 문서 세트가 4개로 고정됨
+- Core Decision Engine, Event/Command envelope, evidence bundle canonical 참조점이 문서군에 고정됨
+- 후속 작업은 active workstream이 아니라 historical/reference 유지로만 관리한다
+
+### A-002 [M-02] [M-07] Social Graph + Quality Telemetry Consolidation
+
+- 상태: Closed on 2026-03-21
+- 종료 근거
+- social + quality 통합 운영 판정 규칙이 문서화됨
+- admin snapshot 진입점 `/agent/runtime/social-quality-snapshot?guildId=...&days=...` 이 canonical entry로 고정됨
+- 후속 개선 항목은 active workstream이 아니라 historical/reference 유지로만 관리한다
+
 ## Active Queue Owner Map
-
-### A-001 queued intake
-
-- [M-01] Runbook/SOP/Control Tower/Execution Board 통합 기준 동기화 완료
-- [M-03] 도구 부재 감지 -> worker proposal 자동 트리거 v1
-- [M-01] [M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
-- [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
-
-### A-002 queued intake
-
-- [M-02] social graph 신호 수집 안정화(reply/mention/co_presence/reaction) 및 누락 복구 지표 고정
-- [M-02] social hint 활용률/영향도 운영 지표 대시보드 반영
-- [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
 
 ### A-003 queued intake
 

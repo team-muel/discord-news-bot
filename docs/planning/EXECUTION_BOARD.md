@@ -24,38 +24,32 @@ Boundary note:
 
 ## Active Now (WIP <= 3)
 
-1. [M-01] [M-03] Control Tower 기준 고정 + Core Decision Engine 인터페이스/이벤트 계약 수렴
-2. [M-02] [M-07] social graph 운영 지표 + quality telemetry 통합 점수화
-3. [M-04] [M-05] [M-06] worker quality gate + Opencode approval 흐름 + model binding/fallback 운영 고정
+1. [M-04] [M-05] [M-06] worker quality gate + Opencode approval 흐름 + model binding/fallback 운영 고정
 
 Backlog binding:
 
-- Active Now 1번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-001`
-- Active Now 2번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-002`
-- Active Now 3번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-003`
+- Active Now 1번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-003`
+
+Recently closed:
+
+- 2026-03-21: [M-01] [M-03] Control Tower 기준 고정 + Core Decision Engine 인터페이스/이벤트 계약 수렴 (`A-001`)
+- 2026-03-21: [M-02] [M-07] social graph 운영 지표 + quality telemetry 통합 점수화 (`A-002`)
 
 운영 규칙:
 
-- 아래 3개만 현재 진행 중으로 취급한다.
+- 아래 Active Now만 현재 진행 중으로 취급한다.
 - 추가 항목은 `Queued Now`에서만 대기한다.
 - 새 요청이 들어와도 기존 Active Now를 닫기 전에는 WIP를 늘리지 않는다.
 - Queued 항목은 `A-001`~`A-003` backlog owner가 붙어 있지 않으면 Active Now로 승격하지 않는다.
 
 ## Queued Now (Approved, Not In Active WIP, Owner-Bound)
 
-1. [A-001] [M-01] Runbook/SOP/Control Tower/Execution Board 통합 기준 동기화 완료
-2. [A-002] [M-02] social graph 신호 수집 안정화(reply/mention/co_presence/reaction) 및 누락 복구 지표 고정
-3. [A-002] [M-02] social hint 활용률/영향도 운영 지표 대시보드 반영
-4. [A-001] [M-03] 도구 부재 감지 -> worker proposal 자동 트리거 v1
-5. [A-003] [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
-6. [A-003] [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
-7. [A-002] [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
-8. [A-001] [M-01] [M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
-9. [A-001] [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
-10. [A-003] [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
-11. [A-003] [M-05] [M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
-12. [A-003] [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
-13. [A-003] [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
+1. [A-003] [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
+2. [A-003] [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
+3. [A-003] [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
+4. [A-003] [M-05] [M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
+5. [A-003] [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
+6. [A-003] [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
 
 ## Next (D31-D60: Autonomous Loops)
 
