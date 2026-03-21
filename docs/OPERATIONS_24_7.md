@@ -134,7 +134,7 @@ Automation token behavior:
 
 Optional but recommended:
 
-- `DISCORD_READY_TIMEOUT_MS=15000`
+- `DISCORD_READY_TIMEOUT_MS=45000` (`120000` recommended on Render or other cold-start-prone hosts)
 - `DISCORD_START_RETRIES=3`
 - `LOG_LEVEL=info`
 - `ADMIN_ALLOWLIST_TABLE=user_roles` (if using DB-managed admin roles)

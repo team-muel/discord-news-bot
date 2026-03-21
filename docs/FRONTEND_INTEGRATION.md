@@ -42,7 +42,7 @@
 - `BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS` (optional): `/api/bot/status` benchmark write interval (default: `60000`)
 - `BOT_MANUAL_RECONNECT_COOLDOWN_MS` (optional): manual reconnect cooldown for bot runtime (default: `30000`)
   - compatibility alias: `DISCORD_MANUAL_RECONNECT_COOLDOWN_MS`
-- `DISCORD_READY_TIMEOUT_MS` (optional): Discord login ready timeout (default: `15000`)
+- `DISCORD_READY_TIMEOUT_MS` (optional): Discord login ready timeout (default: `45000`)
   - compatibility alias: `DISCORD_LOGIN_TIMEOUT_MS`
 
 ## Contract Endpoints

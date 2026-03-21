@@ -6,7 +6,7 @@ services:
     autoDeploy: true
     buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build
     startCommand: npm run start
-    healthCheckPath: /ready
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 22
@@ -14,6 +14,12 @@ services:
         value: production
       - key: START_BOT
         value: "true"
+      - key: DISCORD_READY_TIMEOUT_MS
+        value: "120000"
+      - key: DISCORD_START_RETRIES
+        value: "5"
+      - key: BOT_START_FAILURE_EXIT_ENABLED
+        value: "false"
       - key: START_AUTOMATION_JOBS
         value: "false"
       - key: AUTOMATION_YOUTUBE_ENABLED
