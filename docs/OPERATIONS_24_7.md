@@ -35,6 +35,21 @@ Current app-owned `service-init` loops:
 - trading engine
 - runtime alert scanner
 
+Current external advisory workers:
+
+- local-orchestrator worker
+- OpenDev worker
+- NemoClaw worker
+- OpenJarvis worker
+
+Boundary note for operators:
+
+- these advisory workers currently expose repository-local registered actions over HTTP/MCP-style transport
+- they are health-checkable execution surfaces for this repository's runtime actions, not proof that arbitrary upstream OSS CLIs or servers are auto-discovered and wrapped
+- use the action catalog and role-worker health endpoints as the source of truth for what is actually callable on a given deployment
+- use `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` plus the operator verification order there when a role name or worker label could be mistaken for external runtime evidence
+- when a role name overlaps with an external OSS or model name, confirm interpretation in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before treating it as runtime evidence
+
 Current app-owned `discord-ready` workloads:
 
 - automation monitors (news/youtube)
@@ -59,12 +74,24 @@ Scheduler-policy canonical IDs (operator should compare by ID):
 Operator control-plane endpoints:
 
 - `GET /api/bot/status`: top-level bot, automation, agent runtime summary
+- `GET /api/bot/agent/actions/catalog`: registered action catalog with advisory-worker mapping and optional guild policy overlay
+- `POST /api/bot/agent/actions/execute`: admin-only direct execution path for registered actions, including local-orchestrator/OpenDev/NemoClaw/OpenJarvis runtime actions
+  - `actionName=local.orchestrator.all` triggers lead + consult + synthesis in one pass
 - `GET /api/bot/agent/runtime/scheduler-policy`: canonical runtime ownership/startup snapshot
+- `GET /api/bot/agent/runtime/role-workers`: advisory worker specs plus current reachability/health snapshot
 - `GET /api/bot/agent/runtime/loops`: loop health for memory, Obsidian sync, retrieval eval
 - `GET /api/bot/agent/runtime/unattended-health`: unattended execution telemetry and opencode readiness
+- `GET /api/bot/agent/runtime/unattended-health`: also includes `advisoryWorkersHealth` for local-orchestrator/OpenDev/NemoClaw/OpenJarvis workers
 - `GET /api/bot/agent/runtime/readiness?guildId=...`: guild-scoped runtime readiness report
 - `GET /api/bot/agent/runtime/slo/report?guildId=...`: guild SLO status
 - `GET /api/bot/agent/runtime/slo/alerts?guildId=...`: recent SLO alert events
+
+Operator interpretation rule:
+
+- `GET /api/bot/agent/actions/catalog` answers which runtime actions are registered
+- `GET /api/bot/agent/runtime/role-workers` answers which advisory worker endpoints are configured and reachable
+- `GET /api/bot/agent/runtime/scheduler-policy` answers which unattended workloads are expected to run and who owns them
+- if a capability is not visible through one of these runtime surfaces, do not assume that a matching `.github` role or prompt file makes it operationally available
 
 Operational rule:
 
@@ -130,6 +157,20 @@ Check status:
 npm run pm2:status
 npm run pm2:logs
 ```
+
+Role worker PM2 profile:
+
+```bash
+npx pm2 start ecosystem.role-workers.config.cjs --update-env
+npm run worker:roles:check
+```
+
+Role worker systemd examples:
+
+- [config/systemd/local-orchestrator-worker.service.example](config/systemd/local-orchestrator-worker.service.example)
+- [config/systemd/opendev-worker.service.example](config/systemd/opendev-worker.service.example)
+- [config/systemd/nemoclaw-worker.service.example](config/systemd/nemoclaw-worker.service.example)
+- [config/systemd/openjarvis-worker.service.example](config/systemd/openjarvis-worker.service.example)
 
 ## 2.1) Render Settings (Important)
 

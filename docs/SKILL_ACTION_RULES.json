@@ -2,6 +2,61 @@
   "ragIntentPattern": "rag|근거|출처|기억|메모리|memory|회상|리콜|retrieve|retrieval|요약근거",
   "rules": [
     {
+      "id": "local-orchestrator-all-intent",
+      "pattern": "ALL\\.|all agents|full.?orchestrat|전체.?에이전트|전체.?오케스트레이션|풀.?오케스트레이션",
+      "plans": [
+        {
+          "actionName": "local.orchestrator.all",
+          "reason": "local-orchestrator-all-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "local-orchestrator-intent",
+      "pattern": "orchestrator|local.?collab|lead.?agent|consult.?agent|multi.?agent|라우팅|오케스트레이터|리드.?에이전트|협업.?에이전트",
+      "plans": [
+        {
+          "actionName": "local.orchestrator.route",
+          "reason": "local-orchestrator-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "architecture-intent",
+      "pattern": "architecture|adr|boundary|contract|milestone|roadmap|plan|설계|아키텍처|경계|계약|마일스톤|로드맵|실행 계획",
+      "plans": [
+        {
+          "actionName": "opendev.plan",
+          "reason": "architecture-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "review-risk-intent",
+      "pattern": "review|regression|risk|security|test gap|release gate|리뷰|회귀|리스크|보안|테스트 누락|릴리스 게이트",
+      "plans": [
+        {
+          "actionName": "nemoclaw.review",
+          "reason": "review-risk-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "ops-intent",
+      "pattern": "ops|operations|deploy|release|rollback|runbook|workflow|automation|운영|배포|릴리스|롤백|런북|워크플로|자동화",
+      "plans": [
+        {
+          "actionName": "openjarvis.ops",
+          "reason": "ops-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
       "id": "privacy-forget-user-intent",
       "pattern": "잊어|잊혀|forget|erase|삭제|지워|파기|개인정보|프라이버시|gdpr|탈퇴",
       "plans": [

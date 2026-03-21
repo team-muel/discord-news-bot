@@ -1,4 +1,5 @@
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from './automationBot';
+import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs } from './agentRoleWorkerService';
 import { getLoginSessionCleanupLoopStats } from '../discord/auth';
 import { getAgentOpsSnapshot } from './agentOpsService';
 import { getMemoryJobRunnerStats } from './memoryJobRunner';
@@ -50,6 +51,8 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
   const trading = getTradingEngineRuntimeSnapshot();
   const opencodePublish = getOpencodePublishWorkerStats();
   const runtimeBootstrap = getRuntimeBootstrapState();
+  const advisoryWorkerHealth = await getAgentRoleWorkersHealthSnapshot();
+  const advisoryWorkerSpecs = listAgentRoleWorkerSpecs();
 
   const sharedLoopStartup: RuntimeSchedulerPolicyItem['startup'] =
     runtimeBootstrap.sharedLoopsSource === 'discord-ready' ? 'discord-ready' : 'service-init';
@@ -186,6 +189,16 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
       schedule: cronJobCount > 0 ? `jobs=${cronJobCount}` : 'not installed',
       source: ['docs/SUPABASE_SCHEMA.sql', 'src/services/supabaseExtensionOpsService.ts'],
     },
+    ...advisoryWorkerSpecs.map((spec) => ({
+      id: `${spec.id}-worker`,
+      title: spec.title,
+      owner: 'app' as const,
+      startup: 'service-init' as const,
+      enabled: Boolean(spec.url),
+      running: Boolean(advisoryWorkerHealth[spec.id]?.reachable),
+      schedule: spec.url ? 'external on-demand worker health-checked via HTTP' : 'not configured',
+      source: ['scripts/agent-role-worker.ts', 'ecosystem.role-workers.config.cjs', 'config/systemd'],
+    })),
   ];
 
   return {

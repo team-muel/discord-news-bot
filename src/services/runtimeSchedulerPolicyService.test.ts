@@ -2,6 +2,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listSupabaseCronJobs = vi.fn(async () => []);
 
+vi.mock('./agentRoleWorkerService', () => ({
+  listAgentRoleWorkerSpecs: vi.fn(() => ([
+    { id: 'local-orchestrator', title: 'Local Orchestrator worker', envKey: 'MCP_LOCAL_ORCHESTRATOR_WORKER_URL', url: 'http://127.0.0.1:8790' },
+    { id: 'opendev', title: 'OpenDev worker', envKey: 'MCP_OPENDEV_WORKER_URL', url: 'http://127.0.0.1:8791' },
+    { id: 'nemoclaw', title: 'NemoClaw worker', envKey: 'MCP_NEMOCLAW_WORKER_URL', url: '' },
+    { id: 'openjarvis', title: 'OpenJarvis worker', envKey: 'MCP_OPENJARVIS_WORKER_URL', url: '' },
+  ])),
+  getAgentRoleWorkersHealthSnapshot: vi.fn(async () => ({
+    'local-orchestrator': { reachable: true },
+    opendev: { reachable: true },
+    nemoclaw: { reachable: false },
+    openjarvis: { reachable: false },
+  })),
+}));
+
 vi.mock('./automationBot', () => ({
   isAutomationEnabled: vi.fn(() => true),
   getAutomationRuntimeSnapshot: vi.fn(() => ({
@@ -140,5 +155,17 @@ describe('getRuntimeSchedulerPolicySnapshot', () => {
 
     expect(snapshot.supabase).toMatchObject({ configured: false, cronJobCount: 0 });
     expect(snapshot.items.length).toBeGreaterThan(0);
+  });
+
+  it('configured advisory workers are included in scheduler snapshot', async () => {
+    const { getRuntimeSchedulerPolicySnapshot } = await import('./runtimeSchedulerPolicyService');
+    const snapshot = await getRuntimeSchedulerPolicySnapshot();
+
+    const opendevWorker = snapshot.items.find((item) => item.id === 'opendev-worker');
+    const localOrchestratorWorker = snapshot.items.find((item) => item.id === 'local-orchestrator-worker');
+    expect(opendevWorker).toBeDefined();
+    expect(opendevWorker?.enabled).toBe(true);
+    expect(opendevWorker?.running).toBe(true);
+    expect(localOrchestratorWorker?.running).toBe(true);
   });
 });

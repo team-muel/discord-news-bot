@@ -1,5 +1,11 @@
 # Agent Architecture and Evaluation Framework
 
+문서 상태:
+
+- Reference framework for evaluation design and interpretation.
+- Use this to define how to evaluate, not to decide current execution priority.
+- Live priority remains in `EXECUTION_BOARD.md`.
+
 ## 1) Target Architecture (Recommended)
 
 현재 서비스 맥락에서 목표 아키텍처는 다음 하이브리드다.

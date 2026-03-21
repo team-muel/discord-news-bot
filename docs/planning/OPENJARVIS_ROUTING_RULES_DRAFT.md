@@ -1,5 +1,11 @@
 # OpenJarvis Routing Rules (Draft)
 
+Status note:
+
+- Draft reference only for routing and recovery heuristics.
+- Current local IDE collaboration flow is governed by `LOCAL_COLLAB_AGENT_WORKFLOW.md` and `.github/instructions/multi-agent-routing.instructions.md`.
+- This draft must not be used as a current execution board or active backlog.
+
 목적:
 
 - OpenJarvis가 작업을 OpenCode/NemoClaw/OpenDev로 일관되게 라우팅한다.

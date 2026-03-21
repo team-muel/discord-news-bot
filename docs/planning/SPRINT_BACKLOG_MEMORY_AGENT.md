@@ -6,13 +6,95 @@
 - Derive priorities from [docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md](docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md) and active focus from [docs/planning/EXECUTION_BOARD.md](docs/planning/EXECUTION_BOARD.md).
 - Do not redefine roadmap direction or operator procedure here.
 
+현재 활성 기준:
+
+- 이 문서의 최상단 `Current Active Pack`만 현재 착수 대상으로 본다.
+- 아래의 `Sprint 1~3` 섹션은 레거시 백로그로 유지하되 active priority로 취급하지 않는다.
+
 ## 운영 규칙
 
 - 우선순위: P0 > P1 > P2
 - 티켓 형식: 문제, 작업, 완료 기준, 리스크
 - 기간: 2주 스프린트 기준
+- Active WIP는 `EXECUTION_BOARD.md`의 `Active Now` 3개 축에 종속된다.
+
+## Execution Board Binding
+
+- `EXECUTION_BOARD.md`의 Active Now 1번은 `A-001`만 소유한다.
+- `EXECUTION_BOARD.md`의 Active Now 2번은 `A-002`만 소유한다.
+- `EXECUTION_BOARD.md`의 Active Now 3번은 `A-003`만 소유한다.
+- `Queued Now` 항목은 아래 `A-001`~`A-003` owner map에 배정된 경우에만 승격 후보가 된다.
+
+## Current Active Pack (Aligned to Active Now)
+
+### A-001 [M-01] [M-03] Control Tower + Core Decision Contract Convergence
+
+- 문제: 실행 기준 문서와 이벤트/명령 계약이 여러 문서에 분산되어 컨텍스트 과부하가 발생한다.
+- 작업
+- Control Tower, Execution Board, Backlog 간 용어와 범위 일치화
+- Core Decision Engine 인터페이스와 event/command envelope의 canonical 참조점 고정
+- evidence bundle 표준 필드와 문서 연결 규칙 고정
+- 완료 기준
+- planning 문서에서 현재 실행 기준 문서가 4개 이하로 유지됨
+- 계약 변경 시 갱신 대상 문서가 명시됨
+- 검증 명령
+- `npm run lint`
+
+### A-002 [M-02] [M-07] Social Graph + Quality Telemetry Consolidation
+
+- 문제: social graph 운영 지표와 quality telemetry가 분리되어 운영 판단이 느리다.
+- 작업
+- social ingestion/hint 활용률 지표를 품질 지표와 함께 본다
+- citation/retrieval/hallucination/task success를 단일 판정 입력으로 정리
+- metric source 결측 시 fail-closed 또는 degrade 해석 규칙을 문서화
+- 현재 구현 규칙: admin snapshot에서 citation/retrieval/hallucination/task success 임계치 위반은 blocked, social/retrieval/review/action source 결측은 degraded로 판정
+- 현재 구현 진입점: `/agent/runtime/social-quality-snapshot?guildId=...&days=...`
+- 완료 기준
+- 운영자가 단일 주간 스냅샷으로 M-02/M-07 상태를 판단할 수 있음
+- 결측 데이터 처리 규칙이 문서에 명시됨
+- 검증 명령
+- `npm run lint`
+
+### A-003 [M-04] [M-05] [M-06] Worker Gate + Approval + Model Binding Hardening
+
+- 문제: worker 품질 게이트, approval_required, 모델 바인딩/폴백 규칙이 각각 존재해 운영 판정이 분산된다.
+- 작업
+- worker gate, approval path, workflow slot model binding을 단일 운영 묶음으로 정렬
+- 고위험 액션 미경유 실행 0건 기준을 운영 검증 항목으로 고정
+- provider fallback과 quality gate 재판정 관계를 명시
+- 완료 기준
+- 운영자가 하나의 체크 흐름으로 gate -> approval -> model fallback 상태를 검증할 수 있음
+- 고위험 경로 예외 처리 규칙이 명시됨
+- 검증 명령
+- `npm run lint`
+
+## Active Queue Owner Map
+
+### A-001 queued intake
+
+- [M-01] Runbook/SOP/Control Tower/Execution Board 통합 기준 동기화 완료
+- [M-03] 도구 부재 감지 -> worker proposal 자동 트리거 v1
+- [M-01] [M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
+- [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
+
+### A-002 queued intake
+
+- [M-02] social graph 신호 수집 안정화(reply/mention/co_presence/reaction) 및 누락 복구 지표 고정
+- [M-02] social hint 활용률/영향도 운영 지표 대시보드 반영
+- [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
+
+### A-003 queued intake
+
+- [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
+- [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
+- [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
+- [M-05] [M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
+- [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
+- [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
 
 ## Sprint 1 (P0): 기반 고정
+
+상태: Legacy backlog reference. 현재 활성 우선순위는 `Current Active Pack`을 따른다.
 
 ### T-001 메모리 스키마 확장안 작성
 
@@ -63,6 +145,8 @@
 
 ## Sprint 2 (P1): 품질/안정화
 
+상태: Legacy backlog reference. 현재 활성 우선순위는 `Current Active Pack`을 따른다.
+
 ### T-006 회수 품질 측정 지표 도입
 
 - 작업
@@ -102,6 +186,8 @@
 
 ## Sprint 3 (P1/P2): 파일럿 베타
 
+상태: Legacy backlog reference. 현재 활성 우선순위는 `Current Active Pack`을 따른다.
+
 ### T-011 파일럿 길드 3곳 운영
 
 - 완료 기준
@@ -123,6 +209,8 @@
 - 새 기능 추가 전, citation_rate와 correction SLA를 먼저 안정화
 
 ## Current Cycle (P0): Roadmap Execution Pack
+
+상태: 상세 후보 목록. 이 섹션의 항목은 `Current Active Pack` 3개 workstream 아래에서만 착수한다.
 
 ### R-001 Discord UX 이벤트 계측 고정
 

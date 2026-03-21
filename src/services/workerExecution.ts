@@ -1,4 +1,9 @@
-import type { ActionExecutionInput, ActionExecutionResult } from './skills/actions/types';
+import {
+  inferLegacyAgentRoleByActionName,
+  normalizeAgentRole,
+  type ActionExecutionInput,
+  type ActionExecutionResult,
+} from './skills/actions/types';
 
 export type WorkerErrorCode =
   | 'ACTION_TIMEOUT'
@@ -26,26 +31,7 @@ const normalizeStringList = (value: unknown): string[] => {
 
 const isAgentRole = (value: unknown): value is NonNullable<ActionExecutionResult['agentRole']> => {
   const role = String(value || '').trim().toLowerCase();
-  return role === 'openjarvis' || role === 'opencode' || role === 'nemoclaw' || role === 'opendev';
-};
-
-const inferAgentRoleByActionName = (actionName: string): NonNullable<ActionExecutionResult['agentRole']> => {
-  const normalized = String(actionName || '').trim().toLowerCase();
-  if (normalized.startsWith('opencode.')) {
-    return 'opencode';
-  }
-  if (normalized.startsWith('news.')
-    || normalized.startsWith('web.')
-    || normalized.startsWith('youtube.')
-    || normalized.startsWith('community.')) {
-    return 'nemoclaw';
-  }
-  if (normalized.startsWith('db.')
-    || normalized.startsWith('code.')
-    || normalized.startsWith('rag.')) {
-    return 'opendev';
-  }
-  return 'openjarvis';
+  return normalizeAgentRole(role, '__invalid__' as any) !== ('__invalid__' as any);
 };
 
 const normalizeHandoff = (value: unknown): ActionExecutionResult['handoff'] => {
@@ -53,8 +39,8 @@ const normalizeHandoff = (value: unknown): ActionExecutionResult['handoff'] => {
     return undefined;
   }
 
-  const fromAgent = isAgentRole(value.fromAgent) ? value.fromAgent : null;
-  const toAgent = isAgentRole(value.toAgent) ? value.toAgent : null;
+  const fromAgent = isAgentRole(value.fromAgent) ? normalizeAgentRole(value.fromAgent) : null;
+  const toAgent = isAgentRole(value.toAgent) ? normalizeAgentRole(value.toAgent) : null;
   if (!fromAgent || !toAgent) {
     return undefined;
   }
@@ -176,8 +162,8 @@ export const normalizeActionResult = (params: {
   const verification = normalizeStringList(params.result.verification);
   const error = params.result.error === undefined ? undefined : String(params.result.error || '').trim() || undefined;
   const agentRole = isAgentRole(params.result.agentRole)
-    ? params.result.agentRole
-    : inferAgentRoleByActionName(params.actionName);
+    ? normalizeAgentRole(params.result.agentRole)
+    : inferLegacyAgentRoleByActionName(params.actionName);
   const handoff = normalizeHandoff(params.result.handoff);
 
   return {

@@ -20,6 +20,12 @@ npm run gates:auto-judge -- --stage=A --scope=guild:123 --p95LatencyMs=420 --que
 npm run gates:auto-judge:weekly
 ```
 
+주간 스냅샷 기반 자동 판정 Dry-run(파일 생성 없이 의사결정만 검증):
+
+```bash
+npm run gates:auto-judge:weekly:pending:dry
+```
+
 - weekly auto-judge는 기본값으로 `--minQualitySamples=3`을 적용한다.
 - quality sample이 최소치보다 적으면 quality gate를 `pending`으로 보정해 sparse/0값 기반 오판정을 줄인다.
 - weekly auto-judge는 기본값으로 `--runAfterFallback=true`를 적용하며, quality fail일 때 `:post-fallback` scope 재판정을 1회 추가 실행한다.
@@ -101,6 +107,8 @@ npm run gates:weekly-report:self-improvement
 ```bash
 npm run gates:weekly-report:all:dry
 ```
+
+- `gates:weekly-report:all:dry`는 마지막 단계에서 `gates:auto-judge:weekly:pending:dry`를 자동 실행해 전체 주간 체인의 의사결정 경로까지 함께 검증한다.
 
 Stage rollback 리허설 증거 생성(R-017):
 

@@ -2,6 +2,11 @@
 
 목표: Week 3 안정화 항목(W3-01~03)의 운영 기준을 코드/환경변수와 1:1로 고정한다.
 
+Boundary note:
+
+- 이 문서의 `bot-opencode` 같은 scope 이름은 저장소 내부 정책 식별자다.
+- 이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 판단한다.
+
 ## W3-01 Read-heavy API Cache TTL
 
 | 정책 항목            | 기준값              | 환경변수                | 적용 경로           |

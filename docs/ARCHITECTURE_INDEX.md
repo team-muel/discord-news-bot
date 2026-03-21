@@ -1,5 +1,17 @@
 # Architecture Index
 
+## Boundary Note
+
+This repository uses internal collaboration and runtime labels for planning, routing, and worker execution.
+Legacy labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local names only.
+They are not proof that external frameworks with similar names are installed or automatically integrated in this repository runtime.
+Actual runtime integration must be confirmed through configured providers, registered actions, worker endpoints, and runtime status endpoints.
+
+Canonical naming and runtime surface source of truth:
+
+- `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- `docs/ROLE_RENAME_MAP.md`
+
 ## Purpose
 
 This document is the external analysis entrypoint for the backend repository.
@@ -28,6 +40,7 @@ Primary operations entrypoint:
 - `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md` (core-worker split)
 - `docs/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (LangGraph migration-ready state graph blueprint)
 - `docs/GOT_LANGGRAPH_EXECUTION_PLAN.md` (GoT reasoning + LangGraph execution rollout plan)
+- `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` (local IDE lead+consult agent workflow)
 
 ## Runtime Entrypoints
 
@@ -36,8 +49,67 @@ Primary operations entrypoint:
 - `src/app.ts`: Express middleware and route composition.
 - `src/bot.ts`: Discord command/event runtime and bot orchestration.
 - `src/routes/bot.ts` + `src/routes/botAgentRoutes.ts`: bot control-plane routes split into core and agent composition boundary.
-- `src/routes/bot-agent/*.ts`: agent domain routes (`core`, `runtime`, `got`, `qualityPrivacy`, `governance`, `memory`, `learning`) registered by composer.
+- `src/routes/bot-agent/*.ts`: agent domain routes (`core`, `runtime`, `got`, `qualityPrivacy`, `governance`, `tools`, `memory`, `learning`) registered by composer.
 - `src/services/runtimeBootstrap.ts`: centralized startup boundaries for server process runtime and Discord-ready runtime.
+- `src/services/superAgentService.ts`: structured super-agent facade that normalizes a supervisor task envelope, emits schema-aligned route output, and delegates execution to the existing session runtime.
+
+## Local IDE Collaboration Surface
+
+This repository now defines a customization-level local collaboration surface for IDE work:
+
+- `.github/agents/local-orchestrator.agent.md`
+- `.github/prompts/local-collab-route.prompt.md`
+- `.github/prompts/local-collab-consult.prompt.md`
+- `.github/prompts/local-collab-synthesize.prompt.md`
+- `.github/instructions/multi-agent-routing.instructions.md`
+
+Role of this surface:
+
+- choose a lead agent for local IDE work
+- attach targeted consult agents without forcing a full delivery pipeline
+- standardize `lead_agent`, `consult_agents`, `required_gates`, `handoff`, `escalation`, `next_action`
+
+Boundary note:
+
+- this layer is control-plane guidance for local development, not a replacement for `src/services/multiAgentService.ts`
+- runtime handoff normalization still follows current code contracts such as `ActionHandoff` in `src/services/skills/actions/types.ts`
+
+## Customization vs Runtime Boundary
+
+The repository currently uses the same role names across two different layers:
+
+- customization/control-plane: `.github/agents/*`, `.github/prompts/local-collab-*.prompt.md`, `.github/instructions/multi-agent-routing.instructions.md`
+- runtime execution: `src/services/superAgentService.ts`, `src/services/skills/actions/agentCollab.ts`, `src/services/skills/actions/registry.ts`, `src/services/skills/actionRunner.ts`, advisory role workers
+
+Interpretation rule:
+
+- role names such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local collaboration roles
+- they do not by themselves prove that an upstream open-source system is installed, embedded, or directly executed by this repository
+- runtime-backed behavior exists only where a registered action, worker URL, or HTTP/MCP transport is present in code and environment
+
+Current runtime-backed collaboration surfaces:
+
+- `local.orchestrator.route`
+- `local.orchestrator.all`
+- `opendev.plan`
+- `nemoclaw.review`
+- `openjarvis.ops`
+- `opencode.execute`
+- `tools.run.cli`
+
+Current local tool/runtime facts:
+
+- local Ollama provider usage is supported in `src/services/llmClient.ts`
+- HTTP/MCP-style delegated workers are supported via `src/services/mcpWorkerClient.ts` and `scripts/agent-role-worker.ts`
+- a first narrow local CLI tool slice exists via `src/services/tools/*` and `GET /api/bot/agent/tools/status`
+- general-purpose discovery and wrapping of arbitrary local OSS CLIs/servers is not yet a first-class runtime layer in this repository
+
+Planning note:
+
+- keep collaboration-role documents focused on routing and handoff contracts
+- keep runtime and operator truth in service code plus runtime status endpoints
+- track future local external tool integration separately in `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`
+- use `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` when a role name could be confused with an external OSS/runtime/model name
 
 ## Runtime Loop Inventory (Current Code)
 
@@ -180,6 +252,7 @@ Profile note:
 - `/api/fred`: economic data endpoints.
 - `/api/quant`: quant panel contract endpoint.
 - `/api/bot`: runtime status, automation controls, agent operations.
+- Agent super-facade endpoints under `/api/bot/agent/super/*`: structured recommendation and session start over the existing session runtime.
 - `/api/benchmark`: benchmark event ingest and summary.
 - `/api/trades`: trade query and write APIs.
 - `/api/trading`: strategy/runtime/position control APIs.

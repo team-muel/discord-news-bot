@@ -1,5 +1,16 @@
 # Muel Platform Unified Runbook
 
+## Naming And Runtime Boundary
+
+Operational documents in this repository may reference legacy internal labels that were used for local routing and worker surfaces.
+Those labels do not describe external product installation status.
+When this runbook refers to executable runtime surfaces, it means concrete integrations such as Ollama, local CLI tools, MCP servers, local workers, remote workers, and configured model providers.
+
+Canonical naming and runtime surface source of truth:
+
+- `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- `docs/ROLE_RENAME_MAP.md`
+
 This is the single operational runbook for the Muel platform across Discord, Render, Supabase, Vercel, and Obsidian sync.
 
 Use this document as the first entrypoint for DevOps/SRE operations.
@@ -10,6 +21,13 @@ Document Role:
 - Canonical for platform-wide operational procedure.
 - Read first for incident handling, deployment verification, and operator execution.
 - Companion documents may add detail, but they must not override this runbook's operating procedure.
+
+Boundary note:
+
+- `.github/agents/*`, `.github/prompts/*`, `.github/instructions/*` are IDE collaboration customizations, not operator proof of runtime availability.
+- operator truth for what is actually executable lives in registered runtime actions, configured workers, and runtime status endpoints.
+- local external OSS tool integration beyond the currently registered workers/providers is a planned architecture topic, tracked separately in `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`.
+- name collision interpretation and runtime availability should be checked against `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before using any role name as operational evidence.
 
 ## 0) System Scope
 
@@ -72,6 +90,7 @@ Open these first when verifying behavior:
 - Go/No-Go gate template: `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
 - Autonomy contract schemas: `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
 - Local-first hybrid autonomy: `docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md`
+- Local external tool adapter architecture: `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`
 - GCP opencode worker VM deploy: `docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md`
 - Remote-only autonomy implementation: `docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
 - Generated route map: `docs/ROUTES_INVENTORY.md`
@@ -81,6 +100,7 @@ Runtime/control-plane verification baseline:
 
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
 - Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze.
+- Use `GET /api/bot/agent/actions/catalog` and `GET /api/bot/agent/runtime/role-workers` before assuming that a named role is callable in the current deployment.
 - Distinguish startup phase (`service-init`, `discord-ready`, `database`) from execution ownership (`app`, `db`) during incident triage; not every missing Discord-ready loop is a platform-wide outage.
 
 ## 2.1) Current Progress Snapshot (2026-03-15)
@@ -188,7 +208,7 @@ Sync rule:
 - `OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>`
 - `OPENCLAW_API_KEY=<secret>`
 
-2. Obsidian headless 기반 remote-only 경로 활성화:
+1. Obsidian headless 기반 remote-only 경로 활성화:
 
 - `OBSIDIAN_HEADLESS_ENABLED=true`
 - `OBSIDIAN_HEADLESS_COMMAND=ob`
@@ -201,19 +221,19 @@ Sync rule:
 - `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli`
 - `OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=script-cli`
 
-3. OpenJarvis 원격 실행 강제:
+1. OpenJarvis 원격 실행 강제:
 
 - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
 - `MCP_OPENCODE_WORKER_URL=<remote-worker-url>`
 - `MCP_OPENCODE_TOOL_NAME=opencode.run`
 - `ACTION_MCP_STRICT_ROUTING=true`
 
-4. 쓰기 전략 분리:
+1. 쓰기 전략 분리:
 
 - 문서/지식 업데이트는 `memory_items`, `guild_lore_docs` 등 DB 경로를 주 경로로 사용
 - 파일 직접 쓰기는 `script-cli` 또는 DB 비동기 경로로만 운영 (`local-fs` 미사용)
 
-5. 배포 후 필수 검증:
+1. 배포 후 필수 검증:
 
 - `GET /api/bot/agent/obsidian/runtime` 확인
 - `GET /ready` 확인
@@ -501,15 +521,15 @@ All new automation paths must include these records:
 
 - event_id, event_type, event_version, occurred_at, guild_id, actor_id, payload, trace_id
 
-2. Command envelope:
+1. Command envelope:
 
 - command_id, command_type, requested_by, requested_at, idempotency_key, policy_context, payload
 
-3. Policy decision record:
+1. Policy decision record:
 
 - decision, reasons[], risk_score, budget_state, review_required, approved_by
 
-4. Evidence bundle:
+1. Evidence bundle:
 
 - ok, summary, artifacts[], verification[], error, retry_hint, runtime_cost
 
@@ -527,18 +547,18 @@ Execute in this order:
 - MTTR within threshold
 - queue lag within threshold
 
-2. Quality gate
+1. Quality gate
 
 - citation_rate within threshold
 - retrieval_hit@k within threshold
 - hallucination_review_fail_rate within threshold
 
-3. Safety gate
+1. Safety gate
 
 - approval_required compliance 100%
 - unapproved auto-deploy count 0
 
-4. Governance gate
+1. Governance gate
 
 - roadmap/execution-board/backlog/runbook/changelog sync completed
 
@@ -553,16 +573,16 @@ Decision:
 - Route traffic back to previous stable path
 - freeze new stage writes until incident review closes
 
-2. Queue rollback
+1. Queue rollback
 
 - stop enqueue for impacted task type
 - drain consumers and resume synchronous fallback path
 
-3. Provider rollback
+1. Provider rollback
 
 - force quality-optimized profile when quality gate fails
 
-4. Evidence logging
+1. Evidence logging
 
 - for every rollback: record cause, impact, mitigation, prevention in incident template
 - execute `npm run rehearsal:stage-rollback:record -- --maxRecoveryMinutes=10` and keep the generated md/json artifact pair under `docs/planning/gate-runs/rollback-rehearsals/`
@@ -814,12 +834,12 @@ Result:
 - Keep `opencode.execute` action name and payload contract stable.
 - Keep admin APIs under `/api/bot/agent/opencode/*` for backward-compatible operations.
 
-2. Worker replacement:
+1. Worker replacement:
 
 - Deploy permissive-license executor worker and connect it to `MCP_OPENCODE_WORKER_URL`.
 - Keep `MCP_OPENCODE_TOOL_NAME=opencode.run` unless contract migration is completed.
 
-3. Governance first:
+1. Governance first:
 
 - Start with `runMode=approval_required`.
 - Expand to `auto` only for low-risk guilds/scopes after error-rate review.
@@ -829,11 +849,11 @@ Result:
 Use this bounded loop for "autonomous growth" in production:
 
 1. Detect missing capability from action/runtime failures.
-2. Generate worker proposal with scope and test plan.
-3. Require approval (human or policy gate).
-4. Activate in shadow/canary guild scope.
-5. Promote to wider scope only when SLO and failure thresholds pass.
-6. Auto-disable and rollback on threshold breach.
+1. Generate worker proposal with scope and test plan.
+1. Require approval (human or policy gate).
+1. Activate in shadow/canary guild scope.
+1. Promote to wider scope only when SLO and failure thresholds pass.
+1. Auto-disable and rollback on threshold breach.
 
 Mandatory controls:
 
@@ -880,14 +900,14 @@ Current implementation note:
 Execution sequence (minimum):
 
 1. Apply latest schema and confirm queue tables are healthy.
-2. Configure GitHub credentials and target repo env values.
-3. Enable worker in shadow mode (no real PR creation).
-4. Run canary guild cutover with approval-required policy.
-5. Validate E2E path:
+1. Configure GitHub credentials and target repo env values.
+1. Enable worker in shadow mode (no real PR creation).
+1. Run canary guild cutover with approval-required policy.
+1. Validate E2E path:
 
 - change request create -> approve -> queue publish -> PR created
 
-6. Promote scope only after failure-rate and queue-latency checks pass.
+1. Promote scope only after failure-rate and queue-latency checks pass.
 
 Operational answer:
 
@@ -939,13 +959,13 @@ Env controls:
 Runtime behavior:
 
 1. Loop runs every `AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN` minutes.
-2. For each guild, it evaluates `getAgentGotCutoverDecision(forceRefresh=true)`.
-3. It upserts `agent_got_cutover_profiles`:
+1. For each guild, it evaluates `getAgentGotCutoverDecision(forceRefresh=true)`.
+1. It upserts `agent_got_cutover_profiles`:
 
 - readiness recommended: `rollout_percentage=AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT`
 - readiness not recommended: `rollout_percentage=0`
 
-4. Last run state is visible in `GET /api/bot/agent/policy` under `ops` snapshot.
+1. Last run state is visible in `GET /api/bot/agent/policy` under `ops` snapshot.
 
 Manual trigger:
 
@@ -1050,9 +1070,9 @@ Recommended rollout:
 When pgvector/pg_trgm/pg_cron/pg_net/pg_graphql/hypopg/pg_stat_statements are enabled:
 
 1. `GET /api/bot/agent/runtime/supabase/extensions?includeTopQueries=true&topLimit=10`
-2. Confirm all target extensions show `installed=true` in `snapshot.extensions`.
-3. If `pg_stat_statements` is active, verify `snapshot.topQueries` is populated and review high `totalExecTime` queries.
-4. Use `snapshot.notes` as migration hints for cron/job offloading and index tuning loops.
+1. Confirm all target extensions show `installed=true` in `snapshot.extensions`.
+1. If `pg_stat_statements` is active, verify `snapshot.topQueries` is populated and review high `totalExecTime` queries.
+1. Use `snapshot.notes` as migration hints for cron/job offloading and index tuning loops.
 
 Operational utility endpoints:
 
@@ -1060,16 +1080,16 @@ Operational utility endpoints:
 
 - `GET /api/bot/agent/runtime/supabase/cron-jobs`
 
-2. Ensure maintenance jobs (idempotency key cleanup + llm call log retention):
+1. Ensure maintenance jobs (idempotency key cleanup + llm call log retention):
 
 - `POST /api/bot/agent/runtime/supabase/cron-jobs/ensure-maintenance`
 - body: `{ "llmRetentionDays": 30 }`
 
-3. HypoPG candidate list:
+1. HypoPG candidate list:
 
 - `GET /api/bot/agent/runtime/supabase/hypopg/candidates`
 
-4. HypoPG hypothetical index evaluation:
+1. HypoPG hypothetical index evaluation:
 
 - `POST /api/bot/agent/runtime/supabase/hypopg/evaluate`
 - body: `{ "ddls": ["create index on ...", "create index on ..."] }`

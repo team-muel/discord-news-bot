@@ -1,5 +1,11 @@
 # 고맥락 장기기억 에이전트 로드맵 (6주)
 
+문서 상태:
+
+- Legacy domain roadmap for memory-specific background.
+- Do not use this document as the active roadmap or sprint source.
+- Current priorities are controlled by `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `EXECUTION_BOARD.md`, and `SPRINT_BACKLOG_MEMORY_AGENT.md`.
+
 ## 현재 기준선 (2026-03-15)
 
 아래 항목은 이미 구현/운영 가능한 상태입니다.

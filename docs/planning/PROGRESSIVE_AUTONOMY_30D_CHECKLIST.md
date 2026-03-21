@@ -1,5 +1,11 @@
 # Progressive Autonomy 30-Day Checklist
 
+Status note:
+
+- Historical staged checklist for a prior convergence pass.
+- Active priorities now come from `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `EXECUTION_BOARD.md`, and `SPRINT_BACKLOG_MEMORY_AGENT.md`.
+- Do not treat the numbered 1~24 sequence below as the current active backlog.
+
 기준 문서:
 
 - docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md
@@ -54,12 +60,12 @@
 
 ## Week 1 (D1-D7) - Interface and Contract Freeze
 
-### 목표
+### Week 1 목표
 
 - Core Decision Engine 경계 고정
 - Event/Command/Evidence 계약 버전 고정
 
-### 체크리스트
+### Week 1 체크리스트
 
 - [x] W1-01 Core command 인터페이스 문서 작성
 - [x] W1-02 Discord adapter -> core command 매핑 표 작성
@@ -68,25 +74,25 @@
 - [x] W1-05 Evidence bundle v1 계약 승인
 - [x] W1-06 신규 경로 envelope 준수율 100% 검증
 
-### 산출물
+### Week 1 산출물
 
 - [x] contracts JSON schema 파일
 - [x] mapping 문서
 - [x] 검증 로그
 
-### 완료 기준
+### Week 1 완료 기준
 
 - 신규 기능 100%가 envelope 계약 사용
 - 핵심 경로 1개 이상 adapter/core 분리 경계 적용
 
 ## Week 2 (D8-D14) - Queue-first Worker Split v1
 
-### 목표
+### Week 2 목표
 
 - memory 작업 enqueue/consume 분리
 - retry/backoff/deadletter 정책 고정
 
-### 체크리스트
+### Week 2 체크리스트
 
 - [x] W2-01 memory task type 목록 확정
 - [x] W2-02 enqueue API/producer 경로 확정
@@ -95,25 +101,25 @@
 - [x] W2-05 deadletter 자동 복구 규칙 확정
 - [x] W2-06 queue lag/retry/deadletter 대시보드 노출
 
-### 산출물
+### Week 2 산출물
 
 - [x] 큐 정책 문서 (`docs/planning/MEMORY_QUEUE_POLICY_V1.md`)
 - [x] deadletter 운영 절차 (`docs/planning/MEMORY_DEADLETTER_SOP_V1.md`)
 - [x] 관측 지표 리포트 (`npm run memory:queue:report`)
 
-### 완료 기준
+### Week 2 완료 기준
 
 - memory 장주기 작업의 70% 이상 비동기 큐 경유
 - deadletter 자동/수동 복구 절차 모두 문서화
 
 ## Week 3 (D15-D21) - Control Plane Stabilization
 
-### 목표
+### Week 3 목표
 
 - bot status/control 경로 운영 정책 일원화
 - 운영 명령 idempotency/rate-limit 일관화
 
-### 체크리스트
+### Week 3 체크리스트
 
 - [x] W3-01 read-heavy API 캐시 TTL 표준안 고정
 - [x] W3-02 admin action idempotency 일관성 점검
@@ -121,25 +127,25 @@
 - [x] W3-04 상태 조회 급증 부하 테스트 실행
 - [x] W3-05 장애 시 stage rollback 리허설 수행
 
-### 산출물
+### Week 3 산출물
 
 - [x] control plane 정책표
 - [x] 부하 테스트 결과
 - [x] rollback 리허설 기록
 
-### 완료 기준
+### Week 3 완료 기준
 
 - 상태 API 급증 시 p95 지연 목표 충족
 - 관리자 액션 중복 실행 회귀 0건
 
 ## Week 4 (D22-D30) - Trading Isolation Readiness
 
-### 목표
+### Week 4 목표
 
 - trading read/write 경계 설계 고정
 - canary cutover 준비
 
-### 체크리스트
+### Week 4 체크리스트
 
 - [x] W4-01 trading read model/write model 경계 문서화
 - [x] W4-02 distributed lock, kill switch 운영 절차 확정
@@ -148,13 +154,13 @@
 - [x] W4-05 24h canary 관측 후 go/no-go 판정
 - [x] W4-06 실패 시 10분 내 복귀 리허설 통과
 
-### 산출물
+### Week 4 산출물
 
 - [x] trading isolation readiness 문서
 - [x] canary 운영 기록
 - [x] go/no-go 판정 로그
 
-### 완료 기준
+### Week 4 완료 기준
 
 - trading 독립 전환 계약/절차 용어 일치
 - canary 실패 시 10분 내 복귀 가능

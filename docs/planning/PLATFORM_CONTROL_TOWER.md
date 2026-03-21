@@ -21,8 +21,14 @@
 | 제품/아키텍처 통합 로드맵 | docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md                         | docs/planning/LONG_TERM_MEMORY_AGENT_ROADMAP.md, docs/planning/FRONTIER_2026_PROGRAM.md | 분기 목표/우선순위는 Unified Roadmap 우선               |
 | 스프린트 실행 상태        | docs/planning/EXECUTION_BOARD.md                                           | docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md  | Now/Next/Later 외 상태값 금지, 항목별 milestone ID 필수 |
 | 비용/품질 게이트          | docs/planning/FINOPS_PLAYBOOK.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md | docs/planning/MEMORY_RETRIEVAL_SCORING.md                                               | 배포 전 Go/No-Go 필수                                   |
+| 평가 프레임/SQL 부록      | docs/planning/AGENT_ARCH_EVAL_FRAMEWORK.md                                 | docs/planning/AGENT_EVAL_QUERY_PLAYBOOK.md                                              | 평가는 측정 레시피로만 사용, 우선순위 결정은 보드 우선  |
 | 데이터/스키마             | docs/SUPABASE_SCHEMA.sql                                                   | docs/planning/MEMORY_SCHEMA_MIGRATION_PLAN.md                                           | 스키마 변경 시 SQL + 계획 동시 갱신                     |
 | 아키텍처 변경 근거        | docs/adr/\*.md                                                             | docs/CHANGELOG-ARCH.md                                                                  | 설계 변경은 ADR 선행                                    |
+
+운영 단순화 규칙:
+
+- 일상 운영에서 동시에 여는 planning 문서는 `로드맵 + 실행 보드 + 백로그` 3개를 넘기지 않는다.
+- `Platform Control Tower`는 문서 충돌 조정이 필요할 때만 열고, 실행 상태 추적에는 사용하지 않는다.
 
 ## 2) 역할과 책임 (RACI 요약)
 
@@ -68,6 +74,7 @@
 2. 중복 문서는 5~10줄 요약 + canonical 링크로 축소
 3. 문서 상단에 "Deprecated by PATH" 표기
 4. 2주 후 완전 아카이브
+5. 평가 SQL/벤치 정의는 실행 보드 본문으로 복사하지 않는다.
 
 ## 6) 30일 정렬 계획
 

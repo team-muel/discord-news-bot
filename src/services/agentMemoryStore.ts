@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
+import { hasMemoryConsent } from './agentConsentService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { runWithConcurrency } from '../utils/async';
 
@@ -328,6 +329,17 @@ export async function searchGuildMemory(params: SearchParams) {
 export async function createMemoryItem(params: CreateMemoryParams) {
   const client = ensureSupabase();
   const id = `mem_${crypto.randomUUID()}`;
+  const ownerUserId = toMaybeUserId(params.ownerUserId)
+    || toMaybeUserId(params.source?.sourceAuthorId)
+    || toMaybeUserId(params.actorId);
+
+  if (ownerUserId) {
+    const consentGranted = await hasMemoryConsent({ guildId: params.guildId, userId: ownerUserId });
+    if (!consentGranted) {
+      throw new Error('MEMORY_CONSENT_REQUIRED');
+    }
+  }
+
   const sanitized = sanitizeForObsidianWrite({
     title: params.title,
     summary: null,
@@ -357,9 +369,7 @@ export async function createMemoryItem(params: CreateMemoryParams) {
     id,
     guild_id: params.guildId,
     channel_id: params.channelId || null,
-    owner_user_id: toMaybeUserId(params.ownerUserId)
-      || toMaybeUserId(params.source?.sourceAuthorId)
-      || toMaybeUserId(params.actorId),
+    owner_user_id: ownerUserId,
     type: params.type,
     title: sanitized.cleaned.title || null,
     content: sanitized.cleaned.content,

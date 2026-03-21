@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { hasSocialGraphConsent } from './agentConsentService';
 
 export type CommunityInteractionEventType = 'reply' | 'mention' | 'reaction' | 'co_presence';
 
@@ -36,6 +37,14 @@ const clampWeight = (value: unknown, fallback: number): number => {
 };
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const normalizeSummaryDays = (days: number | undefined): number => {
+  const raw = Number(days);
+  if (!Number.isFinite(raw)) {
+    return 14;
+  }
+  return Math.max(1, Math.min(90, Math.trunc(raw)));
+};
 
 const recencyScoreFromIso = (iso: string): number => {
   const ts = Date.parse(iso);
@@ -157,6 +166,14 @@ export const recordCommunityInteractionEvent = async (params: {
   const actorUserId = toDiscordId(params.actorUserId);
   const targetUserId = toDiscordId(params.targetUserId);
   if (!guildId || !actorUserId || !targetUserId || actorUserId === targetUserId) {
+    return;
+  }
+
+  const [actorConsent, targetConsent] = await Promise.all([
+    hasSocialGraphConsent({ guildId, userId: actorUserId }),
+    hasSocialGraphConsent({ guildId, userId: targetUserId }),
+  ]);
+  if (!actorConsent || !targetConsent) {
     return;
   }
 
@@ -342,4 +359,121 @@ export const buildSocialContextHints = async (params: {
     .filter(Boolean);
 
   return [...outHints, ...inHints].slice(0, maxItems);
+};
+
+export const getCommunityGraphOperationalSummary = async (params: {
+  guildId: string;
+  days?: number;
+  topEdgesLimit?: number;
+}) => {
+  if (!isSupabaseConfigured()) {
+    throw new Error('SUPABASE_NOT_CONFIGURED');
+  }
+
+  const guildId = toDiscordId(params.guildId);
+  if (!guildId) {
+    throw new Error('VALIDATION');
+  }
+
+  const days = normalizeSummaryDays(params.days);
+  const topEdgesLimit = Math.max(1, Math.min(10, Math.trunc(Number(params.topEdgesLimit || 5))));
+  const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const client = getSupabaseClient();
+
+  const [
+    ingestedRes,
+    activeEdgesRes,
+    activeActorsRes,
+    recentEventsRes,
+    topEdgesRes,
+  ] = await Promise.all([
+    client
+      .from('community_interaction_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .gte('event_ts', sinceIso),
+    client
+      .from('community_relationship_edges')
+      .select('src_user_id', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .gte('last_interaction_at', sinceIso),
+    client
+      .from('community_actor_profiles')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .gte('last_seen_at', sinceIso),
+    client
+      .from('community_interaction_events')
+      .select('event_type,event_ts')
+      .eq('guild_id', guildId)
+      .gte('event_ts', sinceIso)
+      .order('event_ts', { ascending: false })
+      .limit(5000),
+    client
+      .from('community_relationship_edges')
+      .select('src_user_id,dst_user_id,interaction_count,affinity_score,trust_score,last_interaction_at')
+      .eq('guild_id', guildId)
+      .gte('last_interaction_at', sinceIso)
+      .order('interaction_count', { ascending: false })
+      .order('affinity_score', { ascending: false })
+      .limit(topEdgesLimit),
+  ]);
+
+  if (ingestedRes.error) {
+    throw new Error(ingestedRes.error.message || 'COMMUNITY_GRAPH_INGESTED_COUNT_FAILED');
+  }
+  if (activeEdgesRes.error) {
+    throw new Error(activeEdgesRes.error.message || 'COMMUNITY_GRAPH_ACTIVE_EDGES_FAILED');
+  }
+  if (activeActorsRes.error) {
+    throw new Error(activeActorsRes.error.message || 'COMMUNITY_GRAPH_ACTIVE_ACTORS_FAILED');
+  }
+  if (recentEventsRes.error) {
+    throw new Error(recentEventsRes.error.message || 'COMMUNITY_GRAPH_RECENT_EVENTS_FAILED');
+  }
+  if (topEdgesRes.error) {
+    throw new Error(topEdgesRes.error.message || 'COMMUNITY_GRAPH_TOP_EDGES_FAILED');
+  }
+
+  const recentEvents = (recentEventsRes.data || []) as Array<Record<string, unknown>>;
+  const eventTypeCounts: Record<CommunityInteractionEventType, number> = {
+    reply: 0,
+    mention: 0,
+    reaction: 0,
+    co_presence: 0,
+  };
+
+  let latestEventAt: string | null = null;
+  for (const row of recentEvents) {
+    const eventType = String(row.event_type || '').trim() as CommunityInteractionEventType;
+    if (eventType in eventTypeCounts) {
+      eventTypeCounts[eventType] += 1;
+    }
+    const eventTs = String(row.event_ts || '').trim();
+    if (!latestEventAt && eventTs) {
+      latestEventAt = eventTs;
+    }
+  }
+
+  const topEdges = ((topEdgesRes.data || []) as Array<Record<string, unknown>>).map((row) => ({
+    srcUserId: String(row.src_user_id || '').trim(),
+    dstUserId: String(row.dst_user_id || '').trim(),
+    interactionCount: Math.max(0, Math.trunc(Number(row.interaction_count || 0))),
+    affinityScore: Number(Number(row.affinity_score || 0).toFixed(4)),
+    trustScore: Number(Number(row.trust_score || 0).toFixed(4)),
+    lastInteractionAt: String(row.last_interaction_at || '').trim() || null,
+  }));
+
+  return {
+    guildId,
+    days,
+    since: sinceIso,
+    socialEventsIngested: Math.max(0, Number(ingestedRes.count || 0)),
+    activeEdges: Math.max(0, Number(activeEdgesRes.count || 0)),
+    activeActors: Math.max(0, Number(activeActorsRes.count || 0)),
+    latestEventAt,
+    eventTypeCounts,
+    topEdges,
+    generatedAt: new Date().toISOString(),
+  };
 };

@@ -1,19 +1,26 @@
 import type { ActionExecutionResult } from './types';
-import { callMcpWorkerTool, getMcpWorkerUrl, isMcpStrictRouting, parseMcpTextBlocks } from './mcpDelegate';
+import { callMcpWorkerTool, getMcpWorkerUrl, isMcpStrictRouting, parseMcpTextBlocks, type McpWorkerKind } from './mcpDelegate';
 import { appendOutcomeSignalVerification, type OutcomeSignal } from '../../observability/outcomeSignal';
 
-type WorkerKind = 'youtube' | 'news' | 'community' | 'web' | 'opencode';
-
-const toAgentRole = (workerKind: WorkerKind): NonNullable<ActionExecutionResult['agentRole']> => {
-  if (workerKind === 'opencode') {
-    return 'opencode';
+const toAgentRole = (workerKind: McpWorkerKind): NonNullable<ActionExecutionResult['agentRole']> => {
+  switch (workerKind) {
+    case 'opencode':
+      return 'opencode';
+    case 'opendev':
+      return 'opendev';
+    case 'nemoclaw':
+      return 'nemoclaw';
+    case 'openjarvis':
+    case 'local-orchestrator':
+      return 'openjarvis';
+    default:
+      return 'nemoclaw';
   }
-  return 'nemoclaw';
 };
 
 type RunDelegatedActionOptions = {
   actionName: string;
-  workerKind: WorkerKind;
+  workerKind: McpWorkerKind;
   toolName: string;
   args: Record<string, unknown>;
   successSummary: (blocks: string[]) => string;
@@ -21,6 +28,7 @@ type RunDelegatedActionOptions = {
   strictFailureVerification?: string[];
   strictFailureError?: string;
   respectStrictRouting?: boolean;
+  parseStructuredResult?: (blocks: string[]) => ActionExecutionResult | null;
   onWorkerMissing?: () => ActionExecutionResult | null;
   onEmptyResult?: (blocks: string[]) => ActionExecutionResult | null;
   onWorkerError?: (error: unknown) => ActionExecutionResult | null;
@@ -29,7 +37,7 @@ type RunDelegatedActionOptions = {
 const withOutcomeSignal = (
   result: ActionExecutionResult,
   outcome: OutcomeSignal,
-  workerKind: WorkerKind,
+  workerKind: McpWorkerKind,
   toolName: string,
 ): ActionExecutionResult => {
   const role = result.agentRole || toAgentRole(workerKind);
@@ -73,6 +81,11 @@ export const runDelegatedAction = async (options: RunDelegatedActionOptions): Pr
     });
 
     const blocks = parseMcpTextBlocks(payload);
+    const structured = options.parseStructuredResult?.(blocks) || null;
+    if (structured) {
+      return withOutcomeSignal(structured, structured.ok ? 'success' : 'failure', options.workerKind, options.toolName);
+    }
+
     if (!payload.isError && blocks.length > 0) {
       return withOutcomeSignal({
         ok: true,

@@ -1,5 +1,11 @@
 # Multi-Agent Dry Run - 2026-03-19
 
+Status note:
+
+- this file is historical dry-run evidence for an older routing shape
+- interpret role names here as repository-local labels, not proof of external OSS integration
+- use `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` for current name-collision and runtime-surface truth
+
 Task ID: TASK-2026-03-19-AGENT-DRYRUN-001
 
 Objective:

@@ -1,5 +1,10 @@
 # Core Command Interface v1
 
+Status note:
+
+- Reference contract specification for the adapter/core boundary.
+- This file is canonical for interface shape within its contract family, but it is not a roadmap or active execution tracker.
+
 Purpose:
 
 - Freeze the core decision boundary so channel adapters can remain thin.

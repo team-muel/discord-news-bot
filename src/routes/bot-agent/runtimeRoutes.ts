@@ -7,6 +7,7 @@ import {
   listSupabaseCronJobs,
 } from '../../services/supabaseExtensionOpsService';
 import { getPlatformLightweightingReport } from '../../services/platformLightweightingService';
+import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs, probeHttpWorkerHealth } from '../../services/agentRoleWorkerService';
 import { getRuntimeSchedulerPolicySnapshot } from '../../services/runtimeSchedulerPolicyService';
 import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../../services/efficiencyOptimizationService';
 import { getAgentTelemetryQueueSnapshot } from '../../services/agentTelemetryQueue';
@@ -18,6 +19,7 @@ import { buildAgentRuntimeReadinessReport } from '../../services/agentRuntimeRea
 import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloAlertEvents } from '../../services/agentSloService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../../services/finopsService';
 import { getLlmExperimentSummary } from '../../services/llmExperimentAnalyticsService';
+import { buildSocialQualityOperationalSnapshot } from '../../services/agentSocialQualitySnapshotService';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
@@ -36,39 +38,21 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   return fallback;
 };
 
-const withFetchTimeout = async (url: string, timeoutMs: number): Promise<{ ok: boolean; status: number; error?: string }> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    return { ok: response.ok, status: response.status };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
 const probeOpencodeWorkerHealth = async () => {
   const required = parseBool(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
   const workerUrl = String(process.env.MCP_OPENCODE_WORKER_URL || '').trim();
   const timeoutMs = Math.max(1000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000));
-  const timestamp = new Date().toISOString();
-
-  if (!required) {
+  if (!required && !workerUrl) {
     return {
-      required,
-      configured: Boolean(workerUrl),
+      required: false,
+      configured: false,
       reachable: null,
       latencyMs: null,
       status: null,
-      endpoint: workerUrl || null,
-      checkedAt: timestamp,
+      endpoint: null,
+      checkedAt: new Date().toISOString(),
       reason: 'worker_not_required',
+      label: 'opencode',
     };
   }
 
@@ -80,48 +64,64 @@ const probeOpencodeWorkerHealth = async () => {
       latencyMs: null,
       status: null,
       endpoint: null,
-      checkedAt: timestamp,
+      checkedAt: new Date().toISOString(),
       reason: 'worker_url_missing',
+      label: 'opencode',
     };
   }
 
-  const base = workerUrl.replace(/\/+$/, '');
-  const candidates = [base, `${base}/health`];
-  const startedAt = Date.now();
-  let lastResult: { ok: boolean; status: number; error?: string } = { ok: false, status: 0 };
-
-  for (const target of candidates) {
-    const result = await withFetchTimeout(target, timeoutMs);
-    lastResult = result;
-    if (result.ok) {
-      return {
-        required,
-        configured: true,
-        reachable: true,
-        latencyMs: Date.now() - startedAt,
-        status: result.status,
-        endpoint: target,
-        checkedAt: timestamp,
-      };
-    }
-  }
+  const health = await probeHttpWorkerHealth(workerUrl, timeoutMs);
 
   return {
     required,
     configured: true,
-    reachable: false,
-    latencyMs: Date.now() - startedAt,
-    status: lastResult.status,
-    endpoint: `${base}/health`,
-    checkedAt: timestamp,
-    reason: lastResult.error || 'probe_failed',
+    reachable: health.ok,
+    latencyMs: health.latencyMs,
+    status: health.status,
+    endpoint: health.endpoint,
+    checkedAt: new Date().toISOString(),
+    reason: health.ok ? undefined : health.error || 'probe_failed',
+    label: 'opencode',
   };
 };
 
 export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
+  router.get('/agent/runtime/social-quality-snapshot', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const snapshot = await buildSocialQualityOperationalSnapshot({ guildId, days });
+      return res.json({ ok: true, snapshot });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      if (message === 'SUPABASE_NOT_CONFIGURED') {
+        return res.status(503).json({ ok: false, error: 'CONFIG', message });
+      }
+      return res.status(500).json({ ok: false, error: 'SOCIAL_QUALITY_SNAPSHOT_FAILED', message });
+    }
+  });
+
   router.get('/agent/runtime/telemetry-queue', requireAdmin, async (_req, res) => {
     return res.json({ ok: true, queue: getAgentTelemetryQueueSnapshot() });
+  });
+
+  router.get('/agent/runtime/role-workers', requireAdmin, async (_req, res) => {
+    try {
+      const specs = listAgentRoleWorkerSpecs();
+      const health = await getAgentRoleWorkersHealthSnapshot();
+      return res.json({ ok: true, workers: specs, health });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'ROLE_WORKERS_RUNTIME_FAILED', message });
+    }
   });
 
   router.get('/agent/runtime/unattended-health', requireAdmin, async (req, res) => {
@@ -132,12 +132,14 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         ? await summarizeOpencodeQueueReadiness({ guildId })
         : null;
       const workerHealth = await probeOpencodeWorkerHealth();
+      const advisoryWorkersHealth = await getAgentRoleWorkersHealthSnapshot();
       return res.json({
         ok: true,
         timestamp: new Date().toISOString(),
         telemetry,
         opencodeReadiness: readiness,
         workerHealth,
+        advisoryWorkersHealth,
         notes: {
           guildScoped: Boolean(guildId),
           publishLock: {

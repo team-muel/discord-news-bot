@@ -4,8 +4,14 @@
 - Source scan: src/services/**/*.ts
 - Notes: static string matching for .from(...) and .rpc(...) usage.
 
+Boundary note:
+
+- 테이블명이나 서비스명에 포함된 `opencode`, `openjarvis`, `opendev`, `nemoclaw` 등의 문자열은 저장소 내부 스키마 및 서비스 식별자다.
+- 이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 판단한다.
+
 ## Tables
 
+<!-- markdownlint-disable MD033 -->
 | Table | Services |
 | --- | --- |
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
@@ -92,4 +98,4 @@
 | get_platform_hypopg_candidates | src/services/supabaseExtensionOpsService.ts |
 | get_platform_pg_statements_top | src/services/supabaseExtensionOpsService.ts |
 | search_memory_items_hybrid | src/services/agentMemoryStore.ts |
-
+<!-- markdownlint-enable MD033 -->

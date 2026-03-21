@@ -29,6 +29,7 @@ const workerUrl = read('MCP_OPENCODE_WORKER_URL');
 const workerRequireAuth = parseBool(read('OPENCODE_LOCAL_WORKER_REQUIRE_AUTH'), false);
 const hasWorkerAuthToken = Boolean(
   read('MCP_WORKER_AUTH_TOKEN')
+  || read('AGENT_ROLE_WORKER_AUTH_TOKEN')
   || read('MCP_OPENCODE_WORKER_AUTH_TOKEN')
   || read('OPENCODE_LOCAL_WORKER_AUTH_TOKEN'),
 );

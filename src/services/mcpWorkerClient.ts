@@ -11,6 +11,7 @@ export type McpCallPayload = {
 const toBaseUrl = (raw: string | undefined): string => String(raw || '').trim().replace(/\/+$/, '');
 const MCP_WORKER_AUTH_TOKEN = String(
   process.env.MCP_WORKER_AUTH_TOKEN
+  || process.env.AGENT_ROLE_WORKER_AUTH_TOKEN
   || process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN
   || '',
 ).trim();

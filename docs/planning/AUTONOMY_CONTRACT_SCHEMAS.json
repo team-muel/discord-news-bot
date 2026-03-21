@@ -21,9 +21,125 @@
     },
     "evidenceBundle": {
       "$ref": "#/$defs/evidenceBundle"
+    },
+    "localCollabTaskEnvelope": {
+      "$ref": "#/$defs/localCollabTaskEnvelope"
+    },
+    "localCollabRouteResponse": {
+      "$ref": "#/$defs/localCollabRouteResponse"
+    },
+    "localCollabConsultResponse": {
+      "$ref": "#/$defs/localCollabConsultResponse"
+    },
+    "localCollabSynthesizeResponse": {
+      "$ref": "#/$defs/localCollabSynthesizeResponse"
     }
   },
   "$defs": {
+    "agentRole": {
+      "type": "string",
+      "enum": ["OpenCode", "OpenDev", "NemoClaw", "OpenJarvis"]
+    },
+    "routeMode": {
+      "type": "string",
+      "enum": ["local-collab", "delivery", "operations"]
+    },
+    "timingHint": {
+      "type": "string",
+      "enum": ["before-edit", "during-implementation", "before-release", "already-consulted", "during-review", "during-validation", "before-implementation"]
+    },
+    "leadAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reason"],
+      "properties": {
+        "name": { "$ref": "#/$defs/agentRole" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "consultAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reason", "timing"],
+      "properties": {
+        "name": { "$ref": "#/$defs/agentRole" },
+        "reason": { "type": "string", "minLength": 1 },
+        "timing": { "$ref": "#/$defs/timingHint" }
+      }
+    },
+    "promptHandoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["next_owner", "reason", "expected_outcome"],
+      "properties": {
+        "next_owner": { "$ref": "#/$defs/agentRole" },
+        "reason": { "type": "string", "minLength": 1 },
+        "expected_outcome": { "type": "string", "minLength": 1 }
+      }
+    },
+    "promptEscalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "target_mode", "reason"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "target_mode": { "$ref": "#/$defs/routeMode" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "requiredGates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["typecheck", "tests", "security", "ops-readiness", "regression-check", "architecture-alignment", "rollback-readiness"]
+      },
+      "uniqueItems": true
+    },
+    "localCollabTaskEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "guild_id",
+        "objective",
+        "constraints",
+        "risk_level",
+        "acceptance_criteria",
+        "inputs",
+        "budget"
+      ],
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "guild_id": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "constraints": {
+          "type": ["array", "string"],
+          "items": { "type": "string" }
+        },
+        "risk_level": { "type": "string", "minLength": 1 },
+        "acceptance_criteria": {
+          "type": ["array", "string"],
+          "items": { "type": "string" }
+        },
+        "inputs": {
+          "type": ["object", "array", "string"]
+        },
+        "budget": {
+          "type": ["object", "string"]
+        },
+        "current_stage": { "type": "string" },
+        "lead_agent": { "$ref": "#/$defs/agentRole" },
+        "consult_agent": { "$ref": "#/$defs/agentRole" },
+        "current_state": { "type": ["object", "array", "string"] },
+        "changed_files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "consult_results": {
+          "type": ["object", "array", "string"]
+        }
+      }
+    },
     "eventEnvelope": {
       "type": "object",
       "additionalProperties": false,
@@ -164,6 +280,110 @@
           },
           "additionalProperties": true
         }
+      }
+    },
+    "localCollabRouteResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "guild_id",
+        "mode",
+        "lead_agent",
+        "consult_agents",
+        "required_gates",
+        "handoff",
+        "escalation",
+        "next_action"
+      ],
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "guild_id": { "type": "string", "minLength": 1 },
+        "mode": { "$ref": "#/$defs/routeMode" },
+        "lead_agent": { "$ref": "#/$defs/leadAgent" },
+        "consult_agents": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/consultAgent" }
+        },
+        "required_gates": { "$ref": "#/$defs/requiredGates" },
+        "handoff": { "$ref": "#/$defs/promptHandoff" },
+        "escalation": { "$ref": "#/$defs/promptEscalation" },
+        "next_action": { "type": "string", "minLength": 1 }
+      }
+    },
+    "localCollabConsultResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "guild_id",
+        "lead_agent",
+        "consult_agent",
+        "summary",
+        "recommendations",
+        "risks",
+        "required_gates",
+        "handoff",
+        "escalation",
+        "next_action"
+      ],
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "guild_id": { "type": "string", "minLength": 1 },
+        "lead_agent": { "$ref": "#/$defs/leadAgent" },
+        "consult_agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "reason"],
+          "properties": {
+            "name": { "$ref": "#/$defs/agentRole" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        "summary": { "type": "string", "minLength": 1 },
+        "recommendations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "risks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "required_gates": { "$ref": "#/$defs/requiredGates" },
+        "handoff": { "$ref": "#/$defs/promptHandoff" },
+        "escalation": { "$ref": "#/$defs/promptEscalation" },
+        "next_action": { "type": "string", "minLength": 1 }
+      }
+    },
+    "localCollabSynthesizeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "guild_id",
+        "lead_agent",
+        "consult_agents",
+        "decision_summary",
+        "required_gates",
+        "handoff",
+        "escalation",
+        "next_action"
+      ],
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "guild_id": { "type": "string", "minLength": 1 },
+        "lead_agent": { "$ref": "#/$defs/leadAgent" },
+        "consult_agents": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/consultAgent" }
+        },
+        "decision_summary": { "type": "string", "minLength": 1 },
+        "required_gates": { "$ref": "#/$defs/requiredGates" },
+        "handoff": { "$ref": "#/$defs/promptHandoff" },
+        "escalation": { "$ref": "#/$defs/promptEscalation" },
+        "next_action": { "type": "string", "minLength": 1 }
       }
     }
   }

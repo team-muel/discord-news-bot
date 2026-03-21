@@ -1,5 +1,11 @@
 # Frontier 2026 Program
 
+문서 상태:
+
+- Reference synthesis for program intent and workstream grouping.
+- Do not use this document for current prioritization, status tracking, or WIP control.
+- Active priorities live in `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `EXECUTION_BOARD.md`, and `SPRINT_BACKLOG_MEMORY_AGENT.md`.
+
 목표: 기존 레거시 계획/런북/로드맵을 모두 구현 완료 상태로 수렴시키고, 운영 중 문제를 구조적으로 제거한다.
 
 비전 선언:

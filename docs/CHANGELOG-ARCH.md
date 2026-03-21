@@ -2,6 +2,12 @@
 
 Use this log for architecture-significant changes only.
 
+Boundary note:
+
+- legacy labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, Local Orchestrator, and opencode in this changelog refer to repository-local roles or runtime surfaces
+- changelog wording alone is not proof of external OSS/framework embedding or current runtime availability
+- verify current naming interpretation and implemented runtime surfaces in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+
 ## Template
 
 Copy this block for each change:
@@ -18,6 +24,56 @@ Copy this block for each change:
 ```
 
 ## Entries
+
+## 2026-03-21 - Neutral Role Alias Compatibility Layer
+
+- Why: 문서에서 정의한 neutral 내부 역할명으로 점진 전환할 수 있도록, legacy 이름을 즉시 제거하지 않고 런타임이 양쪽 이름을 모두 수용하게 만들기 위함.
+- Scope: added neutral action aliases, neutral worker/env alias resolution, local worker script aliases, and runtime role normalization while preserving legacy action contracts.
+- Impacted Routes: `GET /api/bot/agent/actions/catalog`, `POST /api/bot/agent/actions/execute`, `GET /api/bot/agent/runtime/role-workers`.
+- Impacted Services: `src/services/skills/actions/types.ts`, `src/services/skills/actions/registry.ts`, `src/services/workerExecution.ts`, `src/services/skills/actionExecutionLogService.ts`, `src/routes/bot-agent/governanceRoutes.ts`, `src/services/agentRoleWorkerService.ts`, `src/services/skills/actions/mcpDelegate.ts`, `scripts/agent-role-worker.ts`, `scripts/check-agent-role-workers.mjs`, `scripts/validate-env.mjs`, `package.json`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: legacy names remain the canonical persisted/logged runtime roles for compatibility, while neutral aliases are accepted for action lookup, worker startup, and env resolution.
+- Validation: `npm run lint`, targeted Vitest coverage for alias registration and env alias resolution.
+
+## 2026-03-21 - Collaboration Boundary Documentation Realignment
+
+- Why: 역할 이름, IDE 커스터마이징, 실제 런타임 액션, 향후 로컬 외부 도구 통합 설계가 서로 다른 층위인데도 문서상 한 덩어리처럼 읽히던 문제를 줄이기 위함.
+- Scope: clarified customization-vs-runtime boundaries in architecture, operations, runbook, planning, env template, and `.github` collaboration files; added a dedicated planning document for future local external tool adapter architecture.
+- Impacted Routes: N/A (documentation only).
+- Impacted Services: `docs/ARCHITECTURE_INDEX.md`, `docs/OPERATIONS_24_7.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/RENDER_AGENT_ENV_TEMPLATE.md`, `docs/planning/README.md`, `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`, `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`, `.github/instructions/multi-agent-routing.instructions.md`, `.github/agents/*.agent.md`, `.github/prompts/local-collab-*.prompt.md`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: no runtime behavior change; intent is to reduce operator and developer confusion by making runtime truth depend on action registration, worker configuration, and runtime endpoints rather than role naming.
+- Validation: editor diagnostics on touched markdown/customization files and consistency review against runtime action/worker surfaces.
+
+## 2026-03-21 - Super Agent Facade Initial Slice
+
+- Why: 계획된 슈퍼 에이전트 구현을 한 번에 전면 교체하지 않고, 기존 `multiAgentService` 위에 구조화된 목표 입력과 lead/consult 추천을 제공하는 안전한 facade로 시작하기 위함.
+- Scope: added `superAgentService` with structured task recommendation and session start delegation, added admin API endpoints for capabilities/recommendation/session start, and documented the new facade in the architecture index.
+- Impacted Routes: `GET /api/bot/agent/super/capabilities`, `POST /api/bot/agent/super/recommend`, `POST /api/bot/agent/super/sessions`.
+- Impacted Services: `src/services/superAgentService.ts`, `src/services/superAgentService.test.ts`, `src/routes/bot-agent/coreRoutes.ts`, `docs/ARCHITECTURE_INDEX.md`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: existing `startAgentSession` execution path remains the runtime owner; the new facade only normalizes structured input into a session goal and recommendation payload, so rollback is limited to removing the facade routes and service.
+- Validation: targeted service tests and editor diagnostics for touched route/service/docs files.
+
+## 2026-03-21 - Super Agent Contract Alignment
+
+- Why: Phase 1 계획에 맞춰 supervisor 입력 계약을 `task_id`, `guild_id`, `objective`, `constraints`, `risk_level`, `acceptance_criteria`, `inputs`, `budget` 중심으로 고정하고, route/control-plane 출력과 runtime session 매핑을 분리하기 위함.
+- Scope: `superAgentService` now normalizes snake_case supervisor envelopes, emits `task`, `route`, `runtime_mapping` 구조를 반환하며, super-agent routes prefer snake_case request payloads while keeping camelCase compatibility.
+- Impacted Routes: `POST /api/bot/agent/super/recommend`, `POST /api/bot/agent/super/sessions`.
+- Impacted Services: `src/services/superAgentService.ts`, `src/services/superAgentService.test.ts`, `src/routes/bot-agent/coreRoutes.ts`.
+- Impacted Docs: `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`, `docs/ARCHITECTURE_INDEX.md`.
+- Risk/Regression Notes: newly added super-agent endpoints changed response shape to expose contract-aligned `task`, `route`, `runtime_mapping`; existing stable agent session APIs are unchanged.
+- Validation: focused Vitest coverage for snake_case/camelCase normalization and runtime delegation, plus diagnostics on touched files.
+
+## 2026-03-21 - Local Collaborative Agent Control Plane Contracts
+
+- Why: 로컬 IDE에서는 rigid sequential handoff보다 lead + consult 방식이 더 생산적이지만, 기존 runtime handoff 구조와 어긋나지 않도록 prompt/customization 계약을 스키마 수준으로 고정할 필요가 있었다.
+- Scope: added local collaborative contract schemas, connected local-collab customization docs to runtime architecture docs, and clarified that local collaborative prompts are control-plane guidance over the existing multi-agent runtime.
+- Impacted Routes: N/A (customization/docs only)
+- Impacted Services: `.github/instructions/multi-agent-routing.instructions.md`, `.github/agents/local-orchestrator.agent.md`, `.github/prompts/local-collab-route.prompt.md`, `.github/prompts/local-collab-consult.prompt.md`, `.github/prompts/local-collab-synthesize.prompt.md`, `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`, `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`, `docs/planning/MULTI_AGENT_NODE_EXTRACTION_TARGET_STATE.md`, `docs/ARCHITECTURE_INDEX.md`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: no runtime behavior change; the new schemas are intended to stabilize prompt outputs and future supervisor alignment without replacing existing `multiAgentService` or `ActionHandoff` contracts.
+- Validation: customization file validation via editor diagnostics, schema/doc consistency review against `src/services/multiAgentService.ts`, `src/services/skills/actions/types.ts`, `src/services/workerExecution.ts`, and `src/services/skills/actionExecutionLogService.ts`.
 
 ## 2026-03-20 - Static Worker Endpoint Baseline and Cutover Runbooks
 

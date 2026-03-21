@@ -2,6 +2,19 @@
 
 목적: AgentBench/OSWorld/CA-style 지표를 현재 스키마에서 즉시 계산한다.
 
+문서 역할:
+
+- Supporting appendix for evaluation SQL and metric calculation recipes.
+- Use this only after priorities are chosen in `EXECUTION_BOARD.md`.
+- Do not use this document as a roadmap, backlog, or current-state tracker.
+
+읽기 순서:
+
+1. `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`에서 왜 측정하는지 확인
+2. `EXECUTION_BOARD.md`에서 지금 어떤 milestone을 진행 중인지 확인
+3. `AGENT_ARCH_EVAL_FRAMEWORK.md`에서 평가 프레임을 확인
+4. 이 문서에서 필요한 SQL만 실행
+
 ## 1) AgentBench-style (Task Success)
 
 ### 1.1 세션 성공률

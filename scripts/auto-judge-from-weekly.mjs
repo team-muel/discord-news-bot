@@ -68,6 +68,7 @@ async function main() {
   const limit = Math.max(20, Math.min(500, Number(parseArg('limit', '120')) || 120));
   const allowPending = ['1', 'true', 'yes', 'on'].includes(String(parseArg('allowPending', 'false')).toLowerCase());
   const runAfterFallback = ['1', 'true', 'yes', 'on'].includes(String(parseArg('runAfterFallback', 'true')).toLowerCase());
+  const dryRun = ['1', 'true', 'yes', 'on'].includes(String(parseArg('dryRun', 'false')).toLowerCase());
   const minQualitySamples = Math.max(
     1,
     Number(parseArg('minQualitySamples', process.env.GATE_WEEKLY_MIN_QUALITY_SAMPLES || '3')) || 3,
@@ -159,6 +160,7 @@ async function main() {
     providerProfileHint,
     autoCompleteChecklist: true,
     autoCreateClosureDoc: true,
+    dryRun,
   };
 
   const args = buildArgs(baseArgs);
@@ -179,6 +181,7 @@ async function main() {
       runId: fallbackRunId,
       qualityGateOverride: null,
       providerProfileHint: 'quality-optimized',
+      dryRun,
     });
 
     console.log('[GO-NO-GO][AUTO-JUDGE-WEEKLY] post-fallback rejudge triggered (quality-optimized profile)');

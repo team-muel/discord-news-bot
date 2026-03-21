@@ -1,5 +1,10 @@
 # W4 Canary Cutover Results
 
+문서 상태:
+
+- Historical evidence record.
+- Keep for gate evidence only; do not use as an active planning document.
+
 ## Scope
 
 - checklist: W4-04, W4-05, W4-06

@@ -1,0 +1,20 @@
+[Unit]
+Description=Muel NemoClaw Worker
+After=network.target
+
+[Service]
+Type=simple
+User=muel
+WorkingDirectory=/opt/muel/discord-news-bot
+EnvironmentFile=/opt/muel/discord-news-bot/config/env/nemoclaw-worker.env
+ExecStart=/usr/bin/node --import tsx /opt/muel/discord-news-bot/scripts/agent-role-worker.ts --role=nemoclaw
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/muel/discord-news-bot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,10 @@
 # Multi-Agent Node Extraction Target State
 
+Boundary note:
+
+- 이 문서는 저장소 내부 multi-agent runtime 분해 목표를 다루며, 역할명이나 node 명칭이 외부 프레임워크 직접 임베딩을 뜻하지 않는다.
+- 이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
+
 ## Purpose
 
 이 문서는 [src/services/multiAgentService.ts](src/services/multiAgentService.ts) 를 LangGraph-style node runtime으로 분해할 때의 target state를 확정한다.
@@ -83,6 +88,26 @@
 - retry-safe terminalization contract
 
 ## Boundary Decision
+
+### Local-Collab Control Plane Alignment
+
+로컬 IDE 협업용 customization layer는 본 문서의 extraction target과 충돌하지 않는다.
+
+- `.github/agents/local-orchestrator.agent.md`
+- `.github/prompts/local-collab-route.prompt.md`
+- `.github/prompts/local-collab-consult.prompt.md`
+- `.github/prompts/local-collab-synthesize.prompt.md`
+
+이 구조는 node runtime 바깥에서 lead/consult/synthesis 의사결정을 정렬하는 control-plane guidance로 간주한다.
+
+즉, target state에서 추가로 생길 수 있는 supervisor layer는 아래 역할만 가진다.
+
+- lead agent selection
+- consult timing selection
+- escalation decision (`local-collab -> delivery|operations`)
+- runtime handoff normalization
+
+실제 session execution, node transition, terminalization 책임은 여전히 session runtime과 runtime support 계층이 갖는다.
 
 ### 1. What Stays In multiAgentService
 

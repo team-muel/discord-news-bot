@@ -1,5 +1,16 @@
 # Opencode Executor Minimum Spec
 
+Status note:
+
+- Reference specification for executor safety and rollout constraints.
+- This document does not control current WIP priority; use `EXECUTION_BOARD.md` and `SPRINT_BACKLOG_MEMORY_AGENT.md` for active work.
+
+Boundary note:
+
+- `opencode` in this document refers to the repository-local execution surface and compatibility naming layer
+- current name-collision interpretation and runtime-backed surface truth must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- current naming migration and neutral alias policy lives in `docs/ROLE_RENAME_MAP.md`
+
 목표:
 
 - 기존 액션 러너/승인 거버넌스 체인 안에서 터미널 실행형 도구를 안전하게 도입한다.
@@ -55,13 +66,13 @@
 - `ACTION_RUNNER_MODE=dry-run`
 - `opencode.execute` 요청/계획/정책 차단 로그 수집
 
-2. Guarded execution
+1. Guarded execution
 
 - `ACTION_RUNNER_MODE=execute`
 - `opencode.execute`는 `approval_required` 유지
 - 승인 큐 처리 + 실패 패턴 수집
 
-3. Controlled automation
+1. Controlled automation
 
 - 특정 길드/액션 정책에서만 `run_mode=auto`
 - 비용/품질/실패율 기준 미달 시 즉시 rollback

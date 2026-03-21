@@ -2,6 +2,11 @@
 
 기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` (canonical)
 
+Boundary note:
+
+- 이 보드의 OpenCode, OpenDev, NemoClaw, OpenJarvis, opencode 관련 항목은 저장소 내부 milestone 및 협업/실행 표면을 뜻한다.
+- 이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
+
 프로그램 보조 문서: `docs/planning/FRONTIER_2026_PROGRAM.md`
 
 마일스톤 기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`
@@ -11,26 +16,46 @@
 - Canonical for current execution state only (`Now`, `Next`, `Later`).
 - Every item must bind to roadmap milestone IDs from the unified roadmap.
 - Detailed ticket breakdown belongs in [docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md](docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md).
+- Active WIP must stay at 3 items or fewer; the rest remain queued even if approved.
 
 표기 규칙:
 
 - 각 항목은 `M-xx` milestone ID를 반드시 포함한다.
 
-## Now (D1-D30: Foundation Lock)
+## Active Now (WIP <= 3)
 
-1. [M-01] Runbook/SOP/Control Tower/Execution Board 통합 기준 동기화 완료
-2. [M-02] social graph 신호 수집 안정화(reply/mention/co_presence/reaction) 및 누락 복구 지표 고정
-3. [M-02] social hint 활용률/영향도 운영 지표 대시보드 반영
-4. [M-03] 도구 부재 감지 -> worker proposal 자동 트리거 v1
-5. [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
-6. [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
-7. [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
-8. [M-01] [M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
-9. [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
-10. [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
-11. [M-05] [M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
-12. [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
-13. [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
+1. [M-01] [M-03] Control Tower 기준 고정 + Core Decision Engine 인터페이스/이벤트 계약 수렴
+2. [M-02] [M-07] social graph 운영 지표 + quality telemetry 통합 점수화
+3. [M-04] [M-05] [M-06] worker quality gate + Opencode approval 흐름 + model binding/fallback 운영 고정
+
+Backlog binding:
+
+- Active Now 1번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-001`
+- Active Now 2번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-002`
+- Active Now 3번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-003`
+
+운영 규칙:
+
+- 아래 3개만 현재 진행 중으로 취급한다.
+- 추가 항목은 `Queued Now`에서만 대기한다.
+- 새 요청이 들어와도 기존 Active Now를 닫기 전에는 WIP를 늘리지 않는다.
+- Queued 항목은 `A-001`~`A-003` backlog owner가 붙어 있지 않으면 Active Now로 승격하지 않는다.
+
+## Queued Now (Approved, Not In Active WIP, Owner-Bound)
+
+1. [A-001] [M-01] Runbook/SOP/Control Tower/Execution Board 통합 기준 동기화 완료
+2. [A-002] [M-02] social graph 신호 수집 안정화(reply/mention/co_presence/reaction) 및 누락 복구 지표 고정
+3. [A-002] [M-02] social hint 활용률/영향도 운영 지표 대시보드 반영
+4. [A-001] [M-03] 도구 부재 감지 -> worker proposal 자동 트리거 v1
+5. [A-003] [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정
+6. [A-003] [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정
+7. [A-002] [M-07] 품질 지표(citation/retrieval/hallucination) 통합 점수화
+8. [A-001] [M-01] [M-03] Core Decision Engine 인터페이스 고정 + Discord 어댑터 경계 분리(인프로세스)
+9. [A-001] [M-03] Event/Command envelope 버전 계약 고정 및 evidence bundle 표준화
+10. [A-003] [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제
+11. [A-003] [M-05] [M-04] OpenDev -> NemoClaw sandbox 강제 위임 경로 검증(미경유 실행 0건)
+12. [A-003] [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단
+13. [A-003] [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정
 
 ## Next (D31-D60: Autonomous Loops)
 
@@ -65,6 +90,6 @@
 
 - 기준 체크리스트: docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md
 - 1~24 항목을 순차 처리하며, 선행 항목 미완료 시 후행 항목 착수 금지
-- 동시 진행 WIP 최대 3개
+- 동시 진행 WIP 최대 3개, 기준 목록은 `Active Now`만 사용
 - 신규 기능 파일 추가 금지(기존 워크플로우 강화만 허용)
 - 각 항목 완료 증거는 gate-runs 또는 runbook 링크로 남긴다

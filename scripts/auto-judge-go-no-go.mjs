@@ -38,6 +38,7 @@ const rollbackDeadlineMin = String(parseArg('rollbackDeadlineMin', '10')).trim()
 const allowPending = parseBool('allowPending', false);
 const autoCompleteChecklist = parseBool('autoCompleteChecklist', false);
 const autoCreateClosureDoc = parseBool('autoCreateClosureDoc', false);
+const dryRun = parseBool('dryRun', false);
 const qualityGateOverrideArg = String(parseArg('qualityGateOverride', '')).trim().toLowerCase();
 const qualityGateOverride = ['pass', 'fail', 'pending'].includes(qualityGateOverrideArg)
   ? qualityGateOverrideArg
@@ -376,7 +377,7 @@ if (providerProfileFallback.trigger !== 'none') {
   }
 }
 
-if (autoCreateClosureDoc && overall === 'no-go' && !fs.existsSync(closureEvidenceAbsPath)) {
+if (!dryRun && autoCreateClosureDoc && overall === 'no-go' && !fs.existsSync(closureEvidenceAbsPath)) {
   const closureBody = `# ${yyyy}-${mm}-${dd} Gate Runs Follow-up Closure\n\n## Scope\n\n- run_id: ${runId}\n- stage: ${stage}\n- target_scope: ${scope}\n\n## Incident and Comms Closure\n\n- Incident template fields completed for this run scope.\n- Comms notice prepared and delivered for operator stakeholders.\n- Reference docs: docs/ONCALL_INCIDENT_TEMPLATE.md, docs/ONCALL_COMMS_PLAYBOOK.md\n\n## Next Checkpoint and Ownership\n\n- next checkpoint: ${yyyy}-${mm}-${dd} +1 day 10:00 KST\n- follow-up owner: ${operator}\n\n## Validation Set\n\n- npm run -s gates:validate\n- npm run -s gates:validate:strict\n`;
   fs.mkdirSync(path.dirname(closureEvidenceAbsPath), { recursive: true });
   fs.writeFileSync(closureEvidenceAbsPath, closureBody, 'utf8');
@@ -490,12 +491,24 @@ const json = {
   },
 };
 
-fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-fs.writeFileSync(mdPath, md, 'utf8');
-fs.writeFileSync(jsonPath, `${JSON.stringify(json, null, 2)}\n`, 'utf8');
+if (dryRun) {
+  console.log('[GO-NO-GO][AUTO-JUDGE] dry-run=true, no files written');
+  console.log(JSON.stringify({
+    mdPath: path.relative(ROOT, mdPath).replace(/\\/g, '/'),
+    jsonPath: path.relative(ROOT, jsonPath).replace(/\\/g, '/'),
+    overall,
+    rollbackRequired,
+    providerProfileFallback,
+    closureEvidencePath: overall === 'no-go' ? closureEvidencePath.replace(/\\/g, '/') : null,
+  }, null, 2));
+} else {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(mdPath, md, 'utf8');
+  fs.writeFileSync(jsonPath, `${JSON.stringify(json, null, 2)}\n`, 'utf8');
 
-console.log(`[GO-NO-GO][AUTO-JUDGE] created ${path.relative(ROOT, mdPath).replace(/\\/g, '/')} and ${path.relative(ROOT, jsonPath).replace(/\\/g, '/')}`);
-console.log(`[GO-NO-GO][AUTO-JUDGE] overall=${overall} rollback_required=${rollbackRequired}`);
-if (autoCreateClosureDoc && overall === 'no-go') {
-  console.log(`[GO-NO-GO][AUTO-JUDGE] closure evidence ensured: ${closureEvidencePath.replace(/\\/g, '/')}`);
+  console.log(`[GO-NO-GO][AUTO-JUDGE] created ${path.relative(ROOT, mdPath).replace(/\\/g, '/')} and ${path.relative(ROOT, jsonPath).replace(/\\/g, '/')}`);
+  console.log(`[GO-NO-GO][AUTO-JUDGE] overall=${overall} rollback_required=${rollbackRequired}`);
+  if (autoCreateClosureDoc && overall === 'no-go') {
+    console.log(`[GO-NO-GO][AUTO-JUDGE] closure evidence ensured: ${closureEvidencePath.replace(/\\/g, '/')}`);
+  }
 }

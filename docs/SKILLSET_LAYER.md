@@ -1,5 +1,21 @@
 # Muel Skillset Layer (v1)
 
+## Scope Clarification
+
+This document distinguishes four separate layers:
+
+- external model/provider layer
+- external runtime/tool layer
+- repository-local runtime action layer
+- repository-local collaboration label layer
+
+Legacy internal labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator belong to repository-local layers and must not be interpreted as external framework installation status.
+
+Canonical naming and runtime surface source of truth:
+
+- `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- `docs/ROLE_RENAME_MAP.md`
+
 Muel is now designed as a server-operations agent with a generic skill layer.
 
 ## Goals
@@ -24,7 +40,7 @@ Muel is now designed as a server-operations agent with a generic skill layer.
   5. OpenClaw base URL (`OPENCLAW_BASE_URL`)
   6. Ollama model/base URL (`OLLAMA_MODEL`, `OLLAMA_BASE_URL`)
 
-2. `src/services/skills/registry.ts`
+1. `src/services/skills/registry.ts`
 
 - Built-in skill catalog and metadata.
 - Current skills:
@@ -35,7 +51,7 @@ Muel is now designed as a server-operations agent with a generic skill layer.
   - `incident-review`
   - `webhook`
 
-3. `src/services/skills/engine.ts`
+1. `src/services/skills/engine.ts`
 
 - Normalized skill execution interface: `executeSkill(skillId, context)`.
 - Supports specialized module dispatch:
@@ -73,25 +89,25 @@ Muel is now designed as a server-operations agent with a generic skill layer.
 - Optional headless-browser path is available for YouTube via Playwright.
 - If action execution is not applicable, it falls back to LLM-generated deliverable output.
 
-4. `src/services/multiAgentService.ts`
+1. `src/services/multiAgentService.ts`
 
 - Session state machine.
 - Supports pipeline mode and single-skill mode.
 - Queue + retry + deadletter runtime included.
 
-5. `src/services/agentPolicyService.ts`
+1. `src/services/agentPolicyService.ts`
 
 - Governance layer for runtime limits and guardrails.
 - Validates goal length and concurrent session caps.
 
-6. `src/services/agentMemoryService.ts`
+1. `src/services/agentMemoryService.ts`
 
 - Hybrid memory hint provider.
 - Reads long-memory hints from Supabase (`guild_lore_docs`) and optional Obsidian integrations:
   - Runtime CLI execution (`OBSIDIAN_CLI_COMMAND`) for headless query
   - Markdown file wrapper fallback (`OBSIDIAN_VAULT_PATH`)
 
-7. `src/services/agentSessionStore.ts`
+1. `src/services/agentSessionStore.ts`
 
 - Best-effort persistence to Supabase (`agent_sessions`, `agent_steps`) for audit and long-term recall.
 

@@ -1,5 +1,10 @@
 # Dependency Graph
 
+Boundary note:
+
+- service names such as `opencode*`, `openjarvis*`, `opendev*`, and `nemoclaw*` in this graph refer to repository-local modules and runtime surfaces
+- use `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` when a name could otherwise be misread as external package or framework evidence
+
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
 - Nodes: 224
 
@@ -830,4 +835,3 @@ graph LR
   "src/utils/validation.ts":::file
   classDef file fill:#f7f7f7,stroke:#777,stroke-width:1px;
 ```
-

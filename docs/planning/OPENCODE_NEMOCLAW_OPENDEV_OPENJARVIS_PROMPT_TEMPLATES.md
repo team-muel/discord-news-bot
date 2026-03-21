@@ -1,5 +1,11 @@
 # OpenCode/NemoClaw/OpenDev/OpenJarvis Prompt Templates
 
+Status note:
+
+- this document is a legacy planning/template artifact for older multi-agent prompt shapes
+- current role-name interpretation and runtime-backed surfaces must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- current routing and handoff contract source of truth lives in `.github/instructions/multi-agent-routing.instructions.md` and `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`
+
 목표:
 
 - 4개 에이전트를 동시에 운용할 때 프롬프트 드리프트를 줄인다.

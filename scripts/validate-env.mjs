@@ -194,6 +194,7 @@ const workerRequireAuth = isTruthy(process.env.OPENCODE_LOCAL_WORKER_REQUIRE_AUT
 const hasWorkerAuthToken = Boolean(
   read('MCP_WORKER_AUTH_TOKEN')
   || read('MCP_OPENCODE_WORKER_AUTH_TOKEN')
+  || read('AGENT_ROLE_WORKER_AUTH_TOKEN')
   || read('OPENCODE_LOCAL_WORKER_AUTH_TOKEN'),
 );
 if (requireOpencodeWorker && !hasWorkerAuthToken) {
@@ -201,6 +202,16 @@ if (requireOpencodeWorker && !hasWorkerAuthToken) {
 }
 if (workerRequireAuth && !hasWorkerAuthToken) {
   add('ERROR', 'OPENCODE_LOCAL_WORKER_REQUIRE_AUTH', 'OPENCODE_LOCAL_WORKER_REQUIRE_AUTH=true 인 경우 worker/client 공용 인증 토큰이 필요합니다.');
+}
+
+const advisoryWorkerUrls = [
+  read('MCP_ARCHITECT_WORKER_URL') || read('MCP_OPENDEV_WORKER_URL'),
+  read('MCP_REVIEW_WORKER_URL') || read('MCP_NEMOCLAW_WORKER_URL'),
+  read('MCP_OPERATE_WORKER_URL') || read('MCP_OPENJARVIS_WORKER_URL'),
+  read('MCP_COORDINATE_WORKER_URL') || read('MCP_LOCAL_ORCHESTRATOR_WORKER_URL'),
+].filter(Boolean);
+if (advisoryWorkerUrls.length > 0 && !hasWorkerAuthToken) {
+  add('WARN', 'AGENT_ROLE_WORKER_AUTH_TOKEN|MCP_WORKER_AUTH_TOKEN', 'advisory role worker를 원격으로 사용하면 인증 토큰 설정을 권장합니다.');
 }
 
 const providerMaxAttemptsRaw = Number(read('LLM_PROVIDER_MAX_ATTEMPTS') || 2);

@@ -1,5 +1,11 @@
 # Roadmap Status Snapshot (2026-03-19)
 
+문서 상태:
+
+- Historical snapshot for 2026-03-19 only.
+- Do not treat this document as the current execution board.
+- For live prioritization, use `EXECUTION_BOARD.md`.
+
 기준 소스:
 
 - `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`

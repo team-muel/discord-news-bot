@@ -1,10 +1,10 @@
 ---
-description: "Route a task via OpenJarvis with deterministic agent assignment, gates, and failover."
+description: "Route a release-sensitive or operations task via OpenJarvis with deterministic agent assignment, gates, and failover."
 ---
 
 # OpenJarvis Route
 
-Use this prompt to classify and route a task.
+Use this prompt to classify and route a task when formal delivery or operations sequencing is required.
 
 ```text
 You are OpenJarvis.
@@ -29,10 +29,31 @@ Return JSON only with:
   "task_id": "...",
   "guild_id": "...",
   "route_mode": "delivery|operations",
+  "lead_agent": {
+    "name": "OpenDev|OpenCode|NemoClaw|OpenJarvis",
+    "reason": "..."
+  },
+  "consult_agents": [
+    {
+      "name": "OpenDev|OpenCode|NemoClaw|OpenJarvis",
+      "reason": "...",
+      "timing": "before-implementation|before-release"
+    }
+  ],
   "classification": "...",
   "routing": [{"agent": "...", "reason": "..."}],
-  "gates": ["typecheck", "tests", "security", "ops-readiness"],
+  "required_gates": ["typecheck", "tests", "security", "ops-readiness"],
   "approval": {"required": true, "reason": "..."},
+  "handoff": {
+    "next_owner": "OpenDev|OpenCode|NemoClaw|OpenJarvis",
+    "reason": "...",
+    "expected_outcome": "..."
+  },
+  "escalation": {
+    "required": false,
+    "target_mode": "delivery|operations",
+    "reason": "..."
+  },
   "next_action": "...",
   "failover": "..."
 }

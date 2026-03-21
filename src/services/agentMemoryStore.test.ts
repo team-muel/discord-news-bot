@@ -31,7 +31,12 @@ vi.mock('./supabaseClient', () => ({
   getSupabaseClient: vi.fn(() => { throw new Error('SUPABASE_NOT_CONFIGURED'); }),
 }));
 
+vi.mock('./agentConsentService', () => ({
+  hasMemoryConsent: vi.fn(async () => true),
+}));
+
 import * as supabaseClient from './supabaseClient';
+import * as agentConsentService from './agentConsentService';
 import {
   isMemoryType,
   isFeedbackAction,
@@ -143,6 +148,10 @@ describe('searchGuildMemory', () => {
 
 // ──────────────────────────────────────────────────────────
 describe('createMemoryItem', () => {
+  beforeEach(() => {
+    vi.mocked(agentConsentService.hasMemoryConsent).mockResolvedValue(true);
+  });
+
   it('Supabase 미설정 → SUPABASE_NOT_CONFIGURED 에러', async () => {
     vi.mocked(supabaseClient.isSupabaseConfigured).mockReturnValue(false);
     vi.mocked(supabaseClient.getSupabaseClient).mockImplementation(() => {
@@ -191,5 +200,22 @@ describe('createMemoryItem', () => {
         actorId: 'user-123',
       }),
     ).rejects.toThrow('insert failed');
+  });
+
+  it('memory consent가 없으면 저장을 차단한다', async () => {
+    vi.mocked(agentConsentService.hasMemoryConsent).mockResolvedValue(false);
+    const fakeClient = { from: vi.fn() } as any;
+    vi.mocked(supabaseClient.isSupabaseConfigured).mockReturnValue(true);
+    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(fakeClient);
+
+    await expect(
+      createMemoryItem({
+        guildId: 'g1',
+        type: 'semantic',
+        content: '이것은 최소 20자를 넘는 정상적인 내용입니다.',
+        actorId: '12345678',
+      }),
+    ).rejects.toThrow('MEMORY_CONSENT_REQUIRED');
+    expect(fakeClient.from).not.toHaveBeenCalled();
   });
 });

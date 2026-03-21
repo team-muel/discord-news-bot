@@ -1,5 +1,10 @@
 # Discord Adapter -> Core Command Mapping v1
 
+Status note:
+
+- Reference mapping specification for Discord adapter to core command translation.
+- Use this document for contract alignment, not for active planning priority or WIP tracking.
+
 Purpose:
 
 - Define deterministic mapping from Discord command surface to core command intents.

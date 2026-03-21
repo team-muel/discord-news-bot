@@ -1,7 +1,9 @@
 ﻿import { requireAdmin } from '../../middleware/auth';
-import { listActions } from '../../services/skills/actions/registry';
+import { listAgentRoleWorkerSpecs } from '../../services/agentRoleWorkerService';
+import { getAction, listActions } from '../../services/skills/actions/registry';
 import { decideActionApprovalRequest, isActionRunMode, listActionApprovalRequests, listGuildActionPolicies, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 import { getOpencodeExecutionSummary } from '../../services/opencodeOpsService';
+import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../../services/workerExecution';
 import {
   createOpencodeChangeRequest,
   decideOpencodeChangeRequest,
@@ -17,8 +19,67 @@ import { isOneOf, toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
 
+const ADVISORY_ACTION_WORKER_IDS: Record<string, 'local-orchestrator' | 'opendev' | 'nemoclaw' | 'openjarvis'> = {
+  'local.orchestrator.all': 'local-orchestrator',
+  'local.orchestrator.route': 'local-orchestrator',
+  'coordinate.all': 'local-orchestrator',
+  'coordinate.route': 'local-orchestrator',
+  'opendev.plan': 'opendev',
+  'architect.plan': 'opendev',
+  'nemoclaw.review': 'nemoclaw',
+  'review.review': 'nemoclaw',
+  'openjarvis.ops': 'openjarvis',
+  'operate.ops': 'openjarvis',
+  'implement.execute': 'openjarvis',
+  'tools.run.cli': 'openjarvis',
+};
+
+const inferActionRole = (actionName: string): 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev' => {
+  const normalized = String(actionName || '').trim().toLowerCase();
+  if (normalized.startsWith('opencode.') || normalized.startsWith('implement.')) {
+    return 'opencode';
+  }
+  if (normalized.startsWith('nemoclaw.') || normalized.startsWith('review.') || normalized.startsWith('news.') || normalized.startsWith('web.') || normalized.startsWith('youtube.') || normalized.startsWith('community.')) {
+    return 'nemoclaw';
+  }
+  if (normalized.startsWith('opendev.') || normalized.startsWith('architect.') || normalized.startsWith('db.') || normalized.startsWith('code.') || normalized.startsWith('rag.')) {
+    return 'opendev';
+  }
+  return 'openjarvis';
+};
+
+const toCatalogEntry = (action: ReturnType<typeof listActions>[number], policy?: Awaited<ReturnType<typeof listGuildActionPolicies>>[number]) => {
+  const workerId = ADVISORY_ACTION_WORKER_IDS[action.name];
+  const workerSpec = workerId ? listAgentRoleWorkerSpecs().find((item) => item.id === workerId) || null : null;
+
+  return {
+    name: action.name,
+    description: action.description,
+    agentRole: inferActionRole(action.name),
+    advisoryWorker: workerSpec,
+    policy: policy || null,
+  };
+};
+
 export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
+
+  router.get('/agent/actions/catalog', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || null;
+    const [actionCatalog, savedPolicies] = await Promise.all([
+      Promise.resolve(listActions()),
+      guildId ? listGuildActionPolicies(guildId) : Promise.resolve([]),
+    ]);
+
+    const policyMap = new Map(savedPolicies.map((item) => [item.actionName, item]));
+
+    return res.json({
+      ok: true,
+      guildId,
+      actions: actionCatalog.map((action) => toCatalogEntry(action, policyMap.get(action.name))),
+      advisoryWorkers: listAgentRoleWorkerSpecs(),
+    });
+  });
 
   router.get('/agent/actions/policies', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId);
@@ -93,6 +154,54 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     });
 
     return res.json({ ok: true, items });
+  });
+
+  router.post('/agent/actions/execute', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const actionName = toStringParam(req.body?.actionName);
+    const goal = toStringParam(req.body?.goal);
+    const guildId = toStringParam(req.body?.guildId) || undefined;
+    const requestedBy = toStringParam(req.user?.id) || toStringParam(req.body?.requestedBy) || 'api';
+    const rawArgs = req.body?.args;
+    const args = rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)
+      ? rawArgs as Record<string, unknown>
+      : {};
+
+    if (!actionName || !goal) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'actionName and goal are required' });
+    }
+
+    const action = getAction(actionName);
+    if (!action) {
+      return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', message: `unknown actionName: ${actionName}` });
+    }
+
+    try {
+      const input = normalizeActionInput({
+        actionName,
+        input: {
+          goal,
+          args,
+          guildId,
+          requestedBy,
+        },
+      });
+      const result = await action.execute(input);
+      const normalized = normalizeActionResult({ actionName, result });
+      return res.status(normalized.ok ? 200 : 200).json({
+        ok: normalized.ok,
+        action: toCatalogEntry(action),
+        result: normalized,
+      });
+    } catch (error) {
+      const workerError = toWorkerExecutionError(error);
+      return res.status(500).json({
+        ok: false,
+        error: workerError.code,
+        message: workerError.message,
+        retryable: workerError.retryable,
+        meta: workerError.meta || null,
+      });
+    }
   });
 
   router.post('/agent/actions/approvals/:requestId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {

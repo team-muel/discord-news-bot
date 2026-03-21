@@ -1,7 +1,9 @@
 ﻿import { requireAdmin, requireAuth } from '../../middleware/auth';
+import { getUserConsentSnapshot, upsertUserConsentSnapshot } from '../../services/agentConsentService';
 import { getAgentPrivacyPolicySnapshot, upsertAgentPrivacyPolicy } from '../../services/agentPrivacyPolicyService';
 import { buildPrivacyTuningRecommendation, listPrivacyGateSamples, reviewPrivacyGateSample } from '../../services/agentPrivacyTuningService';
 import { isUserAdmin } from '../../services/adminAllowlistService';
+import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../../services/agentRetentionPolicyService';
 import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previewForgetUserRagData } from '../../services/privacyForgetService';
 import { getObsidianAdapterRuntimeStatus } from '../../services/obsidian/router';
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidianQualityService';
@@ -98,6 +100,93 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const guildId = toStringParam(req.query?.guildId) || '*';
     const policy = getAgentPrivacyPolicySnapshot(guildId);
     return res.json({ guildId, policy });
+  });
+
+  router.get('/agent/privacy/consent', requireAuth, async (req, res) => {
+    const requester = toStringParam(req.user?.id) || '';
+    const guildId = toStringParam(req.query?.guildId);
+    const targetUserId = toStringParam(req.query?.userId) || requester;
+
+    if (!requester) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    }
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    const admin = await isUserAdmin(requester);
+    if (targetUserId !== requester && !admin) {
+      return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'only admin can query other users' });
+    }
+
+    const consent = await getUserConsentSnapshot({ guildId, userId: targetUserId });
+    return res.json({ ok: true, consent });
+  });
+
+  router.put('/agent/privacy/consent', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+    const requester = toStringParam(req.user?.id) || '';
+    const guildId = toStringParam(req.body?.guildId);
+    const targetUserId = toStringParam(req.body?.userId) || requester;
+
+    if (!requester) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    }
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    const admin = await isUserAdmin(requester);
+    if (targetUserId !== requester && !admin) {
+      return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'only admin can update other users' });
+    }
+
+    try {
+      const consent = await upsertUserConsentSnapshot({
+        guildId,
+        userId: targetUserId,
+        memoryEnabled: typeof req.body?.memoryEnabled === 'boolean' ? req.body.memoryEnabled : undefined,
+        socialGraphEnabled: typeof req.body?.socialGraphEnabled === 'boolean' ? req.body.socialGraphEnabled : undefined,
+        profilingEnabled: typeof req.body?.profilingEnabled === 'boolean' ? req.body.profilingEnabled : undefined,
+        actionAuditDisclosureEnabled: typeof req.body?.actionAuditDisclosureEnabled === 'boolean' ? req.body.actionAuditDisclosureEnabled : undefined,
+        updatedBy: requester,
+      });
+      return res.json({ ok: true, consent });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and userId are required' });
+      }
+      return res.status(500).json({ ok: false, error: 'CONSENT_UPSERT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/privacy/retention-policy', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId) || '*';
+    const policy = await getAgentRetentionPolicySnapshot(guildId);
+    return res.json({ ok: true, policy });
+  });
+
+  router.put('/agent/privacy/retention-policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId) || '*';
+    try {
+      const updatedBy = toStringParam(req.user?.id) || 'api';
+      const policy = await upsertAgentRetentionPolicy({
+        guildId,
+        actionLogDays: req.body?.actionLogDays,
+        memoryDays: req.body?.memoryDays,
+        socialGraphDays: req.body?.socialGraphDays,
+        conversationDays: req.body?.conversationDays,
+        approvalRequestDays: req.body?.approvalRequestDays,
+        updatedBy,
+      });
+      return res.json({ ok: true, policy });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+      }
+      return res.status(500).json({ ok: false, error: 'RETENTION_POLICY_UPSERT_FAILED', message });
+    }
   });
 
   router.put('/agent/privacy/policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {

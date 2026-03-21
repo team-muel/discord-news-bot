@@ -1,5 +1,11 @@
 # Beta Go/No-Go Checklist
 
+문서 상태:
+
+- Reference gate checklist for release decisions.
+- Use this after implementation and evidence collection, not as a backlog or roadmap.
+- Current execution priority remains in `EXECUTION_BOARD.md`.
+
 ## Decision API
 
 - Endpoint: `GET /api/bot/agent/memory/beta/go-no-go`

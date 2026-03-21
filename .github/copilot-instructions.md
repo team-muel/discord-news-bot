@@ -18,6 +18,14 @@ Keep the platform stable while shipping fast improvements for Discord operations
 - Keep docs in sync when changing behavior that impacts operators.
 - Keep workflows and scripts idempotent for unattended runs.
 
+## Internal Naming Boundary
+
+- Legacy names such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local collaboration/runtime labels.
+- They do not prove that similarly named external OSS frameworks or model stacks are installed or directly executed.
+- Prefer neutral internal naming in new docs and prompts, and refer to runtime-configured providers/actions/workers for executable truth.
+- Canonical naming and runtime surface source of truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`.
+- Naming migration and compatibility policy: `docs/ROLE_RENAME_MAP.md`.
+
 ## Agent Routing Guidance
 
 - OpenCode: coding, refactor, and tests.
@@ -25,7 +33,20 @@ Keep the platform stable while shipping fast improvements for Discord operations
 - OpenJarvis: operations, runbooks, workflows, and unattended automation.
 - OpenDev: architecture, roadmap, ADR, and decomposition plans.
 
+Local IDE collaboration default:
+
+- Prefer a lead agent plus targeted consults instead of forcing a full sequential handoff.
+- Keep release-sensitive work on the formal multi-agent workflow below.
+- Treat agent roles as primary strengths, not hard isolation boundaries, during local development.
+
 ## Multi-Agent Workflow
+
+Local collaborative track (default for IDE iteration):
+
+1. Pick the best lead agent for the current dominant task.
+2. Consult up to two specialist agents when architecture, review, or ops concerns matter.
+3. Synthesize back into one owner before editing, validating, or responding.
+4. Escalate to the delivery or operations track when formal gates are required.
 
 Delivery track (feature or code change):
 

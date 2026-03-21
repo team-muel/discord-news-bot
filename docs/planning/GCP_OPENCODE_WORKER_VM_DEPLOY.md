@@ -1,5 +1,11 @@
 # GCP Opencode Worker VM Deploy
 
+Boundary note:
+
+- `opencode` in this document refers to the repository-local execution worker surface
+- current runtime availability and naming interpretation must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- this document covers worker deployment procedure, not proof of generic upstream framework embedding
+
 목표:
 
 - GCP VM에 `opencode.execute` 전용 HTTP worker를 상주시킨다.

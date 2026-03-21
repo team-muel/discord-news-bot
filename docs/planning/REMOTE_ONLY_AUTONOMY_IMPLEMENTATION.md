@@ -1,5 +1,15 @@
 # Remote-Only Autonomy Implementation (Local Dependency = 0)
 
+Status note:
+
+- Reference operations design for remote-only unattended execution.
+- Current operational truth must be verified through `docs/OPERATIONS_24_7.md`, runtime endpoints, and deployed workflow configuration.
+
+Boundary note:
+
+- 이 문서의 OpenJarvis, `opencode.run`, worker 관련 명칭은 저장소 내부 런타임 표면과 운영 경로를 뜻한다.
+- 현재 구현 상태와 이름 충돌 해석은 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
+
 목표:
 
 - 로컬 PC가 꺼져 있어도 OpenJarvis 기반 자가 진화 루프가 24/7 지속된다.
@@ -25,14 +35,14 @@
 - SUPABASE_SERVICE_ROLE_KEY (또는 SUPABASE_KEY)
 - AUTONOMY_STRICT=true
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL=<remote worker base url>
+- MCP_OPENCODE_WORKER_URL=[remote worker base url]
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 
 자동 배포 사용 시:
 
 - AUTONOMY_AUTO_DEPLOY=true
-- RENDER_SERVICE_ID=<render service id>
-- RENDER_API_KEY=<render api key>
+- RENDER_SERVICE_ID=[render service id]
+- RENDER_API_KEY=[render api key]
 
 권장 안전값:
 
@@ -71,21 +81,21 @@
 
 - docs/planning/MIGRATION_AGENT_WEEKLY_REPORTS.sql
 
-2. GitHub Actions unattended 루프 활성화
+1. GitHub Actions unattended 루프 활성화
 
 - .github/workflows/openjarvis-unattended.yml
 
-3. OpenJarvis 원격 worker 강제
+1. OpenJarvis 원격 worker 강제
 
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
 - MCP_OPENCODE_WORKER_URL 설정
 
-4. strict gate 강제
+1. strict gate 강제
 
 - AUTONOMY_STRICT=true
 - gates:validate:strict 통과
 
-5. remote-only adapter profile 적용
+1. remote-only adapter profile 적용
 
 - local-fs 제거
 - adapter strict 활성화
@@ -96,17 +106,17 @@
 
 - tmp/autonomy/openjarvis-unattended-last-run.json artifact
 
-2. gate 판정 확인
+1. gate 판정 확인
 
 - go/no-go 결과와 rollback_required 확인
 
-3. workflow 상태 테이블 확인
+1. workflow 상태 테이블 확인
 
 - workflow_sessions
 - workflow_steps
 - workflow_events
 
-4. weekly report 적재 확인
+1. weekly report 적재 확인
 
 - agent_weekly_reports
 
@@ -124,15 +134,15 @@
 
 - MCP_OPENCODE_WORKER_URL health 확인 후 rerun
 
-2. gate strict 실패
+1. gate strict 실패
 
 - validate-go-no-go-runs 출력의 checklist 누락 우선 복구
 
-3. 배포 트리거 실패
+1. 배포 트리거 실패
 
 - RENDER_SERVICE_ID/RENDER_API_KEY 점검
 
-4. adapter capability mismatch
+1. adapter capability mismatch
 
 - write 경로를 DB 중심으로 임시 우회하고 script-cli 복구
 

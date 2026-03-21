@@ -1,5 +1,11 @@
 # Opencode Publish Worker Minimum Spec
 
+Boundary note:
+
+- `opencode` in this document refers to the repository-local GitHub change-request and publish worker surface
+- current name-collision interpretation and runtime-backed surface truth must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- this document specifies the publish loop behavior, not proof of a generic upstream framework embedding
+
 목표:
 
 - 현재 구현된 change-request/publish-queue 컨트롤 플레인을 실제 GitHub PR 생성까지 닫힌 루프로 완성한다.

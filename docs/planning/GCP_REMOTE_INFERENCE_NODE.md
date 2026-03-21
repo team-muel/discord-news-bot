@@ -1,5 +1,10 @@
 # GCP Remote Inference Node
 
+Boundary note:
+
+- this document covers remote inference infrastructure planning, not direct proof of a specific upstream stack being embedded
+- runtime naming interpretation and currently implemented surfaces must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+
 목표:
 
 - 로컬 PC가 꺼져 있어도 선택적으로 Ollama 또는 vLLM 기반 원격 추론 노드를 붙일 수 있게 한다.

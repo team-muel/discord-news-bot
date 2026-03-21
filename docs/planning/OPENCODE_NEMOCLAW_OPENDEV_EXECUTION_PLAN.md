@@ -1,5 +1,12 @@
 # Opencode + NemoClaw + OpenDev Execution Plan
 
+Status note:
+
+- this document preserves a legacy planning frame centered on older internal role names
+- current name-collision interpretation and actual runtime availability must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+- current naming migration and compatibility policy lives in `docs/ROLE_RENAME_MAP.md`
+- current local IDE collaboration flow and runtime-backed control-plane contracts live in `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`
+
 목표:
 
 - 창작/콘텐츠 모듈을 제외하고, Opencode/NemoClaw/OpenDev 3계층만 완성한다.
@@ -19,13 +26,13 @@
 - 실패/결손 감지 -> 패치 제안 -> 검증 게이트 -> 반영 루프
 - 최종 병합 권한과 긴급 중단 권한 보유
 
-2. NemoClaw 계층 (Secure Runtime)
+1. NemoClaw 계층 (Secure Runtime)
 
 - sandbox 강제 실행
 - 네트워크/파일시스템/프로세스 정책 집행
 - 정책 위반 이벤트를 상위 계층으로 리포트
 
-3. OpenDev 계층 (Parallel Agent Fabric)
+1. OpenDev 계층 (Parallel Agent Fabric)
 
 - 병렬 세션/서브에이전트 실행
 - workflow 슬롯별 모델 바인딩

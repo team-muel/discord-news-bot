@@ -1,18 +1,23 @@
 # W3 Control Plane Stabilization Results
 
+문서 상태:
+
+- Historical evidence record.
+- Keep for audit and replay only; do not use as an active planning document.
+
 목표: W3-04(상태 조회 급증 부하 테스트)와 W3-05(stage rollback 리허설)의 실행 증거를 고정한다.
 
 ## W3-04 Status API Load Test
 
 실행 환경:
 
-- API base: http://localhost:3001
+- API base: `http://localhost:3001`
 - endpoint: GET /api/bot/status
 - auth: signed session cookie
 
 실행 명령(통제 부하):
 
-- API_BASE=http://localhost:3001 STATUS_LOAD_TOTAL=60 STATUS_LOAD_CONCURRENCY=5 npm run -s load:bot-status
+- `API_BASE=http://localhost:3001 STATUS_LOAD_TOTAL=60 STATUS_LOAD_CONCURRENCY=5 npm run -s load:bot-status`
 
 결과:
 
@@ -32,7 +37,7 @@
 
 참고(버스트 스트레스):
 
-- API_BASE=http://localhost:3001 npm run -s load:bot-status (total=200, concurrency=20)
+- `API_BASE=http://localhost:3001 npm run -s load:bot-status` (total=200, concurrency=20)
 - 결과: 200 중 60개 200, 140개 429(의도된 보호 동작), p95 625ms
 
 ## W3-05 Stage Rollback Rehearsal
@@ -47,7 +52,7 @@
 
 실행 명령:
 
-- API_BASE=http://localhost:3001 node scripts/rehearse-stage-rollback.mjs
+- `API_BASE=http://localhost:3001 node scripts/rehearse-stage-rollback.mjs`
 
 결과:
 

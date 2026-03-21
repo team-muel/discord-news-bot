@@ -1,9 +1,17 @@
 # Local-First Hybrid Autonomy
 
+Status note:
+
+- Reference design for the local-first runtime profile and fallback posture.
+- Runtime availability must be validated through configured providers, worker endpoints, and health surfaces rather than this document alone.
+
 목표:
 
 - 개발자 로컬 머신이 켜져 있을 때는 Ollama 기반 추론을 우선 사용해 응답 품질과 실험 속도를 높인다.
 - 운영 환경은 여전히 원격 worker + 원격 fallback provider를 유지해 OpenJarvis unattended autonomy를 끊지 않는다.
+
+이 문서에서 나오는 역할 이름은 저장소 내부 런타임/협업 라벨이다.
+이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 본다.
 
 핵심 원칙:
 

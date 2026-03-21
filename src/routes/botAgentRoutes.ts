@@ -6,6 +6,7 @@ import { registerBotAgentQualityPrivacyRoutes } from './bot-agent/qualityPrivacy
 import { registerBotAgentGovernanceRoutes } from './bot-agent/governanceRoutes';
 import { registerBotAgentMemoryRoutes } from './bot-agent/memoryRoutes';
 import { registerBotAgentLearningRoutes } from './bot-agent/learningRoutes';
+import { registerBotAgentToolsRoutes } from './bot-agent/toolsRoutes';
 
 export function registerBotAgentRoutes(deps: BotAgentRouteDeps): void {
   registerBotAgentCoreRoutes(deps);
@@ -13,6 +14,7 @@ export function registerBotAgentRoutes(deps: BotAgentRouteDeps): void {
   registerBotAgentGotRoutes(deps);
   registerBotAgentQualityPrivacyRoutes(deps);
   registerBotAgentGovernanceRoutes(deps);
+  registerBotAgentToolsRoutes(deps);
   registerBotAgentMemoryRoutes(deps);
   registerBotAgentLearningRoutes(deps);
 }

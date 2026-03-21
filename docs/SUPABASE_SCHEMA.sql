@@ -3057,8 +3057,55 @@ create index if not exists idx_agent_action_approvals_guild_created
 create index if not exists idx_agent_action_approvals_status_expires
   on public.agent_action_approval_requests (status, expires_at asc);
 
+create table if not exists public.agent_user_privacy_preferences (
+  guild_id text not null,
+  user_id text not null,
+  memory_enabled boolean not null default true,
+  social_graph_enabled boolean not null default true,
+  profiling_enabled boolean not null default true,
+  action_audit_disclosure_enabled boolean not null default true,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, user_id)
+);
+
+create index if not exists idx_agent_user_privacy_preferences_guild_updated
+  on public.agent_user_privacy_preferences (guild_id, updated_at desc);
+
+drop trigger if exists trg_agent_user_privacy_preferences_updated_at on public.agent_user_privacy_preferences;
+create trigger trg_agent_user_privacy_preferences_updated_at
+before update on public.agent_user_privacy_preferences
+for each row
+execute function public.set_updated_at();
+
+create table if not exists public.agent_retention_policies (
+  guild_id text primary key,
+  action_log_days integer not null default 90,
+  memory_days integer not null default 180,
+  social_graph_days integer not null default 180,
+  conversation_days integer not null default 90,
+  approval_request_days integer not null default 30,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (action_log_days > 0),
+  check (memory_days > 0),
+  check (social_graph_days > 0),
+  check (conversation_days > 0),
+  check (approval_request_days > 0)
+);
+
+drop trigger if exists trg_agent_retention_policies_updated_at on public.agent_retention_policies;
+create trigger trg_agent_retention_policies_updated_at
+before update on public.agent_retention_policies
+for each row
+execute function public.set_updated_at();
+
 alter table public.agent_action_policies enable row level security;
 alter table public.agent_action_approval_requests enable row level security;
+alter table public.agent_user_privacy_preferences enable row level security;
+alter table public.agent_retention_policies enable row level security;
 
 do $$
 begin
@@ -3075,6 +3122,24 @@ begin
     select 1 from pg_policies where schemaname='public' and tablename='agent_action_approval_requests' and policyname='agent_action_approvals_guild_all'
   ) then
     create policy agent_action_approvals_guild_all on public.agent_action_approval_requests
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_user_privacy_preferences' and policyname='agent_user_privacy_preferences_guild_all'
+  ) then
+    create policy agent_user_privacy_preferences_guild_all on public.agent_user_privacy_preferences
+      for all
+      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
+      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_retention_policies' and policyname='agent_retention_policies_guild_all'
+  ) then
+    create policy agent_retention_policies_guild_all on public.agent_retention_policies
       for all
       using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
       with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));

@@ -2,6 +2,19 @@
 
 Use this as a baseline for deploying Muel as a server-operations runtime.
 
+Boundary note:
+
+- role-related env vars in this file configure repository-local runtime actions and advisory workers
+- they do not automatically discover or wrap arbitrary local external OSS CLIs or servers
+- broader local tool adapter design is documented separately in `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`
+- name collision interpretation and current runtime availability are tracked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+
+Current first slice note:
+
+- the repository now includes a first local CLI tool slice exposed as `tools.run.cli`
+- this slice is intentionally narrow: one explicitly configured CLI tool, no PATH auto-discovery, no dynamic registration
+- in the current four-role model, direct local tool execution is treated as an OpenJarvis-owned runtime surface and can be invoked directly or through Local Orchestrator
+
 ## Runtime Artifact VCS Policy
 
 - Runtime artifacts are operational outputs and are not tracked in VCS by default.
@@ -17,18 +30,18 @@ Use this as a baseline for deploying Muel as a server-operations runtime.
 ## LLM Provider (Harness)
 
 - AI_PROVIDER=openai|gemini|anthropic|huggingface|openclaw|ollama
-- OPENAI_API_KEY=<secret> (if openai)
-- GEMINI_API_KEY=<secret> (if gemini)
-- ANTHROPIC_API_KEY=<secret> (if anthropic)
-- HF_TOKEN=<secret> (if huggingface; primary key)
-- HF_API_KEY=<secret> (huggingface alias)
-- HUGGINGFACE_API_KEY=<secret> (huggingface alias)
-- HUGGINGFACE_CHAT_COMPLETIONS_URL=https://router.huggingface.co/v1/chat/completions (optional)
-- HUGGINGFACE_MODEL=<model-id> (optional)
-- OPENCLAW_BASE_URL=<url> (if openclaw)
-- OPENCLAW_API_KEY=<secret> (optional)
-- OLLAMA_MODEL=<model> (if ollama)
-- OLLAMA_BASE_URL=http://127.0.0.1:11434 (optional)
+- OPENAI_API_KEY=[secret] (if openai)
+- GEMINI_API_KEY=[secret] (if gemini)
+- ANTHROPIC_API_KEY=[secret] (if anthropic)
+- HF_TOKEN=[secret] (if huggingface; primary key)
+- HF_API_KEY=[secret] (huggingface alias)
+- HUGGINGFACE_API_KEY=[secret] (huggingface alias)
+- HUGGINGFACE_CHAT_COMPLETIONS_URL=`https://router.huggingface.co/v1/chat/completions` (optional)
+- HUGGINGFACE_MODEL=[model-id] (optional)
+- OPENCLAW_BASE_URL=[url] (if openclaw)
+- OPENCLAW_API_KEY=[secret] (optional)
+- OLLAMA_MODEL=[model] (if ollama)
+- OLLAMA_BASE_URL=`http://127.0.0.1:11434` (optional)
 - OPENAI_ANALYSIS_MODEL / GEMINI_MODEL / ANTHROPIC_MODEL (optional)
 
 Provider fallback controls:
@@ -60,12 +73,25 @@ Provider fallback controls:
 - ACTION_POLICY_DEFAULT_ENABLED=true (optional, no policy row fallback)
 - ACTION_POLICY_DEFAULT_RUN_MODE=approval_required (optional: auto|approval_required|disabled)
 - ACTION_POLICY_FAIL_OPEN_ON_ERROR=false (optional, keep false for fail-closed)
-- ACTION_ALLOWED_ACTIONS=rag.retrieve,web.search,web.fetch,db.supabase.read,code.generate,opencode.execute (optional, 운영에서는 \* 대신 명시 allowlist 권장)
+- ACTION_ALLOWED_ACTIONS=rag.retrieve,web.search,web.fetch,db.supabase.read,code.generate,opencode.execute,tools.run.cli (optional, 운영에서는 \* 대신 명시 allowlist 권장)
 - ACTION_MCP_DELEGATION_ENABLED=true (optional)
 - ACTION_MCP_STRICT_ROUTING=false (optional, true면 워커 오류 시 로컬 fallback 금지)
 - ACTION_MCP_TIMEOUT_MS=8000 (optional)
 - MCP_OPENCODE_WORKER_URL= (optional, opencode worker base url)
 - MCP_OPENCODE_TOOL_NAME=opencode.run (optional)
+- MCP_OPENDEV_WORKER_URL= (optional, OpenDev worker base url)
+- MCP_NEMOCLAW_WORKER_URL= (optional, NemoClaw worker base url)
+- MCP_OPENJARVIS_WORKER_URL= (optional, OpenJarvis worker base url)
+- MCP_LOCAL_ORCHESTRATOR_WORKER_URL= (optional, local-orchestrator worker base url)
+- LOCAL_CLI_TOOL_ENABLED=false (optional, true면 단일 명시적 CLI tool slice 활성화)
+- LOCAL_CLI_TOOL_NAME=local.cli (optional, catalog/action에서 보일 tool name)
+- LOCAL_CLI_TOOL_DESCRIPTION=Configured local CLI tool (optional)
+- LOCAL_CLI_TOOL_COMMAND= (optional, 활성화 시 필수; execFile 대상 command)
+- LOCAL_CLI_TOOL_ARGS_JSON=["{goal}"] (optional, JSON array; placeholder: {goal} {guildId} {requestedBy} {arg:key})
+- LOCAL_CLI_TOOL_TIMEOUT_MS=15000 (optional)
+- LOCAL_CLI_TOOL_MAX_OUTPUT_CHARS=2000 (optional)
+- AGENT_ROLE_WORKER_REQUIRE_AUTH=true (optional, advisory role workers auth gate)
+- AGENT_ROLE_WORKER_AUTH_TOKEN=[secret] (optional, advisory role workers shared token)
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=false (optional, unattended/production에서는 true 권장)
 - AGENT_CONVERSATION_THREAD_IDLE_MS=21600000 (optional, turn thread reuse idle window; default 6h)
 - OPENCODE_PUBLISH_WORKER_ENABLED=false (optional, true면 queue 소비 + GitHub PR publish 루프 활성화)
@@ -81,9 +107,9 @@ Provider fallback controls:
 - OPENCODE_PUBLISH_DISTRIBUTED_LOCK_LEASE_MS=30000 (optional, distributed lock lease)
 - OPENCODE_PUBLISH_DISTRIBUTED_LOCK_NAME=opencode.publish.worker (optional)
 - OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN=false (optional, lock 획득 실패 시 fail-open 실행 허용 여부)
-- OPENCODE_TARGET_REPO_OWNER=<owner> (optional, payload 미지정 시 기본값)
-- OPENCODE_TARGET_REPO_NAME=<repo> (optional, payload 미지정 시 기본값)
-- GITHUB_TOKEN=<secret> (optional, publish worker 사용 시 필수)
+- OPENCODE_TARGET_REPO_OWNER=[owner] (optional, payload 미지정 시 기본값)
+- OPENCODE_TARGET_REPO_NAME=[repo] (optional, payload 미지정 시 기본값)
+- GITHUB_TOKEN=[secret] (optional, publish worker 사용 시 필수)
 - PLANNER_SELF_CONSISTENCY_ENABLED=true (optional, planner 다중 샘플 합의 사용)
 - PLANNER_SELF_CONSISTENCY_SAMPLES=3 (optional, 1~5 권장)
 - PLANNER_SELF_CONSISTENCY_TEMPERATURE=0.35 (optional, 0~1)
@@ -96,7 +122,7 @@ Provider fallback controls:
 - WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS=300000 (optional, approval store save warn log throttle)
 - OBSIDIAN_HEADLESS_ENABLED=true (optional, 권장: read/search/graph headless 우선)
 - OBSIDIAN_HEADLESS_COMMAND=ob (optional)
-- OBSIDIAN_VAULT_NAME=<vault-name> (optional, headless 대상 vault 식별자)
+- OBSIDIAN_VAULT_NAME=[vault-name] (optional, headless 대상 vault 식별자)
 - OBSIDIAN_HEADLESS_LORE_MAX_HINTS=6 (optional, headless lore 힌트 수)
 - OBSIDIAN_HEADLESS_LORE_MAX_CHARS=220 (optional, 힌트 1개당 최대 문자)
 - OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli,local-fs (optional)
@@ -247,6 +273,26 @@ Provider fallback controls:
 
 운영형 Render baseline에서는 아래 값을 명시하는 편이 안전하다.
 
+## Local CLI Tool Example
+
+예시 목적:
+
+- 로컬에 명시적으로 설치한 CLI 하나를 네 역할 체계 안에서 first-class action으로 노출
+
+예시 값:
+
+- `LOCAL_CLI_TOOL_ENABLED=true`
+- `LOCAL_CLI_TOOL_NAME=ollama.tags`
+- `LOCAL_CLI_TOOL_DESCRIPTION=Inspect locally available Ollama tags`
+- `LOCAL_CLI_TOOL_COMMAND=ollama`
+- `LOCAL_CLI_TOOL_ARGS_JSON=["list"]`
+
+운영 확인 경로:
+
+- `GET /api/bot/agent/tools/status`
+- `GET /api/bot/agent/actions/catalog`
+- `POST /api/bot/agent/actions/execute` with `actionName=tools.run.cli`
+
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
 - ACTION_MCP_STRICT_ROUTING=true
 - MCP_OPENCODE_WORKER_URL=worker-url
@@ -257,6 +303,7 @@ Provider fallback controls:
 - 현재 임시 endpoint 예시는 [34.56.232.61.sslip.io](https://34.56.232.61.sslip.io) 이다.
 - 장기 운영에서는 정식 도메인으로 교체하고 같은 값을 Render service env에도 반영한다.
 - worker는 public `8787` 직접 노출 대신 `127.0.0.1:8787` + reverse proxy 구성을 유지한다.
+- advisory role worker env가 설정되어 있어도 실제 callable 여부는 `GET /api/bot/agent/actions/catalog`와 `GET /api/bot/agent/runtime/role-workers`로 확인한다.
 
 ## Automation Defaults
 
@@ -278,7 +325,7 @@ Provider fallback controls:
 
 ## Web Search & Verification
 
-- SERPER_API_KEY=<secret> (optional — Google 품질 검색; 없으면 DuckDuckGo HTML 폴백 자동 사용)
+- SERPER_API_KEY=[secret] (optional — Google 품질 검색; 없으면 DuckDuckGo HTML 폴백 자동 사용)
 - WEB_SEARCH_MAX_RESULTS=5 (optional)
 - NEWS_VERIFY_SOURCE_LIMIT=4 (optional)
 - ACTION_NEWS_CAPTURE_ENABLED=true (optional)
@@ -290,9 +337,9 @@ Provider fallback controls:
 
 ## Trading Credentials
 
-- BINANCE_API_KEY=<secret>
-- BINANCE_API_SECRET=<secret>
-- BINANCE_SECRET_KEY=<secret> (legacy alias, migrate to BINANCE_API_SECRET)
+- BINANCE_API_KEY=[secret]
+- BINANCE_API_SECRET=[secret]
+- BINANCE_SECRET_KEY=[secret] (legacy alias, migrate to BINANCE_API_SECRET)
 
 ## Notes
 
@@ -309,7 +356,7 @@ Provider fallback controls:
 - If `OBSIDIAN_CLI_COMMAND` is set, the backend executes it at runtime to fetch memory hints and falls back to direct markdown reads only when CLI output is unavailable.
 - 로컬 PC가 꺼져도 무인 운영하려면 read/search/graph는 `headless-cli` 우선, 쓰기는 Supabase(memory_items/guild_lore_docs) 경로를 기본으로 설계하세요.
 - 현재 `headless-cli` adapter는 `read_lore/search_vault/read_file/graph_metadata` 중심이며, `write_note`는 local-fs/script-cli fallback 경로를 사용합니다.
-- LiteLLM 프록시를 사용하려면 `AI_PROVIDER=openclaw` + `OPENCLAW_BASE_URL=<litellm-endpoint>` 조합으로 서버 측 provider 경로를 고정하세요.
+- LiteLLM 프록시를 사용하려면 `AI_PROVIDER=openclaw` + `OPENCLAW_BASE_URL=[litellm-endpoint]` 조합으로 서버 측 provider 경로를 고정하세요.
 - HF canary A/B를 운영하려면 `LLM_EXPERIMENT_ENABLED=true`, `LLM_EXPERIMENT_HF_PERCENT`, `LLM_EXPERIMENT_GUILD_ALLOWLIST`를 함께 설정하고 `/api/bot/agent/llm/experiments/summary`로 arm별 성공률/지연/비용을 확인하세요.
 - 확장 유틸리티 점검: `/api/bot/agent/runtime/supabase/extensions`, `/api/bot/agent/runtime/supabase/cron-jobs`, `/api/bot/agent/runtime/supabase/hypopg/candidates`.
 - Untrusted chat input is sanitized before passing to Obsidian CLI (control chars, traversal tokens, shell metacharacters removed) and guild-scoped markdown path resolution is constrained under `OBSIDIAN_VAULT_PATH`.
@@ -323,7 +370,7 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 
 - AUTONOMY_STRICT=true
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL=<required>
+- MCP_OPENCODE_WORKER_URL=[required]
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 - ACTION_MCP_DELEGATION_ENABLED=true
 - ACTION_MCP_STRICT_ROUTING=true
@@ -349,13 +396,13 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 Use this profile when 로컬 머신이 켜져 있을 때는 Ollama를 우선 사용하되, 운영 unattended autonomy는 원격 worker로 유지하려는 경우:
 
 - AI_PROVIDER=ollama
-- OLLAMA_MODEL=<required>
-- OLLAMA_BASE_URL=http://127.0.0.1:11434
+- OLLAMA_MODEL=[required]
+- OLLAMA_BASE_URL=`http://127.0.0.1:11434`
 - LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface
 - LLM_PROVIDER_FALLBACK_CHAIN=openclaw,anthropic,openai,gemini,huggingface
 - LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL=http://127.0.0.1:8787 (로컬 worker) 또는 실제 원격 worker URL
+- MCP_OPENCODE_WORKER_URL=`http://127.0.0.1:8787` (로컬 worker) 또는 실제 원격 worker URL
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 - ACTION_MCP_DELEGATION_ENABLED=true
 - ACTION_MCP_STRICT_ROUTING=true
