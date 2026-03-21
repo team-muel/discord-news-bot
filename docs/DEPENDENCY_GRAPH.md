@@ -1,21 +1,21 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 238
+- Nodes: 245
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/services/supabaseClient.ts | 65 |
+| src/services/supabaseClient.ts | 66 |
+| src/utils/env.ts | 61 |
 | src/logger.ts | 55 |
-| src/utils/env.ts | 55 |
 | src/services/skills/actions/types.ts | 25 |
 | src/config.ts | 17 |
 | src/services/multiAgentService.ts | 16 |
 | src/middleware/auth.ts | 15 |
+| src/services/llmClient.ts | 15 |
 | src/services/skills/types.ts | 15 |
-| src/services/llmClient.ts | 14 |
 | src/discord/messages.ts | 12 |
 | src/utils/validation.ts | 12 |
 | src/utils/obsidianEnv.ts | 10 |
@@ -301,6 +301,7 @@ graph LR
   "src/routes/health.ts" --> "src/contracts/bot.ts"
   "src/routes/health.ts" --> "src/services/automationBot.ts"
   "src/routes/health.ts" --> "src/services/llmClient.ts"
+  "src/routes/health.ts" --> "src/utils/env.ts"
   "src/routes/quant.ts":::file
   "src/routes/research.ts" --> "src/contracts/researchPreset.ts"
   "src/routes/research.ts" --> "src/middleware/auth.ts"
@@ -382,6 +383,7 @@ graph LR
   "src/services/agentSloService.ts" --> "src/logger.ts"
   "src/services/agentSloService.ts" --> "src/services/agentRuntimeReadinessService.ts"
   "src/services/agentSloService.ts" --> "src/services/goNoGoService.ts"
+  "src/services/agentSloService.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/agentSloService.ts" --> "src/services/opencodeGitHubQueueService.ts"
   "src/services/agentSloService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentSloService.ts" --> "src/utils/async.ts"
@@ -398,7 +400,9 @@ graph LR
   "src/services/agentTotPolicyService.ts" --> "src/logger.ts"
   "src/services/agentTotPolicyService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentTotPolicyService.ts" --> "src/utils/env.ts"
+  "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/services/opencodeOpsService.ts"
   "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/services/skills/actionGovernanceStore.ts"
+  "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/utils/env.ts"
   "src/services/agentWorkflowService.ts" --> "src/logger.ts"
@@ -639,6 +643,7 @@ graph LR
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/discord/auth.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/agentOpsService.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/agentRoleWorkerService.ts"
+  "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/agentSloService.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/automationBot.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/obsidianLoreSyncService.ts"
@@ -657,7 +662,9 @@ graph LR
   "src/services/skills/actionGovernanceStore.ts" --> "src/utils/env.ts"
   "src/services/skills/actionRunner.ts" --> "src/logger.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/agentMemoryStore.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/agentWorkerApprovalGateSnapshotService.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/finopsService.ts"
+  "src/services/skills/actionRunner.ts" --> "src/services/llmClient.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/newsCaptureDedupService.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/promptCompiler.ts"
   "src/services/skills/actionRunner.ts" --> "src/services/skills/actionExecutionLogService.ts"
@@ -676,6 +683,7 @@ graph LR
   "src/services/skills/actions/agentCollab.ts" --> "src/services/skills/actions/opencode.ts"
   "src/services/skills/actions/agentCollab.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/agentCollab.ts" --> "src/services/superAgentService.ts"
+  "src/services/skills/actions/agentCollab.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/services/skills/actions/agentCollab.ts" --> "src/services/workerGeneration/workerExecutors.ts"
   "src/services/skills/actions/analysis.ts" --> "src/services/investmentAnalysisService.ts"
   "src/services/skills/actions/analysis.ts" --> "src/services/skills/actions/types.ts"
@@ -812,12 +820,30 @@ graph LR
   "src/services/taskRoutingMetricsService.ts" --> "src/services/taskRoutingService.ts"
   "src/services/taskRoutingService.ts" --> "src/services/supabaseClient.ts"
   "src/services/toolLearningService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/utils/env.ts"
+  "src/services/tools/adapters/openclawCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/openclawCliAdapter.ts" --> "src/utils/env.ts"
+  "src/services/tools/adapters/openjarvisAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/openjarvisAdapter.ts" --> "src/utils/env.ts"
+  "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/tools/adapters/scriptCliToolAdapter.ts" --> "src/services/tools/types.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/nemoclawCliAdapter.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openclawCliAdapter.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openjarvisAdapter.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openshellCliAdapter.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/externalAdapterTypes.ts":::file
+  "src/services/tools/externalToolProbe.ts" --> "src/utils/env.ts"
   "src/services/tools/toolExecutor.ts" --> "src/services/tools/adapters/scriptCliToolAdapter.ts"
   "src/services/tools/toolExecutor.ts" --> "src/services/tools/toolRegistry.ts"
   "src/services/tools/toolExecutor.ts" --> "src/services/tools/types.ts"
   "src/services/tools/toolRegistry.ts" --> "src/services/tools/types.ts"
   "src/services/tools/toolRegistry.ts" --> "src/utils/env.ts"
+  "src/services/tools/toolRouter.ts" --> "src/services/tools/externalAdapterRegistry.ts"
+  "src/services/tools/toolRouter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/toolRouter.ts" --> "src/services/tools/externalToolProbe.ts"
   "src/services/tools/toolRouter.ts" --> "src/services/tools/toolExecutor.ts"
   "src/services/tools/toolRouter.ts" --> "src/services/tools/toolRegistry.ts"
   "src/services/tools/toolRouter.ts" --> "src/services/tools/types.ts"

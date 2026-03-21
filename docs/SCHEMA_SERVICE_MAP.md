@@ -9,7 +9,7 @@
 | Table | Services |
 | --- | --- |
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
-| agent_action_logs | src/services/finopsService.ts<br/>src/services/opencodeOpsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts<br/>src/services/taskRoutingAnalyticsService.ts<br/>src/services/taskRoutingMetricsService.ts<br/>src/services/toolLearningService.ts |
+| agent_action_logs | src/services/agentWorkerApprovalGateSnapshotService.ts<br/>src/services/finopsService.ts<br/>src/services/opencodeOpsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts<br/>src/services/taskRoutingAnalyticsService.ts<br/>src/services/taskRoutingMetricsService.ts<br/>src/services/toolLearningService.ts |
 | agent_action_policies | - |
 | agent_answer_quality_reviews | src/services/agentGotAnalyticsService.ts<br/>src/services/agentQualityReviewService.ts |
 | agent_conversation_threads | src/services/privacyForgetService.ts |

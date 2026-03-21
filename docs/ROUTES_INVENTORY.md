@@ -6,7 +6,7 @@
 
 | Method | Path | Auth | Admin | Rate Limit | Source |
 | --- | --- | --- | --- | --- | --- |
-| GET | / | no | no | no | src/routes/health.ts:137 |
+| GET | / | no | no | no | src/routes/health.ts:141 |
 | GET | /api/auth/callback | no | no | yes | src/routes/auth.ts:281 |
 | GET | /api/auth/invite | no | no | no | src/routes/auth.ts:270 |
 | GET | /api/auth/login | no | no | yes | src/routes/auth.ts:254 |
@@ -120,6 +120,8 @@
 | POST | /api/bot/agent/task-routing/feedback | no | yes | yes | src/routes/bot-agent/learningRoutes.ts:28 |
 | GET | /api/bot/agent/task-routing/policy-hints | no | yes | no | src/routes/bot-agent/learningRoutes.ts:77 |
 | GET | /api/bot/agent/task-routing/summary | no | yes | no | src/routes/bot-agent/learningRoutes.ts:12 |
+| GET | /api/bot/agent/tools/adapters | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:21 |
+| GET | /api/bot/agent/tools/external | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:16 |
 | GET | /api/bot/agent/tools/status | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:9 |
 | POST | /api/bot/automation/:jobName/run | no | yes | yes | src/routes/bot.ts:226 |
 | POST | /api/bot/reconnect | no | yes | yes | src/routes/bot.ts:245 |
@@ -131,7 +133,7 @@
 | POST | /api/research/preset/:presetKey | no | yes | no | src/routes/research.ts:36 |
 | GET | /api/research/preset/:presetKey/history | yes | no | no | src/routes/research.ts:25 |
 | POST | /api/research/preset/:presetKey/restore/:historyId | no | yes | no | src/routes/research.ts:58 |
-| GET | /api/status | no | no | no | src/routes/health.ts:133 |
+| GET | /api/status | no | no | no | src/routes/health.ts:137 |
 | GET | /api/trades/ | yes | no | no | src/routes/trades.ts:49 |
 | POST | /api/trades/ | no | yes | no | src/routes/trades.ts:66 |
 | GET | /api/trading/position | yes | yes | no | src/routes/trading.ts:99 |
@@ -143,5 +145,5 @@
 | GET | /api/trading/strategy | yes | yes | no | src/routes/trading.ts:29 |
 | PUT | /api/trading/strategy | yes | yes | yes | src/routes/trading.ts:39 |
 | POST | /api/trading/strategy/reset | yes | yes | yes | src/routes/trading.ts:50 |
-| GET | /health | no | no | no | src/routes/health.ts:89 |
-| GET | /ready | no | no | no | src/routes/health.ts:118 |
+| GET | /health | no | no | no | src/routes/health.ts:92 |
+| GET | /ready | no | no | no | src/routes/health.ts:122 |
