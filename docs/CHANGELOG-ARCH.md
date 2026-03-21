@@ -25,6 +25,36 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-21 - External Tool Layer Integration Plan (NemoClaw, OpenShell, OpenClaw, OpenJarvis, Nemotron)
+
+- Why: 내부 역할 라벨(nemoclaw, openjarvis 등)을 실제 외부 OSS 도구로 연결하는 Tool Layer 통합 시작. NVIDIA NemoClaw(★14.5k), OpenShell(★2.8k), OpenClaw(openclaw.ai), Stanford OpenJarvis(★1.6k), Nemotron 모델을 로컬 IDE Tool Layer로 통합하여 recursive/self-learning 자율 에이전트 파이프라인을 구축한다. OpenJarvis는 Stanford Scaling Intelligence Lab(Hazy Research, Christopher Ré, John Hennessy)의 로컬 우선 개인 AI 프레임워크로, 5-primitive composable stack (Intelligence, Engine, Agents, Tools & Memory, Learning)을 제공하며 trace 기반 self-learning loop(자동 최적화)을 내장한다.
+- Scope: 신규 `EXTERNAL_TOOL_INTEGRATION_PLAN.md` 생성, `RUNTIME_NAME_AND_SURFACE_MATRIX.md` External Name Reference 및 Surface Matrix 업데이트, `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`에 구체적 adapter 인터페이스(OpenShell/NemoClaw/OpenClaw/OpenJarvis) 추가, `litellm.config.yaml`에 `muel-nemotron` 모델 등록, `scripts/bootstrap-external-tools.sh` readiness 체크 스크립트 생성.
+- Impacted Routes: N/A (planning/documentation/config phase)
+- Impacted Services: `litellm.config.yaml` (muel-nemotron entry + fallback chain), future `src/services/tools/adapters/` (openshellCliAdapter, nemoclawCliAdapter, openclawCliAdapter, openjarvisAdapter).
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: (1) litellm.config.yaml에 muel-nemotron 추가는 `NVIDIA_NIM_API_KEY` 미설정 시 해당 모델만 호출 실패하며 기존 모델에 영향 없음. (2) 외부 도구 adapter는 아직 stub/계획 단계이며, 기존 in-process 역할 실행 경로에 영향 없음. (3) 모든 외부 도구는 선택적(optional)이며 미설치 시 기존 폴백 경로 유지.
+- Validation: `npm run -s lint`, `bash scripts/bootstrap-external-tools.sh --check-only` (readiness surface 확인).
+
+## 2026-03-21 - Quality Metric Wiring & Null Coercion Fix (Retrieval Eval Fallback + resolveMetric)
+
+- Why: auto-judge weekly quality gate가 영구 `pending`(source-only quality 샘플 0건) 상태였고, `null ?? '' → Number('') → 0` 버그로 데이터 없는 메트릭이 실제 값 0으로 전달되어 잘못된 pass/fail 판정이 발생했음. Retrieval eval 데이터(82건, recall@k=0.1026)가 존재함에도 quality gate에 연결되지 않았음.
+- Scope: `scripts/auto-judge-from-weekly.mjs` — strategy_quality_normalization fallback 배선, `resolveMetric` 헬퍼 도입, per-action latency 진단 출력, `top_actions` select 추가.
+- Impacted Routes: N/A (ops automation only)
+- Impacted Services: `scripts/auto-judge-from-weekly.mjs`.
+- Impacted Tables/RPC: reads `public.agent_weekly_reports` (`top_actions` column now selected; `baseline_summary.strategy_quality_normalization` consumed as quality fallback).
+- Risk/Regression Notes: (1) Quality gate가 `pending` → `fail`로 전환될 수 있음 (retrieval recall이 threshold 미달 시). 이는 의도된 정직 신호. (2) Safety metrics가 서버 미연결 시 `0` → `null`(pending)로 변경됨 — 이전에는 null→0 변환 버그로 잘못 pass/fail 판정. (3) `hasRetrievalEvalFallback=true` 시 historical gate verdict override를 건너뛰고 gate 자연 평가 적용.
+- Validation: `npm run -s lint`, `npx vitest run` (6/6), `npm run -s gates:validate` (35건), `npm run -s gates:fixtures:check`, `npm run -s gates:weekly-report:all:dry` (7단계 통과).
+
+## 2026-03-21 - Weekly Auto-Judge Metric Mapping Fix (Self-Reference + Unit Mismatch)
+
+- Why: weekly auto-judge가 go/no-go weekly 집계의 `no_go` 카운트를 `error_rate_pct`로, LLM delta를 절대 p95로 오용하여 실제 운영 상태와 무관한 no-go를 반복 생성했고, quality 입력이 자기 참조 루프(weekly:auto 산출물 → 다음 주 judge 입력)에 의해 0으로 고정되는 문제가 있었음.
+- Scope: `scripts/auto-judge-from-weekly.mjs`의 reliability/quality 입력 매핑을 수정하고, `scripts/summarize-go-no-go-runs.mjs`에 source-only `auto_judge_signal_summary`를 추가해 weekly:auto 파생 run이 다음 주기 judge 입력을 오염하지 않게 했다.
+- Impacted Routes: N/A (ops automation/documentation only)
+- Impacted Services: `scripts/auto-judge-from-weekly.mjs`, `scripts/summarize-go-no-go-runs.mjs`, `docs/planning/gate-runs/README.md`.
+- Impacted Tables/RPC: reads/writes `public.agent_weekly_reports` (`report_kind=go_no_go_weekly` `baseline_summary.auto_judge_signal_summary` added).
+- Risk/Regression Notes: 기존 weekly auto-judge 결과에서 error_rate_pct 해석이 달라져 이전 run과 직접 비교 시 차이가 나타남. quality gate override 우선순위가 변경되어 insufficientSamples가 fail보다 앞선다.
+- Validation: `npm run -s lint`, `npx vitest run src/services/runtimeSchedulerPolicyService.test.ts src/services/agentWorkerApprovalGateSnapshotService.test.ts`, `npm run -s gates:validate`, `npm run -s gates:fixtures:check`, `npm run -s gates:weekly-report:all:dry`.
+
 ## 2026-03-21 - Neutral Role Alias Compatibility Layer
 
 - Why: 문서에서 정의한 neutral 내부 역할명으로 점진 전환할 수 있도록, legacy 이름을 즉시 제거하지 않고 런타임이 양쪽 이름을 모두 수용하게 만들기 위함.

@@ -141,6 +141,8 @@ export const runWorkerGenerationPipeline = async (params: {
     validationPassed,
     validationErrors,
     validationWarnings,
+    discoverEvidenceId: discover.evidenceId,
+    verifyEvidenceId: verify.evidenceId,
   });
 
   return { ok: true, approval };

@@ -46,6 +46,8 @@ const runtimeLoopEvidenceChecklist = [
   '- [ ] database ID 확인 (`supabase-maintenance-cron`, `login-session-cleanup(db)`)',
   '- [ ] loops snapshot 첨부 (`/api/bot/agent/runtime/loops`)',
   '- [ ] unattended-health snapshot 첨부 (`/api/bot/agent/runtime/unattended-health`)',
+  '- [ ] worker-approval-gates snapshot 첨부 (`/api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5`)',
+  '- [ ] OpenDev -> NemoClaw sandbox delegation evidence 확인 (`delegationEvidence.complete=true`)',
 ].join('\n');
 
 const fileName = `${yyyy}-${mm}-${dd}_${runId}.md`;
@@ -89,6 +91,8 @@ const jsonBody = {
     database_ids_verified: false,
     loops_snapshot_attached: false,
     unattended_health_snapshot_attached: false,
+    worker_approval_gates_snapshot_attached: false,
+    sandbox_delegation_verified: false,
   },
 };
 

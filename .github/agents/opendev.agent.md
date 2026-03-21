@@ -1,6 +1,6 @@
 ---
 name: opendev
-description: "Use when defining architecture, roadmap sequencing, ADR decisions, cross-system design improvements, or advising other agents during local IDE collaboration."
+description: "Architect role (legacy: opendev). Use when defining architecture, roadmap sequencing, ADR decisions, cross-system design improvements, or advising other agents during local IDE collaboration."
 ---
 
 # OpenDev Agent

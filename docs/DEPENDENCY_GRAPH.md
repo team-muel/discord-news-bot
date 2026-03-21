@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 237
+- Nodes: 238
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -9,7 +9,7 @@
 | --- | --- |
 | src/services/supabaseClient.ts | 65 |
 | src/logger.ts | 55 |
-| src/utils/env.ts | 54 |
+| src/utils/env.ts | 55 |
 | src/services/skills/actions/types.ts | 25 |
 | src/config.ts | 17 |
 | src/services/multiAgentService.ts | 16 |
@@ -254,6 +254,7 @@ graph LR
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agentSloService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agentSocialQualitySnapshotService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agentTelemetryQueue.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agentWorkerApprovalGateSnapshotService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/efficiencyOptimizationService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/finopsService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/llmExperimentAnalyticsService.ts"
@@ -397,6 +398,9 @@ graph LR
   "src/services/agentTotPolicyService.ts" --> "src/logger.ts"
   "src/services/agentTotPolicyService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentTotPolicyService.ts" --> "src/utils/env.ts"
+  "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/services/skills/actionGovernanceStore.ts"
+  "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
+  "src/services/agentWorkerApprovalGateSnapshotService.ts" --> "src/utils/env.ts"
   "src/services/agentWorkflowService.ts" --> "src/logger.ts"
   "src/services/agentWorkflowService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentWorkflowService.ts" --> "src/utils/env.ts"

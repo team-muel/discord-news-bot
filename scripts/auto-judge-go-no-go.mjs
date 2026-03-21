@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import fs from 'fs';
 import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 const ROOT = process.cwd();
 const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
@@ -47,6 +48,79 @@ const providerProfileHintArg = String(parseArg('providerProfileHint', '')).trim(
 const providerProfileHint = ['cost-optimized', 'quality-optimized', 'keep-current'].includes(providerProfileHintArg)
   ? providerProfileHintArg
   : null;
+const autoFetchQuality = parseBool('autoFetchQuality', false);
+const autoFetchWindowMs = parseNum('autoFetchWindowMs', 7 * 24 * 60 * 60 * 1000);
+const autoFetchGuildId = String(parseArg('autoFetchGuildId', '')).trim() || null;
+
+/**
+ * Fetch recall@k and hallucination metrics from Supabase when --autoFetchQuality=true.
+ * Returns { retrievalHitAtK, hallucinationReviewFailRate } or nulls if unavailable.
+ */
+const fetchQualityMetricsFromSupabase = async () => {
+  const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
+  const SUPABASE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.log('[GO-NO-GO][AUTO-FETCH] Supabase credentials not configured, skipping quality auto-fetch');
+    return { retrievalHitAtK: null, hallucinationReviewFailRate: null };
+  }
+
+  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const fromIso = new Date(Date.now() - autoFetchWindowMs).toISOString();
+
+  let retrievalHitAtK = null;
+  try {
+    let query = client
+      .from('retrieval_eval_runs')
+      .select('summary')
+      .eq('status', 'completed')
+      .gte('created_at', fromIso)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (autoFetchGuildId) query = query.eq('guild_id', autoFetchGuildId);
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      const recalls = [];
+      for (const row of data) {
+        const variants = row?.summary?.variants;
+        if (!variants) continue;
+        // Use GoT recall if available, fall back to baseline
+        const val = Number(variants?.got?.recallAtK ?? variants?.baseline?.recallAtK);
+        if (Number.isFinite(val)) recalls.push(val);
+      }
+      if (recalls.length > 0) {
+        retrievalHitAtK = Number((recalls.reduce((a, b) => a + b, 0) / recalls.length).toFixed(4));
+      }
+      console.log(`[GO-NO-GO][AUTO-FETCH] retrieval_eval_runs: ${data.length} rows, recall@k avg=${retrievalHitAtK ?? 'n/a'}`);
+    } else if (error) {
+      console.log(`[GO-NO-GO][AUTO-FETCH] retrieval_eval_runs query error: ${error.message}`);
+    }
+  } catch (err) {
+    console.log(`[GO-NO-GO][AUTO-FETCH] retrieval_eval_runs fetch failed: ${err?.message || err}`);
+  }
+
+  let hallucinationReviewFailRate = null;
+  try {
+    let query = client
+      .from('agent_answer_quality_reviews')
+      .select('is_hallucination')
+      .gte('created_at', fromIso)
+      .limit(5000);
+    if (autoFetchGuildId) query = query.eq('guild_id', autoFetchGuildId);
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      const total = data.length;
+      const hallucinations = data.filter((r) => r.is_hallucination === true).length;
+      hallucinationReviewFailRate = Number((hallucinations / total).toFixed(4));
+      console.log(`[GO-NO-GO][AUTO-FETCH] agent_answer_quality_reviews: ${total} rows, fail_rate=${hallucinationReviewFailRate}`);
+    } else if (error) {
+      console.log(`[GO-NO-GO][AUTO-FETCH] agent_answer_quality_reviews query error: ${error.message}`);
+    }
+  } catch (err) {
+    console.log(`[GO-NO-GO][AUTO-FETCH] agent_answer_quality_reviews fetch failed: ${err?.message || err}`);
+  }
+
+  return { retrievalHitAtK, hallucinationReviewFailRate };
+};
 
 const PROFILE_PRESETS = {
   progressive_autonomy_v1: {
@@ -181,6 +255,19 @@ const metrics = {
     changelogSynced: parseBool('changelogSynced', true),
   },
 };
+
+// Auto-fetch recall@k and hallucination data from Supabase when CLI args are missing
+if (autoFetchQuality) {
+  const fetched = await fetchQualityMetricsFromSupabase();
+  if (metrics.quality.retrievalHitAtK === null && fetched.retrievalHitAtK !== null) {
+    metrics.quality.retrievalHitAtK = fetched.retrievalHitAtK;
+    console.log(`[GO-NO-GO][AUTO-FETCH] applied retrievalHitAtK=${fetched.retrievalHitAtK}`);
+  }
+  if (metrics.quality.hallucinationReviewFailRate === null && fetched.hallucinationReviewFailRate !== null) {
+    metrics.quality.hallucinationReviewFailRate = fetched.hallucinationReviewFailRate;
+    console.log(`[GO-NO-GO][AUTO-FETCH] applied hallucinationReviewFailRate=${fetched.hallucinationReviewFailRate}`);
+  }
+}
 
 const buildGate = (name, checks) => {
   const fails = checks.filter((item) => item.actual !== null && !item.ok);
@@ -384,6 +471,16 @@ if (!dryRun && autoCreateClosureDoc && overall === 'no-go' && !fs.existsSync(clo
 }
 
 const checklistChecked = autoCompleteChecklist && overall !== 'pending';
+const runtimeLoopEvidenceState = {
+  schedulerPolicyItemsVerified: parseBool('schedulerPolicyItemsVerified', checklistChecked),
+  serviceInitIdsVerified: parseBool('serviceInitIdsVerified', checklistChecked),
+  discordReadyIdsVerified: parseBool('discordReadyIdsVerified', checklistChecked),
+  databaseIdsVerified: parseBool('databaseIdsVerified', checklistChecked),
+  loopsSnapshotAttached: parseBool('loopsSnapshotAttached', checklistChecked),
+  unattendedHealthSnapshotAttached: parseBool('unattendedHealthSnapshotAttached', checklistChecked),
+  workerApprovalGatesSnapshotAttached: parseBool('workerApprovalGatesSnapshotAttached', checklistChecked),
+  sandboxDelegationVerified: parseBool('sandboxDelegationVerified', checklistChecked),
+};
 const checklistItems = [
   'incident template 기록 완료',
   'comms playbook 공지 완료',
@@ -404,10 +501,23 @@ const runtimeLoopEvidenceItems = [
   'database ID 확인 (`supabase-maintenance-cron`, `login-session-cleanup(db)`)',
   'loops snapshot 첨부 (`/api/bot/agent/runtime/loops`)',
   'unattended-health snapshot 첨부 (`/api/bot/agent/runtime/unattended-health`)',
-].map((label) => checklistChecked
-  ? `- [x] ${label} (evidence: ${closureEvidencePath})`
-  : `- [ ] ${label}`,
-);
+  'worker-approval-gates snapshot 첨부 (`/api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5`)',
+  'OpenDev -> NemoClaw sandbox delegation evidence 확인 (`delegationEvidence.complete=true`)',
+].map((label, index) => {
+  const checks = [
+    runtimeLoopEvidenceState.schedulerPolicyItemsVerified,
+    runtimeLoopEvidenceState.serviceInitIdsVerified,
+    runtimeLoopEvidenceState.discordReadyIdsVerified,
+    runtimeLoopEvidenceState.databaseIdsVerified,
+    runtimeLoopEvidenceState.loopsSnapshotAttached,
+    runtimeLoopEvidenceState.unattendedHealthSnapshotAttached,
+    runtimeLoopEvidenceState.workerApprovalGatesSnapshotAttached,
+    runtimeLoopEvidenceState.sandboxDelegationVerified,
+  ];
+  return checks[index]
+    ? `- [x] ${label} (evidence: ${closureEvidencePath})`
+    : `- [ ] ${label}`;
+});
 
 const mdPath = path.join(OUTPUT_DIR, `${yyyy}-${mm}-${dd}_${runId}.md`);
 const jsonPath = mdPath.replace(/\.md$/i, '.json');
@@ -455,6 +565,7 @@ const json = {
         hallucination_review_fail_rate: metrics.quality.hallucinationReviewFailRate,
         session_success_rate: metrics.quality.sessionSuccessRate,
       },
+      auto_fetched: autoFetchQuality,
       reasons: qualityGate.reasons,
     },
     safety: {
@@ -482,12 +593,14 @@ const json = {
   runtime_loop_evidence: {
     startup_owner_taxonomy: 'service-init|discord-ready|database / owner(app|db)',
     scheduler_policy_generated_at: null,
-    scheduler_policy_items_verified: checklistChecked,
-    service_init_ids_verified: checklistChecked,
-    discord_ready_ids_verified: checklistChecked,
-    database_ids_verified: checklistChecked,
-    loops_snapshot_attached: checklistChecked,
-    unattended_health_snapshot_attached: checklistChecked,
+    scheduler_policy_items_verified: runtimeLoopEvidenceState.schedulerPolicyItemsVerified,
+    service_init_ids_verified: runtimeLoopEvidenceState.serviceInitIdsVerified,
+    discord_ready_ids_verified: runtimeLoopEvidenceState.discordReadyIdsVerified,
+    database_ids_verified: runtimeLoopEvidenceState.databaseIdsVerified,
+    loops_snapshot_attached: runtimeLoopEvidenceState.loopsSnapshotAttached,
+    unattended_health_snapshot_attached: runtimeLoopEvidenceState.unattendedHealthSnapshotAttached,
+    worker_approval_gates_snapshot_attached: runtimeLoopEvidenceState.workerApprovalGatesSnapshotAttached,
+    sandbox_delegation_verified: runtimeLoopEvidenceState.sandboxDelegationVerified,
   },
 };
 
@@ -510,5 +623,42 @@ if (dryRun) {
   console.log(`[GO-NO-GO][AUTO-JUDGE] overall=${overall} rollback_required=${rollbackRequired}`);
   if (autoCreateClosureDoc && overall === 'no-go') {
     console.log(`[GO-NO-GO][AUTO-JUDGE] closure evidence ensured: ${closureEvidencePath.replace(/\\/g, '/')}`);
+  }
+
+  // Phase 5.1: Feed gate result to OpenJarvis trace store
+  const JARVIS_TRACE_FEED_ENABLED = process.env.JARVIS_TRACE_FEED_ENABLED !== '0' && process.env.JARVIS_TRACE_FEED_ENABLED !== 'false';
+  const JARVIS_SERVE_URL = (process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
+  if (JARVIS_TRACE_FEED_ENABLED) {
+    const tracePayload = {
+      run_id: runId,
+      type: 'gate_verdict',
+      stage,
+      scope,
+      timestamp: iso,
+      overall,
+      gates: {
+        reliability: { verdict: reliabilityGate.verdict, metrics: json.gates.reliability.metrics },
+        quality: { verdict: qualityGate.verdict, metrics: json.gates.quality.metrics },
+        safety: { verdict: safetyGate.verdict, metrics: json.gates.safety.metrics },
+        governance: { verdict: governanceGate.verdict, metrics: json.gates.governance.metrics },
+      },
+      rollback_required: rollbackRequired,
+      provider_profile_fallback: providerProfileFallback,
+    };
+    try {
+      const traceResp = await fetch(`${JARVIS_SERVE_URL}/v1/traces`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tracePayload),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (traceResp.ok) {
+        console.log(`[GO-NO-GO][JARVIS-TRACE] trace stored for run_id=${runId}`);
+      } else {
+        console.log(`[GO-NO-GO][JARVIS-TRACE] HTTP ${traceResp.status} — trace feed skipped`);
+      }
+    } catch (traceErr) {
+      console.log(`[GO-NO-GO][JARVIS-TRACE] trace feed unavailable: ${traceErr?.message || traceErr}`);
+    }
   }
 }

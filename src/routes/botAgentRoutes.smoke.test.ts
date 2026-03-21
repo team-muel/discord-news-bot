@@ -41,6 +41,7 @@ describe('bot agent route module smoke', () => {
 
     expect(routeKeys.has('GET /agent/sessions')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/efficiency')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/worker-approval-gates')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/social-quality-snapshot')).toBe(true);
     expect(routeKeys.has('GET /agent/got/policy')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/policy')).toBe(true);

@@ -1,6 +1,6 @@
 ---
 name: opencode
-description: "Use when implementing or refactoring TypeScript and Node.js code, creating tests, delivering minimal-risk code changes, or leading local IDE work while consulting OpenDev, NemoClaw, or OpenJarvis as needed."
+description: "Implement role (legacy: opencode). Use when implementing or refactoring TypeScript and Node.js code, creating tests, delivering minimal-risk code changes, or leading local IDE work while consulting architect, review, or operate roles as needed."
 ---
 
 # OpenCode Agent

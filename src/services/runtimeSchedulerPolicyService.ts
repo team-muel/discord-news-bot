@@ -1,4 +1,5 @@
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from './automationBot';
+import { getAgentSloAlertLoopStats } from './agentSloService';
 import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs } from './agentRoleWorkerService';
 import { getLoginSessionCleanupLoopStats } from '../discord/auth';
 import { getAgentOpsSnapshot } from './agentOpsService';
@@ -46,6 +47,7 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
   const memoryJobs = getMemoryJobRunnerStats();
   const obsidianSync = getObsidianLoreSyncLoopStats();
   const retrievalEval = getRetrievalEvalLoopStats();
+  const agentSloAlerts = getAgentSloAlertLoopStats();
   const loginCleanup = getLoginSessionCleanupLoopStats();
   const runtimeAlerts = getRuntimeAlertsStats();
   const trading = getTradingEngineRuntimeSnapshot();
@@ -178,6 +180,16 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
       running: Boolean(retrievalEval.running),
       schedule: `every ${retrievalEval.intervalHours}h`,
       source: ['src/services/retrievalEvalLoopService.ts', 'src/discord/runtime/readyWorkloads.ts'],
+    },
+    {
+      id: 'agent-slo-alert-loop',
+      title: 'Agent SLO alert loop',
+      owner: 'app',
+      startup: 'discord-ready',
+      enabled: Boolean(agentSloAlerts.enabled),
+      running: Boolean(agentSloAlerts.running || agentSloAlerts.inFlight),
+      schedule: `every ${agentSloAlerts.intervalMin}m`,
+      source: ['src/services/agentSloService.ts', 'src/services/runtimeBootstrap.ts', 'src/discord/runtime/readyWorkloads.ts'],
     },
     {
       id: 'supabase-maintenance-cron',

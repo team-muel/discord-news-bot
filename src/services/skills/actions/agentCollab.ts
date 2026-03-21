@@ -7,6 +7,7 @@ import {
   type SuperAgentTaskInput,
 } from '../../superAgentService';
 import { runNemoClawDiscoverExecutor } from '../../workerGeneration/workerExecutors';
+import { executeExternalAction } from '../../tools/externalAdapterRegistry';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { opencodeExecuteAction } from './opencode';
 import type { ActionDefinition, ActionExecutionResult, LegacyAgentRole } from './types';
@@ -660,6 +661,22 @@ export const nemoclawReviewAction: ActionDefinition = {
     }
 
     const code = typeof args?.code === 'string' ? args.code.trim() : '';
+
+    // Try external NemoClaw sandbox review if available
+    if (code) {
+      const sandboxReview = await executeExternalAction('nemoclaw', 'code.review', { code, goal: query });
+      if (sandboxReview.ok && sandboxReview.output.length > 0) {
+        return withRouting({
+          ok: true,
+          name: 'nemoclaw.review',
+          summary: 'NemoClaw sandbox 리뷰 완료',
+          artifacts: [sandboxReview.output.join('\n')],
+          verification: ['sandbox code.review executed', `adapter: nemoclaw, duration: ${sandboxReview.durationMs}ms`],
+          agentRole: 'nemoclaw',
+        }, 'nemoclaw', 'nemoclaw sandbox review completed');
+      }
+    }
+
     const discover = code
       ? runNemoClawDiscoverExecutor({ goal: query, actionName: 'nemoclaw.review', code })
       : null;
@@ -753,6 +770,21 @@ export const openjarvisOpsAction: ActionDefinition = {
     });
     if (delegated) {
       return delegated;
+    }
+
+    // Try external OpenJarvis adapter (jarvis serve API)
+    const jarvisResult = await executeExternalAction('openjarvis', 'jarvis.ask', {
+      question: `Ops review: ${query}`,
+    });
+    if (jarvisResult.ok && jarvisResult.output.length > 0) {
+      return withRouting({
+        ok: true,
+        name: 'openjarvis.ops',
+        summary: 'OpenJarvis 서버를 통한 운영 실행안 생성 완료',
+        artifacts: [jarvisResult.output.join('\n')],
+        verification: ['openjarvis adapter executed', `duration: ${jarvisResult.durationMs}ms`],
+        agentRole: 'openjarvis',
+      }, 'openjarvis', 'openjarvis adapter ops completed');
     }
 
     const resolvedGuildId = resolveGuildId(guildId, args);

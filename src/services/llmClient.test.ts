@@ -25,6 +25,8 @@ const clearLlmEnv = () => {
   vi.stubEnv('LOCAL_LLM_MODEL', '');
   vi.stubEnv('AI_PROVIDER', '');
   vi.stubEnv('LLM_PROVIDER_BASE_ORDER', '');
+  vi.stubEnv('OPENJARVIS_ENABLED', '');
+  vi.stubEnv('LITELLM_ENABLED', '');
 };
 
 // ──────────────────────────────────────────────────────────

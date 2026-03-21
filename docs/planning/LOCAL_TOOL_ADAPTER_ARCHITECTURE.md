@@ -193,6 +193,141 @@
 4. worker delegation 또는 HTTP adapter 확장
 5. 문서와 운영 템플릿의 예제 확장
 
+## Concrete External Tool Adapters
+
+다음 어댑터는 `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md`의 Phase 1-4에 따라 구현한다.
+
+### OpenShell CLI Adapter
+
+위치: `src/services/tools/adapters/openshellCliAdapter.ts`
+
+```typescript
+interface OpenShellAdapter {
+  isAvailable(): Promise<boolean>;        // `openshell --version` 실행 확인
+  listSandboxes(): Promise<Sandbox[]>;    // `openshell sandbox list` 파싱
+  createSandbox(opts: { agent: string; from?: string; gpu?: boolean }): Promise<Sandbox>;
+  connectSandbox(name: string): Promise<void>;
+  setSandboxPolicy(name: string, policyPath: string): Promise<void>;
+  setInference(opts: { provider: string; model: string }): Promise<void>;
+}
+```
+
+발견 방식:
+
+- `OPENSHELL_BIN_PATH` env var 또는 `openshell` in PATH
+- `openshell --version` exit code 0 확인
+
+Capability 목록:
+
+- `sandbox.create` — 에이전트 샌드박스 생성
+- `sandbox.connect` — 실행 중인 샌드박스에 연결
+- `sandbox.list` — 샌드박스 상태 조회
+- `policy.set` — 네트워크/파일시스템 정책 적용
+- `inference.set` — 추론 엔드포인트 설정
+
+### NemoClaw CLI Adapter
+
+위치: `src/services/tools/adapters/nemoclawCliAdapter.ts`
+
+```typescript
+interface NemoClawAdapter {
+  isAvailable(): Promise<boolean>;        // `nemoclaw --version` 또는 npm global 확인
+  onboard(opts: { name: string; apiKey?: string }): Promise<OnboardResult>;
+  getStatus(name: string): Promise<SandboxStatus>;
+  connect(name: string): Promise<void>;
+  getLogs(name: string, follow?: boolean): Promise<string>;
+  execInSandbox(name: string, command: string): Promise<ExecResult>;
+}
+```
+
+발견 방식:
+
+- `NEMOCLAW_BIN_PATH` env var 또는 `nemoclaw` in PATH
+- `which nemoclaw` / `where nemoclaw` exit code 0 확인
+
+Capability 목록:
+
+- `agent.onboard` — 새 OpenClaw 에이전트 + 샌드박스 설정
+- `agent.status` — 샌드박스 상태 조회
+- `agent.connect` — 에이전트 셸 연결
+- `agent.logs` — 실시간 로그 스트림
+- `agent.exec` — 샌드박스 내부 명령 실행 (리뷰, 테스트 등)
+
+### OpenClaw CLI Adapter
+
+위치: `src/services/tools/adapters/openclawCliAdapter.ts`
+
+```typescript
+interface OpenClawAdapter {
+  isAvailable(): Promise<boolean>;        // `openclaw --version` 확인
+  sendMessage(opts: { agent: string; message: string; sessionId: string }): Promise<string>;
+  listSkills(): Promise<Skill[]>;
+  createSkill(opts: { name: string; description: string }): Promise<Skill>;
+}
+```
+
+발견 방식:
+
+- `OPENCLAW_BIN_PATH` env var 또는 `openclaw` in PATH
+- NemoClaw 샌드박스 내부에서 자동 사용 가능
+
+Capability 목록:
+
+- `agent.chat` — 에이전트에 메시지 전송
+- `skill.list` — 등록된 스킬 목록
+- `skill.create` — 새 스킬 생성 (자기 개선 파이프라인)
+
+### OpenJarvis CLI/HTTP Adapter
+
+위치: `src/services/tools/adapters/openjarvisAdapter.ts`
+
+```typescript
+interface OpenJarvisAdapter {
+  isAvailable(): Promise<boolean>;        // `jarvis doctor` 실행 확인
+  ask(message: string): Promise<string>;  // `jarvis ask "..."` CLI 호출
+  serve(): Promise<{ url: string }>;      // `jarvis serve` FastAPI 서버 시작
+  optimize(): Promise<OptimizeResult>;    // `jarvis optimize` trace 기반 self-learning
+  bench(): Promise<BenchResult>;          // `jarvis bench` 에너지/레이턴시 벤치마크
+  listAgents(): Promise<Agent[]>;         // 등록된 에이전트 유형 목록
+  scheduleJob(cron: string, task: string): Promise<void>; // cron 스케줄러
+}
+```
+
+발견 방식:
+
+- `OPENJARVIS_BIN_PATH` env var 또는 `jarvis` in PATH
+- `jarvis doctor` exit code 0 확인
+- `OPENJARVIS_SERVE_URL` env var로 HTTP 모드 우선 (FastAPI 서버)
+
+Capability 목록:
+
+- `jarvis.ask` — 단일 질의 (CLI)
+- `jarvis.chat` — 대화형 세션
+- `jarvis.serve` — OpenAI-호환 API 서버 (llmClient provider로 직접 연결)
+- `jarvis.optimize` — trace 기반 모델/에이전트/프롬프트 자동 최적화
+- `jarvis.bench` — 에너지/비용/레이턴시 벤치마크
+- `jarvis.schedule` — cron 기반 자동화 ops
+
+HTTP 모드 (권장):
+
+- `jarvis serve` 실행 시 `http://localhost:8000`에서 OpenAI-호환 API 제공
+- `src/services/llmClient.ts`의 OpenAI-호환 provider로 직접 연결 가능
+- SSE 스트리밍 지원
+
+### Action Routing Update
+
+기존 내부 액션과 외부 도구 매핑:
+
+| 기존 액션 | adapter 호출 | 조건 |
+| --- | --- | --- |
+| `nemoclaw.review` | `NemoClawAdapter.execInSandbox(name, 'openclaw agent --agent review ...')` | NemoClaw 사용 가능 시 |
+| `nemoclaw.review` (fallback) | 기존 in-process LLM review | NemoClaw 미설치 시 |
+| `opencode.execute` | `OpenShellAdapter.createSandbox({ agent: 'opencode' })` | OpenShell 사용 가능 시 |
+| `opencode.execute` (fallback) | 기존 MCP worker delegation | OpenShell 미설치 시 |
+| `openjarvis.ops` | `OpenJarvisAdapter.scheduleJob(cron, task)` + `ask(message)` | OpenJarvis 사용 가능 시 (우선) |
+| `openjarvis.ops` | `OpenClawAdapter.sendMessage({ message: '...' })` | OpenClaw 사용 가능 시 (보조) |
+| `openjarvis.ops` (fallback) | 기존 in-process ops execution | OpenJarvis 미설치 시 |
+
 ## Verification Criteria
 
 - 설치되지 않은 도구는 false positive 없이 unavailable로 보고된다.
@@ -206,4 +341,5 @@
 - `docs/ARCHITECTURE_INDEX.md`
 - `docs/OPERATIONS_24_7.md`
 - `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`
+- `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md`
 - `.github/instructions/multi-agent-routing.instructions.md`

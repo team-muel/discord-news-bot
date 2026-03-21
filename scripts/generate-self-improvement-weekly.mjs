@@ -60,6 +60,25 @@ const avgOrNull = (values) => {
   return Number((sum / nums.length).toFixed(4));
 };
 
+const isGlobalGuildReport = (value) => {
+  const normalized = String(value ?? '').trim();
+  return !normalized || normalized === '*';
+};
+
+const pickPreferredReport = (rows, kind, guildId) => {
+  const matches = rows.filter((row) => row.report_kind === kind);
+  if (matches.length === 0) return null;
+  if (!guildId) return matches[0] || null;
+
+  const exact = matches.find((row) => String(row.guild_id || '').trim() === guildId);
+  if (exact) return exact;
+
+  const global = matches.find((row) => isGlobalGuildReport(row.guild_id));
+  if (global) return global;
+
+  return matches[0] || null;
+};
+
 const isMissingRelationError = (error, tableName) => {
   const code = String(error?.code || '').toUpperCase();
   const message = String(error?.message || '').toLowerCase();
@@ -395,9 +414,6 @@ const fetchLatestByKind = async (client, params) => {
     .order('created_at', { ascending: false })
     .limit(params.limit);
 
-  if (params.guildId) {
-    query.eq('guild_id', params.guildId);
-  }
   if (params.provider) {
     query.eq('provider', params.provider);
   }
@@ -412,11 +428,11 @@ const fetchLatestByKind = async (client, params) => {
 
   const rows = data || [];
   return {
-    goNoGo: rows.find((row) => row.report_kind === 'go_no_go_weekly') || null,
-    llmLatency: rows.find((row) => row.report_kind === 'llm_latency_weekly') || null,
-    hybrid: rows.find((row) => row.report_kind === 'hybrid_weekly') || null,
-    rollbackWeekly: rows.find((row) => row.report_kind === 'rollback_rehearsal_weekly') || null,
-    memoryQueueWeekly: rows.find((row) => row.report_kind === 'memory_queue_weekly') || null,
+    goNoGo: pickPreferredReport(rows, 'go_no_go_weekly', params.guildId),
+    llmLatency: pickPreferredReport(rows, 'llm_latency_weekly', params.guildId),
+    hybrid: pickPreferredReport(rows, 'hybrid_weekly', params.guildId),
+    rollbackWeekly: pickPreferredReport(rows, 'rollback_rehearsal_weekly', params.guildId),
+    memoryQueueWeekly: pickPreferredReport(rows, 'memory_queue_weekly', params.guildId),
   };
 };
 
@@ -519,6 +535,96 @@ const fetchAgentRoleKpiSignals = async (client, params) => {
   }
 
   return result;
+};
+
+const fetchPreviousWeekPatterns = async (client, params) => {
+  const twoWeeksAgo = new Date(Date.now() - params.windowMs * 2).toISOString();
+  const oneWeekAgo = new Date(Date.now() - params.windowMs).toISOString();
+  try {
+    let query = client
+      .from('agent_weekly_reports')
+      .select('baseline_summary, created_at')
+      .eq('report_kind', 'self_improvement_patterns')
+      .gte('created_at', twoWeeksAgo)
+      .lt('created_at', oneWeekAgo)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (params.guildId) {
+      query = query.eq('guild_id', params.guildId);
+    }
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) return null;
+    return data[0].baseline_summary || null;
+  } catch {
+    return null;
+  }
+};
+
+const verifyPatternRegression = (currentPatterns, previousPatterns) => {
+  if (!previousPatterns || !Array.isArray(previousPatterns.patterns)) {
+    return { available: false, resolved: [], ongoing: [], newlyDetected: [], worsened: [] };
+  }
+
+  const prevById = new Map(previousPatterns.patterns.map((p) => [p.id, p]));
+  const currIds = new Set(currentPatterns.map((p) => p.id));
+
+  const resolved = previousPatterns.patterns
+    .filter((p) => !currIds.has(p.id))
+    .map((p) => ({ id: p.id, previousSeverity: p.severity, signal: p.signal }));
+
+  const ongoing = [];
+  const worsened = [];
+  const severityRank = { low: 0, medium: 1, high: 2 };
+
+  for (const curr of currentPatterns) {
+    const prev = prevById.get(curr.id);
+    if (!prev) continue;
+    const prevRank = severityRank[prev.severity] ?? 0;
+    const currRank = severityRank[curr.severity] ?? 0;
+    if (currRank > prevRank) {
+      worsened.push({ id: curr.id, previousSeverity: prev.severity, currentSeverity: curr.severity, signal: curr.signal });
+    } else {
+      ongoing.push({ id: curr.id, severity: curr.severity, signal: curr.signal });
+    }
+  }
+
+  const newlyDetected = currentPatterns
+    .filter((p) => !prevById.has(p.id))
+    .map((p) => ({ id: p.id, severity: p.severity, signal: p.signal }));
+
+  return { available: true, resolved, ongoing, newlyDetected, worsened };
+};
+
+const persistSelfImprovementPatterns = async (client, params) => {
+  try {
+    const payload = {
+      report_key: `self_improvement_patterns:${params.generatedAt.slice(0, 10)}`,
+      report_kind: 'self_improvement_patterns',
+      guild_id: params.guildId || null,
+      baseline_summary: {
+        patterns: params.patterns.map((p) => ({
+          id: p.id,
+          severity: p.severity,
+          signal: p.signal,
+          patchProposal: p.patchProposal,
+        })),
+        regression: params.regression,
+        totalPatterns: params.patterns.length,
+        highSeverityCount: params.patterns.filter((p) => p.severity === 'high').length,
+      },
+      created_at: params.generatedAt,
+    };
+    const { error } = await client
+      .from('agent_weekly_reports')
+      .upsert(payload, { onConflict: 'report_key' });
+    if (error) {
+      console.log(`[SELF-IMPROVEMENT] pattern persistence failed: ${error.message}`);
+    } else {
+      console.log(`[SELF-IMPROVEMENT] patterns persisted: ${payload.report_key}`);
+    }
+  } catch (err) {
+    console.log(`[SELF-IMPROVEMENT] pattern persistence error: ${err?.message || err}`);
+  }
 };
 
 const toPatterns = (reports, qualitySignals, opencodeSignals, agentRoleKpi) => {
@@ -753,6 +859,36 @@ const toPatterns = (reports, qualitySignals, opencodeSignals, agentRoleKpi) => {
   return patterns;
 };
 
+const buildRegressionSection = (regression) => {
+  if (!regression || !regression.available) {
+    return '- previous_week_data: unavailable (첫 주 또는 이전 주 데이터 없음)\n- comparison: skipped';
+  }
+
+  const lines = [];
+  lines.push(`- previous_week_data: available`);
+  lines.push(`- resolved_patterns: ${regression.resolved.length}`);
+  for (const item of regression.resolved) {
+    lines.push(`  - ✅ ${item.id} (was ${item.previousSeverity}): ${item.signal}`);
+  }
+  lines.push(`- ongoing_patterns: ${regression.ongoing.length}`);
+  for (const item of regression.ongoing) {
+    lines.push(`  - ⏳ ${item.id} (${item.severity}): ${item.signal}`);
+  }
+  lines.push(`- worsened_patterns: ${regression.worsened.length}`);
+  for (const item of regression.worsened) {
+    lines.push(`  - ⚠️ ${item.id} (${item.previousSeverity}→${item.currentSeverity}): ${item.signal}`);
+  }
+  lines.push(`- newly_detected: ${regression.newlyDetected.length}`);
+  for (const item of regression.newlyDetected) {
+    lines.push(`  - 🆕 ${item.id} (${item.severity}): ${item.signal}`);
+  }
+
+  const improvementScore = regression.resolved.length - regression.worsened.length;
+  lines.push(`- improvement_score: ${improvementScore > 0 ? '+' : ''}${improvementScore} (resolved=${regression.resolved.length}, worsened=${regression.worsened.length})`);
+
+  return lines.join('\n');
+};
+
 const buildMarkdown = (params) => {
   const goKey = params.reports.goNoGo?.report_key || 'missing';
   const llmKey = params.reports.llmLatency?.report_key || 'missing';
@@ -808,7 +944,7 @@ const buildMarkdown = (params) => {
 - required_actions_total: ${asNumber(actionCompletion?.required_actions_total, 0)}
 - checklist_incomplete_runs: ${asNumber(actionCompletion?.checklist_incomplete_runs, 0)}
 
-## Agent Role KPI Signals\n\n- availability: ${roleKpi.availability}\n- samples: ${asNumber(roleKpi.sampleCount, 0)}\n${roleKpiLines || '- no agent_role samples'}\n\n## Failure Patterns and Patch Proposals\n\n${rows}\n\n## Execution Gate\n\n- next_step: 승인 가능한 패치 제안을 execution board Next 항목(M-05 self-improvement loop v1)에 연결\n- required_validation:\n  - npm run -s gates:validate\n  - npm run -s gates:weekly-report:all:dry\n`;
+## Agent Role KPI Signals\n\n- availability: ${roleKpi.availability}\n- samples: ${asNumber(roleKpi.sampleCount, 0)}\n${roleKpiLines || '- no agent_role samples'}\n\n## Failure Patterns and Patch Proposals\n\n${rows}\n\n## Regression Verification (vs Previous Week)\n\n${buildRegressionSection(params.regression)}\n\n## Execution Gate\n\n- next_step: 승인 가능한 패치 제안을 execution board Next 항목(M-05 self-improvement loop v1)에 연결\n- required_validation:\n  - npm run -s gates:validate\n  - npm run -s gates:weekly-report:all:dry\n`;
 };
 
 const writeMarkdownArtifact = (params) => {
@@ -932,6 +1068,10 @@ async function main() {
   });
 
   const patterns = toPatterns(reports, qualitySignals, opencodeSignals, agentRoleKpi);
+
+  const previousPatterns = await fetchPreviousWeekPatterns(client, { windowMs, guildId });
+  const regression = verifyPatternRegression(patterns, previousPatterns);
+
   const markdown = buildMarkdown({
     generatedAt,
     windowDays,
@@ -943,7 +1083,12 @@ async function main() {
     qualitySignals,
     opencodeSignals,
     agentRoleKpi,
+    regression,
   });
+
+  if (!dryRun) {
+    await persistSelfImprovementPatterns(client, { generatedAt, guildId, patterns, regression });
+  }
 
   const context = {
     dryRun,

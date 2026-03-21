@@ -69,6 +69,17 @@ vi.mock('./retrievalEvalLoopService', () => ({
   })),
 }));
 
+vi.mock('./agentSloService', () => ({
+  getAgentSloAlertLoopStats: vi.fn(() => ({
+    enabled: true,
+    running: true,
+    inFlight: false,
+    intervalMin: 15,
+    maxGuilds: 100,
+    concurrency: 4,
+  })),
+}));
+
 vi.mock('./runtimeAlertService', () => ({
   getRuntimeAlertsStats: vi.fn(() => ({
     enabled: true,
@@ -141,11 +152,14 @@ describe('getRuntimeSchedulerPolicySnapshot', () => {
     const opencode = snapshot.items.find((item) => item.id === 'opencode-publish-worker');
     const trading = snapshot.items.find((item) => item.id === 'trading-engine');
     const alerts = snapshot.items.find((item) => item.id === 'runtime-alerts');
+    const sloAlerts = snapshot.items.find((item) => item.id === 'agent-slo-alert-loop');
 
     expect(memory?.startup).toBe('service-init');
     expect(opencode?.running).toBe(true);
     expect(trading?.running).toBe(true);
     expect(alerts?.running).toBe(true);
+    expect(sloAlerts?.startup).toBe('discord-ready');
+    expect(sloAlerts?.running).toBe(true);
   });
 
   it('supabase 미설정 환경에서도 스냅샷 생성이 실패하지 않는다', async () => {

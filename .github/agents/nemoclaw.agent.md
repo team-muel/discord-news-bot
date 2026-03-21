@@ -1,6 +1,6 @@
 ---
 name: nemoclaw
-description: "Use when reviewing code for bugs, regressions, security issues, missing tests before release, or providing defensive review input to other agents during local IDE collaboration."
+description: "Review role (legacy: nemoclaw). Use when reviewing code for bugs, regressions, security issues, missing tests before release, or providing defensive review input to other agents during local IDE collaboration."
 ---
 
 # NemoClaw Agent

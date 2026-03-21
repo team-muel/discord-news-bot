@@ -24,6 +24,11 @@ model_list:
       model: ollama/qwen2.5:7b-instruct
       api_base: os.environ/OLLAMA_BASE_URL
 
+  - model_name: muel-nemotron
+    litellm_params:
+      model: nvidia_nim/nvidia/nemotron-3-super-120b-a12b
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   disable_spend_logs: true
@@ -31,11 +36,14 @@ general_settings:
   enforce_user_param: false
 
 litellm_settings:
-  # Gemini free-tier quota exhaustion 시 HF/OpenAI/Anthropic 순으로 즉시 폴백
+  # Gemini free-tier quota exhaustion: fallback to HF/OpenAI/Anthropic
   fallbacks:
-    - { "muel-balanced": ["muel-hf", "muel-fast", "muel-precise"] }
+    - {
+        "muel-balanced":
+          ["muel-hf", "muel-fast", "muel-precise", "muel-nemotron"],
+      }
 
 router_settings:
-  # quota limit(429)에서 동일 모델 재시도는 실효성이 낮아 즉시 fallback으로 전환
+  # quota limit 429: skip same-model retry, go straight to fallback
   retry_policy:
     RateLimitErrorRetries: 0

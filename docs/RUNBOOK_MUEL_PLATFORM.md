@@ -100,6 +100,7 @@ Runtime/control-plane verification baseline:
 
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
 - Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze.
+- Use `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` when validating A-003 gate -> approval -> model fallback state for a specific guild.
 - Use `GET /api/bot/agent/actions/catalog` and `GET /api/bot/agent/runtime/role-workers` before assuming that a named role is callable in the current deployment.
 - Distinguish startup phase (`service-init`, `discord-ready`, `database`) from execution ownership (`app`, `db`) during incident triage; not every missing Discord-ready loop is a platform-wide outage.
 
@@ -367,6 +368,26 @@ VCS policy:
   - `/api/bot/status`
 - Review Render logs for restart loops, auth failures, and upstream timeouts.
 
+### 5.1.1 A-003 Operator Verification
+
+When A-003 readiness or release gating is under review, verify in this order:
+
+1. `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5`
+2. `GET /api/bot/agent/runtime/unattended-health?guildId=<id>`
+3. `GET /api/bot/agent/runtime/readiness?guildId=<id>`
+
+Expected reading:
+
+- `workerApprovals.pendingApprovals` shows the guild-scoped queue backlog.
+- `policyBindings.opencodeExecutePolicy.runMode` remains `approval_required` unless an operator-approved exception is active.
+- `modelFallback.defaultProviderFallbackChain` and `providerPolicyBindings` match the intended provider routing.
+- `safetySignals` stays at `approvalRequiredCompliancePct=100`, `unapprovedAutodeployCount=0`, and `policyViolationCount=0` for the guild under review.
+- `delegationEvidence.complete=true` and `missingDelegationExecutions=0` prove the OpenDev -> NemoClaw sandbox path was not bypassed.
+- `globalArtifacts.latestGateDecision` confirms the latest provider fallback trigger/target and safety verdict.
+- `globalArtifacts.runtimeLoopEvidence` is attached before weekly gate evidence is treated as complete.
+
+If these surfaces disagree, keep high-risk Opencode execution blocked until the mismatch is explained in the incident or release evidence bundle.
+
 ### 5.2 Data Health
 
 - Watch for missing schema fallback warnings.
@@ -557,6 +578,7 @@ Execute in this order:
 
 - approval_required compliance 100%
 - unapproved auto-deploy count 0
+- attach `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` evidence and verify gate -> approval -> fallback chain
 
 1. Governance gate
 

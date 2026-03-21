@@ -32,11 +32,15 @@
 - worker gate, approval path, workflow slot model binding을 단일 운영 묶음으로 정렬
 - 고위험 액션 미경유 실행 0건 기준을 운영 검증 항목으로 고정
 - provider fallback과 quality gate 재판정 관계를 명시
+- guild 단위 canonical 진입점 `/api/bot/agent/runtime/worker-approval-gates?guildId=...&recentLimit=...` 를 기준 표면으로 고정
 - 완료 기준
 - 운영자가 하나의 체크 흐름으로 gate -> approval -> model fallback 상태를 검증할 수 있음
+- canonical runtime surface 하나로 OpenDev -> NemoClaw sandbox delegation 증거까지 확인할 수 있음
 - 고위험 경로 예외 처리 규칙이 명시됨
+- weekly gate summary가 A-003 운영 표면 커버리지를 자동 집계함
 - 검증 명령
 - `npm run lint`
+- `npm run gates:weekly-report:dry`
 
 ## Recently Closed
 

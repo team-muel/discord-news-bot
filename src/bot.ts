@@ -757,7 +757,7 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
     const noRequestSinceIso = new Date(nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS * 60 * 60_000).toISOString();
     const dedupSinceMs = nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS;
 
-    const [missingRes, recentRequestRes, allApprovals] = await Promise.all([
+    const [missingRes, retryExhaustRes, recentRequestRes, allApprovals] = await Promise.all([
       client
         .from('agent_action_logs')
         .select('guild_id, requested_by, goal, action_name, error, created_at')
@@ -765,6 +765,15 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
         .gte('created_at', lookbackSinceIso)
         .order('created_at', { ascending: false })
         .limit(5000),
+      client
+        .from('agent_action_logs')
+        .select('guild_id, requested_by, goal, action_name, error, retry_count, created_at')
+        .eq('status', 'failed')
+        .not('error', 'in', '("ACTION_NOT_IMPLEMENTED","DYNAMIC_WORKER_NOT_FOUND")')
+        .gte('retry_count', 2)
+        .gte('created_at', lookbackSinceIso)
+        .order('created_at', { ascending: false })
+        .limit(3000),
       client
         .from('agent_action_logs')
         .select('guild_id, created_at')
@@ -777,6 +786,9 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
 
     if (missingRes.error) {
       throw new Error(missingRes.error.message || 'BACKGROUND_MISSING_ACTION_QUERY_FAILED');
+    }
+    if (retryExhaustRes.error) {
+      logger.warn('[WORKER-GEN] retry-exhaust query failed: %s', retryExhaustRes.error.message);
     }
     if (recentRequestRes.error) {
       throw new Error(recentRequestRes.error.message || 'BACKGROUND_RECENT_REQUEST_QUERY_FAILED');
@@ -808,7 +820,8 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
       }
     }
 
-    const groups = new Map<string, {
+    type LacunaType = 'missing_action' | 'retry_exhaustion' | 'external_failure';
+    type LacunaGroup = {
       guildId: string;
       goal: string;
       normalizedGoal: string;
@@ -816,39 +829,41 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
       distinctRequesters: Set<string>;
       lastSeenAtMs: number;
       missingActionNames: Set<string>;
-    }>();
+      lacunaType: LacunaType;
+      errorCodes: Set<string>;
+    };
+    const groups = new Map<string, LacunaGroup>();
 
-    for (const row of (missingRes.data || []) as Array<Record<string, unknown>>) {
+    const upsertGroup = (
+      row: Record<string, unknown>,
+      lacunaType: LacunaType,
+    ): void => {
       const guildId = String(row.guild_id || '').trim();
       if (!guildId || recentRequestGuildIds.has(guildId)) {
-        continue;
+        return;
       }
-
       const goal = String(row.goal || '').trim();
       if (goal.length < AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH) {
-        continue;
+        return;
       }
-
       const normalizedGoal = normalizeBackgroundProposalGoal(goal);
       if (!normalizedGoal) {
-        continue;
+        return;
       }
-
       const key = `${guildId}::${normalizedGoal}`;
       const requestedBy = String(row.requested_by || '').trim();
       const createdAtMs = Date.parse(String(row.created_at || ''));
       const actionName = String(row.action_name || '').trim();
+      const errorCode = String(row.error || '').trim();
       const existing = groups.get(key);
 
       if (!existing) {
         const distinctRequesters = new Set<string>();
-        if (requestedBy) {
-          distinctRequesters.add(requestedBy);
-        }
+        if (requestedBy) distinctRequesters.add(requestedBy);
         const missingActionNames = new Set<string>();
-        if (actionName) {
-          missingActionNames.add(actionName);
-        }
+        if (actionName) missingActionNames.add(actionName);
+        const errorCodes = new Set<string>();
+        if (errorCode) errorCodes.add(errorCode);
 
         groups.set(key, {
           guildId,
@@ -858,20 +873,31 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
           distinctRequesters,
           lastSeenAtMs: Number.isFinite(createdAtMs) ? createdAtMs : 0,
           missingActionNames,
+          lacunaType,
+          errorCodes,
         });
-        continue;
+        return;
       }
-
       existing.count += 1;
-      if (requestedBy) {
-        existing.distinctRequesters.add(requestedBy);
-      }
-      if (actionName) {
-        existing.missingActionNames.add(actionName);
-      }
+      if (requestedBy) existing.distinctRequesters.add(requestedBy);
+      if (actionName) existing.missingActionNames.add(actionName);
+      if (errorCode) existing.errorCodes.add(errorCode);
       if (Number.isFinite(createdAtMs) && createdAtMs > existing.lastSeenAtMs) {
         existing.lastSeenAtMs = createdAtMs;
       }
+      // Promote to higher-signal lacuna type: missing_action > retry_exhaustion > external_failure
+      if (lacunaType === 'missing_action' && existing.lacunaType !== 'missing_action') {
+        existing.lacunaType = lacunaType;
+      }
+    };
+
+    for (const row of (missingRes.data || []) as Array<Record<string, unknown>>) {
+      upsertGroup(row, 'missing_action');
+    }
+    for (const row of (retryExhaustRes.data || []) as Array<Record<string, unknown>>) {
+      const errorCode = String(row.error || '').toUpperCase();
+      const isExternal = errorCode.includes('WORKER') || errorCode.includes('MCP_') || errorCode === 'ACTION_TIMEOUT' || errorCode === 'WEB_FETCH_FAILED' || errorCode.startsWith('RSS_');
+      upsertGroup(row, isExternal ? 'external_failure' : 'retry_exhaustion');
     }
 
     const metrics = getWorkerProposalMetricsSnapshot();
@@ -880,6 +906,15 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
       logger.warn('[WORKER-GEN] background sweep skipped by quality guard successRate=%.3f requested=%d', metrics.generationSuccessRate, metrics.generationRequested);
       return;
     }
+
+    const lacunaTypeWeight = (type: LacunaType): number =>
+      type === 'missing_action' ? 3 : type === 'retry_exhaustion' ? 2 : 1;
+
+    const scoreLacunaCandidate = (g: LacunaGroup): number => {
+      const recencyDays = Math.max(0.1, (nowMs - g.lastSeenAtMs) / (24 * 60 * 60_000));
+      const recencyDecay = 1 / (1 + Math.log2(recencyDays));
+      return g.count * g.distinctRequesters.size * lacunaTypeWeight(g.lacunaType) * recencyDecay;
+    };
 
     const candidates = [...groups.values()]
       .filter((group) => group.count >= AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT)
@@ -890,12 +925,7 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
         const lastApprovalAtMs = recentApprovalByGuild.get(group.guildId) || 0;
         return lastApprovalAtMs <= 0 || (nowMs - lastApprovalAtMs) >= AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS;
       })
-      .sort((a, b) => {
-        if (b.count !== a.count) {
-          return b.count - a.count;
-        }
-        return b.lastSeenAtMs - a.lastSeenAtMs;
-      })
+      .sort((a, b) => scoreLacunaCandidate(b) - scoreLacunaCandidate(a))
       .slice(0, AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN);
 
     if (candidates.length === 0) {
@@ -905,7 +935,8 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
 
     let generated = 0;
     for (const candidate of candidates) {
-      const requestText = `${candidate.goal}\n\n[auto-proposal:missing_action count=${candidate.count}, distinct_requesters=${candidate.distinctRequesters.size}, actions=${[...candidate.missingActionNames].slice(0, 5).join(',')}]`;
+      const errorContext = [...candidate.errorCodes].slice(0, 5).join(',');
+      const requestText = `${candidate.goal}\n\n[auto-proposal:${candidate.lacunaType} count=${candidate.count}, distinct_requesters=${candidate.distinctRequesters.size}, actions=${[...candidate.missingActionNames].slice(0, 5).join(',')}, errors=${errorContext}, score=${scoreLacunaCandidate(candidate).toFixed(1)}]`;
       const result = await runWorkerGenerationPipeline({
         goal: requestText,
         guildId: candidate.guildId,

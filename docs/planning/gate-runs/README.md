@@ -38,6 +38,8 @@ npm run gates:auto-judge:weekly:pending:dry
 - weekly snapshot이 안정 구간(no-go=0, latency/success/deadletter 양호)으로 판정되면 `providerProfileHint=cost-optimized`를 자동 부여해 dual profile 운영(M-06)을 지속 적용한다.
 - bot runtime은 no-request 구간에서도 `ACTION_NOT_IMPLEMENTED`/`DYNAMIC_WORKER_NOT_FOUND` 실패 로그를 스윕해 worker proposal queue를 자동 생성한다(M-03). 기본값은 30분 간격, 길드당 cooldown/중복 차단/품질가드가 적용된다.
 - bot runtime은 `opencode.execute` 정책을 `approval_required`로 자동 보정해 Opencode executor pilot의 안전 게이트를 고정한다(M-05).
+- A-003 운영 검증의 canonical guild 표면은 `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` 이다.
+- weekly auto-judge는 가능하면 이 endpoint에서 `safetySignals`와 `delegationEvidence.complete`를 직접 읽어 safety gate 및 sandbox delegation evidence를 채운다.
 
 프로파일 규칙:
 
@@ -56,6 +58,8 @@ npm run gates:auto-judge:weekly:pending:dry
 ```bash
 npm run gates:weekly-report -- --days=7
 ```
+
+- `WEEKLY_SUMMARY.md`는 A-003 operator surface completion과 함께 sandbox delegation completion도 집계한다.
 
 Legacy pending no-go 보정 집계(예: Stage B 과거 런 제외):
 
@@ -187,8 +191,13 @@ npm run gates:weekly-report:dry
 - `go_no_go_weekly.baseline_summary`에는 gate verdict 집계(`gate_verdict_counts`)가 포함되며, weekly auto-judge의 quality 회귀 규칙 입력으로 사용한다.
 - `go_no_go_weekly.baseline_summary.no_go_root_cause`에는 no-go 원인군(이중실패/단독실패/pending 기반/기타) 집계가 포함된다.
 - `go_no_go_weekly.baseline_summary.required_action_completion`에는 no-go 후속조치 추정 완료율(체크리스트 기준)이 포함된다.
-- `go_no_go_weekly.baseline_summary.quality_summary`에는 citation/retrieval/hallucination/session 주간 평균이 포함되며, weekly auto-judge의 quality gate 입력값으로 재사용된다.
+- `go_no_go_weekly.baseline_summary.a003_operator_surface_completion`에는 worker gate + approval + model fallback 운영 표면 커버리지가 포함된다.
+- `go_no_go_weekly.baseline_summary.quality_summary`에는 citation/retrieval/hallucination/session 주간 평균이 포함된다.
+- `go_no_go_weekly.baseline_summary.auto_judge_signal_summary`에는 `weekly:auto*` 파생 run을 제외한 source-only gate verdict/quality 평균이 포함되며, weekly auto-judge는 이 필드를 우선 입력으로 사용한다.
 - `go_no_go_weekly.baseline_summary.strategy_quality_normalization`에는 M-07 계측값(전략별 recall@k + hallucination fail rate 기반 정규화 점수, baseline 대비 delta)이 포함된다.
+- weekly auto-judge는 gate-run quality 샘플이 부족할 때 `strategy_quality_normalization.by_strategy.baseline.recall_at_k_avg`를 `retrievalHitAtK` fallback으로, `hallucination_fail_rate_pct/100`을 `hallucinationReviewFailRate` fallback으로 사용한다.
+- retrieval eval fallback이 활성화되면(`hasRetrievalEvalFallback=true`) historical gate verdict override를 건너뛰고 quality gate가 실제 메트릭 값으로 자연 평가한다.
+- `llm_latency_weekly.top_actions`에는 per-action p50/p95/p99 분해 데이터가 포함되며, weekly auto-judge는 이를 읽어 `slow_actions(>80%_of_threshold)` 진단을 로그에 출력한다.
 - 하이브리드 주간 스냅샷은 `report_kind=hybrid_weekly`로 upsert한다.
 - self-improvement 리포트는 markdown 산출물로 생성되며, execution board의 M-05 루프 입력으로 사용한다.
 - self-improvement 리포트의 Labeled Quality Signals 섹션은 M-07 운영 증거(라벨 기반 recall/hallucination)를 주간 자동 리포트로 제공한다.

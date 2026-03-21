@@ -1,6 +1,6 @@
 ---
 name: local-orchestrator
-description: "Use when coordinating local IDE collaboration across OpenCode, OpenDev, NemoClaw, and OpenJarvis with one lead agent plus targeted consults instead of a rigid sequential handoff."
+description: "Coordinate role (legacy: local-orchestrator). Use when coordinating local IDE collaboration across implement, architect, review, and operate roles with one lead agent plus targeted consults instead of a rigid sequential handoff."
 ---
 
 # Local Orchestrator Agent

@@ -4,6 +4,9 @@ import { getBotRuntimeSnapshot } from '../bot';
 import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { resolveLlmProvider } from '../services/llmClient';
+import { parseBooleanEnv } from '../utils/env';
+
+const EXTERNAL_TOOL_PROBE_ENABLED = parseBooleanEnv(process.env.EXTERNAL_TOOL_PROBE_ENABLED, false);
 
 export type RuntimeReadinessState = {
   botEnabled: boolean;
@@ -112,6 +115,7 @@ export function createHealthRouter(): Router {
       ...payload,
       llmProvider: resolveLlmProvider() ?? 'none',
       openclawConfigured: Boolean(process.env.OPENCLAW_BASE_URL),
+      externalToolProbeEnabled: EXTERNAL_TOOL_PROBE_ENABLED,
     });
   });
 

@@ -1,6 +1,6 @@
 ---
 name: openjarvis
-description: "Use when optimizing operations, unattended automation, runbooks, workflows, deployment reliability, or advising other agents on rollback and operational safety during local IDE work."
+description: "Operate role (legacy: openjarvis). Use when optimizing operations, unattended automation, runbooks, workflows, deployment reliability, or advising other agents on rollback and operational safety during local IDE work."
 ---
 
 # OpenJarvis Agent

@@ -23,6 +23,13 @@ export type PendingWorkerApproval = {
   /** Discord message ID in admin channel */
   adminMessageId?: string;
   adminChannelId?: string;
+  /** Discrete evidence IDs from pipeline stages */
+  discoverEvidenceId?: string;
+  verifyEvidenceId?: string;
+  releaseEvidenceId?: string;
+  /** Approval audit trail */
+  approvedAt?: string;
+  approvedBy?: string;
   status: WorkerApprovalStatus;
   createdAt: string;
   updatedAt: string;
@@ -103,6 +110,11 @@ const toDbRow = (entry: PendingWorkerApproval) => ({
   validation_warnings: entry.validationWarnings,
   admin_message_id: entry.adminMessageId || null,
   admin_channel_id: entry.adminChannelId || null,
+  discover_evidence_id: entry.discoverEvidenceId || null,
+  verify_evidence_id: entry.verifyEvidenceId || null,
+  release_evidence_id: entry.releaseEvidenceId || null,
+  approved_at: entry.approvedAt || null,
+  approved_by: entry.approvedBy || null,
   status: entry.status,
   created_at: entry.createdAt,
   updated_at: entry.updatedAt,
@@ -122,6 +134,11 @@ const fromDbRow = (row: Record<string, unknown>): PendingWorkerApproval => ({
   validationWarnings: Array.isArray(row.validation_warnings) ? row.validation_warnings.map((v) => String(v || '')) : [],
   adminMessageId: row.admin_message_id ? String(row.admin_message_id) : undefined,
   adminChannelId: row.admin_channel_id ? String(row.admin_channel_id) : undefined,
+  discoverEvidenceId: row.discover_evidence_id ? String(row.discover_evidence_id) : undefined,
+  verifyEvidenceId: row.verify_evidence_id ? String(row.verify_evidence_id) : undefined,
+  releaseEvidenceId: row.release_evidence_id ? String(row.release_evidence_id) : undefined,
+  approvedAt: row.approved_at ? String(row.approved_at) : undefined,
+  approvedBy: row.approved_by ? String(row.approved_by) : undefined,
   status: (['pending', 'approved', 'rejected', 'refactor_requested'].includes(String(row.status || ''))
     ? String(row.status)
     : 'pending') as WorkerApprovalStatus,
@@ -158,6 +175,11 @@ const toSafeEntry = (value: unknown): PendingWorkerApproval | null => {
     validationWarnings: Array.isArray(row.validationWarnings) ? row.validationWarnings.map((e) => String(e || '')) : [],
     adminMessageId: row.adminMessageId ? String(row.adminMessageId) : undefined,
     adminChannelId: row.adminChannelId ? String(row.adminChannelId) : undefined,
+    discoverEvidenceId: row.discoverEvidenceId ? String(row.discoverEvidenceId) : undefined,
+    verifyEvidenceId: row.verifyEvidenceId ? String(row.verifyEvidenceId) : undefined,
+    releaseEvidenceId: row.releaseEvidenceId ? String(row.releaseEvidenceId) : undefined,
+    approvedAt: row.approvedAt ? String(row.approvedAt) : undefined,
+    approvedBy: row.approvedBy ? String(row.approvedBy) : undefined,
     status,
     createdAt: String(row.createdAt || now()),
     updatedAt: String(row.updatedAt || now()),
@@ -412,7 +434,7 @@ export const getApproval = async (id: string): Promise<PendingWorkerApproval | n
 export const updateApprovalStatus = async (
   id: string,
   status: WorkerApprovalStatus,
-  extra?: { adminMessageId?: string; adminChannelId?: string },
+  extra?: { adminMessageId?: string; adminChannelId?: string; approvedBy?: string },
 ): Promise<boolean> => {
   await ensureLoaded();
   const entry = store.get(id);
@@ -421,6 +443,11 @@ export const updateApprovalStatus = async (
   entry.updatedAt = now();
   if (extra?.adminMessageId) entry.adminMessageId = extra.adminMessageId;
   if (extra?.adminChannelId) entry.adminChannelId = extra.adminChannelId;
+  if (status === 'approved') {
+    entry.approvedAt = now();
+    entry.approvedBy = extra?.approvedBy || 'unknown';
+    entry.releaseEvidenceId = `opendev-release:${id}`;
+  }
   await upsertApprovalToSupabase(entry);
   await queueSave();
   return true;

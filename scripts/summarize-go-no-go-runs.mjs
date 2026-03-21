@@ -123,6 +123,7 @@ const normalizeRollbackType = (value) => {
 };
 
 const cleanCell = (value) => String(value || '').replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
+const A003_OPERATOR_SURFACE_ENDPOINT = '/api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5';
 
 const toBooleanOrNull = (value) => {
   if (typeof value === 'boolean') return value;
@@ -177,6 +178,65 @@ const extractRuntimeLoopEvidenceChecklist = (content) => {
   };
 };
 
+const extractA003OperatorSurface = (json, runtimeLoopEvidence) => {
+  const finalDecision = json?.final_decision && typeof json.final_decision === 'object'
+    ? json.final_decision
+    : {};
+  const safetyMetrics = json?.gates?.safety?.metrics && typeof json.gates.safety.metrics === 'object'
+    ? json.gates.safety.metrics
+    : {};
+  const runtimeLoopEvidenceJson = json?.runtime_loop_evidence && typeof json.runtime_loop_evidence === 'object' && !Array.isArray(json.runtime_loop_evidence)
+    ? json.runtime_loop_evidence
+    : null;
+
+  const explicitSnapshotAttached = toBooleanOrNull(runtimeLoopEvidenceJson?.worker_approval_gates_snapshot_attached);
+  const sandboxDelegationVerified = toBooleanOrNull(runtimeLoopEvidenceJson?.sandbox_delegation_verified);
+  const approvalRequiredComplianceKnown = toNumber(safetyMetrics.approval_required_compliance_pct) !== null;
+  const unapprovedAutodeployKnown = toNumber(safetyMetrics.unapproved_autodeploy_count) !== null;
+  const providerTargetKnown = String(finalDecision.provider_profile_target || '').trim().length > 0;
+  const providerTriggerKnown = String(finalDecision.provider_profile_trigger || '').trim().length > 0;
+  const derivedSnapshotReady = approvalRequiredComplianceKnown && unapprovedAutodeployKnown && providerTargetKnown && providerTriggerKnown;
+
+  const flags = [
+    explicitSnapshotAttached === true || derivedSnapshotReady,
+    approvalRequiredComplianceKnown,
+    unapprovedAutodeployKnown,
+    providerTargetKnown,
+    providerTriggerKnown,
+    sandboxDelegationVerified === true,
+  ];
+  const anyKnown = explicitSnapshotAttached !== null || sandboxDelegationVerified !== null || approvalRequiredComplianceKnown || unapprovedAutodeployKnown || providerTargetKnown || providerTriggerKnown;
+
+  return {
+    source: explicitSnapshotAttached !== null
+      ? 'runtime_loop_evidence'
+      : derivedSnapshotReady
+        ? 'derived_from_gate_json'
+        : 'none',
+    endpoint: A003_OPERATOR_SURFACE_ENDPOINT,
+    present: flags[0],
+    total: flags.length,
+    checked: flags.filter(Boolean).length,
+    unchecked: flags.filter((item) => !item).length,
+    complete: flags.every(Boolean),
+    known: anyKnown,
+    runtimeEvidenceBackfilled: !runtimeLoopEvidence.present && (explicitSnapshotAttached === true || derivedSnapshotReady),
+  };
+};
+
+const extractSandboxDelegation = (json) => {
+  const runtimeLoopEvidenceJson = json?.runtime_loop_evidence && typeof json.runtime_loop_evidence === 'object' && !Array.isArray(json.runtime_loop_evidence)
+    ? json.runtime_loop_evidence
+    : null;
+  const verified = toBooleanOrNull(runtimeLoopEvidenceJson?.sandbox_delegation_verified);
+
+  return {
+    present: verified !== null,
+    known: verified !== null,
+    complete: verified === true,
+  };
+};
+
 const isAllPendingNoGo = (run) => {
   if (String(run.overall || '').toLowerCase() !== 'no-go') return false;
   const verdicts = [
@@ -186,6 +246,12 @@ const isAllPendingNoGo = (run) => {
     run.gateVerdicts.governance,
   ];
   return verdicts.every((value) => String(value || '').toLowerCase() === 'pending');
+};
+
+const isDerivedWeeklyAutoRun = (run) => {
+  const operator = String(run?.operator || '').trim().toLowerCase();
+  const scope = String(run?.scope || '').trim().toLowerCase();
+  return operator === 'auto' && (scope === 'weekly:auto' || scope.startsWith('weekly:auto:'));
 };
 
 const files = fs.existsSync(RUNS_DIR)
@@ -238,6 +304,8 @@ const runs = files
         toBooleanOrNull(runtimeLoopEvidenceJson.database_ids_verified),
         toBooleanOrNull(runtimeLoopEvidenceJson.loops_snapshot_attached),
         toBooleanOrNull(runtimeLoopEvidenceJson.unattended_health_snapshot_attached),
+        toBooleanOrNull(runtimeLoopEvidenceJson.worker_approval_gates_snapshot_attached),
+        toBooleanOrNull(runtimeLoopEvidenceJson.sandbox_delegation_verified),
       ]
       : null;
     const runtimeLoopEvidence = runtimeLoopEvidenceJson
@@ -265,6 +333,8 @@ const runs = files
       hallucinationReviewFailRate: toNumber(json?.gates?.quality?.metrics?.hallucination_review_fail_rate),
       sessionSuccessRate: toNumber(json?.gates?.quality?.metrics?.session_success_rate),
     };
+    const a003OperatorSurface = extractA003OperatorSurface(json, runtimeLoopEvidence);
+    const sandboxDelegation = extractSandboxDelegation(json);
 
     return {
       filePath,
@@ -282,6 +352,8 @@ const runs = files
       requiredActions,
       checklist,
       runtimeLoopEvidence,
+      a003OperatorSurface,
+      sandboxDelegation,
       qualityMetrics,
       source: json ? 'json+md' : 'md',
     };
@@ -316,9 +388,16 @@ const gateVerdictCounts = {
   governance: { pass: 0, fail: 0, pending: 0, unknown: 0 },
 };
 
-const bumpGateVerdict = (gate, verdictRaw) => {
+const autoJudgeSignalGateVerdictCounts = {
+  reliability: { pass: 0, fail: 0, pending: 0, unknown: 0 },
+  quality: { pass: 0, fail: 0, pending: 0, unknown: 0 },
+  safety: { pass: 0, fail: 0, pending: 0, unknown: 0 },
+  governance: { pass: 0, fail: 0, pending: 0, unknown: 0 },
+};
+
+const bumpGateVerdict = (counts, gate, verdictRaw) => {
   const verdict = ['pass', 'fail', 'pending'].includes(verdictRaw) ? verdictRaw : 'unknown';
-  gateVerdictCounts[gate][verdict] += 1;
+  counts[gate][verdict] += 1;
 };
 
 const avg = (values) => {
@@ -328,6 +407,13 @@ const avg = (values) => {
 };
 
 const qualitySignals = {
+  citationRate: [],
+  retrievalHitAtK: [],
+  hallucinationReviewFailRate: [],
+  sessionSuccessRate: [],
+};
+
+const autoJudgeSignalQualitySignals = {
   citationRate: [],
   retrievalHitAtK: [],
   hallucinationReviewFailRate: [],
@@ -354,6 +440,25 @@ const requiredActionCompletion = {
 const runtimeLoopEvidenceCompletion = {
   runs_with_evidence: 0,
   complete_runs: 0,
+  incomplete_runs: 0,
+  missing_runs: 0,
+  known_runs: 0,
+  completion_rate: null,
+};
+
+const a003OperatorSurfaceCompletion = {
+  endpoint: A003_OPERATOR_SURFACE_ENDPOINT,
+  runs_with_surface: 0,
+  complete_runs: 0,
+  incomplete_runs: 0,
+  missing_runs: 0,
+  known_runs: 0,
+  runtime_evidence_backfilled_runs: 0,
+  completion_rate: null,
+};
+
+const sandboxDelegationCompletion = {
+  verified_runs: 0,
   incomplete_runs: 0,
   missing_runs: 0,
   known_runs: 0,
@@ -407,15 +512,27 @@ for (const run of runsForKpi) {
     pendingCount += 1;
   }
 
-  bumpGateVerdict('reliability', run.gateVerdicts.reliability);
-  bumpGateVerdict('quality', run.gateVerdicts.quality);
-  bumpGateVerdict('safety', run.gateVerdicts.safety);
-  bumpGateVerdict('governance', run.gateVerdicts.governance);
+  bumpGateVerdict(gateVerdictCounts, 'reliability', run.gateVerdicts.reliability);
+  bumpGateVerdict(gateVerdictCounts, 'quality', run.gateVerdicts.quality);
+  bumpGateVerdict(gateVerdictCounts, 'safety', run.gateVerdicts.safety);
+  bumpGateVerdict(gateVerdictCounts, 'governance', run.gateVerdicts.governance);
 
   if (run.qualityMetrics.citationRate !== null) qualitySignals.citationRate.push(run.qualityMetrics.citationRate);
   if (run.qualityMetrics.retrievalHitAtK !== null) qualitySignals.retrievalHitAtK.push(run.qualityMetrics.retrievalHitAtK);
   if (run.qualityMetrics.hallucinationReviewFailRate !== null) qualitySignals.hallucinationReviewFailRate.push(run.qualityMetrics.hallucinationReviewFailRate);
   if (run.qualityMetrics.sessionSuccessRate !== null) qualitySignals.sessionSuccessRate.push(run.qualityMetrics.sessionSuccessRate);
+
+  if (!isDerivedWeeklyAutoRun(run)) {
+    bumpGateVerdict(autoJudgeSignalGateVerdictCounts, 'reliability', run.gateVerdicts.reliability);
+    bumpGateVerdict(autoJudgeSignalGateVerdictCounts, 'quality', run.gateVerdicts.quality);
+    bumpGateVerdict(autoJudgeSignalGateVerdictCounts, 'safety', run.gateVerdicts.safety);
+    bumpGateVerdict(autoJudgeSignalGateVerdictCounts, 'governance', run.gateVerdicts.governance);
+
+    if (run.qualityMetrics.citationRate !== null) autoJudgeSignalQualitySignals.citationRate.push(run.qualityMetrics.citationRate);
+    if (run.qualityMetrics.retrievalHitAtK !== null) autoJudgeSignalQualitySignals.retrievalHitAtK.push(run.qualityMetrics.retrievalHitAtK);
+    if (run.qualityMetrics.hallucinationReviewFailRate !== null) autoJudgeSignalQualitySignals.hallucinationReviewFailRate.push(run.qualityMetrics.hallucinationReviewFailRate);
+    if (run.qualityMetrics.sessionSuccessRate !== null) autoJudgeSignalQualitySignals.sessionSuccessRate.push(run.qualityMetrics.sessionSuccessRate);
+  }
 
   if (!run.runtimeLoopEvidence.present) {
     runtimeLoopEvidenceCompletion.missing_runs += 1;
@@ -430,10 +547,46 @@ for (const run of runsForKpi) {
       runtimeLoopEvidenceCompletion.incomplete_runs += 1;
     }
   }
+
+  if (!run.a003OperatorSurface.present) {
+    a003OperatorSurfaceCompletion.missing_runs += 1;
+  } else {
+    a003OperatorSurfaceCompletion.runs_with_surface += 1;
+    if (run.a003OperatorSurface.known) {
+      a003OperatorSurfaceCompletion.known_runs += 1;
+    }
+    if (run.a003OperatorSurface.complete) {
+      a003OperatorSurfaceCompletion.complete_runs += 1;
+    } else {
+      a003OperatorSurfaceCompletion.incomplete_runs += 1;
+    }
+    if (run.a003OperatorSurface.runtimeEvidenceBackfilled) {
+      a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs += 1;
+    }
+  }
+
+  if (!run.sandboxDelegation.present) {
+    sandboxDelegationCompletion.missing_runs += 1;
+  } else {
+    sandboxDelegationCompletion.known_runs += 1;
+    if (run.sandboxDelegation.complete) {
+      sandboxDelegationCompletion.verified_runs += 1;
+    } else {
+      sandboxDelegationCompletion.incomplete_runs += 1;
+    }
+  }
 }
 
 runtimeLoopEvidenceCompletion.completion_rate = runtimeLoopEvidenceCompletion.runs_with_evidence > 0
   ? Number((runtimeLoopEvidenceCompletion.complete_runs / runtimeLoopEvidenceCompletion.runs_with_evidence).toFixed(4))
+  : null;
+
+a003OperatorSurfaceCompletion.completion_rate = a003OperatorSurfaceCompletion.runs_with_surface > 0
+  ? Number((a003OperatorSurfaceCompletion.complete_runs / a003OperatorSurfaceCompletion.runs_with_surface).toFixed(4))
+  : null;
+
+sandboxDelegationCompletion.completion_rate = sandboxDelegationCompletion.known_runs > 0
+  ? Number((sandboxDelegationCompletion.verified_runs / sandboxDelegationCompletion.known_runs).toFixed(4))
   : null;
 
 const qualitySummary = {
@@ -448,6 +601,26 @@ const qualitySummary = {
     retrieval_hit_at_k: avg(qualitySignals.retrievalHitAtK),
     hallucination_review_fail_rate: avg(qualitySignals.hallucinationReviewFailRate),
     session_success_rate: avg(qualitySignals.sessionSuccessRate),
+  },
+};
+
+const autoJudgeSignalSummary = {
+  source_runs: runsForKpi.filter((run) => !isDerivedWeeklyAutoRun(run)).length,
+  derived_weekly_auto_runs_excluded: runsForKpi.filter((run) => isDerivedWeeklyAutoRun(run)).length,
+  gate_verdict_counts: autoJudgeSignalGateVerdictCounts,
+  quality_summary: {
+    samples: {
+      citation_rate: autoJudgeSignalQualitySignals.citationRate.length,
+      retrieval_hit_at_k: autoJudgeSignalQualitySignals.retrievalHitAtK.length,
+      hallucination_review_fail_rate: autoJudgeSignalQualitySignals.hallucinationReviewFailRate.length,
+      session_success_rate: autoJudgeSignalQualitySignals.sessionSuccessRate.length,
+    },
+    averages: {
+      citation_rate: avg(autoJudgeSignalQualitySignals.citationRate),
+      retrieval_hit_at_k: avg(autoJudgeSignalQualitySignals.retrievalHitAtK),
+      hallucination_review_fail_rate: avg(autoJudgeSignalQualitySignals.hallucinationReviewFailRate),
+      session_success_rate: avg(autoJudgeSignalQualitySignals.sessionSuccessRate),
+    },
   },
 };
 
@@ -466,7 +639,17 @@ const recentRows = runsWithFlags
       : run.runtimeLoopEvidence.complete
         ? 'complete'
         : 'incomplete';
-    return `| ${cleanCell(run.runId)}${legacyMark} | ${cleanCell(run.stage)} | ${cleanCell(run.scope)} | ${cleanCell(run.overall)} | ${cleanCell(run.rollbackRequired)} | ${cleanCell(run.rollbackType)} | ${cleanCell(runtimeEvidenceStatus)} | ${cleanCell(rel)} |`;
+    const a003SurfaceStatus = !run.a003OperatorSurface.present
+      ? 'missing'
+      : run.a003OperatorSurface.complete
+        ? 'complete'
+        : 'incomplete';
+    const sandboxDelegationStatus = !run.sandboxDelegation.present
+      ? 'missing'
+      : run.sandboxDelegation.complete
+        ? 'verified'
+        : 'incomplete';
+    return `| ${cleanCell(run.runId)}${legacyMark} | ${cleanCell(run.stage)} | ${cleanCell(run.scope)} | ${cleanCell(run.overall)} | ${cleanCell(run.rollbackRequired)} | ${cleanCell(run.rollbackType)} | ${cleanCell(runtimeEvidenceStatus)} | ${cleanCell(a003SurfaceStatus)} | ${cleanCell(sandboxDelegationStatus)} | ${cleanCell(rel)} |`;
   })
   .join('\n');
 
@@ -659,7 +842,21 @@ const fetchStrategyQualityNormalization = async () => {
 
 const strategyQualityNormalization = await fetchStrategyQualityNormalization();
 
-const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runsForKpi.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n- legacy_pending_no_go_excluded: ${excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0}\n- legacy_pending_cutoff: ${legacyPendingCutoffRaw || 'n/a'}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## No-Go Root Cause Breakdown\n\n- reliability_quality_dual_fail: ${noGoRootCause.reliability_quality_dual_fail}\n- reliability_only_fail: ${noGoRootCause.reliability_only_fail}\n- quality_only_fail: ${noGoRootCause.quality_only_fail}\n- all_gates_pending: ${noGoRootCause.all_gates_pending}\n- other: ${noGoRootCause.other}\n\n## Required Action Completion (Estimated)\n\n- no_go_runs: ${requiredActionCompletion.no_go_runs}\n- required_actions_total: ${requiredActionCompletion.required_actions_total}\n- required_actions_estimated_completed: ${requiredActionCompletion.required_actions_estimated_completed}\n- required_action_completion_rate: ${requiredActionCompletion.required_action_completion_rate ?? 'n/a'}\n- checklist_complete_runs: ${requiredActionCompletion.checklist_complete_runs}\n- checklist_incomplete_runs: ${requiredActionCompletion.checklist_incomplete_runs}\n\n## Runtime Loop Evidence Completion\n\n- runs_with_evidence: ${runtimeLoopEvidenceCompletion.runs_with_evidence}\n- complete_runs: ${runtimeLoopEvidenceCompletion.complete_runs}\n- incomplete_runs: ${runtimeLoopEvidenceCompletion.incomplete_runs}\n- missing_runs: ${runtimeLoopEvidenceCompletion.missing_runs}\n- known_runs: ${runtimeLoopEvidenceCompletion.known_runs}\n- completion_rate: ${runtimeLoopEvidenceCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | File |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - | - |'}\n`;
+const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runsForKpi.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n- legacy_pending_no_go_excluded: ${excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0}\n- legacy_pending_cutoff: ${legacyPendingCutoffRaw || 'n/a'}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## No-Go Root Cause Breakdown\n\n- reliability_quality_dual_fail: ${noGoRootCause.reliability_quality_dual_fail}\n- reliability_only_fail: ${noGoRootCause.reliability_only_fail}\n- quality_only_fail: ${noGoRootCause.quality_only_fail}\n- all_gates_pending: ${noGoRootCause.all_gates_pending}\n- other: ${noGoRootCause.other}\n\n## Required Action Completion (Estimated)\n\n- no_go_runs: ${requiredActionCompletion.no_go_runs}\n- required_actions_total: ${requiredActionCompletion.required_actions_total}\n- required_actions_estimated_completed: ${requiredActionCompletion.required_actions_estimated_completed}\n- required_action_completion_rate: ${requiredActionCompletion.required_action_completion_rate ?? 'n/a'}\n- checklist_complete_runs: ${requiredActionCompletion.checklist_complete_runs}\n- checklist_incomplete_runs: ${requiredActionCompletion.checklist_incomplete_runs}\n\n## Runtime Loop Evidence Completion\n\n- runs_with_evidence: ${runtimeLoopEvidenceCompletion.runs_with_evidence}\n- complete_runs: ${runtimeLoopEvidenceCompletion.complete_runs}\n- incomplete_runs: ${runtimeLoopEvidenceCompletion.incomplete_runs}\n- missing_runs: ${runtimeLoopEvidenceCompletion.missing_runs}\n- known_runs: ${runtimeLoopEvidenceCompletion.known_runs}\n- completion_rate: ${runtimeLoopEvidenceCompletion.completion_rate ?? 'n/a'}\n\n## A-003 Operator Surface Completion\n\n- canonical_endpoint: ${A003_OPERATOR_SURFACE_ENDPOINT}\n- runs_with_surface: ${a003OperatorSurfaceCompletion.runs_with_surface}\n- complete_runs: ${a003OperatorSurfaceCompletion.complete_runs}\n- incomplete_runs: ${a003OperatorSurfaceCompletion.incomplete_runs}\n- missing_runs: ${a003OperatorSurfaceCompletion.missing_runs}\n- known_runs: ${a003OperatorSurfaceCompletion.known_runs}\n- runtime_evidence_backfilled_runs: ${a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs}\n- completion_rate: ${a003OperatorSurfaceCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | File |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - | - | - |'}\n`;
+
+const bodyWithSandboxDelegation = body
+  .replace(
+    `- runtime_evidence_backfilled_runs: ${a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs}\n- completion_rate: ${a003OperatorSurfaceCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary`,
+    `- runtime_evidence_backfilled_runs: ${a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs}\n- completion_rate: ${a003OperatorSurfaceCompletion.completion_rate ?? 'n/a'}\n\n## Sandbox Delegation Completion\n\n- verified_runs: ${sandboxDelegationCompletion.verified_runs}\n- incomplete_runs: ${sandboxDelegationCompletion.incomplete_runs}\n- missing_runs: ${sandboxDelegationCompletion.missing_runs}\n- known_runs: ${sandboxDelegationCompletion.known_runs}\n- completion_rate: ${sandboxDelegationCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary`,
+  )
+  .replace(
+    '| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | File |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | Sandbox Delegation | File |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  )
+  .replace(
+    `${recentRows || '| - | - | - | - | - | - | - | - | - |'}`,
+    recentRows || '| - | - | - | - | - | - | - | - | - | - |',
+  );
 
 const buildReportKey = () => {
   const day = generatedAt.slice(0, 10);
@@ -707,9 +904,12 @@ const writeSupabaseArtifact = async () => {
       legacy_pending_cutoff: legacyPendingCutoffRaw || null,
       stage_distribution: byStage,
       gate_verdict_counts: gateVerdictCounts,
+      auto_judge_signal_summary: autoJudgeSignalSummary,
       no_go_root_cause: noGoRootCause,
       required_action_completion: requiredActionCompletion,
       runtime_loop_evidence_completion: runtimeLoopEvidenceCompletion,
+      a003_operator_surface_completion: a003OperatorSurfaceCompletion,
+      sandbox_delegation_completion: sandboxDelegationCompletion,
       quality_summary: qualitySummary,
       strategy_quality_normalization: strategyQualityNormalization,
     },
@@ -734,13 +934,23 @@ const writeSupabaseArtifact = async () => {
           : run.runtimeLoopEvidence.complete
             ? 'complete'
             : 'incomplete',
+        a003_operator_surface_status: !run.a003OperatorSurface.present
+          ? 'missing'
+          : run.a003OperatorSurface.complete
+            ? 'complete'
+            : 'incomplete',
+        sandbox_delegation_status: !run.sandboxDelegation.present
+          ? 'missing'
+          : run.sandboxDelegation.complete
+            ? 'verified'
+            : 'incomplete',
         citation_rate: run.qualityMetrics.citationRate,
         retrieval_hit_at_k: run.qualityMetrics.retrievalHitAtK,
         hallucination_review_fail_rate: run.qualityMetrics.hallucinationReviewFailRate,
         session_success_rate: run.qualityMetrics.sessionSuccessRate,
       })),
     },
-    markdown: body,
+    markdown: bodyWithSandboxDelegation,
   };
 
   if (dryRun) {
@@ -768,14 +978,14 @@ const writeSupabaseArtifact = async () => {
 if (sinks.includes('markdown')) {
   if (!dryRun) {
     fs.mkdirSync(RUNS_DIR, { recursive: true });
-    fs.writeFileSync(OUTPUT, body, 'utf8');
+    fs.writeFileSync(OUTPUT, bodyWithSandboxDelegation, 'utf8');
   }
   console.log(`[GO-NO-GO] weekly summary ${dryRun ? 'previewed' : 'written'}: ${path.relative(ROOT, OUTPUT).replace(/\\/g, '/')}`);
 }
 
 if (sinks.includes('stdout')) {
   console.log('\n[GO-NO-GO] report markdown\n');
-  console.log(body);
+  console.log(bodyWithSandboxDelegation);
 }
 
 if (sinks.includes('supabase')) {

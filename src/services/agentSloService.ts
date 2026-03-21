@@ -4,6 +4,7 @@ import { runWithConcurrency } from '../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from './goNoGoService';
 import { summarizeOpencodeQueueReadiness } from './opencodeGitHubQueueService';
+import { getMemoryQueueHealthSnapshot } from './memoryJobRunner';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type SloLayer = 'intelligence' | 'engine' | 'agents' | 'tools_memory' | 'learning';
@@ -18,6 +19,10 @@ type SloThresholds = {
   toolsMemoryMinCitationRate: number;
   toolsMemoryMinRecallAt5: number;
   toolsMemoryMaxJobFailureRate: number;
+  toolsMemoryMaxQueueLagP95Sec: number;
+  toolsMemoryMaxRetryRatePct: number;
+  toolsMemoryMaxDeadletterPending: number;
+  toolsMemoryMaxDeadletterIgnored: number;
   learningMinCandidates24h: number;
   learningMinActiveRules: number;
 };
@@ -71,12 +76,25 @@ const DEFAULT_THRESHOLDS: SloThresholds = {
   toolsMemoryMinCitationRate: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MIN_CITATION_RATE, 0.95, 0, 1),
   toolsMemoryMinRecallAt5: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MIN_RECALL_AT_5, 0.60, 0, 1),
   toolsMemoryMaxJobFailureRate: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_JOB_FAILURE_RATE, 0.10, 0, 1),
+  toolsMemoryMaxQueueLagP95Sec: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_QUEUE_LAG_P95_SEC, 120)),
+  toolsMemoryMaxRetryRatePct: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_RETRY_RATE_PCT, 40, 0, 100),
+  toolsMemoryMaxDeadletterPending: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_DEADLETTER_PENDING, 0)),
+  toolsMemoryMaxDeadletterIgnored: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_DEADLETTER_IGNORED, 0)),
   learningMinCandidates24h: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_LEARNING_MIN_CANDIDATES_24H, 1)),
   learningMinActiveRules: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_LEARNING_MIN_ACTIVE_RULES, 1)),
 };
 
 let sloLoopTimer: NodeJS.Timeout | null = null;
 let sloLoopRunning = false;
+
+export const getAgentSloAlertLoopStats = () => ({
+  enabled: SLO_LOOP_ENABLED,
+  running: Boolean(sloLoopTimer),
+  inFlight: sloLoopRunning,
+  intervalMin: SLO_LOOP_INTERVAL_MIN,
+  maxGuilds: SLO_LOOP_MAX_GUILDS,
+  concurrency: SLO_LOOP_CONCURRENCY,
+});
 
 const nowIso = () => new Date().toISOString();
 
@@ -99,6 +117,10 @@ const toThresholds = (value: unknown): SloThresholds => {
     toolsMemoryMinCitationRate: Math.max(0, Math.min(1, Number(row.toolsMemoryMinCitationRate ?? DEFAULT_THRESHOLDS.toolsMemoryMinCitationRate))),
     toolsMemoryMinRecallAt5: Math.max(0, Math.min(1, Number(row.toolsMemoryMinRecallAt5 ?? DEFAULT_THRESHOLDS.toolsMemoryMinRecallAt5))),
     toolsMemoryMaxJobFailureRate: Math.max(0, Math.min(1, Number(row.toolsMemoryMaxJobFailureRate ?? DEFAULT_THRESHOLDS.toolsMemoryMaxJobFailureRate))),
+    toolsMemoryMaxQueueLagP95Sec: Math.max(0, Number(row.toolsMemoryMaxQueueLagP95Sec ?? DEFAULT_THRESHOLDS.toolsMemoryMaxQueueLagP95Sec)),
+    toolsMemoryMaxRetryRatePct: Math.max(0, Math.min(100, Number(row.toolsMemoryMaxRetryRatePct ?? DEFAULT_THRESHOLDS.toolsMemoryMaxRetryRatePct))),
+    toolsMemoryMaxDeadletterPending: Math.max(0, Math.trunc(Number(row.toolsMemoryMaxDeadletterPending ?? DEFAULT_THRESHOLDS.toolsMemoryMaxDeadletterPending))),
+    toolsMemoryMaxDeadletterIgnored: Math.max(0, Math.trunc(Number(row.toolsMemoryMaxDeadletterIgnored ?? DEFAULT_THRESHOLDS.toolsMemoryMaxDeadletterIgnored))),
     learningMinCandidates24h: Math.max(0, Math.trunc(Number(row.learningMinCandidates24h ?? DEFAULT_THRESHOLDS.learningMinCandidates24h))),
     learningMinActiveRules: Math.max(0, Math.trunc(Number(row.learningMinActiveRules ?? DEFAULT_THRESHOLDS.learningMinActiveRules))),
   };
@@ -233,12 +255,13 @@ const check = (params: {
 
 const buildChecks = async (guildId: string, policy: SloPolicy): Promise<SloCheck[]> => {
   const windowDays = Math.max(1, Math.ceil(policy.windowMinutes / (24 * 60)));
-  const [readiness, goNoGo, opencode, llmStats, learningStats] = await Promise.all([
+  const [readiness, goNoGo, opencode, llmStats, learningStats, queueHealth] = await Promise.all([
     buildAgentRuntimeReadinessReport({ guildId, windowDays }),
     buildGoNoGoReport({ guildId, days: windowDays }),
     summarizeOpencodeQueueReadiness({ guildId }).catch(() => null),
     getLlmWindowStats(guildId, policy.windowMinutes),
     getLearningWindowStats(guildId),
+    getMemoryQueueHealthSnapshot(guildId).catch(() => null),
   ]);
 
   const telemetryDropRate = Number(readiness.metrics.telemetryQueue.dropped || 0) /
@@ -333,6 +356,46 @@ const buildChecks = async (guildId: string, policy: SloPolicy): Promise<SloCheck
       metric: toNumeric(jobFailureCheck?.actual),
       threshold: policy.thresholds.toolsMemoryMaxJobFailureRate,
       message: `Memory job failure rate=${String(jobFailureCheck?.actual ?? 'n/a')}`,
+    }),
+    check({
+      layer: 'tools_memory',
+      key: 'queue_lag_p95_sec',
+      status: queueHealth === null
+        ? 'warn'
+        : queueHealth.queueLagP95Sec <= policy.thresholds.toolsMemoryMaxQueueLagP95Sec ? 'pass' : 'fail',
+      metric: queueHealth?.queueLagP95Sec ?? null,
+      threshold: policy.thresholds.toolsMemoryMaxQueueLagP95Sec,
+      message: `Queue lag p95=${queueHealth?.queueLagP95Sec ?? 'n/a'}s`,
+    }),
+    check({
+      layer: 'tools_memory',
+      key: 'retry_rate_pct',
+      status: queueHealth === null
+        ? 'warn'
+        : queueHealth.retryRatePct <= policy.thresholds.toolsMemoryMaxRetryRatePct ? 'pass' : 'fail',
+      metric: queueHealth?.retryRatePct ?? null,
+      threshold: policy.thresholds.toolsMemoryMaxRetryRatePct,
+      message: `Retry rate=${queueHealth?.retryRatePct ?? 'n/a'}%`,
+    }),
+    check({
+      layer: 'tools_memory',
+      key: 'deadletter_pending',
+      status: queueHealth === null
+        ? 'warn'
+        : queueHealth.deadletterPendingCount <= policy.thresholds.toolsMemoryMaxDeadletterPending ? 'pass' : 'fail',
+      metric: queueHealth?.deadletterPendingCount ?? null,
+      threshold: policy.thresholds.toolsMemoryMaxDeadletterPending,
+      message: `Deadletter pending=${queueHealth?.deadletterPendingCount ?? 'n/a'}`,
+    }),
+    check({
+      layer: 'tools_memory',
+      key: 'deadletter_ignored',
+      status: queueHealth === null
+        ? 'warn'
+        : queueHealth.deadletterIgnoredCount <= policy.thresholds.toolsMemoryMaxDeadletterIgnored ? 'pass' : 'fail',
+      metric: queueHealth?.deadletterIgnoredCount ?? null,
+      threshold: policy.thresholds.toolsMemoryMaxDeadletterIgnored,
+      message: `Deadletter ignored=${queueHealth?.deadletterIgnoredCount ?? 'n/a'}`,
     }),
     check({
       layer: 'learning',

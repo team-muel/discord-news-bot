@@ -6,6 +6,7 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const HUGGINGFACE_CHAT_COMPLETIONS_URL = String(process.env.HUGGINGFACE_CHAT_COMPLETIONS_URL || 'https://router.huggingface.co/v1/chat/completions').trim();
 const LLM_API_TIMEOUT_MS = Math.max(1000, Number(process.env.LLM_API_TIMEOUT_MS || 15000));
+const LLM_API_TIMEOUT_LARGE_MS = Math.max(LLM_API_TIMEOUT_MS, Number(process.env.LLM_API_TIMEOUT_LARGE_MS || 90_000));
 const LLM_PROVIDER_TOTAL_TIMEOUT_MS = Math.max(1_000, Number(process.env.LLM_PROVIDER_TOTAL_TIMEOUT_MS || 25_000));
 const LLM_PROVIDER_MAX_ATTEMPTS = Math.max(1, Math.min(6, Number(process.env.LLM_PROVIDER_MAX_ATTEMPTS || 2) || 2));
 const LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED || 'false').trim());
@@ -24,7 +25,9 @@ const LLM_EXPERIMENT_GUILD_ALLOWLIST = new Set(
 const LLM_COST_INPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_INPUT_PER_1K_CHARS_USD || 0.0005) || 0.0005);
 const LLM_COST_OUTPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD || 0.0015) || 0.0015);
 
-export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface';
+export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface' | 'openjarvis' | 'litellm';
+
+export type LlmProviderProfile = 'cost-optimized' | 'quality-optimized';
 
 type ProviderPolicyRule = {
   pattern: string;
@@ -38,6 +41,7 @@ export type LlmTextRequest = {
   topP?: number;
   maxTokens?: number;
   provider?: LlmProvider;
+  providerProfile?: LlmProviderProfile;
   model?: string;
   guildId?: string;
   sessionId?: string;
@@ -58,6 +62,8 @@ export type LlmTextWithMetaResponse = {
     keyHash: string;
   } | null;
   avgLogprob?: number;
+  /** M-07: Normalized quality score [0..1] across providers. Based on latency, logprob, and output completeness. */
+  normalizedQualityScore?: number;
 };
 
 type LlmExperimentDecision = {
@@ -87,8 +93,15 @@ const getOllamaBaseUrl = () => String(process.env.OLLAMA_BASE_URL || 'http://127
 const getOllamaModel = () => String(process.env.OLLAMA_MODEL || process.env.LOCAL_LLM_MODEL || '').trim();
 const isOllamaConfigured = () => Boolean(getOllamaModel() || ['ollama', 'local'].includes(String(process.env.AI_PROVIDER || '').trim().toLowerCase()));
 const isHuggingFaceConfigured = () => Boolean(getHuggingFaceKey());
-const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openai', 'anthropic', 'gemini', 'huggingface', 'openclaw', 'ollama'];
-const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'gemini', 'huggingface', 'ollama'];
+const getOpenJarvisServeUrl = () => String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim().replace(/\/+$/, '');
+const isOpenJarvisConfigured = () => !/^(0|false|off|no)$/i.test(String(process.env.OPENJARVIS_ENABLED || 'false').trim());
+const getOpenJarvisModel = () => String(process.env.OPENJARVIS_MODEL || '').trim();
+const getLiteLLMBaseUrl = () => String(process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000').trim().replace(/\/+$/, '');
+const getLiteLLMKey = () => String(process.env.LITELLM_MASTER_KEY || '').trim();
+const isLiteLLMConfigured = () => !/^(0|false|off|no)$/i.test(String(process.env.LITELLM_ENABLED || 'false').trim());
+const getLiteLLMModel = () => String(process.env.LITELLM_MODEL || 'muel-local').trim();
+const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openai', 'anthropic', 'gemini', 'huggingface', 'openclaw', 'litellm', 'openjarvis', 'ollama'];
+const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'gemini', 'huggingface', 'litellm', 'openjarvis', 'ollama'];
 
 const normalizeProviderAlias = (value: string): LlmProvider | null => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -104,7 +117,10 @@ const normalizeProviderAlias = (value: string): LlmProvider | null => {
   if (normalized === 'local') {
     return 'ollama';
   }
-  if (normalized === 'openai' || normalized === 'gemini' || normalized === 'anthropic' || normalized === 'openclaw' || normalized === 'ollama' || normalized === 'huggingface') {
+  if (normalized === 'jarvis') {
+    return 'openjarvis';
+  }
+  if (normalized === 'openai' || normalized === 'gemini' || normalized === 'anthropic' || normalized === 'openclaw' || normalized === 'ollama' || normalized === 'huggingface' || normalized === 'openjarvis' || normalized === 'litellm') {
     return normalized;
   }
   return null;
@@ -131,6 +147,8 @@ const isProviderConfigured = (provider: LlmProvider): boolean => {
   if (provider === 'huggingface') return isHuggingFaceConfigured();
   if (provider === 'openclaw') return isOpenClawConfigured();
   if (provider === 'ollama') return isOllamaConfigured();
+  if (provider === 'openjarvis') return isOpenJarvisConfigured();
+  if (provider === 'litellm') return isLiteLLMConfigured();
   return false;
 };
 
@@ -189,9 +207,15 @@ const getDefaultProviderFallbackChain = (): LlmProvider[] => {
   return parseProviderList(String(process.env.LLM_PROVIDER_FALLBACK_CHAIN || ''));
 };
 
+let _cachedActionPolicyRules: ProviderPolicyRule[] | null = null;
+const getActionPolicyRulesCached = (): ProviderPolicyRule[] => {
+  if (!_cachedActionPolicyRules) _cachedActionPolicyRules = parseActionPolicyRules();
+  return _cachedActionPolicyRules;
+};
+
 const getActionPolicyProviders = (actionName?: string): LlmProvider[] => {
   const safeActionName = String(actionName || '').trim();
-  const actionPolicyRules = parseActionPolicyRules();
+  const actionPolicyRules = getActionPolicyRulesCached();
   if (!safeActionName || actionPolicyRules.length === 0) {
     return [];
   }
@@ -211,6 +235,78 @@ const getActionPolicyProviders = (actionName?: string): LlmProvider[] => {
     }
   }
   return providers;
+};
+
+/**
+ * M-06: Workflow slot model binding/fallback matrix.
+ * Env format: LLM_WORKFLOW_MODEL_BINDINGS="worker.generation=openai:gpt-4o;news.*=gemini:gemini-2.0-flash;code.*=anthropic:claude-sonnet-4-20250514"
+ * Each entry: actionPattern=provider:model
+ * Provider profile defaults per action: LLM_WORKFLOW_PROFILE_DEFAULTS="worker.generation=quality-optimized;news.*=cost-optimized"
+ */
+type WorkflowModelBinding = { pattern: string; provider: LlmProvider; model: string };
+
+const parseWorkflowModelBindings = (): WorkflowModelBinding[] => {
+  const raw = String(process.env.LLM_WORKFLOW_MODEL_BINDINGS || '').trim();
+  if (!raw) return [];
+  return raw.split(/[;\n]+/).map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+    const eqIdx = entry.indexOf('=');
+    if (eqIdx < 1) return null;
+    const pattern = entry.slice(0, eqIdx).trim().toLowerCase();
+    const binding = entry.slice(eqIdx + 1).trim();
+    const colonIdx = binding.indexOf(':');
+    if (colonIdx < 1) return null;
+    const provider = normalizeProviderAlias(binding.slice(0, colonIdx).trim());
+    const model = binding.slice(colonIdx + 1).trim();
+    if (!provider || !model) return null;
+    return { pattern, provider, model };
+  }).filter((b): b is WorkflowModelBinding => Boolean(b));
+};
+
+let _cachedWorkflowModelBindings: WorkflowModelBinding[] | null = null;
+const getWorkflowModelBindingsCached = (): WorkflowModelBinding[] => {
+  if (!_cachedWorkflowModelBindings) _cachedWorkflowModelBindings = parseWorkflowModelBindings();
+  return _cachedWorkflowModelBindings;
+};
+
+const resolveWorkflowModelBinding = (actionName?: string): { provider: LlmProvider; model: string } | null => {
+  const safeAction = String(actionName || '').trim();
+  if (!safeAction) return null;
+  for (const binding of getWorkflowModelBindingsCached()) {
+    if (matchActionPattern(binding.pattern, safeAction)) {
+      return { provider: binding.provider, model: binding.model };
+    }
+  }
+  return null;
+};
+
+const parseWorkflowProfileDefaults = (): Array<{ pattern: string; profile: LlmProviderProfile }> => {
+  const raw = String(process.env.LLM_WORKFLOW_PROFILE_DEFAULTS || '').trim();
+  if (!raw) return [];
+  return raw.split(/[;\n]+/).map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+    const eqIdx = entry.indexOf('=');
+    if (eqIdx < 1) return null;
+    const pattern = entry.slice(0, eqIdx).trim().toLowerCase();
+    const profile = entry.slice(eqIdx + 1).trim() as LlmProviderProfile;
+    if (profile !== 'cost-optimized' && profile !== 'quality-optimized') return null;
+    return { pattern, profile };
+  }).filter((p): p is { pattern: string; profile: LlmProviderProfile } => Boolean(p));
+};
+
+let _cachedWorkflowProfileDefaults: Array<{ pattern: string; profile: LlmProviderProfile }> | null = null;
+const getWorkflowProfileDefaultsCached = (): Array<{ pattern: string; profile: LlmProviderProfile }> => {
+  if (!_cachedWorkflowProfileDefaults) _cachedWorkflowProfileDefaults = parseWorkflowProfileDefaults();
+  return _cachedWorkflowProfileDefaults;
+};
+
+const resolveWorkflowProfile = (actionName?: string): LlmProviderProfile | undefined => {
+  const safeAction = String(actionName || '').trim();
+  if (!safeAction) return undefined;
+  for (const rule of getWorkflowProfileDefaultsCached()) {
+    if (matchActionPattern(rule.pattern, safeAction)) {
+      return rule.profile;
+    }
+  }
+  return undefined;
 };
 
 const dedupeProviders = (providers: Array<LlmProvider | null | undefined>): LlmProvider[] => {
@@ -270,6 +366,12 @@ const resolveProviderWithoutExperiment = (): LlmProvider | null => {
   if ((preferred === 'ollama' || preferred === 'local') && isOllamaConfigured()) {
     return 'ollama';
   }
+  if ((preferred === 'openjarvis' || preferred === 'jarvis') && isOpenJarvisConfigured()) {
+    return 'openjarvis';
+  }
+  if (preferred === 'litellm' && isLiteLLMConfigured()) {
+    return 'litellm';
+  }
 
   for (const provider of getConfiguredBaseProviderOrder()) {
     if (isProviderConfigured(provider)) {
@@ -325,6 +427,26 @@ const resolveProviderWithExperiment = (params: LlmTextRequest): LlmExperimentDec
   };
 };
 
+const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['ollama', 'huggingface', 'litellm', 'openjarvis', 'openclaw', 'gemini', 'anthropic', 'openai'];
+const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 'openclaw', 'gemini', 'openjarvis', 'litellm', 'huggingface', 'ollama'];
+
+/** M-06/M-07: Gate-driven provider profile override. Set by actionRunner when gate verdict recommends a profile switch. */
+let _gateProviderProfileOverride: LlmProviderProfile | null = null;
+export const setGateProviderProfileOverride = (profile: LlmProviderProfile | null): void => {
+  _gateProviderProfileOverride = profile;
+};
+export const getGateProviderProfileOverride = (): LlmProviderProfile | null => _gateProviderProfileOverride;
+
+const reorderByProfile = (chain: LlmProvider[], profile?: LlmProviderProfile): LlmProvider[] => {
+  if (!profile) return chain;
+  const order = profile === 'cost-optimized' ? COST_OPTIMIZED_ORDER : QUALITY_OPTIMIZED_ORDER;
+  return [...chain].sort((a, b) => {
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+};
+
 const resolveProviderChain = (
   params: LlmTextRequest,
   selectedProvider: LlmProvider,
@@ -343,15 +465,24 @@ const resolveProviderChain = (
     ...(LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED ? getAutomaticFallbackOrder() : []),
   ]).filter((provider) => isProviderConfigured(provider));
 
+  const effectiveProfile = params.providerProfile || _gateProviderProfileOverride || resolveWorkflowProfile(params.actionName);
+  const profiledChain = reorderByProfile(chain, effectiveProfile);
+
+  // M-06: If workflow model binding specifies a provider, prioritize it
+  const workflowBinding = resolveWorkflowModelBinding(params.actionName);
+  const bindingPrioritized = workflowBinding && isProviderConfigured(workflowBinding.provider)
+    ? dedupeProviders([workflowBinding.provider, ...profiledChain])
+    : profiledChain;
+
   const isHfExperimentArm = selection.experiment?.arm === 'huggingface' && selectedProvider === 'huggingface';
   if (isHfExperimentArm && !LLM_EXPERIMENT_FAIL_OPEN) {
     return ['huggingface'];
   }
   if (isHfExperimentArm) {
-    return dedupeProviders(['huggingface', ...chain]).slice(0, LLM_PROVIDER_MAX_ATTEMPTS);
+    return dedupeProviders(['huggingface', ...bindingPrioritized]).slice(0, LLM_PROVIDER_MAX_ATTEMPTS);
   }
 
-  const bounded = (chain.length > 0 ? chain : [selectedProvider]).slice(0, LLM_PROVIDER_MAX_ATTEMPTS);
+  const bounded = (bindingPrioritized.length > 0 ? bindingPrioritized : [selectedProvider]).slice(0, LLM_PROVIDER_MAX_ATTEMPTS);
   return bounded.length > 0 ? bounded : [selectedProvider];
 };
 
@@ -366,6 +497,7 @@ const persistLlmCallLog = async (params: {
   avgLogprob?: number;
   experiment?: LlmTextWithMetaResponse['experiment'];
   estimatedCostUsd?: number;
+  qualityScore?: number;
 }): Promise<void> => {
   if (!LLM_CALL_LOG_ENABLED || !isSupabaseConfigured()) {
     return;
@@ -394,6 +526,7 @@ const persistLlmCallLog = async (params: {
       estimated_cost_usd: typeof params.estimatedCostUsd === 'number'
         ? Math.max(0, Number(params.estimatedCostUsd))
         : estimateLlmCallCostUsd(inputChars, outputChars),
+      quality_score: typeof params.qualityScore === 'number' ? params.qualityScore : null,
       created_at: new Date().toISOString(),
     });
   } catch {
@@ -401,9 +534,10 @@ const persistLlmCallLog = async (params: {
   }
 };
 
-const fetchWithTimeout = async (input: string, init: RequestInit): Promise<Response> => {
+const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs?: number): Promise<Response> => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), LLM_API_TIMEOUT_MS);
+  const effectiveTimeout = timeoutMs ?? LLM_API_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
   try {
     return await fetch(input, {
       ...init,
@@ -414,7 +548,7 @@ const fetchWithTimeout = async (input: string, init: RequestInit): Promise<Respo
       await logStructuredError({
         code: 'API_TIMEOUT',
         source: 'llmClient.fetchWithTimeout',
-        message: `LLM API timeout after ${LLM_API_TIMEOUT_MS}ms`,
+        message: `LLM API timeout after ${effectiveTimeout}ms`,
         meta: { url: input },
       }, error);
       throw new Error('API_TIMEOUT');
@@ -440,7 +574,9 @@ export const isAnyLlmConfigured = (): boolean => Boolean(
     || getAnthropicKey()
     || isHuggingFaceConfigured()
     || isOpenClawConfigured()
-    || isOllamaConfigured(),
+    || isOllamaConfigured()
+    || isOpenJarvisConfigured()
+    || isLiteLLMConfigured(),
 );
 
 export const resolveLlmProvider = (): LlmProvider | null => {
@@ -827,7 +963,7 @@ const requestOllama = async (params: LlmTextRequest): Promise<string> => {
         { role: 'user', content: params.user },
       ],
     }),
-  });
+  }, LLM_API_TIMEOUT_LARGE_MS);
 
   if (!response.ok) {
     const body = await response.text();
@@ -842,6 +978,66 @@ const requestOllama = async (params: LlmTextRequest): Promise<string> => {
 
   const data = (await response.json()) as Record<string, any>;
   return String(data?.message?.content || '').trim();
+};
+
+const requestOpenAiCompatible = async (
+  params: LlmTextRequest,
+  baseUrl: string,
+  model: string,
+  providerName: string,
+  apiKey?: string,
+): Promise<string> => {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const response = await fetchWithTimeout(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      temperature: params.temperature ?? 0.2,
+      top_p: params.topP,
+      max_tokens: params.maxTokens ?? 1000,
+      messages: [
+        { role: 'system', content: params.system },
+        { role: 'user', content: params.user },
+      ],
+    }),
+  }, LLM_API_TIMEOUT_LARGE_MS);
+
+  if (!response.ok) {
+    const respBody = await response.text();
+    await logStructuredError({
+      code: 'LLM_REQUEST_FAILED',
+      source: `llmClient.request${providerName}`,
+      message: `${providerName.toUpperCase()}_REQUEST_FAILED status=${response.status}`,
+      meta: { provider: providerName.toLowerCase(), status: response.status, bodyPreview: respBody.slice(0, 300) },
+    });
+    throw new Error(`${providerName.toUpperCase()}_REQUEST_FAILED: ${respBody.slice(0, 300)}`);
+  }
+
+  const data = (await response.json()) as Record<string, any>;
+  return String(data?.choices?.[0]?.message?.content || '').trim();
+};
+
+const requestOpenJarvis = (params: LlmTextRequest): Promise<string> =>
+  requestOpenAiCompatible(params, getOpenJarvisServeUrl(), params.model || getOpenJarvisModel() || 'qwen2.5:7b-instruct', 'OpenJarvis');
+
+const requestLiteLLM = (params: LlmTextRequest): Promise<string> =>
+  requestOpenAiCompatible(params, getLiteLLMBaseUrl(), params.model || getLiteLLMModel(), 'LiteLLM', getLiteLLMKey() || undefined);
+
+const computeNormalizedQualityScore = (response: LlmTextWithMetaResponse, latencyMs: number): number => {
+  // Latency component: 1.0 at 0ms, 0.0 at 30s+, sigmoid-like decay
+  const latencyScore = 1 / (1 + latencyMs / 5000);
+  // Logprob component: higher (less negative) avgLogprob = better confidence. Scale [-5..0] to [0..1]
+  const logprobScore = typeof response.avgLogprob === 'number' && Number.isFinite(response.avgLogprob)
+    ? Math.max(0, Math.min(1, (response.avgLogprob + 5) / 5))
+    : 0.5; // neutral when unavailable
+  // Completeness component: penalize very short or empty responses
+  const outputLen = String(response.text || '').length;
+  const completenessScore = outputLen >= 50 ? 1.0 : outputLen >= 10 ? 0.7 : outputLen > 0 ? 0.3 : 0;
+  // Weighted combination: latency 25%, confidence 50%, completeness 25%
+  return Number((latencyScore * 0.25 + logprobScore * 0.50 + completenessScore * 0.25).toFixed(4));
 };
 
 export const generateText = async (params: LlmTextRequest): Promise<string> => {
@@ -863,14 +1059,19 @@ export const generateTextWithMeta = async (
   const providerChain = resolveProviderChain(params, provider, selection);
   const providerChainDeadlineMs = startedAt + LLM_PROVIDER_TOTAL_TIMEOUT_MS;
 
+  const cachedWorkflowBinding = resolveWorkflowModelBinding(params.actionName);
   const resolveModel = (p: LlmProvider): string | undefined => {
     if (params.model) return params.model;
+    // M-06: Check workflow slot model binding first (cached per-call)
+    if (cachedWorkflowBinding && cachedWorkflowBinding.provider === p) return cachedWorkflowBinding.model;
     if (p === 'openai') return process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini';
     if (p === 'gemini') return process.env.GEMINI_MODEL || 'gemini-1.5-flash';
     if (p === 'anthropic') return process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-3-5-haiku-latest';
     if (p === 'huggingface') return process.env.HUGGINGFACE_MODEL || process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
     if (p === 'openclaw') return process.env.OPENCLAW_MODEL || 'openclaw';
     if (p === 'ollama') return getOllamaModel() || 'qwen2.5:3b-instruct';
+    if (p === 'openjarvis') return getOpenJarvisModel() || 'qwen2.5:7b-instruct';
+    if (p === 'litellm') return getLiteLLMModel();
     return undefined;
   };
 
@@ -890,6 +1091,12 @@ export const generateTextWithMeta = async (
     }
     if (targetProvider === 'ollama') {
       return { text: await requestOllama(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'openjarvis') {
+      return { text: await requestOpenJarvis(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'litellm') {
+      return { text: await requestLiteLLM(params), provider: targetProvider, model: resolveModel(targetProvider) };
     }
     return { text: await requestGemini(params), provider: 'gemini', model: resolveModel('gemini') };
   };
@@ -920,12 +1127,14 @@ export const generateTextWithMeta = async (
 
     const latencyMs = Math.max(0, Date.now() - startedAt);
     const estimatedCostUsd = estimateLlmCallCostUsd(requestInputChars, String(response.text || '').length);
+    const qualityScore = computeNormalizedQualityScore(response, latencyMs);
     const enriched: LlmTextWithMetaResponse = {
       ...response,
       provider: finalProvider,
       latencyMs,
       estimatedCostUsd,
       experiment: selection.experiment || null,
+      normalizedQualityScore: qualityScore,
     };
 
     void persistLlmCallLog({
@@ -938,6 +1147,7 @@ export const generateTextWithMeta = async (
       avgLogprob: enriched.avgLogprob,
       experiment: enriched.experiment,
       estimatedCostUsd,
+      qualityScore,
     });
 
     return enriched;

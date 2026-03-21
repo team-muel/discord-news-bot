@@ -23,18 +23,19 @@ Use this document when a role name, runtime label, external OSS name, or model f
 | `opencode` | `implement` | implementation, edits, tests, execution | none tracked here as canonical external runtime | treat as repository-local implementation role only |
 | `opendev` | `architect` | architecture, sequencing, ADR planning | OpenDev-style naming may be confused with generic external dev tooling | treat as repository-local architecture role only |
 | `nemoclaw` | `review` | review, regression, security, risk | NVIDIA NemoClaw | does not imply direct NVIDIA NemoClaw integration |
-| `openjarvis` | `operate` | operations, workflows, unattended automation | OpenJarvis | does not imply direct upstream OpenJarvis integration |
+| `openjarvis` | `operate` | operations, workflows, unattended automation | OpenJarvis (Stanford) | internal `openjarvis` labels map to upstream open-jarvis/OpenJarvis framework when integrated |
 | `local-orchestrator` | `coordinate` | routing and multi-role coordination | generic orchestrator frameworks | does not imply generic external orchestrator discovery or embedding |
 
 ## External Name Reference
 
 | External name | Category | Current repository status | Integration rule |
 | --- | --- | --- | --- |
-| Ollama | local model runtime/provider | supported | implemented only where provider/env configuration points to Ollama in the LLM client |
-| NVIDIA OpenShell | agent runtime/security sandbox | not integrated | do not assume presence unless a future runtime surface explicitly adds it |
-| NVIDIA NemoClaw | agent stack/runtime label | not integrated as an upstream runtime | internal `nemoclaw` labels are repository-local and separate from the upstream stack |
-| NVIDIA Nemotron | model family | not directly integrated as a named first-class runtime surface | treat as a possible model/provider choice only if future provider config explicitly adds it |
-| OpenJarvis | local-first personal AI framework | not integrated as an upstream framework | internal `openjarvis` labels refer to repository-local ops surfaces only |
+| Ollama | local model runtime/provider | supported | implemented in LLM client provider and litellm.config.yaml |
+| NVIDIA OpenShell | agent runtime/security sandbox | CLI installed, sandbox pending (Phase 2) | v0.0.12 installed in WSL Ubuntu-24.04; adapter at `src/services/tools/adapters/openshellCliAdapter.ts` with WSL routing; probe passes; sandbox creation blocked on Docker Desktop WSL native integration |
+| NVIDIA NemoClaw | agent stack/reference runtime | CLI installed, sandbox push failed (Phase 3) | installed in WSL via npm; adapter at `src/services/tools/adapters/nemoclawCliAdapter.ts` with WSL routing + NVM sourcing; Docker image built but K3s gateway push failed; blocked on Phase 2 completion |
+| NVIDIA Nemotron | model family | integration complete (Phase 1) | `nvidia/nemotron-3-super-120b-a12b` via NVIDIA Endpoint API; registered in litellm.config.yaml as `muel-nemotron`; E2E verified; `LLM_API_TIMEOUT_LARGE_MS` (90s) supports large model calls |
+| OpenClaw | always-on personal AI assistant | CLI installed, runtime blocked (Phase 4) | npm CLI v2026.3.13 installed globally; Python package import fixed (cmdop TimeoutError patch); agent.chat blocked on cmdop gRPC server |
+| OpenJarvis | local-first personal AI framework (Stanford) | integration active (Phase 4) | v0.1.0 installed; `jarvis serve` running on port 8000 (OpenAI-compatible API); llmClient `openjarvis` provider E2E verified; adapter at `src/services/tools/adapters/openjarvisAdapter.ts` (HTTP + CLI dual); scheduler and learning loop pending |
 
 ## Runtime Surface Matrix
 
@@ -48,7 +49,8 @@ Use this document when a role name, runtime label, external OSS name, or model f
 | Local CLI tool slice | `openjarvis` / `operate` | `tools.run.cli`, `src/services/tools/*` | `GET /api/bot/agent/tools/status`, `GET /api/bot/agent/actions/catalog` | no | explicit env registration required | implemented as a narrow single-tool slice |
 | Ollama provider support | LLM provider layer | `src/services/llmClient.ts` provider config | provider/env validation and runtime behavior | no | Ollama runtime plus env config required | implemented when configured |
 | Generic local OSS CLI discovery | future tool layer | not present as a first-class runtime | none | no | would require new discovery and registry layer | not implemented |
-| Generic upstream framework embedding for OpenShell, NemoClaw, OpenJarvis | future external runtime integration | not present as a first-class runtime | none | no | would require explicit adapter/provider/runtime work | not implemented |
+| Generic upstream framework embedding for OpenShell, NemoClaw, OpenClaw, OpenJarvis | external runtime integration | adapters implemented, adapters probed 7/7 | see `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md` | no | install + env config + adapter implementation required | Phase 1 complete; Phase 2-4 partial; see EXTERNAL_TOOL_INTEGRATION_PLAN.md for per-phase status |
+| NVIDIA Nemotron inference via LiteLLM | LLM provider layer | litellm.config.yaml `muel-nemotron` entry, LiteLLM proxy on :4000 | LiteLLM proxy model routing + `/health/liveliness` probe | no | NVIDIA API key required | implemented and verified |
 
 ## Operator Verification Order
 
@@ -79,3 +81,4 @@ If a role or tool name appears only in `.github` customization files or planning
 - `docs/RUNBOOK_MUEL_PLATFORM.md` explains operator procedure.
 - `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` explains IDE collaboration behavior.
 - `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md` explains the future generalized local tool layer that does not yet exist.
+- `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md` explains the concrete plan for integrating NVIDIA OpenShell, NemoClaw, OpenClaw, Stanford OpenJarvis, and Nemotron as real Tool layer components.

@@ -294,7 +294,7 @@ export const handleButtonInteraction = async (params: {
       }
       if (loadResult.ok) {
         recordWorkerApprovalDecision('approved');
-        await updateApprovalStatus(parentSessionId, 'approved');
+        await updateApprovalStatus(parentSessionId, 'approved', { approvedBy: interaction.user.id });
         try {
           const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
           await interaction.message.edit({ content: `${prev}\n\n✅ **워커 활성화 완료** (승인자: <@${interaction.user.id}>)\n액션: \`${appr.actionName}\``, components: [] });
@@ -311,7 +311,7 @@ export const handleButtonInteraction = async (params: {
       await interaction.deferUpdate();
       await cleanupSandbox(appr.sandboxDir);
       recordWorkerApprovalDecision('rejected');
-      await updateApprovalStatus(parentSessionId, 'rejected');
+      await updateApprovalStatus(parentSessionId, 'rejected', { approvedBy: interaction.user.id });
       try {
         const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
         await interaction.message.edit({ content: `${prev}\n\n❌ **반려됨** (처리자: <@${interaction.user.id}>)`, components: [] });

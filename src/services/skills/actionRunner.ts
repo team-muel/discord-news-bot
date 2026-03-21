@@ -17,7 +17,37 @@ import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
 import { createMemoryItem } from '../agentMemoryStore';
 import { compilePromptGoal } from '../promptCompiler';
+import { buildWorkerApprovalGateSnapshot } from '../agentWorkerApprovalGateSnapshotService';
+import { setGateProviderProfileOverride } from '../llmClient';
+import type { LlmProviderProfile } from '../llmClient';
 import logger from '../../logger';
+
+/** Actions that require approval_required enforcement regardless of guild policy runMode. */
+const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
+  String(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute').split(',').map((s) => s.trim()).filter(Boolean),
+);
+
+/** Gate verdict enforcement: block execution when latest gate-run overall = 'no-go'. */
+const GATE_VERDICT_ENFORCEMENT_ENABLED = parseBooleanEnv(process.env.GATE_VERDICT_ENFORCEMENT_ENABLED, false);
+const GATE_VERDICT_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000));
+let cachedGateVerdict: { overall: string; providerProfileTarget: string | null; fetchedAt: number } | null = null;
+
+const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string | null; providerProfileTarget: string | null }> => {
+  const now = Date.now();
+  if (cachedGateVerdict && (now - cachedGateVerdict.fetchedAt) < GATE_VERDICT_CACHE_TTL_MS) {
+    return { overall: cachedGateVerdict.overall, providerProfileTarget: cachedGateVerdict.providerProfileTarget };
+  }
+  try {
+    const snapshot = await buildWorkerApprovalGateSnapshot({ guildId });
+    const gate = snapshot?.globalArtifacts?.latestGateDecision;
+    const overall = gate?.overall || null;
+    const providerProfileTarget = (gate as Record<string, unknown> | null)?.providerProfileTarget as string | null ?? null;
+    cachedGateVerdict = { overall: overall || 'unknown', providerProfileTarget, fetchedAt: now };
+    return { overall, providerProfileTarget };
+  } catch {
+    return { overall: cachedGateVerdict?.overall || null, providerProfileTarget: cachedGateVerdict?.providerProfileTarget || null };
+  }
+};
 
 type FailureDiagnostics = {
   totalFailures: number;
@@ -771,7 +801,7 @@ const classifyFailureCode = (code: string | undefined): 'missingAction' | 'polic
   if (error === 'ACTION_NOT_ALLOWED' || error === 'ACTION_DISABLED_BY_POLICY' || error === 'ACTION_APPROVAL_REQUIRED') {
     return 'policyBlocked';
   }
-  if (error === 'ALLOWLIST_BLOCKED') {
+  if (error === 'ALLOWLIST_BLOCKED' || error === 'GATE_VERDICT_NO_GO') {
     return 'policyBlocked';
   }
   if (error === 'ACTION_POLICY_UNAVAILABLE') {
@@ -813,6 +843,27 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       externalUnavailable: false,
       diagnostics,
     });
+  }
+
+  // M-04/M-07: Gate verdict enforcement — block execution when latest gate = no-go
+  if (GATE_VERDICT_ENFORCEMENT_ENABLED) {
+    const gate = await getLatestGateVerdict(input.guildId);
+    if (gate.overall === 'no-go') {
+      recordFailureCategory('GATE_VERDICT_NO_GO');
+      logger.warn('[ACTION-RUNNER] execution blocked by no-go gate verdict guild=%s', input.guildId);
+      return finish({
+        handled: true,
+        output: 'go/no-go 게이트 verdict가 no-go이므로 실행이 차단되었습니다. 게이트 통과 후 재시도하세요.',
+        hasSuccess: false,
+        externalUnavailable: false,
+        diagnostics,
+      });
+    }
+    // M-06/M-07: Auto-regression — apply gate-recommended provider profile
+    const profileTarget = gate.providerProfileTarget;
+    if (profileTarget === 'cost-optimized' || profileTarget === 'quality-optimized') {
+      setGateProviderProfileOverride(profileTarget as LlmProviderProfile);
+    }
   }
 
   const compiledPrompt = compilePromptGoal(input.goal);
@@ -978,7 +1029,11 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
 
     const autoApprovalRequired = action.name === 'privacy.forget.guild'
       && !String(input.requestedBy || '').startsWith('system:');
-    const effectiveRunMode = autoApprovalRequired ? 'approval_required' : governance.runMode;
+    const highRiskActionGuard = HIGH_RISK_APPROVAL_ACTIONS.has(action.name)
+      && governance.runMode === 'auto';
+    const effectiveRunMode = (autoApprovalRequired || highRiskActionGuard)
+      ? 'approval_required'
+      : governance.runMode;
 
     if (effectiveRunMode === 'approval_required') {
       recordFailureCategory('ACTION_APPROVAL_REQUIRED');
@@ -991,7 +1046,9 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         actionArgs: planned.args || {},
         reason: autoApprovalRequired
           ? 'high-risk action guard: privacy.forget.guild'
-          : 'action policy run_mode=approval_required',
+          : highRiskActionGuard
+            ? `high-risk action guard: ${action.name}`
+            : 'action policy run_mode=approval_required',
       });
 
       lines.push(`액션: ${action.name}`);

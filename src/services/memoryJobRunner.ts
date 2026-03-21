@@ -20,6 +20,23 @@ let pollTimer: NodeJS.Timeout | null = null;
 let recoveryTimer: NodeJS.Timeout | null = null;
 let inFlight = false;
 let recoveryInFlight = false;
+let currentPhase: MemoryJobPhase | 'idle' = 'idle';
+
+type MemoryJobPhase = 'enqueue' | 'consume' | 'retry' | 'deadletter' | 'recover';
+
+type MemoryQueueHealthSnapshot = {
+  phase: MemoryJobPhase | 'idle';
+  queueDepth: number;
+  runningCount: number;
+  retryScheduledCount: number;
+  deadletterPendingCount: number;
+  deadletterIgnoredCount: number;
+  queueLagP95Sec: number;
+  retryRatePct: number;
+  consumerHealthy: boolean;
+  recoveryHealthy: boolean;
+  snapshotAt: string;
+};
 
 type MemoryRunnerStats = {
   startedAt: string | null;
@@ -601,6 +618,7 @@ const processQueuedJob = async (): Promise<boolean> => {
   }
 
   try {
+    currentPhase = 'consume';
     runnerStats.processed += 1;
     const summary = await buildJobSummary(claimed.guild_id);
     const jobResult = await processJobByType(claimed);
@@ -636,10 +654,12 @@ const processQueuedJob = async (): Promise<boolean> => {
     runnerStats.lastErrorMessage = null;
 
     logger.info('[MEMORY-JOBS] completed job=%s type=%s guild=%s', claimed.id, claimed.job_type, claimed.guild_id);
+    currentPhase = 'idle';
     return true;
   } catch (error) {
     const message = toErrorMessage(error);
     const shouldFail = nextAttempts >= MEMORY_JOBS_MAX_RETRIES;
+    currentPhase = shouldFail ? 'deadletter' : 'retry';
     const nextAttemptAt = shouldFail ? null : toNextAttemptIso(nextAttempts);
     runnerStats.failed += 1;
     runnerStats.lastErrorAt = nowIso();
@@ -683,6 +703,7 @@ const processQueuedJob = async (): Promise<boolean> => {
     }
 
     logger.error('[MEMORY-JOBS] job error id=%s type=%s attempt=%d: %s', claimed.id, claimed.job_type, nextAttempts, message);
+    currentPhase = 'idle';
     return true;
   }
 };
@@ -848,6 +869,46 @@ export const getMemoryJobQueueStats = async (guildId?: string) => {
   }
 
   return stats;
+};
+
+export const getMemoryQueueHealthSnapshot = async (guildId?: string): Promise<MemoryQueueHealthSnapshot> => {
+  const queueStats = await getMemoryJobQueueStats(guildId);
+
+  let deadletterPending = 0;
+  let deadletterIgnored = 0;
+  if (isSupabaseConfigured()) {
+    try {
+      const client = getSupabaseClient();
+      let pendingQuery = client.from('memory_job_deadletters').select('id', { count: 'exact', head: true }).eq('recovery_status', 'pending');
+      let ignoredQuery = client.from('memory_job_deadletters').select('id', { count: 'exact', head: true }).eq('recovery_status', 'ignored');
+      if (guildId) {
+        pendingQuery = pendingQuery.eq('guild_id', guildId);
+        ignoredQuery = ignoredQuery.eq('guild_id', guildId);
+      }
+      const [pendingRes, ignoredRes] = await Promise.all([pendingQuery, ignoredQuery]);
+      deadletterPending = Math.max(0, pendingRes.count || 0);
+      deadletterIgnored = Math.max(0, ignoredRes.count || 0);
+    } catch {
+      // Best-effort deadletter counts
+    }
+  }
+
+  const total = queueStats.completed + queueStats.failed;
+  const retryRatePct = total > 0 ? Number(((queueStats.failed / total) * 100).toFixed(2)) : 0;
+
+  return {
+    phase: currentPhase,
+    queueDepth: queueStats.queued,
+    runningCount: queueStats.running,
+    retryScheduledCount: queueStats.retryScheduled,
+    deadletterPendingCount: deadletterPending,
+    deadletterIgnoredCount: deadletterIgnored,
+    queueLagP95Sec: queueStats.queueLagP95Sec,
+    retryRatePct,
+    consumerHealthy: MEMORY_JOBS_ENABLED && Boolean(pollTimer),
+    recoveryHealthy: MEMORY_DEADLETTER_AUTO_RECOVERY_ENABLED && Boolean(recoveryTimer),
+    snapshotAt: nowIso(),
+  };
 };
 
 export const listMemoryJobDeadletters = async (params: { guildId?: string; limit: number }) => {
@@ -1100,6 +1161,7 @@ const recoveryTick = async () => {
   }
 
   recoveryInFlight = true;
+  currentPhase = 'recover';
   try {
     await processDeadletterRecoveryBatch();
   } catch (error) {
@@ -1109,5 +1171,6 @@ const recoveryTick = async () => {
     logger.error('[MEMORY-JOBS] recovery tick error: %o', error);
   } finally {
     recoveryInFlight = false;
+    currentPhase = 'idle';
   }
 };

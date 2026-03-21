@@ -53,6 +53,25 @@ const asDateMs = (value) => {
   return Number.isFinite(ms) ? ms : 0;
 };
 
+const isGlobalGuildReport = (value) => {
+  const normalized = String(value ?? '').trim();
+  return !normalized || normalized === '*';
+};
+
+const pickPreferredReport = (rows, kind, guildId) => {
+  const matches = rows.filter((row) => row.report_kind === kind);
+  if (matches.length === 0) return null;
+  if (!guildId) return matches[0] || null;
+
+  const exact = matches.find((row) => String(row.guild_id || '').trim() === guildId);
+  if (exact) return exact;
+
+  const global = matches.find((row) => isGlobalGuildReport(row.guild_id));
+  if (global) return global;
+
+  return matches[0] || null;
+};
+
 const fetchLatestByKind = async (client, params) => {
   const fromIso = new Date(Date.now() - params.windowMs).toISOString();
   const query = client
@@ -63,9 +82,6 @@ const fetchLatestByKind = async (client, params) => {
     .order('created_at', { ascending: false })
     .limit(params.limit);
 
-  if (params.guildId) {
-    query.eq('guild_id', params.guildId);
-  }
   if (params.provider) {
     query.eq('provider', params.provider);
   }
@@ -80,10 +96,10 @@ const fetchLatestByKind = async (client, params) => {
 
   const rows = data || [];
   return {
-    goNoGo: rows.find((row) => row.report_kind === 'go_no_go_weekly') || null,
-    llmLatency: rows.find((row) => row.report_kind === 'llm_latency_weekly') || null,
-    rollbackWeekly: rows.find((row) => row.report_kind === 'rollback_rehearsal_weekly') || null,
-    memoryQueueWeekly: rows.find((row) => row.report_kind === 'memory_queue_weekly') || null,
+    goNoGo: pickPreferredReport(rows, 'go_no_go_weekly', params.guildId),
+    llmLatency: pickPreferredReport(rows, 'llm_latency_weekly', params.guildId),
+    rollbackWeekly: pickPreferredReport(rows, 'rollback_rehearsal_weekly', params.guildId),
+    memoryQueueWeekly: pickPreferredReport(rows, 'memory_queue_weekly', params.guildId),
   };
 };
 

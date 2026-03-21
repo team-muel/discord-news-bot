@@ -20,6 +20,7 @@ import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloA
 import { getFinopsBudgetStatus, getFinopsSummary } from '../../services/finopsService';
 import { getLlmExperimentSummary } from '../../services/llmExperimentAnalyticsService';
 import { buildSocialQualityOperationalSnapshot } from '../../services/agentSocialQualitySnapshotService';
+import { buildWorkerApprovalGateSnapshot } from '../../services/agentWorkerApprovalGateSnapshotService';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
@@ -87,6 +88,25 @@ const probeOpencodeWorkerHealth = async () => {
 
 export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
+  router.get('/agent/runtime/worker-approval-gates', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const recentLimit = toBoundedInt(req.query?.recentLimit, 5, { min: 1, max: 20 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const snapshot = await buildWorkerApprovalGateSnapshot({ guildId, recentLimit });
+      return res.json({ ok: true, snapshot });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'VALIDATION') {
+        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
+      }
+      return res.status(500).json({ ok: false, error: 'WORKER_APPROVAL_GATES_FAILED', message });
+    }
+  });
+
   router.get('/agent/runtime/social-quality-snapshot', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId);
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });

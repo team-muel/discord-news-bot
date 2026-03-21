@@ -1,0 +1,99 @@
+{
+  "run_id": "gate-20260321-083944",
+  "stage": "A",
+  "target_scope": "weekly:auto",
+  "started_at": "2026-03-21T08:39:44.897Z",
+  "ended_at": "2026-03-21T08:39:44.897Z",
+  "operator": "auto",
+  "change_set": "auto-judge gate decision from metric inputs",
+  "final_decision": {
+    "overall": "pending",
+    "required_actions": [
+      "provider_profile_fallback:quality-optimized"
+    ],
+    "advisory_actions": [],
+    "rollback_required": false,
+    "rollback_type": "none",
+    "rollback_deadline_min": "",
+    "provider_profile_fallback_required": false,
+    "provider_profile_target": "quality-optimized",
+    "provider_profile_trigger": "quality_gate_pending",
+    "provider_profile_evidence_template": "docs/planning/runtime-profiles/quality-first.env"
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "fail",
+      "metrics": {
+        "p95_latency_ms": null,
+        "error_rate_pct": null,
+        "queue_lag_sec": null,
+        "rollback_rehearsal_fail_count": null,
+        "memory_deadletter_pending_count": null,
+        "memory_deadletter_ignored_count": null
+      },
+      "reasons": [
+        "reliability metrics missing: p95_latency_ms, error_rate_pct, queue_lag_sec, rollback_rehearsal_fail_count, memory_deadletter_pending_count, memory_deadletter_ignored_count",
+        "필수 게이트 메트릭 누락으로 fail 판정"
+      ]
+    },
+    "quality": {
+      "verdict": "pending",
+      "metrics": {
+        "citation_rate": 0,
+        "retrieval_hit_at_k": 0,
+        "hallucination_review_fail_rate": 0,
+        "session_success_rate": 0
+      },
+      "reasons": [
+        "quality gate override applied: pending",
+        "citation_rate: 0 (threshold >= 0.55)",
+        "retrieval_hit_at_k: 0 (threshold >= 0.45)",
+        "session_success_rate: 0 (threshold >= 0.75)"
+      ]
+    },
+    "safety": {
+      "verdict": "pass",
+      "metrics": {
+        "approval_required_compliance_pct": 100,
+        "unapproved_autodeploy_count": 0,
+        "policy_violation_count": 0,
+        "privacy_block_count": 0
+      },
+      "reasons": [
+        "approval_required_compliance_pct: 100 (threshold >= 100)",
+        "unapproved_autodeploy_count: 0 (threshold <= 0)",
+        "policy_violation_count: 0 (threshold <= 0)",
+        "privacy_block_count: 0 (threshold <= 0)"
+      ]
+    },
+    "governance": {
+      "verdict": "pass",
+      "metrics": {
+        "roadmap_synced": true,
+        "execution_board_synced": true,
+        "backlog_synced": true,
+        "runbook_synced": true,
+        "changelog_synced": true
+      },
+      "reasons": [
+        "roadmap_synced: true",
+        "execution_board_synced: true",
+        "backlog_synced: true",
+        "runbook_synced: true",
+        "changelog_synced: true"
+      ]
+    }
+  },
+  "runtime_loop_evidence": {
+    "startup_owner_taxonomy": "service-init|discord-ready|database / owner(app|db)",
+    "scheduler_policy_generated_at": null,
+    "scheduler_policy_items_verified": true,
+    "service_init_ids_verified": true,
+    "discord_ready_ids_verified": false,
+    "database_ids_verified": true,
+    "loops_snapshot_attached": true,
+    "unattended_health_snapshot_attached": true,
+    "worker_approval_gates_snapshot_attached": true,
+    "sandbox_delegation_verified": false
+  }
+}

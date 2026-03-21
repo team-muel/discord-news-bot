@@ -32,6 +32,7 @@
 - `../OPERATIONS_24_7.md`: 운영 절차, 배포, 상태 확인의 정본
 - `LOCAL_COLLAB_AGENT_WORKFLOW.md`: 로컬 IDE 협업 규칙과 handoff 계약의 정본
 - `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`: 향후 로컬 외부 도구 통합 설계의 정본
+- `EXTERNAL_TOOL_INTEGRATION_PLAN.md`: NVIDIA OpenShell/NemoClaw/OpenClaw/Nemotron 실제 외부 도구 통합 계획
 - `.github/agents/*`, `.github/prompts/*`, `.github/instructions/*`: IDE 커스터마이징 입력면
 
 읽기 순서 규칙:
@@ -51,6 +52,7 @@
 - OPENCODE_NEMOCLAW_OPENDEV_OPENJARVIS_PROMPT_TEMPLATES.md
 - LOCAL_COLLAB_AGENT_WORKFLOW.md
 - LOCAL_TOOL_ADAPTER_ARCHITECTURE.md
+- EXTERNAL_TOOL_INTEGRATION_PLAN.md
 - OPENCODE_PUBLISH_WORKER_MIN_SPEC.md
 - OPENJARVIS_ROUTING_RULES_DRAFT.md
 - MULTI_AGENT_OPERATING_STANDARD_V1.md
@@ -149,6 +151,7 @@
 - `ROADMAP_STATUS_2026-03-19.md`
 - `2026-03-18_followup-ops-closure.md`
 - `2026-03-19_followup-ops-closure.md`
+- `2026-03-22_session-handoff.md`
 - `MULTI_AGENT_DRY_RUN_2026-03-19.md`
 - `PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
 - `W3_CONTROL_PLANE_STABILIZATION_RESULTS.md`
