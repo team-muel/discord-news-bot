@@ -1,4 +1,7 @@
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
+const SUCCESS_CACHE_TTL_MS = 10 * 60_000;
+const FAILURE_CACHE_TTL_MS = 60_000;
+const RATE_LIMIT_FALLBACK_MS = 5 * 60_000;
 
 type ProbeResult = {
   ok: boolean;
@@ -7,6 +10,16 @@ type ProbeResult = {
   gatewayUrl: string | null;
   botTag: string | null;
   error: string | null;
+  statusCode: number | null;
+  blocking: boolean;
+  cached: boolean;
+  cooldownMs: number;
+};
+
+const preflightCache = {
+  token: '',
+  expiresAt: 0,
+  result: null as ProbeResult | null,
 };
 
 const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number): Promise<Response> => {
@@ -25,6 +38,43 @@ const normalizeGatewayUrl = (value: string): string => {
     return 'wss://gateway.discord.gg';
   }
   return trimmed.replace(/\/+$/, '');
+};
+
+const parseRetryAfterMs = (response: Response): number => {
+  const retryAfterHeader = response.headers.get('retry-after');
+  const retryAfterSeconds = Number(retryAfterHeader || '');
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.ceil(retryAfterSeconds * 1000);
+  }
+
+  const resetAfterHeader = response.headers.get('x-ratelimit-reset-after');
+  const resetAfterSeconds = Number(resetAfterHeader || '');
+  if (Number.isFinite(resetAfterSeconds) && resetAfterSeconds > 0) {
+    return Math.ceil(resetAfterSeconds * 1000);
+  }
+
+  return RATE_LIMIT_FALLBACK_MS;
+};
+
+const buildResult = (overrides: Partial<ProbeResult>): ProbeResult => ({
+  ok: false,
+  restOk: false,
+  wsOk: null,
+  gatewayUrl: null,
+  botTag: null,
+  error: null,
+  statusCode: null,
+  blocking: false,
+  cached: false,
+  cooldownMs: 0,
+  ...overrides,
+});
+
+const rememberResult = (token: string, result: ProbeResult, ttlMs: number): ProbeResult => {
+  preflightCache.token = token;
+  preflightCache.expiresAt = Date.now() + Math.max(1_000, ttlMs);
+  preflightCache.result = result;
+  return result;
 };
 
 const probeGatewayHello = async (gatewayUrl: string, timeoutMs: number): Promise<{ ok: boolean; error: string | null }> => {
@@ -82,61 +132,67 @@ const probeGatewayHello = async (gatewayUrl: string, timeoutMs: number): Promise
 
 export async function probeDiscordGatewayConnectivity(token: string, timeoutMs: number): Promise<ProbeResult> {
   const safeTimeoutMs = Math.max(3_000, Number(timeoutMs) || 10_000);
+  const normalizedToken = String(token || '').trim();
+  if (preflightCache.result && preflightCache.token === normalizedToken && Date.now() < preflightCache.expiresAt) {
+    return {
+      ...preflightCache.result,
+      cached: true,
+    };
+  }
+
   const headers = {
-    Authorization: `Bot ${String(token || '').trim()}`,
+    Authorization: `Bot ${normalizedToken}`,
     'User-Agent': 'muel-backend discord preflight',
   };
 
   try {
-    const meResponse = await fetchWithTimeout(`${DISCORD_API_BASE}/users/@me`, { headers }, safeTimeoutMs);
-    if (!meResponse.ok) {
-      return {
-        ok: false,
-        restOk: false,
-        wsOk: null,
-        gatewayUrl: null,
-        botTag: null,
-        error: `discord users/@me failed status=${meResponse.status}`,
-      };
-    }
-
-    const me = await meResponse.json() as { username?: string; discriminator?: string; id?: string };
-    const botTag = me.username
-      ? `${me.username}${me.discriminator && me.discriminator !== '0' ? `#${me.discriminator}` : ''} (${String(me.id || '').trim()})`
-      : String(me.id || '').trim() || null;
-
     const gatewayResponse = await fetchWithTimeout(`${DISCORD_API_BASE}/gateway/bot`, { headers }, safeTimeoutMs);
     if (!gatewayResponse.ok) {
-      return {
-        ok: false,
-        restOk: true,
-        wsOk: null,
-        gatewayUrl: null,
-        botTag,
+      if (gatewayResponse.status === 401 || gatewayResponse.status === 403) {
+        return rememberResult(normalizedToken, buildResult({
+          error: `discord gateway/bot failed status=${gatewayResponse.status}`,
+          statusCode: gatewayResponse.status,
+          blocking: true,
+        }), FAILURE_CACHE_TTL_MS);
+      }
+
+      if (gatewayResponse.status === 429) {
+        const cooldownMs = parseRetryAfterMs(gatewayResponse);
+        return rememberResult(normalizedToken, buildResult({
+          error: `discord gateway/bot rate limited status=429`,
+          statusCode: 429,
+          blocking: false,
+          cooldownMs,
+        }), cooldownMs);
+      }
+
+      return rememberResult(normalizedToken, buildResult({
         error: `discord gateway/bot failed status=${gatewayResponse.status}`,
-      };
+        statusCode: gatewayResponse.status,
+        blocking: false,
+      }), FAILURE_CACHE_TTL_MS);
     }
 
-    const gatewayPayload = await gatewayResponse.json() as { url?: string };
+    const gatewayPayload = await gatewayResponse.json() as { url?: string; shards?: number; session_start_limit?: { max_concurrency?: number } };
     const gatewayUrl = normalizeGatewayUrl(String(gatewayPayload.url || ''));
     const wsProbe = await probeGatewayHello(gatewayUrl, safeTimeoutMs);
 
-    return {
+    return rememberResult(normalizedToken, {
       ok: wsProbe.ok,
       restOk: true,
       wsOk: wsProbe.ok,
       gatewayUrl,
-      botTag,
-      error: wsProbe.error,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      restOk: false,
-      wsOk: null,
-      gatewayUrl: null,
       botTag: null,
+      error: wsProbe.error,
+      statusCode: 200,
+      blocking: false,
+      cached: false,
+      cooldownMs: wsProbe.ok ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS,
+    }, wsProbe.ok ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS);
+  } catch (error) {
+    return rememberResult(normalizedToken, buildResult({
       error: error instanceof Error ? error.message : String(error),
-    };
+      blocking: false,
+    }), FAILURE_CACHE_TTL_MS);
   }
 }

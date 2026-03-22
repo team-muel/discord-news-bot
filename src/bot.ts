@@ -1501,22 +1501,28 @@ export async function startBot(token: string): Promise<void> {
       const preflightTimeoutMs = Math.max(5_000, Math.min(15_000, Math.floor(readyTimeout / 8)));
       const preflight = await probeDiscordGatewayConnectivity(token, preflightTimeoutMs);
       if (!preflight.ok) {
-        logger.error(
-          '[BOT] Discord preflight failed restOk=%s wsOk=%s bot=%s gateway=%s reason=%s',
+        const preflightLog = preflight.blocking ? logger.error.bind(logger) : logger.warn.bind(logger);
+        preflightLog(
+          '[BOT] Discord preflight failed restOk=%s wsOk=%s status=%s cached=%s cooldownMs=%d bot=%s gateway=%s reason=%s',
           String(preflight.restOk),
           String(preflight.wsOk),
+          String(preflight.statusCode),
+          String(preflight.cached),
+          Number(preflight.cooldownMs || 0),
           preflight.botTag || 'unknown',
           preflight.gatewayUrl || 'unknown',
           preflight.error || 'unknown',
         );
-        throw new Error(`Discord preflight failed: ${preflight.error || 'unknown'}`);
+        if (preflight.blocking) {
+          throw new Error(`Discord preflight failed: ${preflight.error || 'unknown'}`);
+        }
+      } else {
+        logger.info(
+          '[BOT] Discord preflight ok cached=%s gateway=%s',
+          String(preflight.cached),
+          preflight.gatewayUrl || 'unknown',
+        );
       }
-
-      logger.info(
-        '[BOT] Discord preflight ok bot=%s gateway=%s',
-        preflight.botTag || 'unknown',
-        preflight.gatewayUrl || 'unknown',
-      );
 
       logger.info(
         '[BOT] Attempting login (attempt %d/%d, timeoutMs=%d, messageContentIntent=%s)',
