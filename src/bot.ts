@@ -1606,6 +1606,12 @@ export async function startBot(token: string): Promise<void> {
         logger.debug('[BOT] Error during client.destroy(): %o', e);
       }
 
+      const rateLimitRemainingSec = getLoginRateLimitRemainingSec();
+      if (rateLimitRemainingSec > 0) {
+        botRuntimeState.reconnectQueued = false;
+        throw err;
+      }
+
       if (attempt < maxRetries) {
         const backoffMs = Math.min(30_000, 500 * Math.pow(2, attempt));
         logger.info('[BOT] Waiting %dms before retry', backoffMs);
