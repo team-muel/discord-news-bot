@@ -60,7 +60,18 @@ describe('loginDiscordClientWithTimeout', () => {
     client.isReadyMock.mockReturnValue(true);
 
     await expect(loginDiscordClientWithTimeout(client, 'token', 100)).resolves.toBeUndefined();
-    expect(client.onceMock).not.toHaveBeenCalled();
+    expect(client.onceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves when ready fires immediately after login resolves', async () => {
+    const client = createFakeClient();
+    client.loginMock.mockImplementation(async () => {
+      client.emitReady();
+      return undefined;
+    });
+
+    await expect(loginDiscordClientWithTimeout(client, 'token', 100)).resolves.toBeUndefined();
+    expect(client.offMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects when login never resolves', async () => {

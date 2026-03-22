@@ -33,14 +33,16 @@ export async function loginDiscordClientWithTimeout(
   try {
     await Promise.race([
       (async () => {
+        const readyPromise = new Promise<void>((resolve) => {
+          readyListener = () => resolve();
+          client.once('clientReady', readyListener);
+        });
+
         await client.login(token);
         if (client.isReady()) {
           return;
         }
-        await new Promise<void>((resolve) => {
-          readyListener = () => resolve();
-          client.once('clientReady', readyListener);
-        });
+        await readyPromise;
       })(),
       new Promise<never>((_resolve, reject) => {
         timeoutHandle = setTimeout(() => reject(new Error(DISCORD_LOGIN_READY_TIMEOUT_ERROR)), safeTimeoutMs);
