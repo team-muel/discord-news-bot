@@ -154,6 +154,10 @@ const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(
   || '30000',
   10,
 );
+const DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS = Math.max(
+  0,
+  Number(process.env.DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS || 5 * 60_000),
+);
 
 export type BotRuntimeSnapshot = {
   started: boolean;
@@ -342,7 +346,7 @@ const clearLoginRateLimit = () => {
 };
 
 const setLoginRateLimit = (cooldownMs: number, reason: string) => {
-  const safeCooldownMs = Math.max(1_000, Number(cooldownMs) || 0);
+  const safeCooldownMs = Math.max(1_000, Number(cooldownMs) || 0) + DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS;
   botRuntimeState.loginRateLimitUntil = new Date(Date.now() + safeCooldownMs).toISOString();
   botRuntimeState.loginRateLimitRemainingSec = Math.ceil(safeCooldownMs / 1000);
   botRuntimeState.loginRateLimitReason = reason;
@@ -540,6 +544,14 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
     botRuntimeState.lastLoginError = getErrorMessage(error);
     botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
     botRuntimeState.lastAlertReason = botRuntimeState.lastLoginError;
+    if (/Discord login rate-limited; retry after/i.test(botRuntimeState.lastLoginError || '')) {
+      return {
+        ok: false,
+        status: 'rejected',
+        reason: 'RATE_LIMIT',
+        message: `Discord 로그인 한도에 걸렸습니다. ${getLoginRateLimitRemainingSec()}초 후 다시 시도하세요.`,
+      };
+    }
     return {
       ok: false,
       status: 'rejected',
