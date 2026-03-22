@@ -47,6 +47,10 @@ jobs:
       MCP_OPENCODE_TOOL_NAME: opencode.run
       RENDER_SERVICE_ID: ${{ secrets['RENDER_SERVICE_ID'] }}
       RENDER_API_KEY: ${{ secrets['RENDER_API_KEY'] }}
+      LLM_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_TABLE: "true"
+      HYBRID_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_REPORTS: "true"
+      AUTO_JUDGE_WEEKLY_ALLOW_MISSING_SOURCE_REPORTS: "true"
+      SELF_IMPROVEMENT_ALLOW_MISSING_SOURCE_SNAPSHOTS: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

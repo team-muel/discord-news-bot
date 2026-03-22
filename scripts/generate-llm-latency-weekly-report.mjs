@@ -24,6 +24,12 @@ const parseBool = (value, fallback = false) => {
   return ['1', 'true', 'yes', 'on'].includes(raw);
 };
 
+const isMissingRelationError = (error, tableName) => {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
+};
+
 const parseSinks = (raw) => {
   const tokens = String(raw || '')
     .split(/[;,]/)
@@ -261,6 +267,10 @@ async function main() {
   const dryRun = parseBool(parseArg('dryRun', 'false'));
   const sinks = parseSinks(parseArg('sinks', process.env.LLM_WEEKLY_REPORT_SINKS || 'supabase,obsidian'));
   const allowMissingSupabaseTable = parseBool(parseArg('allowMissingSupabaseTable', process.env.LLM_WEEKLY_REPORT_ALLOW_MISSING_TABLE || 'true'), true);
+  const allowMissingSourceTable = parseBool(
+    parseArg('allowMissingSourceTable', process.env.LLM_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_TABLE || 'false'),
+    false,
+  );
   const guildId = String(parseArg('guildId', '')).trim() || null;
   const provider = String(parseArg('provider', '')).trim() || null;
   const actionPrefix = String(parseArg('actionPrefix', '')).trim() || null;
@@ -277,23 +287,33 @@ async function main() {
 
   const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 
-  const baselineRows = await fetchWindow(client, {
-    from: baselineFrom,
-    to: baselineTo,
-    guildId,
-    provider,
-    actionPrefix,
-    limit,
-  });
+  let baselineRows;
+  let candidateRows;
+  try {
+    baselineRows = await fetchWindow(client, {
+      from: baselineFrom,
+      to: baselineTo,
+      guildId,
+      provider,
+      actionPrefix,
+      limit,
+    });
 
-  const candidateRows = await fetchWindow(client, {
-    from: candidateFrom,
-    to: candidateTo,
-    guildId,
-    provider,
-    actionPrefix,
-    limit,
-  });
+    candidateRows = await fetchWindow(client, {
+      from: candidateFrom,
+      to: candidateTo,
+      guildId,
+      provider,
+      actionPrefix,
+      limit,
+    });
+  } catch (error) {
+    if (allowMissingSourceTable && isMissingRelationError(error, 'agent_llm_call_logs')) {
+      console.log('[LLM-LATENCY] skipped: table public.agent_llm_call_logs not found (apply migration first)');
+      return;
+    }
+    throw error;
+  }
 
   const baselineSummary = summarize(baselineRows);
   const candidateSummary = summarize(candidateRows);

@@ -973,19 +973,32 @@ async function main() {
   const provider = String(parseArg('provider', '')).trim() || null;
   const actionPrefix = String(parseArg('actionPrefix', '')).trim() || null;
   const allowMissingQualityTables = parseBool(parseArg('allowMissingQualityTables', process.env.SELF_IMPROVEMENT_ALLOW_MISSING_QUALITY_TABLES || 'true'), true);
+  const allowMissingSourceSnapshots = parseBool(
+    parseArg('allowMissingSourceSnapshots', process.env.SELF_IMPROVEMENT_ALLOW_MISSING_SOURCE_SNAPSHOTS || 'false'),
+    false,
+  );
   const windowDays = Math.max(1, Number(parseArg('days', '7')) || 7);
   const windowMs = toMsWindow(windowDays, 7);
   const limit = Math.max(20, Math.min(500, Number(parseArg('limit', '120')) || 120));
 
   const generatedAt = new Date().toISOString();
   const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
-  const reports = await fetchLatestByKind(client, {
-    windowMs,
-    guildId,
-    provider,
-    actionPrefix,
-    limit,
-  });
+  let reports;
+  try {
+    reports = await fetchLatestByKind(client, {
+      windowMs,
+      guildId,
+      provider,
+      actionPrefix,
+      limit,
+    });
+  } catch (error) {
+    if (allowMissingSourceSnapshots && isMissingRelationError(error, 'agent_weekly_reports')) {
+      console.log('[SELF-IMPROVEMENT] skipped: table public.agent_weekly_reports not found (apply migration first)');
+      return;
+    }
+    throw error;
+  }
 
   const missing = [
     !reports.goNoGo ? 'go_no_go_weekly' : null,
@@ -1013,6 +1026,10 @@ async function main() {
       ].filter(Boolean);
 
       if (stillMissing.length > 0) {
+        if (allowMissingSourceSnapshots) {
+          console.log(`[SELF-IMPROVEMENT] skipped: missing source snapshots within window (${stillMissing.join(', ')})`);
+          return;
+        }
         throw new Error(`Missing source snapshots: ${stillMissing.join(', ')} must all exist within window`);
       }
 
@@ -1046,6 +1063,17 @@ async function main() {
   }
 
   if (!reports.goNoGo || !reports.llmLatency || !reports.hybrid || !reports.rollbackWeekly || !reports.memoryQueueWeekly) {
+    if (allowMissingSourceSnapshots) {
+      const stillMissing = [
+        !reports.goNoGo ? 'go_no_go_weekly' : null,
+        !reports.llmLatency ? 'llm_latency_weekly' : null,
+        !reports.hybrid ? 'hybrid_weekly' : null,
+        !reports.rollbackWeekly ? 'rollback_rehearsal_weekly' : null,
+        !reports.memoryQueueWeekly ? 'memory_queue_weekly' : null,
+      ].filter(Boolean);
+      console.log(`[SELF-IMPROVEMENT] skipped: missing required snapshots after fallback handling (${stillMissing.join(', ')})`);
+      return;
+    }
     throw new Error('Missing required snapshots after fallback handling');
   }
 

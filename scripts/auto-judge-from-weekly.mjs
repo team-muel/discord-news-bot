@@ -37,6 +37,12 @@ const parseBoolArg = (name, fallback = false) => {
   return ['1', 'true', 'yes', 'on'].includes(raw);
 };
 
+const isMissingRelationError = (error, tableName) => {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
+};
+
 const isGlobalGuildReport = (value) => {
   const normalized = String(value ?? '').trim();
   return !normalized || normalized === '*';
@@ -227,19 +233,47 @@ async function main() {
     1,
     Number(parseArg('minQualitySamples', process.env.GATE_WEEKLY_MIN_QUALITY_SAMPLES || '3')) || 3,
   );
+  const allowMissingSourceReports = parseBoolArg(
+    'allowMissingSourceReports',
+    ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTO_JUDGE_WEEKLY_ALLOW_MISSING_SOURCE_REPORTS || 'false').trim().toLowerCase()),
+  );
 
   const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
-  const snapshots = await latestByKind(
-    client,
-    ['go_no_go_weekly', 'llm_latency_weekly', 'rollback_rehearsal_weekly', 'memory_queue_weekly'],
-    {
-      windowMs: days * 24 * 60 * 60 * 1000,
-      guildId,
-      provider,
-      actionPrefix,
-      limit,
-    },
-  );
+  let snapshots;
+  try {
+    snapshots = await latestByKind(
+      client,
+      ['go_no_go_weekly', 'llm_latency_weekly', 'rollback_rehearsal_weekly', 'memory_queue_weekly'],
+      {
+        windowMs: days * 24 * 60 * 60 * 1000,
+        guildId,
+        provider,
+        actionPrefix,
+        limit,
+      },
+    );
+  } catch (error) {
+    if (allowMissingSourceReports && isMissingRelationError(error, 'agent_weekly_reports')) {
+      console.log('[GO-NO-GO][AUTO-JUDGE-WEEKLY] skipped: table public.agent_weekly_reports not found (apply migration first)');
+      return;
+    }
+    throw error;
+  }
+
+  const missingSnapshots = [
+    !snapshots.goNoGo ? 'go_no_go_weekly' : null,
+    !snapshots.llmLatency ? 'llm_latency_weekly' : null,
+    !snapshots.rollbackWeekly ? 'rollback_rehearsal_weekly' : null,
+    !snapshots.memoryQueueWeekly ? 'memory_queue_weekly' : null,
+  ].filter(Boolean);
+
+  if (missingSnapshots.length > 0) {
+    if (allowMissingSourceReports) {
+      console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] skipped: missing source snapshots within window (${missingSnapshots.join(', ')})`);
+      return;
+    }
+    throw new Error(`Missing source snapshots: ${missingSnapshots.join(', ')}`);
+  }
 
   const go = snapshots.goNoGo?.baseline_summary || {};
   const llmCandidate = snapshots.llmLatency?.candidate_summary || {};

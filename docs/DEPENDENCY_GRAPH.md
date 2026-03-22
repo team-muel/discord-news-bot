@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 245
+- Nodes: 246
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -57,6 +57,7 @@ graph LR
   "src/bot.ts" --> "src/discord/commands/vibe.ts"
   "src/bot.ts" --> "src/discord/messages.ts"
   "src/bot.ts" --> "src/discord/runtime/buttonInteractions.ts"
+  "src/bot.ts" --> "src/discord/runtime/gatewayPreflight.ts"
   "src/bot.ts" --> "src/discord/runtime/guildLifecycle.ts"
   "src/bot.ts" --> "src/discord/runtime/loginAttempt.ts"
   "src/bot.ts" --> "src/discord/runtime/passiveMemoryCapture.ts"
@@ -154,6 +155,7 @@ graph LR
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/utils/codeThread.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/utils/sessionArtifactStore.ts"
+  "src/discord/runtime/gatewayPreflight.ts":::file
   "src/discord/runtime/guildLifecycle.ts" --> "src/logger.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/services/agentOpsService.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/services/privacyForgetService.ts"

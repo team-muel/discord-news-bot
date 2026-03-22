@@ -23,6 +23,12 @@ const parseBool = (value, fallback = false) => {
   return ['1', 'true', 'yes', 'on'].includes(raw);
 };
 
+const isMissingRelationError = (error, tableName) => {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
+};
+
 const parseSinks = (raw) => {
   const tokens = String(raw || '')
     .split(/[;,]/)
@@ -260,6 +266,10 @@ async function main() {
     parseArg('allowMissingSupabaseTable', process.env.HYBRID_WEEKLY_REPORT_ALLOW_MISSING_TABLE || 'true'),
     true,
   );
+  const allowMissingSourceReports = parseBool(
+    parseArg('allowMissingSourceReports', process.env.HYBRID_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_REPORTS || 'false'),
+    false,
+  );
   const guildId = String(parseArg('guildId', '')).trim() || null;
   const provider = String(parseArg('provider', '')).trim() || null;
   const actionPrefix = String(parseArg('actionPrefix', '')).trim() || null;
@@ -271,15 +281,33 @@ async function main() {
   const windowFrom = new Date(Date.now() - windowMs).toISOString();
   const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 
-  const { goNoGo, llmLatency, rollbackWeekly, memoryQueueWeekly } = await fetchLatestByKind(client, {
-    windowMs,
-    guildId,
-    provider,
-    actionPrefix,
-    limit,
-  });
+  let snapshots;
+  try {
+    snapshots = await fetchLatestByKind(client, {
+      windowMs,
+      guildId,
+      provider,
+      actionPrefix,
+      limit,
+    });
+  } catch (error) {
+    if (allowMissingSourceReports && isMissingRelationError(error, 'agent_weekly_reports')) {
+      console.log('[HYBRID-WEEKLY] skipped: table public.agent_weekly_reports not found (apply migration first)');
+      return;
+    }
+    throw error;
+  }
+
+  const { goNoGo, llmLatency, rollbackWeekly, memoryQueueWeekly } = snapshots;
 
   if (!goNoGo || !llmLatency) {
+    if (allowMissingSourceReports) {
+      const missing = [!goNoGo ? 'go_no_go_weekly' : null, !llmLatency ? 'llm_latency_weekly' : null]
+        .filter(Boolean)
+        .join(', ');
+      console.log(`[HYBRID-WEEKLY] skipped: missing source snapshots within window (${missing})`);
+      return;
+    }
     throw new Error('Missing source snapshots: go_no_go_weekly and llm_latency_weekly must both exist within window');
   }
 

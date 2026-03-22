@@ -25,6 +25,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-23 - Unattended Weekly Report Missing-Table Fail-Open Guard
+
+- Why: `openjarvis-unattended` 스케줄 워크플로가 아직 적용되지 않은 Supabase 주간 리포트 테이블과 소스 스냅샷 부재를 hard fail로 취급해, 운영 자동화 자체가 불필요하게 실패하고 있었다.
+- Scope: unattended 주간 리포트 경로에서 `agent_llm_call_logs` 및 `agent_weekly_reports` 누락 시 skip 처리 가드를 추가하고, GitHub Actions 스케줄 워크플로에 해당 fail-open 환경 플래그를 주입했다. 함께 stale 상태였던 dependency graph 산출물을 갱신했다.
+- Impacted Routes: N/A (ops automation and generated docs only)
+- Impacted Services: `scripts/generate-llm-latency-weekly-report.mjs`, `scripts/generate-hybrid-weekly-report.mjs`, `scripts/auto-judge-from-weekly.mjs`, `scripts/generate-self-improvement-weekly.mjs`, `.github/workflows/openjarvis-unattended.yml`, `docs/DEPENDENCY_GRAPH.md`.
+- Impacted Tables/RPC: reads `public.agent_llm_call_logs`, `public.agent_weekly_reports`.
+- Risk/Regression Notes: 기본 CLI 동작은 fail-closed를 유지하고, unattended 워크플로에서만 환경 플래그로 skip 허용을 활성화한다. 따라서 수동 점검이나 로컬 검증 경로의 엄격성은 유지된다.
+- Validation: `npm run lint`, `npm run docs:build`, `npm run docs:check` (stale diff root cause confirmed to `docs/DEPENDENCY_GRAPH.md` before staging updated artifact).
+
 ## 2026-03-21 - External Tool Layer Integration Plan (NemoClaw, OpenShell, OpenClaw, OpenJarvis, Nemotron)
 
 - Why: 내부 역할 라벨(nemoclaw, openjarvis 등)을 실제 외부 OSS 도구로 연결하는 Tool Layer 통합 시작. NVIDIA NemoClaw(★14.5k), OpenShell(★2.8k), OpenClaw(openclaw.ai), Stanford OpenJarvis(★1.6k), Nemotron 모델을 로컬 IDE Tool Layer로 통합하여 recursive/self-learning 자율 에이전트 파이프라인을 구축한다. OpenJarvis는 Stanford Scaling Intelligence Lab(Hazy Research, Christopher Ré, John Hennessy)의 로컬 우선 개인 AI 프레임워크로, 5-primitive composable stack (Intelligence, Engine, Agents, Tools & Memory, Learning)을 제공하며 trace 기반 self-learning loop(자동 최적화)을 내장한다.
