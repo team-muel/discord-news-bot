@@ -22,6 +22,9 @@ const buildSnapshot = (overrides: Partial<BotRuntimeStatus> = {}): BotRuntimeSta
   lastRecoveryAt: null,
   lastManualReconnectAt: null,
   manualReconnectCooldownRemainingSec: 0,
+  loginRateLimitUntil: null,
+  loginRateLimitRemainingSec: 0,
+  loginRateLimitReason: null,
   dynamicWorkerRestore: {
     enabled: true,
     attemptedAt: null,
@@ -54,6 +57,12 @@ describe('evaluateBotAutoRecovery', () => {
     const decision = evaluateBotAutoRecovery(buildSnapshot({ manualReconnectCooldownRemainingSec: 20 }), nowMs, bootedAtMs, thresholdMs, { enabled: true, startBotEnabled: true });
     expect(decision.shouldRecover).toBe(false);
     expect(decision.reason).toBe('cooldown');
+  });
+
+  it('does not recover while Discord login is rate-limited', () => {
+    const decision = evaluateBotAutoRecovery(buildSnapshot({ loginRateLimitRemainingSec: 120 }), nowMs, bootedAtMs, thresholdMs, { enabled: true, startBotEnabled: true });
+    expect(decision.shouldRecover).toBe(false);
+    expect(decision.reason).toBe('login_rate_limited');
   });
 
   it('waits until the offline threshold is exceeded', () => {

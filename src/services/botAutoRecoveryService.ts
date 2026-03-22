@@ -12,6 +12,7 @@ type BotModuleLike = {
     tokenPresent: boolean;
     reconnectQueued: boolean;
     manualReconnectCooldownRemainingSec: number;
+    loginRateLimitRemainingSec: number;
     lastReadyAt: string | null;
     lastDisconnectAt: string | null;
     lastInvalidatedAt: string | null;
@@ -33,6 +34,7 @@ type RecoveryDecision = {
     | 'missing_token'
     | 'reconnect_queued'
     | 'cooldown'
+    | 'login_rate_limited'
     | 'within_threshold'
     | 'recover';
   offlineMs: number;
@@ -93,6 +95,9 @@ export const evaluateBotAutoRecovery = (
   }
   if (Number(snapshot.manualReconnectCooldownRemainingSec || 0) > 0) {
     return { shouldRecover: false, reason: 'cooldown', offlineMs: 0 };
+  }
+  if (Number(snapshot.loginRateLimitRemainingSec || 0) > 0) {
+    return { shouldRecover: false, reason: 'login_rate_limited', offlineMs: 0 };
   }
 
   const referenceMs = resolveReferenceMs(snapshot, bootedAtMs);

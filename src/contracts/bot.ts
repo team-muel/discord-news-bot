@@ -20,6 +20,9 @@ export type BotRuntimeStatus = {
   lastRecoveryAt: string | null;
   lastManualReconnectAt: string | null;
   manualReconnectCooldownRemainingSec: number;
+  loginRateLimitUntil: string | null;
+  loginRateLimitRemainingSec: number;
+  loginRateLimitReason: string | null;
   dynamicWorkerRestore: {
     enabled: boolean;
     attemptedAt: string | null;

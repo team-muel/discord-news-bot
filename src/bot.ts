@@ -175,6 +175,9 @@ export type BotRuntimeSnapshot = {
   lastRecoveryAt: string | null;
   lastManualReconnectAt: string | null;
   manualReconnectCooldownRemainingSec: number;
+  loginRateLimitUntil: string | null;
+  loginRateLimitRemainingSec: number;
+  loginRateLimitReason: string | null;
   dynamicWorkerRestoreEnabled: boolean;
   dynamicWorkerRestoreAttemptedAt: string | null;
   dynamicWorkerRestoreApprovedCount: number;
@@ -203,6 +206,9 @@ const botRuntimeState: BotRuntimeSnapshot = {
   lastRecoveryAt: null,
   lastManualReconnectAt: null,
   manualReconnectCooldownRemainingSec: 0,
+  loginRateLimitUntil: null,
+  loginRateLimitRemainingSec: 0,
+  loginRateLimitReason: null,
   dynamicWorkerRestoreEnabled: String(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT || 'true').trim().toLowerCase() !== 'false',
   dynamicWorkerRestoreAttemptedAt: null,
   dynamicWorkerRestoreApprovedCount: 0,
@@ -298,7 +304,7 @@ const restoreApprovedDynamicWorkers = async () => {
 export type ManualReconnectRequestResult = {
   ok: boolean;
   status: 'accepted' | 'rejected';
-  reason: 'OK' | 'COOLDOWN' | 'IN_FLIGHT' | 'NO_TOKEN' | 'RECONNECT_FAILED';
+  reason: 'OK' | 'COOLDOWN' | 'RATE_LIMIT' | 'IN_FLIGHT' | 'NO_TOKEN' | 'RECONNECT_FAILED';
   message: string;
 };
 
@@ -314,6 +320,32 @@ const getManualReconnectCooldownRemainingSec = () => {
 
   const remainingMs = Math.max(0, MANUAL_RECONNECT_COOLDOWN_MS - (Date.now() - lastReconnectAtMs));
   return Math.ceil(remainingMs / 1000);
+};
+
+const getLoginRateLimitRemainingSec = () => {
+  if (!botRuntimeState.loginRateLimitUntil) {
+    return 0;
+  }
+
+  const untilMs = Date.parse(botRuntimeState.loginRateLimitUntil);
+  if (!Number.isFinite(untilMs)) {
+    return 0;
+  }
+
+  return Math.ceil(Math.max(0, untilMs - Date.now()) / 1000);
+};
+
+const clearLoginRateLimit = () => {
+  botRuntimeState.loginRateLimitUntil = null;
+  botRuntimeState.loginRateLimitRemainingSec = 0;
+  botRuntimeState.loginRateLimitReason = null;
+};
+
+const setLoginRateLimit = (cooldownMs: number, reason: string) => {
+  const safeCooldownMs = Math.max(1_000, Number(cooldownMs) || 0);
+  botRuntimeState.loginRateLimitUntil = new Date(Date.now() + safeCooldownMs).toISOString();
+  botRuntimeState.loginRateLimitRemainingSec = Math.ceil(safeCooldownMs / 1000);
+  botRuntimeState.loginRateLimitReason = reason;
 };
 
 const getUsageSummaryLine = async (): Promise<string> => {
@@ -528,6 +560,16 @@ export const requestManualReconnect = async (source: string): Promise<ManualReco
       status: 'rejected',
       reason: 'COOLDOWN',
       message: `재연결 쿨다운 중입니다. ${remaining}초 후 다시 시도하세요.`,
+    };
+  }
+
+  const rateLimitRemainingSec = getLoginRateLimitRemainingSec();
+  if (rateLimitRemainingSec > 0) {
+    return {
+      ok: false,
+      status: 'rejected',
+      reason: 'RATE_LIMIT',
+      message: `Discord 로그인 한도에 걸렸습니다. ${rateLimitRemainingSec}초 후 다시 시도하세요.`,
     };
   }
 
@@ -1466,13 +1508,16 @@ export function getBotRuntimeSnapshot(): BotRuntimeSnapshot {
   const started = botRuntimeState.started;
   const liveWsStatus = Number(client.ws?.status ?? botRuntimeState.wsStatus ?? -1);
   const manualCooldown = getManualReconnectCooldownRemainingSec();
+  const loginRateLimitRemainingSec = getLoginRateLimitRemainingSec();
   botRuntimeState.manualReconnectCooldownRemainingSec = manualCooldown;
+  botRuntimeState.loginRateLimitRemainingSec = loginRateLimitRemainingSec;
   return {
     ...botRuntimeState,
     started,
     ready: client.isReady(),
     wsStatus: started ? liveWsStatus : -1,
     manualReconnectCooldownRemainingSec: manualCooldown,
+    loginRateLimitRemainingSec,
   };
 }
 
@@ -1485,10 +1530,16 @@ export async function startBot(token: string): Promise<void> {
   botRuntimeState.tokenPresent = Boolean(token);
   const maxRetries = DISCORD_START_RETRIES;
   const readyTimeout = DISCORD_READY_TIMEOUT_MS;
+  const initialRateLimitRemainingSec = getLoginRateLimitRemainingSec();
 
   if (client.isReady()) {
     logger.warn('[BOT] client already ready');
     return;
+  }
+
+  if (initialRateLimitRemainingSec > 0) {
+    botRuntimeState.loginRateLimitRemainingSec = initialRateLimitRemainingSec;
+    throw new Error(`Discord login rate-limited; retry after ${initialRateLimitRemainingSec}s`);
   }
 
   let attempt = 0;
@@ -1513,6 +1564,10 @@ export async function startBot(token: string): Promise<void> {
           preflight.gatewayUrl || 'unknown',
           preflight.error || 'unknown',
         );
+        if (preflight.statusCode === 429 && Number(preflight.cooldownMs || 0) > 0) {
+          setLoginRateLimit(preflight.cooldownMs, preflight.error || 'discord gateway/bot rate limited');
+          throw new Error(`Discord login rate-limited; retry after ${getLoginRateLimitRemainingSec()}s`);
+        }
         if (preflight.blocking) {
           throw new Error(`Discord preflight failed: ${preflight.error || 'unknown'}`);
         }
@@ -1534,6 +1589,7 @@ export async function startBot(token: string): Promise<void> {
       await loginDiscordClientWithTimeout(client, token, readyTimeout);
 
       logger.info('[BOT] Discord client logged in');
+      clearLoginRateLimit();
       botRuntimeState.started = true;
       botRuntimeState.reconnectQueued = false;
       botRuntimeState.reconnectAttempts = Math.max(0, attempt - 1);

@@ -18,6 +18,8 @@ type BotRuntimeSnapshotLike = {
   wsStatus: number;
   reconnectQueued: boolean;
   reconnectAttempts: number;
+  loginRateLimitRemainingSec?: number;
+  loginRateLimitReason?: string | null;
   dynamicWorkerRestoreEnabled?: boolean;
   dynamicWorkerRestoreApprovedCount?: number;
   dynamicWorkerRestoreSuccessCount?: number;
@@ -77,6 +79,9 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       '[런타임 상태]',
       `Bot ready: ${String(bot.ready)} | wsStatus: ${bot.wsStatus}`,
       `Reconnect queued: ${String(bot.reconnectQueued)} | attempts: ${bot.reconnectAttempts}`,
+      Number(bot.loginRateLimitRemainingSec || 0) > 0
+        ? `Discord login rate-limited: remaining=${bot.loginRateLimitRemainingSec}s reason=${bot.loginRateLimitReason || 'unknown'}`
+        : null,
       typeof bot.dynamicWorkerRestoreEnabled === 'boolean'
         ? `Dynamic worker restore: enabled=${String(bot.dynamicWorkerRestoreEnabled)} approved=${bot.dynamicWorkerRestoreApprovedCount || 0} restored=${bot.dynamicWorkerRestoreSuccessCount || 0} failed=${bot.dynamicWorkerRestoreFailedCount || 0}`
         : null,
