@@ -131,6 +131,7 @@ import { processPassiveMemoryCapture } from './discord/runtime/passiveMemoryCapt
 import { handleButtonInteraction } from './discord/runtime/buttonInteractions';
 import { handleGuildCreateLifecycle, handleGuildDeleteLifecycle } from './discord/runtime/guildLifecycle';
 import { loginDiscordClientWithTimeout } from './discord/runtime/loginAttempt';
+import { probeDiscordGatewayConnectivity } from './discord/runtime/gatewayPreflight';
 import { DISCORD_MESSAGES } from './discord/messages';
 import { isStockFeatureEnabled } from './services/stockService';
 
@@ -1497,6 +1498,26 @@ export async function startBot(token: string): Promise<void> {
     botRuntimeState.reconnectAttempts = Math.max(0, attempt - 1);
     botRuntimeState.reconnectQueued = attempt > 1;
     try {
+      const preflightTimeoutMs = Math.max(5_000, Math.min(15_000, Math.floor(readyTimeout / 8)));
+      const preflight = await probeDiscordGatewayConnectivity(token, preflightTimeoutMs);
+      if (!preflight.ok) {
+        logger.error(
+          '[BOT] Discord preflight failed restOk=%s wsOk=%s bot=%s gateway=%s reason=%s',
+          String(preflight.restOk),
+          String(preflight.wsOk),
+          preflight.botTag || 'unknown',
+          preflight.gatewayUrl || 'unknown',
+          preflight.error || 'unknown',
+        );
+        throw new Error(`Discord preflight failed: ${preflight.error || 'unknown'}`);
+      }
+
+      logger.info(
+        '[BOT] Discord preflight ok bot=%s gateway=%s',
+        preflight.botTag || 'unknown',
+        preflight.gatewayUrl || 'unknown',
+      );
+
       logger.info(
         '[BOT] Attempting login (attempt %d/%d, timeoutMs=%d, messageContentIntent=%s)',
         attempt,
