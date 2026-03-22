@@ -15,8 +15,15 @@ const HTTP_HEADERS_TIMEOUT_MS = Math.max(10_000, Number(process.env.HTTP_HEADERS
 const HTTP_REQUEST_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 120_000));
 const HTTP_SHUTDOWN_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_SHUTDOWN_TIMEOUT_MS || 15_000));
 
+const isDiscordLoginRateLimitedError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /Discord login rate-limited; retry after/i.test(message);
+};
+
 const exitForRequiredBotFailure = (message: string, error?: unknown) => {
-  if (error) {
+  if (error && isDiscordLoginRateLimitedError(error)) {
+    logger.warn('[BOT] %s: %s', message, error instanceof Error ? error.message : String(error));
+  } else if (error) {
     logger.error('[BOT] %s: %o', message, error);
   } else {
     logger.error('[BOT] %s', message);

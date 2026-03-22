@@ -25,6 +25,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-23 - Discord Login Rate-Limit Startup Log Downgrade
+
+- Why: Render 부팅 시 Discord session start 429가 이미 보호 동작으로 처리되고 있었지만, 시작 경로 로그가 `error` 위주로 남아 운영자가 실제 장애와 rate-limit cooldown 상태를 구분하기 어려웠다.
+- Scope: Discord login rate-limit 에러를 시작 경로에서 별도 식별해 `warn` 레벨로 기록하도록 조정했다. 프로세스 생존, cooldown 보존, auto/manual recovery 제어 동작은 유지한다.
+- Impacted Routes: N/A (runtime logging only)
+- Impacted Services: `src/bot.ts`, `server.ts`.
+- Impacted Tables/RPC: N/A.
+- Risk/Regression Notes: 로그 레벨만 조정되며, 비-rate-limit 로그인 실패는 기존처럼 `error`로 유지된다.
+- Validation: `npm run lint`.
+
 ## 2026-03-23 - Unattended Weekly Report Missing-Table Fail-Open Guard
 
 - Why: `openjarvis-unattended` 스케줄 워크플로가 아직 적용되지 않은 Supabase 주간 리포트 테이블과 소스 스냅샷 부재를 hard fail로 취급해, 운영 자동화 자체가 불필요하게 실패하고 있었다.

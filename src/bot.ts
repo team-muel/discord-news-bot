@@ -345,6 +345,11 @@ const clearLoginRateLimit = () => {
   botRuntimeState.loginRateLimitReason = null;
 };
 
+const isDiscordLoginRateLimitedError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /Discord login rate-limited; retry after/i.test(message);
+};
+
 const setLoginRateLimit = (cooldownMs: number, reason: string) => {
   const safeCooldownMs = Math.max(1_000, Number(cooldownMs) || 0) + DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS;
   botRuntimeState.loginRateLimitUntil = new Date(Date.now() + safeCooldownMs).toISOString();
@@ -1607,7 +1612,11 @@ export async function startBot(token: string): Promise<void> {
       botRuntimeState.reconnectAttempts = Math.max(0, attempt - 1);
       return;
     } catch (err) {
-      logger.error('[BOT] Login attempt %d failed: %o', attempt, err);
+      if (isDiscordLoginRateLimitedError(err)) {
+        logger.warn('[BOT] Login attempt %d deferred by Discord rate limit: %s', attempt, err instanceof Error ? err.message : String(err));
+      } else {
+        logger.error('[BOT] Login attempt %d failed: %o', attempt, err);
+      }
       botRuntimeState.lastLoginErrorAt = new Date().toISOString();
       botRuntimeState.lastLoginError = err instanceof Error ? err.message : String(err);
       botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
