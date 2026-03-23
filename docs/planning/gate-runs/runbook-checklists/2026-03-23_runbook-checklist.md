@@ -1,6 +1,6 @@
 # Stage Rollback Runbook Auto-Check
 
-- generated_at: 2026-03-23T13:49:51.564Z
+- generated_at: 2026-03-23T19:13:47.839Z
 - verdict: PASS
 - checkpoints: 5
 - passed: 5
@@ -10,7 +10,7 @@
 
 - [x] Rehearsal evidence freshness (<= maxSummaryAgeHours)
   - status: OK
-  - detail: age_hours=0.0, generated_at=2026-03-23T13:49:50.071Z
+  - detail: age_hours=0.0, generated_at=2026-03-23T19:13:46.411Z
 - [x] P95 recovery SLA (<= maxRecoveryMinutes)
   - status: OK
   - detail: p95_elapsed_ms=440, limit_ms=600000

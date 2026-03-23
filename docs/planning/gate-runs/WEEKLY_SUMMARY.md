@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-03-23T13:49:45.798Z
+- generated_at: 2026-03-23T19:13:41.212Z
 - total_runs: 38
 - go: 11
 - no_go: 15
@@ -97,6 +97,6 @@
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
-| gate-20260319-111443 | A | weekly:auto | no-go | true | stage | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111443.md |
-| gate-20260319-111711 | A | weekly:auto | no-go | true | stage | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111711.md |
-| gate-20260319-111714 | A | weekly:auto | no-go | true | stage | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111714.md |
+| gate-20260318-081523 | A | guild:demo | pending | unknown | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081523.md |
+| gate-20260318-081925 | B | guild:demo | no-go | true | queue | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081925.md |
+| gate-20260318-082348 | A | guild:demo | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-082348.md |
