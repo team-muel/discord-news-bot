@@ -244,6 +244,50 @@
           "queryArg": "goal"
         }
       ]
+    },
+    {
+      "id": "sprint-qa-intent",
+      "pattern": "qa\\s*테스트|qa\\s*test|테스트\\s*실행|버그\\s*탐지|test\\s*run|run\\s*tests",
+      "plans": [
+        {
+          "actionName": "qa.test",
+          "reason": "sprint-qa-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "sprint-security-audit-intent",
+      "pattern": "보안\\s*감사|security\\s*audit|owasp|stride|취약점\\s*분석|vulnerability\\s*scan|cso\\s*audit",
+      "plans": [
+        {
+          "actionName": "cso.audit",
+          "reason": "sprint-security-audit-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "sprint-ship-intent",
+      "pattern": "ship|릴리스\\s*실행|release\\s*ship|pr\\s*생성|pr\\s*작성|배포\\s*실행",
+      "plans": [
+        {
+          "actionName": "release.ship",
+          "reason": "sprint-ship-intent",
+          "queryArg": "goal"
+        }
+      ]
+    },
+    {
+      "id": "sprint-retro-intent",
+      "pattern": "회고|retro|retrospective|스프린트\\s*요약|sprint\\s*summary|keep.?stop.?start",
+      "plans": [
+        {
+          "actionName": "retro.summarize",
+          "reason": "sprint-retro-intent",
+          "queryArg": "goal"
+        }
+      ]
     }
   ]
 }

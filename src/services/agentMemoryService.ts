@@ -2,10 +2,14 @@ import logger from '../logger';
 import { parseIntegerEnv } from '../utils/env';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { withObsidianFileLock } from '../utils/obsidianFileLock';
+import { TtlCache } from '../utils/ttlCache';
 import { assessMemoryPoisonRisk } from './memoryPoisonGuard';
 import { buildSocialContextHints } from './communityGraphService';
 import { readObsidianLoreWithAdapter } from './obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+
+const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 5_000));
+const memoryHintCache = new TtlCache<string[]>(200);
 
 const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();
 const OBSIDIAN_INPUT_MAX_LENGTH = Math.max(40, Math.min(1200, parseIntegerEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320)));
@@ -248,6 +252,13 @@ export const buildAgentMemoryHints = async (params: {
     return [];
   }
 
+  // Session-level dedup: same guild+goal within TTL returns cached hints
+  const cacheKey = `${safeGuildId}::${safeGoal.slice(0, 120)}`;
+  const cached = memoryHintCache.get(cacheKey);
+  if (cached) {
+    return cached.slice(0, maxItems);
+  }
+
   if (!safeGuildId) {
     logger.warn('[AGENT-MEMORY] invalid guild id blocked in memory hint pipeline');
     return [`현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`].slice(0, maxItems);
@@ -279,5 +290,6 @@ export const buildAgentMemoryHints = async (params: {
 
   const goalHint = `현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`;
   const merged = [goalHint, ...socialHints, ...rankedMemoryHints, ...supabaseLoreHints, ...obsidianHints].filter(Boolean);
+  memoryHintCache.set(cacheKey, merged, MEMORY_HINT_CACHE_TTL_MS);
   return merged.slice(0, maxItems);
 };

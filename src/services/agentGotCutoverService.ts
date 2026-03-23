@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
 import { buildGotPerformanceDashboard } from './agentGotAnalyticsService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { TtlCache } from '../utils/ttlCache';
 
 export type AgentGotCutoverDecision = {
   guildId: string;
@@ -20,7 +21,7 @@ const CUTOVER_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.GOT_CUT
 const CUTOVER_FAIL_OPEN = parseBooleanEnv(process.env.GOT_CUTOVER_FAIL_OPEN, false);
 const GOT_ACTIVE_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.GOT_ACTIVE_ROLLOUT_PERCENT, 100)));
 
-const cache = new Map<string, { expiresAt: number; value: AgentGotCutoverDecision }>();
+const cache = new TtlCache<AgentGotCutoverDecision>(200);
 
 const nowIso = () => new Date().toISOString();
 
@@ -101,19 +102,19 @@ export const getAgentGotCutoverDecision = async (params: {
 
   if (!params.forceRefresh) {
     const hit = cache.get(cacheKey);
-    if (hit && hit.expiresAt > Date.now()) {
+    if (hit) {
       if (!params.sessionId) {
-        return hit.value;
+        return hit;
       }
       const bucket = getStableBucket(`${guildId}:${params.sessionId}`);
-      const selectedByRollout = bucket < hit.value.rolloutPercentage;
+      const selectedByRollout = bucket < hit.rolloutPercentage;
       return {
-        ...hit.value,
+        ...hit,
         selectedByRollout,
-        allowed: hit.value.readinessRecommended && selectedByRollout,
-        reason: hit.value.readinessRecommended
+        allowed: hit.readinessRecommended && selectedByRollout,
+        reason: hit.readinessRecommended
           ? (selectedByRollout ? 'dashboard_recommended_and_rollout_selected' : 'dashboard_recommended_but_rollout_holdout')
-          : hit.value.reason,
+          : hit.reason,
       };
     }
   }
@@ -150,20 +151,14 @@ export const getAgentGotCutoverDecision = async (params: {
       windowDays: CUTOVER_WINDOW_DAYS,
     };
 
-    cache.set(cacheKey, {
-      expiresAt: Date.now() + CUTOVER_CACHE_TTL_MS,
-      value: decision,
-    });
+    cache.set(cacheKey, decision, CUTOVER_CACHE_TTL_MS);
 
     return decision;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const allowed = CUTOVER_FAIL_OPEN;
     const decision = buildFallbackDecision(guildId, `dashboard_error:${message}`, allowed);
-    cache.set(cacheKey, {
-      expiresAt: Date.now() + CUTOVER_CACHE_TTL_MS,
-      value: decision,
-    });
+    cache.set(cacheKey, decision, CUTOVER_CACHE_TTL_MS);
     return decision;
   }
 };

@@ -288,6 +288,18 @@ const inferLeadAgent = (objective: string, requestedLeadAgent: SuperAgentLeadAge
   if (requestedLeadAgent) {
     return requestedLeadAgent;
   }
+
+  // Sprint phase-based deterministic routing (highest priority)
+  if (/\[PHASE\]\s*(plan|설계)/i.test(objective)) return 'OpenDev';
+  if (/\[PHASE\]\s*(implement|구현)/i.test(objective)) return 'OpenCode';
+  if (/\[PHASE\]\s*(review|리뷰)/i.test(objective)) return 'NemoClaw';
+  if (/\[PHASE\]\s*(qa|테스트)/i.test(objective)) return 'OpenCode';
+  if (/\[PHASE\]\s*(security-audit|보안)/i.test(objective)) return 'NemoClaw';
+  if (/\[PHASE\]\s*(ops-validate|운영)/i.test(objective)) return 'OpenJarvis';
+  if (/\[PHASE\]\s*(ship|배포)/i.test(objective)) return 'OpenJarvis';
+  if (/\[PHASE\]\s*(retro|회고)/i.test(objective)) return 'OpenDev';
+
+  // Keyword-based fallback for non-sprint invocations
   if (/(review|risk|regression|security|audit|보안|리스크|회귀|리뷰)/i.test(objective)) {
     return 'NemoClaw';
   }

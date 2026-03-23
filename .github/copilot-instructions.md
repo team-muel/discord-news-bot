@@ -2,7 +2,7 @@
 
 ## Mission
 
-Keep the platform stable while shipping fast improvements for Discord operations, knowledge retrieval, and automation.
+Keep the platform stable while shipping fast improvements for Discord operations, knowledge retrieval, and automation — with autonomous sprint pipelines that can plan, implement, review, test, and ship changes.
 
 ## Core Priorities
 
@@ -10,6 +10,7 @@ Keep the platform stable while shipping fast improvements for Discord operations
 2. Graph-first context strategy: prefer Obsidian link graph retrieval patterns over chunk-first RAG defaults.
 3. Security by default: never print or commit secrets from environment variables.
 4. Small safe changes: preserve existing APIs unless migration is explicit.
+5. Sprint-flow discipline: follow the phase order (plan → implement → review → qa → ops-validate → ship → retro).
 
 ## Working Rules
 
@@ -20,67 +21,49 @@ Keep the platform stable while shipping fast improvements for Discord operations
 
 ## Internal Naming Boundary
 
-- Legacy names such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local collaboration/runtime labels.
-- They do not prove that similarly named external OSS frameworks or model stacks are installed or directly executed.
-- Prefer neutral internal naming in new docs and prompts, and refer to runtime-configured providers/actions/workers for executable truth.
-- Canonical naming and runtime surface source of truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`.
-- Naming migration and compatibility policy: `docs/ROLE_RENAME_MAP.md`.
+- Role names (OpenCode, OpenDev, NemoClaw, OpenJarvis) are repository-local collaboration labels.
+- They do not prove that similarly named external OSS frameworks are installed or directly executed.
+- Canonical naming: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/ROLE_RENAME_MAP.md`.
 
-## Agent Routing Guidance
+## Sprint Skills (gstack-inspired)
 
-- OpenCode: coding, refactor, and tests.
-- NemoClaw: review, risk analysis, and regression hunting.
-- OpenJarvis: operations, runbooks, workflows, and unattended automation.
-- OpenDev: architecture, roadmap, ADR, and decomposition plans.
+Available skills in sprint order:
+`/plan`, `/implement`, `/review`, `/qa`, `/security-audit`, `/ops-validate`, `/ship`, `/retro`
 
-Local IDE collaboration default:
+Each skill has a SKILL.md in `.github/skills/{name}/` defining:
 
-- Prefer a lead agent plus targeted consults instead of forcing a full sequential handoff.
-- Keep release-sensitive work on the formal multi-agent workflow below.
-- Treat agent roles as primary strengths, not hard isolation boundaries, during local development.
+- When to use, process steps, input/output contract
+- Runtime action mapping for production execution
+- Next skill transitions
 
-## Multi-Agent Workflow
+Sprint flow: `plan → implement → review → qa → ops-validate → ship → retro`
 
-Local collaborative track (default for IDE iteration):
+Phase → Lead Agent:
 
-1. Pick the best lead agent for the current dominant task.
-2. Consult up to two specialist agents when architecture, review, or ops concerns matter.
-3. Synthesize back into one owner before editing, validating, or responding.
-4. Escalate to the delivery or operations track when formal gates are required.
+- `/plan` → OpenDev (architect)
+- `/implement` → OpenCode (implement)
+- `/review` → NemoClaw (review)
+- `/qa` → OpenCode (QA execution)
+- `/security-audit` → NemoClaw (security)
+- `/ops-validate` → OpenJarvis (operations)
+- `/ship` → OpenJarvis (release)
+- `/retro` → OpenDev (reflection)
 
-Delivery track (feature or code change):
+## Autonomous Execution
 
-1. OpenDev defines target state, constraints, and phased milestones.
-2. OpenCode implements the smallest safe slice for the current milestone.
-3. NemoClaw reviews for correctness, regressions, security, and test gaps.
-4. OpenJarvis validates operational readiness, rollback, and unattended safety.
+The production runtime can autonomously:
 
-Operations track (incident, recover, release):
+- Detect runtime errors and trigger bugfix sprints
+- Classify CS tickets and trigger feature/fix sprints
+- Run scheduled security audits and code improvement sprints
+- Create branches, commit changes, and open PRs via GitHub API
 
-- OpenJarvis classifies `discover|implement|verify|release|recover` first.
-- Route to the owning agent based on classification and risk policy.
+Autonomy is governed by guild-level policy (`SPRINT_AUTONOMY_LEVEL`):
 
-If any step fails quality gates, return to OpenCode with precise findings and re-run the sequence.
-
-## Handoff Contract
-
-Each agent handoff should include:
-
-- Scope and non-goals
-- Changed files and expected behavior impact
-- Validation run and results
-- Known risks, rollback path, and follow-up tasks
-
-Required identifiers in every stage payload:
-
-- `task_id`
-- `guild_id`
-- `objective`
-- `constraints`
-- `risk_level`
-- `acceptance_criteria`
-- `inputs`
-- `budget`
+- `full-auto`: all phases auto (use cautiously)
+- `approve-ship`: ship requires approval (recommended default)
+- `approve-impl`: implement + ship require approval
+- `manual`: all phases require approval
 
 ## Release Gate Checklist
 
@@ -88,9 +71,12 @@ Required identifiers in every stage payload:
 - Obsidian graph-first retrieval behavior preserved
 - Discord output sanitization verified for deliverable wrappers
 - Workflow/script idempotency and rollback path documented
+- Sprint changed file cap not exceeded
+- All sprint phases passed before ship
 
 ## Repo-Specific Notes
 
-- In multi-agent logic, ensure helper signatures match current implementations.
+- Runtime sprint state persists to Supabase table `sprint_pipelines`.
+- Sprint pipeline uses existing `actionRunner` with governance gates, FinOps budgets, and circuit breakers.
 - Sanitize user-facing Discord outputs, including wrapped deliverable sections.
 - Keep Obsidian CLI and headless roles explicit in docs and release gates.

@@ -5,20 +5,21 @@ import { recordCommunityInteractionEvent } from '../../services/communityGraphSe
 import { recordDiscordChannelMessageSignal } from '../../services/discordChannelTelemetryService';
 import { getGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 import { isUserLearningEnabled } from '../../services/userLearningPrefsService';
+import { TtlCache } from '../../utils/ttlCache';
 
 const LEARNING_POLICY_ACTION = 'memory_learning';
-const learningPolicyCache = new Map<string, { enabled: boolean; fetchedAt: number }>();
+const learningPolicyCache = new TtlCache<boolean>(200);
+const LEARNING_POLICY_TTL_MS = 30_000;
 
 const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
   const cached = learningPolicyCache.get(guildId);
-  if (cached && (Date.now() - cached.fetchedAt) < 30_000) {
-    return cached.enabled;
+  if (cached !== null) {
+    return cached;
   }
 
   const policy = await getGuildActionPolicy(guildId, LEARNING_POLICY_ACTION);
-  const enabled = policy.enabled;
-  learningPolicyCache.set(guildId, { enabled, fetchedAt: Date.now() });
-  return enabled;
+  learningPolicyCache.set(guildId, policy.enabled, LEARNING_POLICY_TTL_MS);
+  return policy.enabled;
 };
 
 const getErrorMessage = (error: unknown): string => {

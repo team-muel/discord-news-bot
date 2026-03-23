@@ -11,6 +11,32 @@ import { parseIntegerEnv } from '../utils/env';
 
 const CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3_600_000));
 const CACHE_ENABLED = process.env.OBSIDIAN_RAG_CACHE_ENABLED !== 'false';
+const HIT_FLUSH_INTERVAL_MS = 30_000;
+
+// Batched hit counter: accumulate in-memory, flush periodically
+const pendingHitCounts = new Map<string, number>();
+
+const flushHitCounts = async (): Promise<void> => {
+  if (pendingHitCounts.size === 0 || !isSupabaseConfigured()) return;
+  const batch = new Map(pendingHitCounts);
+  pendingHitCounts.clear();
+  const db = getSupabaseClient();
+  for (const [filePath, increment] of batch) {
+    try {
+      await db
+        .from('obsidian_cache')
+        .update({
+          hit_count: increment,
+          last_accessed_at: new Date().toISOString(),
+        })
+        .eq('file_path', filePath);
+    } catch {
+      // Best-effort: drop failed increments
+    }
+  }
+};
+
+setInterval(() => { void flushHitCounts(); }, HIT_FLUSH_INTERVAL_MS).unref();
 
 export interface CachedDocument {
   filePath: string;
@@ -73,18 +99,8 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
       return null;
     }
 
-    // Increment hit counter (best-effort, don't block on error)
-    try {
-      await db
-        .from('obsidian_cache')
-        .update({
-          hit_count: (data.hit_count || 0) + 1,
-          last_accessed_at: new Date().toISOString(),
-        })
-        .eq('file_path', filePath);
-    } catch (error) {
-      logger.debug('[OBSIDIAN-CACHE] Hit counter increment failed: %o', error);
-    }
+    // Batch hit counter increment instead of per-read Supabase UPDATE
+    pendingHitCounts.set(filePath, (pendingHitCounts.get(filePath) || (data.hit_count || 0)) + 1);
 
     logger.debug('[OBSIDIAN-CACHE] HIT %s', filePath);
 

@@ -104,6 +104,46 @@ export const OBSIDIAN_RAG_CACHE_TTL_MS = parseIntegerEnv(process.env.OBSIDIAN_RA
 export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MAX_DOCS, 10);
 export const OBSIDIAN_RAG_CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_RAG_CACHE_ENABLED, true);
 
+// ──── Sprint Pipeline (Autonomous Agent) ────
+export const SPRINT_ENABLED = parseBooleanEnv(process.env.SPRINT_ENABLED, false);
+export const SPRINT_AUTONOMY_LEVEL = (process.env.SPRINT_AUTONOMY_LEVEL || 'approve-ship') as
+  | 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
+export const SPRINT_MAX_IMPL_REVIEW_LOOPS = parseIntegerEnv(process.env.SPRINT_MAX_IMPL_REVIEW_LOOPS, 3);
+export const SPRINT_MAX_TOTAL_PHASES = parseIntegerEnv(process.env.SPRINT_MAX_TOTAL_PHASES, 12);
+export const SPRINT_CHANGED_FILE_CAP = parseIntegerEnv(process.env.SPRINT_CHANGED_FILE_CAP, 10);
+export const SPRINT_PHASE_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_PHASE_TIMEOUT_MS, 120_000);
+export const SPRINT_TRIGGER_ERROR_THRESHOLD = parseIntegerEnv(process.env.SPRINT_TRIGGER_ERROR_THRESHOLD, 5);
+export const SPRINT_TRIGGER_CS_CHANNEL_IDS = process.env.SPRINT_TRIGGER_CS_CHANNEL_IDS || '';
+export const SPRINT_TRIGGER_CRON_SECURITY_AUDIT = process.env.SPRINT_TRIGGER_CRON_SECURITY_AUDIT || '';
+export const SPRINT_TRIGGER_CRON_IMPROVEMENT = process.env.SPRINT_TRIGGER_CRON_IMPROVEMENT || '';
+export const SPRINT_GIT_ENABLED = parseBooleanEnv(process.env.SPRINT_GIT_ENABLED, false);
+export const SPRINT_GITHUB_TOKEN = process.env.SPRINT_GITHUB_TOKEN || '';
+export const SPRINT_GITHUB_OWNER = process.env.SPRINT_GITHUB_OWNER || '';
+export const SPRINT_GITHUB_REPO = process.env.SPRINT_GITHUB_REPO || '';
+export const SPRINT_PIPELINES_TABLE = process.env.SPRINT_PIPELINES_TABLE || 'sprint_pipelines';
+export const SPRINT_DRY_RUN = parseBooleanEnv(process.env.SPRINT_DRY_RUN, false);
+export const SPRINT_FAST_PATH_ENABLED = parseBooleanEnv(process.env.SPRINT_FAST_PATH_ENABLED, true);
+export const SPRINT_FAST_PATH_VITEST_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_VITEST_TIMEOUT_MS, 60_000);
+export const SPRINT_FAST_PATH_TSC_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_TSC_TIMEOUT_MS, 30_000);
+
+// ──── Cross-Model Outside Voice ────
+export const SPRINT_CROSS_MODEL_ENABLED = parseBooleanEnv(process.env.SPRINT_CROSS_MODEL_ENABLED, false);
+export const SPRINT_CROSS_MODEL_PROVIDER = process.env.SPRINT_CROSS_MODEL_PROVIDER || '';
+export const SPRINT_CROSS_MODEL_PHASES = process.env.SPRINT_CROSS_MODEL_PHASES || 'review,security-audit';
+
+// ──── Scope Guard (freeze/guard) ────
+export const SPRINT_SCOPE_GUARD_ENABLED = parseBooleanEnv(process.env.SPRINT_SCOPE_GUARD_ENABLED, true);
+export const SPRINT_SCOPE_GUARD_ALLOWED_DIRS = process.env.SPRINT_SCOPE_GUARD_ALLOWED_DIRS || 'src,scripts,tests,.github/skills';
+export const SPRINT_SCOPE_GUARD_PROTECTED_FILES = process.env.SPRINT_SCOPE_GUARD_PROTECTED_FILES || 'package.json,.env,ecosystem.config.cjs,render.yaml';
+
+// ──── LLM-as-Judge (Tier 3 eval) ────
+export const SPRINT_LLM_JUDGE_ENABLED = parseBooleanEnv(process.env.SPRINT_LLM_JUDGE_ENABLED, false);
+export const SPRINT_LLM_JUDGE_PHASES = process.env.SPRINT_LLM_JUDGE_PHASES || 'review,retro';
+
+// ──── Autoplan Sub-Pipeline ────
+export const SPRINT_AUTOPLAN_ENABLED = parseBooleanEnv(process.env.SPRINT_AUTOPLAN_ENABLED, false);
+export const SPRINT_AUTOPLAN_LENSES = process.env.SPRINT_AUTOPLAN_LENSES || 'ceo,engineering,security';
+
 export default {
   PORT,
   FRONTEND_ORIGIN,
@@ -180,4 +220,32 @@ export default {
   OBSIDIAN_RAG_CACHE_TTL_MS,
   OBSIDIAN_RAG_MAX_DOCS,
   OBSIDIAN_RAG_CACHE_ENABLED,
+  SPRINT_ENABLED,
+  SPRINT_AUTONOMY_LEVEL,
+  SPRINT_MAX_IMPL_REVIEW_LOOPS,
+  SPRINT_MAX_TOTAL_PHASES,
+  SPRINT_CHANGED_FILE_CAP,
+  SPRINT_PHASE_TIMEOUT_MS,
+  SPRINT_TRIGGER_ERROR_THRESHOLD,
+  SPRINT_TRIGGER_CS_CHANNEL_IDS,
+  SPRINT_TRIGGER_CRON_SECURITY_AUDIT,
+  SPRINT_TRIGGER_CRON_IMPROVEMENT,
+  SPRINT_GIT_ENABLED,
+  SPRINT_GITHUB_TOKEN,
+  SPRINT_GITHUB_OWNER,
+  SPRINT_GITHUB_REPO,
+  SPRINT_PIPELINES_TABLE,
+  SPRINT_FAST_PATH_ENABLED,
+  SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
+  SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+  SPRINT_CROSS_MODEL_ENABLED,
+  SPRINT_CROSS_MODEL_PROVIDER,
+  SPRINT_CROSS_MODEL_PHASES,
+  SPRINT_SCOPE_GUARD_ENABLED,
+  SPRINT_SCOPE_GUARD_ALLOWED_DIRS,
+  SPRINT_SCOPE_GUARD_PROTECTED_FILES,
+  SPRINT_LLM_JUDGE_ENABLED,
+  SPRINT_LLM_JUDGE_PHASES,
+  SPRINT_AUTOPLAN_ENABLED,
+  SPRINT_AUTOPLAN_LENSES,
 };

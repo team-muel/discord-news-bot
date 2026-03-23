@@ -97,9 +97,9 @@ describe('isActionAllowed', () => {
 });
 
 describe('isWebHostAllowed', () => {
-  it('빈 WEB_ALLOWED_HOSTS(기본값) 이면 모든 호스트가 거부된다', () => {
-    expect(isWebHostAllowed('reuters.com')).toBe(false);
-    expect(isWebHostAllowed('bloomberg.com')).toBe(false);
+  it('빈 WEB_ALLOWED_HOSTS(기본값) 이면 모든 호스트가 허용된다 (open-by-default)', () => {
+    expect(isWebHostAllowed('reuters.com')).toBe(true);
+    expect(isWebHostAllowed('bloomberg.com')).toBe(true);
   });
 
   it('빈 host 값은 거부된다', () => {

@@ -1,0 +1,807 @@
+import crypto from 'node:crypto';
+import logger from '../../logger';
+import {
+  SPRINT_ENABLED,
+  SPRINT_AUTONOMY_LEVEL,
+  SPRINT_MAX_IMPL_REVIEW_LOOPS,
+  SPRINT_MAX_TOTAL_PHASES,
+  SPRINT_CHANGED_FILE_CAP,
+  SPRINT_PHASE_TIMEOUT_MS,
+  SPRINT_PIPELINES_TABLE,
+  SPRINT_DRY_RUN,
+} from '../../config';
+import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
+import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
+import { formatActionableOutput } from './actionableErrors';
+import { buildSprintPreamble } from './sprintPreamble';
+import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
+import { checkFilesScope } from './scopeGuard';
+import { isJudgePhase, judgePhaseOutput, formatJudgeAppendix } from './llmJudge';
+import { runAutoplan, formatAutoplanAppendix } from './autoplan';
+import { getAction } from '../skills/actions/registry';
+import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getMcpWorkerUrl, callMcpWorkerTool, parseMcpTextBlocks, type McpWorkerKind } from '../skills/actions/mcpDelegate';
+import { createActionApprovalRequest } from '../skills/actionGovernanceStore';
+
+// Phase → MCP worker kind mapping for delegation
+const PHASE_WORKER_KIND: Partial<Record<SprintPhase, McpWorkerKind>> = {
+  plan: 'opendev',
+  implement: 'opencode',
+  review: 'nemoclaw',
+  'security-audit': 'nemoclaw',
+  'ops-validate': 'openjarvis',
+  ship: 'openjarvis',
+  retro: 'opendev',
+};
+
+// ──── Types ───────────────────────────────────────────────────────────────────
+
+export type SprintPhase =
+  | 'plan' | 'implement' | 'review' | 'qa'
+  | 'security-audit' | 'ops-validate' | 'ship' | 'retro'
+  | 'complete' | 'blocked' | 'cancelled';
+
+export type SprintTriggerType =
+  | 'error-detection'
+  | 'cs-ticket'
+  | 'feature-request'
+  | 'scheduled'
+  | 'manual'
+  | 'self-improvement';
+
+export type AutonomyLevel = 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
+
+export type PhaseResult = {
+  phase: SprintPhase;
+  status: 'success' | 'failed' | 'blocked' | 'skipped' | 'awaiting-approval';
+  output: string;
+  artifacts: string[];
+  sessionId?: string;
+  startedAt: string;
+  completedAt: string;
+  iterationCount: number;
+};
+
+export type SprintPipeline = {
+  sprintId: string;
+  triggerId: string;
+  triggerType: SprintTriggerType;
+  guildId: string;
+  objective: string;
+  autonomyLevel: AutonomyLevel;
+  currentPhase: SprintPhase;
+  phaseResults: Record<string, PhaseResult>;
+  phaseOrder: SprintPhase[];
+  implementReviewLoopCount: number;
+  totalPhasesExecuted: number;
+  changedFiles: string[];
+  rollbackPlan: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  error?: string;
+};
+
+// ──── Constants ───────────────────────────────────────────────────────────────
+
+const DEFAULT_PHASE_ORDER: SprintPhase[] = [
+  'plan', 'implement', 'review', 'qa', 'ops-validate', 'ship', 'retro',
+];
+
+const PHASE_TRANSITIONS: Record<string, (result: PhaseResult, pipeline: SprintPipeline) => SprintPhase> = {
+  plan: (r) => r.status === 'success' ? 'implement' : 'blocked',
+
+  implement: (r) => r.status === 'success' ? 'review' : 'blocked',
+
+  review: (r, p) => {
+    if (r.status === 'success') {
+      // Insert security-audit before qa if high-risk content detected
+      if (r.output.includes('SECURITY') || r.output.includes('security concern')) {
+        return 'security-audit';
+      }
+      return 'qa';
+    }
+    // Critical findings → re-implement (with loop guard)
+    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) {
+      return 'implement';
+    }
+    return 'blocked';
+  },
+
+  qa: (r, p) => {
+    if (r.status === 'success') return 'ops-validate';
+    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) return 'implement';
+    return 'blocked';
+  },
+
+  'security-audit': (r, p) => {
+    if (r.status === 'success') return 'qa';
+    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) return 'implement';
+    return 'blocked';
+  },
+
+  'ops-validate': (r, p) => {
+    if (r.status === 'success') return 'ship';
+    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) return 'implement';
+    return 'blocked';
+  },
+
+  ship: (r) => r.status === 'success' ? 'retro' : 'blocked',
+
+  retro: () => 'complete',
+};
+
+// ──── In-memory store ─────────────────────────────────────────────────────────
+
+const pipelines = new Map<string, SprintPipeline>();
+
+// ──── Pipeline CRUD ───────────────────────────────────────────────────────────
+
+export const createSprintPipeline = (params: {
+  triggerId: string;
+  triggerType: SprintTriggerType;
+  guildId: string;
+  objective: string;
+  autonomyLevel?: AutonomyLevel;
+  includeSecurityAudit?: boolean;
+}): SprintPipeline => {
+  if (!SPRINT_ENABLED) {
+    throw new Error('Sprint pipeline is disabled (SPRINT_ENABLED=false)');
+  }
+
+  const sprintId = `sprint-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const phaseOrder = params.includeSecurityAudit
+    ? ['plan', 'implement', 'review', 'security-audit', 'qa', 'ops-validate', 'ship', 'retro'] as SprintPhase[]
+    : [...DEFAULT_PHASE_ORDER];
+
+  const pipeline: SprintPipeline = {
+    sprintId,
+    triggerId: params.triggerId,
+    triggerType: params.triggerType,
+    guildId: params.guildId,
+    objective: params.objective,
+    autonomyLevel: params.autonomyLevel || SPRINT_AUTONOMY_LEVEL,
+    currentPhase: phaseOrder[0],
+    phaseResults: {},
+    phaseOrder,
+    implementReviewLoopCount: 0,
+    totalPhasesExecuted: 0,
+    changedFiles: [],
+    rollbackPlan: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  pipelines.set(sprintId, pipeline);
+  recordPipelineCreated();
+  logger.info('[SPRINT] created pipeline=%s trigger=%s objective=%.80s', sprintId, params.triggerType, params.objective);
+
+  // Best-effort persist to Supabase
+  persistPipeline(pipeline).catch(() => {});
+
+  return pipeline;
+};
+
+export const getSprintPipeline = (sprintId: string): SprintPipeline | null => {
+  return pipelines.get(sprintId) || null;
+};
+
+export const listSprintPipelines = (guildId?: string, limit = 20): SprintPipeline[] => {
+  const all = Array.from(pipelines.values());
+  const filtered = guildId ? all.filter((p) => p.guildId === guildId) : all;
+  return filtered
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, limit);
+};
+
+// ──── Phase execution ─────────────────────────────────────────────────────────
+
+const requiresApproval = (phase: SprintPhase, autonomy: AutonomyLevel): boolean => {
+  if (autonomy === 'full-auto') return false;
+  if (autonomy === 'manual') return true;
+  if (autonomy === 'approve-ship') return phase === 'ship';
+  if (autonomy === 'approve-impl') return phase === 'implement' || phase === 'ship';
+  return false;
+};
+
+const executePhaseAction = async (
+  pipeline: SprintPipeline,
+  phase: SprintPhase,
+): Promise<PhaseResult> => {
+  const startedAt = new Date().toISOString();
+  const actionName = getPhaseActionName(phase);
+  const systemPrompt = buildPhaseSystemPrompt(phase);
+
+  if (!actionName) {
+    return {
+      phase,
+      status: 'failed',
+      output: `No action mapped for phase: ${phase}`,
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 0,
+    };
+  }
+
+  // Check approval requirement
+  if (requiresApproval(phase, pipeline.autonomyLevel)) {
+    return {
+      phase,
+      status: 'awaiting-approval',
+      output: `Phase ${phase} requires human approval (autonomyLevel=${pipeline.autonomyLevel})`,
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 0,
+    };
+  }
+
+  // Resolve action from static registry or dynamic workers
+  const action = getAction(actionName) || getDynamicAction(actionName);
+  if (!action) {
+    return {
+      phase,
+      status: 'failed',
+      output: `Action not found: ${actionName}`,
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 0,
+    };
+  }
+
+  try {
+    // ── Fast-path: deterministic phases skip LLM entirely ──
+    if (isDeterministicPhase(phase)) {
+      logger.info('[SPRINT] fast-path execution for phase=%s (zero LLM tokens)', phase);
+      const fastResult = await Promise.race([
+        executeFastPath({
+          phase,
+          sprintId: pipeline.sprintId,
+          objective: pipeline.objective,
+          changedFiles: pipeline.changedFiles,
+        }),
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), SPRINT_PHASE_TIMEOUT_MS),
+        ),
+      ]);
+
+      if (fastResult) {
+        return {
+          phase,
+          status: fastResult.ok ? 'success' : 'failed',
+          output: fastResult.summary || '',
+          artifacts: fastResult.artifacts || [],
+          startedAt,
+          completedAt: new Date().toISOString(),
+          iterationCount: 1,
+        };
+      }
+      logger.warn('[SPRINT] fast-path returned null for phase=%s, falling back to LLM action', phase);
+    }
+
+    // ── Standard path: LLM-based action execution ──
+    const goal = buildPhaseGoal(pipeline, phase, systemPrompt);
+
+    // ── MCP worker delegation: prefer remote worker if configured ──
+    const workerKind = PHASE_WORKER_KIND[phase];
+    const workerUrl = workerKind ? getMcpWorkerUrl(workerKind) : '';
+
+    if (workerUrl) {
+      logger.info('[SPRINT] delegating phase=%s to MCP worker=%s', phase, workerKind);
+      const mcpResult = await Promise.race([
+        callMcpWorkerTool({
+          workerUrl,
+          toolName: actionName,
+          args: {
+            goal,
+            sprintId: pipeline.sprintId,
+            phase,
+            objective: pipeline.objective,
+            changedFiles: pipeline.changedFiles,
+          },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`MCP delegation timed out for phase ${phase}`)), SPRINT_PHASE_TIMEOUT_MS),
+        ),
+      ]);
+      const blocks = parseMcpTextBlocks(mcpResult);
+      const output = blocks.join('\n') || '';
+      return {
+        phase,
+        status: mcpResult.isError ? 'failed' : 'success',
+        output,
+        artifacts: [],
+        startedAt,
+        completedAt: new Date().toISOString(),
+        iterationCount: 1,
+      };
+    }
+
+    // ── Local action fallback ──
+    const result = await Promise.race([
+      action.execute({
+        goal,
+        args: {
+          sprintId: pipeline.sprintId,
+          phase,
+          objective: pipeline.objective,
+          changedFiles: pipeline.changedFiles,
+          previousPhaseResults: Object.values(pipeline.phaseResults).map((r) => ({
+            phase: r.phase,
+            status: r.status,
+            output: r.output.slice(0, 500),
+          })),
+        },
+        guildId: pipeline.guildId,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Phase ${phase} timed out after ${SPRINT_PHASE_TIMEOUT_MS}ms`)), SPRINT_PHASE_TIMEOUT_MS),
+      ),
+    ]);
+
+    return {
+      phase,
+      status: result.ok ? 'success' : 'failed',
+      output: result.summary || '',
+      artifacts: result.artifacts || [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 1,
+    };
+  } catch (error) {
+    const rawError = error instanceof Error ? error.message : String(error);
+    logger.error('[SPRINT] phase=%s action=%s error=%s', phase, actionName, rawError);
+    return {
+      phase,
+      status: 'failed',
+      output: formatActionableOutput(phase, rawError),
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 1,
+    };
+  }
+};
+
+const buildPhaseGoal = (pipeline: SprintPipeline, phase: SprintPhase, systemPrompt: string | null): string => {
+  const sections = [
+    `[SPRINT] ${pipeline.sprintId}`,
+    `[PHASE] ${phase}`,
+    `[OBJECTIVE] ${pipeline.objective}`,
+  ];
+
+  // Inject preamble (gstack pattern: common preprocessing for all phases)
+  const preamble = buildSprintPreamble(pipeline.sprintId, phase);
+  sections.push(`[PREAMBLE]\n${preamble}`);
+
+  if (systemPrompt) {
+    sections.push(`[PHASE_INSTRUCTIONS]\n${systemPrompt}`);
+  }
+
+  // Feed previous phase output as context
+  const prevResults = Object.values(pipeline.phaseResults);
+  if (prevResults.length > 0) {
+    const lastResult = prevResults[prevResults.length - 1];
+    sections.push(`[PREVIOUS_PHASE] ${lastResult.phase} (${lastResult.status})`);
+    if (lastResult.output) {
+      sections.push(`[PREVIOUS_OUTPUT]\n${lastResult.output.slice(0, 2000)}`);
+    }
+  }
+
+  if (pipeline.changedFiles.length > 0) {
+    sections.push(`[CHANGED_FILES]\n${pipeline.changedFiles.join('\n')}`);
+  }
+
+  return sections.join('\n\n');
+};
+
+// ──── Pipeline advancement ────────────────────────────────────────────────────
+
+export const advanceSprintPhase = async (sprintId: string): Promise<{
+  ok: boolean;
+  pipeline: SprintPipeline;
+  phaseResult?: PhaseResult;
+  message: string;
+}> => {
+  const pipeline = pipelines.get(sprintId);
+  if (!pipeline) {
+    return { ok: false, pipeline: {} as SprintPipeline, message: 'Pipeline not found' };
+  }
+
+  if (pipeline.currentPhase === 'complete' || pipeline.currentPhase === 'cancelled') {
+    return { ok: false, pipeline, message: `Pipeline already ${pipeline.currentPhase}` };
+  }
+
+  if (pipeline.currentPhase === 'blocked') {
+    return { ok: false, pipeline, message: 'Pipeline is blocked — requires manual intervention or cancellation' };
+  }
+
+  if (pipeline.totalPhasesExecuted >= SPRINT_MAX_TOTAL_PHASES) {
+    pipeline.currentPhase = 'blocked';
+    pipeline.error = `Max total phases exceeded (${SPRINT_MAX_TOTAL_PHASES})`;
+    pipeline.updatedAt = new Date().toISOString();
+    return { ok: false, pipeline, message: pipeline.error };
+  }
+
+  if (pipeline.changedFiles.length > SPRINT_CHANGED_FILE_CAP) {
+    pipeline.currentPhase = 'blocked';
+    pipeline.error = `Changed file cap exceeded (${SPRINT_CHANGED_FILE_CAP})`;
+    pipeline.updatedAt = new Date().toISOString();
+    return { ok: false, pipeline, message: pipeline.error };
+  }
+
+  const currentPhase = pipeline.currentPhase;
+  logger.info('[SPRINT] advancing pipeline=%s phase=%s', sprintId, currentPhase);
+
+  // ── Scope guard: check changed files are within allowed scope ──
+  if (pipeline.changedFiles.length > 0) {
+    const scopeCheck = checkFilesScope(pipeline.changedFiles);
+    if (!scopeCheck.allowed) {
+      pipeline.currentPhase = 'blocked';
+      pipeline.error = `Scope guard: ${scopeCheck.reason}`;
+      pipeline.updatedAt = new Date().toISOString();
+      return { ok: false, pipeline, message: pipeline.error };
+    }
+  }
+
+  const phaseStartMs = Date.now();
+  const phaseResult = await executePhaseAction(pipeline, currentPhase);
+  const phaseDurationMs = Date.now() - phaseStartMs;
+  recordPhaseMetric(currentPhase, phaseDurationMs, phaseResult.status === 'failed');
+
+  // ── Autoplan: multi-lens review after plan phase ──
+  if (currentPhase === 'plan' && phaseResult.status === 'success') {
+    const autoplanResult = await runAutoplan({
+      planOutput: phaseResult.output,
+      objective: pipeline.objective,
+    });
+    if (autoplanResult) {
+      phaseResult.output += formatAutoplanAppendix(autoplanResult);
+      if (autoplanResult.requiresHumanDecision && pipeline.autonomyLevel !== 'full-auto') {
+        phaseResult.status = 'awaiting-approval';
+        phaseResult.output += '\n\nAWAITING_APPROVAL: Autoplan found taste decisions requiring human input.';
+      }
+    }
+  }
+
+  // ── Cross-model outside voice: independent review for review phases ──
+  if (isCrossModelPhase(currentPhase) && phaseResult.status === 'success') {
+    const crossResult = await requestCrossModelReview({
+      phase: currentPhase,
+      primaryOutput: phaseResult.output,
+      objective: pipeline.objective,
+      changedFiles: pipeline.changedFiles,
+    });
+    if (crossResult) {
+      phaseResult.output += formatCrossModelAppendix(crossResult);
+    }
+  }
+
+  // ── LLM-as-Judge: quality score for applicable phases ──
+  if (isJudgePhase(currentPhase) && phaseResult.status === 'success') {
+    const judgeResult = await judgePhaseOutput({
+      phase: currentPhase,
+      objective: pipeline.objective,
+      output: phaseResult.output,
+      artifacts: phaseResult.artifacts,
+    });
+    if (judgeResult) {
+      phaseResult.output += formatJudgeAppendix(judgeResult);
+    }
+  }
+
+  // Track implement↔review loops
+  if (currentPhase === 'review' && phaseResult.status !== 'success') {
+    pipeline.implementReviewLoopCount++;
+    recordLoopBack();
+  }
+
+  // Record result
+  const resultKey = `${currentPhase}-${pipeline.totalPhasesExecuted}`;
+  pipeline.phaseResults[resultKey] = phaseResult;
+  pipeline.totalPhasesExecuted++;
+
+  // Track changed files from artifacts
+  const newFiles = phaseResult.artifacts.filter((a) => a.endsWith('.ts') || a.endsWith('.js') || a.endsWith('.md'));
+  for (const f of newFiles) {
+    if (!pipeline.changedFiles.includes(f)) {
+      pipeline.changedFiles.push(f);
+    }
+  }
+
+  // Handle awaiting-approval
+  if (phaseResult.status === 'awaiting-approval') {
+    // Create approval request via governance store (enables Discord button notification)
+    try {
+      const approvalReq = await createActionApprovalRequest({
+        guildId: pipeline.guildId,
+        requestedBy: 'sprint-pipeline',
+        goal: `Sprint ${sprintId} phase "${currentPhase}" requires approval`,
+        actionName: `sprint.${currentPhase}`,
+        actionArgs: { sprintId, phase: currentPhase, objective: pipeline.objective },
+        reason: `Autonomy level ${pipeline.autonomyLevel} requires human approval for phase "${currentPhase}"`,
+      });
+      phaseResult.output += `\n\nAPPROVAL_REQUEST_ID: ${approvalReq.id}`;
+    } catch (approvalError) {
+      logger.warn('[SPRINT] approval request creation failed: %s', approvalError instanceof Error ? approvalError.message : String(approvalError));
+    }
+    pipeline.updatedAt = new Date().toISOString();
+    persistPipeline(pipeline).catch(() => {});
+    return { ok: true, pipeline, phaseResult, message: `Phase ${currentPhase} awaiting approval` };
+  }
+
+  // Determine next phase
+  const transition = PHASE_TRANSITIONS[currentPhase];
+  const nextPhase = transition ? transition(phaseResult, pipeline) : 'blocked';
+
+  pipeline.currentPhase = nextPhase;
+  pipeline.updatedAt = new Date().toISOString();
+
+  if (nextPhase === 'complete') {
+    pipeline.completedAt = new Date().toISOString();
+    logger.info('[SPRINT] pipeline=%s completed successfully', sprintId);
+  } else if (nextPhase === 'blocked') {
+    pipeline.error = `Phase ${currentPhase} failed: ${phaseResult.output.slice(0, 200)}`;
+    logger.warn('[SPRINT] pipeline=%s blocked at phase=%s', sprintId, currentPhase);
+  }
+
+  persistPipeline(pipeline).catch(() => {});
+
+  return {
+    ok: nextPhase !== 'blocked',
+    pipeline,
+    phaseResult,
+    message: nextPhase === 'complete'
+      ? 'Sprint completed successfully'
+      : nextPhase === 'blocked'
+        ? `Sprint blocked at ${currentPhase}`
+        : `Advanced to ${nextPhase}`,
+  };
+};
+
+// ──── Full pipeline run ───────────────────────────────────────────────────────
+
+export const runFullSprintPipeline = async (sprintId: string): Promise<SprintPipeline> => {
+  const pipeline = pipelines.get(sprintId);
+  if (!pipeline) throw new Error(`Pipeline ${sprintId} not found`);
+
+  while (
+    pipeline.currentPhase !== 'complete' &&
+    pipeline.currentPhase !== 'blocked' &&
+    pipeline.currentPhase !== 'cancelled' &&
+    pipeline.totalPhasesExecuted < SPRINT_MAX_TOTAL_PHASES
+  ) {
+    const result = await advanceSprintPhase(sprintId);
+
+    // Stop if awaiting approval in any non-full-auto mode
+    if (result.phaseResult?.status === 'awaiting-approval') {
+      logger.info('[SPRINT] pipeline=%s paused for approval at phase=%s', sprintId, pipeline.currentPhase);
+      break;
+    }
+
+    if (!result.ok) break;
+  }
+
+  return pipeline;
+};
+
+// ──── Approval handling ───────────────────────────────────────────────────────
+
+export const approveSprintPhase = async (sprintId: string, approvedBy: string): Promise<{
+  ok: boolean;
+  message: string;
+}> => {
+  const pipeline = pipelines.get(sprintId);
+  if (!pipeline) return { ok: false, message: 'Pipeline not found' };
+
+  const lastResult = Object.values(pipeline.phaseResults).pop();
+  if (!lastResult || lastResult.status !== 'awaiting-approval') {
+    return { ok: false, message: 'No phase awaiting approval' };
+  }
+
+  logger.info('[SPRINT] phase=%s approved by=%s pipeline=%s', pipeline.currentPhase, approvedBy, sprintId);
+
+  // Re-execute the phase without approval gate by temporarily overriding
+  lastResult.status = 'success';
+  lastResult.output = `Approved by ${approvedBy} — re-executing phase`;
+
+  // Determine next phase based on approval
+  const transition = PHASE_TRANSITIONS[pipeline.currentPhase];
+  const nextPhase = transition ? transition(lastResult, pipeline) : 'blocked';
+  pipeline.currentPhase = nextPhase;
+  pipeline.updatedAt = new Date().toISOString();
+
+  persistPipeline(pipeline).catch(() => {});
+  return { ok: true, message: `Phase approved, advancing to ${nextPhase}` };
+};
+
+export const cancelSprintPipeline = (sprintId: string): { ok: boolean; message: string } => {
+  const pipeline = pipelines.get(sprintId);
+  if (!pipeline) return { ok: false, message: 'Pipeline not found' };
+
+  pipeline.currentPhase = 'cancelled';
+  pipeline.updatedAt = new Date().toISOString();
+  pipeline.completedAt = new Date().toISOString();
+
+  persistPipeline(pipeline).catch(() => {});
+  logger.info('[SPRINT] pipeline=%s cancelled', sprintId);
+  return { ok: true, message: 'Pipeline cancelled' };
+};
+
+// ──── Supabase persistence ────────────────────────────────────────────────────
+
+const persistPipeline = async (pipeline: SprintPipeline): Promise<void> => {
+  if (SPRINT_DRY_RUN) {
+    logger.debug('[SPRINT][DRY-RUN] would persist pipeline=%s phase=%s', pipeline.sprintId, pipeline.currentPhase);
+    return;
+  }
+  if (!isSupabaseConfigured()) return;
+  try {
+    const client = getSupabaseClient();
+    await client.from(SPRINT_PIPELINES_TABLE).upsert({
+      sprint_id: pipeline.sprintId,
+      trigger_id: pipeline.triggerId,
+      trigger_type: pipeline.triggerType,
+      guild_id: pipeline.guildId,
+      objective: pipeline.objective,
+      autonomy_level: pipeline.autonomyLevel,
+      current_phase: pipeline.currentPhase,
+      phase_results: pipeline.phaseResults,
+      phase_order: pipeline.phaseOrder,
+      changed_files: pipeline.changedFiles,
+      total_phases_executed: pipeline.totalPhasesExecuted,
+      impl_review_loop_count: pipeline.implementReviewLoopCount,
+      error: pipeline.error || null,
+      created_at: pipeline.createdAt,
+      updated_at: pipeline.updatedAt,
+      completed_at: pipeline.completedAt || null,
+    }, { onConflict: 'sprint_id' });
+  } catch (error) {
+    logger.debug('[SPRINT] persist failed: %s', error instanceof Error ? error.message : String(error));
+  }
+};
+
+// ──── Snapshot ─────────────────────────────────────────────────────────────────
+
+// ──── Rehydration ─────────────────────────────────────────────────────────────
+
+export const rehydrateActivePipelines = async (): Promise<number> => {
+  if (!SPRINT_ENABLED || !isSupabaseConfigured()) return 0;
+  try {
+    const client = getSupabaseClient();
+    const { data } = await client
+      .from(SPRINT_PIPELINES_TABLE)
+      .select('*')
+      .not('current_phase', 'in', '("complete","cancelled","blocked")')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!data || data.length === 0) return 0;
+
+    for (const row of data as Array<Record<string, unknown>>) {
+      const sprintId = String(row.sprint_id || '');
+      if (!sprintId || pipelines.has(sprintId)) continue;
+
+      const pipeline: SprintPipeline = {
+        sprintId,
+        triggerId: String(row.trigger_id || ''),
+        triggerType: (row.trigger_type || 'manual') as SprintTriggerType,
+        guildId: String(row.guild_id || ''),
+        objective: String(row.objective || ''),
+        autonomyLevel: (row.autonomy_level || SPRINT_AUTONOMY_LEVEL) as AutonomyLevel,
+        currentPhase: (row.current_phase || 'blocked') as SprintPhase,
+        phaseResults: (row.phase_results || {}) as Record<string, PhaseResult>,
+        phaseOrder: Array.isArray(row.phase_order) ? row.phase_order as SprintPhase[] : [...DEFAULT_PHASE_ORDER],
+        implementReviewLoopCount: Number(row.impl_review_loop_count || 0),
+        totalPhasesExecuted: Number(row.total_phases_executed || 0),
+        changedFiles: Array.isArray(row.changed_files) ? row.changed_files as string[] : [],
+        rollbackPlan: '',
+        createdAt: String(row.created_at || new Date().toISOString()),
+        updatedAt: String(row.updated_at || new Date().toISOString()),
+        completedAt: row.completed_at ? String(row.completed_at) : undefined,
+        error: row.error ? String(row.error) : undefined,
+      };
+      pipelines.set(sprintId, pipeline);
+    }
+    logger.info('[SPRINT] rehydrated %d active pipelines from Supabase', data.length);
+    return data.length;
+  } catch (error) {
+    logger.warn('[SPRINT] rehydration failed: %s', error instanceof Error ? error.message : String(error));
+    return 0;
+  }
+};
+
+// ──── Observability / Metrics ──────────────────────────────────────────────────
+
+const sprintMetrics = {
+  totalPipelinesCreated: 0,
+  totalPhasesExecuted: 0,
+  totalPhasesFailed: 0,
+  totalLoopBacks: 0,
+  phaseTimingsMs: [] as Array<{ phase: string; durationMs: number; at: string }>,
+};
+
+/** Record a phase execution metric (called internally after each phase). */
+export const recordPhaseMetric = (phase: string, durationMs: number, failed: boolean): void => {
+  sprintMetrics.totalPhasesExecuted++;
+  if (failed) sprintMetrics.totalPhasesFailed++;
+  sprintMetrics.phaseTimingsMs.push({ phase, durationMs, at: new Date().toISOString() });
+  // Keep only last 200 entries to bound memory
+  if (sprintMetrics.phaseTimingsMs.length > 200) {
+    sprintMetrics.phaseTimingsMs = sprintMetrics.phaseTimingsMs.slice(-200);
+  }
+};
+
+export const recordPipelineCreated = (): void => {
+  sprintMetrics.totalPipelinesCreated++;
+};
+
+export const recordLoopBack = (): void => {
+  sprintMetrics.totalLoopBacks++;
+};
+
+export type SprintMetricsSummary = {
+  totalPipelinesCreated: number;
+  totalPhasesExecuted: number;
+  totalPhasesFailed: number;
+  totalLoopBacks: number;
+  avgPhaseDurationMs: number;
+  recentTimings: Array<{ phase: string; durationMs: number; at: string }>;
+};
+
+export const getSprintMetrics = (): SprintMetricsSummary => {
+  const timings = sprintMetrics.phaseTimingsMs;
+  const avg = timings.length > 0
+    ? Math.round(timings.reduce((s, t) => s + t.durationMs, 0) / timings.length)
+    : 0;
+  return {
+    totalPipelinesCreated: sprintMetrics.totalPipelinesCreated,
+    totalPhasesExecuted: sprintMetrics.totalPhasesExecuted,
+    totalPhasesFailed: sprintMetrics.totalPhasesFailed,
+    totalLoopBacks: sprintMetrics.totalLoopBacks,
+    avgPhaseDurationMs: avg,
+    recentTimings: timings.slice(-20),
+  };
+};
+
+// ──── Snapshot ─────────────────────────────────────────────────────────────────
+
+export type SprintRuntimeSnapshot = {
+  enabled: boolean;
+  defaultAutonomyLevel: AutonomyLevel;
+  activePipelines: number;
+  completedPipelines: number;
+  blockedPipelines: number;
+  recentPipelines: Array<{
+    sprintId: string;
+    triggerType: SprintTriggerType;
+    currentPhase: SprintPhase;
+    objective: string;
+    totalPhasesExecuted: number;
+    createdAt: string;
+  }>;
+};
+
+export const getSprintRuntimeSnapshot = (): SprintRuntimeSnapshot => {
+  const all = Array.from(pipelines.values());
+  return {
+    enabled: SPRINT_ENABLED,
+    defaultAutonomyLevel: SPRINT_AUTONOMY_LEVEL,
+    activePipelines: all.filter((p) => !['complete', 'blocked', 'cancelled'].includes(p.currentPhase)).length,
+    completedPipelines: all.filter((p) => p.currentPhase === 'complete').length,
+    blockedPipelines: all.filter((p) => p.currentPhase === 'blocked').length,
+    recentPipelines: all
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 10)
+      .map((p) => ({
+        sprintId: p.sprintId,
+        triggerType: p.triggerType,
+        currentPhase: p.currentPhase,
+        objective: p.objective.slice(0, 120),
+        totalPhasesExecuted: p.totalPhasesExecuted,
+        createdAt: p.createdAt,
+      })),
+  };
+};

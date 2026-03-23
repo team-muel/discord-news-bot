@@ -424,17 +424,7 @@ describe('executeSession integration path', () => {
     const completed = getAgentSession(created.id);
     expect(completed).not.toBeNull();
     expect(completed?.status).toBe('completed');
-    expect(completed?.shadowGraph).toBeTruthy();
-
-    const nodes = (completed?.shadowGraph?.trace || []).map((entry) => entry.node);
-    expect(nodes).toContain('ingest');
-    expect(nodes).toContain('compile_prompt');
-    expect(nodes).toContain('route_intent');
-    expect(nodes).toContain('policy_gate');
-    expect(nodes).toContain('hydrate_memory');
-    expect(nodes).toContain('plan_actions');
-    expect(nodes).toContain('execute_actions');
-    expect(nodes).toContain('compose_response');
-    expect(nodes).toContain('persist_and_emit');
+    // shadowGraph is released after terminal persistence for memory optimization
+    expect(completed?.shadowGraph).toBeNull();
   });
 });

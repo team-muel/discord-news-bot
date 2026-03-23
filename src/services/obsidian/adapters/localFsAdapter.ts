@@ -12,9 +12,21 @@ import type {
 
 const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown']);
 const DEFAULT_MAX_DOCS = 40;
-const DEFAULT_INDEX_TTL_MS = 15_000;
+const DEFAULT_INDEX_TTL_MS = 60_000;
 
 type IndexedDoc = {
+  title: string;
+  filePath: string;
+  excerpt: string;
+  modifiedAtMs: number;
+  tags: string[];
+  tagsLower: string[];
+  wordsLower: Set<string>;
+  links: string[];
+  backlinks: string[];
+};
+
+type RawDoc = {
   title: string;
   filePath: string;
   content: string;
@@ -22,12 +34,7 @@ type IndexedDoc = {
   modifiedAtMs: number;
   tags: string[];
   tagsLower: string[];
-  wordsLower: string[];
-  links: string[];
-  backlinks: string[];
-};
-
-type RawDoc = Omit<IndexedDoc, 'links' | 'backlinks'> & {
+  wordsLower: Set<string>;
   linkTargets: string[];
 };
 
@@ -255,7 +262,7 @@ function normalizeRawDoc(rawPath: string, rawContent: string, root: string, modi
     modifiedAtMs,
     tags,
     tagsLower: tags.map((tag) => tag.toLowerCase()),
-    wordsLower: toTerms(rawContent),
+    wordsLower: new Set(toTerms(rawContent)),
     linkTargets: parseWikilinks(rawContent),
   };
 }
@@ -298,7 +305,13 @@ function resolveDocLinks(docs: RawDoc[]): IndexedDoc[] {
     }
 
     return {
-      ...doc,
+      title: doc.title,
+      filePath: doc.filePath,
+      excerpt: doc.excerpt,
+      modifiedAtMs: doc.modifiedAtMs,
+      tags: doc.tags,
+      tagsLower: doc.tagsLower,
+      wordsLower: doc.wordsLower,
       links: [...links],
       backlinks: [],
     };
@@ -452,7 +465,12 @@ function applySearchQuery(index: VaultIndex, query: ObsidianSearchQuery): Obsidi
       return requiredTags.length > 0 || queryText.length === 0;
     }
 
-    const hasTextMatch = terms.every((term) => doc.wordsLower.some((word) => word.includes(term)));
+    const hasTextMatch = terms.every((term) => {
+      for (const word of doc.wordsLower) {
+        if (word.includes(term)) return true;
+      }
+      return false;
+    });
     if (hasTextMatch) {
       return true;
     }
@@ -463,7 +481,7 @@ function applySearchQuery(index: VaultIndex, query: ObsidianSearchQuery): Obsidi
   return filtered
     .map((doc) => {
       const nowMs = Date.now();
-      const baseScore = estimateRelevance(`${doc.title}\n${doc.content}`, queryText)
+      const baseScore = estimateRelevance(`${doc.title}\n${doc.excerpt}`, queryText)
         * clampFinite(SEARCH_TEXT_WEIGHT, 1);
       const titleMatchBonus = terms.reduce((sum, term) => (
         doc.title.toLowerCase().includes(term) ? sum + 2 : sum
@@ -550,57 +568,10 @@ async function writeNote(params: ObsidianNoteWriteInput): Promise<{ path: string
 
   const rendered = renderFrontmatter(params.properties, params.tags, params.content);
   await fs.writeFile(absolutePath, rendered, 'utf8');
-  const modifiedAtMs = Date.now();
 
+  // Invalidate index and trigger async rebuild instead of inline patching
   const key = normalizeVaultKey(vaultRoot);
-  const cached = localIndexCache.get(key);
-  if (cached && cached.docsByPath.size > 0) {
-    const existingRawDocs: RawDoc[] = [...cached.docsByPath.values()].map((doc) => ({
-      title: doc.title,
-      filePath: doc.filePath,
-      content: doc.content,
-      excerpt: doc.excerpt,
-      modifiedAtMs: doc.modifiedAtMs,
-      tags: doc.tags,
-      tagsLower: doc.tagsLower,
-      wordsLower: doc.wordsLower,
-      linkTargets: doc.links,
-    }));
-
-    const normalizedNew = normalizeRawDoc(absolutePath, rendered, vaultRoot, modifiedAtMs);
-    const filtered = existingRawDocs.filter((doc) => doc.filePath !== normalizedNew.filePath);
-    const rehydrated = resolveDocLinks([...filtered, normalizedNew]);
-
-    const docsByPath = new Map<string, IndexedDoc>();
-    const tags = new Map<string, Set<string>>();
-
-    for (const doc of rehydrated) {
-      docsByPath.set(doc.filePath, doc);
-      for (const tag of doc.tagsLower) {
-        const set = tags.get(tag);
-        if (set) {
-          set.add(doc.filePath);
-        } else {
-          tags.set(tag, new Set([doc.filePath]));
-        }
-      }
-    }
-
-    for (const doc of docsByPath.values()) {
-      doc.backlinks = buildBacklinksForDoc(doc.filePath, docsByPath);
-    }
-
-    const now = Date.now();
-    const connectivityByPath = buildConnectivityMap(docsByPath);
-    localIndexCache.set(key, {
-      docsByPath,
-      tags,
-      connectivityByPath,
-      builtAt: now,
-      expiresAt: now + indexTtlMs(),
-    });
-  }
-
+  localIndexCache.delete(key);
   triggerBackgroundRebuild(vaultRoot);
 
   return { path: normalizePathToPosix(path.relative(vaultRoot, absolutePath)) };

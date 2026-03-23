@@ -29,6 +29,10 @@ import {
   nemoclawReviewAction,
   opendevPlanAction,
   openjarvisOpsAction,
+  qaTestAction,
+  csoAuditAction,
+  releaseShipAction,
+  retroSummarizeAction,
 } from './agentCollab';
 import { getAction } from './registry';
 
@@ -152,5 +156,109 @@ describe('agentCollab actions', () => {
     expect(getAction('review.review')).not.toBeNull();
     expect(getAction('operate.ops')).not.toBeNull();
     expect(getAction('implement.execute')).not.toBeNull();
+  });
+});
+
+// ──── Sprint Phase Actions ────────────────────────────────────────────────────
+
+describe('sprint phase actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('qa.test', () => {
+    it('returns OBJECTIVE_EMPTY on empty goal', async () => {
+      const result = await qaTestAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('OBJECTIVE_EMPTY');
+      expect(result.agentRole).toBe('opencode');
+    });
+
+    it('returns ok with fallback text when LLM unavailable', async () => {
+      const result = await qaTestAction.execute({ goal: 'test sprint changes', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(result.agentRole).toBe('opencode');
+      expect(result.artifacts[0]).toContain('QA Report');
+      expect(result.artifacts[0]).toContain('manual QA required');
+    });
+
+    it('is deterministic', () => {
+      expect(qaTestAction.deterministic).toBe(true);
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('qa.test')).not.toBeNull();
+      expect(getAction('test.qa')).not.toBeNull();
+    });
+  });
+
+  describe('cso.audit', () => {
+    it('returns OBJECTIVE_EMPTY on empty goal', async () => {
+      const result = await csoAuditAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('OBJECTIVE_EMPTY');
+      expect(result.agentRole).toBe('nemoclaw');
+    });
+
+    it('returns ok with fallback text when LLM unavailable', async () => {
+      const result = await csoAuditAction.execute({ goal: 'audit auth module', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(result.agentRole).toBe('nemoclaw');
+      expect(result.artifacts[0]).toContain('Security Audit');
+      expect(result.artifacts[0]).toContain('manual audit required');
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('cso.audit')).not.toBeNull();
+      expect(getAction('security.audit')).not.toBeNull();
+    });
+  });
+
+  describe('release.ship', () => {
+    it('returns OBJECTIVE_EMPTY on empty goal', async () => {
+      const result = await releaseShipAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('OBJECTIVE_EMPTY');
+      expect(result.agentRole).toBe('openjarvis');
+    });
+
+    it('returns ok with fallback text when LLM unavailable', async () => {
+      const result = await releaseShipAction.execute({ goal: 'ship v2.1.0', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(result.agentRole).toBe('openjarvis');
+      expect(result.artifacts[0]).toContain('Ship Report');
+      expect(result.artifacts[0]).toContain('manual ship required');
+    });
+
+    it('is deterministic', () => {
+      expect(releaseShipAction.deterministic).toBe(true);
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('release.ship')).not.toBeNull();
+      expect(getAction('ship.release')).not.toBeNull();
+    });
+  });
+
+  describe('retro.summarize', () => {
+    it('returns OBJECTIVE_EMPTY on empty goal', async () => {
+      const result = await retroSummarizeAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('OBJECTIVE_EMPTY');
+      expect(result.agentRole).toBe('opendev');
+    });
+
+    it('returns ok with fallback text when LLM unavailable', async () => {
+      const result = await retroSummarizeAction.execute({ goal: 'sprint-42 retro', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(result.agentRole).toBe('opendev');
+      expect(result.artifacts[0]).toContain('Sprint Retro');
+      expect(result.artifacts[0]).toContain('manual retro required');
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('retro.summarize')).not.toBeNull();
+      expect(getAction('summary.retro')).not.toBeNull();
+    });
   });
 });

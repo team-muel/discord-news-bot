@@ -20,6 +20,9 @@ const userExecTimestamps = new Map<string, number[]>();
 const allowWithinRate = (store: Map<string, number[]>, key: string, limit: number, windowMs: number): boolean => {
   const now = Date.now();
   const next = (store.get(key) || []).filter((ts) => now - ts < windowMs);
+  if (next.length === 0) {
+    store.delete(key);
+  }
   if (next.length >= limit) {
     store.set(key, next);
     return false;

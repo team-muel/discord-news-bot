@@ -11,6 +11,9 @@ import { startTradingEngine } from './tradingEngine';
 import { startOpencodePublishWorker } from './opencodePublishWorker';
 import { startBotAutoRecovery } from './botAutoRecoveryService';
 import { startLoginSessionCleanupLoop } from '../discord/auth';
+import { rehydrateActivePipelines } from './sprint/sprintOrchestrator';
+import { startSprintScheduledTriggers } from './sprint/sprintTriggers';
+import { checkGitConfigHealth } from './sprint/autonomousGit';
 import logger from '../logger';
 
 const runtimeState = {
@@ -55,6 +58,17 @@ export const startServerProcessRuntime = (): void => {
   startTradingEngine();
   startRuntimeAlerts();
   startBotAutoRecovery();
+
+  // Restore in-progress sprint pipelines from Supabase
+  void rehydrateActivePipelines().catch((error) => {
+    logger.debug('[SPRINT] rehydration skipped: %s', getErrorMessage(error));
+  });
+
+  // Start scheduled sprint triggers (security audit, improvement)
+  startSprintScheduledTriggers();
+
+  // Validate sprint git config at startup
+  checkGitConfigHealth();
 
   runtimeState.serverStarted = true;
 };

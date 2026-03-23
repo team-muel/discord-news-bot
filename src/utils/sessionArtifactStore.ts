@@ -5,6 +5,7 @@
 
 const MAX_GUILD_INDEX = 300;
 const MAX_ENTRIES = 500;
+const MAX_RAW_RESULT_LENGTH = 2000;
 
 export type ArtifactEntry = {
   sessionId: string;
@@ -35,7 +36,11 @@ const pruneStore = () => {
 };
 
 export const saveArtifact = (entry: ArtifactEntry): void => {
-  store.set(entry.sessionId, { ...entry });
+  const truncated = { ...entry };
+  if (truncated.rawResult.length > MAX_RAW_RESULT_LENGTH) {
+    truncated.rawResult = truncated.rawResult.slice(0, MAX_RAW_RESULT_LENGTH);
+  }
+  store.set(entry.sessionId, truncated);
   pruneStore();
 
   const ids = guildIndex.get(entry.guildId) || [];

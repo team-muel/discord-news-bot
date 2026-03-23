@@ -4,6 +4,7 @@ import { setDefaultResultOrder } from 'dns';
 import logger from './src/logger';
 import initMonitoring from './src/init';
 import { initObsidianRAG } from './src/services/obsidianRagService';
+import { recordRuntimeError } from './src/services/sprint/sprintTriggers';
 
 // Initialize monitoring (Sentry) if configured
 initMonitoring();
@@ -12,10 +13,13 @@ setDefaultResultOrder('ipv4first');
 
 process.on('unhandledRejection', (reason) => {
   logger.error('[PROCESS] Unhandled rejection: %o', reason);
+  const message = reason instanceof Error ? reason.message : String(reason || 'unknown');
+  recordRuntimeError({ message, code: 'UNHANDLED_REJECTION' });
 });
 
 process.on('uncaughtException', (error) => {
   logger.error('[PROCESS] Uncaught exception: %o', error);
+  recordRuntimeError({ message: error.message || String(error), code: 'UNCAUGHT_EXCEPTION' });
 });
 
 const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;

@@ -20,6 +20,7 @@ const DEFAULT_SOCIAL_GRAPH_ENABLED = parseBooleanEnv(process.env.AGENT_CONSENT_D
 const DEFAULT_PROFILING_ENABLED = parseBooleanEnv(process.env.AGENT_CONSENT_DEFAULT_PROFILING_ENABLED, !REQUIRE_EXPLICIT_CONSENT);
 const DEFAULT_ACTION_AUDIT_DISCLOSURE_ENABLED = parseBooleanEnv(process.env.AGENT_CONSENT_DEFAULT_ACTION_AUDIT_DISCLOSURE_ENABLED, true);
 
+const MAX_CONSENT_CACHE_ENTRIES = 500;
 const memoryConsent = new Map<string, AgentUserConsentSnapshot>();
 
 const nowIso = () => new Date().toISOString();
@@ -127,6 +128,10 @@ export const upsertUserConsentSnapshot = async (params: {
   };
 
   memoryConsent.set(toConsentKey(guildId, userId), snapshot);
+  if (memoryConsent.size > MAX_CONSENT_CACHE_ENTRIES) {
+    const first = memoryConsent.keys().next().value;
+    if (first !== undefined) memoryConsent.delete(first);
+  }
 
   if (!isSupabaseConfigured()) {
     return snapshot;

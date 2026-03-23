@@ -1,5 +1,6 @@
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
-import { listActions } from './registry';
+import { getActionTermIndex, listActions } from './registry';
+import { getActionUtilityScore } from '../actionRunner';
 import type { ActionChainPlan, ActionPlan } from './types';
 import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../../utils/env';
@@ -7,6 +8,47 @@ import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../.
 const PLANNER_SELF_CONSISTENCY_ENABLED = parseBooleanEnv(process.env.PLANNER_SELF_CONSISTENCY_ENABLED, true);
 const PLANNER_SELF_CONSISTENCY_SAMPLES = Math.max(1, Math.min(5, parseIntegerEnv(process.env.PLANNER_SELF_CONSISTENCY_SAMPLES, 3)));
 const PLANNER_SELF_CONSISTENCY_TEMPERATURE = parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_TEMPERATURE, 0.35, 0, 1);
+const PLANNER_RULES_FIRST_ENABLED = parseBooleanEnv(process.env.PLANNER_RULES_FIRST_ENABLED, true);
+const PLANNER_CATALOG_MAX_ACTIONS = Math.max(5, parseIntegerEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12));
+
+const toGoalTerms = (text: string): Set<string> => {
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9\uac00-\ud7af_\-/]+/g).filter((t) => t.length >= 2),
+  );
+};
+
+const jaccardSets = (a: Set<string>, b: Set<string>): number => {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const item of a) {
+    if (b.has(item)) intersection += 1;
+  }
+  const union = a.size + b.size - intersection;
+  return union > 0 ? intersection / union : 0;
+};
+
+/** Rank actions by Jaccard similarity to the goal and return top-N catalog lines. */
+const buildPrunedCatalog = (goal: string, maxActions = PLANNER_CATALOG_MAX_ACTIONS): string => {
+  const goalTerms = toGoalTerms(goal);
+  const termIndex = getActionTermIndex();
+  const actions = listActions();
+
+  const ranked = actions
+    .map((action) => {
+      const relevance = jaccardSets(goalTerms, termIndex.get(action.name) || new Set());
+      const utility = getActionUtilityScore(action.name);
+      // Penalize actions with high recent failure rate (only when enough runs exist)
+      const utilityPenalty = utility.runs >= 3 && utility.successRate < 0.4 ? -0.1 : 0;
+      return {
+        action,
+        score: relevance + utilityPenalty,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxActions);
+
+  return ranked.map(({ action }) => `- ${action.name}: ${action.description}`).join('\n');
+};
 
 const applyRagPriority = async (plans: ActionPlan[], goal: string): Promise<ActionPlan[]> => {
   if (!(await isRagIntentGoal(goal))) {
@@ -138,12 +180,21 @@ const requestPlanCandidate = async (params: {
 };
 
 export const planActions = async (goal: string): Promise<ActionChainPlan> => {
+  // Rules-first fast-path: if regex rules produce a plan, skip LLM entirely.
+  if (PLANNER_RULES_FIRST_ENABLED) {
+    const rulesPlan = await buildFallbackPlan(goal);
+    if (rulesPlan.length > 0) {
+      const withRag = await applyRagPriority(rulesPlan, goal);
+      return { actions: withRag.slice(0, 3) };
+    }
+  }
+
   if (!isAnyLlmConfigured()) {
     return { actions: await fallbackPlan(goal) };
   }
 
   const actions = listActions();
-  const catalog = actions.map((action) => `- ${action.name}: ${action.description}`).join('\n');
+  const catalog = buildPrunedCatalog(goal);
   const prompt = [
     '아래 목표를 가장 잘 수행할 액션 체인을 선택하세요.',
     '출력은 JSON 한 줄만 허용합니다.',

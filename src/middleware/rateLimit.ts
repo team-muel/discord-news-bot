@@ -17,6 +17,16 @@ type Bucket = {
 
 const buckets = new Map<string, Bucket>();
 
+const SWEEP_INTERVAL_MS = 30_000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAtMs <= now) {
+      buckets.delete(key);
+    }
+  }
+}, SWEEP_INTERVAL_MS).unref();
+
 const buildDefaultKey = (req: Request): string => {
   const userId = req.user?.id || 'anon';
   const ip = req.ip || req.socket.remoteAddress || 'unknown-ip';

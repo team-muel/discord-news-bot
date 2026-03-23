@@ -20,6 +20,7 @@ const DEFAULT_SOCIAL_GRAPH_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_
 const DEFAULT_CONVERSATION_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_CONVERSATION_RETENTION_DAYS, 90));
 const DEFAULT_APPROVAL_REQUEST_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_APPROVAL_RETENTION_DAYS, 30));
 
+const MAX_POLICY_CACHE_ENTRIES = 300;
 const memoryPolicies = new Map<string, AgentRetentionPolicySnapshot>();
 
 const nowIso = () => new Date().toISOString();
@@ -123,6 +124,10 @@ export const upsertAgentRetentionPolicy = async (params: {
   };
 
   memoryPolicies.set(guildId, policy);
+  if (memoryPolicies.size > MAX_POLICY_CACHE_ENTRIES) {
+    const first = memoryPolicies.keys().next().value;
+    if (first !== undefined) memoryPolicies.delete(first);
+  }
 
   if (!isSupabaseConfigured()) {
     return policy;

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import logger from '../logger';
 import { buildAgentMemoryHints } from './agentMemoryService';
+import { TtlCache } from '../utils/ttlCache';
 import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agentPolicyService';
 import { persistAgentSession } from './agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn } from './conversationTurnService';
@@ -213,6 +214,44 @@ const LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS = Math.max(5, Math.min(200, Number(pro
 const sessions = new Map<string, AgentSession>();
 const queueRuntime = new MultiAgentRuntimeQueue<AgentSession>();
 
+// Cross-session outcome hints: recent terminal session summaries per guild
+type SessionOutcomeEntry = { status: string; error: string | null; goalSnippet: string; stepCount: number };
+const recentSessionOutcomes = new TtlCache<SessionOutcomeEntry[]>(200);
+const SESSION_OUTCOME_TTL_MS = 120_000;
+const SESSION_OUTCOME_MAX_PER_GUILD = 5;
+
+const recordSessionOutcome = (session: AgentSession, status: string): void => {
+  const key = session.guildId;
+  if (!key) return;
+  const existing = recentSessionOutcomes.get(key) || [];
+  existing.unshift({
+    status,
+    error: session.error,
+    goalSnippet: String(session.goal || '').slice(0, 80),
+    stepCount: session.steps.length,
+  });
+  recentSessionOutcomes.set(key, existing.slice(0, SESSION_OUTCOME_MAX_PER_GUILD), SESSION_OUTCOME_TTL_MS);
+};
+
+export const getRecentSessionOutcomes = (guildId: string): SessionOutcomeEntry[] => {
+  return recentSessionOutcomes.get(guildId) || [];
+};
+
+// Per-guild complexity history for adaptive reasoning budget
+type ComplexityRecord = { stepCount: number; traceLength: number };
+const complexityHistory = new TtlCache<ComplexityRecord[]>(200);
+const COMPLEXITY_HISTORY_TTL_MS = 300_000;
+const COMPLEXITY_HISTORY_MAX_PER_GUILD = 10;
+
+const recordComplexityMetric = (session: AgentSession): void => {
+  const key = session.guildId;
+  if (!key) return;
+  const traceLength = session.shadowGraph?.trace?.length || 0;
+  const existing = complexityHistory.get(key) || [];
+  existing.unshift({ stepCount: session.steps.length, traceLength });
+  complexityHistory.set(key, existing.slice(0, COMPLEXITY_HISTORY_MAX_PER_GUILD), COMPLEXITY_HISTORY_TTL_MS);
+};
+
 const GOT_SHADOW_RECORD_TASK = 'got_shadow_record';
 const TOT_CANDIDATE_PAIR_RECORD_TASK = 'tot_candidate_pair_record';
 
@@ -247,7 +286,7 @@ const enqueueBestEffortTelemetry = (params: {
 
 type ReasoningComplexity = 'low' | 'medium' | 'high';
 
-const estimateReasoningComplexity = (taskGoal: string, priority: AgentPriority): ReasoningComplexity => {
+const estimateReasoningComplexity = (taskGoal: string, priority: AgentPriority, guildId?: string): ReasoningComplexity => {
   const text = String(taskGoal || '').trim();
   if (!AGENT_DYNAMIC_REASONING_BUDGET_ENABLED) {
     return priority === 'precise' ? 'high' : priority === 'fast' ? 'low' : 'medium';
@@ -257,20 +296,31 @@ const estimateReasoningComplexity = (taskGoal: string, priority: AgentPriority):
   const hardKeywords = /(설계|아키텍처|migration|마이그레이션|cutover|rollout|benchmark|성능|지연|보안|privacy|policy|gate|리스크)/i;
   const lowKeywords = /(요약|짧게|한줄|간단|quick|빠르게)/i;
 
+  // Historical complexity boost: if recent sessions in this guild used many steps, bump up
+  let historicalBump: ReasoningComplexity | null = null;
+  if (guildId) {
+    const history = complexityHistory.get(guildId);
+    if (history && history.length >= 2) {
+      const avgSteps = history.reduce((sum, r) => sum + r.stepCount, 0) / history.length;
+      if (avgSteps >= 4) historicalBump = 'high';
+      else if (avgSteps >= 2.5) historicalBump = 'medium';
+    }
+  }
+
   if (priority === 'precise' || hardKeywords.test(text) || length >= AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH) {
     return 'high';
   }
   if (priority === 'fast' || lowKeywords.test(text) || length < AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH) {
-    return 'low';
+    return historicalBump === 'high' ? 'medium' : 'low';
   }
-  return 'medium';
+  return historicalBump === 'high' ? 'high' : 'medium';
 };
 
 const resolveFinalSelfConsistencySamples = (session: AgentSession, taskGoal: string): number => {
   if (!FINAL_SELF_CONSISTENCY_ENABLED) {
     return 1;
   }
-  const complexity = estimateReasoningComplexity(taskGoal, session.priority);
+  const complexity = estimateReasoningComplexity(taskGoal, session.priority, session.guildId);
   if (complexity === 'low') {
     return 1;
   }
@@ -289,7 +339,7 @@ const resolveTotShadowBudget = (params: {
   replayTopK: number;
   localSearchMutations: number;
 } => {
-  const complexity = estimateReasoningComplexity(params.taskGoal, params.session.priority);
+  const complexity = estimateReasoningComplexity(params.taskGoal, params.session.priority, params.session.guildId);
   if (complexity === 'low') {
     return {
       maxBranches: Math.min(params.policy.maxBranches, 1),
@@ -1293,6 +1343,16 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
   touch(session);
   void persistAgentSession(cloneSession(session));
 
+  // Record cross-session metrics before releasing heavy structures
+  recordComplexityMetric(session);
+  recordSessionOutcome(session, status);
+
+  // Release heavy in-memory structures after persistence
+  session.shadowGraph = null;
+  for (const step of session.steps) {
+    step.output = undefined as any;
+  }
+
   const assistantPayload = nodeResult.assistantPayload;
   if (assistantPayload) {
     void bindSessionAssistantTurn({
@@ -1407,7 +1467,17 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       goal: taskGoal,
       maxItems: 4,
       requesterUserId: session.requestedBy,
-    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_HINT_TIMEOUT').catch(() => []);
+    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_HINT_TIMEOUT').catch((): string[] => []);
+
+    // Inject cross-session outcome hints (recent failures in this guild)
+    const outcomes = getRecentSessionOutcomes(session.guildId);
+    const recentFailures = outcomes.filter((o) => o.status === 'failed' && o.error);
+    if (recentFailures.length > 0) {
+      intentHints.push(
+        ...recentFailures.slice(0, 2).map((f) => `[최근 실패] "${f.goalSnippet}" → ${String(f.error).slice(0, 80)}`),
+      );
+    }
+
     session.routedIntent = await runRouteIntentNode({
       goal: compiledPrompt.normalizedGoal || taskGoal,
       requestedSkillId: session.requestedSkillId,

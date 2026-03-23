@@ -1,102 +1,84 @@
 ---
-description: "Use when triaging tasks across OpenCode, NemoClaw, OpenJarvis, and OpenDev; enforce deterministic routing and handoff contracts."
+description: "Sprint-flow skill routing for autonomous agent pipelines — use when triaging tasks across sprint phases."
 ---
 
-# Multi-Agent Routing Instruction
+# Sprint Pipeline Routing
 
 ## Goal
 
-Route each task through the right collaboration mode with minimal ambiguity.
+Route tasks through sprint phases with deterministic flow and clear safety gates.
 
-Boundary note:
+## Default Sprint Flow
 
-- OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are collaboration roles used by this repository's local IDE workflow
-- matching role names do not imply direct installation or embedding of upstream open-source systems
-- actual execution support must be confirmed through runtime actions, worker configuration, and operator endpoints in the repository runtime
-- similarly named external frameworks and model stacks must be treated as separate systems unless explicitly integrated by runtime configuration
+```
+/plan → /implement → /review → /qa → /ops-validate → /ship → /retro
+```
 
-Canonical naming and runtime surface source of truth:
+## Conditional Phase Insertions
 
-- `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
-- `docs/ROLE_RENAME_MAP.md`
+- `/security-audit`: inserted between `/review` and `/qa` when high-risk content is detected
+- Implement↔review loop: up to `SPRINT_MAX_IMPL_REVIEW_LOOPS` (default 3) iterations when review finds critical issues
 
-## Routing Modes
+## Phase → Lead Agent Mapping
 
-Local collaborative mode (IDE-first exploration and development):
+| Phase             | Lead Agent | Runtime Action     |
+| ----------------- | ---------- | ------------------ |
+| `/plan`           | OpenDev    | `opendev.plan`     |
+| `/implement`      | OpenCode   | `opencode.execute` |
+| `/review`         | NemoClaw   | `nemoclaw.review`  |
+| `/qa`             | OpenCode   | `qa.test`          |
+| `/security-audit` | NemoClaw   | `cso.audit`        |
+| `/ops-validate`   | OpenJarvis | `openjarvis.ops`   |
+| `/ship`           | OpenJarvis | `release.ship`     |
+| `/retro`          | OpenDev    | `retro.summarize`  |
 
-1. Select one lead agent based on the dominant task shape.
-2. Allow up to two consult agents in parallel for architecture, review, or ops input.
-3. Return to the lead agent for synthesis and next action.
-4. Escalate to delivery mode only when the task becomes release-sensitive or spans multiple risk domains.
+## Autonomy Levels
 
-Delivery mode (feature or code change):
+| Level          | plan         | implement    | review       | qa           | ship         |
+| -------------- | ------------ | ------------ | ------------ | ------------ | ------------ |
+| `full-auto`    | auto         | auto         | auto         | auto         | auto         |
+| `approve-ship` | auto         | auto         | auto         | auto         | **approval** |
+| `approve-impl` | auto         | **approval** | auto         | auto         | **approval** |
+| `manual`       | **approval** | **approval** | **approval** | **approval** | **approval** |
 
-1. OpenDev: define target state, constraints, and milestone slice.
-2. OpenCode: implement the smallest safe change set.
-3. NemoClaw: review for regressions, security, and test gaps.
-4. OpenJarvis: validate operational readiness, rollback, and unattended safety.
+Default: `approve-ship` — safest balance of automation and human oversight.
 
-Operations mode (incident, release, recovery):
+## Trigger Types
 
-- OpenJarvis classifies first, then routes by ownership and risk.
+- `manual`: user invokes via Discord command or API
+- `error-detection`: runtime error pattern threshold exceeded
+- `cs-ticket`: CS channel message classified as bug-report or feature-request
+- `scheduled`: cron-based security audit or self-improvement
+- `self-improvement`: retro pattern analysis triggers targeted fix sprint
 
-Mode selection rule:
+## IDE Usage
 
-- Use `local-collab` by default for local IDE work, brainstorming, iterative implementation, and mixed architecture-plus-code tasks.
-- Use `delivery` when the user requests a release-grade execution sequence, PR-ready changes, or formal stage gates.
-- Use `operations` for incidents, unattended automation, releases, rollbacks, and recovery workflows.
+Each skill can be invoked directly from the IDE:
 
-## Classification Rules
+- Every SKILL.md in `.github/skills/` defines when to use, process, and output contract
+- The "Next Skills" table in each SKILL.md serves as the routing guide
+- No complex mode selection or consult patterns required — sprint order is the guide
 
-- `architecture`, `roadmap`, `ADR`, `trade-off` -> OpenDev first.
-- `implement`, `refactor`, `bugfix`, `test` -> OpenCode first.
-- `review`, `risk`, `regression`, `security` -> NemoClaw first.
-- `workflow`, `runbook`, `deployment`, `automation`, `rollback` -> OpenJarvis first.
+## Runtime Usage
 
-## Collaboration Rules
+- `sprintOrchestrator` executes phases sequentially via `actionRunner`
+- Each phase uses the existing governance gates, FinOps budgets, and circuit breakers
+- Git operations (branch/commit/PR) are handled by `autonomousGit` when `SPRINT_GIT_ENABLED=true`
+- Pipeline state persists to Supabase table `sprint_pipelines`
 
-- In `local-collab`, treat agent specialties as primary strengths, not exclusive ownership.
-- A lead agent may consult another agent without surrendering ownership of the task.
-- Prefer consult patterns such as `OpenCode + OpenDev`, `OpenCode + NemoClaw`, `OpenJarvis + NemoClaw`, or `OpenDev + OpenJarvis` when the task spans design, implementation, safety, and ops.
-- Do not force a full sequential handoff unless the task is explicitly release-sensitive.
-- When consult input conflicts, the lead agent must synthesize the trade-off and choose the next step explicitly.
+## Safety Guardrails
 
-## Shared Payload Contract
+- Changed file cap per sprint: `SPRINT_CHANGED_FILE_CAP` (default 10)
+- Phase timeout: `SPRINT_PHASE_TIMEOUT_MS` (default 120s)
+- Total phase execution limit: `SPRINT_MAX_TOTAL_PHASES` (default 12)
+- Protected branches (main/master/production) cannot be modified directly
+- All code changes go through branch → PR → merge flow
 
-Every stage payload must include:
+## Boundary Note
 
-- `task_id`
-- `guild_id`
-- `objective`
-- `constraints`
-- `risk_level`
-- `acceptance_criteria`
-- `inputs`
-- `budget`
-
-## Handoff Contract
-
-Every stage must emit:
-
-- Scope and non-goals
-- Changed files or touched surfaces
-- Validation commands and outcomes
-- Risks, rollback path, and next owner
-
-For `local-collab`, also include:
-
-- Lead agent
-- Consulted agents and why they were consulted
-- Whether escalation to `delivery` or `operations` mode is now required
-
-Preferred structured output fields across prompts:
-
-- `lead_agent`: current owner plus ownership reason
-- `consult_agents`: optional specialist inputs with timing and purpose
-- `required_gates`: checks required before release or escalation
-- `handoff`: next owner, why, and expected outcome
-- `escalation`: whether the task should move to `delivery` or `operations`
-- `next_action`: immediate action for the current owner
+Role names (OpenCode, OpenDev, NemoClaw, OpenJarvis) are repository-local collaboration labels.
+They do not imply installation of similarly named external OSS frameworks.
+Runtime integration exists only where registered actions and configured workers are present.
 
 ## Hard Gates
 

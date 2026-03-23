@@ -4,6 +4,10 @@ import {
   nemoclawReviewAction,
   opendevPlanAction,
   openjarvisOpsAction,
+  qaTestAction,
+  csoAuditAction,
+  releaseShipAction,
+  retroSummarizeAction,
 } from './agentCollab';
 import { investmentAnalysisAction } from './analysis';
 import { codeGenerateAction } from './code';
@@ -65,10 +69,31 @@ const ACTIONS: ActionDefinition[] = [
   webFetchAction,
   dbSupabaseReadAction,
   toolsRunCliAction,
+  qaTestAction,
+  aliasAction('test.qa', 'Neutral alias for qa.test.', qaTestAction),
+  csoAuditAction,
+  aliasAction('security.audit', 'Neutral alias for cso.audit.', csoAuditAction),
+  releaseShipAction,
+  aliasAction('ship.release', 'Neutral alias for release.ship.', releaseShipAction),
+  retroSummarizeAction,
+  aliasAction('summary.retro', 'Neutral alias for retro.summarize.', retroSummarizeAction),
 ];
 
 const ACTION_MAP = new Map<string, ActionDefinition>(ACTIONS.map((action) => [action.name, action]));
 
+// Pre-built term sets for Jaccard-based tool filtering in planner
+const toTermSet = (text: string): Set<string> => {
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9\uac00-\ud7af_\-/]+/g).filter((t) => t.length >= 2),
+  );
+};
+
+const actionTermIndex = new Map<string, Set<string>>(
+  ACTIONS.map((action) => [action.name, toTermSet(`${action.name} ${action.description}`)]),
+);
+
 export const listActions = (): ActionDefinition[] => ACTIONS.map((action) => ({ ...action }));
 
 export const getAction = (actionName: string): ActionDefinition | null => ACTION_MAP.get(actionName) || null;
+
+export const getActionTermIndex = (): ReadonlyMap<string, Set<string>> => actionTermIndex;

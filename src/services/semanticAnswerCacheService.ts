@@ -1,5 +1,6 @@
 import { parseBoundedNumberEnv, parseIntegerEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { TtlCache } from '../utils/ttlCache';
 
 type CacheRow = {
   id: number;
@@ -24,6 +25,9 @@ const SEMANTIC_CACHE_ENABLED = String(process.env.SEMANTIC_ANSWER_CACHE_ENABLED 
 const SEMANTIC_CACHE_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY, 0.82, 0, 1);
 const SEMANTIC_CACHE_LOOKBACK_DAYS = Math.max(1, parseIntegerEnv(process.env.SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS, 14));
 const SEMANTIC_CACHE_CANDIDATE_LIMIT = Math.max(10, Math.min(500, parseIntegerEnv(process.env.SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT, 120)));
+
+const HOT_CACHE_TTL_MS = 15_000;
+const hotCandidateCache = new TtlCache<CacheRow[]>(100);
 
 const tokenize = (text: string): string[] => {
   const normalized = String(text || '').toLowerCase();
@@ -80,22 +84,27 @@ export const getSemanticAnswerCache = async (params: {
   }
 
   const sinceIso = new Date(Date.now() - SEMANTIC_CACHE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('agent_semantic_answer_cache')
-    .select('id, guild_id, question, answer, intent, source_files, hit_count, created_at')
-    .eq('guild_id', guildId)
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(SEMANTIC_CACHE_CANDIDATE_LIMIT);
 
-  if (error) {
-    return null;
-  }
+  let candidates: CacheRow[];
+  const hotKey = `${guildId}::${sinceIso.slice(0, 10)}`;
+  const hotHit = hotCandidateCache.get(hotKey);
+  if (hotHit) {
+    candidates = hotHit;
+  } else {
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from('agent_semantic_answer_cache')
+      .select('id, guild_id, question, answer, intent, source_files, hit_count, created_at')
+      .eq('guild_id', guildId)
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(SEMANTIC_CACHE_CANDIDATE_LIMIT);
 
-  let best: { row: CacheRow; similarity: number } | null = null;
-  for (const raw of (data || []) as Array<Record<string, unknown>>) {
-    const row: CacheRow = {
+    if (error) {
+      return null;
+    }
+
+    candidates = ((data || []) as Array<Record<string, unknown>>).map((raw) => ({
       id: Number(raw.id || 0),
       guild_id: String(raw.guild_id || ''),
       question: String(raw.question || ''),
@@ -104,7 +113,12 @@ export const getSemanticAnswerCache = async (params: {
       source_files: toSourceFiles(raw.source_files),
       hit_count: Number(raw.hit_count || 0),
       created_at: String(raw.created_at || ''),
-    };
+    }));
+    hotCandidateCache.set(hotKey, candidates, HOT_CACHE_TTL_MS);
+  }
+
+  let best: { row: CacheRow; similarity: number } | null = null;
+  for (const row of candidates) {
     if (!row.answer) continue;
 
     const score = jaccard(queryTokens, tokenize(row.question));
@@ -120,7 +134,7 @@ export const getSemanticAnswerCache = async (params: {
     return null;
   }
 
-  void client
+  void getSupabaseClient()
     .from('agent_semantic_answer_cache')
     .update({
       hit_count: Math.max(0, Number(best.row.hit_count || 0)) + 1,
@@ -167,4 +181,7 @@ export const putSemanticAnswerCache = async (params: {
     hit_count: 0,
     last_hit_at: null,
   });
+
+  // Invalidate hot cache for this guild so next read picks up the new entry
+  hotCandidateCache.pruneExpired();
 };

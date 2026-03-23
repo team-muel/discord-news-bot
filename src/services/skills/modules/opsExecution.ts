@@ -5,12 +5,17 @@ import { parseBooleanEnv } from '../../../utils/env';
 
 const REACT_REFLECT_ON_ACTION_FAILURE_ENABLED = parseBooleanEnv(process.env.REACT_REFLECT_ON_ACTION_FAILURE_ENABLED, true);
 const OPS_EXECUTION_ACTION_RUNNER_ENABLED = parseBooleanEnv(process.env.OPS_EXECUTION_ACTION_RUNNER_ENABLED, true);
+const OPS_EXECUTION_ALWAYS_ATTEMPT_ACTIONS = parseBooleanEnv(process.env.OPS_EXECUTION_ALWAYS_ATTEMPT_ACTIONS, true);
 
-const ACTIONABLE_GOAL_PATTERN = /(webhook|웹훅|api|엔드포인트|크롤|crawler|crawl|scrape|검색|search|조회|fetch|뉴스|news|youtube|유튜브|quote|chart|시세|가격|stock|db\.|supabase|notify|알림|자동화|automation|worker|mcp)/i;
+const ACTIONABLE_GOAL_PATTERN = /(webhook|웹훅|api|엔드포인트|크롤|crawler|crawl|scrape|검색|search|조회|fetch|뉴스|news|youtube|유튜브|quote|chart|시세|가격|stock|db\.|supabase|notify|알림|자동화|automation|worker|mcp|분석|analyze|analysis|날씨|weather|확인|check|요약|summary|summarize|정리|추천|recommend|비교|compare|리뷰|review|투자|invest|종목|coin|crypto|코인|환율|exchange|알아|찾아|궁금|물어|질문)/i;
 
 const shouldAttemptActionRunner = (goal: string): boolean => {
   if (!OPS_EXECUTION_ACTION_RUNNER_ENABLED) {
     return false;
+  }
+  // Always attempt action runner — let planner decide if no action fits.
+  if (OPS_EXECUTION_ALWAYS_ATTEMPT_ACTIONS) {
+    return true;
   }
   return ACTIONABLE_GOAL_PATTERN.test(String(goal || ''));
 };

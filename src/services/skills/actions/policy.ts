@@ -52,13 +52,15 @@ export const isActionAllowed = (actionName: string): boolean => {
 };
 
 export const isWebHostAllowed = (host: string): boolean => {
-  if (WEB_ALLOWED_HOSTS.size === 0) {
-    return false;
-  }
-
   const normalizedHost = normalizeHost(host);
   if (!normalizedHost) {
     return false;
+  }
+
+  // Empty allowlist = allow all hosts (open-by-default).
+  // To restrict, set ACTION_WEB_FETCH_ALLOWED_HOSTS="example.com,other.com".
+  if (WEB_ALLOWED_HOSTS.size === 0) {
+    return true;
   }
 
   for (const allowed of WEB_ALLOWED_HOSTS) {

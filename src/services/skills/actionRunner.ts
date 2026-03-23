@@ -128,6 +128,31 @@ const ACTION_RUNNER_MODE = getActionRunnerMode();
 const ACTION_CACHE_ENABLED = parseBooleanEnv(process.env.ACTION_CACHE_ENABLED, true);
 const ACTION_CACHE_TTL_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000));
 const ACTION_CACHE_MAX_ENTRIES = Math.max(50, parseIntegerEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000));
+const ACTION_GOVERNANCE_FAST_PATH_ENABLED = parseBooleanEnv(process.env.ACTION_GOVERNANCE_FAST_PATH_ENABLED, true);
+
+/** Read-only actions that skip guild policy + FinOps + gate-verdict governance. */
+const GOVERNANCE_FAST_PATH_ACTIONS: ReadonlySet<string> = new Set(
+  String(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '').trim()
+    ? String(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS).split(',').map((s) => s.trim()).filter(Boolean)
+    : [
+      'web.search',
+      'web.fetch',
+      'news.google.search',
+      'news.verify',
+      'rag.retrieve',
+      'community.search',
+      'stock.quote',
+      'stock.chart',
+      'youtube.search.first',
+      'db.supabase.read',
+      'investment.analysis',
+    ],
+);
+
+const isGovernanceFastPathEligible = (actionName: string): boolean => {
+  return ACTION_GOVERNANCE_FAST_PATH_ENABLED && GOVERNANCE_FAST_PATH_ACTIONS.has(actionName);
+};
+
 const ACTION_NEWS_CAPTURE_ENABLED = parseBooleanEnv(process.env.ACTION_NEWS_CAPTURE_ENABLED, true);
 const ACTION_NEWS_CAPTURE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000));
 const ACTION_NEWS_CAPTURE_MIN_ITEMS = Math.max(1, Math.min(5, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2)));
@@ -176,6 +201,36 @@ const actionResultCache = new TtlCache<{
 }>(ACTION_CACHE_MAX_ENTRIES);
 
 const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
+
+// Per-action utility scores: rolling success rate for planner feedback
+const actionUtilityScores = new Map<string, { runs: number; successes: number; lastFailedAt: number }>();
+const ACTION_UTILITY_MAX_ACTIONS = 100;
+
+const updateActionUtility = (actionName: string, succeeded: boolean): void => {
+  const current = actionUtilityScores.get(actionName) || { runs: 0, successes: 0, lastFailedAt: 0 };
+  current.runs += 1;
+  if (succeeded) {
+    current.successes += 1;
+  } else {
+    current.lastFailedAt = Date.now();
+  }
+  actionUtilityScores.set(actionName, current);
+  if (actionUtilityScores.size > ACTION_UTILITY_MAX_ACTIONS) {
+    const first = actionUtilityScores.keys().next().value;
+    if (first !== undefined) actionUtilityScores.delete(first);
+  }
+};
+
+export const getActionUtilityScore = (actionName: string): { successRate: number; runs: number; recentlyFailed: boolean } => {
+  const entry = actionUtilityScores.get(actionName);
+  if (!entry || entry.runs === 0) return { successRate: 1, runs: 0, recentlyFailed: false };
+  return {
+    successRate: entry.successes / entry.runs,
+    runs: entry.runs,
+    recentlyFailed: (Date.now() - entry.lastFailedAt) < 60_000,
+  };
+};
+
 let lastFinopsBudgetFetchErrorLogAt = 0;
 
 const getFinopsBudgetStatusSafely = async (guildId: string) => {
@@ -742,6 +797,7 @@ const isCircuitOpen = (actionName: string): boolean => {
 };
 
 const recordSuccess = (actionName: string) => {
+  updateActionUtility(actionName, true);
   if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
     return;
   }
@@ -749,6 +805,7 @@ const recordSuccess = (actionName: string) => {
 };
 
 const recordFailure = (actionName: string) => {
+  updateActionUtility(actionName, false);
   if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
     return;
   }
@@ -900,7 +957,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
   }
 
   for (const planned of chain.actions) {
-    if (budget?.enabled) {
+    if (budget?.enabled && !isGovernanceFastPathEligible(planned.actionName)) {
       const finopsDecision = decideFinopsAction({
         budget,
         actionName: planned.actionName,
@@ -978,6 +1035,10 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       continue;
     }
 
+    // Governance fast-path: read-only actions skip guild policy / FinOps / approval gates.
+    const fastPath = isGovernanceFastPathEligible(action.name);
+
+    if (!fastPath) {
     let governance;
     try {
       governance = await getGuildActionPolicy(input.guildId, action.name);
@@ -1071,6 +1132,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       });
       continue;
     }
+    } // end !fastPath governance block
 
     handledAny = true;
 

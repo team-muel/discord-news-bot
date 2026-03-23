@@ -75,6 +75,8 @@ export type ActionExecutionResult = {
 export type ActionDefinition = {
   name: string;
   description: string;
+  /** When true, this action runs without LLM — subprocess exit code drives pass/fail. */
+  deterministic?: boolean;
   execute: (input: ActionExecutionInput) => Promise<ActionExecutionResult>;
 };
 
