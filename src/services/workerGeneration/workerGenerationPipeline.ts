@@ -2,7 +2,7 @@ import logger from '../../logger';
 import { generateText } from '../llmClient';
 import { createApproval, updateApprovalCode, type PendingWorkerApproval } from './workerApprovalStore';
 import { cleanupSandbox, writeSandboxFile } from './workerSandbox';
-import { runNemoClawDiscoverExecutor, runOpenDevVerifyExecutor } from './workerExecutors';
+import { runNemoClawDiscoverExecutor, runArchitectVerifyExecutor } from './workerExecutors';
 
 const compact = (v: unknown): string => String(v || '').replace(/\s+/g, ' ').trim();
 
@@ -94,12 +94,12 @@ export const runWorkerGenerationPipeline = async (params: {
   });
   logger.info('[WORKER-GEN][NEMOCLAW] discover ok=%s risk=%s errors=%o', discover.ok, discover.riskLevel, discover.validationErrors);
 
-  // 3. OpenDev verify stage (release eligibility + approval policy)
-  const verify = runOpenDevVerifyExecutor({
+  // 3. Architect verify stage (release eligibility + approval policy)
+  const verify = runArchitectVerifyExecutor({
     discover,
     requestedBy: params.requestedBy,
   });
-  logger.info('[WORKER-GEN][OPENDEV] verify ok=%s releaseEligible=%s reasons=%o', verify.ok, verify.releaseEligible, verify.reasons);
+  logger.info('[WORKER-GEN][ARCHITECT] verify ok=%s releaseEligible=%s reasons=%o', verify.ok, verify.releaseEligible, verify.reasons);
 
   // 4. Write to sandbox
   let sandbox: { sandboxDir: string; filePath: string };

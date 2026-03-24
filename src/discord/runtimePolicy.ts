@@ -105,3 +105,29 @@ export const DISCORD_VIBE_DEDUP_MAX_ENTRIES = clamp(
   100,
   5000,
 );
+
+// ─── H-001: Simple command allowlist ──────────────────────────────────────────
+const parseCommandAllowlist = (): ReadonlySet<string> => {
+  const override = String(process.env.DISCORD_SIMPLE_COMMAND_ALLOWLIST || '').trim();
+  if (override) {
+    return new Set(override.split(',').map((s) => s.trim()).filter(Boolean));
+  }
+  return new Set([
+    'ping', 'help', '도움말', '로그인', '구독', '해줘', '만들어줘',
+    '주가', '차트', '상태', '설정', '정책', '세션', '관리설정',
+    '잊어줘', '학습', '유저', '유저 프로필 보기', '유저 메모 추가',
+  ]);
+};
+export const SIMPLE_COMMAND_ALLOWLIST: ReadonlySet<string> = parseCommandAllowlist();
+
+// ─── H-003: Session streaming / timeout ───────────────────────────────────────
+const parsePositiveInt = (value: string | undefined, fallback: number, min = 1): number => {
+  const parsed = Number(value || '');
+  return Number.isFinite(parsed) ? Math.max(min, Math.floor(parsed)) : fallback;
+};
+
+export const SESSION_PROGRESS_TIMEOUT_MS = parsePositiveInt(process.env.DISCORD_SESSION_PROGRESS_TIMEOUT_MS, 3 * 60 * 1000, 10_000);
+export const SESSION_PROGRESS_INTERVAL_MS = parsePositiveInt(process.env.DISCORD_SESSION_PROGRESS_INTERVAL_MS, 2200, 500);
+export const SESSION_PROGRESS_UPDATE_BUCKET_MS = parsePositiveInt(process.env.DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS, 10_000, 1000);
+export const SESSION_RESULT_CLIP_LIMIT_DEBUG = parsePositiveInt(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_DEBUG, 1700, 200);
+export const SESSION_RESULT_CLIP_LIMIT_USER = parsePositiveInt(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_USER, 1200, 200);

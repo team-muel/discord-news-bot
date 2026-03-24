@@ -5,16 +5,21 @@ import { appendOutcomeSignalVerification, type OutcomeSignal } from '../../obser
 const toAgentRole = (workerKind: McpWorkerKind): NonNullable<ActionExecutionResult['agentRole']> => {
   switch (workerKind) {
     case 'opencode':
-      return 'opencode';
+    case 'implement':
+      return 'implement';
     case 'opendev':
-      return 'opendev';
+    case 'architect':
+      return 'architect';
     case 'nemoclaw':
-      return 'nemoclaw';
+    case 'review':
+      return 'review';
     case 'openjarvis':
+    case 'operate':
     case 'local-orchestrator':
-      return 'openjarvis';
+    case 'coordinate':
+      return 'operate';
     default:
-      return 'nemoclaw';
+      return 'review';
   }
 };
 
@@ -45,7 +50,7 @@ const withOutcomeSignal = (
     ...result,
     agentRole: role,
     handoff: result.handoff || {
-      fromAgent: 'openjarvis',
+      fromAgent: 'operate',
       toAgent: role,
       reason: 'mcp delegated action execution',
       evidenceId: toolName,

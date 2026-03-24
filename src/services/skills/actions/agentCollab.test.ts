@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { recommendSuperAgentMock, startSuperAgentSessionFromTaskMock } = vi.hoisted(() => ({
   recommendSuperAgentMock: vi.fn(),
@@ -40,11 +40,11 @@ const recommendationFixture = {
   task: { task_id: 'task-1', guild_id: 'guild-1', objective: 'test objective' },
   route: {
     mode: 'local-collab',
-    lead_agent: { name: 'OpenDev', reason: 'architecture-heavy objective' },
-    consult_agents: [{ name: 'NemoClaw', reason: 'risk review', timing: 'during-review' }],
+    lead_agent: { name: 'Architect', reason: 'architecture-heavy objective' },
+    consult_agents: [{ name: 'Review', reason: 'risk review', timing: 'during-review' }],
     required_gates: ['typecheck', 'tests'],
     handoff: {
-      next_owner: 'OpenDev',
+      next_owner: 'Architect',
       reason: 'architecture first',
       expected_outcome: 'milestone plan',
     },
@@ -93,9 +93,9 @@ describe('agentCollab actions', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.agentRole).toBe('openjarvis');
-    expect(result.handoff?.toAgent).toBe('opendev');
-    expect(result.artifacts[0]).toContain('lead_agent: OpenDev');
+    expect(result.agentRole).toBe('operate');
+    expect(result.handoff?.toAgent).toBe('architect');
+    expect(result.artifacts[0]).toContain('lead_agent: Architect');
   });
 
   it('local-orchestrator all executes lead and consult results with synthesis', async () => {
@@ -105,10 +105,10 @@ describe('agentCollab actions', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.agentRole).toBe('openjarvis');
-    expect(result.handoff?.toAgent).toBe('opendev');
-    expect(result.verification).toContain('lead executed:opendev');
-    expect(result.verification).toContain('consult executed:nemoclaw');
+    expect(result.agentRole).toBe('operate');
+    expect(result.handoff?.toAgent).toBe('architect');
+    expect(result.verification).toContain('lead executed:architect');
+    expect(result.verification).toContain('consult executed:review');
     expect(result.artifacts[result.artifacts.length - 1]).toContain('# Synthesis');
   });
 
@@ -119,7 +119,7 @@ describe('agentCollab actions', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.agentRole).toBe('opendev');
+    expect(result.agentRole).toBe('architect');
     expect(result.artifacts[0]).toContain('# Current State');
   });
 
@@ -133,7 +133,7 @@ describe('agentCollab actions', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.agentRole).toBe('nemoclaw');
+    expect(result.agentRole).toBe('review');
     expect(result.error).toBe('NEMOCLAW_REVIEW_BLOCKED');
     expect(result.artifacts[1]).toContain('eval() is not allowed');
   });
@@ -145,7 +145,7 @@ describe('agentCollab actions', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.agentRole).toBe('openjarvis');
+    expect(result.agentRole).toBe('operate');
     expect(buildAgentRuntimeReadinessReportMock).toHaveBeenCalledTimes(1);
     expect(result.artifacts[1]).toContain('"decision": "pass"');
   });
@@ -171,13 +171,13 @@ describe('sprint phase actions', () => {
       const result = await qaTestAction.execute({ goal: '', guildId: 'g1' });
       expect(result.ok).toBe(false);
       expect(result.error).toBe('OBJECTIVE_EMPTY');
-      expect(result.agentRole).toBe('opencode');
+      expect(result.agentRole).toBe('implement');
     });
 
     it('returns ok with fallback text when LLM unavailable', async () => {
       const result = await qaTestAction.execute({ goal: 'test sprint changes', guildId: 'g1' });
       expect(result.ok).toBe(true);
-      expect(result.agentRole).toBe('opencode');
+      expect(result.agentRole).toBe('implement');
       expect(result.artifacts[0]).toContain('QA Report');
       expect(result.artifacts[0]).toContain('manual QA required');
     });
@@ -197,13 +197,13 @@ describe('sprint phase actions', () => {
       const result = await csoAuditAction.execute({ goal: '', guildId: 'g1' });
       expect(result.ok).toBe(false);
       expect(result.error).toBe('OBJECTIVE_EMPTY');
-      expect(result.agentRole).toBe('nemoclaw');
+      expect(result.agentRole).toBe('review');
     });
 
     it('returns ok with fallback text when LLM unavailable', async () => {
       const result = await csoAuditAction.execute({ goal: 'audit auth module', guildId: 'g1' });
       expect(result.ok).toBe(true);
-      expect(result.agentRole).toBe('nemoclaw');
+      expect(result.agentRole).toBe('review');
       expect(result.artifacts[0]).toContain('Security Audit');
       expect(result.artifacts[0]).toContain('manual audit required');
     });
@@ -219,13 +219,13 @@ describe('sprint phase actions', () => {
       const result = await releaseShipAction.execute({ goal: '', guildId: 'g1' });
       expect(result.ok).toBe(false);
       expect(result.error).toBe('OBJECTIVE_EMPTY');
-      expect(result.agentRole).toBe('openjarvis');
+      expect(result.agentRole).toBe('operate');
     });
 
     it('returns ok with fallback text when LLM unavailable', async () => {
       const result = await releaseShipAction.execute({ goal: 'ship v2.1.0', guildId: 'g1' });
       expect(result.ok).toBe(true);
-      expect(result.agentRole).toBe('openjarvis');
+      expect(result.agentRole).toBe('operate');
       expect(result.artifacts[0]).toContain('Ship Report');
       expect(result.artifacts[0]).toContain('manual ship required');
     });
@@ -245,13 +245,13 @@ describe('sprint phase actions', () => {
       const result = await retroSummarizeAction.execute({ goal: '', guildId: 'g1' });
       expect(result.ok).toBe(false);
       expect(result.error).toBe('OBJECTIVE_EMPTY');
-      expect(result.agentRole).toBe('opendev');
+      expect(result.agentRole).toBe('architect');
     });
 
     it('returns ok with fallback text when LLM unavailable', async () => {
       const result = await retroSummarizeAction.execute({ goal: 'sprint-42 retro', guildId: 'g1' });
       expect(result.ok).toBe(true);
-      expect(result.agentRole).toBe('opendev');
+      expect(result.agentRole).toBe('architect');
       expect(result.artifacts[0]).toContain('Sprint Retro');
       expect(result.artifacts[0]).toContain('manual retro required');
     });

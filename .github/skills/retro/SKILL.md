@@ -16,7 +16,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`opendev` (architect role — strategic reflection)
+`architect` (architect role — strategic reflection)
 
 ## Process
 

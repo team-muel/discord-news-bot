@@ -8,7 +8,7 @@ import { createActionApprovalRequest, type ActionApprovalRequest } from './skill
 import { isSkillId, listSkills } from './skills/registry';
 
 export const SUPER_AGENT_MODES = ['local-collab', 'delivery', 'operations'] as const;
-export const SUPER_AGENT_LEAD_AGENTS = ['OpenCode', 'OpenDev', 'NemoClaw', 'OpenJarvis'] as const;
+export const SUPER_AGENT_LEAD_AGENTS = ['Implement', 'Architect', 'Review', 'Operate'] as const;
 export const SUPER_AGENT_CONSULT_TIMINGS = [
   'before-edit',
   'during-implementation',
@@ -290,26 +290,26 @@ const inferLeadAgent = (objective: string, requestedLeadAgent: SuperAgentLeadAge
   }
 
   // Sprint phase-based deterministic routing (highest priority)
-  if (/\[PHASE\]\s*(plan|설계)/i.test(objective)) return 'OpenDev';
-  if (/\[PHASE\]\s*(implement|구현)/i.test(objective)) return 'OpenCode';
-  if (/\[PHASE\]\s*(review|리뷰)/i.test(objective)) return 'NemoClaw';
-  if (/\[PHASE\]\s*(qa|테스트)/i.test(objective)) return 'OpenCode';
-  if (/\[PHASE\]\s*(security-audit|보안)/i.test(objective)) return 'NemoClaw';
-  if (/\[PHASE\]\s*(ops-validate|운영)/i.test(objective)) return 'OpenJarvis';
-  if (/\[PHASE\]\s*(ship|배포)/i.test(objective)) return 'OpenJarvis';
-  if (/\[PHASE\]\s*(retro|회고)/i.test(objective)) return 'OpenDev';
+  if (/\[PHASE\]\s*(plan|설계)/i.test(objective)) return 'Architect';
+  if (/\[PHASE\]\s*(implement|구현)/i.test(objective)) return 'Implement';
+  if (/\[PHASE\]\s*(review|리뷰)/i.test(objective)) return 'Review';
+  if (/\[PHASE\]\s*(qa|테스트)/i.test(objective)) return 'Implement';
+  if (/\[PHASE\]\s*(security-audit|보안)/i.test(objective)) return 'Review';
+  if (/\[PHASE\]\s*(ops-validate|운영)/i.test(objective)) return 'Operate';
+  if (/\[PHASE\]\s*(ship|배포)/i.test(objective)) return 'Operate';
+  if (/\[PHASE\]\s*(retro|회고)/i.test(objective)) return 'Architect';
 
   // Keyword-based fallback for non-sprint invocations
   if (/(review|risk|regression|security|audit|보안|리스크|회귀|리뷰)/i.test(objective)) {
-    return 'NemoClaw';
+    return 'Review';
   }
   if (/(architecture|roadmap|adr|boundary|contract|migration|설계|아키텍처|경계|계약|마이그레이션)/i.test(objective)) {
-    return 'OpenDev';
+    return 'Architect';
   }
   if (/(workflow|deploy|release|rollback|automation|script|runbook|배포|롤백|자동화|스크립트|운영)/i.test(objective)) {
-    return 'OpenJarvis';
+    return 'Operate';
   }
-  return 'OpenCode';
+  return 'Implement';
 };
 
 const inferSuggestedSkillId = (objective: string, explicitSkillId?: string | null): string | null => {
@@ -343,30 +343,30 @@ const inferConsultAgents = (objective: string, leadAgent: SuperAgentLeadAgent, m
   const safetyHeavy = /(security|risk|regression|test|보안|리스크|회귀|테스트)/i.test(objective);
   const opsHeavy = /(workflow|deploy|release|rollback|automation|script|runbook|배포|롤백|운영|자동화)/i.test(objective);
 
-  if (leadAgent === 'OpenCode') {
+  if (leadAgent === 'Implement') {
     if (architectureHeavy) {
-      pushConsult(items, { name: 'OpenDev', reason: '경계와 계약 검토가 필요합니다.', timing: 'before-edit' });
+      pushConsult(items, { name: 'Architect', reason: '경계와 계약 검토가 필요합니다.', timing: 'before-edit' });
     }
     if (safetyHeavy || mode === 'delivery') {
-      pushConsult(items, { name: 'NemoClaw', reason: '실패 경로와 회귀 리스크를 조기에 점검합니다.', timing: 'during-implementation' });
+      pushConsult(items, { name: 'Review', reason: '실패 경로와 회귀 리스크를 조기에 점검합니다.', timing: 'during-implementation' });
     }
     if (opsHeavy || mode === 'operations') {
-      pushConsult(items, { name: 'OpenJarvis', reason: '운영 영향과 롤백 경로를 확인합니다.', timing: 'before-release' });
+      pushConsult(items, { name: 'Operate', reason: '운영 영향과 롤백 경로를 확인합니다.', timing: 'before-release' });
     }
-  } else if (leadAgent === 'OpenDev') {
-    pushConsult(items, { name: 'OpenCode', reason: '구현 가능성과 변경 범위를 확인합니다.', timing: 'before-implementation' });
+  } else if (leadAgent === 'Architect') {
+    pushConsult(items, { name: 'Implement', reason: '구현 가능성과 변경 범위를 확인합니다.', timing: 'before-implementation' });
     if (opsHeavy || mode !== 'local-collab') {
-      pushConsult(items, { name: 'OpenJarvis', reason: '배포 및 운영 가드레일을 함께 검토합니다.', timing: 'before-release' });
+      pushConsult(items, { name: 'Operate', reason: '배포 및 운영 가드레일을 함께 검토합니다.', timing: 'before-release' });
     }
-  } else if (leadAgent === 'OpenJarvis') {
-    pushConsult(items, { name: 'OpenCode', reason: '코드 수정 필요 범위를 확인합니다.', timing: 'during-implementation' });
+  } else if (leadAgent === 'Operate') {
+    pushConsult(items, { name: 'Implement', reason: '코드 수정 필요 범위를 확인합니다.', timing: 'during-implementation' });
     if (safetyHeavy || mode !== 'local-collab') {
-      pushConsult(items, { name: 'NemoClaw', reason: '운영 변경의 리스크를 점검합니다.', timing: 'before-release' });
+      pushConsult(items, { name: 'Review', reason: '운영 변경의 리스크를 점검합니다.', timing: 'before-release' });
     }
   } else {
-    pushConsult(items, { name: 'OpenCode', reason: '수정 경로와 검증 범위를 구체화합니다.', timing: 'during-review' });
+    pushConsult(items, { name: 'Implement', reason: '수정 경로와 검증 범위를 구체화합니다.', timing: 'during-review' });
     if (opsHeavy) {
-      pushConsult(items, { name: 'OpenJarvis', reason: '운영 blast radius를 확인합니다.', timing: 'before-release' });
+      pushConsult(items, { name: 'Operate', reason: '운영 blast radius를 확인합니다.', timing: 'before-release' });
     }
   }
 
@@ -381,13 +381,13 @@ const resolveRequiredGates = (params: {
   riskLevel: string;
 }): string[] => {
   const gates = new Set<string>(['typecheck', 'tests']);
-  if (params.mode !== 'local-collab' || /high|critical|높음|긴급/i.test(params.riskLevel) || params.leadAgent === 'NemoClaw') {
+  if (params.mode !== 'local-collab' || /high|critical|높음|긴급/i.test(params.riskLevel) || params.leadAgent === 'Review') {
     gates.add('security');
   }
-  if (params.leadAgent === 'OpenDev') {
+  if (params.leadAgent === 'Architect') {
     gates.add('architecture-alignment');
   }
-  if (params.mode === 'operations' || params.consultAgents.some((item) => item.name === 'OpenJarvis') || /(deploy|rollback|automation|배포|롤백|자동화)/i.test(params.objective)) {
+  if (params.mode === 'operations' || params.consultAgents.some((item) => item.name === 'Operate') || /(deploy|rollback|automation|배포|롤백|자동화)/i.test(params.objective)) {
     gates.add('ops-readiness');
   }
   if (params.mode !== 'local-collab') {

@@ -1,5 +1,7 @@
 # 고맥락 장기기억 에이전트 로드맵 (6주)
 
+**Status: ARCHIVED (2026-03-24)** — 전체 로드맵/WIP 종결에 따라 보관.
+
 문서 상태:
 
 - Legacy domain roadmap for memory-specific background.

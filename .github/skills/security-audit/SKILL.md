@@ -16,7 +16,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`nemoclaw` (review role — security specialization)
+`review` (review role — security specialization)
 
 ## Process
 

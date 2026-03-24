@@ -13,8 +13,8 @@ describe('agentRoleWorkerService', () => {
     const mod = await import('./agentRoleWorkerService');
     const specs = mod.listAgentRoleWorkerSpecs();
 
-    expect(specs.find((item) => item.id === 'opendev')?.url).toBe('http://127.0.0.1:8791');
-    expect(specs.find((item) => item.id === 'nemoclaw')?.url).toBe('http://127.0.0.1:8792');
+    expect(specs.find((item) => item.id === 'architect')?.url).toBe('http://127.0.0.1:8791');
+    expect(specs.find((item) => item.id === 'review')?.url).toBe('http://127.0.0.1:8792');
   });
 
   it('neutral worker env aliases are also accepted', async () => {
@@ -24,7 +24,7 @@ describe('agentRoleWorkerService', () => {
     const mod = await import('./agentRoleWorkerService');
     const specs = mod.listAgentRoleWorkerSpecs();
 
-    expect(specs.find((item) => item.id === 'opendev')?.url).toBe('http://127.0.0.1:9791');
-    expect(specs.find((item) => item.id === 'openjarvis')?.url).toBe('http://127.0.0.1:9793');
+    expect(specs.find((item) => item.id === 'architect')?.url).toBe('http://127.0.0.1:9791');
+    expect(specs.find((item) => item.id === 'operate')?.url).toBe('http://127.0.0.1:9793');
   });
 });

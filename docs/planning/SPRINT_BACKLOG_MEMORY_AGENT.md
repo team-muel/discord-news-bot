@@ -25,22 +25,16 @@
 
 ## Current Active Pack (Aligned to Active Now)
 
+_없음 — 2026-03-24 기준 모든 로드맵/WIP 항목 종결._
+
 ### A-003 [M-04] [M-05] [M-06] Worker Gate + Approval + Model Binding Hardening
 
-- 문제: worker 품질 게이트, approval_required, 모델 바인딩/폴백 규칙이 각각 존재해 운영 판정이 분산된다.
-- 작업
-- worker gate, approval path, workflow slot model binding을 단일 운영 묶음으로 정렬
-- 고위험 액션 미경유 실행 0건 기준을 운영 검증 항목으로 고정
-- provider fallback과 quality gate 재판정 관계를 명시
-- guild 단위 canonical 진입점 `/api/bot/agent/runtime/worker-approval-gates?guildId=...&recentLimit=...` 를 기준 표면으로 고정
-- 완료 기준
-- 운영자가 하나의 체크 흐름으로 gate -> approval -> model fallback 상태를 검증할 수 있음
-- canonical runtime surface 하나로 OpenDev -> NemoClaw sandbox delegation 증거까지 확인할 수 있음
-- 고위험 경로 예외 처리 규칙이 명시됨
-- weekly gate summary가 A-003 운영 표면 커버리지를 자동 집계함
-- 검증 명령
-- `npm run lint`
-- `npm run gates:weekly-report:dry`
+- 상태: **Closed on 2026-03-24**
+- 종료 근거
+  - worker quality gate (evidence ID + audit trail), approval_required 경화 (HIGH_RISK_APPROVAL_ACTIONS), model binding/fallback matrix (LLM_WORKFLOW_MODEL_BINDINGS + LLM_WORKFLOW_PROFILE_DEFAULTS) 일체 구현 완료
+  - canonical runtime surface `/api/bot/agent/runtime/worker-approval-gates` 고정
+  - 운영자 단일 체크 흐름으로 gate → approval → model fallback 상태 검증 가능
+  - 전체 로드맵/WIP 종결에 따라 active pack에서 해제
 
 ## Recently Closed
 

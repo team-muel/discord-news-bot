@@ -17,7 +17,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`openjarvis` (operate role)
+`operate` (operate role)
 
 ## Process
 
@@ -64,6 +64,6 @@ applyTo: "**"
 
 ## Runtime Counterpart
 
-- Action: `openjarvis.ops`
+- Action: `operate.ops` (legacy: `openjarvis.ops`)
 - Discord intent: `ops|deploy|release|rollback|운영|배포|롤백`
-- Worker env: `MCP_OPENJARVIS_WORKER_URL`
+- Worker env: `MCP_OPERATE_WORKER_URL` (legacy: `MCP_OPENJARVIS_WORKER_URL`)

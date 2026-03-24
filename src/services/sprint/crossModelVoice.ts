@@ -88,7 +88,8 @@ export const requestCrossModelReview = async (params: {
   ].join('\n');
 
   try {
-    const modelOverride = SPRINT_CROSS_MODEL_PROVIDER || undefined;
+    // Use configured provider, or auto-select muel-nemotron (120B) for independent second opinion
+    const modelOverride = SPRINT_CROSS_MODEL_PROVIDER || 'muel-nemotron';
     const raw = await generateText({
       system,
       user,
@@ -103,7 +104,7 @@ export const requestCrossModelReview = async (params: {
 
     const result: CrossModelResult = {
       enabled: true,
-      provider: SPRINT_CROSS_MODEL_PROVIDER || 'default',
+      provider: SPRINT_CROSS_MODEL_PROVIDER || 'muel-nemotron',
       review: raw.slice(0, 3000),
       agreements: agreements.split('\n').filter((l) => l.startsWith('-')).map((l) => l.slice(1).trim()),
       disagreements: disagreements.split('\n').filter((l) => l.startsWith('-')).map((l) => l.slice(1).trim()),

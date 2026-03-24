@@ -6,7 +6,7 @@ model_list:
 
   - model_name: muel-balanced
     litellm_params:
-      model: gemini/gemini-2.0-flash
+      model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
 
   - model_name: muel-precise

@@ -1,5 +1,6 @@
 import type { ActionDefinition, ActionExecutionResult } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
+import { executeExternalAction } from '../../tools/externalAdapterRegistry';
 
 const OPENCODE_TOOL_NAME = String(process.env.MCP_OPENCODE_TOOL_NAME || 'opencode.run').trim() || 'opencode.run';
 const MAX_TASK_LENGTH = 2400;
@@ -15,10 +16,10 @@ const withOpencodeRouting = (
 ): ActionExecutionResult => {
   return {
     ...result,
-    agentRole: 'opencode',
+    agentRole: 'implement',
     handoff: {
-      fromAgent: 'openjarvis',
-      toAgent: 'opencode',
+      fromAgent: 'operate',
+      toAgent: 'implement',
       reason,
       evidenceId,
     },
@@ -113,6 +114,19 @@ export const opencodeExecuteAction: ActionDefinition = {
     });
 
     if (!delegated) {
+      // ── OpenShell sandbox fallback: try running task in sandboxed environment ──
+      const sandboxResult = await executeExternalAction('openshell', 'sandbox.list');
+      if (sandboxResult.ok && sandboxResult.output.length > 0) {
+        return withOpencodeRouting({
+          ok: false,
+          name: 'opencode.execute',
+          summary: 'MCP 워커 불가 — OpenShell sandbox 사용 가능하나 자동 실행은 아직 지원되지 않습니다.',
+          artifacts: [`available_sandboxes: ${sandboxResult.output.slice(0, 3).join(', ')}`],
+          verification: ['mcp delegation failed', 'openshell sandbox available'],
+          error: 'OPENCODE_SANDBOX_FALLBACK_PENDING',
+        }, 'openshell sandbox fallback (execution pending)');
+      }
+
       return withOpencodeRouting({
         ok: false,
         name: 'opencode.execute',

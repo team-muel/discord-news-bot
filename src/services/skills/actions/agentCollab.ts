@@ -1,4 +1,4 @@
-import { buildAgentRuntimeReadinessReport } from '../../agentRuntimeReadinessService';
+﻿import { buildAgentRuntimeReadinessReport } from '../../agentRuntimeReadinessService';
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import {
   recommendSuperAgent,
@@ -10,7 +10,7 @@ import { runNemoClawDiscoverExecutor } from '../../workerGeneration/workerExecut
 import { executeExternalAction } from '../../tools/externalAdapterRegistry';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { opencodeExecuteAction } from './opencode';
-import type { ActionDefinition, ActionExecutionResult, LegacyAgentRole } from './types';
+import type { ActionDefinition, ActionExecutionResult, AgentRoleName } from './types';
 
 const MAX_ARTIFACT_CHARS = 3200;
 const MAX_PROMPT_CODE_CHARS = 1800;
@@ -79,30 +79,30 @@ const createTaskInput = (params: {
   };
 };
 
-const leadAgentToRole = (value: string): LegacyAgentRole => {
+const leadAgentToRole = (value: string): AgentRoleName => {
   const normalized = compact(value).toLowerCase();
-  if (normalized === 'opencode') return 'opencode';
-  if (normalized === 'opendev') return 'opendev';
-  if (normalized === 'nemoclaw') return 'nemoclaw';
-  return 'openjarvis';
+  if (normalized === 'opencode' || normalized === 'implement') return 'implement';
+  if (normalized === 'opendev' || normalized === 'architect') return 'architect';
+  if (normalized === 'nemoclaw' || normalized === 'review') return 'review';
+  return 'operate';
 };
 
-const roleToLeadAgent = (value: LegacyAgentRole): SuperAgentLeadAgent => {
-  if (value === 'opencode') return 'OpenCode';
-  if (value === 'opendev') return 'OpenDev';
-  if (value === 'nemoclaw') return 'NemoClaw';
-  return 'OpenJarvis';
+const roleToLeadAgent = (value: AgentRoleName): SuperAgentLeadAgent => {
+  if (value === 'implement') return 'Implement';
+  if (value === 'architect') return 'Architect';
+  if (value === 'review') return 'Review';
+  return 'Operate';
 };
 
 const withRouting = (
   result: ActionExecutionResult,
-  toAgent: LegacyAgentRole,
+  toAgent: AgentRoleName,
   reason: string,
   evidenceId?: string,
 ): ActionExecutionResult => ({
   ...result,
   handoff: result.handoff || {
-    fromAgent: 'openjarvis',
+    fromAgent: 'operate',
     toAgent,
     reason,
     evidenceId,
@@ -195,7 +195,7 @@ const getActiveWorkerRole = (): string => String(process.env.AGENT_ROLE_WORKER_R
 
 const maybeDelegateAgentAction = async (params: {
   actionName: string;
-  workerKind: 'local-orchestrator' | 'opendev' | 'nemoclaw' | 'openjarvis';
+  workerKind: 'coordinate' | 'architect' | 'review' | 'operate' | 'local-orchestrator' | 'opendev' | 'nemoclaw' | 'openjarvis';
   toolName: string;
   goal: string;
   args?: Record<string, unknown>;
@@ -237,18 +237,18 @@ const maybeDelegateAgentAction = async (params: {
 };
 
 const executeRoleAction = async (params: {
-  role: LegacyAgentRole;
+  role: AgentRoleName;
   goal: string;
   guildId?: string;
   requestedBy?: string;
   args?: Record<string, unknown>;
 }): Promise<ActionExecutionResult> => {
   const actionArgs = { ...(params.args || {}) };
-  if (params.role === 'opencode' && typeof actionArgs.task !== 'string') {
+  if (params.role === 'implement' && typeof actionArgs.task !== 'string') {
     actionArgs.task = params.goal;
   }
 
-  if (params.role === 'opencode') {
+  if (params.role === 'implement') {
     return opencodeExecuteAction.execute({
       goal: params.goal,
       guildId: params.guildId,
@@ -256,7 +256,7 @@ const executeRoleAction = async (params: {
       args: actionArgs,
     });
   }
-  if (params.role === 'opendev') {
+  if (params.role === 'architect') {
     return opendevPlanAction.execute({
       goal: params.goal,
       guildId: params.guildId,
@@ -264,7 +264,7 @@ const executeRoleAction = async (params: {
       args: actionArgs,
     });
   }
-  if (params.role === 'nemoclaw') {
+  if (params.role === 'review') {
     return nemoclawReviewAction.execute({
       goal: params.goal,
       guildId: params.guildId,
@@ -284,7 +284,7 @@ const buildConsultArgs = (params: {
   baseArgs?: Record<string, unknown>;
   recommendation: ReturnType<typeof recommendSuperAgent>;
   leadResult: ActionExecutionResult;
-  role: LegacyAgentRole;
+  role: AgentRoleName;
 }): Record<string, unknown> => ({
   ...(params.baseArgs || {}),
   requestedLeadAgent: roleToLeadAgent(params.role),
@@ -302,7 +302,7 @@ const buildConsultArgs = (params: {
 const renderOrchestrationFallback = (params: {
   recommendation: ReturnType<typeof recommendSuperAgent>;
   leadResult: ActionExecutionResult;
-  consultResults: Array<{ role: LegacyAgentRole; result: ActionExecutionResult }>;
+  consultResults: Array<{ role: AgentRoleName; result: ActionExecutionResult }>;
 }): string => {
   const consults = params.consultResults.length > 0
     ? params.consultResults.map((item) => `- ${item.role}: ${item.result.ok ? 'ok' : 'failed'} | ${item.result.summary}`).join('\n')
@@ -341,8 +341,8 @@ export const localOrchestratorRouteAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'task validation failed');
+        agentRole: 'operate',
+      }, 'operate', 'task validation failed');
     }
 
     const delegated = await maybeDelegateAgentAction({
@@ -393,7 +393,7 @@ export const localOrchestratorRouteAction: ActionDefinition = {
             : `local-orchestrator가 ${started.recommendation.route.lead_agent.name} lead 라우팅과 승인 대기를 생성했습니다.`,
           artifacts,
           verification: ['super-agent recommendation generated', 'super-agent session start attempted'],
-          agentRole: 'openjarvis',
+          agentRole: 'operate',
         }, leadRole, 'local orchestrator selected next owner', started.recommendation.route.mode);
       }
 
@@ -411,7 +411,7 @@ export const localOrchestratorRouteAction: ActionDefinition = {
           })),
         ],
         verification: ['super-agent recommendation generated'],
-        agentRole: 'openjarvis',
+        agentRole: 'operate',
       }, leadRole, 'local orchestrator selected next owner', recommendation.route.mode);
     } catch (error) {
       return withRouting({
@@ -421,8 +421,8 @@ export const localOrchestratorRouteAction: ActionDefinition = {
         artifacts: [clip(error instanceof Error ? error.message : String(error), 400)],
         verification: ['super-agent routing failed'],
         error: 'LOCAL_ORCHESTRATOR_ROUTE_FAILED',
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'local orchestrator routing failed');
+        agentRole: 'operate',
+      }, 'operate', 'local orchestrator routing failed');
     }
   },
 };
@@ -440,8 +440,8 @@ export const localOrchestratorAllAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'task validation failed');
+        agentRole: 'operate',
+      }, 'operate', 'task validation failed');
     }
 
     const delegated = await maybeDelegateAgentAction({
@@ -534,7 +534,7 @@ export const localOrchestratorAllAction: ActionDefinition = {
           'local orchestrator synthesis emitted',
         ],
         error: leadResult.ok ? (degradedRoles.length > 0 ? 'LOCAL_ORCHESTRATOR_CONSULT_DEGRADED' : undefined) : 'LOCAL_ORCHESTRATOR_LEAD_FAILED',
-        agentRole: 'openjarvis',
+        agentRole: 'operate',
       }, leadRole, 'local orchestrator full collaboration completed', recommendation.route.mode);
     } catch (error) {
       return withRouting({
@@ -544,8 +544,8 @@ export const localOrchestratorAllAction: ActionDefinition = {
         artifacts: [clip(error instanceof Error ? error.message : String(error), 400)],
         verification: ['local orchestrator full collaboration failed'],
         error: 'LOCAL_ORCHESTRATOR_ALL_FAILED',
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'local orchestrator full collaboration failed');
+        agentRole: 'operate',
+      }, 'operate', 'local orchestrator full collaboration failed');
     }
   },
 };
@@ -563,13 +563,13 @@ export const opendevPlanAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'opendev',
-      }, 'opendev', 'task validation failed');
+        agentRole: 'architect',
+      }, 'architect', 'task validation failed');
     }
 
     const delegated = await maybeDelegateAgentAction({
       actionName: 'opendev.plan',
-      workerKind: 'opendev',
+      workerKind: 'architect',
       toolName: 'opendev.plan',
       goal: query,
       args,
@@ -583,7 +583,7 @@ export const opendevPlanAction: ActionDefinition = {
       goal: query,
       guildId,
       args,
-      requestedLeadAgent: 'OpenDev',
+      requestedLeadAgent: 'Architect',
     }));
     const fallback = [
       '# Current State',
@@ -626,8 +626,8 @@ export const opendevPlanAction: ActionDefinition = {
       summary: 'OpenDev 계획 산출 완료',
       artifacts: [clip(synthesized), clip(toJson(recommendation.route))],
       verification: ['super-agent route synthesized', 'opendev planning emitted'],
-      agentRole: 'opendev',
-    }, 'opendev', 'opendev planning completed', recommendation.route.mode);
+      agentRole: 'architect',
+    }, 'architect', 'opendev planning completed', recommendation.route.mode);
   },
 };
 
@@ -644,13 +644,13 @@ export const nemoclawReviewAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'nemoclaw',
-      }, 'nemoclaw', 'task validation failed');
+        agentRole: 'review',
+      }, 'review', 'task validation failed');
     }
 
     const delegated = await maybeDelegateAgentAction({
       actionName: 'nemoclaw.review',
-      workerKind: 'nemoclaw',
+      workerKind: 'review',
       toolName: 'nemoclaw.review',
       goal: query,
       args,
@@ -672,8 +672,8 @@ export const nemoclawReviewAction: ActionDefinition = {
           summary: 'NemoClaw sandbox 리뷰 완료',
           artifacts: [sandboxReview.output.join('\n')],
           verification: ['sandbox code.review executed', `adapter: nemoclaw, duration: ${sandboxReview.durationMs}ms`],
-          agentRole: 'nemoclaw',
-        }, 'nemoclaw', 'nemoclaw sandbox review completed');
+          agentRole: 'review',
+        }, 'review', 'nemoclaw sandbox review completed');
       }
     }
 
@@ -684,7 +684,7 @@ export const nemoclawReviewAction: ActionDefinition = {
       goal: query,
       guildId,
       args,
-      requestedLeadAgent: 'NemoClaw',
+      requestedLeadAgent: 'Review',
     }));
 
     const findings: string[] = [];
@@ -738,8 +738,8 @@ export const nemoclawReviewAction: ActionDefinition = {
         'nemoclaw review emitted',
       ],
       error: discover?.ok === false ? 'NEMOCLAW_REVIEW_BLOCKED' : undefined,
-      agentRole: 'nemoclaw',
-    }, 'nemoclaw', 'nemoclaw review completed', discover?.evidenceId || recommendation.route.mode);
+      agentRole: 'review',
+    }, 'review', 'nemoclaw review completed', discover?.evidenceId || recommendation.route.mode);
   },
 };
 
@@ -756,13 +756,13 @@ export const openjarvisOpsAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'task validation failed');
+        agentRole: 'operate',
+      }, 'operate', 'task validation failed');
     }
 
     const delegated = await maybeDelegateAgentAction({
       actionName: 'openjarvis.ops',
-      workerKind: 'openjarvis',
+      workerKind: 'operate',
       toolName: 'openjarvis.ops',
       goal: query,
       args,
@@ -783,8 +783,8 @@ export const openjarvisOpsAction: ActionDefinition = {
         summary: 'OpenJarvis 서버를 통한 운영 실행안 생성 완료',
         artifacts: [jarvisResult.output.join('\n')],
         verification: ['openjarvis adapter executed', `duration: ${jarvisResult.durationMs}ms`],
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'openjarvis adapter ops completed');
+        agentRole: 'operate',
+      }, 'operate', 'openjarvis adapter ops completed');
     }
 
     const resolvedGuildId = resolveGuildId(guildId, args);
@@ -792,7 +792,7 @@ export const openjarvisOpsAction: ActionDefinition = {
       goal: query,
       guildId: resolvedGuildId,
       args,
-      requestedLeadAgent: 'OpenJarvis',
+      requestedLeadAgent: 'Operate',
     }));
 
     let readinessArtifact = 'runtime_readiness=skipped';
@@ -853,8 +853,8 @@ export const openjarvisOpsAction: ActionDefinition = {
       summary: 'OpenJarvis 운영 실행안 생성 완료',
       artifacts: [clip(synthesized), readinessArtifact],
       verification: ['openjarvis ops plan emitted', 'runtime readiness consulted'],
-      agentRole: 'openjarvis',
-    }, 'openjarvis', 'openjarvis operations planning completed', recommendation.route.mode);
+      agentRole: 'operate',
+    }, 'operate', 'openjarvis operations planning completed', recommendation.route.mode);
   },
 };
 
@@ -874,8 +874,8 @@ export const qaTestAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'opencode',
-      }, 'opencode', 'task validation failed');
+        agentRole: 'implement',
+      }, 'implement', 'task validation failed');
     }
 
     const synthesized = await maybeGenerateRoleText({
@@ -897,8 +897,8 @@ export const qaTestAction: ActionDefinition = {
       summary: 'QA 테스트 실행 완료',
       artifacts: [clip(synthesized)],
       verification: ['qa test report emitted'],
-      agentRole: 'opencode',
-    }, 'opencode', 'qa testing completed');
+      agentRole: 'implement',
+    }, 'implement', 'qa testing completed');
   },
 };
 
@@ -915,8 +915,8 @@ export const csoAuditAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'nemoclaw',
-      }, 'nemoclaw', 'task validation failed');
+        agentRole: 'review',
+      }, 'review', 'task validation failed');
     }
 
     const synthesized = await maybeGenerateRoleText({
@@ -939,8 +939,8 @@ export const csoAuditAction: ActionDefinition = {
       summary: 'CSO 보안 감사 완료',
       artifacts: [clip(synthesized)],
       verification: ['cso security audit emitted'],
-      agentRole: 'nemoclaw',
-    }, 'nemoclaw', 'security audit completed');
+      agentRole: 'review',
+    }, 'review', 'security audit completed');
   },
 };
 
@@ -958,8 +958,8 @@ export const releaseShipAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'openjarvis',
-      }, 'openjarvis', 'task validation failed');
+        agentRole: 'operate',
+      }, 'operate', 'task validation failed');
     }
 
     const synthesized = await maybeGenerateRoleText({
@@ -981,8 +981,8 @@ export const releaseShipAction: ActionDefinition = {
       summary: '릴리스 Ship 보고 완료',
       artifacts: [clip(synthesized)],
       verification: ['release ship report emitted'],
-      agentRole: 'openjarvis',
-    }, 'openjarvis', 'release ship completed');
+      agentRole: 'operate',
+    }, 'operate', 'release ship completed');
   },
 };
 
@@ -999,8 +999,8 @@ export const retroSummarizeAction: ActionDefinition = {
         artifacts: [],
         verification: ['objective required'],
         error: 'OBJECTIVE_EMPTY',
-        agentRole: 'opendev',
-      }, 'opendev', 'task validation failed');
+        agentRole: 'architect',
+      }, 'architect', 'task validation failed');
     }
 
     const synthesized = await maybeGenerateRoleText({
@@ -1022,7 +1022,7 @@ export const retroSummarizeAction: ActionDefinition = {
       summary: '스프린트 회고 완료',
       artifacts: [clip(synthesized)],
       verification: ['retro summary emitted'],
-      agentRole: 'opendev',
-    }, 'opendev', 'sprint retro completed');
+      agentRole: 'architect',
+    }, 'architect', 'sprint retro completed');
   },
 };

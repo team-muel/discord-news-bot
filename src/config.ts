@@ -249,3 +249,142 @@ export default {
   SPRINT_AUTOPLAN_ENABLED,
   SPRINT_AUTOPLAN_LENSES,
 };
+
+// ──── Namespaced Config Groups ────────────────────────────────────────────────
+// These group related config vars for better discoverability.
+// Consumers can import { discordConfig } from '../config' instead of 10+ flat vars.
+// Flat exports above are preserved for backward compatibility.
+
+export const discordConfig = {
+  readyTimeoutMs: DISCORD_READY_TIMEOUT_MS,
+  startRetries: DISCORD_START_RETRIES,
+  commandGuildId: DISCORD_COMMAND_GUILD_ID,
+  messageContentIntentEnabled: DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
+  startBot: START_BOT,
+  botStartFailureExitEnabled: BOT_START_FAILURE_EXIT_ENABLED,
+  oauth: {
+    clientId: DISCORD_OAUTH_CLIENT_ID,
+    clientSecret: DISCORD_OAUTH_CLIENT_SECRET,
+    redirectUri: DISCORD_OAUTH_REDIRECT_URI,
+    scope: DISCORD_OAUTH_SCOPE,
+    apiBase: DISCORD_OAUTH_API_BASE,
+    stateCookieName: DISCORD_OAUTH_STATE_COOKIE_NAME,
+    stateTtlSec: DISCORD_OAUTH_STATE_TTL_SEC,
+  },
+  invitePermissions: DISCORD_INVITE_PERMISSIONS,
+  inviteScopes: DISCORD_INVITE_SCOPES,
+} as const;
+
+export const tradingConfig = {
+  mode: AI_TRADING_MODE,
+  dryRun: AI_TRADING_DRY_RUN,
+  baseUrl: AI_TRADING_BASE_URL,
+  internalToken: AI_TRADING_INTERNAL_TOKEN,
+  orderPath: AI_TRADING_ORDER_PATH,
+  positionPath: AI_TRADING_POSITION_PATH,
+  timeoutMs: AI_TRADING_TIMEOUT_MS,
+  exchange: TRADING_EXCHANGE,
+  symbols: TRADING_SYMBOLS,
+  timeframe: TRADING_TIMEFRAME,
+  cvdLen: TRADING_CVD_LEN,
+  deltaCoef: TRADING_DELTA_COEF,
+  riskPct: TRADING_RISK_PCT,
+  tpPct: TRADING_TP_PCT,
+  slPct: TRADING_SL_PCT,
+  leverage: TRADING_LEVERAGE,
+  initialCapital: TRADING_INITIAL_CAPITAL,
+  equitySplit: TRADING_EQUITY_SPLIT,
+  pollSeconds: TRADING_POLL_SECONDS,
+  candleLookback: TRADING_CANDLE_LOOKBACK,
+  tickFetchLimit: TRADING_TICK_FETCH_LIMIT,
+  tickMaxPages: TRADING_TICK_MAX_PAGES,
+  tradingDryRun: TRADING_DRY_RUN,
+  candlesTable: TRADING_CANDLES_TABLE,
+  stateTable: TRADING_STATE_TABLE,
+  startTradingBot: START_TRADING_BOT,
+  binance: {
+    apiKey: BINANCE_API_KEY,
+    apiSecret: BINANCE_API_SECRET,
+    futures: BINANCE_FUTURES,
+    hedgeMode: BINANCE_HEDGE_MODE,
+    spotMinBaseQty: BINANCE_SPOT_MIN_BASE_QTY,
+  },
+  limits: {
+    maxManualTradeQty: MAX_MANUAL_TRADE_QTY,
+    maxManualTradeLeverage: MAX_MANUAL_TRADE_LEVERAGE,
+    maxManualTradeEntryPrice: MAX_MANUAL_TRADE_ENTRY_PRICE,
+  },
+} as const;
+
+export const obsidianConfig = {
+  headlessEnabled: OBSIDIAN_HEADLESS_ENABLED,
+  email: OBSIDIAN_EMAIL,
+  password: OBSIDIAN_PASSWORD,
+  vaultName: OBSIDIAN_VAULT_NAME,
+  ragCacheTtlMs: OBSIDIAN_RAG_CACHE_TTL_MS,
+  ragMaxDocs: OBSIDIAN_RAG_MAX_DOCS,
+  ragCacheEnabled: OBSIDIAN_RAG_CACHE_ENABLED,
+} as const;
+
+export const sprintConfig = {
+  enabled: SPRINT_ENABLED,
+  autonomyLevel: SPRINT_AUTONOMY_LEVEL,
+  maxImplReviewLoops: SPRINT_MAX_IMPL_REVIEW_LOOPS,
+  maxTotalPhases: SPRINT_MAX_TOTAL_PHASES,
+  changedFileCap: SPRINT_CHANGED_FILE_CAP,
+  phaseTimeoutMs: SPRINT_PHASE_TIMEOUT_MS,
+  dryRun: SPRINT_DRY_RUN,
+  pipelinesTable: SPRINT_PIPELINES_TABLE,
+  triggers: {
+    errorThreshold: SPRINT_TRIGGER_ERROR_THRESHOLD,
+    csChannelIds: SPRINT_TRIGGER_CS_CHANNEL_IDS,
+    cronSecurityAudit: SPRINT_TRIGGER_CRON_SECURITY_AUDIT,
+    cronImprovement: SPRINT_TRIGGER_CRON_IMPROVEMENT,
+  },
+  git: {
+    enabled: SPRINT_GIT_ENABLED,
+    token: SPRINT_GITHUB_TOKEN,
+    owner: SPRINT_GITHUB_OWNER,
+    repo: SPRINT_GITHUB_REPO,
+  },
+  fastPath: {
+    enabled: SPRINT_FAST_PATH_ENABLED,
+    vitestTimeoutMs: SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
+    tscTimeoutMs: SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+  },
+  crossModel: {
+    enabled: SPRINT_CROSS_MODEL_ENABLED,
+    provider: SPRINT_CROSS_MODEL_PROVIDER,
+    phases: SPRINT_CROSS_MODEL_PHASES,
+  },
+  scopeGuard: {
+    enabled: SPRINT_SCOPE_GUARD_ENABLED,
+    allowedDirs: SPRINT_SCOPE_GUARD_ALLOWED_DIRS,
+    protectedFiles: SPRINT_SCOPE_GUARD_PROTECTED_FILES,
+  },
+  llmJudge: {
+    enabled: SPRINT_LLM_JUDGE_ENABLED,
+    phases: SPRINT_LLM_JUDGE_PHASES,
+  },
+  autoplan: {
+    enabled: SPRINT_AUTOPLAN_ENABLED,
+    lenses: SPRINT_AUTOPLAN_LENSES,
+  },
+} as const;
+
+export const authConfig = {
+  jwtSecret: JWT_SECRET,
+  cookieName: AUTH_COOKIE_NAME,
+  csrfCookieName: AUTH_CSRF_COOKIE_NAME,
+  csrfHeaderName: AUTH_CSRF_HEADER_NAME,
+  devAuthEnabled: DEV_AUTH_ENABLED,
+} as const;
+
+export const supabaseConfig = {
+  url: SUPABASE_URL,
+  serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+  tradesTable: SUPABASE_TRADES_TABLE,
+  adminAllowlistTable: ADMIN_ALLOWLIST_TABLE,
+  adminAllowlistRoleValue: ADMIN_ALLOWLIST_ROLE_VALUE,
+  adminAllowlistCacheTtlMs: ADMIN_ALLOWLIST_CACHE_TTL_MS,
+} as const;

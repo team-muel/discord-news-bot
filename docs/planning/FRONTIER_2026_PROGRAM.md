@@ -1,5 +1,7 @@
 # Frontier 2026 Program
 
+**Status: ARCHIVED (2026-03-24)** — 전체 로드맵/WIP 종결에 따라 보관.
+
 문서 상태:
 
 - Reference synthesis for program intent and workstream grouping.

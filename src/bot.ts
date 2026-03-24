@@ -128,6 +128,7 @@ import { createDocsHandlers } from './discord/commands/docs';
 import { createPersonaHandlers } from './discord/commands/persona';
 import { startDiscordReadyWorkloads } from './discord/runtime/readyWorkloads';
 import { processPassiveMemoryCapture } from './discord/runtime/passiveMemoryCapture';
+import { handleCsChannelMessage, recordRuntimeError } from './services/sprint/sprintTriggers';
 import { handleButtonInteraction } from './discord/runtime/buttonInteractions';
 import { handleGuildCreateLifecycle, handleGuildDeleteLifecycle } from './discord/runtime/guildLifecycle';
 import { loginDiscordClientWithTimeout } from './discord/runtime/loginAttempt';
@@ -236,7 +237,7 @@ const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD = Math.max(1, Math.m
 const AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS || 7 * 24 * 60 * 60_000));
 const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS || 6 * 60 * 60_000));
 const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = Math.max(6, Math.min(120, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH || 8)));
-const OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY || 4)));
+const IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY || process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY || 4)));
 let autoWorkerProposalBackgroundTimer: NodeJS.Timeout | null = null;
 let autoWorkerProposalBackgroundRunning = false;
 
@@ -775,7 +776,7 @@ const normalizeBackgroundProposalGoal = (goal: string): string =>
     .trim()
     .slice(0, 220);
 
-const enforceOpencodeApprovalRequiredPilot = async (): Promise<void> => {
+const enforceImplementApprovalRequiredPilot = async (): Promise<void> => {
   const guildIds = [...client.guilds.cache.keys()];
   if (guildIds.length === 0) {
     return;
@@ -784,6 +785,7 @@ const enforceOpencodeApprovalRequiredPilot = async (): Promise<void> => {
   let changed = 0;
   await runWithConcurrency(guildIds, async (guildId) => {
     try {
+      // Action name 'opencode.execute' is a persisted Supabase policy key — kept for backward compatibility
       const policy = await getGuildActionPolicy(guildId, 'opencode.execute');
       if (policy.enabled && policy.runMode === 'approval_required') {
         return;
@@ -794,16 +796,16 @@ const enforceOpencodeApprovalRequiredPilot = async (): Promise<void> => {
         actionName: 'opencode.execute',
         enabled: true,
         runMode: 'approval_required',
-        actorId: 'system:opencode-pilot',
+        actorId: 'system:implement-pilot',
       });
       changed += 1;
     } catch (error) {
-      logger.warn('[OPENCODE-PILOT] policy enforce failed guild=%s reason=%s', guildId, getErrorMessage(error));
+      logger.warn('[IMPLEMENT-PILOT] policy enforce failed guild=%s reason=%s', guildId, getErrorMessage(error));
     }
-  }, OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY);
+  }, IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY);
 
   if (changed > 0) {
-    logger.info('[OPENCODE-PILOT] approval_required enforced guilds=%d', changed);
+    logger.info('[IMPLEMENT-PILOT] approval_required enforced guilds=%d', changed);
   }
 };
 
@@ -1354,13 +1356,14 @@ const attachCommandHandlers = () => {
       }
     } catch (error) {
       logger.error('[BOT] interaction handler failed: %o', error);
-      const message = DISCORD_MESSAGES.bot.executionFailedBody;
+      recordRuntimeError({ message: getErrorMessage(error), code: 'INTERACTION_HANDLER' });
+      const errorBody = DISCORD_MESSAGES.bot.executionFailedBody;
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR)).catch((replyError) => {
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, errorBody, EMBED_ERROR)).catch((replyError) => {
           logger.debug('[BOT] interaction error editReply skipped: %s', getErrorMessage(replyError));
         });
       } else {
-        await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, message, EMBED_ERROR), ephemeral: true }).catch((replyError) => {
+        await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleExecutionFailed, errorBody, EMBED_ERROR), ephemeral: true }).catch((replyError) => {
           logger.debug('[BOT] interaction error reply skipped: %s', getErrorMessage(replyError));
         });
       }
@@ -1383,8 +1386,14 @@ const attachCommandHandlers = () => {
       void processPassiveMemoryCapture(message).catch((error) => {
         logger.debug('[BOT] passive memory capture skipped: %s', getErrorMessage(error));
       });
+
+      // C-13: Route CS channel messages to sprint trigger pipeline
+      void handleCsChannelMessage(message.channelId, message.content || '', message.author.id).catch((error) => {
+        logger.debug('[BOT] CS channel message handler skipped: %s', getErrorMessage(error));
+      });
     } catch (error) {
       logger.warn('[BOT] messageCreate handler failed: %o', error);
+      recordRuntimeError({ message: getErrorMessage(error), code: 'MESSAGE_CREATE_HANDLER' });
     }
   });
 
@@ -1399,7 +1408,7 @@ client.on('clientReady', () => {
 
   void registerSlashCommands();
   void restoreApprovedDynamicWorkers();
-  void enforceOpencodeApprovalRequiredPilot();
+  void enforceImplementApprovalRequiredPilot();
   startAutoWorkerProposalBackgroundLoop();
   startDiscordReadyWorkloads(client);
 });

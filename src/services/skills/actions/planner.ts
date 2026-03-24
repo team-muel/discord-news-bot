@@ -10,6 +10,21 @@ const PLANNER_SELF_CONSISTENCY_SAMPLES = Math.max(1, Math.min(5, parseIntegerEnv
 const PLANNER_SELF_CONSISTENCY_TEMPERATURE = parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_TEMPERATURE, 0.35, 0, 1);
 const PLANNER_RULES_FIRST_ENABLED = parseBooleanEnv(process.env.PLANNER_RULES_FIRST_ENABLED, true);
 const PLANNER_CATALOG_MAX_ACTIONS = Math.max(5, parseIntegerEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12));
+const PLANNER_ADAPTIVE_SAMPLES_ENABLED = parseBooleanEnv(process.env.PLANNER_ADAPTIVE_SAMPLES_ENABLED, true);
+
+/** Reduce LLM calls for simple goals — short or single-action-likely goals use k=1 */
+const resolveAdaptiveSamples = (goal: string): number => {
+  if (!PLANNER_ADAPTIVE_SAMPLES_ENABLED || !PLANNER_SELF_CONSISTENCY_ENABLED) {
+    return PLANNER_SELF_CONSISTENCY_SAMPLES;
+  }
+  const text = String(goal || '').trim();
+  // Very short goals are almost always single-action
+  if (text.length < 40) return 1;
+  // Simple imperative goals don't benefit from multi-sample consensus
+  const simplePatterns = /^(검색|찾아|알려|보여|조회|요약|상태|확인|정보)/;
+  if (simplePatterns.test(text)) return 1;
+  return PLANNER_SELF_CONSISTENCY_SAMPLES;
+};
 
 const toGoalTerms = (text: string): Set<string> => {
   return new Set(
@@ -218,7 +233,16 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     return { actions: single };
   }
 
-  const temperatures = Array.from({ length: PLANNER_SELF_CONSISTENCY_SAMPLES }, (_, index) => (
+  const k = resolveAdaptiveSamples(goal);
+  if (k <= 1) {
+    const single = await requestPlanCandidate({ goal, prompt, temperature: 0 });
+    if (!single || single.length === 0) {
+      return { actions: await fallbackPlan(goal) };
+    }
+    return { actions: single };
+  }
+
+  const temperatures = Array.from({ length: k }, (_, index) => (
     index === 0 ? 0 : PLANNER_SELF_CONSISTENCY_TEMPERATURE
   ));
   const candidates = await Promise.all(temperatures.map((temperature) => requestPlanCandidate({ goal, prompt, temperature })));

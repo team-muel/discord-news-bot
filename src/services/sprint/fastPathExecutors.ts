@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fast-path (deterministic) executors for sprint phases that don't need LLM.
  *
  * These run subprocess commands directly and map exit codes to PhaseResult,
@@ -10,8 +10,10 @@
  *   - ship      → autonomousGit (branch + commit + PR)
  */
 import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../../logger';
+import type { CodeChange } from './sprintCodeWriter';
 import {
   SPRINT_FAST_PATH_ENABLED,
   SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
@@ -93,7 +95,7 @@ const executeQaFastPath = async (
       ? ['vitest exit code 0', 'all tests passed']
       : [`vitest exit code ${result.exitCode}`, 'test failures detected'],
     durationMs: result.durationMs,
-    agentRole: 'opencode',
+    agentRole: 'implement',
   };
 };
 
@@ -112,7 +114,7 @@ const executeOpsValidateFastPath = async (
 
   return {
     ok: passed,
-    name: 'openjarvis.ops',
+    name: 'operate.ops',
     summary: passed
       ? `OPS-VALIDATE PASSED (${result.durationMs}ms): tsc --noEmit clean`
       : `OPS-VALIDATE FAILED (${result.durationMs}ms): ${errorCount} type error(s)`,
@@ -129,7 +131,7 @@ const executeOpsValidateFastPath = async (
       ? ['tsc exit code 0', 'no type errors']
       : [`tsc exit code ${result.exitCode}`, `${errorCount} type error(s)`],
     durationMs: result.durationMs,
-    agentRole: 'openjarvis',
+    agentRole: 'operate',
   };
 };
 
@@ -139,6 +141,7 @@ const executeShipFastPath = async (
   sprintId: string,
   objective: string,
   changedFiles: string[],
+  codeChanges?: CodeChange[],
 ): Promise<ActionExecutionResult> => {
   logger.info('[FAST-PATH] ship: creating branch + commit + PR');
   const start = Date.now();
@@ -154,7 +157,7 @@ const executeShipFastPath = async (
       verification: ['branch creation failed'],
       error: branch.error,
       durationMs: Date.now() - start,
-      agentRole: 'openjarvis',
+      agentRole: 'operate',
     };
   }
 
@@ -162,7 +165,18 @@ const executeShipFastPath = async (
   const commit = await commitSprintChanges({
     branchName: branch.branchName,
     message: `sprint(${sprintId}): ${objective.slice(0, 72)}`,
-    files: changedFiles.map((f) => ({ path: f, content: '' })), // content fetched from working tree
+    files: await Promise.all(changedFiles.map(async (f) => {
+      // Prefer content from codeChanges (authoritative), fall back to disk read
+      const fromChanges = codeChanges?.find((c) => c.filePath === f);
+      if (fromChanges) return { path: f, content: fromChanges.newContent };
+      try {
+        const content = await fs.readFile(path.resolve(PROJECT_ROOT, f), 'utf-8');
+        return { path: f, content };
+      } catch {
+        logger.warn('[FAST-PATH] ship: cannot read file %s, skipping', f);
+        return { path: f, content: '' };
+      }
+    })),
   });
   if (!commit.ok) {
     return {
@@ -173,7 +187,7 @@ const executeShipFastPath = async (
       verification: ['commit failed'],
       error: commit.error,
       durationMs: Date.now() - start,
-      agentRole: 'openjarvis',
+      agentRole: 'operate',
     };
   }
 
@@ -204,7 +218,7 @@ const executeShipFastPath = async (
       verification: ['PR creation failed'],
       error: pr.error,
       durationMs,
-      agentRole: 'openjarvis',
+      agentRole: 'operate',
     };
   }
 
@@ -223,7 +237,7 @@ const executeShipFastPath = async (
     ],
     verification: ['branch created', 'changes committed', 'PR opened'],
     durationMs,
-    agentRole: 'openjarvis',
+    agentRole: 'operate',
   };
 };
 
@@ -245,6 +259,7 @@ export const executeFastPath = async (params: {
   sprintId: string;
   objective: string;
   changedFiles: string[];
+  codeChanges?: CodeChange[];
 }): Promise<ActionExecutionResult | null> => {
   if (!SPRINT_FAST_PATH_ENABLED) return null;
 
@@ -254,7 +269,7 @@ export const executeFastPath = async (params: {
     case 'ops-validate':
       return executeOpsValidateFastPath(params.objective, params.changedFiles);
     case 'ship':
-      return executeShipFastPath(params.sprintId, params.objective, params.changedFiles);
+      return executeShipFastPath(params.sprintId, params.objective, params.changedFiles, params.codeChanges);
     default:
       return null;
   }

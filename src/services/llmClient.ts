@@ -25,7 +25,7 @@ const LLM_EXPERIMENT_GUILD_ALLOWLIST = new Set(
 const LLM_COST_INPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_INPUT_PER_1K_CHARS_USD || 0.0005) || 0.0005);
 const LLM_COST_OUTPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD || 0.0015) || 0.0015);
 
-export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface' | 'openjarvis' | 'litellm';
+export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface' | 'openjarvis' | 'litellm' | 'kimi';
 
 export type LlmProviderProfile = 'cost-optimized' | 'quality-optimized';
 
@@ -100,8 +100,12 @@ const getLiteLLMBaseUrl = () => String(process.env.LITELLM_BASE_URL || 'http://1
 const getLiteLLMKey = () => String(process.env.LITELLM_MASTER_KEY || '').trim();
 const isLiteLLMConfigured = () => !/^(0|false|off|no)$/i.test(String(process.env.LITELLM_ENABLED || 'false').trim());
 const getLiteLLMModel = () => String(process.env.LITELLM_MODEL || 'muel-local').trim();
-const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openai', 'anthropic', 'gemini', 'huggingface', 'openclaw', 'litellm', 'openjarvis', 'ollama'];
-const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'gemini', 'huggingface', 'litellm', 'openjarvis', 'ollama'];
+const getKimiKey = () => String(process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || '').trim();
+const getKimiBaseUrl = () => String(process.env.KIMI_BASE_URL || 'https://api.moonshot.cn').trim().replace(/\/+$/, '');
+const isKimiConfigured = () => Boolean(getKimiKey());
+const getKimiModel = () => String(process.env.KIMI_MODEL || 'moonshot-v1-128k').trim();
+const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openai', 'anthropic', 'gemini', 'kimi', 'huggingface', 'openclaw', 'litellm', 'openjarvis', 'ollama'];
+const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openclaw', 'openai', 'anthropic', 'kimi', 'gemini', 'huggingface', 'litellm', 'openjarvis', 'ollama'];
 
 const normalizeProviderAlias = (value: string): LlmProvider | null => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -120,7 +124,10 @@ const normalizeProviderAlias = (value: string): LlmProvider | null => {
   if (normalized === 'jarvis') {
     return 'openjarvis';
   }
-  if (normalized === 'openai' || normalized === 'gemini' || normalized === 'anthropic' || normalized === 'openclaw' || normalized === 'ollama' || normalized === 'huggingface' || normalized === 'openjarvis' || normalized === 'litellm') {
+  if (normalized === 'moonshot') {
+    return 'kimi';
+  }
+  if (normalized === 'openai' || normalized === 'gemini' || normalized === 'anthropic' || normalized === 'openclaw' || normalized === 'ollama' || normalized === 'huggingface' || normalized === 'openjarvis' || normalized === 'litellm' || normalized === 'kimi') {
     return normalized;
   }
   return null;
@@ -149,6 +156,7 @@ const isProviderConfigured = (provider: LlmProvider): boolean => {
   if (provider === 'ollama') return isOllamaConfigured();
   if (provider === 'openjarvis') return isOpenJarvisConfigured();
   if (provider === 'litellm') return isLiteLLMConfigured();
+  if (provider === 'kimi') return isKimiConfigured();
   return false;
 };
 
@@ -372,6 +380,9 @@ const resolveProviderWithoutExperiment = (): LlmProvider | null => {
   if (preferred === 'litellm' && isLiteLLMConfigured()) {
     return 'litellm';
   }
+  if ((preferred === 'kimi' || preferred === 'moonshot') && isKimiConfigured()) {
+    return 'kimi';
+  }
 
   for (const provider of getConfiguredBaseProviderOrder()) {
     if (isProviderConfigured(provider)) {
@@ -427,8 +438,8 @@ const resolveProviderWithExperiment = (params: LlmTextRequest): LlmExperimentDec
   };
 };
 
-const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['ollama', 'huggingface', 'litellm', 'openjarvis', 'openclaw', 'gemini', 'anthropic', 'openai'];
-const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 'openclaw', 'gemini', 'openjarvis', 'litellm', 'huggingface', 'ollama'];
+const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['ollama', 'huggingface', 'litellm', 'openjarvis', 'openclaw', 'kimi', 'gemini', 'anthropic', 'openai'];
+const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 'kimi', 'openclaw', 'gemini', 'openjarvis', 'litellm', 'huggingface', 'ollama'];
 
 /** M-06/M-07: Gate-driven provider profile override. Set by actionRunner when gate verdict recommends a profile switch. */
 let _gateProviderProfileOverride: LlmProviderProfile | null = null;
@@ -646,7 +657,7 @@ const requestGemini = async (params: LlmTextRequest): Promise<string> => {
     throw new Error('GEMINI_API_KEY_NOT_CONFIGURED');
   }
 
-  const model = params.model || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const model = params.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const response = await fetchWithTimeout(url, {
@@ -1026,6 +1037,9 @@ const requestOpenJarvis = (params: LlmTextRequest): Promise<string> =>
 const requestLiteLLM = (params: LlmTextRequest): Promise<string> =>
   requestOpenAiCompatible(params, getLiteLLMBaseUrl(), params.model || getLiteLLMModel(), 'LiteLLM', getLiteLLMKey() || undefined);
 
+const requestKimi = (params: LlmTextRequest): Promise<string> =>
+  requestOpenAiCompatible(params, getKimiBaseUrl(), params.model || getKimiModel(), 'Kimi', getKimiKey());
+
 const computeNormalizedQualityScore = (response: LlmTextWithMetaResponse, latencyMs: number): number => {
   // Latency component: 1.0 at 0ms, 0.0 at 30s+, sigmoid-like decay
   const latencyScore = 1 / (1 + latencyMs / 5000);
@@ -1065,13 +1079,14 @@ export const generateTextWithMeta = async (
     // M-06: Check workflow slot model binding first (cached per-call)
     if (cachedWorkflowBinding && cachedWorkflowBinding.provider === p) return cachedWorkflowBinding.model;
     if (p === 'openai') return process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini';
-    if (p === 'gemini') return process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+    if (p === 'gemini') return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     if (p === 'anthropic') return process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-3-5-haiku-latest';
     if (p === 'huggingface') return process.env.HUGGINGFACE_MODEL || process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
     if (p === 'openclaw') return process.env.OPENCLAW_MODEL || 'openclaw';
     if (p === 'ollama') return getOllamaModel() || 'qwen2.5:3b-instruct';
     if (p === 'openjarvis') return getOpenJarvisModel() || 'qwen2.5:7b-instruct';
     if (p === 'litellm') return getLiteLLMModel();
+    if (p === 'kimi') return getKimiModel();
     return undefined;
   };
 
@@ -1097,6 +1112,9 @@ export const generateTextWithMeta = async (
     }
     if (targetProvider === 'litellm') {
       return { text: await requestLiteLLM(params), provider: targetProvider, model: resolveModel(targetProvider) };
+    }
+    if (targetProvider === 'kimi') {
+      return { text: await requestKimi(params), provider: targetProvider, model: resolveModel(targetProvider) };
     }
     return { text: await requestGemini(params), provider: 'gemini', model: resolveModel('gemini') };
   };

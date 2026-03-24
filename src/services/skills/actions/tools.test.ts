@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { executeToolByNameMock, getToolRuntimeStatusMock } = vi.hoisted(() => ({
   executeToolByNameMock: vi.fn(),
@@ -59,7 +59,7 @@ describe('toolsRunCliAction', () => {
       requestedBy: 'user-1',
     });
     expect(result.ok).toBe(true);
-    expect(result.agentRole).toBe('openjarvis');
+    expect(result.agentRole).toBe('operate');
     expect(result.artifacts[0]).toBe('tool:local.cli');
     expect(result.verification).toContain('registry_configured:true');
   });

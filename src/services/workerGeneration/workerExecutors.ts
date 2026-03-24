@@ -13,7 +13,7 @@ export type NemoClawDiscoverResult = {
   evidenceId: string;
 };
 
-export type OpenDevVerifyResult = {
+export type ArchitectVerifyResult = {
   ok: boolean;
   stage: 'verify';
   releaseEligible: boolean;
@@ -21,6 +21,9 @@ export type OpenDevVerifyResult = {
   reasons: string[];
   evidenceId: string;
 };
+
+/** @deprecated Use ArchitectVerifyResult */
+export type OpenDevVerifyResult = ArchitectVerifyResult;
 
 const normalizeGoal = (goal: string): string => String(goal || '').toLowerCase();
 
@@ -54,10 +57,10 @@ export const runNemoClawDiscoverExecutor = (params: {
   };
 };
 
-export const runOpenDevVerifyExecutor = (params: {
+export const runArchitectVerifyExecutor = (params: {
   discover: NemoClawDiscoverResult;
   requestedBy: string;
-}): OpenDevVerifyResult => {
+}): ArchitectVerifyResult => {
   const reasons: string[] = [];
   let releaseEligible = true;
 
@@ -82,14 +85,15 @@ export const runOpenDevVerifyExecutor = (params: {
     releaseEligible,
     approvalRequired,
     reasons,
+    // Legacy evidence IDs preserved for backward compatibility with existing Supabase data
     evidenceId: `opendev:${params.discover.actionName}`,
   };
 };
 
-export const runOpenDevReleaseGate = (params: {
+export const runArchitectReleaseGate = (params: {
   approval: PendingWorkerApproval;
   actorIsAdmin: boolean;
-}): OpenDevVerifyResult => {
+}): ArchitectVerifyResult => {
   const reasons: string[] = [];
   let releaseEligible = true;
 
@@ -118,6 +122,12 @@ export const runOpenDevReleaseGate = (params: {
     releaseEligible,
     approvalRequired: true,
     reasons,
+    // Legacy evidence ID preserved for backward compatibility with existing Supabase data
     evidenceId: `opendev-release:${params.approval.id}`,
   };
 };
+
+/** @deprecated Use runArchitectVerifyExecutor */
+export const runOpenDevVerifyExecutor = runArchitectVerifyExecutor;
+/** @deprecated Use runArchitectReleaseGate */
+export const runOpenDevReleaseGate = runArchitectReleaseGate;

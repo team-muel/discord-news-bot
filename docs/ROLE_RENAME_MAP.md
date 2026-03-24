@@ -43,19 +43,25 @@ Internal labels must:
 
 ## Compatibility Policy
 
-Phase A:
+**Current status: Phase C complete (2026-03-24).**
+
+All internal source code, types, actions, worker specs, tests, docs, and prompts now use neutral names as canonical labels. Legacy names are still accepted as input aliases for backward compatibility in `normalizeAgentRole()`, `McpWorkerKind`, worker spec aliases, and `ROLE_TOOLS`.
+
+Phase A (completed):
 
 - docs and prompts prefer new names
 - runtime accepts both legacy and new labels
 
-Phase B:
+Phase B (completed):
 
 - scripts/workflows/env prefer new names
 - legacy labels remain as deprecated aliases
 
-Phase C:
+Phase C (completed 2026-03-24):
 
-- remove legacy aliases only after docs, scripts, workflows, and env transitions are complete
+- all source code uses neutral names as canonical
+- legacy aliases kept only at input boundaries for backward compat
+- external OSS adapter IDs (nemoclaw, openjarvis, openshell, openclaw) remain unchanged
 
 ## Runtime Scope Reminder
 

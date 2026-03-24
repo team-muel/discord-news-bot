@@ -20,33 +20,33 @@ import { isOneOf, toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
 
-const ADVISORY_ACTION_WORKER_IDS: Record<string, 'local-orchestrator' | 'opendev' | 'nemoclaw' | 'openjarvis'> = {
-  'local.orchestrator.all': 'local-orchestrator',
-  'local.orchestrator.route': 'local-orchestrator',
-  'coordinate.all': 'local-orchestrator',
-  'coordinate.route': 'local-orchestrator',
-  'opendev.plan': 'opendev',
-  'architect.plan': 'opendev',
-  'nemoclaw.review': 'nemoclaw',
-  'review.review': 'nemoclaw',
-  'openjarvis.ops': 'openjarvis',
-  'operate.ops': 'openjarvis',
-  'implement.execute': 'openjarvis',
-  'tools.run.cli': 'openjarvis',
+const ADVISORY_ACTION_WORKER_IDS: Record<string, 'coordinate' | 'architect' | 'review' | 'operate'> = {
+  'local.orchestrator.all': 'coordinate',
+  'local.orchestrator.route': 'coordinate',
+  'coordinate.all': 'coordinate',
+  'coordinate.route': 'coordinate',
+  'opendev.plan': 'architect',
+  'architect.plan': 'architect',
+  'nemoclaw.review': 'review',
+  'review.review': 'review',
+  'openjarvis.ops': 'operate',
+  'operate.ops': 'operate',
+  'implement.execute': 'operate',
+  'tools.run.cli': 'operate',
 };
 
-const inferActionRole = (actionName: string): 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev' => {
+const inferActionRole = (actionName: string): 'operate' | 'implement' | 'review' | 'architect' => {
   const normalized = String(actionName || '').trim().toLowerCase();
   if (normalized.startsWith('opencode.') || normalized.startsWith('implement.')) {
-    return 'opencode';
+    return 'implement';
   }
   if (normalized.startsWith('nemoclaw.') || normalized.startsWith('review.') || normalized.startsWith('news.') || normalized.startsWith('web.') || normalized.startsWith('youtube.') || normalized.startsWith('community.')) {
-    return 'nemoclaw';
+    return 'review';
   }
   if (normalized.startsWith('opendev.') || normalized.startsWith('architect.') || normalized.startsWith('db.') || normalized.startsWith('code.') || normalized.startsWith('rag.')) {
-    return 'opendev';
+    return 'architect';
   }
-  return 'openjarvis';
+  return 'operate';
 };
 
 const toCatalogEntry = (action: ReturnType<typeof listActions>[number], policy?: Awaited<ReturnType<typeof listGuildActionPolicies>>[number]) => {

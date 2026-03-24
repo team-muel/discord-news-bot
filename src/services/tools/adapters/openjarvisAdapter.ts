@@ -8,6 +8,7 @@ const TIMEOUT_MS = 30_000;
 const IS_WINDOWS = process.platform === 'win32';
 const ENABLED = parseBooleanEnv(process.env.OPENJARVIS_ENABLED, false);
 const SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
+const MODEL = String(process.env.OPENJARVIS_MODEL || 'qwen2.5:7b-instruct').trim();
 
 const runCli = async (args: string): Promise<{ stdout: string; stderr: string }> => {
   return execAsync(`jarvis ${args}`, {
@@ -71,7 +72,7 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           const health = await fetch(`${SERVE_URL}/health`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
           if (health?.ok) {
             const { ok, data } = await httpPost('/v1/chat/completions', {
-              model: args.model || 'default',
+              model: args.model || MODEL,
               messages: [{ role: 'user', content: question }],
             });
             if (ok && data) {

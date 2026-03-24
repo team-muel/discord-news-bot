@@ -1,5 +1,7 @@
 # GoT + LangGraph Execution Plan
 
+**Status: CLOSED (2026-03-24)** — State contract(스테이트 계약) 정의 완료, 런타임 수동 상태 머신 유지. LangGraph 전환은 로드맵 종결에 따라 보관. 재개 시 별도 실행 사이클에서 처리한다.
+
 이 문서는 현재 멀티에이전트 런타임을 유지하면서 GoT(Graph of Thoughts) 추론을 도입하고,
 그 실행 엔진을 LangGraph 스타일로 점진 전환하기 위한 실행 계획을 정의한다.
 

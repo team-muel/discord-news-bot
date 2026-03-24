@@ -17,7 +17,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`opencode` (implement role)
+`implement` (implement role)
 
 ## Process
 
@@ -62,6 +62,6 @@ applyTo: "**"
 
 ## Runtime Counterpart
 
-- Action: `opencode.execute`
+- Action: `implement.execute` (legacy: `opencode.execute`)
 - Discord intent: `implement|refactor|bugfix|test|구현|리팩터`
-- Worker env: `MCP_OPENCODE_WORKER_URL`
+- Worker env: `MCP_IMPLEMENT_WORKER_URL` (legacy: `MCP_OPENCODE_WORKER_URL`)

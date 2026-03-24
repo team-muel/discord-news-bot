@@ -17,7 +17,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`nemoclaw` (review role)
+`review` (review role)
 
 ## Process
 
@@ -63,6 +63,6 @@ applyTo: "**"
 
 ## Runtime Counterpart
 
-- Action: `nemoclaw.review`
+- Action: `review.review` (legacy: `nemoclaw.review`)
 - Discord intent: `review|regression|risk|security|리뷰|회귀|보안`
-- Worker env: `MCP_NEMOCLAW_WORKER_URL`
+- Worker env: `MCP_REVIEW_WORKER_URL` (legacy: `MCP_NEMOCLAW_WORKER_URL`)

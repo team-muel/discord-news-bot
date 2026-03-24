@@ -1,5 +1,7 @@
 # 2026-03-18 Gate Runs Follow-up Closure
 
+**Status: ARCHIVED (2026-03-24)**
+
 ## Scope
 
 - gate-20260318-081523 (guild:demo)

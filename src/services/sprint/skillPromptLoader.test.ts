@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   loadSkillPrompt,
   buildPhaseSystemPrompt,
@@ -11,15 +11,15 @@ import {
 describe('skillPromptLoader', () => {
   describe('getPhaseActionName', () => {
     it('plan → opendev.plan', () => {
-      expect(getPhaseActionName('plan')).toBe('opendev.plan');
+      expect(getPhaseActionName('plan')).toBe('architect.plan');
     });
 
     it('implement → opencode.execute', () => {
-      expect(getPhaseActionName('implement')).toBe('opencode.execute');
+      expect(getPhaseActionName('implement')).toBe('implement.execute');
     });
 
     it('review → nemoclaw.review', () => {
-      expect(getPhaseActionName('review')).toBe('nemoclaw.review');
+      expect(getPhaseActionName('review')).toBe('review.review');
     });
 
     it('qa → qa.test', () => {
@@ -41,19 +41,19 @@ describe('skillPromptLoader', () => {
 
   describe('getPhaseLeadAgent', () => {
     it('plan → OpenDev', () => {
-      expect(getPhaseLeadAgent('plan')).toBe('OpenDev');
+      expect(getPhaseLeadAgent('plan')).toBe('Architect');
     });
 
     it('implement → OpenCode', () => {
-      expect(getPhaseLeadAgent('implement')).toBe('OpenCode');
+      expect(getPhaseLeadAgent('implement')).toBe('Implement');
     });
 
     it('review → NemoClaw', () => {
-      expect(getPhaseLeadAgent('review')).toBe('NemoClaw');
+      expect(getPhaseLeadAgent('review')).toBe('Review');
     });
 
     it('ops-validate → OpenJarvis', () => {
-      expect(getPhaseLeadAgent('ops-validate')).toBe('OpenJarvis');
+      expect(getPhaseLeadAgent('ops-validate')).toBe('Operate');
     });
   });
 

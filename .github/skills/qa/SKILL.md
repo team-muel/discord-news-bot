@@ -16,7 +16,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`opencode` (implement role — QA execution requires code-level verification)
+`implement` (implement role — QA execution requires code-level verification)
 
 ## Process
 

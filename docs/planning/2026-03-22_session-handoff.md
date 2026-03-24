@@ -1,5 +1,7 @@
 # 2026-03-22 Session Handoff
 
+**Status: ARCHIVED (2026-03-24)** — 전체 로드맵/WIP 종결. 핸드오프 역할 종료.
+
 ## Purpose
 
 - 이 문서는 다음 세션이 현재 상태를 다시 발굴하지 않고 바로 이어서 작업할 수 있도록 남기는 handoff snapshot이다.

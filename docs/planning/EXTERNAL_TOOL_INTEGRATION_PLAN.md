@@ -1,8 +1,8 @@
 # External Tool Integration Plan
 
-Status: Active — Phase 1 complete, Phase 2-4 partial, Phase 5.1 complete
+Status: **CLOSED (2026-03-24)** — Phase 1 complete, Phase 2-4 partial, Phase 5.1 complete. 잔여 Phase 3-4 runtime binding은 외부 도구 GA 이후 재개 예정. 전체 로드맵/WIP 종결에 따라 보관.
 Created: 2026-03-21
-Last Updated: 2026-03-21
+Last Updated: 2026-03-24
 
 ## Objective
 

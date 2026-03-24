@@ -191,10 +191,10 @@ const actionResultCache = new TtlCache<{
   summary: string;
   artifacts: string[];
   verification: string[];
-  agentRole?: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+  agentRole?: 'operate' | 'implement' | 'review' | 'architect';
   handoff?: {
-    fromAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
-    toAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+    fromAgent: 'operate' | 'implement' | 'review' | 'architect';
+    toAgent: 'operate' | 'implement' | 'review' | 'architect';
     reason?: string;
     evidenceId?: string;
   };
@@ -1192,10 +1192,10 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       verification: string[];
       error?: string;
       durationMs?: number;
-      agentRole?: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+      agentRole?: 'operate' | 'implement' | 'review' | 'architect';
       handoff?: {
-        fromAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
-        toAgent: 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+        fromAgent: 'operate' | 'implement' | 'review' | 'architect';
+        toAgent: 'operate' | 'implement' | 'review' | 'architect';
         reason?: string;
         evidenceId?: string;
       };

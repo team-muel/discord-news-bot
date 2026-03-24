@@ -21,16 +21,16 @@ Route tasks through sprint phases with deterministic flow and clear safety gates
 
 ## Phase → Lead Agent Mapping
 
-| Phase             | Lead Agent | Runtime Action     |
-| ----------------- | ---------- | ------------------ |
-| `/plan`           | OpenDev    | `opendev.plan`     |
-| `/implement`      | OpenCode   | `opencode.execute` |
-| `/review`         | NemoClaw   | `nemoclaw.review`  |
-| `/qa`             | OpenCode   | `qa.test`          |
-| `/security-audit` | NemoClaw   | `cso.audit`        |
-| `/ops-validate`   | OpenJarvis | `openjarvis.ops`   |
-| `/ship`           | OpenJarvis | `release.ship`     |
-| `/retro`          | OpenDev    | `retro.summarize`  |
+| Phase             | Lead Agent | Runtime Action      |
+| ----------------- | ---------- | ------------------- |
+| `/plan`           | Architect  | `architect.plan`    |
+| `/implement`      | Implement  | `implement.execute` |
+| `/review`         | Review     | `review.review`     |
+| `/qa`             | Implement  | `qa.test`           |
+| `/security-audit` | Review     | `cso.audit`         |
+| `/ops-validate`   | Operate    | `operate.ops`       |
+| `/ship`           | Operate    | `release.ship`      |
+| `/retro`          | Architect  | `retro.summarize`   |
 
 ## Autonomy Levels
 
@@ -76,8 +76,8 @@ Each skill can be invoked directly from the IDE:
 
 ## Boundary Note
 
-Role names (OpenCode, OpenDev, NemoClaw, OpenJarvis) are repository-local collaboration labels.
-They do not imply installation of similarly named external OSS frameworks.
+Role names (Implement, Architect, Review, Operate) are repository-local collaboration labels describing function.
+They do not imply installation of similarly named external OSS frameworks (NVIDIA NemoClaw, Stanford OpenJarvis, etc.).
 Runtime integration exists only where registered actions and configured workers are present.
 
 ## Hard Gates

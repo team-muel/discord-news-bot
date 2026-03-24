@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { startAgentSessionMock, serializeAgentSessionForApiMock, listSkillsMock, isSkillIdMock } = vi.hoisted(() => ({
   startAgentSessionMock: vi.fn(),
@@ -76,7 +76,7 @@ describe('superAgentService', () => {
 
     expect(recommendation.task.task_id).toBe('task-1');
     expect(recommendation.route.mode).toBe('local-collab');
-    expect(recommendation.route.lead_agent.name).toBe('OpenCode');
+    expect(recommendation.route.lead_agent.name).toBe('Implement');
     expect(recommendation.route.consult_agents).toHaveLength(0);
     expect(recommendation.suggested_skill_id).toBe('webhook');
     expect(recommendation.privacy_preflight).toMatchObject({
@@ -90,7 +90,7 @@ describe('superAgentService', () => {
     expect(recommendation.runtime_mapping.supervisor_fields.task_id).toBe('task-1');
   });
 
-  it('운영/롤백 목표에 대해 operations 모드와 OpenJarvis lead를 선택한다', () => {
+  it('운영/롤백 목표에 대해 operations 모드와 Operate lead를 선택한다', () => {
     const recommendation = recommendSuperAgent({
       task_id: 'task-2',
       guild_id: 'guild-1',
@@ -99,7 +99,7 @@ describe('superAgentService', () => {
     });
 
     expect(recommendation.route.mode).toBe('operations');
-    expect(recommendation.route.lead_agent.name).toBe('OpenJarvis');
+    expect(recommendation.route.lead_agent.name).toBe('Operate');
     expect(recommendation.route.required_gates).toContain('ops-readiness');
     expect(recommendation.priority).toBe('precise');
   });
@@ -143,7 +143,7 @@ describe('superAgentService', () => {
     });
     expect(typeof startAgentSessionMock.mock.calls[0][0].goal).toBe('string');
     expect(result.session).toEqual({ id: 'session-1', status: 'queued' });
-    expect(result.recommendation.route.lead_agent.name).toBe('OpenDev');
+    expect(result.recommendation.route.lead_agent.name).toBe('Architect');
     expect(result.recommendation.runtime_mapping.agent_session_request.requestedBy).toBe('user-1');
   });
 
@@ -235,7 +235,7 @@ describe('superAgentService', () => {
     const capabilities = getSuperAgentCapabilities();
 
     expect(capabilities.modes).toContain('local-collab');
-    expect(capabilities.leadAgents).toContain('OpenCode');
+    expect(capabilities.leadAgents).toContain('Implement');
     expect(capabilities.availableSkills).toHaveLength(2);
   });
 });

@@ -14,31 +14,12 @@ import { parseBooleanEnv } from '../utils/env';
 import {
   AUTOMATION_INTENT_PATTERN as RUNTIME_AUTOMATION_INTENT_PATTERN,
   CODING_INTENT_PATTERN as RUNTIME_CODING_INTENT_PATTERN,
+  SIMPLE_COMMAND_ALLOWLIST,
 } from './runtimePolicy';
 
 export const SIMPLE_COMMANDS_ENABLED = !['0', 'false', 'no', 'off']
   .includes(String(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED || 'true').toLowerCase());
-export const SIMPLE_COMMAND_ALLOWLIST = new Set([
-  'ping',
-  'help',
-  '도움말',
-  '로그인',
-  '구독',
-  '해줘',
-  '만들어줘',
-  '주가',
-  '차트',
-  '상태',
-  '설정',
-  '정책',
-  '세션',
-  '관리설정',
-  '잊어줘',
-  '학습',
-  '유저',
-  '유저 프로필 보기',
-  '유저 메모 추가',
-]);
+export { SIMPLE_COMMAND_ALLOWLIST };
 export const CODE_THREAD_ENABLED = parseBooleanEnv(
   process.env.CODE_THREAD_ENABLED,
   true,

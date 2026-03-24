@@ -17,25 +17,25 @@ export type SkillPromptDefinition = {
 const SKILLS_DIR = path.resolve(__dirname, '../../../.github/skills');
 
 const PHASE_ACTION_MAP: Record<string, string> = {
-  plan: 'opendev.plan',
-  implement: 'opencode.execute',
-  review: 'nemoclaw.review',
+  plan: 'architect.plan',
+  implement: 'implement.execute',
+  review: 'review.review',
   qa: 'qa.test',
   'security-audit': 'cso.audit',
-  'ops-validate': 'openjarvis.ops',
+  'ops-validate': 'operate.ops',
   ship: 'release.ship',
   retro: 'retro.summarize',
 };
 
 const PHASE_LEAD_AGENT_MAP: Record<string, string> = {
-  plan: 'OpenDev',
-  implement: 'OpenCode',
-  review: 'NemoClaw',
-  qa: 'OpenCode',
-  'security-audit': 'NemoClaw',
-  'ops-validate': 'OpenJarvis',
-  ship: 'OpenJarvis',
-  retro: 'OpenDev',
+  plan: 'Architect',
+  implement: 'Implement',
+  review: 'Review',
+  qa: 'Implement',
+  'security-audit': 'Review',
+  'ops-validate': 'Operate',
+  ship: 'Operate',
+  retro: 'Architect',
 };
 
 const cache = new TtlCache<SkillPromptDefinition>(50);
@@ -106,7 +106,7 @@ export const loadSkillPrompt = (skillName: string): SkillPromptDefinition | null
   const def: SkillPromptDefinition = {
     skillName,
     description,
-    leadAgent: PHASE_LEAD_AGENT_MAP[skillName] || 'OpenCode',
+    leadAgent: PHASE_LEAD_AGENT_MAP[skillName] || 'Implement',
     process: extractProcessSteps(body),
     outputContract: extractOutputContract(body),
     nextSkills: extractNextSkills(body),
@@ -152,7 +152,7 @@ export const getPhaseActionName = (skillName: string): string => {
 };
 
 export const getPhaseLeadAgent = (skillName: string): string => {
-  return PHASE_LEAD_AGENT_MAP[skillName] || 'OpenCode';
+  return PHASE_LEAD_AGENT_MAP[skillName] || 'Implement';
 };
 
 /**

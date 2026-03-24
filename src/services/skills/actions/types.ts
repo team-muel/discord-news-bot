@@ -5,35 +5,50 @@ export type ActionExecutionInput = {
   requestedBy?: string;
 };
 
+/** Canonical agent role names — neutral, function-based labels. */
+export const AGENT_ROLES = ['operate', 'implement', 'review', 'architect'] as const;
+export type AgentRoleName = (typeof AGENT_ROLES)[number];
+
+/** Legacy role names kept for backward compatibility (stored DB data, env vars). */
 export const LEGACY_AGENT_ROLES = ['openjarvis', 'opencode', 'nemoclaw', 'opendev'] as const;
-export const NEUTRAL_AGENT_ROLES = ['operate', 'implement', 'review', 'architect'] as const;
-
 export type LegacyAgentRole = (typeof LEGACY_AGENT_ROLES)[number];
-export type NeutralAgentRole = (typeof NEUTRAL_AGENT_ROLES)[number];
-export type AgentRole = LegacyAgentRole | NeutralAgentRole;
 
-const NEUTRAL_TO_LEGACY_ROLE: Record<NeutralAgentRole, LegacyAgentRole> = {
-  operate: 'openjarvis',
-  implement: 'opencode',
-  review: 'nemoclaw',
-  architect: 'opendev',
+/** @deprecated Use AGENT_ROLES instead. Alias kept during migration. */
+export const NEUTRAL_AGENT_ROLES = AGENT_ROLES;
+/** @deprecated Use AgentRoleName instead. Alias kept during migration. */
+export type NeutralAgentRole = AgentRoleName;
+/** Union of canonical + legacy names — use for input acceptance only. */
+export type AgentRole = AgentRoleName | LegacyAgentRole;
+
+const LEGACY_TO_NEUTRAL_ROLE: Record<LegacyAgentRole, AgentRoleName> = {
+  openjarvis: 'operate',
+  opencode: 'implement',
+  nemoclaw: 'review',
+  opendev: 'architect',
 };
 
-export const normalizeAgentRole = (value: unknown, fallback: LegacyAgentRole = 'openjarvis'): LegacyAgentRole => {
-  const role = String(value || '').trim().toLowerCase() as AgentRole;
-  if ((LEGACY_AGENT_ROLES as readonly string[]).includes(role)) {
-    return role as LegacyAgentRole;
+/**
+ * Normalize any agent role input (legacy or neutral) to canonical neutral name.
+ * Accepts both legacy ('openjarvis') and neutral ('operate') names.
+ */
+export const normalizeAgentRole = (value: unknown, fallback: AgentRoleName = 'operate'): AgentRoleName => {
+  const role = String(value || '').trim().toLowerCase();
+  if ((AGENT_ROLES as readonly string[]).includes(role)) {
+    return role as AgentRoleName;
   }
-  if ((NEUTRAL_AGENT_ROLES as readonly string[]).includes(role)) {
-    return NEUTRAL_TO_LEGACY_ROLE[role as NeutralAgentRole];
+  if ((LEGACY_AGENT_ROLES as readonly string[]).includes(role)) {
+    return LEGACY_TO_NEUTRAL_ROLE[role as LegacyAgentRole];
   }
   return fallback;
 };
 
-export const inferLegacyAgentRoleByActionName = (actionName: string): LegacyAgentRole => {
+/** @deprecated Use inferAgentRoleByActionName instead. */
+export const inferLegacyAgentRoleByActionName = inferAgentRoleByActionName;
+
+export function inferAgentRoleByActionName(actionName: string): AgentRoleName {
   const normalized = String(actionName || '').trim().toLowerCase();
   if (normalized.startsWith('opencode.') || normalized.startsWith('implement.')) {
-    return 'opencode';
+    return 'implement';
   }
   if (normalized.startsWith('nemoclaw.')
     || normalized.startsWith('review.')
@@ -41,21 +56,21 @@ export const inferLegacyAgentRoleByActionName = (actionName: string): LegacyAgen
     || normalized.startsWith('web.')
     || normalized.startsWith('youtube.')
     || normalized.startsWith('community.')) {
-    return 'nemoclaw';
+    return 'review';
   }
   if (normalized.startsWith('opendev.')
     || normalized.startsWith('architect.')
     || normalized.startsWith('db.')
     || normalized.startsWith('code.')
     || normalized.startsWith('rag.')) {
-    return 'opendev';
+    return 'architect';
   }
-  return 'openjarvis';
-};
+  return 'operate';
+}
 
 export type ActionHandoff = {
-  fromAgent: LegacyAgentRole;
-  toAgent: LegacyAgentRole;
+  fromAgent: AgentRoleName;
+  toAgent: AgentRoleName;
   reason?: string;
   evidenceId?: string;
 };
@@ -68,7 +83,7 @@ export type ActionExecutionResult = {
   verification: string[];
   error?: string;
   durationMs?: number;
-  agentRole?: LegacyAgentRole;
+  agentRole?: AgentRoleName;
   handoff?: ActionHandoff;
 };
 

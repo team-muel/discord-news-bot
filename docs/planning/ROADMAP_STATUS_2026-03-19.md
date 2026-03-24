@@ -1,5 +1,7 @@
 # Roadmap Status Snapshot (2026-03-19)
 
+**Status: ARCHIVED (2026-03-24)** — 전체 로드맵/WIP 종결에 따라 보관.
+
 문서 상태:
 
 - Historical snapshot for 2026-03-19 only.

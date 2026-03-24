@@ -10,6 +10,43 @@
 
 import { SPRINT_AUTOPLAN_ENABLED } from '../../config';
 
+// ──── Learning context store (C-17/18: optimize/bench feedback loop) ──────────
+
+type LearningInsight = {
+  sprintId: string;
+  storedAt: string;
+  optimizeHints: string[];
+  benchResults: string[];
+};
+
+const LEARNING_MAX_ENTRIES = 20;
+const learningStore: LearningInsight[] = [];
+
+/** Store optimization and benchmark insights from retro phase self-learning loop. */
+export const storeLearningInsight = (insight: LearningInsight): void => {
+  learningStore.push(insight);
+  while (learningStore.length > LEARNING_MAX_ENTRIES) {
+    learningStore.shift();
+  }
+};
+
+/** Get recent learning insights for injection into plan phase. */
+export const getRecentLearningContext = (maxEntries = 5): string => {
+  if (learningStore.length === 0) return '';
+  const recent = learningStore.slice(-maxEntries);
+  const lines = recent.flatMap((insight) => {
+    const parts: string[] = [`- Sprint ${insight.sprintId} (${insight.storedAt}):`];
+    if (insight.optimizeHints.length > 0) {
+      parts.push(`  Optimize: ${insight.optimizeHints.slice(0, 3).join('; ')}`);
+    }
+    if (insight.benchResults.length > 0) {
+      parts.push(`  Bench: ${insight.benchResults.slice(0, 3).join('; ')}`);
+    }
+    return parts;
+  });
+  return lines.join('\n');
+};
+
 // ──── Session tracking ────────────────────────────────────────────────────────
 
 const activeSessions = new Map<string, number>(); // sprintId → lastActiveAt
@@ -109,6 +146,21 @@ export const buildSprintPreamble = (sprintId: string, phase: string): string => 
       'Focus on the technical plan — strategic and security reviews will follow.',
       '',
     );
+  }
+
+  // Learning context from previous sprints' retro → optimize → bench results
+  if (phase === 'plan') {
+    const learningContext = getRecentLearningContext();
+    if (learningContext) {
+      sections.push(
+        '## Learning From Previous Sprints',
+        'Recent optimization insights and benchmark results from past sprints:',
+        learningContext,
+        '',
+        'Use these insights to avoid known issues and build on proven patterns.',
+        '',
+      );
+    }
   }
 
   return sections.join('\n');

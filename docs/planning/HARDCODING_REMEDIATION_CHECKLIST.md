@@ -1,5 +1,7 @@
 # Hardcoding Remediation Checklist (Discord + Agent Runtime)
 
+**Status: CLOSED (2026-03-24)** — Phase 1 (H-001~H-003) 미착수 상태로 종결. 전체 로드맵/WIP 종결에 따라 보관. 재개 시 별도 실행 사이클에서 처리한다.
+
 목표: 디스코드 런타임 계층의 하드코딩/매직넘버를 정책/설정으로 외부화해 변경 리스크를 낮춘다.
 
 ## 원칙

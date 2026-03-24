@@ -26,7 +26,7 @@ import {
   runWorkerGenerationPipeline,
 } from '../../services/workerGeneration/workerGenerationPipeline';
 import { cleanupSandbox } from '../../services/workerGeneration/workerSandbox';
-import { runOpenDevReleaseGate } from '../../services/workerGeneration/workerExecutors';
+import { runArchitectReleaseGate } from '../../services/workerGeneration/workerExecutors';
 import { evaluateWorkerActivationGate } from '../../services/agentRuntimeReadinessService';
 import { DISCORD_MESSAGES } from '../messages';
 import {
@@ -242,13 +242,13 @@ export const handleButtonInteraction = async (params: {
 
     if (action === 'worker_approve') {
       await interaction.deferUpdate();
-      const releaseGate = runOpenDevReleaseGate({
+      const releaseGate = runArchitectReleaseGate({
         approval: appr,
         actorIsAdmin: true,
       });
       if (!releaseGate.releaseEligible) {
         await interaction.followUp({
-          content: `🚫 OpenDev 릴리스 게이트 차단: ${releaseGate.reasons.join('; ') || 'unknown reason'}`,
+          content: `🚫 릴리스 게이트 차단: ${releaseGate.reasons.join('; ') || 'unknown reason'}`,
           ephemeral: true,
         });
         return true;

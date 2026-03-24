@@ -25,12 +25,12 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
 const extractPhaseActionMap = (): string => {
   const map: Record<string, string> = {
-    plan: 'opendev.plan',
-    implement: 'opencode.execute',
-    review: 'nemoclaw.review',
+    plan: 'architect.plan',
+    implement: 'implement.execute',
+    review: 'review.review',
     qa: 'qa.test',
     'security-audit': 'cso.audit',
-    'ops-validate': 'openjarvis.ops',
+    'ops-validate': 'operate.ops',
     ship: 'release.ship',
     retro: 'retro.summarize',
   };
@@ -44,14 +44,14 @@ const extractPhaseActionMap = (): string => {
 
 const extractPhaseLeadAgentMap = (): string => {
   const map: Record<string, string> = {
-    plan: 'OpenDev (architect)',
-    implement: 'OpenCode (implement)',
-    review: 'NemoClaw (review)',
-    qa: 'OpenCode (QA)',
-    'security-audit': 'NemoClaw (security)',
-    'ops-validate': 'OpenJarvis (operations)',
-    ship: 'OpenJarvis (release)',
-    retro: 'OpenDev (reflection)',
+    plan: 'Architect',
+    implement: 'Implement',
+    review: 'Review',
+    qa: 'Implement (QA)',
+    'security-audit': 'Review (security)',
+    'ops-validate': 'Operate (operations)',
+    ship: 'Operate (release)',
+    retro: 'Architect (reflection)',
   };
 
   const rows = Object.entries(map)

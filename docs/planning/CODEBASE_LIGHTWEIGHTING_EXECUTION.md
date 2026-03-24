@@ -1,5 +1,7 @@
 # Codebase Lightweighting Execution
 
+**Status: CLOSED (2026-03-24)** — Phase A complete, Phase B queued. 전체 로드맵/WIP 종결에 따라 보관. 재개 시 별도 실행 사이클에서 처리한다.
+
 This document tracks practical code-lightweighting actions while preserving unattended runtime safety.
 
 ## Goal

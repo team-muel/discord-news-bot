@@ -1,5 +1,7 @@
 # Multi-Agent Node Extraction Target State
 
+**Status: CLOSED (2026-03-24)** — Step 1 (type/intent 추출) 완료. 로드맵 종결에 따라 보관. 재개 시 별도 실행 사이클에서 처리한다.
+
 Boundary note:
 
 - 이 문서는 저장소 내부 multi-agent runtime 분해 목표를 다루며, 역할명이나 node 명칭이 외부 프레임워크 직접 임베딩을 뜻하지 않는다.

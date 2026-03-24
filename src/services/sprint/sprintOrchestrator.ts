@@ -13,7 +13,7 @@ import {
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble } from './sprintPreamble';
+import { buildSprintPreamble, storeLearningInsight } from './sprintPreamble';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
 import { isJudgePhase, judgePhaseOutput, formatJudgeAppendix } from './llmJudge';
@@ -23,16 +23,26 @@ import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getMcpWorkerUrl, callMcpWorkerTool, parseMcpTextBlocks, type McpWorkerKind } from '../skills/actions/mcpDelegate';
 import { createActionApprovalRequest } from '../skills/actionGovernanceStore';
+import { executeExternalAction } from '../tools/externalAdapterRegistry';
+import { runWorkerGenerationPipeline } from '../workerGeneration/workerGenerationPipeline';
+import { generateAndApplyCodeChanges, rollbackCodeChanges, type CodeChange } from './sprintCodeWriter';
 
 // Phase → MCP worker kind mapping for delegation
 const PHASE_WORKER_KIND: Partial<Record<SprintPhase, McpWorkerKind>> = {
-  plan: 'opendev',
-  implement: 'opencode',
-  review: 'nemoclaw',
-  'security-audit': 'nemoclaw',
-  'ops-validate': 'openjarvis',
-  ship: 'openjarvis',
-  retro: 'opendev',
+  plan: 'architect',
+  implement: 'implement',
+  review: 'review',
+  'security-audit': 'review',
+  'ops-validate': 'operate',
+  ship: 'operate',
+  retro: 'architect',
+};
+
+// Phase → external adapter fallback for when MCP workers are absent
+const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, { adapterId: 'openshell' | 'nemoclaw' | 'openclaw' | 'openjarvis'; action: string }>> = {
+  review: { adapterId: 'nemoclaw', action: 'code.review' },
+  'security-audit': { adapterId: 'nemoclaw', action: 'code.review' },
+  'ops-validate': { adapterId: 'openjarvis', action: 'jarvis.ask' },
 };
 
 // ──── Types ───────────────────────────────────────────────────────────────────
@@ -77,6 +87,10 @@ export type SprintPipeline = {
   totalPhasesExecuted: number;
   changedFiles: string[];
   rollbackPlan: string;
+  /** Name of dynamically generated worker (if any), populated during implement phase */
+  generatedWorkerName?: string;
+  /** Code changes applied during implement phase (for rollback and ship) */
+  codeChanges?: CodeChange[];
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -253,6 +267,82 @@ const executePhaseAction = async (
   }
 
   try {
+    // ── Worker generation path: feature-request/cs-ticket implement generates dynamic workers ──
+    if (phase === 'implement' && (pipeline.triggerType === 'feature-request' || pipeline.triggerType === 'cs-ticket')) {
+      logger.info('[SPRINT] worker-generation path for phase=%s trigger=%s', phase, pipeline.triggerType);
+      try {
+        const pipeResult = await Promise.race([
+          runWorkerGenerationPipeline({
+            goal: pipeline.objective,
+            guildId: pipeline.guildId,
+            requestedBy: `sprint:${pipeline.sprintId}`,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Worker generation timed out')), SPRINT_PHASE_TIMEOUT_MS),
+          ),
+        ]);
+
+        if (pipeResult.ok) {
+          pipeline.generatedWorkerName = pipeResult.approval.actionName;
+          return {
+            phase,
+            status: 'success',
+            output: `Dynamic worker generated: ${pipeResult.approval.actionName} (approval=${pipeResult.approval.id}, validation=${pipeResult.approval.validationPassed ? 'passed' : 'failed'})`,
+            artifacts: [pipeResult.approval.actionName, `approval:${pipeResult.approval.id}`],
+            startedAt,
+            completedAt: new Date().toISOString(),
+            iterationCount: 1,
+          };
+        }
+
+        logger.warn('[SPRINT] worker-generation failed: %s, falling through to standard implement', pipeResult.error);
+      } catch (wgError) {
+        logger.warn('[SPRINT] worker-generation threw: %s, falling through to standard implement', wgError instanceof Error ? wgError.message : String(wgError));
+      }
+    }
+
+    // ── Code modification path: self-improvement / error-detection / manual / scheduled ──
+    const CODE_MOD_TRIGGERS: SprintTriggerType[] = ['error-detection', 'self-improvement', 'manual', 'scheduled'];
+    if (phase === 'implement' && CODE_MOD_TRIGGERS.includes(pipeline.triggerType)) {
+      logger.info('[SPRINT] code-modification path for phase=%s trigger=%s', phase, pipeline.triggerType);
+      try {
+        const planOutput = pipeline.phaseResults['plan-0']?.output;
+        const codeResult = await Promise.race([
+          generateAndApplyCodeChanges({
+            objective: pipeline.objective,
+            changedFiles: pipeline.changedFiles,
+            previousPhaseOutput: planOutput,
+            sprintId: pipeline.sprintId,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Code modification timed out')), SPRINT_PHASE_TIMEOUT_MS),
+          ),
+        ]);
+
+        if (codeResult.ok && codeResult.changes.length > 0) {
+          pipeline.codeChanges = codeResult.changes;
+          for (const change of codeResult.changes) {
+            if (!pipeline.changedFiles.includes(change.filePath)) {
+              pipeline.changedFiles.push(change.filePath);
+            }
+          }
+          return {
+            phase,
+            status: 'success',
+            output: codeResult.summary,
+            artifacts: codeResult.changes.map((c) => c.filePath),
+            startedAt,
+            completedAt: new Date().toISOString(),
+            iterationCount: 1,
+          };
+        }
+
+        logger.warn('[SPRINT] code-modification returned no changes: %s, falling through to LLM action', codeResult.summary);
+      } catch (cmError) {
+        logger.warn('[SPRINT] code-modification threw: %s, falling through to LLM action', cmError instanceof Error ? cmError.message : String(cmError));
+      }
+    }
+
     // ── Fast-path: deterministic phases skip LLM entirely ──
     if (isDeterministicPhase(phase)) {
       logger.info('[SPRINT] fast-path execution for phase=%s (zero LLM tokens)', phase);
@@ -262,6 +352,7 @@ const executePhaseAction = async (
           sprintId: pipeline.sprintId,
           objective: pipeline.objective,
           changedFiles: pipeline.changedFiles,
+          codeChanges: pipeline.codeChanges,
         }),
         new Promise<null>((resolve) =>
           setTimeout(() => resolve(null), SPRINT_PHASE_TIMEOUT_MS),
@@ -318,6 +409,33 @@ const executePhaseAction = async (
         completedAt: new Date().toISOString(),
         iterationCount: 1,
       };
+    }
+
+    // ── External adapter fallback: try real external tools before LLM-only fallback ──
+    const externalMapping = PHASE_EXTERNAL_ADAPTER[phase];
+    if (externalMapping) {
+      try {
+        const adapterResult = await executeExternalAction(externalMapping.adapterId, externalMapping.action, {
+          code: pipeline.changedFiles.join('\n'),
+          goal: pipeline.objective,
+          question: `Sprint phase "${phase}" objective: ${pipeline.objective}`,
+        });
+        if (adapterResult.ok && adapterResult.output.length > 0) {
+          logger.info('[SPRINT] external adapter %s.%s succeeded for phase=%s (duration=%dms)', externalMapping.adapterId, externalMapping.action, phase, adapterResult.durationMs);
+          return {
+            phase,
+            status: 'success',
+            output: adapterResult.output.join('\n'),
+            artifacts: [],
+            startedAt,
+            completedAt: new Date().toISOString(),
+            iterationCount: 1,
+          };
+        }
+        logger.info('[SPRINT] external adapter %s.%s unavailable or empty for phase=%s, falling through to local action', externalMapping.adapterId, externalMapping.action, phase);
+      } catch (adapterError) {
+        logger.warn('[SPRINT] external adapter %s.%s failed: %s', externalMapping.adapterId, externalMapping.action, adapterError instanceof Error ? adapterError.message : String(adapterError));
+      }
     }
 
     // ── Local action fallback ──
@@ -393,6 +511,35 @@ const buildPhaseGoal = (pipeline: SprintPipeline, phase: SprintPhase, systemProm
 
   if (pipeline.changedFiles.length > 0) {
     sections.push(`[CHANGED_FILES]\n${pipeline.changedFiles.join('\n')}`);
+  }
+
+  // Inject generated worker context for post-implement phases
+  if (pipeline.generatedWorkerName && phase !== 'implement') {
+    sections.push(`[GENERATED_WORKER] ${pipeline.generatedWorkerName}`);
+    sections.push(`[REVIEW_TARGET] Review the dynamically generated worker "${pipeline.generatedWorkerName}" for correctness, security, and alignment with the objective.`);
+  }
+
+  // Inject actual code diffs for review/security-audit/implement (re-implement) phases
+  if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
+    if (phase === 'review' || phase === 'security-audit') {
+      const diffSections: string[] = ['[CODE_DIFFS] Review the following actual code modifications:'];
+      for (const change of pipeline.codeChanges) {
+        const origSnippet = change.originalContent.slice(0, 1500);
+        const newSnippet = change.newContent.slice(0, 1500);
+        diffSections.push(
+          `\n### ${change.filePath}`,
+          `**Before (truncated):**\n\`\`\`typescript\n${origSnippet}\n\`\`\``,
+          `**After (truncated):**\n\`\`\`typescript\n${newSnippet}\n\`\`\``,
+        );
+      }
+      sections.push(diffSections.join('\n'));
+    } else if (phase === 'implement' && pipeline.implementReviewLoopCount > 0) {
+      // Re-implement: feed structured diff context so the LLM knows what was tried and rejected
+      const rejectedSummary = pipeline.codeChanges.map(
+        (c) => `- ${c.filePath} (${c.newContent.length} bytes → rolled back)`,
+      ).join('\n');
+      sections.push(`[PREVIOUS_CODE_CHANGES_REJECTED]\nThe following code modifications were attempted but rejected by review/qa:\n${rejectedSummary}\nMake different changes to address the review feedback.`);
+    }
   }
 
   return sections.join('\n\n');
@@ -493,10 +640,72 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
     }
   }
 
+  // ── Self-learning loop: feed retro results to OpenJarvis for trace + optimize ──
+  if (currentPhase === 'retro' && phaseResult.status === 'success') {
+    const learningAppendix: string[] = [];
+
+    // 1. Store trace data
+    const traceResult = await executeExternalAction('openjarvis', 'jarvis.trace', {
+      trace: {
+        run_id: pipeline.sprintId,
+        phase: 'retro',
+        objective: pipeline.objective,
+        output: phaseResult.output.slice(0, 3000),
+        changed_files: pipeline.changedFiles,
+        total_phases: pipeline.totalPhasesExecuted,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    if (traceResult.ok) {
+      learningAppendix.push(`[TRACE] stored (run_id=${pipeline.sprintId})`);
+    }
+
+    // 2. Trigger optimization if enough traces have accumulated
+    const optimizeResult = await executeExternalAction('openjarvis', 'jarvis.optimize', {});
+    if (optimizeResult.ok && optimizeResult.output.length > 0) {
+      learningAppendix.push(`[OPTIMIZE] ${optimizeResult.output.slice(0, 5).join('; ')}`);
+    }
+
+    // 3. Run benchmark for before/after comparison
+    const benchResult = await executeExternalAction('openjarvis', 'jarvis.bench', {});
+    if (benchResult.ok && benchResult.output.length > 0) {
+      learningAppendix.push(`[BENCH] ${benchResult.output.slice(0, 5).join('; ')}`);
+    }
+
+    if (learningAppendix.length > 0) {
+      phaseResult.output += `\n\n## Self-Learning Loop\n${learningAppendix.join('\n')}`;
+      logger.info('[SPRINT] self-learning loop completed for sprint=%s steps=%d', sprintId, learningAppendix.length);
+
+      // C-17/18: Store learning insights for next sprint's plan phase
+      storeLearningInsight({
+        sprintId: pipeline.sprintId,
+        storedAt: new Date().toISOString(),
+        optimizeHints: optimizeResult.ok ? optimizeResult.output.slice(0, 5) : [],
+        benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
+      });
+    }
+  }
+
   // Track implement↔review loops
   if (currentPhase === 'review' && phaseResult.status !== 'success') {
     pipeline.implementReviewLoopCount++;
     recordLoopBack();
+
+    // Rollback code changes before re-implementing so the next iteration starts clean
+    if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
+      logger.info('[SPRINT] rolling back %d code change(s) after review failure', pipeline.codeChanges.length);
+      await rollbackCodeChanges(pipeline.codeChanges);
+      pipeline.codeChanges = undefined;
+    }
+  }
+
+  // Rollback code changes when qa fails and loops back to implement
+  if (currentPhase === 'qa' && phaseResult.status !== 'success') {
+    if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
+      logger.info('[SPRINT] rolling back %d code change(s) after qa failure', pipeline.codeChanges.length);
+      await rollbackCodeChanges(pipeline.codeChanges);
+      pipeline.codeChanges = undefined;
+    }
   }
 
   // Record result

@@ -1,8 +1,10 @@
 # Planning Docs Index
 
+**상태: 전체 로드맵/WIP 종결 (2026-03-24)** — 현재 Active WIP 없음. 신규 사이클 시작 시 새 Roadmap + Execution Board 항목을 신설한다.
+
 ## Daily Operating Set
 
-매일 열어야 하는 문서는 아래 4개로 제한한다.
+매일 열어야 하는 문서는 아래 4개로 제한한다. (현재 Active WIP 없음)
 
 1. `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` — 방향, 우선순위, milestone ID
 2. `EXECUTION_BOARD.md` — 현재 활성 항목만 관리

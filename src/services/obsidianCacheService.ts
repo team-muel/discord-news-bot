@@ -12,6 +12,8 @@ import { parseIntegerEnv } from '../utils/env';
 const CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3_600_000));
 const CACHE_ENABLED = process.env.OBSIDIAN_RAG_CACHE_ENABLED !== 'false';
 const HIT_FLUSH_INTERVAL_MS = 30_000;
+const MAX_PENDING_HIT_ENTRIES = 500; // Prevent unbounded in-memory growth
+const MAX_PARALLEL_LOADS = 10; // Limit concurrent vault loads to prevent memory pressure
 
 // Batched hit counter: accumulate in-memory, flush periodically
 const pendingHitCounts = new Map<string, number>();
@@ -100,7 +102,10 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
     }
 
     // Batch hit counter increment instead of per-read Supabase UPDATE
-    pendingHitCounts.set(filePath, (pendingHitCounts.get(filePath) || (data.hit_count || 0)) + 1);
+    // Guard against unbounded map growth from many unique file paths
+    if (pendingHitCounts.size < MAX_PENDING_HIT_ENTRIES) {
+      pendingHitCounts.set(filePath, (pendingHitCounts.get(filePath) || (data.hit_count || 0)) + 1);
+    }
 
     logger.debug('[OBSIDIAN-CACHE] HIT %s', filePath);
 
@@ -183,29 +188,32 @@ export async function loadDocumentsWithCache(
     }
   }
 
-  // Phase 2: Load uncached documents in parallel
-  await Promise.all(
-    uncached.map(async (path) => {
-      try {
-        const content = await loader(path);
-        if (content) {
-          const doc: CachedDocument = {
-            filePath: path,
-            content,
-            frontmatter: {},
-            cachedAt: new Date().toISOString(),
-            hitCount: 0,
-          };
-          docs.set(path, doc);
+  // Phase 2: Load uncached documents in batches to limit concurrent memory usage
+  for (let i = 0; i < uncached.length; i += MAX_PARALLEL_LOADS) {
+    const batch = uncached.slice(i, i + MAX_PARALLEL_LOADS);
+    await Promise.all(
+      batch.map(async (path) => {
+        try {
+          const content = await loader(path);
+          if (content) {
+            const doc: CachedDocument = {
+              filePath: path,
+              content,
+              frontmatter: {},
+              cachedAt: new Date().toISOString(),
+              hitCount: 0,
+            };
+            docs.set(path, doc);
 
-          // Cache for next time
-          await cacheDocument(path, content, {});
+            // Cache for next time
+            await cacheDocument(path, content, {});
+          }
+        } catch (error) {
+          logger.warn('[OBSIDIAN-CACHE] Load failed for %s: %o', path, error);
         }
-      } catch (error) {
-        logger.warn('[OBSIDIAN-CACHE] Load failed for %s: %o', path, error);
-      }
-    })
-  );
+      })
+    );
+  }
 
   return docs;
 }

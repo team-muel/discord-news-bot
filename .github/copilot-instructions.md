@@ -21,8 +21,9 @@ Keep the platform stable while shipping fast improvements for Discord operations
 
 ## Internal Naming Boundary
 
-- Role names (OpenCode, OpenDev, NemoClaw, OpenJarvis) are repository-local collaboration labels.
-- They do not prove that similarly named external OSS frameworks are installed or directly executed.
+- Internal role names (Implement, Architect, Review, Operate) are repository-local collaboration labels describing function.
+- They do not imply that similarly named external OSS frameworks are installed or directly executed.
+- External OSS tool names (NVIDIA NemoClaw, Stanford OpenJarvis, NVIDIA OpenShell, OpenClaw) are separate and used only via external adapters.
 - Canonical naming: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/ROLE_RENAME_MAP.md`.
 
 ## Sprint Skills (gstack-inspired)
@@ -40,14 +41,14 @@ Sprint flow: `plan → implement → review → qa → ops-validate → ship →
 
 Phase → Lead Agent:
 
-- `/plan` → OpenDev (architect)
-- `/implement` → OpenCode (implement)
-- `/review` → NemoClaw (review)
-- `/qa` → OpenCode (QA execution)
-- `/security-audit` → NemoClaw (security)
-- `/ops-validate` → OpenJarvis (operations)
-- `/ship` → OpenJarvis (release)
-- `/retro` → OpenDev (reflection)
+- `/plan` → Architect
+- `/implement` → Implement
+- `/review` → Review
+- `/qa` → Implement (QA execution)
+- `/security-audit` → Review (security)
+- `/ops-validate` → Operate (operations)
+- `/ship` → Operate (release)
+- `/retro` → Architect (reflection)
 
 ## Autonomous Execution
 

@@ -1,7 +1,7 @@
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
-import { inferLegacyAgentRoleByActionName, normalizeAgentRole } from './actions/types';
+import { inferAgentRoleByActionName, normalizeAgentRole, type AgentRoleName } from './actions/types';
 
-type AgentRole = 'openjarvis' | 'opencode' | 'nemoclaw' | 'opendev';
+type AgentRole = AgentRoleName;
 
 type ActionHandoff = {
   fromAgent: AgentRole;
@@ -31,7 +31,7 @@ export type ActionExecutionLogEvent = {
 
 const appendRoutingVerification = (event: ActionExecutionLogEvent): string[] => {
   const lines = [...(Array.isArray(event.verification) ? event.verification : [])];
-  const effectiveRole = event.agentRole ? normalizeAgentRole(event.agentRole) : inferLegacyAgentRoleByActionName(event.actionName);
+  const effectiveRole = event.agentRole ? normalizeAgentRole(event.agentRole) : inferAgentRoleByActionName(event.actionName);
   lines.push(`agent_role=${effectiveRole}`);
 
   const handoff = event.handoff;

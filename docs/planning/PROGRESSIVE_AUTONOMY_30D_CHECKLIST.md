@@ -1,5 +1,7 @@
 # Progressive Autonomy 30-Day Checklist
 
+**Status: ARCHIVED (2026-03-24)** — 전체 로드맵/WIP 종결에 따라 보관. 수렴 실행 규칙 역할 종료.
+
 Status note:
 
 - Historical staged checklist for a prior convergence pass.

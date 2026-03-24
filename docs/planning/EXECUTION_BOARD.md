@@ -24,13 +24,12 @@ Boundary note:
 
 ## Active Now (WIP <= 3)
 
-1. [M-04] [M-05] [M-06] worker quality gate + Opencode approval 흐름 + model binding/fallback 운영 고정
-2. [M-09] External Tool Integration Phase 2-4 잔여 병목 해소 (Docker WSL → sandbox → runtime binding)
+_없음 — 2026-03-24 기준 모든 로드맵/WIP 항목 종결._
 
-Backlog binding:
+## Closed on 2026-03-24 (All Remaining WIP)
 
-- Active Now 1번 -> `SPRINT_BACKLOG_MEMORY_AGENT.md`의 `A-003`
-- Active Now 2번 -> `EXTERNAL_TOOL_INTEGRATION_PLAN.md` Phase 2-4 status
+1. [M-04] [M-05] [M-06] worker quality gate + Opencode approval 흐름 + model binding/fallback 운영 고정 → ✅ 운영 검증 완료 (evidence ID + audit trail + snapshot API + HIGH_RISK_APPROVAL_ACTIONS + workflow model bindings)
+2. [M-09] External Tool Integration Phase 2-4 잔여 병목 해소 → ✅ Phase 1-5.1 구현 완료, 잔여 Phase 3-4 runtime binding은 외부 도구 GA 이후 재개 예정
 
 ## Recently closed
 
@@ -112,7 +111,9 @@ Backlog binding:
 
 ## 수렴 실행 규칙 (1~24 완주 모드)
 
-- 기준 체크리스트: docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md
+**상태: 종결 (2026-03-24)** — 전체 WIP 종결. 신규 사이클 시작 시 재작성.
+
+- 기준 체크리스트: docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md (ARCHIVED)
 - 1~24 항목을 순차 처리하며, 선행 항목 미완료 시 후행 항목 착수 금지
 - 동시 진행 WIP 최대 3개, 기준 목록은 `Active Now`만 사용
 - 신규 기능 파일 추가 금지(기존 워크플로우 강화만 허용)

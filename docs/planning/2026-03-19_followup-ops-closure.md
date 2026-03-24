@@ -1,5 +1,7 @@
 # 2026-03-19 Gate Runs Follow-up Closure
 
+**Status: ARCHIVED (2026-03-24)**
+
 ## Scope
 
 - gate-20260319-103500 (control-plane:w3-01-w3-03)

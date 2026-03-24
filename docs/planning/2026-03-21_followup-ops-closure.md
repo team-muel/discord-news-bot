@@ -1,5 +1,7 @@
 # 2026-03-21 Gate Runs Follow-up Closure
 
+**Status: ARCHIVED (2026-03-24)**
+
 ## Scope
 
 - run_batch: 2026-03-21 weekly:auto and weekly:auto:post-fallback closures

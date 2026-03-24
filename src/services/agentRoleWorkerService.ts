@@ -1,4 +1,20 @@
-type AgentRoleWorkerId = 'local-orchestrator' | 'opendev' | 'nemoclaw' | 'openjarvis';
+/**
+ * Agent Role Worker Service
+ *
+ * Manages HTTP worker endpoints for the sprint pipeline's role-based delegation.
+ *
+ * Worker role names use neutral, function-based labels (architect, review, operate, coordinate).
+ * Legacy aliases (opendev, nemoclaw, openjarvis) are accepted for backward compatibility.
+ *
+ * Worker URL resolution supports both canonical and legacy env vars:
+ *   - MCP_ARCHITECT_WORKER_URL (legacy: MCP_OPENDEV_WORKER_URL) → architect
+ *   - MCP_REVIEW_WORKER_URL (legacy: MCP_NEMOCLAW_WORKER_URL) → review
+ *   - MCP_OPERATE_WORKER_URL (legacy: MCP_OPENJARVIS_WORKER_URL) → operate
+ *   - MCP_COORDINATE_WORKER_URL (legacy: MCP_LOCAL_ORCHESTRATOR_WORKER_URL) → coordinate
+ *
+ * See docs/ROLE_RENAME_MAP.md for the canonical name mapping.
+ */
+type AgentRoleWorkerId = 'coordinate' | 'architect' | 'review' | 'operate';
 
 export type AgentRoleWorkerSpec = {
   id: AgentRoleWorkerId;
@@ -41,36 +57,36 @@ const readFirstEnv = (...keys: string[]): string => {
 
 const AGENT_ROLE_WORKER_SPECS: AgentRoleWorkerSpec[] = [
   {
-    id: 'local-orchestrator',
-    title: 'Local Orchestrator worker',
-    envKey: 'MCP_LOCAL_ORCHESTRATOR_WORKER_URL',
+    id: 'coordinate',
+    title: 'Coordinate worker',
+    envKey: 'MCP_COORDINATE_WORKER_URL',
     url: readFirstEnv('MCP_COORDINATE_WORKER_URL', 'MCP_LOCAL_ORCHESTRATOR_WORKER_URL'),
-    aliases: ['coordinate'],
+    aliases: ['local-orchestrator'],
     actionAliases: ['local.orchestrator.route', 'local.orchestrator.all', 'coordinate.route', 'coordinate.all'],
   },
   {
-    id: 'opendev',
-    title: 'OpenDev worker',
-    envKey: 'MCP_OPENDEV_WORKER_URL',
+    id: 'architect',
+    title: 'Architect worker',
+    envKey: 'MCP_ARCHITECT_WORKER_URL',
     url: readFirstEnv('MCP_ARCHITECT_WORKER_URL', 'MCP_OPENDEV_WORKER_URL'),
-    aliases: ['architect'],
-    actionAliases: ['opendev.plan', 'architect.plan'],
+    aliases: ['opendev'],
+    actionAliases: ['architect.plan', 'opendev.plan'],
   },
   {
-    id: 'nemoclaw',
-    title: 'NemoClaw worker',
-    envKey: 'MCP_NEMOCLAW_WORKER_URL',
+    id: 'review',
+    title: 'Review worker',
+    envKey: 'MCP_REVIEW_WORKER_URL',
     url: readFirstEnv('MCP_REVIEW_WORKER_URL', 'MCP_NEMOCLAW_WORKER_URL'),
-    aliases: ['review'],
-    actionAliases: ['nemoclaw.review', 'review.review'],
+    aliases: ['nemoclaw'],
+    actionAliases: ['review.review', 'nemoclaw.review'],
   },
   {
-    id: 'openjarvis',
-    title: 'OpenJarvis worker',
-    envKey: 'MCP_OPENJARVIS_WORKER_URL',
+    id: 'operate',
+    title: 'Operate worker',
+    envKey: 'MCP_OPERATE_WORKER_URL',
     url: readFirstEnv('MCP_OPERATE_WORKER_URL', 'MCP_OPENJARVIS_WORKER_URL'),
-    aliases: ['operate', 'implement'],
-    actionAliases: ['openjarvis.ops', 'operate.ops', 'implement.execute', 'tools.run.cli'],
+    aliases: ['openjarvis', 'implement'],
+    actionAliases: ['operate.ops', 'openjarvis.ops', 'implement.execute', 'tools.run.cli'],
   },
 ];
 

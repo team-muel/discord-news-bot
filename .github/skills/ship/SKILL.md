@@ -15,7 +15,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`openjarvis` (operate role — release engineering)
+`operate` (operate role — release engineering)
 
 ## Process
 

@@ -7,9 +7,11 @@
 
 이 문서는 정책/우선순위의 Canonical Roadmap이다.
 
+**상태: CLOSED (2026-03-24)** — 90-Day Execution Plan (Phase A-C) 전 항목 완료. 신규 사이클 시작 시 별도 Roadmap 문서를 신설한다.
+
 문서 역할:
 
-- Canonical for direction, priorities, milestone IDs, and phased rollout intent.
+- Historical reference for 2026 Q2 direction, priorities, milestone IDs, and phased rollout intent.
 - Do not track day-to-day status here; status belongs in [docs/planning/EXECUTION_BOARD.md](docs/planning/EXECUTION_BOARD.md).
 - Do not embed operator SOP here; execution procedure belongs in [docs/RUNBOOK_MUEL_PLATFORM.md](docs/RUNBOOK_MUEL_PLATFORM.md).
 

@@ -1,5 +1,5 @@
 import {
-  inferLegacyAgentRoleByActionName,
+  inferAgentRoleByActionName,
   normalizeAgentRole,
   type ActionExecutionInput,
   type ActionExecutionResult,
@@ -163,7 +163,7 @@ export const normalizeActionResult = (params: {
   const error = params.result.error === undefined ? undefined : String(params.result.error || '').trim() || undefined;
   const agentRole = isAgentRole(params.result.agentRole)
     ? normalizeAgentRole(params.result.agentRole)
-    : inferLegacyAgentRoleByActionName(params.actionName);
+    : inferAgentRoleByActionName(params.actionName);
   const handoff = normalizeHandoff(params.result.handoff);
 
   return {

@@ -3,7 +3,7 @@
 ## Boundary Note
 
 This repository uses internal collaboration and runtime labels for planning, routing, and worker execution.
-Legacy labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local names only.
+Legacy labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local names that have been migrated to neutral equivalents (Implement, Architect, Review, Operate, Coordinate).
 They are not proof that external frameworks with similar names are installed or automatically integrated in this repository runtime.
 Actual runtime integration must be confirmed through configured providers, registered actions, worker endpoints, and runtime status endpoints.
 
@@ -83,18 +83,18 @@ The repository currently uses the same role names across two different layers:
 
 Interpretation rule:
 
-- role names such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local collaboration roles
+- role names such as Implement, Architect, Review, Operate, and Coordinate (and their legacy aliases OpenCode, OpenDev, NemoClaw, OpenJarvis, Local Orchestrator) are repository-local collaboration roles
 - they do not by themselves prove that an upstream open-source system is installed, embedded, or directly executed by this repository
 - runtime-backed behavior exists only where a registered action, worker URL, or HTTP/MCP transport is present in code and environment
 
 Current runtime-backed collaboration surfaces:
 
-- `local.orchestrator.route`
-- `local.orchestrator.all`
-- `opendev.plan`
-- `nemoclaw.review`
-- `openjarvis.ops`
-- `opencode.execute`
+- `coordinate.route` (legacy: `local.orchestrator.route`)
+- `coordinate.all` (legacy: `local.orchestrator.all`)
+- `architect.plan` (legacy: `opendev.plan`)
+- `review.review` (legacy: `nemoclaw.review`)
+- `operate.ops` (legacy: `openjarvis.ops`)
+- `implement.execute` (legacy: `opencode.execute`)
 - `tools.run.cli`
 
 Current local tool/runtime facts:

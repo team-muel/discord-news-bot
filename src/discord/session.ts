@@ -7,25 +7,19 @@ import { cancelAgentSession, getAgentSession, startAgentSession } from '../servi
 import { buildReasoningGoalForGuild } from '../services/taskRoutingService';
 import { recordTaskRoutingMetric } from '../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from './messages';
-
-const parsePositiveIntEnv = (value: string | undefined, fallback: number, min = 1): number => {
-  const parsed = Number(value || '');
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.max(min, Math.floor(parsed));
-};
+import {
+  SESSION_PROGRESS_INTERVAL_MS,
+  SESSION_PROGRESS_TIMEOUT_MS,
+  SESSION_PROGRESS_UPDATE_BUCKET_MS,
+  SESSION_RESULT_CLIP_LIMIT_DEBUG,
+  SESSION_RESULT_CLIP_LIMIT_USER,
+} from './runtimePolicy';
 
 const FEEDBACK_PROMPT_ENABLED = (() => {
   const raw = String(process.env.DISCORD_ENABLE_FEEDBACK_PROMPT || 'true').trim().toLowerCase();
   return ['1', 'true', 'yes', 'on'].includes(raw);
 })();
 const FEEDBACK_PROMPT_LINE = String(process.env.DISCORD_FEEDBACK_PROMPT_LINE || '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.').trim();
-const SESSION_PROGRESS_TIMEOUT_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_TIMEOUT_MS, 3 * 60 * 1000, 10_000);
-const SESSION_PROGRESS_INTERVAL_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_INTERVAL_MS, 2200, 500);
-const SESSION_PROGRESS_UPDATE_BUCKET_MS = parsePositiveIntEnv(process.env.DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS, 10_000, 1000);
-const SESSION_RESULT_CLIP_LIMIT_DEBUG = parsePositiveIntEnv(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_DEBUG, 1700, 200);
-const SESSION_RESULT_CLIP_LIMIT_USER = parsePositiveIntEnv(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_USER, 1200, 200);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type ProgressSink = {

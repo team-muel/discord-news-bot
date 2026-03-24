@@ -1,5 +1,5 @@
 ---
-description: "Sprint Phase: Plan — define target state, constraints, architecture, and phased milestones before implementation begins. Replaces the heavyweight OpenDev delivery gate with a direct-invoke planning skill."
+description: "Sprint Phase: Plan — define target state, constraints, architecture, and phased milestones before implementation begins."
 applyTo: "**"
 ---
 
@@ -17,7 +17,7 @@ applyTo: "**"
 
 ## Lead Agent
 
-`opendev` (architect role)
+`architect` (architecture role)
 
 ## Process
 
@@ -57,9 +57,9 @@ applyTo: "**"
 
 ## Runtime Counterpart
 
-- Action: `opendev.plan`
+- Action: `architect.plan` (legacy: `opendev.plan`)
 - Discord intent: `architecture|adr|boundary|plan|설계|아키텍처`
-- Worker env: `MCP_OPENDEV_WORKER_URL`
+- Worker env: `MCP_ARCHITECT_WORKER_URL` (legacy: `MCP_OPENDEV_WORKER_URL`)
 
 ## Obsidian Integration
 
