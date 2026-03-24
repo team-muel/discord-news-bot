@@ -10,6 +10,7 @@
  *   - ship      → autonomousGit (branch + commit + PR)
  */
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../../logger';
@@ -25,7 +26,15 @@ import type { ActionExecutionResult } from '../skills/actions/types';
 
 // ──── Subprocess helper ───────────────────────────────────────────────────────
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+const resolveProjectRoot = (): string => {
+  const cwdRoot = path.resolve(process.cwd());
+  if (existsSync(path.join(cwdRoot, 'package.json'))) return cwdRoot;
+  const fallbackRoot = path.resolve(__dirname, '../../..');
+  if (existsSync(path.join(fallbackRoot, 'package.json'))) return fallbackRoot;
+  return cwdRoot;
+};
+
+const PROJECT_ROOT = resolveProjectRoot();
 
 type SubprocessResult = {
   exitCode: number;
@@ -34,10 +43,23 @@ type SubprocessResult = {
   durationMs: number;
 };
 
+const buildDeterministicChildEnv = (): NodeJS.ProcessEnv => ({
+  ...process.env,
+  NODE_ENV: 'test',
+  SPRINT_ENABLED: 'false',
+  AI_PROVIDER: '',
+  OLLAMA_MODEL: '',
+  OPENJARVIS_ENABLED: 'false',
+  LITELLM_ENABLED: 'false',
+  NEMOCLAW_ENABLED: 'false',
+  SPRINT_CROSS_MODEL_ENABLED: 'false',
+});
+
 const runCommand = (
   command: string,
   args: string[],
   timeoutMs: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<SubprocessResult> => {
   const start = Date.now();
   return new Promise((resolve) => {
@@ -46,6 +68,7 @@ const runCommand = (
       timeout: timeoutMs,
       maxBuffer: 512 * 1024,
       shell: true,
+      env,
     }, (error, stdout, stderr) => {
       const durationMs = Date.now() - start;
       const exitCode = error && 'code' in error ? (error.code as number ?? 1) : error ? 1 : 0;
@@ -66,7 +89,12 @@ const executeQaFastPath = async (
   changedFiles: string[],
 ): Promise<ActionExecutionResult> => {
   logger.info('[FAST-PATH] qa: running vitest');
-  const result = await runCommand('npx', ['vitest', 'run', '--reporter=verbose'], SPRINT_FAST_PATH_VITEST_TIMEOUT_MS);
+  const result = await runCommand(
+    'npx',
+    ['vitest', 'run', '--reporter=verbose'],
+    SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
+    buildDeterministicChildEnv(),
+  );
 
   const passed = result.exitCode === 0;
   const output = result.stdout || result.stderr;
@@ -106,7 +134,12 @@ const executeOpsValidateFastPath = async (
   changedFiles: string[],
 ): Promise<ActionExecutionResult> => {
   logger.info('[FAST-PATH] ops-validate: running tsc --noEmit');
-  const result = await runCommand('npx', ['tsc', '--noEmit'], SPRINT_FAST_PATH_TSC_TIMEOUT_MS);
+  const result = await runCommand(
+    'npx',
+    ['tsc', '--noEmit'],
+    SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+    buildDeterministicChildEnv(),
+  );
 
   const passed = result.exitCode === 0;
   const errorLines = result.stdout.split('\n').filter((l) => l.includes('error TS'));

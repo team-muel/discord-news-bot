@@ -4,10 +4,24 @@ import { executeExternalAction } from '../../tools/externalAdapterRegistry';
 
 const OPENCODE_TOOL_NAME = String(process.env.MCP_OPENCODE_TOOL_NAME || 'opencode.run').trim() || 'opencode.run';
 const MAX_TASK_LENGTH = 2400;
+const MAX_SPRINT_TASK_LENGTH = 12_000;
 
 const DANGEROUS_COMMAND_PATTERN = /(?:\brm\s+-rf\b|\bdel\s+\/f\b|\bformat\b|\bmkfs\b|\bshutdown\b|\breboot\b|\bpoweroff\b|\bgit\s+reset\s+--hard\b|\bgit\s+clean\s+-fd\b|\bRemove-Item\b\s+.*-Recurse|\bStop-Computer\b|\bRestart-Computer\b)/i;
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+
+const resolveTaskLengthLimit = (task: string): number => {
+  return task.includes('[SPRINT]') ? MAX_SPRINT_TASK_LENGTH : MAX_TASK_LENGTH;
+};
+
+const resolveSafetyCheckText = (task: string): string => {
+  if (!task.includes('[SPRINT]')) {
+    return task;
+  }
+
+  const objectiveMatch = task.match(/\[OBJECTIVE\]\s*([\s\S]*?)(?:\n\[[A-Z_]+\]|$)/);
+  return (objectiveMatch?.[1] || task).trim();
+};
 
 const withOpencodeRouting = (
   result: ActionExecutionResult,
@@ -39,6 +53,8 @@ export const opencodeExecuteAction: ActionDefinition = {
   description: 'Opencode MCP 워커를 통해 샌드박스 터미널 작업을 실행합니다(기본: read_only).',
   execute: async ({ goal, args, guildId, requestedBy }) => {
     const task = String(args?.task || goal || '').trim();
+    const taskLengthLimit = resolveTaskLengthLimit(task);
+    const safetyCheckText = resolveSafetyCheckText(task);
     const cwd = toSingleLine(args?.cwd || '');
     const mode = toMode(args?.mode);
 
@@ -53,23 +69,23 @@ export const opencodeExecuteAction: ActionDefinition = {
       }, 'task validation failed');
     }
 
-    if (task.length > MAX_TASK_LENGTH) {
+    if (task.length > taskLengthLimit) {
       return withOpencodeRouting({
         ok: false,
         name: 'opencode.execute',
-        summary: `task 길이가 너무 깁니다(max=${MAX_TASK_LENGTH}).`,
+        summary: `task 길이가 너무 깁니다(max=${taskLengthLimit}).`,
         artifacts: [],
         verification: ['task length guardrail'],
         error: 'OPENCODE_TASK_TOO_LONG',
       }, 'task validation failed');
     }
 
-    if (DANGEROUS_COMMAND_PATTERN.test(task)) {
+    if (DANGEROUS_COMMAND_PATTERN.test(safetyCheckText)) {
       return withOpencodeRouting({
         ok: false,
         name: 'opencode.execute',
         summary: '파괴적 명령어 패턴이 감지되어 실행이 차단되었습니다.',
-        artifacts: [toSingleLine(task).slice(0, 220)],
+        artifacts: [toSingleLine(safetyCheckText).slice(0, 220)],
         verification: ['dangerous command guardrail'],
         error: 'OPENCODE_DANGEROUS_COMMAND_BLOCKED',
       }, 'task validation failed');

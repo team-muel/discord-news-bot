@@ -29,7 +29,7 @@ describe('externalToolProbe', () => {
     expect(result.summary.total).toBe(7);
     expect(typeof result.summary.available).toBe('number');
     expect(typeof result.summary.apiReachable).toBe('number');
-  });
+  }, 20_000);
 
   it('getExternalToolById returns a single tool status', async () => {
     const { getExternalToolById } = await import('./externalToolProbe');

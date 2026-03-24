@@ -10,6 +10,7 @@
  * Safety: all writes go through scopeGuard.checkFileScope() before touching disk.
  */
 
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../../logger';
@@ -17,7 +18,15 @@ import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { checkFileScope } from './scopeGuard';
 import { SPRINT_CHANGED_FILE_CAP, SPRINT_DRY_RUN } from '../../config';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+const resolveProjectRoot = (): string => {
+  const cwdRoot = path.resolve(process.cwd());
+  if (existsSync(path.join(cwdRoot, 'package.json'))) return cwdRoot;
+  const fallbackRoot = path.resolve(__dirname, '../../..');
+  if (existsSync(path.join(fallbackRoot, 'package.json'))) return fallbackRoot;
+  return cwdRoot;
+};
+
+const PROJECT_ROOT = resolveProjectRoot();
 
 const MAX_FILE_READ_BYTES = 12_000;
 const MAX_CONTEXT_FILES = 8;
@@ -312,6 +321,14 @@ export const generateAndApplyCodeChanges = async (params: {
       changes: [],
       summary: `All file writes failed: ${errors.join('; ')}`,
       error: 'ALL_WRITES_FAILED',
+    };
+  }
+
+  if (changes.length === 0) {
+    return {
+      ok: true,
+      changes: [],
+      summary: 'No code changes were necessary',
     };
   }
 

@@ -319,7 +319,7 @@ const executePhaseAction = async (
           ),
         ]);
 
-        if (codeResult.ok && codeResult.changes.length > 0) {
+        if (codeResult.ok) {
           pipeline.codeChanges = codeResult.changes;
           for (const change of codeResult.changes) {
             if (!pipeline.changedFiles.includes(change.filePath)) {
