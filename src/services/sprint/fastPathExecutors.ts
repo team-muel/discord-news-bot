@@ -13,6 +13,9 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import logger from '../../logger';
 import type { CodeChange } from './sprintCodeWriter';
 import {

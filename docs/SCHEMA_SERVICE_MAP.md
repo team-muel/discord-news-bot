@@ -79,7 +79,7 @@
 | trading_engine_configs | - |
 | trading_signals | - |
 | user_roles | - |
-| users | src/services/newsChannelStore.ts |
+| users | src/services/baseRepository.ts<br/>src/services/newsChannelStore.ts |
 | worker_approvals | - |
 
 ## RPC Functions

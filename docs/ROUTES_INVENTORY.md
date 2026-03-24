@@ -114,6 +114,13 @@
 | GET | /api/bot/agent/sessions/:sessionId | no | yes | no | src/routes/bot-agent/coreRoutes.ts:155 |
 | POST | /api/bot/agent/sessions/:sessionId/cancel | no | yes | yes | src/routes/bot-agent/coreRoutes.ts:200 |
 | GET | /api/bot/agent/skills | no | yes | no | src/routes/bot-agent/coreRoutes.ts:122 |
+| GET | /api/bot/agent/sprint/metrics | no | yes | no | src/routes/bot-agent/sprintRoutes.ts:26 |
+| GET | /api/bot/agent/sprint/pipelines | no | yes | no | src/routes/bot-agent/sprintRoutes.ts:30 |
+| POST | /api/bot/agent/sprint/pipelines | no | yes | yes | src/routes/bot-agent/sprintRoutes.ts:46 |
+| DELETE | /api/bot/agent/sprint/pipelines/:id | no | yes | no | src/routes/bot-agent/sprintRoutes.ts:78 |
+| GET | /api/bot/agent/sprint/pipelines/:id | no | yes | no | src/routes/bot-agent/sprintRoutes.ts:36 |
+| POST | /api/bot/agent/sprint/pipelines/:id/approve | no | yes | yes | src/routes/bot-agent/sprintRoutes.ts:71 |
+| GET | /api/bot/agent/sprint/snapshot | no | yes | no | src/routes/bot-agent/sprintRoutes.ts:22 |
 | GET | /api/bot/agent/super/capabilities | no | yes | no | src/routes/bot-agent/governanceRoutes.ts:68 |
 | POST | /api/bot/agent/super/recommend | no | yes | yes | src/routes/bot-agent/governanceRoutes.ts:72 |
 | POST | /api/bot/agent/super/sessions | no | yes | yes | src/routes/bot-agent/governanceRoutes.ts:92 |
@@ -134,8 +141,8 @@
 | GET | /api/research/preset/:presetKey/history | yes | no | no | src/routes/research.ts:25 |
 | POST | /api/research/preset/:presetKey/restore/:historyId | no | yes | no | src/routes/research.ts:58 |
 | GET | /api/status | no | no | no | src/routes/health.ts:137 |
-| GET | /api/trades/ | yes | no | no | src/routes/trades.ts:49 |
-| POST | /api/trades/ | no | yes | no | src/routes/trades.ts:66 |
+| GET | /api/trades/ | yes | no | no | src/routes/trades.ts:52 |
+| POST | /api/trades/ | no | yes | no | src/routes/trades.ts:69 |
 | GET | /api/trading/position | yes | yes | no | src/routes/trading.ts:99 |
 | POST | /api/trading/position/close | yes | yes | yes | src/routes/trading.ts:115 |
 | GET | /api/trading/runtime | yes | yes | no | src/routes/trading.ts:60 |

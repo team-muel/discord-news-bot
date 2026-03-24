@@ -17,6 +17,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SKILLS_DIR = path.resolve(__dirname, '../../../.github/skills');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
