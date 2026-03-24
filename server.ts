@@ -30,7 +30,11 @@ const exitForRequiredBotFailure = (message: string, error?: unknown) => {
   }
 
   if (!BOT_START_FAILURE_EXIT_ENABLED) {
-    logger.warn('[BOT] Startup failure exit is disabled; keeping API process alive for manual/auto recovery');
+    if (error && isDiscordLoginRateLimitedError(error)) {
+      logger.warn('[BOT] Startup failure exit is disabled; auto-recovery will retry after rate-limit expires');
+    } else {
+      logger.warn('[BOT] Startup failure exit is disabled; keeping API process alive for manual/auto recovery');
+    }
     return;
   }
 

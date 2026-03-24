@@ -551,6 +551,12 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
     botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
     botRuntimeState.lastAlertReason = botRuntimeState.lastLoginError;
     if (/Discord login rate-limited; retry after/i.test(botRuntimeState.lastLoginError || '')) {
+      // Ensure rate-limit state is set even if startBot threw before setLoginRateLimit
+      if (getLoginRateLimitRemainingSec() <= 0) {
+        const fallbackCooldownMs = 10 * 60_000; // 10 min safety net
+        setLoginRateLimit(fallbackCooldownMs, botRuntimeState.lastLoginError || 'rate-limit fallback');
+        logger.warn('[BOT] Rate-limit state missing after 429 error; applied fallback cooldown %dms', fallbackCooldownMs);
+      }
       return {
         ok: false,
         status: 'rejected',
