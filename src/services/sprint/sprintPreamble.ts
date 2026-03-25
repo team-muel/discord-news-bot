@@ -9,6 +9,7 @@
  */
 
 import { SPRINT_AUTOPLAN_ENABLED } from '../../config';
+import { loadWorkflowReconfigHints, formatReconfigHintsForPreamble } from './sprintLearningJournal';
 
 // ──── Learning context store (C-17/18: optimize/bench feedback loop) ──────────
 
@@ -164,4 +165,21 @@ export const buildSprintPreamble = (sprintId: string, phase: string): string => 
   }
 
   return sections.join('\n');
+};
+
+// ──── Async preamble enrichment (Obsidian journal) ────────────────────────────
+
+/**
+ * Load workflow reconfiguration hints from Obsidian journal.
+ * Called once during plan phase to inject adaptive proposals.
+ * Returns empty string if journal is unavailable or has insufficient data.
+ */
+export const loadJournalPreambleSection = async (): Promise<string> => {
+  try {
+    const hints = await loadWorkflowReconfigHints();
+    if (!hints) return '';
+    return formatReconfigHintsForPreamble(hints);
+  } catch {
+    return '';
+  }
 };

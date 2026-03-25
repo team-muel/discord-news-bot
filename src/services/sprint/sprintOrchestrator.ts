@@ -13,7 +13,8 @@ import {
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble, storeLearningInsight } from './sprintPreamble';
+import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection } from './sprintPreamble';
+import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
 import { isJudgePhase, judgePhaseOutput, formatJudgeAppendix } from './llmJudge';
@@ -84,6 +85,8 @@ export type SprintPipeline = {
   phaseResults: Record<string, PhaseResult>;
   phaseOrder: SprintPhase[];
   implementReviewLoopCount: number;
+  /** Per-pipeline loop limit (may be adjusted by journal reconfig). */
+  maxImplReviewLoops: number;
   totalPhasesExecuted: number;
   changedFiles: string[];
   rollbackPlan: string;
@@ -117,7 +120,7 @@ const PHASE_TRANSITIONS: Record<string, (result: PhaseResult, pipeline: SprintPi
       return 'qa';
     }
     // Critical findings → re-implement (with loop guard)
-    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) {
+    if (p.implementReviewLoopCount < p.maxImplReviewLoops) {
       return 'implement';
     }
     return 'blocked';
@@ -125,19 +128,19 @@ const PHASE_TRANSITIONS: Record<string, (result: PhaseResult, pipeline: SprintPi
 
   qa: (r, p) => {
     if (r.status === 'success') return 'ops-validate';
-    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) return 'implement';
+    if (p.implementReviewLoopCount < p.maxImplReviewLoops) return 'implement';
     return 'blocked';
   },
 
   'security-audit': (r, p) => {
     if (r.status === 'success') return 'qa';
-    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) return 'implement';
+    if (p.implementReviewLoopCount < p.maxImplReviewLoops) return 'implement';
     return 'blocked';
   },
 
   'ops-validate': (r, p) => {
     if (r.status === 'success') return 'ship';
-    if (p.implementReviewLoopCount < SPRINT_MAX_IMPL_REVIEW_LOOPS) return 'implement';
+    if (p.implementReviewLoopCount < p.maxImplReviewLoops) return 'implement';
     return 'blocked';
   },
 
@@ -149,6 +152,25 @@ const PHASE_TRANSITIONS: Record<string, (result: PhaseResult, pipeline: SprintPi
 // ──── In-memory store ─────────────────────────────────────────────────────────
 
 const pipelines = new Map<string, SprintPipeline>();
+
+// ──── Reconfig hints cache (refreshed before pipeline runs) ──────────────────
+
+let cachedReconfigHints: WorkflowReconfigHints | null = null;
+let cachedReconfigHintsAt = 0;
+const RECONFIG_CACHE_TTL_MS = 10 * 60_000;
+
+const refreshReconfigHints = async (): Promise<void> => {
+  if (Date.now() - cachedReconfigHintsAt < RECONFIG_CACHE_TTL_MS) return;
+  try {
+    cachedReconfigHints = await loadWorkflowReconfigHints();
+    cachedReconfigHintsAt = Date.now();
+  } catch {
+    // best-effort
+  }
+};
+
+/** Expose cached hints for testing/diagnostics. */
+export const getCachedReconfigHints = (): WorkflowReconfigHints | null => cachedReconfigHints;
 
 // ──── Pipeline CRUD ───────────────────────────────────────────────────────────
 
@@ -165,9 +187,21 @@ export const createSprintPipeline = (params: {
   }
 
   const sprintId = `sprint-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-  const phaseOrder = params.includeSecurityAudit
-    ? ['plan', 'implement', 'review', 'security-audit', 'qa', 'ops-validate', 'ship', 'retro'] as SprintPhase[]
+  const basePhaseOrder: SprintPhase[] = params.includeSecurityAudit
+    ? ['plan', 'implement', 'review', 'security-audit', 'qa', 'ops-validate', 'ship', 'retro']
     : [...DEFAULT_PHASE_ORDER];
+
+  // Apply journal-driven reconfig mutations (phase-insert, phase-skip, loop-limit-adjust)
+  const mutation = applyReconfigToPhaseOrder(
+    basePhaseOrder,
+    SPRINT_MAX_IMPL_REVIEW_LOOPS,
+    cachedReconfigHints,
+    params.triggerType,
+  );
+  const phaseOrder = (mutation.appliedProposals.length > 0
+    ? mutation.phaseOrder
+    : basePhaseOrder) as SprintPhase[];
+  const effectiveLoopLimit = mutation.adjustedLoopLimit ?? SPRINT_MAX_IMPL_REVIEW_LOOPS;
 
   const pipeline: SprintPipeline = {
     sprintId,
@@ -180,12 +214,17 @@ export const createSprintPipeline = (params: {
     phaseResults: {},
     phaseOrder,
     implementReviewLoopCount: 0,
+    maxImplReviewLoops: effectiveLoopLimit,
     totalPhasesExecuted: 0,
     changedFiles: [],
     rollbackPlan: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+
+  if (mutation.appliedProposals.length > 0) {
+    logger.info('[SPRINT] reconfig applied to pipeline=%s: %s', sprintId, mutation.log.filter((l) => l.startsWith('[APPLIED')).join('; '));
+  }
 
   pipelines.set(sprintId, pipeline);
   recordPipelineCreated();
@@ -601,6 +640,16 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
 
   // ── Autoplan: multi-lens review after plan phase ──
   if (currentPhase === 'plan' && phaseResult.status === 'success') {
+    // Inject Obsidian journal reconfig hints into plan output
+    try {
+      const journalSection = await loadJournalPreambleSection();
+      if (journalSection) {
+        phaseResult.output += `\n\n${journalSection}`;
+      }
+    } catch {
+      // Journal enrichment is best-effort
+    }
+
     const autoplanResult = await runAutoplan({
       planOutput: phaseResult.output,
       objective: pipeline.objective,
@@ -684,6 +733,41 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
         benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
       });
     }
+
+    // ── Obsidian journal: persist retro insights to vault for pattern accumulation ──
+    const phaseTimings: Record<string, number> = {};
+    const failedPhases: string[] = [];
+    const succeededPhases: string[] = [];
+    for (const [key, result] of Object.entries(pipeline.phaseResults)) {
+      const phaseName = key.replace(/-\d+$/, '');
+      const start = new Date(result.startedAt).getTime();
+      const end = new Date(result.completedAt).getTime();
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        phaseTimings[phaseName] = end - start;
+      }
+      if (result.status === 'failed') failedPhases.push(phaseName);
+      if (result.status === 'success') succeededPhases.push(phaseName);
+    }
+
+    const journalEntry: JournalEntry = {
+      sprintId: pipeline.sprintId,
+      guildId: pipeline.guildId,
+      objective: pipeline.objective,
+      totalPhases: pipeline.totalPhasesExecuted,
+      implementReviewLoops: pipeline.implementReviewLoopCount,
+      changedFiles: pipeline.changedFiles,
+      retroOutput: phaseResult.output.slice(0, 3000),
+      optimizeHints: optimizeResult.ok ? optimizeResult.output.slice(0, 5) : [],
+      benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
+      phaseTimings,
+      failedPhases,
+      succeededPhases,
+      completedAt: new Date().toISOString(),
+    };
+
+    recordSprintJournalEntry(journalEntry).catch((err) =>
+      logger.warn('[SPRINT] journal entry write failed: %s', err instanceof Error ? err.message : String(err)),
+    );
   }
 
   // Track implement↔review loops
@@ -777,6 +861,9 @@ export const runFullSprintPipeline = async (sprintId: string): Promise<SprintPip
   const pipeline = pipelines.get(sprintId);
   if (!pipeline) throw new Error(`Pipeline ${sprintId} not found`);
 
+  // Refresh journal-driven reconfig hints before execution
+  await refreshReconfigHints();
+
   while (
     pipeline.currentPhase !== 'complete' &&
     pipeline.currentPhase !== 'blocked' &&
@@ -863,6 +950,7 @@ const persistPipeline = async (pipeline: SprintPipeline): Promise<void> => {
       changed_files: pipeline.changedFiles,
       total_phases_executed: pipeline.totalPhasesExecuted,
       impl_review_loop_count: pipeline.implementReviewLoopCount,
+      max_impl_review_loops: pipeline.maxImplReviewLoops,
       error: pipeline.error || null,
       created_at: pipeline.createdAt,
       updated_at: pipeline.updatedAt,
@@ -904,6 +992,7 @@ export const rehydrateActivePipelines = async (): Promise<number> => {
         phaseResults: (row.phase_results || {}) as Record<string, PhaseResult>,
         phaseOrder: Array.isArray(row.phase_order) ? row.phase_order as SprintPhase[] : [...DEFAULT_PHASE_ORDER],
         implementReviewLoopCount: Number(row.impl_review_loop_count || 0),
+        maxImplReviewLoops: Number(row.max_impl_review_loops || SPRINT_MAX_IMPL_REVIEW_LOOPS),
         totalPhasesExecuted: Number(row.total_phases_executed || 0),
         changedFiles: Array.isArray(row.changed_files) ? row.changed_files as string[] : [],
         rollbackPlan: '',

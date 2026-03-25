@@ -136,7 +136,7 @@ const probeOpenShell = async (): Promise<ExternalToolStatus> => {
     version: cmd.ok ? cmd.output : null,
     apiReachable: null,
     details: [
-      ...(cmd.ok ? [`via WSL ${WSL_DISTRO}`] : ['install: curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh']),
+      ...(cmd.ok ? [IS_WINDOWS ? `via WSL ${WSL_DISTRO}` : 'native Linux'] : ['install: curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh']),
     ],
   };
 };
@@ -154,7 +154,7 @@ const probeNemoClaw = async (): Promise<ExternalToolStatus> => {
     version: cmd.ok ? 'installed' : null,
     apiReachable: null,
     details: [
-      ...(!cmd.ok ? ['install: curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash'] : [`via WSL ${WSL_DISTRO}`]),
+      ...(!cmd.ok ? ['install: curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash'] : [IS_WINDOWS ? `via WSL ${WSL_DISTRO}` : 'native Linux']),
       ...(cmd.ok && !hasKey ? ['NVIDIA_API_KEY not set'] : []),
       ...(hasSandbox ? [`sandbox: ${sandboxName}`] : cmd.ok ? ['no sandbox registered'] : []),
     ],
