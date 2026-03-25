@@ -74,6 +74,8 @@
 | retrieval_ranker_experiments | src/services/retrievalEvalService.ts |
 | settings | - |
 | sources | src/services/agentSloService.ts<br/>src/services/crawlerRuntimeRegistry.ts<br/>src/services/goNoGoService.ts<br/>src/services/newsChannelStore.ts<br/>src/services/newsSentimentMonitor.ts<br/>src/services/sourceMonitorStore.ts<br/>src/services/youtubeSubscriptionStore.ts<br/>src/services/youtubeSubscriptionsMonitor.ts |
+| sprint_journal_entries | - |
+| sprint_pipelines | - |
 | system_error_events | - |
 | trades | - |
 | trading_engine_configs | - |

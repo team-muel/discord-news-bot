@@ -1,24 +1,24 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 261
+- Nodes: 262
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/services/supabaseClient.ts | 67 |
-| src/logger.ts | 65 |
-| src/utils/env.ts | 61 |
+| src/services/supabaseClient.ts | 68 |
+| src/logger.ts | 66 |
+| src/utils/env.ts | 62 |
 | src/config.ts | 27 |
 | src/services/skills/actions/types.ts | 26 |
-| src/services/llmClient.ts | 21 |
+| src/services/llmClient.ts | 22 |
 | src/middleware/auth.ts | 16 |
 | src/services/multiAgentService.ts | 16 |
 | src/services/skills/types.ts | 16 |
 | src/utils/validation.ts | 13 |
 | src/discord/messages.ts | 12 |
-| src/routes/bot-agent/types.ts | 10 |
+| src/utils/obsidianEnv.ts | 11 |
 
 ## Mermaid
 
@@ -855,6 +855,13 @@ graph LR
   "src/services/sprint/sprintCodeWriter.ts" --> "src/logger.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/services/llmClient.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/services/sprint/scopeGuard.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/logger.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/services/llmClient.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/services/obsidian/authoring.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/services/obsidian/router.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/services/supabaseClient.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/utils/env.ts"
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/config.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/logger.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actionGovernanceStore.ts"
@@ -868,12 +875,14 @@ graph LR
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/scopeGuard.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/skillPromptLoader.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintCodeWriter.ts"
+  "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintLearningJournal.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintPreamble.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/supabaseClient.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/config.ts"
+  "src/services/sprint/sprintPreamble.ts" --> "src/services/sprint/sprintLearningJournal.ts"
   "src/services/sprint/sprintTriggers.ts" --> "src/config.ts"
   "src/services/sprint/sprintTriggers.ts" --> "src/logger.ts"
   "src/services/sprint/sprintTriggers.ts" --> "src/services/llmClient.ts"
