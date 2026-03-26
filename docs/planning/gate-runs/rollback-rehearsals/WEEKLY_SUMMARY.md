@@ -1,15 +1,15 @@
 # Rollback Rehearsal Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-03-26T13:59:00.977Z
-- total_runs: 1
-- pass: 1
+- generated_at: 2026-03-26T19:32:40.473Z
+- total_runs: 0
+- pass: 0
 - fail: 0
-- avg_elapsed_ms: 440
-- p95_elapsed_ms: 440
+- avg_elapsed_ms: 0
+- p95_elapsed_ms: 0
 
 ## Recent Rehearsals
 
 | Run ID | Timestamp | Overall | Elapsed(ms) | Within Target | Reconnect | Replay | File |
 | --- | --- | --- | ---: | --- | ---: | ---: | --- |
-| rollback-20260319-181357 | 2026-03-19T18:13:57.754Z | pass | 440 | true | 409 | 409 | docs/planning/gate-runs/rollback-rehearsals/2026-03-19_rollback-20260319-181357.json |
+| - | - | - | 0 | - | - | - | - |
