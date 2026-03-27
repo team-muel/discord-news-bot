@@ -58,6 +58,7 @@ import {
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { recordGotShadowRun } from './agentGotStore';
 import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agentTelemetryQueue';
+import { isShadowRunnerEnabled, runShadowGraph, persistShadowDivergence, type ShadowRunResult } from './langgraph/shadowGraphRunner';
 import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
 import type {
   AgentRole,
@@ -1175,6 +1176,11 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
   recordComplexityMetric(session);
   recordSessionOutcome(session, status);
 
+  // Capture shadow trace before releasing in-memory structures
+  const shadowTraceNodes: LangGraphNodeId[] = session.shadowGraph
+    ? session.shadowGraph.trace.map((t) => t.node).filter((n): n is LangGraphNodeId => (LANGGRAPH_NODE_IDS as string[]).includes(n))
+    : [];
+
   // Release heavy in-memory structures after persistence
   session.shadowGraph = null;
   for (const step of session.steps) {
@@ -1209,6 +1215,28 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
   }
 
   void runLangGraphExecutorShadowReplay(session, status);
+
+  // Phase-1 shadow graph: run real node handlers in parallel and log divergence
+  if (isShadowRunnerEnabled()) {
+    void runShadowGraph({
+      sessionId: session.id,
+      guildId: session.guildId,
+      requestedBy: session.requestedBy,
+      priority: session.priority,
+      goal: session.goal,
+      mainPathNodes: shadowTraceNodes,
+      loadMemoryHints: (input) => withTimeout(buildAgentMemoryHints(input), AGENT_MEMORY_HINT_TIMEOUT_MS, 'SHADOW_MEMORY_HINT_TIMEOUT').catch(() => []),
+    }).then((result: ShadowRunResult) => {
+      void persistShadowDivergence({
+        sessionId: session.id,
+        guildId: session.guildId,
+        result,
+        mainFinalStatus: status,
+      });
+    }).catch(() => {
+      // Best-effort shadow execution
+    });
+  }
 };
 
 const runStep = async (
