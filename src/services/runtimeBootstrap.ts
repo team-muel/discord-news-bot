@@ -14,6 +14,7 @@ import { startLoginSessionCleanupLoop } from '../discord/auth';
 import { rehydrateActivePipelines } from './sprint/sprintOrchestrator';
 import { startSprintScheduledTriggers } from './sprint/sprintTriggers';
 import { checkGitConfigHealth } from './sprint/autonomousGit';
+import { initMcpSkillRouter } from './mcpSkillRouter';
 import logger from '../logger';
 
 const runtimeState = {
@@ -66,6 +67,11 @@ export const startServerProcessRuntime = (): void => {
 
   // Start scheduled sprint triggers (security audit, improvement)
   startSprintScheduledTriggers();
+
+  // Initialize MCP skill router with health-aware worker discovery
+  void initMcpSkillRouter().catch((error) => {
+    logger.debug('[MCP-ROUTER] init skipped: %s', getErrorMessage(error));
+  });
 
   // Validate sprint git config at startup
   checkGitConfigHealth();

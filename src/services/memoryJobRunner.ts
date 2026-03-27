@@ -6,8 +6,8 @@ import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
-const MEMORY_JOBS_POLL_INTERVAL_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 20_000));
-const MEMORY_JOBS_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.MEMORY_JOBS_CONCURRENCY, 2)));
+const MEMORY_JOBS_POLL_INTERVAL_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 8_000));
+const MEMORY_JOBS_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.MEMORY_JOBS_CONCURRENCY, 4)));
 const MEMORY_JOBS_MAX_RETRIES = Math.max(1, parseIntegerEnv(process.env.MEMORY_JOBS_MAX_RETRIES, 3));
 const MEMORY_JOBS_BACKOFF_BASE_MS = Math.max(1_000, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_BASE_MS, 15_000));
 const MEMORY_JOBS_BACKOFF_MAX_MS = Math.max(MEMORY_JOBS_BACKOFF_BASE_MS, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_MAX_MS, 30 * 60_000));

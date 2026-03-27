@@ -25,7 +25,13 @@ import {
   getCacheStats,
   clearExpiredCache,
 } from './obsidianCacheService';
+import { TtlCache } from '../utils/ttlCache';
 import logger from '../logger';
+
+// In-memory TTL cache for graph metadata (avoids reload every RAG query)
+const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, Number(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS || 120_000));
+const graphMetaCache = new TtlCache<Record<string, any>>(4);
+const GRAPH_META_CACHE_KEY = 'graph_metadata';
 
 /** Category routing rules */
 const INTENT_ROUTES = {
@@ -158,8 +164,12 @@ export async function queryObsidianRAG(
       return content;
     });
 
-    // 4. Get graph metadata for relationship context
-    const graphMetadata = await getObsidianGraphMetadata();
+    // 4. Get graph metadata for relationship context (TTL-cached in memory)
+    let graphMetadata = graphMetaCache.get(GRAPH_META_CACHE_KEY);
+    if (!graphMetadata) {
+      graphMetadata = await getObsidianGraphMetadata();
+      graphMetaCache.set(GRAPH_META_CACHE_KEY, graphMetadata, GRAPH_META_CACHE_TTL_MS);
+    }
 
     // 5. Assemble context
     const contextText = assembleContext(documents, graphMetadata, contextMode);

@@ -8,7 +8,7 @@ import { buildSocialContextHints } from './communityGraphService';
 import { readObsidianLoreWithAdapter } from './obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
-const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 5_000));
+const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));
 const memoryHintCache = new TtlCache<string[]>(200);
 
 const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();

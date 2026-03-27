@@ -123,6 +123,55 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
 }
 
 /**
+ * Batch-fetch multiple cached documents in a single Supabase query.
+ * Replaces N individual getCachedDocument() calls with 1 round-trip.
+ */
+export async function getCachedDocumentsBatch(filePaths: string[]): Promise<Map<string, CachedDocument>> {
+  const result = new Map<string, CachedDocument>();
+  if (!CACHE_ENABLED || !isSupabaseConfigured() || filePaths.length === 0) {
+    return result;
+  }
+
+  try {
+    const db = getSupabaseClient();
+    const cutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
+
+    const { data, error } = await db
+      .from('obsidian_cache')
+      .select('file_path, content, frontmatter, cached_at, hit_count')
+      .in('file_path', filePaths)
+      .gt('cached_at', cutoff);
+
+    if (error || !data) {
+      return result;
+    }
+
+    for (const row of data) {
+      const fp = String(row.file_path || '');
+      if (!fp) continue;
+
+      if (pendingHitCounts.size < MAX_PENDING_HIT_ENTRIES) {
+        pendingHitCounts.set(fp, (pendingHitCounts.get(fp) || (row.hit_count || 0)) + 1);
+      }
+
+      result.set(fp, {
+        filePath: fp,
+        content: row.content,
+        frontmatter: row.frontmatter || {},
+        cachedAt: row.cached_at,
+        hitCount: (row.hit_count || 0) + 1,
+      });
+    }
+
+    logger.debug('[OBSIDIAN-CACHE] BATCH HIT %d/%d', result.size, filePaths.length);
+    return result;
+  } catch (error) {
+    logger.warn('[OBSIDIAN-CACHE] Batch get failed: %o', error);
+    return result;
+  }
+}
+
+/**
  * Cache a document
  */
 export async function cacheDocument(
@@ -172,19 +221,15 @@ export async function loadDocumentsWithCache(
   const docs = new Map<string, CachedDocument>();
   const uncached: string[] = [];
 
-  // Phase 1: Check cache in parallel
-  const cachedRows = await Promise.all(
-    filePaths.map(async (path) => ({
-      path,
-      cached: await getCachedDocument(path),
-    }))
-  );
+  // Phase 1: Batch cache lookup — single Supabase IN query instead of N individual queries
+  const cachedBatch = await getCachedDocumentsBatch(filePaths);
 
-  for (const row of cachedRows) {
-    if (row.cached) {
-      docs.set(row.path, row.cached);
+  for (const path of filePaths) {
+    const cached = cachedBatch.get(path);
+    if (cached) {
+      docs.set(path, cached);
     } else {
-      uncached.push(row.path);
+      uncached.push(path);
     }
   }
 

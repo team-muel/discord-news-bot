@@ -1,5 +1,6 @@
 import { requireAdmin } from '../../middleware/auth';
 import { getToolRuntimeStatus, getExternalToolsStatus, getExternalAdaptersStatus } from '../../services/tools/toolRouter';
+import { getRouterSnapshot } from '../../services/mcpSkillRouter';
 
 import { BotAgentRouteDeps } from './types';
 
@@ -21,5 +22,9 @@ export function registerBotAgentToolsRoutes(deps: BotAgentRouteDeps): void {
   router.get('/agent/tools/adapters', requireAdmin, async (_req, res) => {
     const adapters = await getExternalAdaptersStatus();
     return res.json({ ok: true, adapters });
+  });
+
+  router.get('/agent/tools/router', requireAdmin, (_req, res) => {
+    return res.json({ ok: true, router: getRouterSnapshot() });
   });
 }

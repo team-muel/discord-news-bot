@@ -1,3 +1,5 @@
+import http from 'node:http';
+import https from 'node:https';
 import { logStructuredError } from './structuredErrorLogService';
 import { toWorkerExecutionError, validateMcpCallParams, WorkerExecutionError } from './workerExecution';
 
@@ -15,6 +17,13 @@ const MCP_WORKER_AUTH_TOKEN = String(
   || process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN
   || '',
 ).trim();
+
+// Keep-alive HTTP agents — reuse TCP connections across MCP calls
+const httpKeepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 6, keepAliveMsecs: 30_000 });
+const httpsKeepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 6, keepAliveMsecs: 30_000 });
+
+const getDispatcher = (url: string) =>
+  url.startsWith('https') ? httpsKeepAliveAgent : httpKeepAliveAgent;
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   let timer: NodeJS.Timeout | null = null;
@@ -92,6 +101,8 @@ export const callMcpTool = async (params: {
       name: params.toolName,
       arguments: params.args,
     }),
+    // @ts-expect-error Node.js fetch supports agent option for keep-alive pooling
+    agent: getDispatcher(base),
   }), params.timeoutMs).catch((error) => {
     throw toWorkerExecutionError(error, 'MCP_TIMEOUT');
   });

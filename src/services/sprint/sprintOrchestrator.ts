@@ -46,6 +46,34 @@ const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, { adapterId: 'openshel
   'ops-validate': { adapterId: 'openjarvis', action: 'jarvis.ask' },
 };
 
+// Worker health cache — skip known-dead workers quickly instead of waiting for full timeout
+const WORKER_HEALTH_CACHE_TTL_MS = 60_000;
+const MCP_FAST_FAIL_TIMEOUT_MS = Math.max(3_000, Math.min(SPRINT_PHASE_TIMEOUT_MS, Number(process.env.MCP_FAST_FAIL_TIMEOUT_MS || 10_000)));
+const workerHealthCache = new Map<string, { healthy: boolean; checkedAt: number }>();
+
+const isWorkerKnownDead = (workerUrl: string): boolean => {
+  const entry = workerHealthCache.get(workerUrl);
+  if (!entry) return false;
+  if (Date.now() - entry.checkedAt > WORKER_HEALTH_CACHE_TTL_MS) {
+    workerHealthCache.delete(workerUrl);
+    return false;
+  }
+  return !entry.healthy;
+};
+
+const recordWorkerHealth = (workerUrl: string, healthy: boolean): void => {
+  workerHealthCache.set(workerUrl, { healthy, checkedAt: Date.now() });
+  // Prevent unbounded growth
+  if (workerHealthCache.size > 50) {
+    const oldest = [...workerHealthCache.entries()]
+      .sort((a, b) => a[1].checkedAt - b[1].checkedAt)[0];
+    if (oldest) workerHealthCache.delete(oldest[0]);
+  }
+};
+
+// Expose for diagnostics
+export const getWorkerHealthCacheSnapshot = () => Object.fromEntries(workerHealthCache);
+
 // ──── Types ───────────────────────────────────────────────────────────────────
 
 export type SprintPhase =
@@ -419,35 +447,44 @@ const executePhaseAction = async (
     const workerKind = PHASE_WORKER_KIND[phase];
     const workerUrl = workerKind ? getMcpWorkerUrl(workerKind) : '';
 
-    if (workerUrl) {
+    if (workerUrl && !isWorkerKnownDead(workerUrl)) {
       logger.info('[SPRINT] delegating phase=%s to MCP worker=%s', phase, workerKind);
-      const mcpResult = await Promise.race([
-        callMcpWorkerTool({
-          workerUrl,
-          toolName: actionName,
-          args: {
-            goal,
-            sprintId: pipeline.sprintId,
-            phase,
-            objective: pipeline.objective,
-            changedFiles: pipeline.changedFiles,
-          },
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`MCP delegation timed out for phase ${phase}`)), SPRINT_PHASE_TIMEOUT_MS),
-        ),
-      ]);
-      const blocks = parseMcpTextBlocks(mcpResult);
-      const output = blocks.join('\n') || '';
-      return {
-        phase,
-        status: mcpResult.isError ? 'failed' : 'success',
-        output,
-        artifacts: [],
-        startedAt,
-        completedAt: new Date().toISOString(),
-        iterationCount: 1,
-      };
+      try {
+        const mcpResult = await Promise.race([
+          callMcpWorkerTool({
+            workerUrl,
+            toolName: actionName,
+            args: {
+              goal,
+              sprintId: pipeline.sprintId,
+              phase,
+              objective: pipeline.objective,
+              changedFiles: pipeline.changedFiles,
+            },
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`MCP delegation timed out for phase ${phase}`)), MCP_FAST_FAIL_TIMEOUT_MS),
+          ),
+        ]);
+        recordWorkerHealth(workerUrl, true);
+        const blocks = parseMcpTextBlocks(mcpResult);
+        const output = blocks.join('\n') || '';
+        return {
+          phase,
+          status: mcpResult.isError ? 'failed' : 'success',
+          output,
+          artifacts: [],
+          startedAt,
+          completedAt: new Date().toISOString(),
+          iterationCount: 1,
+        };
+      } catch (mcpError) {
+        recordWorkerHealth(workerUrl, false);
+        logger.warn('[SPRINT] MCP worker %s failed for phase=%s (%s), falling through to next fallback',
+          workerKind, phase, mcpError instanceof Error ? mcpError.message : String(mcpError));
+      }
+    } else if (workerUrl) {
+      logger.info('[SPRINT] skipping known-dead MCP worker %s for phase=%s', workerKind, phase);
     }
 
     // ── External adapter fallback: try real external tools before LLM-only fallback ──

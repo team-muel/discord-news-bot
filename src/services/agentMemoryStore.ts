@@ -4,6 +4,7 @@ import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import { hasMemoryConsent } from './agentConsentService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { runWithConcurrency } from '../utils/async';
+import { generateQueryEmbedding, generateEmbedding, storeMemoryEmbedding, isEmbeddingEnabled } from './memoryEmbeddingService';
 
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;
@@ -166,12 +167,18 @@ export async function searchGuildMemory(params: SearchParams) {
   let items: Array<Record<string, unknown>> = [];
   const canUseHybridRpc = typeof (client as { rpc?: unknown }).rpc === 'function';
   if (cleanQuery && canUseHybridRpc) {
+    // Generate query embedding for vector search (best-effort, non-blocking fallback)
+    const queryEmbedding = isEmbeddingEnabled()
+      ? await generateQueryEmbedding(cleanQuery).catch(() => null)
+      : null;
+
     const hybrid = await client.rpc('search_memory_items_hybrid', {
       p_guild_id: params.guildId,
       p_query: cleanQuery,
       p_type: params.type || null,
       p_limit: params.limit,
       p_min_similarity: MEMORY_HYBRID_MIN_SIMILARITY,
+      p_query_embedding: queryEmbedding ? `[${queryEmbedding.join(',')}]` : null,
     });
 
     if (hybrid.error) {
@@ -402,6 +409,14 @@ export async function createMemoryItem(params: CreateMemoryParams) {
     if (sourceError) {
       throw new Error(sourceError.message || 'MEMORY_SOURCE_CREATE_FAILED');
     }
+  }
+
+  // Generate and store embedding asynchronously (best-effort, never blocks creation)
+  if (isEmbeddingEnabled()) {
+    const embeddingText = [insertRow.title, insertRow.content].filter(Boolean).join(' ').trim();
+    void generateEmbedding(embeddingText).then((emb) => {
+      if (emb) return storeMemoryEmbedding(id, emb);
+    }).catch(() => {});
   }
 
   return data;
