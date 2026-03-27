@@ -136,6 +136,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/tools/discover') {
+    const { getExternalAdapterStatus } = await import('../src/services/tools/externalAdapterRegistry');
+    try {
+      const adapters = await getExternalAdapterStatus();
+      json(res, 200, {
+        ok: true,
+        role: ROLE || null,
+        platform: process.platform,
+        resourceProfile: 'micro',
+        allowedTools: ALLOWED_TOOLS,
+        externalAdapters: adapters,
+      });
+    } catch {
+      json(res, 200, {
+        ok: true,
+        role: ROLE || null,
+        platform: process.platform,
+        resourceProfile: 'micro',
+        allowedTools: ALLOWED_TOOLS,
+        externalAdapters: [],
+      });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/tools') {
     const tools = listActions().filter((action) => ALLOWED_TOOLS.includes(action.name));
     json(res, 200, {

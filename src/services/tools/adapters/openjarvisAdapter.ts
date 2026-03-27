@@ -9,6 +9,15 @@ const IS_WINDOWS = process.platform === 'win32';
 const ENABLED = parseBooleanEnv(process.env.OPENJARVIS_ENABLED, false);
 const SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
 const MODEL = String(process.env.OPENJARVIS_MODEL || 'qwen2.5:7b-instruct').trim();
+const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
+const LITELLM_MASTER_KEY = String(process.env.LITELLM_MASTER_KEY || process.env.OPENCLAW_API_KEY || '').trim();
+const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim();
+
+/**
+ * Lite mode: when jarvis CLI is not installed but LiteLLM proxy is available,
+ * jarvis.ask can still function via LiteLLM HTTP fallback.
+ */
+let cliAvailable: boolean | null = null;
 
 const runCli = async (args: string): Promise<{ stdout: string; stderr: string }> => {
   return execAsync(`jarvis ${args}`, {
@@ -44,9 +53,12 @@ export const openjarvisAdapter: ExternalToolAdapter = {
     if (!ENABLED) return false;
     try {
       await runCli('--version');
+      cliAvailable = true;
       return true;
     } catch {
-      return false;
+      cliAvailable = false;
+      // Lite mode: LiteLLM proxy available → jarvis.ask only
+      return LITELLM_BASE_URL.length > 0;
     }
   },
 
@@ -83,8 +95,41 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           }
 
           // Fallback to CLI
-          const { stdout } = await runCli(`ask "${question.replace(/"/g, '\\"')}" --quiet`);
-          return makeResult(true, 'Response via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
+          if (cliAvailable !== false) {
+            try {
+              const { stdout } = await runCli(`ask "${question.replace(/"/g, '\\"')}" --quiet`);
+              return makeResult(true, 'Response via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
+            } catch {
+              // CLI failed — try LiteLLM fallback below
+            }
+          }
+
+          // LiteLLM proxy fallback (lite mode or CLI failure)
+          if (LITELLM_BASE_URL) {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (LITELLM_MASTER_KEY) {
+              headers['Authorization'] = `Bearer ${LITELLM_MASTER_KEY}`;
+            }
+            const llmResp = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                model: LITELLM_MODEL,
+                messages: [{ role: 'user', content: question }],
+              }),
+              signal: AbortSignal.timeout(TIMEOUT_MS),
+            }).catch(() => null);
+            if (llmResp?.ok) {
+              const data = (await llmResp.json()) as { choices?: Array<{ message?: { content?: string } }> };
+              const content = data.choices?.[0]?.message?.content || '';
+              if (content) {
+                const mode = cliAvailable === false ? ' (lite mode)' : '';
+                return makeResult(true, `Response via LiteLLM proxy${mode}`, content.split('\n').slice(0, 20));
+              }
+            }
+          }
+
+          return makeResult(false, 'No inference endpoint available', [], 'INFERENCE_UNAVAILABLE');
         }
 
         case 'jarvis.serve': {
@@ -97,11 +142,13 @@ export const openjarvisAdapter: ExternalToolAdapter = {
         }
 
         case 'jarvis.optimize': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis optimize requires CLI', [], 'CLI_REQUIRED');
           const { stdout } = await runCli('optimize --json');
           return makeResult(true, 'Optimization completed', stdout.trim().split('\n').slice(0, 20));
         }
 
         case 'jarvis.bench': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis bench requires CLI', [], 'CLI_REQUIRED');
           const { stdout } = await runCli('bench --json');
           return makeResult(true, 'Benchmark completed', stdout.trim().split('\n').slice(0, 20));
         }
@@ -122,6 +169,9 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           }
 
           // Fallback: write trace via CLI stdin pipe
+          if (cliAvailable === false) {
+            return makeResult(false, 'jarvis trace requires CLI or serve endpoint', [], 'CLI_REQUIRED');
+          }
           const traceJson = JSON.stringify(tracePayload);
           const escaped = traceJson.replace(/"/g, '\\"');
           const { stdout } = await runCli(`trace store --json "${escaped}"`);

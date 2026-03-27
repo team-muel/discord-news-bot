@@ -11,6 +11,16 @@ const ENABLED = parseBooleanEnv(process.env.NEMOCLAW_ENABLED, false);
 const SANDBOX_NAME = String(process.env.NEMOCLAW_SANDBOX_NAME || 'muel-assistant').trim();
 const SANDBOX_INFERENCE_MODEL = String(process.env.NEMOCLAW_INFERENCE_MODEL || 'qwen2.5:7b-instruct').trim();
 const SANDBOX_OLLAMA_URL = String(process.env.NEMOCLAW_SANDBOX_OLLAMA_URL || 'http://localhost:11434').trim();
+const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
+const LITELLM_MASTER_KEY = String(process.env.LITELLM_MASTER_KEY || process.env.OPENCLAW_API_KEY || '').trim();
+const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim();
+
+/**
+ * Lite mode: when the nemoclaw CLI is not installed (e.g. GCP e2-micro without Docker),
+ * but a LiteLLM proxy is available, expose code.review capability via LLM inference only.
+ * Full sandbox/onboard/connect features remain unavailable.
+ */
+let cliAvailable: boolean | null = null;
 
 const WSL_DISTRO = process.env.WSL_DISTRO || 'Ubuntu-24.04';
 
@@ -44,9 +54,12 @@ export const nemoclawAdapter: ExternalToolAdapter = {
     if (!ENABLED) return false;
     try {
       await runCli('--version');
+      cliAvailable = true;
       return true;
     } catch {
-      return false;
+      cliAvailable = false;
+      // Lite mode: LiteLLM proxy available → code.review only
+      return LITELLM_BASE_URL.length > 0;
     }
   },
 
@@ -65,15 +78,22 @@ export const nemoclawAdapter: ExternalToolAdapter = {
 
     try {
       switch (action) {
-        case 'agent.onboard': {
-          const { stdout } = await runCli('onboard');
-          return makeResult(true, 'NemoClaw onboarded', stdout.trim().split('\n'));
-        }
-        case 'agent.status': {
-          const { stdout } = await runCli(`${name} status`);
-          return makeResult(true, `Status for ${name}`, stdout.trim().split('\n'));
-        }
+        case 'agent.onboard':
+        case 'agent.status':
         case 'agent.connect': {
+          // These actions require full CLI — not available in lite mode
+          if (cliAvailable === false) {
+            return makeResult(false, `${action} requires nemoclaw CLI (lite mode: code.review only)`, [], 'CLI_REQUIRED');
+          }
+          if (action === 'agent.onboard') {
+            const { stdout } = await runCli('onboard');
+            return makeResult(true, 'NemoClaw onboarded', stdout.trim().split('\n'));
+          }
+          if (action === 'agent.status') {
+            const { stdout } = await runCli(`${name} status`);
+            return makeResult(true, `Status for ${name}`, stdout.trim().split('\n'));
+          }
+          // agent.connect
           const { stdout } = await runCli(`${name} connect`);
           return makeResult(true, `Connected to ${name}`, stdout.trim().split('\n'));
         }
@@ -101,21 +121,35 @@ export const nemoclawAdapter: ExternalToolAdapter = {
             // Sandbox inference unavailable — fall through to host LLM
           }
 
-          // Fallback: use host-side LLM via OpenAI-compatible endpoint (jarvis serve / litellm / ollama)
-          const hostUrls = [
-            process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000',
-            process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000',
-            process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-          ];
-          for (const baseUrl of hostUrls) {
+          // Fallback: use host-side LLM via OpenAI-compatible endpoint (litellm / jarvis serve / ollama)
+          const hostEndpoints: Array<{ url: string; model: string; authHeader?: string }> = [];
+          // Prefer LiteLLM proxy first (most reliable on GCP)
+          if (LITELLM_BASE_URL) {
+            hostEndpoints.push({
+              url: LITELLM_BASE_URL,
+              model: LITELLM_MODEL,
+              authHeader: LITELLM_MASTER_KEY ? `Bearer ${LITELLM_MASTER_KEY}` : undefined,
+            });
+          }
+          // Then local endpoints
+          const jarvisUrl = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
+          const ollamaUrl = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim();
+          hostEndpoints.push({ url: jarvisUrl, model: SANDBOX_INFERENCE_MODEL });
+          hostEndpoints.push({ url: ollamaUrl, model: SANDBOX_INFERENCE_MODEL });
+
+          for (const endpoint of hostEndpoints) {
             try {
               const controller = new AbortController();
               const timer = setTimeout(() => controller.abort(), REVIEW_TIMEOUT_MS);
-              const resp = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`, {
+              const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+              if (endpoint.authHeader) {
+                headers['Authorization'] = endpoint.authHeader;
+              }
+              const resp = await fetch(`${endpoint.url.replace(/\/+$/, '')}/v1/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
-                  model: SANDBOX_INFERENCE_MODEL,
+                  model: endpoint.model,
                   messages: [
                     { role: 'system', content: 'You are a thorough code reviewer. Identify bugs, security issues, and test gaps.' },
                     { role: 'user', content: prompt.slice(0, 6000) },
@@ -130,7 +164,8 @@ export const nemoclawAdapter: ExternalToolAdapter = {
                 const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
                 const content = data.choices?.[0]?.message?.content || '';
                 if (content.length > 10) {
-                  return makeResult(true, `Code review via host LLM (${baseUrl})`, content.split('\n').slice(0, 40));
+                  const mode = cliAvailable === false ? ' (lite mode)' : '';
+                  return makeResult(true, `Code review via host LLM (${endpoint.url})${mode}`, content.split('\n').slice(0, 40));
                 }
               }
             } catch {
