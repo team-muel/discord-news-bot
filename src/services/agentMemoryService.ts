@@ -7,6 +7,7 @@ import { buildSocialContextHints } from './communityGraphService';
 import { readObsidianLoreWithAdapter } from './obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { generateQueryEmbedding, isEmbeddingEnabled } from './memoryEmbeddingService';
+import { loadSelfNotes } from './entityNervousSystem';
 
 const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));
 const memoryHintCache = new TtlCache<string[]>(200);
@@ -292,11 +293,12 @@ export const buildAgentMemoryHints = async (params: {
     return [`현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`].slice(0, maxItems);
   }
 
-  const [socialHints, memoryHints, supabaseLoreHints, obsidianHints] = await Promise.all([
+  const [socialHints, memoryHints, supabaseLoreHints, obsidianHints, selfNotes] = await Promise.all([
     buildSocialContextHints({ guildId: safeGuildId, requesterUserId: params.requesterUserId, maxItems: 4 }),
     readSupabaseMemoryItems(safeGuildId, safeGoal),
     readSupabaseLore(safeGuildId),
     readObsidianLore({ guildId: safeGuildId, goal: safeGoal }),
+    loadSelfNotes(safeGuildId),
   ]);
 
   const socialByUser = parseSocialUserScores(socialHints);
@@ -317,7 +319,7 @@ export const buildAgentMemoryHints = async (params: {
     .map((item) => `${item.text} [rank=${item.rank.toFixed(2)} rel=${item.socialScore.toFixed(2)} recency=${item.recencyScore.toFixed(2)}]`);
 
   const goalHint = `현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`;
-  const merged = [goalHint, ...socialHints, ...rankedMemoryHints, ...supabaseLoreHints, ...obsidianHints].filter(Boolean);
+  const merged = [goalHint, ...selfNotes, ...socialHints, ...rankedMemoryHints, ...supabaseLoreHints, ...obsidianHints].filter(Boolean);
   memoryHintCache.set(cacheKey, merged, MEMORY_HINT_CACHE_TTL_MS);
   return merged.slice(0, maxItems);
 };

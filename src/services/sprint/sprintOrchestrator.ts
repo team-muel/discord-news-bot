@@ -15,6 +15,7 @@ import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
 import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
+import { ingestRetroInsights } from '../entityNervousSystem';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
 import { isJudgePhase, judgePhaseOutput, formatJudgeAppendix } from './llmJudge';
@@ -819,6 +820,16 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
 
     recordSprintJournalEntry(journalEntry).catch((err) =>
       logger.warn('[SPRINT] journal entry write failed: %s', err instanceof Error ? err.message : String(err)),
+    );
+
+    // Circuit 3: Ingest retro insights as self-notes for future session context
+    void ingestRetroInsights({
+      guildId: pipeline.guildId,
+      sprintId: pipeline.sprintId,
+      optimizeHints: journalEntry.optimizeHints,
+      failedPhases: journalEntry.failedPhases,
+    }).catch((err) =>
+      logger.warn('[SPRINT] retro insight ingestion failed: %s', err instanceof Error ? err.message : String(err)),
     );
   }
 

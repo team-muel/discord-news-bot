@@ -264,6 +264,10 @@ export const persistRewardSnapshot = async (snapshot: RewardSnapshot): Promise<b
       logger.warn('[REWARD-SIGNAL] persist failed guild=%s: %s', snapshot.guildId, error.message);
       return false;
     }
+
+    // Circuit 2: After persisting reward, trigger behavior adjustment
+    void import('./entityNervousSystem').then((m) => m.adjustBehaviorFromReward(snapshot.guildId)).catch(() => { /* best-effort */ });
+
     return true;
   } catch {
     return false;

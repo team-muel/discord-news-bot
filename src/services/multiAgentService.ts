@@ -59,6 +59,7 @@ import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { recordGotShadowRun } from './agentGotStore';
 import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agentTelemetryQueue';
 import { isShadowRunnerEnabled, runShadowGraph, persistShadowDivergence, type ShadowRunResult } from './langgraph/shadowGraphRunner';
+import { precipitateSessionToMemory } from './entityNervousSystem';
 import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
 import type {
   AgentRole,
@@ -1175,6 +1176,17 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
   // Record cross-session metrics before releasing heavy structures
   recordComplexityMetric(session);
   recordSessionOutcome(session, status);
+
+  // Circuit 1: Precipitate session outcome into long-term memory
+  void precipitateSessionToMemory({
+    sessionId: session.id,
+    guildId: session.guildId,
+    goal: session.goal,
+    result: session.result,
+    status,
+    stepCount: session.steps.length,
+    requestedBy: session.requestedBy,
+  }).catch(() => { /* best-effort precipitation */ });
 
   // Capture shadow trace before releasing in-memory structures
   const shadowTraceNodes: LangGraphNodeId[] = session.shadowGraph
