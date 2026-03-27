@@ -1,15 +1,15 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 262
+- Nodes: 267
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/services/supabaseClient.ts | 68 |
-| src/logger.ts | 66 |
-| src/utils/env.ts | 62 |
+| src/services/supabaseClient.ts | 72 |
+| src/logger.ts | 71 |
+| src/utils/env.ts | 67 |
 | src/config.ts | 27 |
 | src/services/skills/actions/types.ts | 26 |
 | src/services/llmClient.ts | 22 |
@@ -279,6 +279,7 @@ graph LR
   "src/routes/bot-agent/sprintRoutes.ts" --> "src/utils/validation.ts"
   "src/routes/bot-agent/toolsRoutes.ts" --> "src/middleware/auth.ts"
   "src/routes/bot-agent/toolsRoutes.ts" --> "src/routes/bot-agent/types.ts"
+  "src/routes/bot-agent/toolsRoutes.ts" --> "src/services/mcpSkillRouter.ts"
   "src/routes/bot-agent/toolsRoutes.ts" --> "src/services/tools/toolRouter.ts"
   "src/routes/bot-agent/types.ts":::file
   "src/routes/bot.ts" --> "src/bot.ts"
@@ -350,14 +351,16 @@ graph LR
   "src/services/agentIntentClassifier.ts" --> "src/services/llmClient.ts"
   "src/services/agentMemoryService.ts" --> "src/logger.ts"
   "src/services/agentMemoryService.ts" --> "src/services/communityGraphService.ts"
+  "src/services/agentMemoryService.ts" --> "src/services/entityNervousSystem.ts"
+  "src/services/agentMemoryService.ts" --> "src/services/memoryEmbeddingService.ts"
   "src/services/agentMemoryService.ts" --> "src/services/memoryPoisonGuard.ts"
   "src/services/agentMemoryService.ts" --> "src/services/obsidian/router.ts"
   "src/services/agentMemoryService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentMemoryService.ts" --> "src/utils/env.ts"
   "src/services/agentMemoryService.ts" --> "src/utils/obsidianEnv.ts"
-  "src/services/agentMemoryService.ts" --> "src/utils/obsidianFileLock.ts"
   "src/services/agentMemoryService.ts" --> "src/utils/ttlCache.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/agentConsentService.ts"
+  "src/services/agentMemoryStore.ts" --> "src/services/memoryEmbeddingService.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/memoryPoisonGuard.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/obsidianSanitizationWorker.ts"
   "src/services/agentMemoryStore.ts" --> "src/services/supabaseClient.ts"
@@ -475,6 +478,11 @@ graph LR
   "src/services/efficiencyOptimizationService.ts" --> "src/services/platformLightweightingService.ts"
   "src/services/efficiencyOptimizationService.ts" --> "src/services/runtimeSchedulerPolicyService.ts"
   "src/services/efficiencyOptimizationService.ts" --> "src/services/supabaseExtensionOpsService.ts"
+  "src/services/entityNervousSystem.ts" --> "src/logger.ts"
+  "src/services/entityNervousSystem.ts" --> "src/services/agentMemoryStore.ts"
+  "src/services/entityNervousSystem.ts" --> "src/services/rewardSignalService.ts"
+  "src/services/entityNervousSystem.ts" --> "src/services/supabaseClient.ts"
+  "src/services/entityNervousSystem.ts" --> "src/utils/env.ts"
   "src/services/finopsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/finopsService.ts" --> "src/utils/env.ts"
   "src/services/goNoGoService.ts" --> "src/services/agentTelemetryQueue.ts"
@@ -515,6 +523,13 @@ graph LR
   "src/services/langgraph/sessionRuntime/fullReviewNodes.ts" --> "src/services/langgraph/runtimeSupport/runtimeBudget.ts"
   "src/services/langgraph/sessionRuntime/fullReviewNodes.ts" --> "src/services/multiAgentService.ts"
   "src/services/langgraph/sessionRuntime/fullReviewNodes.ts" --> "src/services/skills/types.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/logger.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/services/agentRuntimeTypes.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/services/langgraph/executor.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/services/langgraph/nodes/coreNodes.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/services/langgraph/stateContract.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/services/supabaseClient.ts"
+  "src/services/langgraph/shadowGraphRunner.ts" --> "src/utils/env.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/agentOutcomeContract.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/langgraph/stateContract.ts" --> "src/services/promptCompiler.ts"
@@ -524,8 +539,14 @@ graph LR
   "src/services/llmStructuredParseService.ts" --> "src/services/securityCandidateContract.ts"
   "src/services/localAiTradingClient.ts" --> "src/config.ts"
   "src/services/localAiTradingClient.ts" --> "src/contracts/trade.ts"
+  "src/services/mcpSkillRouter.ts" --> "src/logger.ts"
+  "src/services/mcpSkillRouter.ts" --> "src/utils/env.ts"
+  "src/services/mcpSkillRouter.ts" --> "src/utils/ttlCache.ts"
   "src/services/mcpWorkerClient.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/mcpWorkerClient.ts" --> "src/services/workerExecution.ts"
+  "src/services/memoryEmbeddingService.ts" --> "src/logger.ts"
+  "src/services/memoryEmbeddingService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/memoryEmbeddingService.ts" --> "src/utils/env.ts"
   "src/services/memoryJobRunner.ts" --> "src/logger.ts"
   "src/services/memoryJobRunner.ts" --> "src/services/memoryPoisonGuard.ts"
   "src/services/memoryJobRunner.ts" --> "src/services/obsidianSanitizationWorker.ts"
@@ -549,6 +570,7 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/agentTotPolicyService.ts"
   "src/services/multiAgentService.ts" --> "src/services/agentWorkflowService.ts"
   "src/services/multiAgentService.ts" --> "src/services/conversationTurnService.ts"
+  "src/services/multiAgentService.ts" --> "src/services/entityNervousSystem.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/executor.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/coreNodes.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/nodes/runtimeNodes.ts"
@@ -558,6 +580,7 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/langgraph/runtimeSupport/runtimeFormatting.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/runtimeSupport/runtimeSessionState.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/sessionRuntime/branchRuntime.ts"
+  "src/services/multiAgentService.ts" --> "src/services/langgraph/shadowGraphRunner.ts"
   "src/services/multiAgentService.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/multiAgentService.ts" --> "src/services/llmClient.ts"
   "src/services/multiAgentService.ts" --> "src/services/multiAgentRuntimeQueue.ts"
@@ -612,6 +635,7 @@ graph LR
   "src/services/obsidianRagService.ts" --> "src/services/llmClient.ts"
   "src/services/obsidianRagService.ts" --> "src/services/obsidianCacheService.ts"
   "src/services/obsidianRagService.ts" --> "src/services/obsidianHeadlessService.ts"
+  "src/services/obsidianRagService.ts" --> "src/utils/ttlCache.ts"
   "src/services/obsidianSanitizationWorker.ts" --> "src/utils/env.ts"
   "src/services/opencodeGitHubQueueService.ts" --> "src/services/supabaseClient.ts"
   "src/services/opencodeGitHubQueueService.ts" --> "src/utils/env.ts"
@@ -635,6 +659,10 @@ graph LR
   "src/services/retrievalEvalService.ts" --> "src/services/obsidian/router.ts"
   "src/services/retrievalEvalService.ts" --> "src/services/supabaseClient.ts"
   "src/services/retrievalEvalService.ts" --> "src/utils/obsidianEnv.ts"
+  "src/services/rewardSignalService.ts" --> "src/logger.ts"
+  "src/services/rewardSignalService.ts" --> "src/services/entityNervousSystem.ts"
+  "src/services/rewardSignalService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/rewardSignalService.ts" --> "src/utils/env.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/automationBot.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/runtime-alerts/config.ts"
   "src/services/runtime-alerts/checks.ts" --> "src/services/runtime-alerts/types.ts"
@@ -655,6 +683,7 @@ graph LR
   "src/services/runtimeBootstrap.ts" --> "src/services/automationBot.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/botAutoRecoveryService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/discordTopologySyncService.ts"
+  "src/services/runtimeBootstrap.ts" --> "src/services/mcpSkillRouter.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/obsidianLoreSyncService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/opencodePublishWorker.ts"
@@ -864,6 +893,7 @@ graph LR
   "src/services/sprint/sprintLearningJournal.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/config.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/logger.ts"
+  "src/services/sprint/sprintOrchestrator.ts" --> "src/services/entityNervousSystem.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actions/mcpDelegate.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actions/registry.ts"

@@ -127,9 +127,10 @@
 | POST | /api/bot/agent/task-routing/feedback | no | yes | yes | src/routes/bot-agent/learningRoutes.ts:28 |
 | GET | /api/bot/agent/task-routing/policy-hints | no | yes | no | src/routes/bot-agent/learningRoutes.ts:77 |
 | GET | /api/bot/agent/task-routing/summary | no | yes | no | src/routes/bot-agent/learningRoutes.ts:12 |
-| GET | /api/bot/agent/tools/adapters | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:21 |
-| GET | /api/bot/agent/tools/external | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:16 |
-| GET | /api/bot/agent/tools/status | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:9 |
+| GET | /api/bot/agent/tools/adapters | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:22 |
+| GET | /api/bot/agent/tools/external | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:17 |
+| GET | /api/bot/agent/tools/router | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:27 |
+| GET | /api/bot/agent/tools/status | no | yes | no | src/routes/bot-agent/toolsRoutes.ts:10 |
 | POST | /api/bot/automation/:jobName/run | no | yes | yes | src/routes/bot.ts:226 |
 | POST | /api/bot/reconnect | no | yes | yes | src/routes/bot.ts:245 |
 | GET | /api/bot/status | yes | no | yes | src/routes/bot.ts:192 |

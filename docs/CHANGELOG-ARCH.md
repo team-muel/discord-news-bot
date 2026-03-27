@@ -25,6 +25,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-03-27 - Entity Nervous System Feedback Circuits
+
+- Why: Discord 안에서 동작하는 자율 진화 엔티티라는 목표에 맞춰, 기존의 분리된 루프들을 감각→기억, 보상→행동, 자기 성찰→자기 수정의 닫힌 피드백 회로로 연결할 필요가 있었다.
+- Scope: added `entityNervousSystem` integration service, wired session terminal state into `durable_extraction` memory jobs, connected reward snapshot persistence to behavior adjustment, and persisted retro optimize/failure insights as self-notes injected into subsequent agent memory hints.
+- Impacted Routes: N/A (runtime/service boundary and persistence change only).
+- Impacted Services: `src/services/entityNervousSystem.ts`, `src/services/multiAgentService.ts`, `src/services/rewardSignalService.ts`, `src/services/agentMemoryService.ts`, `src/services/sprint/sprintOrchestrator.ts`, `src/services/entityNervousSystem.test.ts`.
+- Impacted Tables/RPC: `public.entity_self_notes` (new), `public.memory_jobs`, `public.agent_tot_policies`, `public.retrieval_ranker_active_profiles`, `public.reward_signal_snapshots`.
+- Risk/Regression Notes: session 종료 후 memory precipitation과 reward-based adjustment는 best-effort 비동기 경로로 연결되어 기존 핵심 응답 경로를 블로킹하지 않는다. `entity_self_notes` 미적용 환경에서는 self-note 주입만 비활성화되고 기존 memory hint 경로는 유지된다.
+- Validation: `npx tsc --noEmit`, `npx vitest run`, `npm run docs:build`, `npm run docs:check`.
+
 ## 2026-03-23 - Discord Login Rate-Limit Startup Log Downgrade
 
 - Why: Render 부팅 시 Discord session start 429가 이미 보호 동작으로 처리되고 있었지만, 시작 경로 로그가 `error` 위주로 남아 운영자가 실제 장애와 rate-limit cooldown 상태를 구분하기 어려웠다.
