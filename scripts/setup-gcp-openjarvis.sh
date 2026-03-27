@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
-# Setup OpenJarvis CLI on GCP VM (e2-micro, Debian/Ubuntu)
-# This installs ONLY the CLI — no serve mode (insufficient RAM).
-# All inference routed through LiteLLM proxy on Render.
+# Setup OpenJarvis on GCP VM (e2-micro, Debian/Ubuntu)
+#
+# NOTE: Stanford OpenJarvis (open-jarvis/OpenJarvis) is NOT published on PyPI.
+# Installation requires: git clone + uv sync (~200MB+ with dependencies).
+# On e2-micro (1GB RAM), this may OOM during dependency compilation.
+#
+# LITE MODE (recommended for e2-micro):
+#   Skip this script entirely. Set OPENJARVIS_ENABLED=true and LITELLM_BASE_URL
+#   in the worker env. The adapter will use LiteLLM proxy for jarvis.ask directly.
+#   jarvis.optimize/bench/trace require the full CLI and are unavailable in lite mode.
+#
+# FULL INSTALL (requires e2-small/2GB+ RAM):
+#   git clone https://github.com/open-jarvis/OpenJarvis.git /opt/openjarvis
+#   cd /opt/openjarvis && pip install --break-system-packages -e .
+#   jarvis init --engine litellm
 #
 # Usage: bash scripts/setup-gcp-openjarvis.sh
 # Run as the same user that runs the role workers.
@@ -25,9 +37,25 @@ else
   echo "[1/5] Python3 already installed: $(python3 --version)"
 fi
 
-# 2. Install OpenJarvis CLI (no extras — CLI only, ~60MB)
-echo "[2/5] Installing OpenJarvis CLI..."
-pip install --user --quiet openjarvis 2>/dev/null || pip3 install --user --quiet openjarvis
+# 2. Install OpenJarvis CLI
+# Stanford OpenJarvis is NOT on PyPI as "openjarvis".
+# The PyPI package "open-jarvis" is a DIFFERENT project (Philipp Scheer, CouchDB-based).
+echo "[2/5] Attempting OpenJarvis install from GitHub..."
+if pip3 install --user --break-system-packages --quiet git+https://github.com/open-jarvis/OpenJarvis.git 2>/dev/null; then
+  echo "  Installed from GitHub source"
+else
+  echo "  WARNING: GitHub install failed (likely OOM on e2-micro)."
+  echo "  Falling back to LITE MODE — adapter will use LiteLLM proxy directly."
+  echo "  Set OPENJARVIS_ENABLED=true and LITELLM_BASE_URL in worker env."
+  echo ""
+  echo "  For full install, upgrade VM to e2-small (2GB) and retry."
+  echo ""
+  echo "=== Lite Mode Active ==="
+  echo "Enable in worker env: OPENJARVIS_ENABLED=true"
+  echo "  LITELLM_BASE_URL=${LITELLM_PROXY_URL}"
+  echo "  LITELLM_MODEL=${LITELLM_MODEL}"
+  exit 0
+fi
 
 # Ensure ~/.local/bin is in PATH
 export PATH="$HOME/.local/bin:$PATH"

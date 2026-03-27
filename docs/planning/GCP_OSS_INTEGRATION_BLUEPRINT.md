@@ -99,11 +99,18 @@ GCP에서 OSS CLI 없이도 추론 기능을 제공하는 "lite mode" 도입.
 
 ### Phase 2: OpenJarvis on GCP (infra)
 
-e2-micro에서 유일하게 설치 가능한 OSS = OpenJarvis CLI (Python, ~60MB).
+**UPDATE (2026-03-27):** Stanford OpenJarvis is NOT published on PyPI (`openjarvis` package).
+Installation requires `git clone + uv sync` which needs ~200MB+ dependencies and may OOM on e2-micro.
+**For e2-micro, use lite mode only** (Phase 1). Full CLI install requires e2-small (2GB+).
 
 ```bash
-# Install steps
-pip install openjarvis
+# LITE MODE (current, e2-micro) — no install needed:
+# Set OPENJARVIS_ENABLED=true + LITELLM_BASE_URL in worker env
+# Adapter provides jarvis.ask via LiteLLM proxy automatically
+
+# FULL INSTALL (future, e2-small/2GB+):
+git clone https://github.com/open-jarvis/OpenJarvis.git /opt/openjarvis
+cd /opt/openjarvis && pip install --break-system-packages -e .
 jarvis init --engine litellm
 # Configure ~/.openjarvis/config.toml:
 #   engine = "litellm"
