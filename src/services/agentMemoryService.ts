@@ -1,7 +1,6 @@
 import logger from '../logger';
 import { parseIntegerEnv } from '../utils/env';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
-import { withObsidianFileLock } from '../utils/obsidianFileLock';
 import { TtlCache } from '../utils/ttlCache';
 import { assessMemoryPoisonRisk } from './memoryPoisonGuard';
 import { buildSocialContextHints } from './communityGraphService';
@@ -99,7 +98,7 @@ const safeGoalTerms = (goal: string): string[] =>
     .replace(/[^a-z0-9가-힣\s]/g, ' ')
     .split(/\s+/)
     .map((term) => term.trim())
-    .filter((term) => term.length >= 2)
+    .filter((term) => term.length >= 2 && !term.includes('_'))
     .slice(0, 6);
 
 const readObsidianLore = async (params: { guildId: string; goal: string }): Promise<string[]> => {
@@ -110,21 +109,19 @@ const readObsidianLore = async (params: { guildId: string; goal: string }): Prom
     return [];
   }
 
-  return withObsidianFileLock({
-    vaultRoot: OBSIDIAN_VAULT_PATH,
-    key: `obsidian:guild:${safeGuildId}`,
-    task: async () => {
-      if (!OBSIDIAN_VAULT_PATH) {
-        return [];
-      }
+  if (!OBSIDIAN_VAULT_PATH) {
+    return [];
+  }
 
-      return readObsidianLoreWithAdapter({
-        guildId: safeGuildId,
-        goal: safeGoal,
-        vaultPath: OBSIDIAN_VAULT_PATH,
-      });
-    },
-  });
+  try {
+    return await readObsidianLoreWithAdapter({
+      guildId: safeGuildId,
+      goal: safeGoal,
+      vaultPath: OBSIDIAN_VAULT_PATH,
+    });
+  } catch {
+    return [];
+  }
 };
 
 const readSupabaseLore = async (guildId: string): Promise<string[]> => {

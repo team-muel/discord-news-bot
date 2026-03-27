@@ -99,6 +99,7 @@ export const startRetrievalEvalLoop = (client: Client) => {
   timer = setInterval(() => {
     void runOnce(client);
   }, intervalMs);
+  timer.unref();
 
   if (RETRIEVAL_AUTO_EVAL_RUN_ON_START) {
     void runOnce(client);

@@ -1,14 +1,14 @@
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
 const REVIEW_TIMEOUT_MS = 60_000;
 const IS_WINDOWS = process.platform === 'win32';
 const ENABLED = parseBooleanEnv(process.env.NEMOCLAW_ENABLED, false);
-const SANDBOX_NAME = String(process.env.NEMOCLAW_SANDBOX_NAME || 'muel-assistant').trim();
+const SANDBOX_NAME = String(process.env.NEMOCLAW_SANDBOX_NAME || 'muel-assistant').replace(/[^a-zA-Z0-9._-]/g, '').trim();
 const SANDBOX_INFERENCE_MODEL = String(process.env.NEMOCLAW_INFERENCE_MODEL || 'qwen2.5:7b-instruct').trim();
 const SANDBOX_OLLAMA_URL = String(process.env.NEMOCLAW_SANDBOX_OLLAMA_URL || 'http://localhost:11434').trim();
 const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
@@ -22,28 +22,36 @@ const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim(
  */
 let cliAvailable: boolean | null = null;
 
-const WSL_DISTRO = process.env.WSL_DISTRO || 'Ubuntu-24.04';
+const WSL_DISTRO = String(process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
 
-const runCli = async (args: string): Promise<{ stdout: string; stderr: string }> => {
+const sanitizeArg = (value: string, maxLen = 300): string =>
+  String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[;&|`$(){}]/g, '').trim().slice(0, maxLen);
+
+const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
   if (IS_WINDOWS) {
-    const shellCmd = `export HOME=/root; export NVM_DIR=/root/.nvm; source /root/.nvm/nvm.sh 2>/dev/null; nemoclaw ${args}`;
-    return execAsync(
-      `wsl -d ${WSL_DISTRO} -e bash -c "${shellCmd.replace(/"/g, '\\"')}"`,
+    const escaped = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+    const shellCmd = `export HOME=/root; export NVM_DIR=/root/.nvm; source /root/.nvm/nvm.sh 2>/dev/null; nemoclaw ${escaped}`;
+    return execFileAsync(
+      'wsl',
+      ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
       { timeout: TIMEOUT_MS, windowsHide: true },
     );
   }
-  return execAsync(`nemoclaw ${args}`, { timeout: TIMEOUT_MS, windowsHide: true });
+  return execFileAsync('nemoclaw', args, { timeout: TIMEOUT_MS, windowsHide: true });
 };
 
-const runSandboxCmd = async (name: string, cmd: string): Promise<{ stdout: string; stderr: string }> => {
+const runSandboxCmd = async (name: string, cmd: string[]): Promise<{ stdout: string; stderr: string }> => {
+  const safeName = sanitizeArg(name, 80);
   if (IS_WINDOWS) {
-    const shellCmd = `export HOME=/root; source /root/.nvm/nvm.sh 2>/dev/null; ssh openshell-${name} ${cmd}`;
-    return execAsync(
-      `wsl -d ${WSL_DISTRO} -e bash -c "${shellCmd.replace(/"/g, '\\"')}"`,
+    const escaped = cmd.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+    const shellCmd = `export HOME=/root; source /root/.nvm/nvm.sh 2>/dev/null; ssh openshell-${safeName} ${escaped}`;
+    return execFileAsync(
+      'wsl',
+      ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
       { timeout: REVIEW_TIMEOUT_MS, windowsHide: true },
     );
   }
-  return execAsync(`ssh openshell-${name} ${cmd}`, { timeout: REVIEW_TIMEOUT_MS, windowsHide: true });
+  return execFileAsync('ssh', [`openshell-${safeName}`, ...cmd], { timeout: REVIEW_TIMEOUT_MS, windowsHide: true });
 };
 
 export const nemoclawAdapter: ExternalToolAdapter = {
@@ -53,7 +61,7 @@ export const nemoclawAdapter: ExternalToolAdapter = {
   isAvailable: async () => {
     if (!ENABLED) return false;
     try {
-      await runCli('--version');
+      await runCli(['--version']);
       cliAvailable = true;
       return true;
     } catch {
@@ -86,15 +94,15 @@ export const nemoclawAdapter: ExternalToolAdapter = {
             return makeResult(false, `${action} requires nemoclaw CLI (lite mode: code.review only)`, [], 'CLI_REQUIRED');
           }
           if (action === 'agent.onboard') {
-            const { stdout } = await runCli('onboard');
+            const { stdout } = await runCli(['onboard']);
             return makeResult(true, 'NemoClaw onboarded', stdout.trim().split('\n'));
           }
           if (action === 'agent.status') {
-            const { stdout } = await runCli(`${name} status`);
+            const { stdout } = await runCli([sanitizeArg(name), 'status']);
             return makeResult(true, `Status for ${name}`, stdout.trim().split('\n'));
           }
           // agent.connect
-          const { stdout } = await runCli(`${name} connect`);
+          const { stdout } = await runCli([sanitizeArg(name), 'connect']);
           return makeResult(true, `Connected to ${name}`, stdout.trim().split('\n'));
         }
         case 'code.review': {
@@ -110,9 +118,7 @@ export const nemoclawAdapter: ExternalToolAdapter = {
               prompt: JSON.parse(safePrompt),
               stream: false,
             });
-            const escapedPayload = curlPayload.replace(/'/g, "'\\''");
-            const curlCmd = `curl -s -m 55 ${SANDBOX_OLLAMA_URL}/api/generate -d '${escapedPayload}'`;
-            const { stdout: inferenceOut } = await runSandboxCmd(name, curlCmd);
+            const { stdout: inferenceOut } = await runSandboxCmd(name, ['curl', '-s', '-m', '55', `${SANDBOX_OLLAMA_URL}/api/generate`, '-d', curlPayload]);
             const parsed = JSON.parse(inferenceOut.trim()) as { response?: string };
             if (parsed.response && parsed.response.length > 10) {
               return makeResult(true, `AI code review via sandbox ${name}`, parsed.response.split('\n').slice(0, 40));

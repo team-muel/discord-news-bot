@@ -24,6 +24,7 @@ const FLUSH_EVERY_EVENTS = Math.max(2, parseIntegerEnv(process.env.DISCORD_REACT
 const MAX_MESSAGE_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_REACTION_REWARD_MAX_MESSAGES, 40));
 const MAX_USER_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_REACTION_REWARD_MAX_USERS, 40));
 
+const MAX_REWARD_BUCKETS = 200;
 const buckets = new Map<string, RewardBucket>();
 const flushingGuilds = new Set<string>();
 let shutdownHooksInstalled = false;
@@ -145,9 +146,7 @@ const flushBucket = async (guildId: string): Promise<void> => {
 
 const flushAllBuckets = async (): Promise<void> => {
   const guildIds = [...buckets.keys()];
-  for (const guildId of guildIds) {
-    await flushBucket(guildId);
-  }
+  await Promise.allSettled(guildIds.map((guildId) => flushBucket(guildId)));
 };
 
 const ensureShutdownHooks = (): void => {
@@ -208,6 +207,11 @@ export const recordReactionRewardSignal = (params: {
       userFeedback: new Map(),
     };
     buckets.set(guildId, bucket);
+  }
+  // Evict oldest buckets when exceeding cap
+  if (buckets.size > MAX_REWARD_BUCKETS) {
+    const oldest = buckets.keys().next().value;
+    if (oldest !== undefined && oldest !== guildId) buckets.delete(oldest);
   }
 
   bucket.totalEvents += 1;

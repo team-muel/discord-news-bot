@@ -100,6 +100,7 @@ export const startObsidianLoreSyncLoop = () => {
   timer = setInterval(() => {
     void runSyncOnce();
   }, intervalMs);
+  timer.unref();
 
   if (OBSIDIAN_SYNC_LOOP_RUN_ON_START) {
     void runSyncOnce();

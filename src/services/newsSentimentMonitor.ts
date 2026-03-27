@@ -723,6 +723,7 @@ export const startNewsSentimentMonitor = (client: Client) => {
   timer = setInterval(() => {
     void executeTick(client);
   }, INTERVAL_MS);
+  timer.unref();
 
   logger.info('[NEWS-MONITOR] started (intervalMs=%d, instance=%s)', INTERVAL_MS, INSTANCE_ID);
 };

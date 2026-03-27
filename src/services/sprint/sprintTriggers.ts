@@ -221,6 +221,7 @@ export const startSprintScheduledTriggers = (): void => {
         logger.error('[SPRINT-TRIGGER] scheduled security audit failed: %s', e),
       );
     }, securityIntervalMs);
+    securityAuditTimer.unref();
     logger.info('[SPRINT-TRIGGER] scheduled security audit every %dms', securityIntervalMs);
   }
 
@@ -231,6 +232,7 @@ export const startSprintScheduledTriggers = (): void => {
         logger.error('[SPRINT-TRIGGER] scheduled improvement failed: %s', e),
       );
     }, improvementIntervalMs);
+    improvementTimer.unref();
     logger.info('[SPRINT-TRIGGER] scheduled improvement every %dms', improvementIntervalMs);
   }
 };

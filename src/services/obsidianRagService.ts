@@ -107,11 +107,12 @@ export async function initObsidianRAG(): Promise<boolean> {
     );
 
     // Periodic cache cleanup (every hour)
-    setInterval(() => {
+    const cacheCleanupTimer = setInterval(() => {
       clearExpiredCache().catch(error =>
         logger.warn('[OBSIDIAN-RAG] Cache cleanup failed: %o', error)
       );
     }, 3600000);
+    cacheCleanupTimer.unref();
 
     initialized = true;
     return true;
@@ -213,17 +214,27 @@ export async function queryObsidianRAG(
 }
 
 /**
- * Infer intent category from question text
+ * Infer intent category from question text using multi-match scoring
  */
 export function inferIntent(question: string): IntentCategory {
+  let bestCategory: IntentCategory = 'development';
+  let bestScore = 0;
+
   for (const [category, route] of Object.entries(INTENT_ROUTES)) {
-    if (route.keywords.test(question)) {
-      return category as IntentCategory;
+    const matches = question.match(route.keywords);
+    if (matches) {
+      // Score by number of keyword matches
+      const allMatches = question.matchAll(new RegExp(route.keywords, 'gi'));
+      let matchCount = 0;
+      for (const _ of allMatches) matchCount++;
+      if (matchCount > bestScore) {
+        bestScore = matchCount;
+        bestCategory = category as IntentCategory;
+      }
     }
   }
 
-  // Default fallback
-  return 'development';
+  return bestCategory;
 }
 
 /**

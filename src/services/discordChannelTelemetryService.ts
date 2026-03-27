@@ -16,6 +16,7 @@ const FLUSH_EVERY_EVENTS = Math.max(5, parseIntegerEnv(process.env.DISCORD_CHANN
 const MAX_CHANNEL_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_CHANNEL_TELEMETRY_MAX_CHANNELS, 30));
 const MAX_USER_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_CHANNEL_TELEMETRY_MAX_USERS, 30));
 
+const MAX_TELEMETRY_BUCKETS = 200;
 const buckets = new Map<string, GuildBucket>();
 const flushingGuilds = new Set<string>();
 let shutdownHooksInstalled = false;
@@ -118,9 +119,7 @@ const flushBucket = async (guildId: string): Promise<void> => {
 
 const flushAllBuckets = async (): Promise<void> => {
   const guildIds = [...buckets.keys()];
-  for (const guildId of guildIds) {
-    await flushBucket(guildId);
-  }
+  await Promise.allSettled(guildIds.map((guildId) => flushBucket(guildId)));
 };
 
 const ensureShutdownHooks = (): void => {
@@ -174,6 +173,11 @@ export const recordDiscordChannelMessageSignal = (params: {
       users: new Map(),
     };
     buckets.set(guildId, bucket);
+  }
+  // Evict oldest buckets when exceeding cap
+  if (buckets.size > MAX_TELEMETRY_BUCKETS) {
+    const oldest = buckets.keys().next().value;
+    if (oldest !== undefined && oldest !== guildId) buckets.delete(oldest);
   }
 
   bucket.total += 1;

@@ -28,6 +28,15 @@ import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import { runWorkerGenerationPipeline } from '../workerGeneration/workerGenerationPipeline';
 import { generateAndApplyCodeChanges, rollbackCodeChanges, type CodeChange } from './sprintCodeWriter';
 
+// Race a promise against a timeout, cleaning up the timer when the main promise resolves
+const raceWithTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+};
+
 // Phase → MCP worker kind mapping for delegation
 const PHASE_WORKER_KIND: Partial<Record<SprintPhase, McpWorkerKind>> = {
   plan: 'architect',
@@ -179,6 +188,7 @@ const PHASE_TRANSITIONS: Record<string, (result: PhaseResult, pipeline: SprintPi
 
 // ──── In-memory store ─────────────────────────────────────────────────────────
 
+const MAX_PIPELINE_ENTRIES = 200;
 const pipelines = new Map<string, SprintPipeline>();
 
 // ──── Reconfig hints cache (refreshed before pipeline runs) ──────────────────
@@ -255,6 +265,16 @@ export const createSprintPipeline = (params: {
   }
 
   pipelines.set(sprintId, pipeline);
+  // Evict oldest completed pipelines when exceeding cap
+  if (pipelines.size > MAX_PIPELINE_ENTRIES) {
+    const completed = [...pipelines.entries()]
+      .filter(([, p]) => p.currentPhase === 'complete' || p.currentPhase === 'cancelled' || p.currentPhase === 'blocked')
+      .sort((a, b) => a[1].createdAt.localeCompare(b[1].createdAt));
+    const toRemove = Math.max(1, pipelines.size - MAX_PIPELINE_ENTRIES);
+    for (let i = 0; i < Math.min(toRemove, completed.length); i++) {
+      pipelines.delete(completed[i][0]);
+    }
+  }
   recordPipelineCreated();
   logger.info('[SPRINT] created pipeline=%s trigger=%s objective=%.80s', sprintId, params.triggerType, params.objective);
 
@@ -338,16 +358,15 @@ const executePhaseAction = async (
     if (phase === 'implement' && (pipeline.triggerType === 'feature-request' || pipeline.triggerType === 'cs-ticket')) {
       logger.info('[SPRINT] worker-generation path for phase=%s trigger=%s', phase, pipeline.triggerType);
       try {
-        const pipeResult = await Promise.race([
+        const pipeResult = await raceWithTimeout(
           runWorkerGenerationPipeline({
             goal: pipeline.objective,
             guildId: pipeline.guildId,
             requestedBy: `sprint:${pipeline.sprintId}`,
           }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Worker generation timed out')), SPRINT_PHASE_TIMEOUT_MS),
-          ),
-        ]);
+          SPRINT_PHASE_TIMEOUT_MS,
+          'Worker generation timed out',
+        );
 
         if (pipeResult.ok) {
           pipeline.generatedWorkerName = pipeResult.approval.actionName;
@@ -374,17 +393,16 @@ const executePhaseAction = async (
       logger.info('[SPRINT] code-modification path for phase=%s trigger=%s', phase, pipeline.triggerType);
       try {
         const planOutput = pipeline.phaseResults['plan-0']?.output;
-        const codeResult = await Promise.race([
+        const codeResult = await raceWithTimeout(
           generateAndApplyCodeChanges({
             objective: pipeline.objective,
             changedFiles: pipeline.changedFiles,
             previousPhaseOutput: planOutput,
             sprintId: pipeline.sprintId,
           }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Code modification timed out')), SPRINT_PHASE_TIMEOUT_MS),
-          ),
-        ]);
+          SPRINT_PHASE_TIMEOUT_MS,
+          'Code modification timed out',
+        );
 
         if (codeResult.ok) {
           pipeline.codeChanges = codeResult.changes;
@@ -413,7 +431,7 @@ const executePhaseAction = async (
     // ── Fast-path: deterministic phases skip LLM entirely ──
     if (isDeterministicPhase(phase)) {
       logger.info('[SPRINT] fast-path execution for phase=%s (zero LLM tokens)', phase);
-      const fastResult = await Promise.race([
+      const fastResult = await raceWithTimeout(
         executeFastPath({
           phase,
           sprintId: pipeline.sprintId,
@@ -421,10 +439,9 @@ const executePhaseAction = async (
           changedFiles: pipeline.changedFiles,
           codeChanges: pipeline.codeChanges,
         }),
-        new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), SPRINT_PHASE_TIMEOUT_MS),
-        ),
-      ]);
+        SPRINT_PHASE_TIMEOUT_MS,
+        `Fast-path ${phase} timed out`,
+      ).catch(() => null);
 
       if (fastResult) {
         return {
@@ -450,7 +467,7 @@ const executePhaseAction = async (
     if (workerUrl && !isWorkerKnownDead(workerUrl)) {
       logger.info('[SPRINT] delegating phase=%s to MCP worker=%s', phase, workerKind);
       try {
-        const mcpResult = await Promise.race([
+        const mcpResult = await raceWithTimeout(
           callMcpWorkerTool({
             workerUrl,
             toolName: actionName,
@@ -462,10 +479,9 @@ const executePhaseAction = async (
               changedFiles: pipeline.changedFiles,
             },
           }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`MCP delegation timed out for phase ${phase}`)), MCP_FAST_FAIL_TIMEOUT_MS),
-          ),
-        ]);
+          MCP_FAST_FAIL_TIMEOUT_MS,
+          `MCP delegation timed out for phase ${phase}`,
+        );
         recordWorkerHealth(workerUrl, true);
         const blocks = parseMcpTextBlocks(mcpResult);
         const output = blocks.join('\n') || '';
@@ -515,7 +531,7 @@ const executePhaseAction = async (
     }
 
     // ── Local action fallback ──
-    const result = await Promise.race([
+    const result = await raceWithTimeout(
       action.execute({
         goal,
         args: {
@@ -531,10 +547,9 @@ const executePhaseAction = async (
         },
         guildId: pipeline.guildId,
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Phase ${phase} timed out after ${SPRINT_PHASE_TIMEOUT_MS}ms`)), SPRINT_PHASE_TIMEOUT_MS),
-      ),
-    ]);
+      SPRINT_PHASE_TIMEOUT_MS,
+      `Phase ${phase} timed out after ${SPRINT_PHASE_TIMEOUT_MS}ms`,
+    );
 
     return {
       phase,
@@ -930,7 +945,12 @@ export const approveSprintPhase = async (sprintId: string, approvedBy: string): 
   const pipeline = pipelines.get(sprintId);
   if (!pipeline) return { ok: false, message: 'Pipeline not found' };
 
-  const lastResult = Object.values(pipeline.phaseResults).pop();
+  // Find the most recent result for the current phase (keys are like "plan-0", "implement-1", etc.)
+  const phaseKey = Object.keys(pipeline.phaseResults)
+    .filter((k) => k.startsWith(`${pipeline.currentPhase}-`))
+    .sort()
+    .pop();
+  const lastResult = phaseKey ? pipeline.phaseResults[phaseKey] : undefined;
   if (!lastResult || lastResult.status !== 'awaiting-approval') {
     return { ok: false, message: 'No phase awaiting approval' };
   }
@@ -1002,7 +1022,15 @@ const persistPipeline = async (pipeline: SprintPipeline): Promise<void> => {
 
 // ──── Rehydration ─────────────────────────────────────────────────────────────
 
+let rehydrationInFlight: Promise<number> | null = null;
+
 export const rehydrateActivePipelines = async (): Promise<number> => {
+  if (rehydrationInFlight) return rehydrationInFlight;
+  rehydrationInFlight = rehydrateActivePipelinesInner().finally(() => { rehydrationInFlight = null; });
+  return rehydrationInFlight;
+};
+
+const rehydrateActivePipelinesInner = async (): Promise<number> => {
   if (!SPRINT_ENABLED || !isSupabaseConfigured()) return 0;
   try {
     const client = getSupabaseClient();

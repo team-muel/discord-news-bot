@@ -1,24 +1,28 @@
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
 const IS_WINDOWS = process.platform === 'win32';
 const ENABLED = parseBooleanEnv(process.env.OPENSHELL_ENABLED, false);
 
-const WSL_DISTRO = process.env.WSL_DISTRO || 'Ubuntu-24.04';
+const WSL_DISTRO = String(process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
 
-const runCli = async (args: string): Promise<{ stdout: string; stderr: string }> => {
+const sanitizeArg = (value: string, maxLen = 200): string =>
+  String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[;&|`$(){}]/g, '').trim().slice(0, maxLen);
+
+const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
   if (IS_WINDOWS) {
-    const shellCmd = `export PATH=/root/.local/bin:$PATH; openshell ${args}`;
-    return execAsync(
-      `wsl -d ${WSL_DISTRO} -e bash -c "${shellCmd.replace(/"/g, '\\"')}"`,
+    const shellCmd = `export PATH=/root/.local/bin:$PATH; openshell ${args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ')}`;
+    return execFileAsync(
+      'wsl',
+      ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
       { timeout: TIMEOUT_MS, windowsHide: true },
     );
   }
-  return execAsync(`openshell ${args}`, { timeout: TIMEOUT_MS, windowsHide: true });
+  return execFileAsync('openshell', args, { timeout: TIMEOUT_MS, windowsHide: true });
 };
 
 export const openshellAdapter: ExternalToolAdapter = {
@@ -28,7 +32,7 @@ export const openshellAdapter: ExternalToolAdapter = {
   isAvailable: async () => {
     if (!ENABLED) return false;
     try {
-      await runCli('--version');
+      await runCli(['--version']);
       return true;
     } catch {
       return false;
@@ -50,18 +54,18 @@ export const openshellAdapter: ExternalToolAdapter = {
     try {
       switch (action) {
         case 'sandbox.create': {
-          const from = String(args.from || 'ollama');
-          const { stdout } = await runCli(`sandbox create --from ${from}`);
+          const from = sanitizeArg(String(args.from || 'ollama'));
+          const { stdout } = await runCli(['sandbox', 'create', '--from', from]);
           return makeResult(true, `Sandbox created from ${from}`, stdout.trim().split('\n'));
         }
         case 'sandbox.list': {
-          const { stdout } = await runCli('sandbox list');
+          const { stdout } = await runCli(['sandbox', 'list']);
           return makeResult(true, 'Sandbox list retrieved', stdout.trim().split('\n'));
         }
         case 'policy.set': {
-          const policy = String(args.policy || '');
+          const policy = sanitizeArg(String(args.policy || ''));
           if (!policy) return makeResult(false, 'Policy path required', [], 'MISSING_POLICY');
-          const { stdout } = await runCli(`policy set ${policy}`);
+          const { stdout } = await runCli(['policy', 'set', policy]);
           return makeResult(true, `Policy applied: ${policy}`, stdout.trim().split('\n'));
         }
         default:

@@ -91,6 +91,7 @@ let cacheLoadedAt = 0;
 let cacheLoading: Promise<void> | null = null;
 let lastPolicyCacheErrorLogAt = 0;
 
+const MAX_AUTO_TUNE_ENTRIES = 200;
 const lastAutoTuneAtByGuild = new Map<string, number>();
 
 const isCacheFresh = () => Date.now() - cacheLoadedAt < AGENT_TOT_POLICY_CACHE_TTL_MS;
@@ -337,6 +338,10 @@ export const maybeAutoTuneAgentTotPolicy = async (guildId: string): Promise<void
   }
 
   lastAutoTuneAtByGuild.set(guildId, now);
+  if (lastAutoTuneAtByGuild.size > MAX_AUTO_TUNE_ENTRIES) {
+    const oldest = lastAutoTuneAtByGuild.keys().next().value;
+    if (oldest !== undefined) lastAutoTuneAtByGuild.delete(oldest);
+  }
 
   try {
     const client = getSupabaseClient();

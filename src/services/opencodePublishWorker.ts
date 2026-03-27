@@ -889,6 +889,7 @@ export const startOpencodePublishWorker = () => {
   timer = setInterval(() => {
     void runTick();
   }, WORKER_INTERVAL_MS);
+  timer.unref();
 
   logger.info(
     '[OPENCODE_PUBLISH] started enabled=%s intervalMs=%d batchSize=%d maxAttempts=%d staleRunningMs=%d lockEnabled=%s lockLeaseMs=%d lockName=%s',

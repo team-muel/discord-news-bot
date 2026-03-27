@@ -72,7 +72,7 @@ const ensureSupabase = () => {
   return getSupabaseClient();
 };
 
-const safeLike = (value: string): string => value.replace(/[%,]/g, ' ').trim();
+const safeLike = (value: string): string => value.replace(/[%,_]/g, ' ').trim();
 const MEMORY_RETRIEVE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE || 0.35)));
 const MEMORY_HYBRID_MIN_SIMILARITY = Math.max(0, Math.min(1, Number(process.env.MEMORY_HYBRID_MIN_SIMILARITY || 0.08)));
 const MEMORY_CITATIONS_PER_ITEM = Math.max(1, Math.min(5, Number(process.env.MEMORY_CITATIONS_PER_ITEM || 3)));
@@ -195,7 +195,7 @@ export async function searchGuildMemory(params: SearchParams) {
   let citationsById = new Map<string, Array<{ sourceKind: string; sourceMessageId: string; sourceRef: string }>>();
   if (ids.length > 0) {
     const citationsPerItem = MEMORY_CITATIONS_PER_ITEM;
-    const warmupLimit = Math.max(citationsPerItem * ids.length, params.limit * citationsPerItem);
+    const warmupLimit = citationsPerItem * ids.length;
     const { data: sourceRows, error: sourceError } = await client
       .from('memory_sources')
       .select('memory_item_id, source_kind, source_message_id, source_ref')

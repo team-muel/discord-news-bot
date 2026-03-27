@@ -22,6 +22,7 @@ export const startRuntimeAlerts = () => {
   timer = setInterval(() => {
     void scanAlerts();
   }, RUNTIME_ALERT_SCAN_INTERVAL_MS);
+  timer.unref();
 
   logger.info(
     '[ALERT] runtime alert scanner started (intervalMs=%d, cooldownMs=%d, webhook=%s)',

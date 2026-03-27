@@ -752,11 +752,13 @@ export const startMemoryJobRunner = () => {
   pollTimer = setInterval(() => {
     void tick();
   }, MEMORY_JOBS_POLL_INTERVAL_MS);
+  pollTimer.unref();
 
   if (MEMORY_DEADLETTER_AUTO_RECOVERY_ENABLED) {
     recoveryTimer = setInterval(() => {
       void recoveryTick();
     }, MEMORY_DEADLETTER_RECOVERY_INTERVAL_MS);
+    recoveryTimer.unref();
   }
 
   void tick();

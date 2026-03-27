@@ -1045,6 +1045,7 @@ const startAutoWorkerProposalBackgroundLoop = () => {
   autoWorkerProposalBackgroundTimer = setInterval(() => {
     void runBackgroundAutoWorkerProposalSweep();
   }, AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS);
+  autoWorkerProposalBackgroundTimer.unref();
 };
 
 const vibeHandlers = createVibeHandlers({

@@ -156,6 +156,7 @@ export const startBotAutoRecovery = (loadBotModule: () => Promise<BotModuleLike>
       logger.warn('[BOT-AUTO-RECOVERY] scan failed: %o', error);
     });
   }, BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS);
+  state.timer.unref();
 
   logger.info(
     '[BOT-AUTO-RECOVERY] started (intervalMs=%d thresholdMs=%d enabled=%s)',

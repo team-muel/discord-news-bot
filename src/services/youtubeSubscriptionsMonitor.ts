@@ -340,6 +340,7 @@ export const startYouTubeSubscriptionsMonitor = (client: Client) => {
   timer = setInterval(() => {
     void executeTick(client);
   }, MONITOR_INTERVAL_MS);
+  timer.unref();
 
   logger.info('[YT-MONITOR] started (intervalMs=%d, concurrency=%d, instance=%s)', MONITOR_INTERVAL_MS, MONITOR_CONCURRENCY, INSTANCE_ID);
 };
