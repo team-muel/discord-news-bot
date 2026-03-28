@@ -1,7 +1,7 @@
 # Rollback Rehearsal Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-03-27T19:12:01.518Z
+- generated_at: 2026-03-28T03:16:27.537Z
 - total_runs: 0
 - pass: 0
 - fail: 0
