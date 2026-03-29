@@ -140,6 +140,16 @@ export const callIndexingMcpTool = async (request: McpToolCallRequest): Promise<
     return toTextResult('tool name is required', true);
   }
 
+  // Sanitize file path arguments to prevent path traversal
+  for (const key of ['filePath', 'filePathHint'] as const) {
+    if (typeof (args as Record<string, unknown>)[key] === 'string') {
+      const fp = String((args as Record<string, unknown>)[key]);
+      if (fp.includes('..') || fp.startsWith('/') || /^[a-zA-Z]:/.test(fp)) {
+        return toTextResult(`invalid ${key}: path traversal or absolute path not allowed`, true);
+      }
+    }
+  }
+
   try {
     if (name === 'code.index.symbol_search') {
       return toJsonResult(await searchIndexedSymbols({

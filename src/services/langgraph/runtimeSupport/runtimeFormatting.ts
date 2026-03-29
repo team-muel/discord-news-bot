@@ -122,7 +122,7 @@ export const selectConsensusText = (candidates: string[]): string => {
     .map((candidate) => candidate.trim())
     .filter(Boolean);
   if (normalized.length <= 1) {
-    return normalized[0] || candidates[0] || '';
+    return normalized[0] || sanitizeDeliverableText(candidates[0] || '');
   }
 
   let bestIndex = 0;

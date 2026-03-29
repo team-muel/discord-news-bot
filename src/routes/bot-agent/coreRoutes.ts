@@ -23,7 +23,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
   router.get('/agent/sessions', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
-      return res.status(400).json({ error: 'guildId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required' });
     }
 
     const limit = Number(req.query?.limit || 10);
@@ -131,7 +131,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
   router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     if (!guildId) {
-      return res.status(400).json({ error: 'guildId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required' });
     }
 
     const guildName = toStringParam(req.body?.guildName) || undefined;
@@ -155,12 +155,12 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
   router.get('/agent/sessions/:sessionId', requireAdmin, async (req, res) => {
     const sessionId = toStringParam(req.params.sessionId);
     if (!sessionId) {
-      return res.status(400).json({ error: 'sessionId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'sessionId is required' });
     }
 
     const session = getAgentSession(sessionId);
     if (!session) {
-      return res.status(404).json({ error: 'SESSION_NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'SESSION_NOT_FOUND', message: 'Session not found' });
     }
 
     const includeShadowGraph = String(req.query?.includeShadowGraph || '').trim().toLowerCase() === 'true';
@@ -175,7 +175,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     const skillId = toStringParam(req.body?.skillId);
     const priority = req.body?.priority ? String(req.body.priority).trim() : undefined;
     if (!guildId || !goal) {
-      return res.status(400).json({ error: 'guildId and goal are required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId and goal are required' });
     }
 
     const requester = toStringParam(req.user?.id) || 'api';
@@ -191,7 +191,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return res.status(409).json({ ok: false, message });
+      return res.status(409).json({ ok: false, error: 'SESSION_START_FAILED', message });
     }
 
     return res.status(202).json({ ok: true, session: serializeAgentSessionForApi(session) });
@@ -200,12 +200,12 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
   router.post('/agent/sessions/:sessionId/cancel', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const sessionId = toStringParam(req.params.sessionId);
     if (!sessionId) {
-      return res.status(400).json({ error: 'sessionId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'sessionId is required' });
     }
 
     const result = cancelAgentSession(sessionId);
     if (!result.ok) {
-      return res.status(409).json({ ok: false, message: result.message });
+      return res.status(409).json({ ok: false, error: 'SESSION_CANCEL_FAILED', message: result.message });
     }
 
     return res.status(202).json({ ok: true, message: result.message });

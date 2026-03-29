@@ -9,17 +9,17 @@
  */
 
 import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_ENABLED, true);
 const WINDOW_HOURS = Math.max(1, Math.min(168, parseIntegerEnv(process.env.REWARD_SIGNAL_WINDOW_HOURS, 6)));
 
 // Blend weights (must sum to 1.0)
-const W_REACTION   = Math.max(0, Math.min(1, Number(process.env.REWARD_W_REACTION   || 0.20) || 0.20));
-const W_SUCCESS    = Math.max(0, Math.min(1, Number(process.env.REWARD_W_SUCCESS    || 0.35) || 0.35));
-const W_CITATION   = Math.max(0, Math.min(1, Number(process.env.REWARD_W_CITATION   || 0.25) || 0.25));
-const W_LATENCY    = Math.max(0, Math.min(1, Number(process.env.REWARD_W_LATENCY    || 0.20) || 0.20));
+const W_REACTION   = parseBoundedNumberEnv(process.env.REWARD_W_REACTION, 0.20, 0, 1);
+const W_SUCCESS    = parseBoundedNumberEnv(process.env.REWARD_W_SUCCESS, 0.35, 0, 1);
+const W_CITATION   = parseBoundedNumberEnv(process.env.REWARD_W_CITATION, 0.25, 0, 1);
+const W_LATENCY    = parseBoundedNumberEnv(process.env.REWARD_W_LATENCY, 0.20, 0, 1);
 
 // Latency normalization: score = clamp(1 - latency/TARGET, 0, 1)
 const LATENCY_TARGET_MS = Math.max(500, parseIntegerEnv(process.env.REWARD_LATENCY_TARGET_MS, 10_000));
@@ -55,22 +55,32 @@ const fetchReactionSignals = async (
 ): Promise<{ up: number; down: number }> => {
   try {
     const client = getSupabaseClient();
-    // Reaction events are logged in agent_llm_call_logs with experiment annotations
-    // but primary source is Obsidian vault files. Use session-level reaction proxy:
-    // Count completed sessions with positive/negative user feedback from agent_sessions
+    // Use real Discord reaction events from community_interaction_events
+    // Emoji metadata: {"emoji":"thumbsup"} = up, {"emoji":"rage"} = down
     const { data, error } = await client
-      .from('agent_sessions')
-      .select('id, status')
+      .from('community_interaction_events')
+      .select('metadata')
       .eq('guild_id', guildId)
-      .gte('created_at', windowStart)
-      .lte('created_at', windowEnd)
-      .in('status', ['completed', 'failed']);
+      .eq('event_type', 'reaction')
+      .gte('event_ts', windowStart)
+      .lte('event_ts', windowEnd)
+      .limit(1000);
 
-    if (error || !data) return { up: 0, down: 0 };
+    if (error || !data || data.length === 0) return { up: 0, down: 0 };
 
-    const completed = data.filter((r: any) => r.status === 'completed').length;
-    const failed = data.filter((r: any) => r.status === 'failed').length;
-    return { up: completed, down: failed };
+    const POSITIVE_EMOJI = new Set(['thumbsup', '👍', '+1', 'heart', '❤️', '❤', 'fire', '🔥', 'clap', '👏', 'tada', '🎉', 'white_check_mark', '✅']);
+    const NEGATIVE_EMOJI = new Set(['thumbsdown', '👎', '-1', 'rage', '😡', 'x', '❌', 'disappointed', '😞', 'confused', '😕']);
+
+    let up = 0;
+    let down = 0;
+    for (const row of data as Array<{ metadata: Record<string, unknown> }>) {
+      const emoji = String(row.metadata?.emoji || '').toLowerCase();
+      const isRemove = row.metadata?.direction === 'remove';
+      const delta = isRemove ? -1 : 1;
+      if (POSITIVE_EMOJI.has(emoji)) up += delta;
+      else if (NEGATIVE_EMOJI.has(emoji)) down += delta;
+    }
+    return { up: Math.max(0, up), down: Math.max(0, down) };
   } catch {
     return { up: 0, down: 0 };
   }
@@ -179,7 +189,7 @@ const computeLatencyScore = (avgMs: number | null): number => {
 
 const blendReward = (reaction: number, success: number, citation: number, latency: number): number => {
   const wSum = W_REACTION + W_SUCCESS + W_CITATION + W_LATENCY;
-  if (wSum <= 0) return 0;
+  if (wSum <= 0) return 0.5; // neutral when all weights are zero
   // Normalize weights in case they don't sum to 1
   return clamp01(
     (reaction * W_REACTION + success * W_SUCCESS + citation * W_CITATION + latency * W_LATENCY) / wSum,
@@ -241,7 +251,10 @@ export const persistRewardSnapshot = async (snapshot: RewardSnapshot): Promise<b
 
   try {
     const client = getSupabaseClient();
-    const { error } = await client.from('reward_signal_snapshots').insert({
+
+    // Atomic upsert: UNIQUE index on (guild_id, window_start) prevents duplicates
+    // ON CONFLICT DO NOTHING = safe when reward loop and eval loop overlap
+    const { error } = await client.from('reward_signal_snapshots').upsert({
       guild_id: snapshot.guildId,
       window_start: snapshot.windowStart,
       window_end: snapshot.windowEnd,
@@ -258,7 +271,7 @@ export const persistRewardSnapshot = async (snapshot: RewardSnapshot): Promise<b
       avg_retrieval_score: snapshot.raw.avgRetrievalScore,
       avg_latency_ms: snapshot.raw.avgLatencyMs,
       p95_latency_ms: snapshot.raw.p95LatencyMs,
-    });
+    }, { onConflict: 'guild_id,window_start', ignoreDuplicates: true });
 
     if (error) {
       logger.warn('[REWARD-SIGNAL] persist failed guild=%s: %s', snapshot.guildId, error.message);
@@ -326,10 +339,15 @@ export const computeRewardTrend = async (
   guildId: string,
 ): Promise<{ current: number; previous: number; delta: number; trend: 'improving' | 'stable' | 'degrading' } | null> => {
   const snapshots = await getRecentRewardSnapshots(guildId, 10);
-  if (snapshots.length < 2) return null;
+  if (snapshots.length < 3) return null;
 
-  const current = snapshots[0].rewardScalar;
-  const previous = snapshots.slice(1).reduce((sum, s) => sum + s.rewardScalar, 0) / (snapshots.length - 1);
+  // Use recent 3 vs older to smooth out single-snapshot noise
+  const recentCount = Math.min(3, Math.floor(snapshots.length / 2));
+  const recentSlice = snapshots.slice(0, recentCount);
+  const olderSlice = snapshots.slice(recentCount);
+
+  const current = recentSlice.reduce((sum, s) => sum + s.rewardScalar, 0) / recentSlice.length;
+  const previous = olderSlice.reduce((sum, s) => sum + s.rewardScalar, 0) / olderSlice.length;
   const delta = current - previous;
 
   const trend = delta > 0.03 ? 'improving' : delta < -0.03 ? 'degrading' : 'stable';

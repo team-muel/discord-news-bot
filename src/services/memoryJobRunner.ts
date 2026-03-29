@@ -191,6 +191,7 @@ const buildTopTags = (tagFrequency: Map<string, number>, limit: number): Array<{
 };
 
 const buildJobSummary = async (guildId: string) => {
+  if (!isSupabaseConfigured()) return { totalItems: 0, activeJobs: 0, lastJobAt: null };
   const client = getSupabaseClient();
   const { count: totalItems } = await client
     .from('memory_items')

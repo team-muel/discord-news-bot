@@ -217,26 +217,25 @@ export function createBotRouter(): Router {
 
     const payload = await botStatusCache.inFlight;
     return res.json(payload);
-    })().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ error: 'STATUS_BUILD_FAILED', message });
+    })().catch(() => {
+      return res.status(500).json({ ok: false, error: 'STATUS_BUILD_FAILED', message: 'Internal error while building status.' });
     });
   });
 
   router.post('/automation/:jobName/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const jobName = String(req.params.jobName || '');
     if (jobName !== 'youtube-monitor' && jobName !== 'news-monitor') {
-      return res.status(404).json({ error: 'NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Unknown automation job' });
     }
 
     const guildId = toStringParam(req.body?.guildId);
     if (!guildId) {
-      return res.status(400).json({ ok: false, message: 'guildId is required for scoped manual run' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required for scoped manual run' });
     }
 
     const result = await triggerAutomationJob(jobName, { guildId });
     if (!result.ok) {
-      return res.status(409).json({ ok: false, message: result.message });
+      return res.status(409).json({ ok: false, error: 'AUTOMATION_FAILED', message: result.message });
     }
 
     return res.status(202).json({ ok: true, message: `${jobName} execution started`, guildId });
@@ -256,7 +255,7 @@ export function createBotRouter(): Router {
           payload: { source, status: 'rejected', reason: 'BOT_DISABLED' },
         },
       ]);
-      return res.status(409).json({ ok: false, message: '봇이 비활성화되어 있습니다.' });
+      return res.status(409).json({ ok: false, error: 'BOT_DISABLED', message: '봇이 비활성화되어 있습니다.' });
     }
 
     const result = await requestManualReconnect(`api:${source}`);
@@ -272,7 +271,7 @@ export function createBotRouter(): Router {
     ]);
 
     if (!result.ok) {
-      return res.status(409).json({ ok: false, message: result.message });
+      return res.status(409).json({ ok: false, error: 'RECONNECT_FAILED', message: result.message });
     }
 
     return res.status(202).json({ ok: true, message: result.message });
@@ -309,7 +308,7 @@ export function createBotRouter(): Router {
       .select('guild_id, is_active, name, created_at');
 
     if (error) {
-      return res.status(500).json({ error: error.message || 'USAGE_QUERY_FAILED' });
+      return res.status(500).json({ ok: false, error: error.message || 'USAGE_QUERY_FAILED', message: 'Failed to query usage data' });
     }
 
     const rows = data || [];

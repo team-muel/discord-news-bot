@@ -5,7 +5,7 @@ import { requireAdmin, requireAuth } from '../middleware/auth';
 import { executeAiTradingOrder, isAiTradingConfigured } from '../services/aiTradingClient';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { createTrade, listTrades } from '../services/tradesStore';
-import { isOneOf, toBoundedInt, toStringParam } from '../utils/validation';
+import { isOneOf, sanitizeRecord, toBoundedInt, toStringParam } from '../utils/validation';
 
 const TRADE_STATUS_VALUES = ['open', 'closed', 'canceled', 'error'] as const;
 const TRADE_SIDE_VALUES = ['long', 'short'] as const;
@@ -14,6 +14,7 @@ const POST_RATE_WINDOW_MS = 60_000;
 const POST_RATE_MAX = 30;
 const EXEC_RATE_WINDOW_MS = 60_000;
 const EXEC_RATE_MAX = 8;
+const MAX_RATE_KEYS = 2_000;
 const userPostTimestamps = new Map<string, number[]>();
 const userExecTimestamps = new Map<string, number[]>();
 
@@ -28,6 +29,10 @@ const allowWithinRate = (store: Map<string, number[]>, key: string, limit: numbe
     return false;
   }
 
+  if (store.size >= MAX_RATE_KEYS && !store.has(key)) {
+    const oldest = store.keys().next().value;
+    if (oldest !== undefined) store.delete(oldest);
+  }
   next.push(now);
   store.set(key, next);
   return true;
@@ -145,13 +150,10 @@ export function createTradesRouter(): Router {
         orderResult = execution.raw;
       }
 
-      const inputOrderIds =
-        req.body?.exchangeOrderIds && typeof req.body.exchangeOrderIds === 'object'
-          ? (req.body.exchangeOrderIds as Record<string, unknown>)
-          : undefined;
+      const inputOrderIds = sanitizeRecord(req.body?.exchangeOrderIds) || undefined;
       const exchangeOrderIds = mergedOrderIds ? { ...(inputOrderIds || {}), ...mergedOrderIds } : inputOrderIds;
 
-      const inputMeta = req.body?.meta && typeof req.body.meta === 'object' ? (req.body.meta as Record<string, unknown>) : undefined;
+      const inputMeta = sanitizeRecord(req.body?.meta) || undefined;
       const meta = executeOrder
         ? {
             ...(inputMeta || {}),
@@ -177,8 +179,7 @@ export function createTradesRouter(): Router {
 
       return res.status(201).json({ trade });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-      return res.status(500).json({ error: 'INTERNAL', message });
+      return res.status(500).json({ error: 'INTERNAL', message: 'Trade operation failed.' });
     }
   });
 

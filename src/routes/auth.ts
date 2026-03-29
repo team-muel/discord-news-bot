@@ -29,7 +29,10 @@ function renderAuthCallbackPage(ok: boolean): string {
   const targetOrigin = (FRONTEND_ORIGIN || '')
     .split(',')
     .map((origin) => origin.trim())
-    .filter(Boolean)[0] || '*';
+    .filter(Boolean)[0] || null;
+  if (!targetOrigin) {
+    return `<!doctype html><html><body><p>OAuth configuration error: FRONTEND_ORIGIN not set.</p></body></html>`;
+  }
   const serializedOrigin = JSON.stringify(targetOrigin);
   return `<!doctype html>
 <html lang="en">
@@ -215,11 +218,11 @@ export function createAuthRouter(): Router {
   const devAuthRateLimiter = createRateLimiter({ windowMs: 60_000, max: 12, keyPrefix: 'auth-dev', store: 'supabase' });
 
   const denyDevAuth = (res: { status: (code: number) => { json: (payload: Record<string, unknown>) => void } }) =>
-    res.status(403).json({ error: 'FORBIDDEN', message: 'DEV auth endpoints are disabled' });
+    res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'DEV auth endpoints are disabled' });
 
   router.get('/me', (req, res) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'UNAUTHORIZED' });
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
     }
 
     const existingCsrf = String(req.cookies?.[AUTH_CSRF_COOKIE_NAME] || '').trim();
@@ -253,7 +256,7 @@ export function createAuthRouter(): Router {
 
   router.get('/login', oauthRateLimiter, (req, res) => {
     if (!isDiscordOAuthConfigured()) {
-      return res.status(503).json({ error: 'CONFIG', message: 'Discord OAuth is not configured' });
+      return res.status(503).json({ ok: false, error: 'CONFIG', message: 'Discord OAuth is not configured' });
     }
 
     const state = crypto.randomBytes(24).toString('hex');
@@ -274,7 +277,7 @@ export function createAuthRouter(): Router {
       return res.json({ inviteUrl });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'INVITE_URL_BUILD_FAILED';
-      return res.status(503).json({ error: message });
+      return res.status(503).json({ ok: false, error: 'INVITE_URL_BUILD_FAILED', message });
     }
   });
 

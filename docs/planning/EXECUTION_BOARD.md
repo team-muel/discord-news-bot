@@ -2,12 +2,9 @@
 
 기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` (canonical)
 
-Boundary note:
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
-- 이 보드의 OpenCode, OpenDev, NemoClaw, OpenJarvis, opencode 관련 항목은 저장소 내부 milestone 및 협업/실행 표면을 뜻한다.
-- 이름 충돌 해석과 현재 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
-
-프로그램 보조 문서: `docs/planning/FRONTIER_2026_PROGRAM.md`
+프로그램 보조 문서: `docs/archive/FRONTIER_2026_PROGRAM.md` (ARCHIVED)
 
 마일스톤 기준 문서: `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`
 
@@ -113,7 +110,7 @@ _없음 — 2026-03-24 기준 모든 로드맵/WIP 항목 종결._
 
 **상태: 종결 (2026-03-24)** — 전체 WIP 종결. 신규 사이클 시작 시 재작성.
 
-- 기준 체크리스트: docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md (ARCHIVED)
+- 기준 체크리스트: docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md (ARCHIVED)
 - 1~24 항목을 순차 처리하며, 선행 항목 미완료 시 후행 항목 착수 금지
 - 동시 진행 WIP 최대 3개, 기준 목록은 `Active Now`만 사용
 - 신규 기능 파일 추가 금지(기존 워크플로우 강화만 허용)

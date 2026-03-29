@@ -55,14 +55,19 @@ export const executeExternalAction = async (
 };
 
 export const getExternalAdapterStatus = async (): Promise<
-  Array<{ id: ExternalAdapterId; available: boolean; capabilities: readonly string[] }>
+  Array<{ id: ExternalAdapterId; available: boolean; capabilities: readonly string[]; liteMode?: boolean; liteCapabilities?: readonly string[] }>
 > => {
   const results = await Promise.all(
-    ADAPTERS.map(async (a) => ({
-      id: a.id,
-      available: await a.isAvailable(),
-      capabilities: a.capabilities,
-    })),
+    ADAPTERS.map(async (a) => {
+      const available = await a.isAvailable();
+      const liteMode = available && a.liteCapabilities ? a.capabilities.length !== a.liteCapabilities.length : undefined;
+      return {
+        id: a.id,
+        available,
+        capabilities: a.capabilities,
+        ...(liteMode !== undefined ? { liteMode, liteCapabilities: a.liteCapabilities } : {}),
+      };
+    }),
   );
   return results;
 };

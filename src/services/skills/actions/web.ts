@@ -15,6 +15,10 @@ const toTextPreview = (html: string): string => {
 export const webFetchAction: ActionDefinition = {
   name: 'web.fetch',
   description: '허용된 호스트의 웹 페이지를 조회해 핵심 텍스트를 추출합니다(read-only).',
+  category: 'tool',
+  parameters: [
+    { name: 'url', required: true, description: 'Target URL to fetch (must be in allowlist)', example: 'https://example.com/page' },
+  ],
   execute: async ({ goal, args }) => {
     const url = extractFirstUrl(goal, args);
     if (!url) {
@@ -50,6 +54,19 @@ export const webFetchAction: ActionDefinition = {
         artifacts: [parsed.origin],
         verification: ['호스트 allowlist 정책 차단'],
         error: 'HOST_NOT_ALLOWED',
+      };
+    }
+
+    // SSRF guard: block private/loopback/link-local IP addresses
+    const PRIVATE_IP_PATTERNS = /^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.|169\.254\.|::1$|fc|fd|fe80)/i;
+    if (PRIVATE_IP_PATTERNS.test(parsed.hostname) || parsed.hostname === 'localhost') {
+      return {
+        ok: false,
+        name: 'web.fetch',
+        summary: '내부 네트워크 주소는 허용되지 않습니다.',
+        artifacts: [parsed.origin],
+        verification: ['SSRF 방어: private/loopback IP 차단'],
+        error: 'SSRF_BLOCKED',
       };
     }
 

@@ -19,11 +19,16 @@ const buildUrl = (params: Record<string, string>) => {
   return u.toString();
 };
 
+const VALID_SYMBOL_RE = /^[A-Z0-9.^=]{1,15}$/i;
+
 export const isStockFeatureEnabled = (): boolean => Boolean(getAlphaVantageKey());
 
 export async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
   const key = getAlphaVantageKey();
   if (!key) {
+    return null;
+  }
+  if (!VALID_SYMBOL_RE.test(symbol)) {
     return null;
   }
 
@@ -52,6 +57,9 @@ export async function fetchStockQuote(symbol: string): Promise<StockQuote | null
 export async function fetchStockChartImageUrl(symbol: string): Promise<string | null> {
   const key = getAlphaVantageKey();
   if (!key) {
+    return null;
+  }
+  if (!VALID_SYMBOL_RE.test(symbol)) {
     return null;
   }
 

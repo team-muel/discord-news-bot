@@ -9,7 +9,7 @@ import { getObsidianAdapterRuntimeStatus } from '../../services/obsidian/router'
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidianQualityService';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agentQualityReviewService';
-import { isOneOf, toBoundedInt, toStringParam } from '../../utils/validation';
+import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
 
@@ -35,7 +35,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
         sessionId: toStringParam(req.body?.sessionId) || undefined,
         question: toStringParam(req.body?.question) || undefined,
         answerExcerpt: toStringParam(req.body?.answerExcerpt) || undefined,
-        labelConfidence: Number(req.body?.labelConfidence),
+        labelConfidence: toFiniteNumber(req.body?.labelConfidence, 0),
         reviewNote: toStringParam(req.body?.reviewNote) || undefined,
       });
       return res.json({ ok: true });
@@ -108,7 +108,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const targetUserId = toStringParam(req.query?.userId) || requester;
 
     if (!requester) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
     }
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -129,7 +129,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const targetUserId = toStringParam(req.body?.userId) || requester;
 
     if (!requester) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
     }
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -316,7 +316,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const deleteObsidian = req.body?.deleteObsidian !== false;
 
     if (!requester) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
     }
     if (!targetUserId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'userId is required' });
@@ -397,7 +397,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const userId = toStringParam(req.query?.userId) || requester;
 
     if (!requester) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
     }
 
     try {

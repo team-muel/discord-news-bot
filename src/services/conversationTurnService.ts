@@ -1,3 +1,4 @@
+import logger from '../logger';
 import { parseIntegerEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
@@ -181,7 +182,7 @@ const appendTurn = async (params: {
     throw new Error(turnError.message || 'CONVERSATION_TURN_INSERT_FAILED');
   }
 
-  await client
+  const { error: threadUpdateError } = await client
     .from(THREAD_TABLE)
     .update({
       last_turn_at: nowIso(),
@@ -189,6 +190,10 @@ const appendTurn = async (params: {
       updated_at: nowIso(),
     })
     .eq('id', threadId);
+
+  if (threadUpdateError) {
+    logger.warn('[CONVERSATION-TURN] thread update failed thread=%d: %s', threadId, threadUpdateError.message);
+  }
 
   return { threadId, turnIndex };
 };

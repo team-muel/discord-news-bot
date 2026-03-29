@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv } from './utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from './utils/env';
 
 const parsePositiveNumberEnv = (raw: string | undefined, fallback: number): number => {
   const numeric = Number(raw);
@@ -44,7 +44,7 @@ export const DISCORD_OAUTH_REDIRECT_URI = process.env.DISCORD_OAUTH_REDIRECT_URI
   || (PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}/api/auth/callback` : '');
 export const DISCORD_OAUTH_SCOPE = process.env.DISCORD_OAUTH_SCOPE || 'identify';
 export const DISCORD_OAUTH_API_BASE = process.env.DISCORD_OAUTH_API_BASE || 'https://discord.com/api';
-export const DISCORD_INVITE_PERMISSIONS = process.env.DISCORD_INVITE_PERMISSIONS || '8';
+export const DISCORD_INVITE_PERMISSIONS = process.env.DISCORD_INVITE_PERMISSIONS || '377957238784';
 export const DISCORD_INVITE_SCOPES = process.env.DISCORD_INVITE_SCOPES || 'bot applications.commands';
 export const DISCORD_OAUTH_STATE_COOKIE_NAME = process.env.DISCORD_OAUTH_STATE_COOKIE_NAME || 'muel_oauth_state';
 export const DISCORD_OAUTH_STATE_TTL_SEC = parseIntegerEnv(process.env.DISCORD_OAUTH_STATE_TTL_SEC, 600);
@@ -67,19 +67,19 @@ export const BINANCE_API_KEY = process.env.BINANCE_API_KEY || '';
 export const BINANCE_API_SECRET = process.env.BINANCE_API_SECRET || process.env.BINANCE_SECRET_KEY || process.env.BINANCE_SECRET || '';
 export const BINANCE_FUTURES = parseBooleanEnv(process.env.BINANCE_FUTURES, true);
 export const BINANCE_HEDGE_MODE = parseBooleanEnv(process.env.BINANCE_HEDGE_MODE, false);
-export const BINANCE_SPOT_MIN_BASE_QTY = Number(process.env.BINANCE_SPOT_MIN_BASE_QTY || 0.000001);
+export const BINANCE_SPOT_MIN_BASE_QTY = parseNumberEnv(process.env.BINANCE_SPOT_MIN_BASE_QTY, 0.000001);
 
 export const START_TRADING_BOT = parseBooleanEnv(process.env.START_TRADING_BOT, false);
 export const TRADING_EXCHANGE = process.env.TRADING_EXCHANGE || 'binance';
 export const TRADING_SYMBOLS = process.env.TRADING_SYMBOLS || process.env.SYMBOLS || process.env.TRADING_SYMBOL || process.env.SYMBOL || 'BTC/USDT';
 export const TRADING_TIMEFRAME = process.env.TRADING_TIMEFRAME || process.env.TIMEFRAME || '30m';
 export const TRADING_CVD_LEN = parseIntegerEnv(process.env.TRADING_CVD_LEN || process.env.CVD_LEN, 19);
-export const TRADING_DELTA_COEF = Number(process.env.TRADING_DELTA_COEF || process.env.DELTA_COEF || 1.0);
-export const TRADING_RISK_PCT = Number(process.env.TRADING_RISK_PCT || process.env.RISK_PCT || 2.0);
-export const TRADING_TP_PCT = Number(process.env.TRADING_TP_PCT || process.env.TP_PCT || 4.0);
-export const TRADING_SL_PCT = Number(process.env.TRADING_SL_PCT || process.env.SL_PCT || 2.0);
-export const TRADING_LEVERAGE = Number(process.env.TRADING_LEVERAGE || process.env.LEVERAGE || 20);
-export const TRADING_INITIAL_CAPITAL = Number(process.env.TRADING_INITIAL_CAPITAL || process.env.INITIAL_CAPITAL || 3000);
+export const TRADING_DELTA_COEF = parseNumberEnv(process.env.TRADING_DELTA_COEF || process.env.DELTA_COEF, 1.0);
+export const TRADING_RISK_PCT = parseNumberEnv(process.env.TRADING_RISK_PCT || process.env.RISK_PCT, 2.0);
+export const TRADING_TP_PCT = parseNumberEnv(process.env.TRADING_TP_PCT || process.env.TP_PCT, 4.0);
+export const TRADING_SL_PCT = parseNumberEnv(process.env.TRADING_SL_PCT || process.env.SL_PCT, 2.0);
+export const TRADING_LEVERAGE = parseNumberEnv(process.env.TRADING_LEVERAGE || process.env.LEVERAGE, 20);
+export const TRADING_INITIAL_CAPITAL = parseNumberEnv(process.env.TRADING_INITIAL_CAPITAL || process.env.INITIAL_CAPITAL, 3000);
 export const TRADING_EQUITY_SPLIT = parseBooleanEnv(process.env.TRADING_EQUITY_SPLIT ?? process.env.EQUITY_SPLIT, true);
 export const TRADING_POLL_SECONDS = parseIntegerEnv(process.env.TRADING_POLL_SECONDS || process.env.POLL_SECONDS, 20);
 export const TRADING_CANDLE_LOOKBACK = parseIntegerEnv(process.env.TRADING_CANDLE_LOOKBACK || process.env.CANDLE_LOOKBACK, 400);
@@ -143,6 +143,22 @@ export const SPRINT_LLM_JUDGE_PHASES = process.env.SPRINT_LLM_JUDGE_PHASES || 'r
 // ──── Autoplan Sub-Pipeline ────
 export const SPRINT_AUTOPLAN_ENABLED = parseBooleanEnv(process.env.SPRINT_AUTOPLAN_ENABLED, false);
 export const SPRINT_AUTOPLAN_LENSES = process.env.SPRINT_AUTOPLAN_LENSES || 'ceo,engineering,security';
+
+// ──── Sprint Learning Journal ────
+export const SPRINT_LEARNING_JOURNAL_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_ENABLED, true);
+export const SPRINT_LEARNING_JOURNAL_GUILD_ID = process.env.SPRINT_LEARNING_JOURNAL_GUILD_ID || 'system';
+export const SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW = Math.max(3, parseIntegerEnv(process.env.SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW, 10));
+export const SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED, true);
+export const SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED, false);
+// Accept 0-1 (e.g. 0.85) or 1-100 (e.g. 85) — normalize to 0-1 range, clamp to [0.5, 1]
+const _rawMinConf = parseNumberEnv(process.env.SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE, 75);
+export const SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE = Math.max(0.5, Math.min(1, _rawMinConf > 1 ? _rawMinConf / 100 : _rawMinConf));
+
+// ──── MCP Worker Fast-Fail ────
+// Fast-fail must be strictly less than phase timeout; cap at 50% of phase timeout
+const _phaseTimeoutMs = parseIntegerEnv(process.env.SPRINT_PHASE_TIMEOUT_MS, 120_000);
+const _fastFailRaw = parseIntegerEnv(process.env.MCP_FAST_FAIL_TIMEOUT_MS, 10_000);
+export const MCP_FAST_FAIL_TIMEOUT_MS = Math.max(3_000, Math.min(_fastFailRaw, Math.floor(_phaseTimeoutMs * 0.5)));
 
 export default {
   PORT,

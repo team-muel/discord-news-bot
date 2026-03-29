@@ -203,7 +203,7 @@ export async function queryObsidianRAG(
     logger.error('[OBSIDIAN-RAG] Query failed: %o', error);
     return {
       sourceFiles: [],
-      documentContext: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      documentContext: 'RAG query failed. Please try again later.',
       intent: 'development',
       contextMode,
       documentCount: 0,

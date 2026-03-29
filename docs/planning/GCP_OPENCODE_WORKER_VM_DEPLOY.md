@@ -1,10 +1,6 @@
 # GCP Opencode Worker VM Deploy
 
-Boundary note:
-
-- `opencode` in this document refers to the repository-local execution worker surface
-- current runtime availability and naming interpretation must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
-- this document covers worker deployment procedure, not proof of generic upstream framework embedding
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 목표:
 

@@ -32,6 +32,11 @@ const normalizeLimit = (args?: Record<string, unknown>): number => {
 export const dbSupabaseReadAction: ActionDefinition = {
   name: 'db.supabase.read',
   description: '허용된 Supabase 테이블을 읽기 전용으로 조회합니다(limit 적용).',
+  category: 'data',
+  parameters: [
+    { name: 'table', required: true, description: 'Supabase table name (must be in allowlist)', example: 'memory_items' },
+    { name: 'limit', required: false, description: 'Max rows to return (default 20)', example: '20' },
+  ],
   execute: async ({ goal, args }) => {
     if (!isSupabaseConfigured()) {
       return {

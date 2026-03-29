@@ -197,6 +197,10 @@ export const runShadowGraph = async (params: {
   });
 
   try {
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('SHADOW_GRAPH_TIMEOUT')), SHADOW_TIMEOUT_MS);
+    });
     const result = await Promise.race([
       executeLangGraph({
         initialNode: 'ingest',
@@ -208,10 +212,8 @@ export const runShadowGraph = async (params: {
           maxSteps: SHADOW_GRAPH_ORDER.length,
         },
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('SHADOW_GRAPH_TIMEOUT')), SHADOW_TIMEOUT_MS),
-      ),
-    ]);
+      timeoutPromise,
+    ]).finally(() => clearTimeout(timeoutId));
 
     const visited = result.visitedNodes;
     const main = params.mainPathNodes;
@@ -266,6 +268,30 @@ export const runShadowGraph = async (params: {
 };
 
 // ─── Divergence Persistence ─────────────────────────────────────────
+
+/** Compute quality delta: 0 = perfect match, negative = shadow diverged or errored */
+const computeQualityDelta = (result: ShadowRunResult, mainFinalStatus: string): number | null => {
+  // Error means quality penalty
+  if (result.error) return -1.0;
+
+  // No divergence = perfect match
+  if (result.divergeAtIndex === null) return 0.0;
+
+  // Partial divergence: scale by how early the divergence happened
+  const mainLen = result.mainPathNodes.length || 1;
+  const shadowLen = result.visitedNodes.length || 0;
+  const convergenceRatio = result.divergeAtIndex / mainLen;
+
+  // Length penalty: shadow completed fewer nodes = lower quality (capped at 1.0)
+  const lengthRatio = mainLen > 0 ? Math.min(1, shadowLen / mainLen) : 0;
+
+  // Status penalty: if main succeeded but shadow produced blocking state
+  const statusPenalty = mainFinalStatus === 'completed' && result.shadowState.policyBlocked ? -0.3 : 0;
+
+  // Blend: convergence ratio (how far they matched) + length ratio + status penalty
+  return Math.max(-1, Math.min(1, (convergenceRatio * 0.5 + lengthRatio * 0.3 + statusPenalty) - 0.5));
+};
+
 export const persistShadowDivergence = async (params: {
   sessionId: string;
   guildId: string;
@@ -275,6 +301,7 @@ export const persistShadowDivergence = async (params: {
   if (!isSupabaseConfigured()) return;
 
   try {
+    const qualityDelta = computeQualityDelta(params.result, params.mainFinalStatus);
     const client = getSupabaseClient();
     await client.from('shadow_graph_divergence_logs').insert({
       session_id: params.sessionId,
@@ -285,9 +312,103 @@ export const persistShadowDivergence = async (params: {
       main_final_status: params.mainFinalStatus,
       shadow_final_text: params.result.shadowState.finalText?.slice(0, 2000) || null,
       shadow_error: params.result.error?.slice(0, 500) || null,
+      quality_delta: qualityDelta,
       elapsed_ms: params.result.elapsedMs,
     });
   } catch {
     // Best-effort persistence
+  }
+};
+
+// ─── Shadow Divergence Queries (used by API routes) ─────────────────
+
+export const getRecentShadowDivergence = async (
+  guildId: string,
+  limit: number,
+): Promise<{ data: unknown[] | null; error: string | null }> => {
+  if (!isSupabaseConfigured()) return { data: null, error: 'SUPABASE_NOT_CONFIGURED' };
+
+  try {
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from('shadow_graph_divergence_logs')
+      .select('*')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) return { data: null, error: error.message };
+    return { data: data || [], error: null };
+  } catch {
+    return { data: null, error: 'query_failed' };
+  }
+};
+
+export const getShadowDivergenceBySession = async (
+  sessionId: string,
+): Promise<{ data: unknown | null; error: string | null }> => {
+  if (!isSupabaseConfigured()) return { data: null, error: 'SUPABASE_NOT_CONFIGURED' };
+
+  try {
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from('shadow_graph_divergence_logs')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return { data: null, error: error.message };
+    return { data, error: null };
+  } catch {
+    return { data: null, error: 'query_failed' };
+  }
+};
+
+export type ShadowDivergenceStats = {
+  totalRuns: number;
+  divergedRuns: number;
+  errorRuns: number;
+  convergenceRate: number | null;
+  avgElapsedMs: number;
+};
+
+export const getShadowDivergenceStats = async (
+  guildId: string,
+): Promise<{ stats: ShadowDivergenceStats | null; error: string | null }> => {
+  if (!isSupabaseConfigured()) return { stats: null, error: 'SUPABASE_NOT_CONFIGURED' };
+
+  try {
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from('shadow_graph_divergence_logs')
+      .select('diverge_at_index, elapsed_ms, shadow_error, created_at')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) return { stats: null, error: error.message };
+
+    const logs = data || [];
+    const totalRuns = logs.length;
+    const divergedRuns = logs.filter((l: any) => l.diverge_at_index != null).length;
+    const errorRuns = logs.filter((l: any) => !!l.shadow_error).length;
+    const avgElapsedMs = totalRuns > 0
+      ? logs.reduce((sum: number, l: any) => sum + (Number(l.elapsed_ms) || 0), 0) / totalRuns
+      : 0;
+
+    return {
+      stats: {
+        totalRuns,
+        divergedRuns,
+        errorRuns,
+        convergenceRate: totalRuns > 0 ? ((totalRuns - divergedRuns) / totalRuns) : null,
+        avgElapsedMs: Math.round(avgElapsedMs),
+      },
+      error: null,
+    };
+  } catch {
+    return { stats: null, error: 'query_failed' };
   }
 };

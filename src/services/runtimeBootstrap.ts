@@ -6,6 +6,8 @@ import { startRetrievalEvalLoop } from './retrievalEvalLoopService';
 import { startAgentSloAlertLoop } from './agentSloService';
 import { startAgentDailyLearningLoop, startGotCutoverAutopilotLoop } from './agentOpsService';
 import { autoSyncGuildTopologiesOnReady } from './discordTopologySyncService';
+import { startRewardSignalLoop } from './rewardSignalLoopService';
+import { startEvalAutoPromoteLoop } from './evalAutoPromoteLoopService';
 import { startRuntimeAlerts } from './runtimeAlertService';
 import { startTradingEngine } from './tradingEngine';
 import { startOpencodePublishWorker } from './opencodePublishWorker';
@@ -94,6 +96,8 @@ export const startDiscordReadyRuntime = (client: Client): void => {
   startSharedLoops('discord-ready');
   startObsidianLoreSyncLoop();
   startRetrievalEvalLoop(client);
+  startRewardSignalLoop(client);
+  startEvalAutoPromoteLoop(client);
   startAgentSloAlertLoop();
 
   void autoSyncGuildTopologiesOnReady(client.guilds.cache.values()).catch((error) => {

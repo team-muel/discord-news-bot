@@ -43,6 +43,8 @@ const getHeadlessLoreMaxChars = (): number => {
 const sanitizeArg = (value: unknown, maxLen = 300): string => String(value || '')
   .replace(/[\u0000-\u001f\u007f]/g, ' ')
   .replace(/\r?\n/g, ' ')
+  .replace(/[|&;$`<>]/g, ' ')
+  .replace(/\$\(|\)\s*;/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()
   .slice(0, maxLen);

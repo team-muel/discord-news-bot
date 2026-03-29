@@ -36,12 +36,19 @@ export const AUTO_LOGIN_ON_FIRST_COMMAND = !['0', 'false', 'no', 'off']
 
 // ─── In-process cache ────────────────────────────────────────────────────────
 export const loggedInUsersByGuild = new Map<string, Map<string, number>>();
+const MAX_GUILDS_IN_CACHE = 500;
+const MAX_USERS_PER_GUILD = 5000;
 let loginSessionCleanupTimer: NodeJS.Timeout | null = null;
 
 export const cacheLoginSession = (guildId: string, userId: string, expiresAt: number): void => {
-  const guildUsers = loggedInUsersByGuild.get(guildId) || new Map<string, number>();
+  let guildUsers = loggedInUsersByGuild.get(guildId);
+  if (!guildUsers) {
+    if (loggedInUsersByGuild.size >= MAX_GUILDS_IN_CACHE) return;
+    guildUsers = new Map<string, number>();
+    loggedInUsersByGuild.set(guildId, guildUsers);
+  }
+  if (!guildUsers.has(userId) && guildUsers.size >= MAX_USERS_PER_GUILD) return;
   guildUsers.set(userId, expiresAt);
-  loggedInUsersByGuild.set(guildId, guildUsers);
 };
 
 export const uncacheLoginSession = (guildId: string, userId: string): void => {
@@ -55,6 +62,7 @@ export const markUserLoggedIn = async (
   guildId: string,
   userId: string,
 ): Promise<'persisted' | 'memory-only'> => {
+  if (!guildId || !userId) return 'memory-only';
   const expiresAt = Date.now() + LOGIN_SESSION_TTL_MS;
   cacheLoginSession(guildId, userId, expiresAt);
   try {
@@ -142,7 +150,8 @@ export const hasAdminPermission = async (
   if (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) return true;
   try {
     return await isUserAdmin(interaction.user.id);
-  } catch {
+  } catch (err) {
+    logger.warn('[AUTH] admin check failed userId=%s error=%s', interaction.user.id, err instanceof Error ? err.message : String(err));
     return false;
   }
 };

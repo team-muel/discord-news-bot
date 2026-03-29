@@ -22,12 +22,7 @@ Document Role:
 - Read first for incident handling, deployment verification, and operator execution.
 - Companion documents may add detail, but they must not override this runbook's operating procedure.
 
-Boundary note:
-
-- `.github/agents/*`, `.github/prompts/*`, `.github/instructions/*` are IDE collaboration customizations, not operator proof of runtime availability.
-- operator truth for what is actually executable lives in registered runtime actions, configured workers, and runtime status endpoints.
-- local external OSS tool integration beyond the currently registered workers/providers is a planned architecture topic, tracked separately in `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`.
-- name collision interpretation and runtime availability should be checked against `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before using any role name as operational evidence.
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## 0) System Scope
 
@@ -86,7 +81,7 @@ Open these first when verifying behavior:
 - Obsidian sync operations: `docs/OBSIDIAN_SUPABASE_SYNC.md`
 - MCP tool spec and rollout: `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/planning/mcp/MCP_ROLLOUT_1W.md`
 - Lightweight worker split: `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md`
-- Progressive autonomy 30-day checklist: `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
+- Progressive autonomy 30-day checklist: `docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md` (ARCHIVED)
 - Go/No-Go gate template: `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
 - Autonomy contract schemas: `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
 - Local-first hybrid autonomy: `docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md`
@@ -497,7 +492,7 @@ For any change touching routes, persistence, runtime controls, or auth:
 For memory/agent loop changes specifically:
 
 1. Update `docs/OBSIDIAN_SUPABASE_SYNC.md` when bootstrap/sync/loop/reward behavior changes.
-2. Update `docs/planning/LONG_TERM_MEMORY_AGENT_ROADMAP.md` when stage milestones or success metrics change.
+2. Memory agent roadmap has been archived to `docs/archive/LONG_TERM_MEMORY_AGENT_ROADMAP.md`.
 3. Add an entry to `docs/CHANGELOG-ARCH.md` for architecture-significant automation changes.
 
 ## 10) Command Reference
@@ -624,7 +619,7 @@ Rollback rehearsal weekly consolidation:
 
 Daily execution checklist source:
 
-- `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
+- `docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md` (ARCHIVED)
 
 Contract validation source:
 

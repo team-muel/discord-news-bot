@@ -57,9 +57,14 @@ export const isWebHostAllowed = (host: string): boolean => {
     return false;
   }
 
-  // Empty allowlist = allow all hosts (open-by-default).
-  // To restrict, set ACTION_WEB_FETCH_ALLOWED_HOSTS="example.com,other.com".
+  // Empty allowlist = deny all hosts (closed-by-default).
+  // To allow specific hosts, set ACTION_WEB_FETCH_ALLOWED_HOSTS="example.com,other.com".
+  // To allow all, set ACTION_WEB_FETCH_ALLOWED_HOSTS="*".
   if (WEB_ALLOWED_HOSTS.size === 0) {
+    return false;
+  }
+
+  if (WEB_ALLOWED_HOSTS.has('*')) {
     return true;
   }
 

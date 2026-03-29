@@ -87,9 +87,31 @@ export type ActionExecutionResult = {
   handoff?: ActionHandoff;
 };
 
+/** Tool parameter specification for prompt generation. */
+export type ActionParameterSpec = {
+  name: string;
+  required: boolean;
+  description: string;
+  example?: string;
+};
+
+/** Action categories for grouping in prompts and UI. */
+export type ActionCategory =
+  | 'agent'     // multi-agent collaboration / routing
+  | 'data'      // data retrieval (RAG, DB, search)
+  | 'finance'   // stock, trading, analysis
+  | 'content'   // news, youtube, community
+  | 'code'      // code generation, execution
+  | 'ops'       // privacy, governance, release
+  | 'tool';     // CLI tools, web fetch
+
 export type ActionDefinition = {
   name: string;
   description: string;
+  /** Action category for prompt grouping. */
+  category?: ActionCategory;
+  /** Parameter specs — single source of truth for prompt generation. */
+  parameters?: ActionParameterSpec[];
   /** When true, this action runs without LLM — subprocess exit code drives pass/fail. */
   deterministic?: boolean;
   execute: (input: ActionExecutionInput) => Promise<ActionExecutionResult>;

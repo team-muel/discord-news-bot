@@ -2,6 +2,7 @@ import logger from '../logger';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const unavailableLockNames = new Set<string>();
+const MAX_UNAVAILABLE_LOCK_NAMES = 200;
 
 const isLockTableUnavailableError = (error: any): boolean => {
   const code = String(error?.code || '');
@@ -59,7 +60,7 @@ export const acquireDistributedLease = async (params: {
     return { ok: false, reason: 'LOCK_HELD' };
   } catch (error) {
     if (isLockTableUnavailableError(error)) {
-      if (!unavailableLockNames.has(params.name)) {
+      if (!unavailableLockNames.has(params.name) && unavailableLockNames.size < MAX_UNAVAILABLE_LOCK_NAMES) {
         unavailableLockNames.add(params.name);
         logger.error('[LOCK] distributed_locks table missing/unavailable; lock=%s', params.name);
       }

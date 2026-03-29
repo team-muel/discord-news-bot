@@ -1196,7 +1196,7 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
   // Release heavy in-memory structures after persistence
   session.shadowGraph = null;
   for (const step of session.steps) {
-    step.output = undefined as any;
+    step.output = null;
   }
 
   const assistantPayload = nodeResult.assistantPayload;

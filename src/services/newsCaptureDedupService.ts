@@ -6,6 +6,7 @@
 import crypto from 'crypto';
 import { TtlCache } from '../utils/ttlCache';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import logger from '../logger';
 
 const FINGERPRINT_TABLE = 'news_capture_fingerprints';
 
@@ -26,7 +27,7 @@ export const buildNewsFingerprint = (params: {
     params.goal.trim().toLowerCase().slice(0, 200),
     ...[...params.canonicalUrls].sort().map((u) => u.toLowerCase()),
   ].join('|');
-  return crypto.createHash('sha1').update(seed).digest('hex');
+  return crypto.createHash('sha256').update(seed).digest('hex');
 };
 
 /**
@@ -59,7 +60,8 @@ export const isNewsFingerprinted = async (params: {
     }
 
     return Boolean(data);
-  } catch {
+  } catch (err) {
+    logger.debug('[NEWS-DEDUP] DB check fallback to memory: %s', err instanceof Error ? err.message : String(err));
     return Boolean(memoryCache.get(memKey));
   }
 };
@@ -95,7 +97,7 @@ export const recordNewsFingerprint = async (params: {
         },
         { onConflict: 'guild_id,fingerprint', ignoreDuplicates: true },
       );
-  } catch {
-    // Best-effort: memory fallback already set above.
+  } catch (err) {
+    logger.debug('[NEWS-DEDUP] DB record fallback to memory: %s', err instanceof Error ? err.message : String(err));
   }
 };

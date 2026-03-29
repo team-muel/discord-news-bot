@@ -21,6 +21,7 @@ const TABLE = String(process.env.API_IDEMPOTENCY_TABLE || 'api_idempotency_keys'
 const DEFAULT_TTL_SEC = Math.max(60, parseIntegerEnv(process.env.API_IDEMPOTENCY_TTL_SEC, 86_400));
 const REQUIRE_HEADER_DEFAULT = parseBooleanEnv(process.env.API_IDEMPOTENCY_REQUIRE_HEADER, false);
 
+const MEMORY_STORE_MAX = 5_000;
 const memoryStore = new Map<string, IdempotencyRecord>();
 
 const nowMs = () => Date.now();
@@ -78,6 +79,10 @@ const claimMemoryRecord = (params: {
   const existing = getMemoryRecord(params.scope, params.idempotencyKey);
   if (existing) {
     return { ok: false, record: existing };
+  }
+
+  if (memoryStore.size >= MEMORY_STORE_MAX) {
+    garbageCollectMemory();
   }
 
   const current = nowMs();

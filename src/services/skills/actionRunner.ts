@@ -30,22 +30,29 @@ const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
 /** Gate verdict enforcement: block execution when latest gate-run overall = 'no-go'. */
 const GATE_VERDICT_ENFORCEMENT_ENABLED = parseBooleanEnv(process.env.GATE_VERDICT_ENFORCEMENT_ENABLED, false);
 const GATE_VERDICT_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000));
-let cachedGateVerdict: { overall: string; providerProfileTarget: string | null; fetchedAt: number } | null = null;
+let cachedGateVerdict: Map<string, { overall: string; providerProfileTarget: string | null; fetchedAt: number }> = new Map();
 
 const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string | null; providerProfileTarget: string | null }> => {
   const now = Date.now();
-  if (cachedGateVerdict && (now - cachedGateVerdict.fetchedAt) < GATE_VERDICT_CACHE_TTL_MS) {
-    return { overall: cachedGateVerdict.overall, providerProfileTarget: cachedGateVerdict.providerProfileTarget };
+  const cached = cachedGateVerdict.get(guildId);
+  if (cached && (now - cached.fetchedAt) < GATE_VERDICT_CACHE_TTL_MS) {
+    return { overall: cached.overall, providerProfileTarget: cached.providerProfileTarget };
   }
   try {
     const snapshot = await buildWorkerApprovalGateSnapshot({ guildId });
     const gate = snapshot?.globalArtifacts?.latestGateDecision;
     const overall = gate?.overall || null;
     const providerProfileTarget = (gate as Record<string, unknown> | null)?.providerProfileTarget as string | null ?? null;
-    cachedGateVerdict = { overall: overall || 'unknown', providerProfileTarget, fetchedAt: now };
+    cachedGateVerdict.set(guildId, { overall: overall || 'unknown', providerProfileTarget, fetchedAt: now });
+    // Evict oldest entries if map grows too large
+    if (cachedGateVerdict.size > 100) {
+      const first = cachedGateVerdict.keys().next().value;
+      if (first !== undefined) cachedGateVerdict.delete(first);
+    }
     return { overall, providerProfileTarget };
   } catch {
-    return { overall: cachedGateVerdict?.overall || null, providerProfileTarget: cachedGateVerdict?.providerProfileTarget || null };
+    const cached = cachedGateVerdict.get(guildId);
+    return { overall: cached?.overall || null, providerProfileTarget: cached?.providerProfileTarget || null };
   }
 };
 
@@ -201,6 +208,7 @@ const actionResultCache = new TtlCache<{
 }>(ACTION_CACHE_MAX_ENTRIES);
 
 const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
+const BREAKER_MAX_ENTRIES = 500;
 
 // Per-action utility scores: rolling success rate for planner feedback
 const actionUtilityScores = new Map<string, { runs: number; successes: number; lastFailedAt: number }>();
@@ -809,6 +817,11 @@ const recordFailure = (actionName: string) => {
   if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
     return;
   }
+  // Evict oldest entries to bound memory
+  if (breakerState.size >= BREAKER_MAX_ENTRIES) {
+    const oldest = breakerState.keys().next().value;
+    if (oldest !== undefined) breakerState.delete(oldest);
+  }
   const current = breakerState.get(actionName) || { failures: 0, openedUntilMs: 0 };
   const failures = current.failures + 1;
   if (failures >= ACTION_CIRCUIT_FAILURE_THRESHOLD) {
@@ -888,6 +901,11 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     diagnostics.totalFailures += 1;
     const normalizedCode = String(code || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
     actionRunnerFailureCodeCounts.set(normalizedCode, (actionRunnerFailureCodeCounts.get(normalizedCode) || 0) + 1);
+    // Bound failure code map to prevent unbounded growth
+    if (actionRunnerFailureCodeCounts.size > 500) {
+      const first = actionRunnerFailureCodeCounts.keys().next().value;
+      if (first !== undefined) actionRunnerFailureCodeCounts.delete(first);
+    }
     const key = classifyFailureCode(normalizedCode);
     diagnostics[key] += 1;
   };

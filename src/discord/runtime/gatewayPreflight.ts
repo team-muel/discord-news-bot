@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '../../utils/network';
+
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SUCCESS_CACHE_TTL_MS = 10 * 60_000;
 const FAILURE_CACHE_TTL_MS = 60_000;
@@ -20,16 +22,6 @@ const preflightCache = {
   token: '',
   expiresAt: 0,
   result: null as ProbeResult | null,
-};
-
-const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number): Promise<Response> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
 };
 
 const normalizeGatewayUrl = (value: string): string => {

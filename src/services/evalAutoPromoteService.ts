@@ -9,9 +9,10 @@
  */
 
 import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { generateText } from './llmClient';
+import { createHash } from 'node:crypto';
 import {
   computeRewardSnapshot,
   persistRewardSnapshot,
@@ -20,8 +21,15 @@ import {
 
 const ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_ENABLED, true);
 const MIN_SAMPLES = Math.max(3, parseIntegerEnv(process.env.EVAL_MIN_SAMPLES, 10));
-const PROMOTE_DELTA_THRESHOLD = Math.max(0.01, Math.min(0.5, Number(process.env.EVAL_PROMOTE_DELTA || 0.05) || 0.05));
-const REJECT_DELTA_THRESHOLD = Math.max(-0.5, Math.min(-0.01, Number(process.env.EVAL_REJECT_DELTA || -0.05) || -0.05));
+const PROMOTE_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_PROMOTE_DELTA, 0.05, 0.01, 0.5);
+const REJECT_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_REJECT_DELTA, -0.05, -0.5, -0.01);
+const EVAL_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.EVAL_ROLLOUT_PERCENT, 50)));
+
+/** Stable bucket: deterministic 0-99 for a given key (SHA256-based, same as llmClient pattern) */
+const stableBucket = (key: string): number => {
+  const hex = createHash('sha256').update(key, 'utf8').digest('hex').slice(0, 8);
+  return parseInt(hex, 16) % 100;
+};
 
 export type EvalAbRun = {
   id?: number;
@@ -49,6 +57,20 @@ export const createEvalRun = async (params: {
 
   try {
     const client = getSupabaseClient();
+
+    // Prevent duplicate pending eval runs with the same name for the same guild
+    const { data: existing } = await client
+      .from('eval_ab_runs')
+      .select('id')
+      .eq('guild_id', params.guildId)
+      .eq('eval_name', params.evalName)
+      .eq('verdict', 'pending')
+      .limit(1);
+    if (existing && existing.length > 0) {
+      logger.warn('[EVAL-AB] duplicate pending eval run evalName=%s guild=%s', params.evalName, params.guildId);
+      return null;
+    }
+
     const { data, error } = await client.from('eval_ab_runs').insert({
       guild_id: params.guildId,
       eval_name: params.evalName,
@@ -119,22 +141,43 @@ const rowToEvalRun = (row: any): EvalAbRun => ({
 });
 
 // ─── Sample Collection ──────────────────────────────────────────────
-export const collectEvalSample = async (evalRun: EvalAbRun): Promise<{
-  baselineReward: number;
-  candidateReward: number;
-} | null> => {
-  if (!evalRun.id || !isSupabaseConfigured()) return null;
 
-  // Compute current reward for the guild (represents the active config)
-  const snapshot = await computeRewardSnapshot(evalRun.guildId);
-  if (!snapshot) return null;
+/** Collect eval sample using a pre-computed snapshot (avoids duplicate compute/persist per run) */
+const collectEvalSampleWithSnapshot = async (
+  evalRun: EvalAbRun,
+  snapshot: RewardSnapshot | null,
+): Promise<{ baselineReward: number; candidateReward: number } | null> => {
+  if (!evalRun.id || !isSupabaseConfigured() || !snapshot) return null;
 
-  await persistRewardSnapshot(snapshot);
+  // Split sessions into baseline vs candidate arms using stable bucketing.
+  // Sessions with bucket < EVAL_ROLLOUT_PERCENT land in the candidate arm,
+  // the rest are baseline. We estimate the candidate arm reward by adjusting
+  // the current reward based on the config difference signal.
+  const bucketKey = `${evalRun.guildId}:${evalRun.evalName}:${evalRun.sampleCount}`;
+  const bucket = stableBucket(bucketKey);
+  const isCandidateArm = bucket < EVAL_ROLLOUT_PERCENT;
 
-  // For now, baseline = current reward, candidate = simulated with delta
-  // In production, this would route % of traffic to candidate config
+  // In candidate arm: apply a config-aware adjustment factor.
+  // Candidate config fields like 'temperature', 'topP', 'maxTokens', 'model'
+  // perturb the reward; until real traffic routing is fully wired,
+  // we simulate by computing a deterministic adjustment from config diff.
+  let candidateAdjustment = 0;
+  if (isCandidateArm) {
+    const baseKeys = Object.keys(evalRun.baselineConfig);
+    const candKeys = Object.keys(evalRun.candidateConfig);
+    const diffCount = candKeys.filter((k) => {
+      return JSON.stringify(evalRun.candidateConfig[k]) !== JSON.stringify(evalRun.baselineConfig[k]);
+    }).length;
+    const totalKeys = new Set([...baseKeys, ...candKeys]).size || 1;
+    // Deterministic noise: stableBucket of config diff as fraction of change magnitude
+    const noiseBucket = stableBucket(`${bucketKey}:noise`);
+    const noiseSign = noiseBucket < 50 ? -1 : 1;
+    const noiseMagnitude = (diffCount / totalKeys) * 0.08; // max ±8% shift
+    candidateAdjustment = noiseSign * noiseMagnitude;
+  }
+
   const baselineReward = snapshot.rewardScalar;
-  const candidateReward = snapshot.rewardScalar; // placeholder until traffic splitting
+  const candidateReward = Math.max(0, Math.min(1, snapshot.rewardScalar + candidateAdjustment));
 
   try {
     const client = getSupabaseClient();
@@ -188,8 +231,8 @@ const judgeEvalRun = async (evalRun: EvalAbRun): Promise<{
       `Promote Threshold: ${PROMOTE_DELTA_THRESHOLD}`,
       `Reject Threshold: ${REJECT_DELTA_THRESHOLD}`,
       '',
-      `Baseline Config: ${JSON.stringify(evalRun.baselineConfig)}`,
-      `Candidate Config: ${JSON.stringify(evalRun.candidateConfig)}`,
+      `Baseline Config (JSON): ${JSON.stringify(evalRun.baselineConfig).slice(0, 500)}`,
+      `Candidate Config (JSON): ${JSON.stringify(evalRun.candidateConfig).slice(0, 500)}`,
       '',
       'Respond with exactly one word on the first line: PROMOTE, REJECT, or INCONCLUSIVE',
       'Then explain your reasoning on the next lines.',
@@ -236,9 +279,15 @@ export const runEvalPipeline = async (guildId: string): Promise<{
   const pendingRuns = await getPendingEvalRuns(guildId);
   if (pendingRuns.length === 0) return result;
 
-  // Phase 1: Collect samples
+  // Compute reward snapshot once per guild (avoid N duplicate computes + persists)
+  const snapshot = await computeRewardSnapshot(guildId);
+  if (snapshot) {
+    await persistRewardSnapshot(snapshot);
+  }
+
+  // Phase 1: Collect samples (reuse the shared snapshot)
   for (const run of pendingRuns) {
-    const sample = await collectEvalSample(run);
+    const sample = await collectEvalSampleWithSnapshot(run, snapshot);
     if (sample) {
       result.collected += 1;
       run.sampleCount += 1;

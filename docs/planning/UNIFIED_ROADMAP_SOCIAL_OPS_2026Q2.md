@@ -15,10 +15,7 @@
 - Do not track day-to-day status here; status belongs in [docs/planning/EXECUTION_BOARD.md](docs/planning/EXECUTION_BOARD.md).
 - Do not embed operator SOP here; execution procedure belongs in [docs/RUNBOOK_MUEL_PLATFORM.md](docs/RUNBOOK_MUEL_PLATFORM.md).
 
-Boundary note:
-
-- 이 로드맵의 Opencode, OpenDev, NemoClaw, OpenJarvis 관련 항목은 저장소 내부 실행 표면과 milestone 명칭을 뜻한다.
-- 현재 구현 상태와 이름 충돌 해석은 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## 1) North Star
 
@@ -194,7 +191,7 @@ Opencode 연동은 아래 계약을 따른다.
 
 실행 보조 아티팩트:
 
-1. `docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
+1. `docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md` (ARCHIVED)
 2. `docs/planning/GO_NO_GO_GATE_TEMPLATE.md`
 3. `docs/planning/AUTONOMY_CONTRACT_SCHEMAS.json`
 

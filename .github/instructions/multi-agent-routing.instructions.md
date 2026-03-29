@@ -74,11 +74,7 @@ Each skill can be invoked directly from the IDE:
 - Protected branches (main/master/production) cannot be modified directly
 - All code changes go through branch → PR → merge flow
 
-## Boundary Note
-
-Role names (Implement, Architect, Review, Operate) are repository-local collaboration labels describing function.
-They do not imply installation of similarly named external OSS frameworks (NVIDIA NemoClaw, Stanford OpenJarvis, etc.).
-Runtime integration exists only where registered actions and configured workers are present.
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## Hard Gates
 

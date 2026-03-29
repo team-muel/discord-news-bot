@@ -32,6 +32,7 @@ const processedMessageUntilMs = new Map<string, number>();
 const AUTO_WORKER_PROPOSAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_ENABLED || 'false').trim());
 const AUTO_WORKER_PROPOSAL_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS || 15 * 60_000));
 const autoWorkerProposalUntilMs = new Map<string, number>();
+const AUTO_WORKER_PROPOSAL_MAX_ENTRIES = 500;
 
 const logVibeNonCritical = (scope: string, error: unknown, getErrorMessage: (error: unknown) => string): void => {
   logger.debug('[VIBE] %s: %s', scope, getErrorMessage(error));
@@ -49,6 +50,16 @@ const shouldProcessMessage = (messageId: string): boolean => {
     for (const [id, until] of processedMessageUntilMs.entries()) {
       if (until <= now) {
         processedMessageUntilMs.delete(id);
+      }
+    }
+    // Hard cap: evict oldest if still over limit
+    if (processedMessageUntilMs.size > DISCORD_VIBE_DEDUP_MAX_ENTRIES) {
+      const excess = processedMessageUntilMs.size - DISCORD_VIBE_DEDUP_MAX_ENTRIES;
+      let removed = 0;
+      for (const key of processedMessageUntilMs.keys()) {
+        if (removed >= excess) break;
+        processedMessageUntilMs.delete(key);
+        removed++;
       }
     }
   }
@@ -103,6 +114,14 @@ const acquireAutoProposalSlot = (key: string): boolean => {
     return false;
   }
   autoWorkerProposalUntilMs.set(key, now + AUTO_WORKER_PROPOSAL_COOLDOWN_MS);
+
+  // Opportunistic cleanup to keep the map bounded
+  if (autoWorkerProposalUntilMs.size > AUTO_WORKER_PROPOSAL_MAX_ENTRIES) {
+    for (const [id, until] of autoWorkerProposalUntilMs.entries()) {
+      if (until <= now) autoWorkerProposalUntilMs.delete(id);
+    }
+  }
+
   return true;
 };
 

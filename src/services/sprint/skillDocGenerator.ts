@@ -24,6 +24,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = path.resolve(__dirname, '../../../.github/skills');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
+const SAFE_SKILL_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
 // ──── Metadata extractors ─────────────────────────────────────────────────────
 
 const extractPhaseActionMap = (): string => {
@@ -144,6 +146,7 @@ const fillTemplate = (template: string): string => {
  * Returns { changed: boolean, content: string }.
  */
 export const generateSkillDoc = (skillName: string): { changed: boolean; content: string } => {
+  if (!SAFE_SKILL_NAME_RE.test(skillName)) return { changed: false, content: '' };
   const tmplPath = path.join(SKILLS_DIR, skillName, 'SKILL.md.tmpl');
   const outPath = path.join(SKILLS_DIR, skillName, 'SKILL.md');
 

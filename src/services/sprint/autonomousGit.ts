@@ -47,9 +47,10 @@ export const createSprintBranch = async (sprintId: string, baseBranch = 'main'):
   }
 
   const branchName = sanitizeBranchName(`sprint/${sprintId}`);
+  const safeBase = sanitizeBranchName(baseBranch);
 
   if (SPRINT_DRY_RUN) {
-    logger.info('[SPRINT-GIT][DRY-RUN] would create branch: %s from %s', branchName, baseBranch);
+    logger.info('[SPRINT-GIT][DRY-RUN] would create branch: %s from %s', branchName, safeBase);
     return { ok: true, branchName };
   }
 
@@ -59,9 +60,9 @@ export const createSprintBranch = async (sprintId: string, baseBranch = 'main'):
 
   try {
     // Get base branch SHA
-    const baseRef = await githubApi(`/git/ref/heads/${baseBranch}`);
+    const baseRef = await githubApi(`/git/ref/heads/${safeBase}`);
     if (!baseRef.ok) {
-      return { ok: false, branchName, error: `Base branch ${baseBranch} not found` };
+      return { ok: false, branchName, error: `Base branch ${safeBase} not found` };
     }
     const baseData = await baseRef.json() as { object: { sha: string } };
     const baseSha = baseData.object.sha;
@@ -80,7 +81,7 @@ export const createSprintBranch = async (sprintId: string, baseBranch = 'main'):
       return { ok: false, branchName, error: `Branch creation failed: ${errBody.slice(0, 200)}` };
     }
 
-    logger.info('[SPRINT-GIT] branch created: %s from %s', branchName, baseBranch);
+    logger.info('[SPRINT-GIT] branch created: %s from %s', branchName, safeBase);
     return { ok: true, branchName };
   } catch (error) {
     return { ok: false, branchName, error: error instanceof Error ? error.message : String(error) };

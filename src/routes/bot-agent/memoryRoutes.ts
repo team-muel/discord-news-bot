@@ -27,7 +27,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
 
   router.get('/agent/memory/search', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId);
-    const q = toStringParam(req.query?.q);
+    const q = toStringParam(req.query?.q).slice(0, 2000);
     const typeValue = toStringParam(req.query?.type);
     const limit = toBoundedInt(req.query?.limit, 8, { min: 1, max: 20 });
 
@@ -54,7 +54,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       if (message === 'SUPABASE_NOT_CONFIGURED') {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
       }
-      return res.status(500).json({ ok: false, error: 'MEMORY_SEARCH_FAILED', message });
+      return res.status(500).json({ ok: false, error: 'MEMORY_SEARCH_FAILED', message: 'Search operation failed.' });
     }
   });
 

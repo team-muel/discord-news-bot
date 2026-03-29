@@ -53,9 +53,11 @@ export type SelfNoteEntry = {
   createdAt: string;
 };
 
-// ──── In-memory self-notes cache (per-guild) ────────────────────────────────
+// ──── In-memory self-notes cache (per-guild, with TTL) ──────────────────────
 
-const selfNotesCache = new Map<string, SelfNoteEntry[]>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+type CachedSelfNotes = { entries: SelfNoteEntry[]; cachedAt: number };
+const selfNotesCache = new Map<string, CachedSelfNotes>();
 
 // ──── Circuit 1: Perception → Memory Precipitation ──────────────────────────
 
@@ -138,10 +140,13 @@ export const adjustBehaviorFromReward = async (guildId: string): Promise<RewardB
         const currentBranches = Number(totPolicy.max_branches) || 3;
         const nextBranches = Math.min(6, currentBranches + 1);
         if (nextBranches > currentBranches) {
-          await client.from('agent_tot_policies').update({
+          const { error: totErr } = await client.from('agent_tot_policies').update({
             max_branches: nextBranches,
             updated_at: new Date().toISOString(),
-          }).eq('guild_id', guildId);
+          }).eq('guild_id', guildId).eq('enabled', true);
+          if (totErr) {
+            logger.warn('[NERVOUS-SYSTEM] tot policy update failed guild=%s: %s', guildId, totErr.message);
+          }
           actions.push(`tot.maxBranches: ${currentBranches} → ${nextBranches}`);
         }
       }
@@ -166,6 +171,31 @@ export const adjustBehaviorFromReward = async (guildId: string): Promise<RewardB
         createdAt: new Date().toISOString(),
       });
       actions.push('self-note: degradation awareness added');
+    }
+
+    if (trend.trend === 'improving') {
+      // Normalize maxBranches back down when reward is improving
+      const { data: totPolicy } = await client
+        .from('agent_tot_policies')
+        .select('max_branches')
+        .eq('guild_id', guildId)
+        .eq('enabled', true)
+        .maybeSingle();
+
+      if (totPolicy) {
+        const currentBranches = Number(totPolicy.max_branches) || 3;
+        const nextBranches = Math.max(2, currentBranches - 1);
+        if (nextBranches < currentBranches) {
+          const { error: totErr } = await client.from('agent_tot_policies').update({
+            max_branches: nextBranches,
+            updated_at: new Date().toISOString(),
+          }).eq('guild_id', guildId).eq('enabled', true);
+          if (totErr) {
+            logger.warn('[NERVOUS-SYSTEM] tot policy normalize failed guild=%s: %s', guildId, totErr.message);
+          }
+          actions.push(`tot.maxBranches: ${currentBranches} → ${nextBranches} (normalizing)`);
+        }
+      }
     }
 
     if (actions.length > 0) {
@@ -207,9 +237,10 @@ export const persistSelfNote = async (entry: SelfNoteEntry): Promise<boolean> =>
     });
 
     // Update in-memory cache
-    const existing = selfNotesCache.get(entry.guildId) || [];
+    const cached = selfNotesCache.get(entry.guildId);
+    const existing = cached ? cached.entries : [];
     existing.unshift({ ...entry, note: noteText });
-    selfNotesCache.set(entry.guildId, existing.slice(0, SELF_NOTES_MAX_ITEMS));
+    selfNotesCache.set(entry.guildId, { entries: existing.slice(0, SELF_NOTES_MAX_ITEMS), cachedAt: Date.now() });
 
     logger.debug('[NERVOUS-SYSTEM] self-note persisted guild=%s source=%s', entry.guildId, entry.source);
     return true;
@@ -269,10 +300,14 @@ export const ingestRetroInsights = async (params: {
  * to inject self-reflection context into sessions.
  */
 export const loadSelfNotes = async (guildId: string): Promise<string[]> => {
-  // Return from cache first
+  // Return from cache if fresh
   const cached = selfNotesCache.get(guildId);
-  if (cached && cached.length > 0) {
-    return cached.map((n) => `[자기 성찰: ${n.source}] ${n.note}`);
+  if (cached && cached.entries.length > 0 && (Date.now() - cached.cachedAt) < CACHE_TTL_MS) {
+    return cached.entries.map((n) => `[자기 성찰: ${n.source}] ${n.note}`);
+  }
+  // Evict stale entry
+  if (cached && (Date.now() - cached.cachedAt) >= CACHE_TTL_MS) {
+    selfNotesCache.delete(guildId);
   }
 
   if (!isSupabaseConfigured()) return [];
@@ -295,7 +330,7 @@ export const loadSelfNotes = async (guildId: string): Promise<string[]> => {
       createdAt: String(row.created_at || ''),
     }));
 
-    selfNotesCache.set(guildId, entries);
+    selfNotesCache.set(guildId, { entries, cachedAt: Date.now() });
     return entries.map((n) => `[자기 성찰: ${n.source}] ${n.note}`);
   } catch (err) {
     logger.warn('[NERVOUS-SYSTEM] loadSelfNotes failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
@@ -313,7 +348,7 @@ export const getNervousSystemStatus = (): {
     rewardToBehavior: boolean;
     selfReflectionToModification: boolean;
   };
-  selfNotesGuilds: number;
+  selfNotesCachedGuilds: number;
 } => ({
   enabled: NERVOUS_SYSTEM_ENABLED,
   circuits: {
@@ -321,5 +356,5 @@ export const getNervousSystemStatus = (): {
     rewardToBehavior: NERVOUS_SYSTEM_ENABLED && REWARD_BEHAVIOR_ENABLED,
     selfReflectionToModification: NERVOUS_SYSTEM_ENABLED && SELF_NOTES_ENABLED,
   },
-  selfNotesGuilds: selfNotesCache.size,
+  selfNotesCachedGuilds: selfNotesCache.size,
 });

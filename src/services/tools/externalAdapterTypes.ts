@@ -35,6 +35,8 @@ export type ExternalAdapterResult = {
 export type ExternalToolAdapter = {
   id: ExternalAdapterId;
   capabilities: readonly ExternalAdapterCapability[];
+  /** Capabilities available in lite mode (no CLI, LiteLLM proxy only). Undefined means all or none. */
+  liteCapabilities?: readonly ExternalAdapterCapability[];
   isAvailable: () => Promise<boolean>;
   execute: (action: string, args: Record<string, unknown>) => Promise<ExternalAdapterResult>;
 };

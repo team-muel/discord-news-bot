@@ -44,6 +44,24 @@ if (ACTION_POLICY_IS_PRODUCTION && ACTION_POLICY_FAIL_OPEN_ON_ERROR) {
 
 const memoryPolicies = new Map<string, GuildActionPolicy>();
 const memoryApprovals = new Map<string, ActionApprovalRequest>();
+const MAX_MEMORY_POLICIES = 2000;
+const MAX_MEMORY_APPROVALS = 2000;
+
+const safeSetPolicy = (key: string, value: GuildActionPolicy): void => {
+  if (!memoryPolicies.has(key) && memoryPolicies.size >= MAX_MEMORY_POLICIES) {
+    const oldest = memoryPolicies.keys().next().value;
+    if (oldest !== undefined) memoryPolicies.delete(oldest);
+  }
+  memoryPolicies.set(key, value);
+};
+
+const safeSetApproval = (key: string, value: ActionApprovalRequest): void => {
+  if (!memoryApprovals.has(key) && memoryApprovals.size >= MAX_MEMORY_APPROVALS) {
+    const oldest = memoryApprovals.keys().next().value;
+    if (oldest !== undefined) memoryApprovals.delete(oldest);
+  }
+  memoryApprovals.set(key, value);
+};
 
 const toPolicyKey = (guildId: string, actionName: string): string => `${guildId}::${actionName}`;
 
@@ -188,7 +206,7 @@ export const upsertGuildActionPolicy = async (params: {
   };
 
   if (!isSupabaseConfigured()) {
-    memoryPolicies.set(toPolicyKey(row.guildId, row.actionName), row);
+    safeSetPolicy(toPolicyKey(row.guildId, row.actionName), row);
     return row;
   }
 
@@ -292,7 +310,7 @@ export const createActionApprovalRequest = async (params: {
   };
 
   if (!isSupabaseConfigured()) {
-    memoryApprovals.set(request.id, request);
+    safeSetApproval(request.id, request);
     return request;
   }
 
@@ -316,13 +334,13 @@ export const createActionApprovalRequest = async (params: {
       .single();
 
     if (error || !data) {
-      memoryApprovals.set(request.id, request);
+      safeSetApproval(request.id, request);
       return request;
     }
 
     return normalizeApprovalRow(data);
   } catch {
-    memoryApprovals.set(request.id, request);
+    safeSetApproval(request.id, request);
     return request;
   }
 };
@@ -391,7 +409,7 @@ export const decideActionApprovalRequest = async (params: {
       approvedAt: decidedAt,
       reason: params.reason ? String(params.reason) : row.reason,
     };
-    memoryApprovals.set(params.requestId, next);
+    safeSetApproval(params.requestId, next);
     return next;
   }
 

@@ -534,7 +534,19 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
   }
 
   try {
-    await startBot(activeToken);
+    // Re-read token from env if cleared (e.g., after invalidation)
+    const token = activeToken || process.env.DISCORD_BOT_TOKEN || null;
+    if (!token) {
+      reconnectInProgress = false;
+      botRuntimeState.reconnectQueued = false;
+      return {
+        ok: false,
+        status: 'rejected',
+        reason: 'NO_TOKEN',
+        message: '활성 봇 토큰이 없어 재연결할 수 없습니다.',
+      };
+    }
+    await startBot(token);
     botRuntimeState.lastRecoveryAt = new Date().toISOString();
     botRuntimeState.lastAlertAt = null;
     botRuntimeState.lastAlertReason = null;
@@ -1204,13 +1216,20 @@ const attachCommandHandlers = () => {
       return;
     }
 
-    await handleButtonInteraction({
-      interaction,
-      client,
-      workerApprovalChannelId: WORKER_APPROVAL_CHANNEL_ID,
-      startVibeSession,
-      streamSessionProgress,
-    });
+    try {
+      await handleButtonInteraction({
+        interaction,
+        client,
+        workerApprovalChannelId: WORKER_APPROVAL_CHANNEL_ID,
+        startVibeSession,
+        streamSessionProgress,
+      });
+    } catch (error) {
+      logger.error('[BOT] button interaction handler failed: %o', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
+      }
+    }
   });
 
   client.on('interactionCreate', async (interaction) => {
@@ -1382,6 +1401,9 @@ const attachCommandHandlers = () => {
     if (!SIMPLE_COMMANDS_ENABLED) {
       return;
     }
+    if (message.author.bot) {
+      return;
+    }
 
     try {
       try {
@@ -1413,9 +1435,9 @@ client.on('clientReady', () => {
   botRuntimeState.lastAlertReason = null;
   botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
-  void registerSlashCommands();
-  void restoreApprovedDynamicWorkers();
-  void enforceImplementApprovalRequiredPilot();
+  void registerSlashCommands().catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', err instanceof Error ? err.message : String(err)));
+  void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', err instanceof Error ? err.message : String(err)));
+  void enforceImplementApprovalRequiredPilot().catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', err instanceof Error ? err.message : String(err)));
   startAutoWorkerProposalBackgroundLoop();
   startDiscordReadyWorkloads(client);
 });
@@ -1468,6 +1490,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         metadata: {
           source: 'message_reaction_add',
           emoji: reaction.emoji.name || '',
+          direction: 'add',
         },
       });
     }
@@ -1501,6 +1524,26 @@ client.on('messageReactionRemove', async (reaction, user) => {
       emoji: reaction.emoji.name || '',
       direction: 'remove',
     });
+
+    // Record removal in community_interaction_events so reward signal can subtract
+    const targetUserId = String(reaction.message.author?.id || '').trim();
+    if (targetUserId && targetUserId !== user.id && !reaction.message.author?.bot) {
+      await recordCommunityInteractionEvent({
+        guildId,
+        actorUserId: user.id,
+        targetUserId,
+        channelId,
+        sourceMessageId: messageId,
+        eventType: 'reaction',
+        eventTs: new Date().toISOString(),
+        weight: 0.4,
+        metadata: {
+          source: 'message_reaction_remove',
+          emoji: reaction.emoji.name || '',
+          direction: 'remove',
+        },
+      });
+    }
   } catch (error) {
     logger.debug('[REACTION-REWARD] remove skipped reason=%s', getErrorMessage(error));
   }
@@ -1523,6 +1566,8 @@ client.on('invalidated', () => {
   botRuntimeState.lastInvalidatedAt = new Date().toISOString();
   botRuntimeState.lastAlertAt = botRuntimeState.lastInvalidatedAt;
   botRuntimeState.lastAlertReason = 'Gateway session invalidated';
+  // Clear stale token to force re-read from env on next reconnect
+  activeToken = null;
 });
 
 client.on('shardError', (error) => {

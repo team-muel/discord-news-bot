@@ -1,0 +1,8 @@
+{"level":"info","message":"[MEMORY-JOBS] runner started intervalMs=20000 maxRetries=3","timestamp":"2026-03-24T16:12:10.428Z"}
+{"level":"info","message":"[TRADING] START_TRADING_BOT disabled","timestamp":"2026-03-24T16:12:10.430Z"}
+{"level":"info","message":"[ALERT] runtime alert scanner started (intervalMs=30000, cooldownMs=300000, webhook=false)","timestamp":"2026-03-24T16:12:10.432Z"}
+{"level":"info","message":"[BOT-AUTO-RECOVERY] started (intervalMs=60000 thresholdMs=180000 enabled=true)","timestamp":"2026-03-24T16:12:10.435Z"}
+{"level":"info","message":"[BOOT] START_BOT=false START_AUTOMATION_JOBS=true DISCORD_TOKEN_PRESENT=true","timestamp":"2026-03-24T16:12:10.436Z"}
+{"level":"info","message":"[BOT] START_BOT disabled; server-only mode","timestamp":"2026-03-24T16:12:10.437Z"}
+{"level":"info","message":"[RENDER_EVENT] SERVER_READY port=3001","timestamp":"2026-03-24T16:12:10.455Z"}
+{"level":"info","message":"Server running on http://localhost:3001","timestamp":"2026-03-24T16:12:10.456Z"}

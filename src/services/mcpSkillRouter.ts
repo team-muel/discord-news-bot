@@ -51,6 +51,7 @@ export type RouteResult = {
 
 const workers = new Map<string, RegisteredWorker>();
 const capabilityIndex = new Map<string, Set<string>>(); // capability → worker ids
+const MAX_WORKERS = 50;
 const routeCache = new TtlCache<RouteResult>(200);
 const ROUTE_CACHE_TTL_MS = 10_000;
 
@@ -60,6 +61,9 @@ const ROUTE_CACHE_TTL_MS = 10_000;
 export const registerWorker = async (id: string, url: string): Promise<RegisteredWorker> => {
   const base = String(url || '').trim().replace(/\/+$/, '');
   if (!base) throw new Error('WORKER_URL_EMPTY');
+  if (workers.size >= MAX_WORKERS && !workers.has(id)) {
+    throw new Error('MAX_WORKERS_EXCEEDED');
+  }
 
   const capabilities = await probeWorkerCapabilities(base);
   const worker: RegisteredWorker = {
@@ -71,6 +75,14 @@ export const registerWorker = async (id: string, url: string): Promise<Registere
     lastCheckedAt: Date.now(),
     consecutiveFailures: 0,
   };
+
+  // Clean stale capability entries if re-registering an existing worker
+  const existing = workers.get(id);
+  if (existing) {
+    for (const oldCap of existing.capabilities) {
+      capabilityIndex.get(oldCap)?.delete(id);
+    }
+  }
 
   workers.set(id, worker);
   for (const cap of capabilities) {
@@ -190,6 +202,8 @@ export const runHealthSweep = async (): Promise<void> => {
 
 // ──── Auto-registration from env vars ─────────────────────────────────────────
 
+let healthSweepTimer: ReturnType<typeof setInterval> | null = null;
+
 const ENV_WORKER_MAP: Array<{ id: string; envKeys: string[] }> = [
   { id: 'architect', envKeys: ['MCP_ARCHITECT_WORKER_URL', 'MCP_OPENDEV_WORKER_URL'] },
   { id: 'review', envKeys: ['MCP_REVIEW_WORKER_URL', 'MCP_NEMOCLAW_WORKER_URL'] },
@@ -232,10 +246,19 @@ export const initMcpSkillRouter = async (): Promise<void> => {
   logger.info('[MCP-ROUTER] Initialized with %d workers: %s', registered.length, registered.join(', '));
 
   // Start background health sweep
-  const sweepTimer = setInterval(() => {
+  if (healthSweepTimer) clearInterval(healthSweepTimer);
+  healthSweepTimer = setInterval(() => {
     void runHealthSweep();
   }, HEALTH_SWEEP_INTERVAL_MS);
-  sweepTimer.unref();
+  healthSweepTimer.unref();
+};
+
+/** Stop the background health sweep timer (for graceful shutdown or tests). */
+export const stopMcpSkillRouter = (): void => {
+  if (healthSweepTimer) {
+    clearInterval(healthSweepTimer);
+    healthSweepTimer = null;
+  }
 };
 
 // ──── Diagnostics ─────────────────────────────────────────────────────────────

@@ -1,10 +1,6 @@
 # Opencode Publish Worker Minimum Spec
 
-Boundary note:
-
-- `opencode` in this document refers to the repository-local GitHub change-request and publish worker surface
-- current name-collision interpretation and runtime-backed surface truth must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
-- this document specifies the publish loop behavior, not proof of a generic upstream framework embedding
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 목표:
 

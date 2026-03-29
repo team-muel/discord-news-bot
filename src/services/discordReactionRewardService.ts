@@ -48,14 +48,13 @@ const hourKeyNow = (): string => {
   return `${yyyy}-${mm}-${dd}-${hh}`;
 };
 
+const POSITIVE_EMOJI_SET = new Set(['thumbsup', '👍', '+1', 'heart', '❤️', '❤', 'fire', '🔥', 'clap', '👏', 'tada', '🎉', 'white_check_mark', '✅']);
+const NEGATIVE_EMOJI_SET = new Set(['thumbsdown', '👎', '-1', 'rage', '😡', 'x', '❌', 'disappointed', '😞', 'confused', '😕']);
+
 const normalizeEmoji = (value: string): 'up' | 'down' | null => {
-  const trimmed = String(value || '').trim();
-  if (trimmed === '👍' || trimmed.toLowerCase() === 'thumbsup') {
-    return 'up';
-  }
-  if (trimmed === '😡' || trimmed.toLowerCase() === 'rage') {
-    return 'down';
-  }
+  const lower = String(value || '').trim().toLowerCase();
+  if (POSITIVE_EMOJI_SET.has(lower)) return 'up';
+  if (NEGATIVE_EMOJI_SET.has(lower)) return 'down';
   return null;
 };
 

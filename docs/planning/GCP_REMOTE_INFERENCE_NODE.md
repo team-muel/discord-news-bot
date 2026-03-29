@@ -1,9 +1,6 @@
 # GCP Remote Inference Node
 
-Boundary note:
-
-- this document covers remote inference infrastructure planning, not direct proof of a specific upstream stack being embedded
-- runtime naming interpretation and currently implemented surfaces must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 목표:
 

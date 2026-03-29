@@ -72,7 +72,7 @@ const ensureSupabase = () => {
   return getSupabaseClient();
 };
 
-const safeLike = (value: string): string => value.replace(/[%,_]/g, ' ').trim();
+const safeLike = (value: string): string => value.replace(/[%,_()."'\\]/g, ' ').trim();
 const MEMORY_RETRIEVE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE || 0.35)));
 const MEMORY_HYBRID_MIN_SIMILARITY = Math.max(0, Math.min(1, Number(process.env.MEMORY_HYBRID_MIN_SIMILARITY || 0.08)));
 const MEMORY_CITATIONS_PER_ITEM = Math.max(1, Math.min(5, Number(process.env.MEMORY_CITATIONS_PER_ITEM || 3)));

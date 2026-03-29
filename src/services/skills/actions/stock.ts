@@ -14,6 +14,10 @@ const extractTicker = (goal: string, args?: Record<string, unknown>): string | n
 export const stockQuoteAction: ActionDefinition = {
   name: 'stock.quote',
   description: '티커 심볼의 현재 시세를 조회합니다.',
+  category: 'finance',
+  parameters: [
+    { name: 'symbol', required: true, description: 'Stock ticker symbol (e.g. AAPL, TSLA)', example: 'AAPL' },
+  ],
   execute: async ({ goal, args }) => {
     const symbol = extractTicker(goal, args);
     if (!symbol) {
@@ -52,6 +56,10 @@ export const stockQuoteAction: ActionDefinition = {
 export const stockChartAction: ActionDefinition = {
   name: 'stock.chart',
   description: '티커 심볼의 차트 URL을 생성합니다.',
+  category: 'finance',
+  parameters: [
+    { name: 'symbol', required: true, description: 'Stock ticker symbol', example: 'TSLA' },
+  ],
   execute: async ({ goal, args }) => {
     const symbol = extractTicker(goal, args);
     if (!symbol) {

@@ -42,13 +42,7 @@ Current external advisory workers:
 - NemoClaw worker
 - OpenJarvis worker
 
-Boundary note for operators:
-
-- these advisory workers currently expose repository-local registered actions over HTTP/MCP-style transport
-- they are health-checkable execution surfaces for this repository's runtime actions, not proof that arbitrary upstream OSS CLIs or servers are auto-discovered and wrapped
-- use the action catalog and role-worker health endpoints as the source of truth for what is actually callable on a given deployment
-- use `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` plus the operator verification order there when a role name or worker label could be mistaken for external runtime evidence
-- when a role name overlaps with an external OSS or model name, confirm interpretation in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before treating it as runtime evidence
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 Current app-owned `discord-ready` workloads:
 

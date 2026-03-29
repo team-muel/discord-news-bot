@@ -1,11 +1,11 @@
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
+import logger from '../../../logger';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 30_000;
-const IS_WINDOWS = process.platform === 'win32';
 const ENABLED = parseBooleanEnv(process.env.OPENJARVIS_ENABLED, false);
 const SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
 const MODEL = String(process.env.OPENJARVIS_MODEL || 'qwen2.5:7b-instruct').trim();
@@ -19,11 +19,26 @@ const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim(
  */
 let cliAvailable: boolean | null = null;
 
-const runCli = async (args: string): Promise<{ stdout: string; stderr: string }> => {
-  return execAsync(`jarvis ${args}`, {
+// Cache health check results to avoid redundant probes when multiple actions run in quick succession
+let cachedServeHealth: { ok: boolean; at: number } | null = null;
+const SERVE_HEALTH_CACHE_TTL_MS = 10_000;
+
+const checkServeHealth = async (): Promise<boolean> => {
+  if (cachedServeHealth && Date.now() - cachedServeHealth.at < SERVE_HEALTH_CACHE_TTL_MS) {
+    return cachedServeHealth.ok;
+  }
+  const resp = await fetch(`${SERVE_URL}/health`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+  const ok = !!resp?.ok;
+  cachedServeHealth = { ok, at: Date.now() };
+  return ok;
+};
+
+const stripShellMeta = (s: string): string => s.replace(/[|&;$`<>(){}\[\]!#"'\\\n\r]/g, '');
+
+const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
+  return execFileAsync('jarvis', args, {
     timeout: TIMEOUT_MS,
     windowsHide: true,
-    ...(IS_WINDOWS ? { shell: 'cmd.exe' } : {}),
   });
 };
 
@@ -40,7 +55,8 @@ const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ 
     clearTimeout(timer);
     const data = await resp.json();
     return { ok: resp.ok, data };
-  } catch {
+  } catch (fetchErr) {
+    logger.debug('[OPENJARVIS] httpPost %s failed: %s', path, fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
     return { ok: false, data: null };
   }
 };
@@ -48,11 +64,12 @@ const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ 
 export const openjarvisAdapter: ExternalToolAdapter = {
   id: 'openjarvis',
   capabilities: ['jarvis.ask', 'jarvis.serve', 'jarvis.optimize', 'jarvis.bench', 'jarvis.trace'],
+  liteCapabilities: ['jarvis.ask'],
 
   isAvailable: async () => {
     if (!ENABLED) return false;
     try {
-      await runCli('--version');
+      await runCli(['--version']);
       cliAvailable = true;
       return true;
     } catch {
@@ -81,8 +98,8 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           if (!question) return makeResult(false, 'Question required', [], 'MISSING_QUESTION');
 
           // Prefer HTTP if serve is running, otherwise fall back to CLI
-          const health = await fetch(`${SERVE_URL}/health`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
-          if (health?.ok) {
+          const serveOk = await checkServeHealth();
+          if (serveOk) {
             const { ok, data } = await httpPost('/v1/chat/completions', {
               model: args.model || MODEL,
               messages: [{ role: 'user', content: question }],
@@ -97,7 +114,7 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           // Fallback to CLI
           if (cliAvailable !== false) {
             try {
-              const { stdout } = await runCli(`ask "${question.replace(/"/g, '\\"')}" --quiet`);
+              const { stdout } = await runCli(['ask', stripShellMeta(question), '--quiet']);
               return makeResult(true, 'Response via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
             } catch {
               // CLI failed — try LiteLLM fallback below
@@ -134,8 +151,8 @@ export const openjarvisAdapter: ExternalToolAdapter = {
 
         case 'jarvis.serve': {
           // Check if serve is already running
-          const health = await fetch(`${SERVE_URL}/health`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
-          if (health?.ok) {
+          const serveOk = await checkServeHealth();
+          if (serveOk) {
             return makeResult(true, `jarvis serve already running at ${SERVE_URL}`, ['status: running']);
           }
           return makeResult(false, 'jarvis serve not running', [`Start with: jarvis serve --port 8000`], 'NOT_RUNNING');
@@ -143,13 +160,13 @@ export const openjarvisAdapter: ExternalToolAdapter = {
 
         case 'jarvis.optimize': {
           if (cliAvailable === false) return makeResult(false, 'jarvis optimize requires CLI', [], 'CLI_REQUIRED');
-          const { stdout } = await runCli('optimize --json');
+          const { stdout } = await runCli(['optimize', '--json']);
           return makeResult(true, 'Optimization completed', stdout.trim().split('\n').slice(0, 20));
         }
 
         case 'jarvis.bench': {
           if (cliAvailable === false) return makeResult(false, 'jarvis bench requires CLI', [], 'CLI_REQUIRED');
-          const { stdout } = await runCli('bench --json');
+          const { stdout } = await runCli(['bench', '--json']);
           return makeResult(true, 'Benchmark completed', stdout.trim().split('\n').slice(0, 20));
         }
 
@@ -160,8 +177,8 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           }
 
           // Prefer HTTP POST if serve is running
-          const health = await fetch(`${SERVE_URL}/health`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
-          if (health?.ok) {
+          const serveOk = await checkServeHealth();
+          if (serveOk) {
             const { ok } = await httpPost('/v1/traces', tracePayload);
             if (ok) {
               return makeResult(true, 'Trace stored via jarvis serve', [`run_id=${String(tracePayload.run_id || 'unknown')}`]);
@@ -173,8 +190,7 @@ export const openjarvisAdapter: ExternalToolAdapter = {
             return makeResult(false, 'jarvis trace requires CLI or serve endpoint', [], 'CLI_REQUIRED');
           }
           const traceJson = JSON.stringify(tracePayload);
-          const escaped = traceJson.replace(/"/g, '\\"');
-          const { stdout } = await runCli(`trace store --json "${escaped}"`);
+          const { stdout } = await runCli(['trace', 'store', '--json', traceJson]);
           return makeResult(true, 'Trace stored via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
         }
 

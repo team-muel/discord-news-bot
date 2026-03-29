@@ -59,28 +59,32 @@ export const buildAdminCard = (
 });
 
 // ─── Error helpers ────────────────────────────────────────────────────────────
+const SENSITIVE_PATTERN = /supabase|postgres|token|secret|api.key|authorization|password|connection.string/i;
+
 export const getErrorMessage = (error: unknown): string => {
+  let raw: string;
   if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error && typeof error === 'object') {
+    raw = error.message;
+  } else if (typeof error === 'string') {
+    raw = error;
+  } else if (error && typeof error === 'object') {
     const record = error as Record<string, unknown>;
     const parts = [record.code, record.message, record.details, record.hint]
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
       .filter(Boolean);
     if (parts.length > 0) {
-      return parts.join(' | ');
+      raw = parts.join(' | ');
+    } else {
+      try {
+        raw = JSON.stringify(error);
+      } catch {
+        raw = String(error);
+      }
     }
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return String(error);
-    }
+  } else {
+    raw = String(error);
   }
-  return String(error);
+  return SENSITIVE_PATTERN.test(raw) ? 'internal error' : raw;
 };
 
 // ─── Interaction helpers ──────────────────────────────────────────────────────

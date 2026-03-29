@@ -51,6 +51,10 @@ const extractNewsQuery = (goal: string, args?: Record<string, unknown>): string 
 export const newsGoogleSearchAction: ActionDefinition = {
   name: 'news.google.search',
   description: 'Google News RSS 기반으로 질의어 관련 최신 뉴스 링크를 수집합니다.',
+  category: 'content',
+  parameters: [
+    { name: 'query', required: true, description: 'News search keyword(s)', example: 'AI semiconductor 2026' },
+  ],
   execute: async ({ goal, args }) => {
     const query = extractNewsQuery(goal, args);
     const limit = 5;

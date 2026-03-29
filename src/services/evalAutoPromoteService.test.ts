@@ -29,23 +29,31 @@ vi.mock('./rewardSignalService', () => ({
   persistRewardSnapshot: vi.fn().mockResolvedValue(true),
 }));
 
+const createChainableMock = (terminal: any = { data: [], error: null }): any => {
+  const handler: any = {};
+  const proxy = new Proxy(handler, {
+    get(_target, prop) {
+      if (prop === 'then') return undefined; // prevent Promise detection
+      return vi.fn().mockImplementation(() => {
+        // If terminal is a thenable result, wrap the last call
+        if (prop === 'limit' || prop === 'single' || prop === 'maybeSingle') {
+          return Promise.resolve(terminal);
+        }
+        return proxy;
+      });
+    },
+  });
+  return proxy;
+};
+
 const mockInsert = vi.fn();
 const mockUpdate = vi.fn();
-const mockSelect = vi.fn();
 
 const mockClient = {
   from: vi.fn().mockImplementation(() => ({
     insert: mockInsert.mockReturnValue({ select: () => ({ single: () => Promise.resolve({ data: { id: 1 }, error: null }) }) }),
     update: mockUpdate.mockReturnValue({ eq: () => Promise.resolve({ data: null, error: null }) }),
-    select: mockSelect.mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          order: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue({ data: [], error: null }),
-          }),
-        }),
-      }),
-    }),
+    select: vi.fn().mockReturnValue(createChainableMock({ data: [], error: null })),
   })),
 };
 

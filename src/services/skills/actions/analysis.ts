@@ -6,6 +6,10 @@ const compact = (value: unknown): string => String(value || '').replace(/\s+/g, 
 export const investmentAnalysisAction: ActionDefinition = {
   name: 'investment.analysis',
   description: '요청 텍스트 기반으로 투자 분석 결과를 생성합니다.',
+  category: 'finance',
+  parameters: [
+    { name: 'query', required: true, description: 'Investment analysis topic or question', example: 'NVIDIA Q4 2025 earnings analysis' },
+  ],
   execute: async ({ goal, args }) => {
     const query = typeof args?.query === 'string' && args.query.trim()
       ? args.query.trim()

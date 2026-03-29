@@ -2,11 +2,7 @@
 
 Use this log for architecture-significant changes only.
 
-Boundary note:
-
-- legacy labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, Local Orchestrator, and opencode in this changelog refer to repository-local roles or runtime surfaces
-- changelog wording alone is not proof of external OSS/framework embedding or current runtime availability
-- verify current naming interpretation and implemented runtime surfaces in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## Template
 

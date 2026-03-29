@@ -70,7 +70,7 @@ const runCommand = (
       cwd: PROJECT_ROOT,
       timeout: timeoutMs,
       maxBuffer: 512 * 1024,
-      shell: true,
+      shell: false,
       env,
     }, (error, stdout, stderr) => {
       const durationMs = Date.now() - start;

@@ -30,6 +30,10 @@ create table if not exists public.reward_signal_snapshots (
 create index if not exists idx_reward_signal_snapshots_guild_window
   on public.reward_signal_snapshots (guild_id, window_end desc);
 
+-- Prevent duplicate snapshots for the same guild+window (race condition guard)
+create unique index if not exists idx_reward_signal_snapshots_guild_window_unique
+  on public.reward_signal_snapshots (guild_id, window_start);
+
 -- 2. A/B eval comparison runs
 create table if not exists public.eval_ab_runs (
   id bigint generated always as identity primary key,

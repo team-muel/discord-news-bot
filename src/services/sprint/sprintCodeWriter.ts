@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import logger from '../../logger';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { atomicWriteFile } from '../../utils/atomicWrite';
 import { checkFileScope } from './scopeGuard';
 import { SPRINT_CHANGED_FILE_CAP, SPRINT_DRY_RUN } from '../../config';
 
@@ -51,11 +52,16 @@ export type CodeWriterResult = {
 
 // ──── File I/O helpers ────────────────────────────────────────────────────────
 
+const isInsideProjectRoot = (abs: string): boolean => {
+  const normalAbs = process.platform === 'win32' ? abs.toLowerCase() : abs;
+  const normalRoot = process.platform === 'win32' ? PROJECT_ROOT.toLowerCase() : PROJECT_ROOT;
+  return normalAbs.startsWith(normalRoot + path.sep);
+};
+
 const readProjectFile = async (relativePath: string): Promise<string | null> => {
   try {
     const abs = path.resolve(PROJECT_ROOT, relativePath);
-    // Prevent path traversal
-    if (!abs.startsWith(PROJECT_ROOT)) return null;
+    if (!isInsideProjectRoot(abs)) return null;
     const content = await fs.readFile(abs, 'utf-8');
     return content.slice(0, MAX_FILE_READ_BYTES);
   } catch {
@@ -71,13 +77,12 @@ const writeProjectFile = async (relativePath: string, content: string): Promise<
   }
 
   const abs = path.resolve(PROJECT_ROOT, relativePath);
-  // Prevent path traversal
-  if (!abs.startsWith(PROJECT_ROOT)) {
+  if (!isInsideProjectRoot(abs)) {
     return { ok: false, error: 'Path traversal blocked' };
   }
 
   try {
-    await fs.writeFile(abs, content, 'utf-8');
+    await atomicWriteFile(abs, content);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -350,8 +355,13 @@ export const generateAndApplyCodeChanges = async (params: {
 export const rollbackCodeChanges = async (changes: CodeChange[]): Promise<void> => {
   for (const change of changes) {
     try {
+      const scope = checkFileScope(change.filePath);
+      if (!scope.allowed) {
+        logger.warn('[SPRINT-CODE-WRITER] rollback scope blocked: %s reason=%s', change.filePath, scope.reason);
+        continue;
+      }
       const abs = path.resolve(PROJECT_ROOT, change.filePath);
-      if (!abs.startsWith(PROJECT_ROOT)) continue;
+      if (!isInsideProjectRoot(abs)) continue;
       await fs.writeFile(abs, change.originalContent, 'utf-8');
       logger.info('[SPRINT-CODE-WRITER] rolled back: %s', change.filePath);
     } catch (err) {

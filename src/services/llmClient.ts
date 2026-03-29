@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { fetchWithTimeout as baseFetchWithTimeout } from '../utils/network';
 import { logStructuredError } from './structuredErrorLogService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
@@ -216,8 +217,14 @@ const getDefaultProviderFallbackChain = (): LlmProvider[] => {
 };
 
 let _cachedActionPolicyRules: ProviderPolicyRule[] | null = null;
+let _cachedActionPolicyRulesAt = 0;
+const ACTION_POLICY_RULES_CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 const getActionPolicyRulesCached = (): ProviderPolicyRule[] => {
-  if (!_cachedActionPolicyRules) _cachedActionPolicyRules = parseActionPolicyRules();
+  const now = Date.now();
+  if (!_cachedActionPolicyRules || (now - _cachedActionPolicyRulesAt) >= ACTION_POLICY_RULES_CACHE_TTL_MS) {
+    _cachedActionPolicyRules = parseActionPolicyRules();
+    _cachedActionPolicyRulesAt = now;
+  }
   return _cachedActionPolicyRules;
 };
 
@@ -271,8 +278,13 @@ const parseWorkflowModelBindings = (): WorkflowModelBinding[] => {
 };
 
 let _cachedWorkflowModelBindings: WorkflowModelBinding[] | null = null;
+let _cachedWorkflowModelBindingsAt = 0;
 const getWorkflowModelBindingsCached = (): WorkflowModelBinding[] => {
-  if (!_cachedWorkflowModelBindings) _cachedWorkflowModelBindings = parseWorkflowModelBindings();
+  const now = Date.now();
+  if (!_cachedWorkflowModelBindings || (now - _cachedWorkflowModelBindingsAt) >= ACTION_POLICY_RULES_CACHE_TTL_MS) {
+    _cachedWorkflowModelBindings = parseWorkflowModelBindings();
+    _cachedWorkflowModelBindingsAt = now;
+  }
   return _cachedWorkflowModelBindings;
 };
 
@@ -301,8 +313,13 @@ const parseWorkflowProfileDefaults = (): Array<{ pattern: string; profile: LlmPr
 };
 
 let _cachedWorkflowProfileDefaults: Array<{ pattern: string; profile: LlmProviderProfile }> | null = null;
+let _cachedWorkflowProfileDefaultsAt = 0;
 const getWorkflowProfileDefaultsCached = (): Array<{ pattern: string; profile: LlmProviderProfile }> => {
-  if (!_cachedWorkflowProfileDefaults) _cachedWorkflowProfileDefaults = parseWorkflowProfileDefaults();
+  const now = Date.now();
+  if (!_cachedWorkflowProfileDefaults || (now - _cachedWorkflowProfileDefaultsAt) >= ACTION_POLICY_RULES_CACHE_TTL_MS) {
+    _cachedWorkflowProfileDefaults = parseWorkflowProfileDefaults();
+    _cachedWorkflowProfileDefaultsAt = now;
+  }
   return _cachedWorkflowProfileDefaults;
 };
 
@@ -443,10 +460,18 @@ const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 
 
 /** M-06/M-07: Gate-driven provider profile override. Set by actionRunner when gate verdict recommends a profile switch. */
 let _gateProviderProfileOverride: LlmProviderProfile | null = null;
+let _gateProviderProfileOverrideAt = 0;
+const GATE_PROFILE_OVERRIDE_TTL_MS = 30_000; // 30 seconds — auto-expires to prevent stale cross-request bleed
 export const setGateProviderProfileOverride = (profile: LlmProviderProfile | null): void => {
   _gateProviderProfileOverride = profile;
+  _gateProviderProfileOverrideAt = profile ? Date.now() : 0;
 };
-export const getGateProviderProfileOverride = (): LlmProviderProfile | null => _gateProviderProfileOverride;
+export const getGateProviderProfileOverride = (): LlmProviderProfile | null => {
+  if (_gateProviderProfileOverride && (Date.now() - _gateProviderProfileOverrideAt) >= GATE_PROFILE_OVERRIDE_TTL_MS) {
+    _gateProviderProfileOverride = null;
+  }
+  return _gateProviderProfileOverride;
+};
 
 const reorderByProfile = (chain: LlmProvider[], profile?: LlmProviderProfile): LlmProvider[] => {
   if (!profile) return chain;
@@ -476,7 +501,7 @@ const resolveProviderChain = (
     ...(LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED ? getAutomaticFallbackOrder() : []),
   ]).filter((provider) => isProviderConfigured(provider));
 
-  const effectiveProfile = params.providerProfile || _gateProviderProfileOverride || resolveWorkflowProfile(params.actionName);
+  const effectiveProfile = params.providerProfile || getGateProviderProfileOverride() || resolveWorkflowProfile(params.actionName);
   const profiledChain = reorderByProfile(chain, effectiveProfile);
 
   // M-06: If workflow model binding specifies a provider, prioritize it
@@ -545,22 +570,23 @@ const persistLlmCallLog = async (params: {
   }
 };
 
+/** Strip query-string parameters from a URL to prevent secret leakage in logs. */
+const redactUrlParams = (url: string): string => {
+  try { const u = new URL(url); u.search = ''; return u.toString(); } catch { return url.split('?')[0] || url; }
+};
+
 const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs?: number): Promise<Response> => {
-  const controller = new AbortController();
   const effectiveTimeout = timeoutMs ?? LLM_API_TIMEOUT_MS;
-  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
   try {
-    return await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
+    return await baseFetchWithTimeout(input, init, effectiveTimeout);
   } catch (error: any) {
+    const safeUrl = redactUrlParams(input);
     if (error?.name === 'AbortError') {
       await logStructuredError({
         code: 'API_TIMEOUT',
         source: 'llmClient.fetchWithTimeout',
         message: `LLM API timeout after ${effectiveTimeout}ms`,
-        meta: { url: input },
+        meta: { url: safeUrl },
       }, error);
       throw new Error('API_TIMEOUT');
     }
@@ -569,13 +595,11 @@ const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs?: nu
       source: 'llmClient.fetchWithTimeout',
       message: `LLM network error: ${String(error?.message || 'unknown')}`,
       meta: {
-        url: input,
+        url: safeUrl,
         errorName: String(error?.name || ''),
       },
     }, error);
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
 };
 
@@ -583,6 +607,7 @@ export const isAnyLlmConfigured = (): boolean => Boolean(
   getOpenAiKey()
     || getGeminiKey()
     || getAnthropicKey()
+    || isKimiConfigured()
     || isHuggingFaceConfigured()
     || isOpenClawConfigured()
     || isOllamaConfigured()

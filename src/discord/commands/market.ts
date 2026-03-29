@@ -36,7 +36,13 @@ export const handleStockPriceCommand = async (
     return;
   }
 
-  const quote = await fetchStockQuote(symbol);
+  let quote: Awaited<ReturnType<typeof fetchStockQuote>>;
+  try {
+    quote = await fetchStockQuote(symbol);
+  } catch {
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.market.titlePriceFailed, `${symbol} 조회 중 오류가 발생했습니다.`, EMBED_ERROR));
+    return;
+  }
   if (!quote) {
     await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.market.titlePriceFailed, symbol, EMBED_ERROR));
     return;
@@ -73,7 +79,13 @@ export const handleStockChartCommand = async (
     return;
   }
 
-  const imageUrl = await fetchStockChartImageUrl(symbol);
+  let imageUrl: string | null;
+  try {
+    imageUrl = await fetchStockChartImageUrl(symbol);
+  } catch {
+    await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.market.titleChartFailed, `${symbol} 차트 조회 중 오류가 발생했습니다.`, EMBED_ERROR));
+    return;
+  }
   if (!imageUrl) {
     await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.market.titleChartFailed, symbol, EMBED_ERROR));
     return;
@@ -91,7 +103,13 @@ export const handleAnalyzeCommand = async (
   const shared = getReplyVisibility(interaction) === 'public';
   await interaction.deferReply({ ephemeral: !shared });
 
-  const answer = await generateInvestmentAnalysis(query);
+  let answer: string;
+  try {
+    answer = await generateInvestmentAnalysis(query);
+  } catch {
+    await interaction.editReply(buildSimpleEmbed('분석 실패', 'AI 분석 중 오류가 발생했습니다.', EMBED_ERROR));
+    return;
+  }
   const title = isInvestmentAnalysisEnabled() ? '📊 AI 투자 분석' : '📊 투자 분석 (제한 모드)';
   await interaction.editReply({
     embeds: [{ title, description: answer.slice(0, DISCORD_MARKET_ANALYSIS_LIMIT), color: 0x3498db }],

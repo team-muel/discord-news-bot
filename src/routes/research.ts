@@ -13,10 +13,10 @@ import { toBoundedInt, toStringParam } from '../utils/validation';
 export function createResearchRouter(): Router {
   const router = Router();
 
-  router.get('/preset/:presetKey', (req, res) => {
+  router.get('/preset/:presetKey', requireAuth, (req, res) => {
     const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
-      return res.status(404).json({ error: 'NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Unknown preset key' });
     }
 
     return res.json({ preset: getPreset(key) });
@@ -25,7 +25,7 @@ export function createResearchRouter(): Router {
   router.get('/preset/:presetKey/history', requireAuth, (req, res) => {
     const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
-      return res.status(404).json({ error: 'NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Unknown preset key' });
     }
 
     const limit = toBoundedInt(req.query.limit, 20, { min: 1, max: 100 });
@@ -36,12 +36,12 @@ export function createResearchRouter(): Router {
   router.post('/preset/:presetKey', requireAdmin, (req, res) => {
     const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
-      return res.status(404).json({ error: 'NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Unknown preset key' });
     }
 
     const payload = req.body?.payload as ResolvedResearchPreset | undefined;
     if (!payload || typeof payload !== 'object') {
-      return res.status(422).json({ error: 'INVALID_PAYLOAD' });
+      return res.status(422).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'Missing or invalid payload' });
     }
 
     const preset = upsertPreset({
@@ -58,7 +58,7 @@ export function createResearchRouter(): Router {
   router.post('/preset/:presetKey/restore/:historyId', requireAdmin, (req, res) => {
     const key = toStringParam(req.params.presetKey);
     if (!isResearchPresetKey(key)) {
-      return res.status(404).json({ error: 'NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Unknown preset key' });
     }
 
     const result = restorePresetFromHistory({
@@ -69,7 +69,7 @@ export function createResearchRouter(): Router {
     });
 
     if (!result) {
-      return res.status(404).json({ error: 'NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'History entry not found' });
     }
 
     return res.json({ preset: result.preset, restored: result.restored });

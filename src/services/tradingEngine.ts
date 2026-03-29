@@ -68,6 +68,7 @@ type TradingRuntimeSnapshot = {
 
 const runtime = new Map<string, SymbolRuntimeState>();
 const fallbackStateStore = new Map<string, string>();
+const MAX_FALLBACK_STATE_ENTRIES = 500;
 
 let started = false;
 let startedAt: string | null = null;
@@ -174,7 +175,9 @@ function floorToTf(ms: number, tfMs: number): number {
 }
 
 function sizeByExposure(params: { equity: number; riskPct: number; leverage: number; price: number }) {
+  if (!Number.isFinite(params.price) || params.price <= 0) return { qty: 0, exposure: 0 };
   const exposure = params.equity * (params.riskPct / 100) * params.leverage;
+  if (!Number.isFinite(exposure)) return { qty: 0, exposure: 0 };
   return { qty: exposure / params.price, exposure };
 }
 
@@ -249,6 +252,10 @@ async function getLastProcessedTs(symbol: string, timeframe: string): Promise<st
 
 async function setLastProcessedTs(symbol: string, timeframe: string, ts: string): Promise<void> {
   const key = stateKey(symbol, timeframe);
+  if (!fallbackStateStore.has(key) && fallbackStateStore.size >= MAX_FALLBACK_STATE_ENTRIES) {
+    const oldest = fallbackStateStore.keys().next().value;
+    if (oldest !== undefined) fallbackStateStore.delete(oldest);
+  }
   fallbackStateStore.set(key, ts);
 
   if (!isSupabaseConfigured()) {
@@ -776,6 +783,13 @@ export function startTradingEngine(): void {
   logger.info('[TRADING] started exchange=%s', TRADING_EXCHANGE);
 
   void loop();
+}
+
+/** Stop the trading engine loop. Resolves after the current cycle finishes (or immediately if idle). */
+export function stopTradingEngine(): void {
+  if (!started) return;
+  started = false;
+  logger.info('[TRADING] stop requested');
 }
 
 export async function runTradingEngineOnce(): Promise<{ ok: boolean; message: string }> {

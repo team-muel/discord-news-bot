@@ -14,9 +14,6 @@ const sanitizePath = (value: string) => (value.startsWith('/') ? value : `/${val
 
 const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, '');
 
-const requestWithTimeout = async (input: string, init: RequestInit, timeoutMs: number): Promise<Response> => {
-  return fetchWithTimeout(input, init, timeoutMs);
-};
 
 export function isAiTradingConfigured(): boolean {
   return resolveTradingMode() !== 'none';
@@ -76,7 +73,7 @@ export async function executeAiTradingOrder(input: TradeExecutionRequest): Promi
   }
 
   const url = buildUrl(AI_TRADING_ORDER_PATH);
-  const response = await requestWithTimeout(
+  const response = await fetchWithTimeout(
     url,
     {
       method: 'POST',
@@ -109,7 +106,7 @@ export async function getAiTradingPosition(symbol: string): Promise<Record<strin
   }
 
   const url = `${buildUrl(AI_TRADING_POSITION_PATH)}?symbol=${encodeURIComponent(symbol)}`;
-  const response = await requestWithTimeout(
+  const response = await fetchWithTimeout(
     url,
     {
       method: 'GET',

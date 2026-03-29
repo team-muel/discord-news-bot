@@ -10,11 +10,7 @@ Status note:
 - 충돌 없는 단일 실행 규칙으로 OpenCode, NemoClaw, OpenDev, OpenJarvis를 운영한다.
 - 안정성, graph-first retrieval, 보안, 무인 운영 준비도를 동시에 보장한다.
 
-Boundary note:
-
-- 이 문서의 역할 이름은 저장소 내부 운영 규칙과 협업 레이어를 뜻한다.
-- 이름 충돌 해석과 실제 runtime availability는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 판단한다.
-- 이 문서 자체만으로 특정 외부 OSS, 모델 스택, 또는 프레임워크의 직접 임베딩을 증명하지 않는다.
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## 1) Plane and Layer
 

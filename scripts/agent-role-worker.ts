@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+import crypto from 'node:crypto';
 import http from 'node:http';
 import process from 'node:process';
 
@@ -62,6 +63,14 @@ const getAuthTokenFromRequest = (req: http.IncomingMessage): string => {
   return '';
 };
 
+const isTokenValid = (token: string): boolean => {
+  if (!WORKER_AUTH_TOKEN) return false;
+  const expected = Buffer.from(String(WORKER_AUTH_TOKEN));
+  const incoming = Buffer.from(String(token));
+  if (expected.length !== incoming.length) return false;
+  return crypto.timingSafeEqual(expected, incoming);
+};
+
 const json = (res: http.ServerResponse, status: number, payload: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
@@ -72,10 +81,18 @@ const toErrorPayload = (message: string) => ({
   isError: true,
 });
 
+const MAX_BODY_BYTES = 1_048_576; // 1 MB
+
 const collectBody = async (req: http.IncomingMessage) => {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    totalBytes += buf.length;
+    if (totalBytes > MAX_BODY_BYTES) {
+      throw new Error('REQUEST_BODY_TOO_LARGE');
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks).toString('utf8');
 };
@@ -129,14 +146,19 @@ const server = http.createServer(async (req, res) => {
     json(res, 200, {
       ok: true,
       service: 'agent-role-worker',
-      role: ROLE || null,
-      allowedTools: ALLOWED_TOOLS,
       requireAuth: REQUIRE_AUTH,
     });
     return;
   }
 
   if (req.method === 'GET' && req.url === '/tools/discover') {
+    if (REQUIRE_AUTH) {
+      const incomingToken = getAuthTokenFromRequest(req);
+      if (!incomingToken || !isTokenValid(incomingToken)) {
+        json(res, 401, { error: 'unauthorized' });
+        return;
+      }
+    }
     const { getExternalAdapterStatus } = await import('../src/services/tools/externalAdapterRegistry');
     try {
       const adapters = await getExternalAdapterStatus();
@@ -162,6 +184,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && req.url === '/tools') {
+    if (REQUIRE_AUTH) {
+      const incomingToken = getAuthTokenFromRequest(req);
+      if (!incomingToken || !isTokenValid(incomingToken)) {
+        json(res, 401, { error: 'unauthorized' });
+        return;
+      }
+    }
     const tools = listActions().filter((action) => ALLOWED_TOOLS.includes(action.name));
     json(res, 200, {
       ok: true,
@@ -174,7 +203,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/tools/call') {
     if (REQUIRE_AUTH) {
       const incomingToken = getAuthTokenFromRequest(req);
-      if (!incomingToken || incomingToken !== WORKER_AUTH_TOKEN) {
+      if (!incomingToken || !isTokenValid(incomingToken)) {
         json(res, 401, toErrorPayload('unauthorized'));
         return;
       }
@@ -186,7 +215,8 @@ const server = http.createServer(async (req, res) => {
       const result = await handleToolCall(payload);
       json(res, 200, result);
     } catch (error) {
-      json(res, 400, toErrorPayload(error instanceof Error ? error.message : String(error)));
+      const msg = error instanceof Error ? error.message : 'unknown error';
+      json(res, 400, toErrorPayload(msg.length > 200 ? msg.slice(0, 200) : msg));
     }
     return;
   }

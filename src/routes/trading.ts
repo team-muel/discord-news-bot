@@ -31,8 +31,7 @@ export function createTradingRouter(): Router {
       const strategy = await getTradingStrategyConfig();
       return res.json({ strategy, defaults: getDefaultTradingStrategyConfig() });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-      return res.status(500).json({ error: 'INTERNAL', message });
+      return res.status(500).json({ error: 'INTERNAL', message: 'Failed to load strategy.' });
     }
   });
 
@@ -42,8 +41,7 @@ export function createTradingRouter(): Router {
       const strategy = await updateTradingStrategyConfig(patch);
       return res.json({ ok: true, strategy });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-      return res.status(500).json({ error: 'INTERNAL', message });
+      return res.status(500).json({ error: 'INTERNAL', message: 'Failed to update strategy.' });
     }
   });
 
@@ -52,8 +50,7 @@ export function createTradingRouter(): Router {
       const strategy = await resetTradingStrategyConfig();
       return res.json({ ok: true, strategy });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-      return res.status(500).json({ error: 'INTERNAL', message });
+      return res.status(500).json({ error: 'INTERNAL', message: 'Failed to reset strategy.' });
     }
   });
 

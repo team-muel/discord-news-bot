@@ -1,16 +1,8 @@
 # Architecture Index
 
-## Boundary Note
+## Role Naming
 
-This repository uses internal collaboration and runtime labels for planning, routing, and worker execution.
-Legacy labels such as OpenCode, OpenDev, NemoClaw, OpenJarvis, and Local Orchestrator are repository-local names that have been migrated to neutral equivalents (Implement, Architect, Review, Operate, Coordinate).
-They are not proof that external frameworks with similar names are installed or automatically integrated in this repository runtime.
-Actual runtime integration must be confirmed through configured providers, registered actions, worker endpoints, and runtime status endpoints.
-
-Canonical naming and runtime surface source of truth:
-
-- `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
-- `docs/ROLE_RENAME_MAP.md`
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## Purpose
 
@@ -70,10 +62,7 @@ Role of this surface:
 - attach targeted consult agents without forcing a full delivery pipeline
 - standardize `lead_agent`, `consult_agents`, `required_gates`, `handoff`, `escalation`, `next_action`
 
-Boundary note:
-
-- this layer is control-plane guidance for local development, not a replacement for `src/services/multiAgentService.ts`
-- runtime handoff normalization still follows current code contracts such as `ActionHandoff` in `src/services/skills/actions/types.ts`
+> This layer is control-plane guidance for local development, not a replacement for `src/services/multiAgentService.ts`.
 
 ## Customization vs Runtime Boundary
 

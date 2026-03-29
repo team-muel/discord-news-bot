@@ -2,8 +2,13 @@ import { parseIntegerEnv } from '../utils/env';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
+const REDOS_SUSPECT_RE = /([+*]|\{[0-9,]+\})\s*\)\s*[+*?]/;
+
 const toRegex = (raw: string | undefined, fallbackSource: string): RegExp => {
   const source = String(raw || '').trim() || fallbackSource;
+  if (REDOS_SUSPECT_RE.test(source)) {
+    return new RegExp(fallbackSource, 'i');
+  }
   try {
     return new RegExp(source, 'i');
   } catch {

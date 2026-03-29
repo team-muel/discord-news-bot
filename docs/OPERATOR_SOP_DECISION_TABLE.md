@@ -2,10 +2,7 @@
 
 목표: Runbook를 실제 운영 UX로 바로 실행 가능하게 만들기 위해, "누가/언제/어떤 임계치에서/어떤 조치"를 표준화한다.
 
-Boundary note:
-
-- 이 문서의 `opencode`, `openjarvis`, worker, control-plane 명칭은 저장소 내부 운영 표면과 절차를 뜻한다.
-- 현재 이름 해석과 구현된 runtime surface는 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## 1) 역할 정의 (Who)
 

@@ -127,6 +127,9 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
   }
 
   if (request.name === 'action.execute.direct') {
+    if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+      return toTextResult('action.execute.direct is disabled in production', true);
+    }
     const actionName = compact(args.actionName);
     const goal = compact(args.goal);
     const actionArgs = toObject(args.args);

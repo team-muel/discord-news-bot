@@ -8,8 +8,10 @@ export async function generateInvestmentAnalysis(query: string): Promise<string>
     return '(OPENAI_API_KEY 없음) 투자 분석 기능이 제한 모드로 동작합니다.';
   }
 
+  const safeQuery = String(query || '').slice(0, 1000);
+
   const prompt = [
-    `기업/종목 분석 요청: ${query}`,
+    `기업/종목 분석 요청: ${safeQuery}`,
     '출력 형식:',
     '서론 2~3문장 후 아래 소제목을 순서대로 작성:',
     '독점적 기술 및 시장 지위',

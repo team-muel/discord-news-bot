@@ -560,7 +560,7 @@ async function writeNote(params: ObsidianNoteWriteInput): Promise<{ path: string
   const safeRelativePath = ensureMarkdownFileName(params.fileName);
   const absolutePath = path.resolve(vaultRoot, safeRelativePath);
 
-  if (!absolutePath.startsWith(vaultRoot)) {
+  if (!absolutePath.startsWith(vaultRoot + path.sep) && absolutePath !== vaultRoot) {
     throw new Error('Refused to write outside vault path');
   }
 
@@ -596,7 +596,7 @@ export const localFsObsidianAdapter: ObsidianVaultAdapter = {
     const safeRelativePath = params.filePath.replace(/\\/g, '/').replace(/^\/+/, '');
     const vaultRoot = path.resolve(params.vaultPath);
     const absolutePath = path.resolve(vaultRoot, safeRelativePath);
-    if (!absolutePath.startsWith(vaultRoot)) {
+    if (!absolutePath.startsWith(vaultRoot + path.sep) && absolutePath !== vaultRoot) {
       return null;
     }
 

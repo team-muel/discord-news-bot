@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { trackSprintSession, getActiveSessionCount, buildSprintPreamble } from './sprintPreamble';
+import {
+  trackSprintSession,
+  getActiveSessionCount,
+  buildSprintPreamble,
+  isActionBlockedInPhase,
+  accumulateActionContext,
+  getAccumulatedContextSection,
+  clearSprintContext,
+} from './sprintPreamble';
 
 describe('sprintPreamble', () => {
   describe('trackSprintSession / getActiveSessionCount', () => {
@@ -45,6 +53,72 @@ describe('sprintPreamble', () => {
     it('모든 단계에서 Question Format을 포함한다', () => {
       const preamble = buildSprintPreamble('sprint-any', 'retro');
       expect(preamble).toContain('Question Format');
+    });
+
+    it('plan 단계에서 Restricted Tool Categories를 포함한다', () => {
+      const preamble = buildSprintPreamble('sprint-restrict', 'plan');
+      expect(preamble).toContain('Restricted Tool Categories');
+      expect(preamble).toContain('code');
+    });
+
+    it('implement 단계에서 Restricted Tool Categories를 포함하지 않는다', () => {
+      const preamble = buildSprintPreamble('sprint-impl-noblock', 'implement');
+      expect(preamble).not.toContain('Restricted Tool Categories');
+    });
+  });
+
+  describe('isActionBlockedInPhase', () => {
+    it('plan 단계에서 code 카테고리를 차단한다', () => {
+      const reason = isActionBlockedInPhase('plan', 'code');
+      expect(reason).toContain('restricted');
+    });
+
+    it('plan 단계에서 data 카테고리를 허용한다', () => {
+      expect(isActionBlockedInPhase('plan', 'data')).toBeNull();
+    });
+
+    it('retro 단계에서 tool 카테고리를 차단한다', () => {
+      const reason = isActionBlockedInPhase('retro', 'tool');
+      expect(reason).toContain('restricted');
+    });
+
+    it('미분류 카테고리는 허용한다', () => {
+      expect(isActionBlockedInPhase('plan', undefined)).toBeNull();
+    });
+  });
+
+  describe('accumulateActionContext', () => {
+    const testSprintId = 'ctx-test-sprint';
+
+    it('컨텍스트가 없으면 빈 문자열을 반환한다', () => {
+      expect(getAccumulatedContextSection('nonexistent')).toBe('');
+    });
+
+    it('액션 결과를 축적하고 조회할 수 있다', () => {
+      clearSprintContext(testSprintId);
+      accumulateActionContext(testSprintId, 'plan', {
+        ok: true,
+        name: 'architect.plan',
+        summary: 'Plan completed',
+        artifacts: [],
+        verification: [],
+      });
+      const section = getAccumulatedContextSection(testSprintId);
+      expect(section).toContain('architect.plan');
+      expect(section).toContain('OK');
+      clearSprintContext(testSprintId);
+    });
+
+    it('clearSprintContext가 데이터를 제거한다', () => {
+      accumulateActionContext(testSprintId, 'plan', {
+        ok: true,
+        name: 'test.action',
+        summary: 'test',
+        artifacts: [],
+        verification: [],
+      });
+      clearSprintContext(testSprintId);
+      expect(getAccumulatedContextSection(testSprintId)).toBe('');
     });
   });
 });

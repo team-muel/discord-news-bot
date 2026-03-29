@@ -3,11 +3,13 @@ import {
   getNewsSentimentMonitorSnapshot,
   isNewsSentimentMonitorEnabled,
   startNewsSentimentMonitor,
+  stopNewsSentimentMonitor,
   triggerNewsSentimentMonitor,
 } from '../newsSentimentMonitor';
 import {
   getYouTubeSubscriptionsMonitorSnapshot,
   startYouTubeSubscriptionsMonitor,
+  stopYouTubeSubscriptionsMonitor,
   triggerYouTubeSubscriptionsMonitor,
 } from '../youtubeSubscriptionsMonitor';
 import type { AutomationJobName } from './types';
@@ -33,6 +35,7 @@ export type AutomationModule = {
   name: AutomationJobName;
   isEnabled: () => boolean;
   start: (client: Client) => void;
+  stop: () => void;
   trigger: (client: Client, guildId?: string) => Promise<AutomationModuleRunResult>;
   getSnapshot: () => AutomationModuleSnapshot;
 };
@@ -43,6 +46,9 @@ const modules: Record<AutomationJobName, AutomationModule> = {
     isEnabled: () => true,
     start: (client: Client) => {
       startYouTubeSubscriptionsMonitor(client);
+    },
+    stop: () => {
+      stopYouTubeSubscriptionsMonitor();
     },
     trigger: (client: Client, guildId?: string) => triggerYouTubeSubscriptionsMonitor(client, guildId),
     getSnapshot: () => {
@@ -65,6 +71,9 @@ const modules: Record<AutomationJobName, AutomationModule> = {
     isEnabled: () => isNewsSentimentMonitorEnabled(),
     start: (client: Client) => {
       startNewsSentimentMonitor(client);
+    },
+    stop: () => {
+      stopNewsSentimentMonitor();
     },
     trigger: (client: Client, guildId?: string) => triggerNewsSentimentMonitor(client, guildId),
     getSnapshot: () => {

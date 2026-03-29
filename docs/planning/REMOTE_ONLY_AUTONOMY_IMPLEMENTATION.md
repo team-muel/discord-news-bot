@@ -5,10 +5,7 @@ Status note:
 - Reference operations design for remote-only unattended execution.
 - Current operational truth must be verified through `docs/OPERATIONS_24_7.md`, runtime endpoints, and deployed workflow configuration.
 
-Boundary note:
-
-- 이 문서의 OpenJarvis, `opencode.run`, worker 관련 명칭은 저장소 내부 런타임 표면과 운영 경로를 뜻한다.
-- 현재 구현 상태와 이름 충돌 해석은 `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 기준으로 확인한다.
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 목표:
 
@@ -151,6 +148,6 @@ Boundary note:
 아래 문서는 항상 같은 PR에서 같이 갱신한다.
 
 1. docs/planning/EXECUTION_BOARD.md
-2. docs/planning/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md
+2. docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md (ARCHIVED)
 3. docs/RUNBOOK_MUEL_PLATFORM.md
 4. docs/CHANGELOG-ARCH.md

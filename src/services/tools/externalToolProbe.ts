@@ -64,7 +64,7 @@ const probeCommand = async (
   }
 };
 
-const WSL_DISTRO = process.env.WSL_DISTRO || 'Ubuntu-24.04';
+const WSL_DISTRO = (process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
 
 const probeWslCommand = async (
   command: string,

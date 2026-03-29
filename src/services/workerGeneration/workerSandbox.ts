@@ -7,16 +7,46 @@ const SANDBOX_ROOT = path.join(os.tmpdir(), 'muel-worker-sandbox');
 
 // ─── Security scanner ─────────────────────────────────────────────────────────
 
+/**
+ * Dangerous Node.js built-in modules that must never be imported (static or dynamic).
+ * Static ESM imports like `import { exec } from 'child_process'` bypass `require()` checks.
+ */
+const DANGEROUS_MODULES = [
+  'child_process', 'cluster', 'dgram', 'dns', 'http', 'http2', 'https',
+  'net', 'tls', 'vm', 'worker_threads', 'perf_hooks', 'async_hooks',
+  'module', 'repl', 'inspector',
+];
+const dangerousModulePattern = new RegExp(
+  `(?:import\\s+.*?from\\s+|import\\s*\\(|require\\s*\\(\\s*)['"\`](?:node:)?(?:${DANGEROUS_MODULES.join('|')})['"\`]`,
+);
+
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\beval\s*\(/, reason: 'eval() is not allowed' },
-  { pattern: /new\s+Function\s*\(/, reason: 'new Function() is not allowed' },
-  { pattern: /require\s*\(\s*['"]child_process['"]/, reason: 'child_process import is not allowed' },
-  { pattern: /\bspawnSync\b|\bexecSync\b|\bexecFileSync\b/, reason: 'sync process execution is not allowed' },
-  { pattern: /process\.env\s*\[/, reason: 'dynamic env key access is not allowed' },
-  { pattern: /\bfs\s*\.\s*(rm|rmdir|unlink|writeFile|appendFile|chmod|chown)\b/, reason: 'filesystem mutation is not allowed' },
+  // ── Eval / Function constructor (including aliasing) ──
+  { pattern: /\beval\b/, reason: 'eval is not allowed (including aliased references)' },
+  { pattern: /\bFunction\b/, reason: 'Function constructor access is not allowed' },
+  // ── Module system ──
+  { pattern: dangerousModulePattern, reason: 'importing dangerous built-in modules is not allowed' },
+  { pattern: /import\s*\(/, reason: 'dynamic import() is not allowed' },
+  { pattern: /\bcreateRequire\b/, reason: 'createRequire is not allowed' },
+  { pattern: /\brequire\b/, reason: 'require() is not allowed' },
+  // ── Process / execution ──
+  { pattern: /\bspawnSync\b|\bexecSync\b|\bexecFileSync\b|\bspawn\s*\(|\bexecFile\s*\(/, reason: 'process execution is not allowed' },
+  { pattern: /child_process|\.exec\s*\(/, reason: 'child_process exec is not allowed' },
+  { pattern: /process\.env/, reason: 'process.env access is not allowed' },
+  { pattern: /process\s*\[/, reason: 'dynamic process property access is not allowed' },
   { pattern: /process\.exit\s*\(/, reason: 'process.exit() is not allowed' },
-  { pattern: /import\s*\(\s*['"`][^'"`]*\.\.[/\\]/, reason: 'path traversal in dynamic import is not allowed' },
+  { pattern: /process\.binding\b/, reason: 'process.binding is not allowed' },
+  // ── Filesystem mutation ──
+  { pattern: /\bfs\s*\.\s*(rm|rmdir|unlink|writeFile|appendFile|chmod|chown)\b/, reason: 'filesystem mutation is not allowed' },
+  // ── Timers ──
   { pattern: /\bsetInterval\b|\bsetTimeout\b/, reason: 'timer creation inside execute() is not allowed' },
+  // ── Global / prototype chain escapes ──
+  { pattern: /\bglobalThis\b/, reason: 'globalThis access is not allowed' },
+  { pattern: /\bglobal\s*[.\[]/, reason: 'global object access is not allowed' },
+  { pattern: /\bReflect\b/, reason: 'Reflect API is not allowed' },
+  { pattern: /\.constructor\b/, reason: '.constructor chain access is not allowed' },
+  { pattern: /\.__proto__\b/, reason: '__proto__ access is not allowed' },
+  { pattern: /Object\s*\.\s*getPrototypeOf/, reason: 'prototype traversal is not allowed' },
 ];
 
 // ─── Structure validator ──────────────────────────────────────────────────────

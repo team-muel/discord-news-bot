@@ -10,6 +10,111 @@
 
 import { SPRINT_AUTOPLAN_ENABLED } from '../../config';
 import { loadWorkflowReconfigHints, formatReconfigHintsForPreamble } from './sprintLearningJournal';
+import { buildToolCatalogPrompt } from '../skills/actions/registry';
+import type { ActionCategory } from '../skills/actions/types';
+import type { ActionExecutionResult } from '../skills/actions/types';
+
+// ──── Phase → tool category mapping (Cline-inspired variant config) ───────────
+
+const PHASE_TOOL_CATEGORIES: Record<string, ActionCategory[]> = {
+  plan:      ['agent', 'data'],
+  implement: ['code', 'tool', 'data'],
+  review:    ['data', 'content', 'code'],
+  qa:        ['code', 'tool'],
+  'security-audit': ['code', 'tool'],
+  'ops-validate':   ['ops', 'data', 'tool'],
+  ship:      ['ops', 'code'],
+  retro:     ['data', 'agent'],
+};
+
+// ──── Phase tool enforcement (Cline PLAN_MODE_RESTRICTED_TOOLS pattern) ───────
+// Hard-block: actions in restricted categories cannot execute during certain phases.
+// plan phase → block 'code' and 'tool' (read-only planning only)
+// retro phase → block 'code' (reflection only, no mutations)
+
+const PHASE_BLOCKED_CATEGORIES: Record<string, ActionCategory[]> = {
+  plan:  ['code', 'tool'],
+  retro: ['code', 'tool'],
+};
+
+/**
+ * Check if an action category is blocked in the given phase.
+ * Returns a rejection reason string if blocked, null if allowed.
+ */
+export const isActionBlockedInPhase = (
+  phase: string,
+  actionCategory: ActionCategory | undefined,
+): string | null => {
+  if (!actionCategory) return null; // uncategorised actions are allowed
+  const blocked = PHASE_BLOCKED_CATEGORIES[phase];
+  if (!blocked) return null;
+  if (blocked.includes(actionCategory)) {
+    return `Action category "${actionCategory}" is restricted in phase "${phase}". Switch to an appropriate phase first.`;
+  }
+  return null;
+};
+
+// ──── Post-action context accumulator (Cline hook_context pattern) ─────────────
+// Accumulates action results within a sprint for injection into subsequent phase prompts.
+
+type AccumulatedContext = {
+  actionName: string;
+  phase: string;
+  summary: string;
+  ok: boolean;
+  storedAt: number;
+};
+
+const sprintContextStore = new Map<string, AccumulatedContext[]>();
+const MAX_CONTEXT_PER_SPRINT = 30;
+const MAX_SPRINT_CONTEXT_ENTRIES = 100;
+
+/** Record an action result so later phases can reference it. */
+export const accumulateActionContext = (
+  sprintId: string,
+  phase: string,
+  result: ActionExecutionResult,
+): void => {
+  let entries = sprintContextStore.get(sprintId);
+  if (!entries) {
+    entries = [];
+    sprintContextStore.set(sprintId, entries);
+  }
+  entries.push({
+    actionName: result.name,
+    phase,
+    summary: result.summary.slice(0, 500),
+    ok: result.ok,
+    storedAt: Date.now(),
+  });
+  while (entries.length > MAX_CONTEXT_PER_SPRINT) entries.shift();
+  // Bound overall map size
+  if (sprintContextStore.size > MAX_SPRINT_CONTEXT_ENTRIES) {
+    const oldest = sprintContextStore.keys().next().value;
+    if (oldest !== undefined) sprintContextStore.delete(oldest);
+  }
+};
+
+/** Build a context section from accumulated action results for a sprint. */
+export const getAccumulatedContextSection = (sprintId: string, maxItems = 10): string => {
+  const entries = sprintContextStore.get(sprintId);
+  if (!entries || entries.length === 0) return '';
+  const recent = entries.slice(-maxItems);
+  const lines = recent.map(
+    (e) => `- [${e.ok ? 'OK' : 'FAIL'}] ${e.actionName} (${e.phase}): ${e.summary.slice(0, 200)}`,
+  );
+  return [
+    '## Action Context (accumulated)',
+    'Previous action results in this sprint:',
+    ...lines,
+    '',
+  ].join('\n');
+};
+
+/** Clear context for a completed sprint. */
+export const clearSprintContext = (sprintId: string): void => {
+  sprintContextStore.delete(sprintId);
+};
 
 // ──── Learning context store (C-17/18: optimize/bench feedback loop) ──────────
 
@@ -52,7 +157,15 @@ export const getRecentLearningContext = (maxEntries = 5): string => {
 
 const activeSessions = new Map<string, number>(); // sprintId → lastActiveAt
 
+const MAX_ACTIVE_SESSIONS = 500;
+
 export const trackSprintSession = (sprintId: string): void => {
+  if (activeSessions.size >= MAX_ACTIVE_SESSIONS && !activeSessions.has(sprintId)) {
+    const twoHoursAgo = Date.now() - 2 * 60 * 60_000;
+    for (const [id, lastActive] of activeSessions) {
+      if (lastActive <= twoHoursAgo) activeSessions.delete(id);
+    }
+  }
   activeSessions.set(sprintId, Date.now());
 };
 
@@ -162,6 +275,32 @@ export const buildSprintPreamble = (sprintId: string, phase: string): string => 
         '',
       );
     }
+  }
+
+  // Phase-filtered tool catalog (Cline-inspired: variant → tools)
+  const phaseCategories = PHASE_TOOL_CATEGORIES[phase];
+  if (phaseCategories) {
+    const toolSection = buildToolCatalogPrompt({ categories: phaseCategories });
+    if (toolSection) {
+      sections.push(toolSection, '');
+    }
+  }
+
+  // Accumulated action context from prior phases (Cline hook_context pattern)
+  const accContext = getAccumulatedContextSection(sprintId);
+  if (accContext) {
+    sections.push(accContext, '');
+  }
+
+  // Phase tool restriction notice (Cline PLAN_MODE_RESTRICTED_TOOLS pattern)
+  const blockedCats = PHASE_BLOCKED_CATEGORIES[phase];
+  if (blockedCats && blockedCats.length > 0) {
+    sections.push(
+      '## Restricted Tool Categories',
+      `The following tool categories are **blocked** in the "${phase}" phase: ${blockedCats.join(', ')}.`,
+      'Attempting to use actions in these categories will be rejected. Use only the tools listed above.',
+      '',
+    );
   }
 
   return sections.join('\n');

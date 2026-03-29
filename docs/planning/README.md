@@ -48,15 +48,11 @@
 ## 문서 목록
 
 - UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md
-- ROADMAP_STATUS_2026-03-19.md
 - OPENCODE_EXECUTOR_MIN_SPEC.md
-- OPENCODE_NEMOCLAW_OPENDEV_EXECUTION_PLAN.md
-- OPENCODE_NEMOCLAW_OPENDEV_OPENJARVIS_PROMPT_TEMPLATES.md
 - LOCAL_COLLAB_AGENT_WORKFLOW.md
 - LOCAL_TOOL_ADAPTER_ARCHITECTURE.md
 - EXTERNAL_TOOL_INTEGRATION_PLAN.md
 - OPENCODE_PUBLISH_WORKER_MIN_SPEC.md
-- OPENJARVIS_ROUTING_RULES_DRAFT.md
 - MULTI_AGENT_OPERATING_STANDARD_V1.md
 - OPENJARVIS_TEST_DEPLOY_GATE_CHECKLIST.md
 - OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md
@@ -67,13 +63,10 @@
 - gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md
 - REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md
 - PLATFORM_CONTROL_TOWER.md
-- FRONTIER_2026_PROGRAM.md
-- LONG_TERM_MEMORY_AGENT_ROADMAP.md
 - SPRINT_BACKLOG_MEMORY_AGENT.md
 - EXECUTION_BOARD.md
 - BETA_GO_NO_GO_CHECKLIST.md
 - GO_NO_GO_GATE_TEMPLATE.md
-- PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md
 - AUTONOMY_CONTRACT_SCHEMAS.json
 - CORE_COMMAND_INTERFACE_V1.md
 - DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md
@@ -93,6 +86,8 @@
 - W3_CONTROL_PLANE_STABILIZATION_RESULTS.md
 - TRADING_ISOLATION_READINESS_V1.md
 - W4_CANARY_CUTOVER_RESULTS.md
+
+Archived documents: [docs/archive/README.md](../archive/README.md)
 
 ## ADR 목록
 
@@ -150,23 +145,14 @@
 
 ### Historical Snapshot / Evidence
 
-- `ROADMAP_STATUS_2026-03-19.md`
-- `2026-03-18_followup-ops-closure.md`
-- `2026-03-19_followup-ops-closure.md`
-- `2026-03-22_session-handoff.md`
-- `MULTI_AGENT_DRY_RUN_2026-03-19.md`
-- `PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
 - `W3_CONTROL_PLANE_STABILIZATION_RESULTS.md`
 - `W4_CANARY_CUTOVER_RESULTS.md`
 - `gate-runs/*`
+- Archived items → [docs/archive/](../archive/README.md)
 
 ### Legacy or Narrow-Scope Reference
 
-- `LONG_TERM_MEMORY_AGENT_ROADMAP.md`
-- `FRONTIER_2026_PROGRAM.md`
-- `OPENCODE_NEMOCLAW_OPENDEV_EXECUTION_PLAN.md`
-- `OPENCODE_NEMOCLAW_OPENDEV_OPENJARVIS_PROMPT_TEMPLATES.md`
-- `OPENJARVIS_ROUTING_RULES_DRAFT.md`
+Moved to [docs/archive/](../archive/README.md).
 
 ## Reference Families
 
@@ -176,7 +162,6 @@
 
 - `LOCAL_COLLAB_AGENT_WORKFLOW.md`
 - `MULTI_AGENT_OPERATING_STANDARD_V1.md`
-- `OPENJARVIS_ROUTING_RULES_DRAFT.md`
 - `.github/instructions/multi-agent-routing.instructions.md`
 
 ### Interface and Contract Reference
@@ -204,17 +189,9 @@
 4. interface/contract reference 문서는 계약 정본으로 유지하되 우선순위나 WIP 상태를 서술하지 않는다.
 5. local runtime/tooling 설계 문서는 가능한 동작과 future target state를 분리해 쓰고, 실제 가용성은 `../RUNTIME_NAME_AND_SURFACE_MATRIX.md`와 코드 surface로만 판정한다.
 
-## Immediate Archive Candidates
+## Archive Log
 
-다음 문서는 현재 운영 판단을 직접 바꾸지 않으며, 다음 손댈 때 archive/shrink 대상으로 우선 처리한다.
-
-- `2026-03-18_followup-ops-closure.md`
-- `2026-03-19_followup-ops-closure.md`
-- `MULTI_AGENT_DRY_RUN_2026-03-19.md`
-- `PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md`
-- `OPENCODE_NEMOCLAW_OPENDEV_EXECUTION_PLAN.md`
-- `OPENCODE_NEMOCLAW_OPENDEV_OPENJARVIS_PROMPT_TEMPLATES.md`
-- `OPENJARVIS_ROUTING_RULES_DRAFT.md`
+위 문서들은 2026-03-29에 [docs/archive/](../archive/README.md)로 이동 완료.
 
 정리 원칙:
 

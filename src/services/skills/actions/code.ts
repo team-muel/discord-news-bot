@@ -526,6 +526,10 @@ const toExt = (filePath: string): string => {
 export const codeGenerateAction: ActionDefinition = {
   name: 'code.generate',
   description: '요청 목표를 바탕으로 실제 코드 초안(파일별 블록)을 생성합니다.',
+  category: 'code',
+  parameters: [
+    { name: 'query', required: true, description: 'Code generation task description', example: 'Create a TTL cache utility in TypeScript' },
+  ],
   execute: async ({ goal, args }) => {
     const query = typeof args?.query === 'string' && args.query.trim() ? args.query.trim() : stripGoalNoise(goal);
 

@@ -30,8 +30,29 @@ const pruneStore = () => {
     return;
   }
   const oldest = [...store.keys()].slice(0, store.size - MAX_ENTRIES);
+  const pruned = new Set(oldest);
   for (const id of oldest) {
     store.delete(id);
+  }
+
+  // Clean stale references from guildIndex
+  for (const [guildId, ids] of guildIndex) {
+    const filtered = ids.filter((id) => !pruned.has(id));
+    if (filtered.length === 0) {
+      guildIndex.delete(guildId);
+    } else {
+      guildIndex.set(guildId, filtered);
+    }
+  }
+
+  // Clean stale references from parentIndex
+  for (const [parentId, children] of parentIndex) {
+    const filtered = children.filter((id) => !pruned.has(id));
+    if (filtered.length === 0) {
+      parentIndex.delete(parentId);
+    } else {
+      parentIndex.set(parentId, filtered);
+    }
   }
 };
 

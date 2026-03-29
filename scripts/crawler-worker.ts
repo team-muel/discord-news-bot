@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+import crypto from 'node:crypto';
 import 'dotenv/config';
 import express from 'express';
 import { listCommunityPlugins, searchCommunityWithPlugins } from './crawler-worker/plugins/registry';
@@ -102,6 +102,8 @@ const fetchWithTimeout = async (url: string, init?: RequestInit, timeoutMs = WOR
   }
 };
 
+const YOUTUBE_HOST_RE = /^(www\.)?youtube\.com$/i;
+
 const resolveChannelIdFromHandleUrl = async (url: string): Promise<string | null> => {
   const base = url.split('#', 1)[0];
 
@@ -109,6 +111,10 @@ const resolveChannelIdFromHandleUrl = async (url: string): Promise<string | null
   try {
     parsed = new URL(base);
   } catch {
+    return null;
+  }
+
+  if (!YOUTUBE_HOST_RE.test(parsed.hostname)) {
     return null;
   }
 
@@ -632,6 +638,22 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'crawler-worker', uptimeSec: Math.floor(process.uptime()) });
 });
 
+const CRAWLER_AUTH_TOKEN = (process.env.CRAWLER_WORKER_AUTH_TOKEN || '').trim();
+const CRAWLER_REQUIRE_AUTH = CRAWLER_AUTH_TOKEN.length > 0;
+
+const crawlerAuth: express.RequestHandler = (req, res, next) => {
+  if (!CRAWLER_REQUIRE_AUTH) return next();
+  const header = String(req.headers.authorization || '').trim();
+  const token = /^Bearer\s+/i.test(header) ? header.replace(/^Bearer\s+/i, '').trim() : '';
+  if (!token) return res.status(401).json({ error: 'unauthorized' });
+  const expected = Buffer.from(CRAWLER_AUTH_TOKEN);
+  const incoming = Buffer.from(token);
+  if (expected.length !== incoming.length || !crypto.timingSafeEqual(expected, incoming)) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  next();
+};
+
 type ToolResponse = {
   content: Array<{ type: 'text'; text: string }>;
   isError: boolean;
@@ -802,13 +824,13 @@ const getToolCatalog = (): Array<{ name: string; description: string }> => {
   }));
 };
 
-app.get('/tools/list', (_req, res) => {
+app.get('/tools/list', crawlerAuth, (_req, res) => {
   res.json({
     tools: getToolCatalog(),
   });
 });
 
-app.post('/tools/call', async (req, res) => {
+app.post('/tools/call', crawlerAuth, async (req, res) => {
   const name = compact(req.body?.name);
   const args = req.body?.arguments && typeof req.body.arguments === 'object' && !Array.isArray(req.body.arguments)
     ? req.body.arguments as Record<string, unknown>
@@ -833,8 +855,9 @@ app.post('/tools/call', async (req, res) => {
       isError: true,
     });
   } catch (error) {
+    const msg = error instanceof Error ? error.message : 'unknown error';
     return res.status(500).json({
-      content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
+      content: [{ type: 'text', text: msg.slice(0, 200) }],
       isError: true,
     });
   }

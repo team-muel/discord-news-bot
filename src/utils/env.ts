@@ -15,8 +15,10 @@ export const parseBooleanEnv = (value: string | undefined, fallback: boolean): b
 };
 
 export const parseIntegerEnv = (value: string | undefined, fallback: number): number => {
-  const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
 };
 
 export const parseNumberEnv = (value: string | undefined, fallback: number): number => {

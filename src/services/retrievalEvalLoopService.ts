@@ -97,12 +97,12 @@ export const startRetrievalEvalLoop = (client: Client) => {
 
   const intervalMs = RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS * 60 * 60 * 1000;
   timer = setInterval(() => {
-    void runOnce(client);
+    void runOnce(client).catch((err) => logger.error('[RETRIEVAL-EVAL-LOOP] runOnce failed: %s', err instanceof Error ? err.message : String(err)));
   }, intervalMs);
   timer.unref();
 
   if (RETRIEVAL_AUTO_EVAL_RUN_ON_START) {
-    void runOnce(client);
+    void runOnce(client).catch((err) => logger.error('[RETRIEVAL-EVAL-LOOP] runOnce (startup) failed: %s', err instanceof Error ? err.message : String(err)));
   }
 
   logger.info(

@@ -47,11 +47,18 @@ const DEFAULT_BLOCK_RULES: AgentPrivacyRuleInput[] = [
   { pattern: '(개인정보.*수집.*자동|동의 없이|무단 수집)', score: 50, reason: 'non_consensual_collection' },
 ];
 
+// Reject patterns with nested quantifiers that could cause catastrophic backtracking
+const REDOS_SUSPECT_RE = /([+*]|\{[0-9,]+\})\s*\)\s*[+*?]|\(\?=.*[+*].*\)\s*[+*]/;
+
 const compileRules = (rules: AgentPrivacyRuleInput[]): AgentPrivacyCompiledRule[] => {
   const out: AgentPrivacyCompiledRule[] = [];
   for (const raw of rules) {
     const pattern = String(raw.pattern || '').trim();
     if (!pattern) {
+      continue;
+    }
+
+    if (REDOS_SUSPECT_RE.test(pattern)) {
       continue;
     }
 

@@ -1,6 +1,16 @@
 import type { Request, Response } from 'express';
 import type { JwtUser } from '../types/auth';
 
+const SAFE_IMAGE_HOST_RE = /^([a-z0-9-]+\.)*(youtube\.com|ytimg\.com|ggpht\.com|googleusercontent\.com)$/i;
+const isSafeImageUrl = (raw: string): boolean => {
+  try {
+    const parsed = new URL(raw);
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && SAFE_IMAGE_HOST_RE.test(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
 export type Source = {
   id: number;
   user_id: string | null;
@@ -87,7 +97,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
           updateData.last_check_error = offlineMessage;
         } else {
           let imageBase64: string | undefined;
-          if (imageUrl) {
+          if (imageUrl && isSafeImageUrl(imageUrl)) {
             imageBase64 = await deps.imageUrlToBase64(imageUrl);
           }
 
@@ -317,7 +327,7 @@ export const createCrawlerRuntimeRegistry = (deps: CrawlerRuntimeRegistryDeps) =
       const { content, imageUrl, author } = await deps.scrapeYouTubePost(url);
 
       let imageBase64: string | undefined;
-      if (imageUrl) {
+      if (imageUrl && isSafeImageUrl(imageUrl)) {
         imageBase64 = await deps.imageUrlToBase64(imageUrl);
       }
 

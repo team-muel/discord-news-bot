@@ -137,7 +137,7 @@ export const createOpencodeChangeRequest = async (params: {
       score_card: toScoreCard(params.scoreCard),
       evidence_bundle_id: String(params.evidenceBundleId || '').trim().slice(0, 160) || null,
       files: (params.files || []).map((item) => String(item || '').trim()).filter(Boolean).slice(0, 500),
-      diff_patch: String(params.diffPatch || '').trim() || null,
+      diff_patch: String(params.diffPatch || '').trim().slice(0, 500_000) || null,
       metadata: params.metadata || {},
       created_at: nowIso(),
       updated_at: nowIso(),

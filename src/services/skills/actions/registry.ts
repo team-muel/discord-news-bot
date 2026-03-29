@@ -21,7 +21,7 @@ import { privacyForgetGuildAction, privacyForgetUserAction } from './privacy';
 import { ragRetrieveAction } from './rag';
 import { stockChartAction, stockQuoteAction } from './stock';
 import { toolsRunCliAction } from './tools';
-import type { ActionDefinition } from './types';
+import type { ActionDefinition, ActionCategory } from './types';
 import { webFetchAction } from './web';
 import { webSearchAction } from './webSearch';
 import { youtubeSearchFirstAction } from './youtube';
@@ -97,3 +97,50 @@ export const listActions = (): ActionDefinition[] => ACTIONS.map((action) => ({ 
 export const getAction = (actionName: string): ActionDefinition | null => ACTION_MAP.get(actionName) || null;
 
 export const getActionTermIndex = (): ReadonlyMap<string, Set<string>> => actionTermIndex;
+
+/**
+ * Generate a tool catalog section for system prompts.
+ * Groups actions by category and renders parameter specs.
+ * Inspired by Cline's ClineToolSet → PromptBuilder pipeline.
+ */
+export function buildToolCatalogPrompt(filter?: { categories?: ActionCategory[] }): string {
+  const actions = filter?.categories
+    ? ACTIONS.filter((a) => a.category && filter.categories!.includes(a.category))
+    : ACTIONS;
+
+  // Deduplicate aliases — keep only the first registration for each execute reference
+  const seen = new Set<string>();
+  const unique = actions.filter((a) => {
+    if (seen.has(a.name)) return false;
+    seen.add(a.name);
+    return true;
+  });
+
+  // Group by category
+  const groups = new Map<string, ActionDefinition[]>();
+  for (const action of unique) {
+    const cat = action.category ?? 'other';
+    const list = groups.get(cat) ?? [];
+    list.push(action);
+    groups.set(cat, list);
+  }
+
+  const lines: string[] = ['## Available Tools', ''];
+  for (const [category, categoryActions] of groups) {
+    lines.push(`### ${category}`);
+    for (const action of categoryActions) {
+      const params = action.parameters;
+      if (params && params.length > 0) {
+        const paramList = params
+          .map((p) => `  - \`${p.name}\`${p.required ? ' (required)' : ''}: ${p.description}`)
+          .join('\n');
+        lines.push(`- **${action.name}**: ${action.description}\n${paramList}`);
+      } else {
+        lines.push(`- **${action.name}**: ${action.description}`);
+      }
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}

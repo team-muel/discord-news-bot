@@ -28,6 +28,7 @@ import {
 import { cleanupSandbox } from '../../services/workerGeneration/workerSandbox';
 import { runArchitectReleaseGate } from '../../services/workerGeneration/workerExecutors';
 import { evaluateWorkerActivationGate } from '../../services/agentRuntimeReadinessService';
+import logger from '../../logger';
 import { DISCORD_MESSAGES } from '../messages';
 import {
   DISCORD_MSG_LIMIT,
@@ -45,17 +46,19 @@ const WORKER_BUTTON_ACTIONS = new Set(['worker_propose', 'worker_approve', 'work
 const FORGET_BUTTON_ACTIONS = new Set(['forget_confirm_user', 'forget_confirm_guild', 'forget_cancel']);
 
 const toErrorMessage = (error: unknown): string => {
+  let msg: string;
   if (error instanceof Error && error.message) {
-    return error.message;
+    msg = error.message;
+  } else if (typeof error === 'string') {
+    msg = error;
+  } else {
+    return 'An unexpected error occurred.';
   }
-  if (typeof error === 'string') {
-    return error;
+  // Don't expose internal details to Discord users
+  if (msg.length > 200 || /supabase|postgres|internal|token|key|secret/i.test(msg)) {
+    return 'An internal error occurred.';
   }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
+  return msg;
 };
 
 export const handleButtonInteraction = async (params: {
@@ -174,7 +177,7 @@ export const handleButtonInteraction = async (params: {
       recordWorkerGenerationResult(pipeResult.ok, pipeResult.ok ? undefined : pipeResult.error);
 
       if (!pipeResult.ok) {
-        await interaction.editReply(`❌ 워커 생성 실패: ${pipeResult.error}`);
+        await interaction.editReply(`❌ 워커 생성 실패: ${toErrorMessage(pipeResult.error)}`);
         return true;
       }
 
@@ -265,7 +268,8 @@ export const handleButtonInteraction = async (params: {
           guildId: appr.guildId,
           actorId: interaction.user.id,
         });
-      } catch {
+      } catch (gateErr) {
+        logger.debug('[BUTTON] worker activation gate check failed: %s', toErrorMessage(gateErr));
         await interaction.followUp({
           content: '🚫 운영 준비도 게이트 확인 중 오류가 발생해 워커 활성화를 차단했습니다. 잠시 후 다시 시도하거나 관리자 API /api/bot/agent/runtime/readiness 를 확인해주세요.',
           ephemeral: true,
@@ -298,11 +302,11 @@ export const handleButtonInteraction = async (params: {
         try {
           const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
           await interaction.message.edit({ content: `${prev}\n\n✅ **워커 활성화 완료** (승인자: <@${interaction.user.id}>)\n액션: \`${appr.actionName}\``, components: [] });
-        } catch {
-          // ignore edit failure
+        } catch (editErr) {
+          logger.debug('[BUTTON] message edit skipped (approve): %s', toErrorMessage(editErr));
         }
       } else {
-        await interaction.followUp({ content: `❌ 워커 로드 실패: ${loadResult.error}`, ephemeral: true });
+        await interaction.followUp({ content: `❌ 워커 로드 실패: ${toErrorMessage(loadResult.error)}`, ephemeral: true });
       }
       return true;
     }
@@ -315,8 +319,8 @@ export const handleButtonInteraction = async (params: {
       try {
         const prev = interaction.message.content.split('\n✅')[0].split('\n❌')[0];
         await interaction.message.edit({ content: `${prev}\n\n❌ **반려됨** (처리자: <@${interaction.user.id}>)`, components: [] });
-      } catch {
-        // ignore edit failure
+      } catch (editErr) {
+        logger.debug('[BUTTON] message edit skipped (reject): %s', toErrorMessage(editErr));
       }
       return true;
     }
@@ -333,7 +337,7 @@ export const handleButtonInteraction = async (params: {
       });
 
       if (!refactorResult.ok) {
-        await interaction.editReply(`❌ 리팩토링 실패: ${refactorResult.error}`);
+        await interaction.editReply(`❌ 리팩토링 실패: ${toErrorMessage(refactorResult.error)}`);
         return true;
       }
 
@@ -358,8 +362,8 @@ export const handleButtonInteraction = async (params: {
           ].join('\n').slice(0, 1950),
           components: [newRow],
         });
-      } catch {
-        // ignore edit failure
+      } catch (editErr) {
+        logger.debug('[BUTTON] message edit skipped (refactor): %s', toErrorMessage(editErr));
       }
       await interaction.editReply('🔧 리팩토링이 완료됐습니다. 관리자 메시지를 확인해주세요.');
       return true;
@@ -459,8 +463,8 @@ export const handleButtonInteraction = async (params: {
         } catch {
           try {
             await thread.send(safe);
-          } catch {
-            // ignore retry failure
+          } catch (retryErr) {
+            logger.debug('[BUTTON] thread send retry failed: %s', toErrorMessage(retryErr));
           }
         }
       }

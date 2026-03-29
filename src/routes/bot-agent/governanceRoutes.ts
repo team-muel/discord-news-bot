@@ -1,4 +1,5 @@
 ﻿import { requireAdmin } from '../../middleware/auth';
+import logger from '../../logger';
 import { listAgentRoleWorkerSpecs } from '../../services/agentRoleWorkerService';
 import { getAction, listActions } from '../../services/skills/actions/registry';
 import { decideActionApprovalRequest, isActionRunMode, listActionApprovalRequests, listGuildActionPolicies, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
@@ -16,7 +17,7 @@ import {
   type OpencodeRiskTier,
 } from '../../services/opencodeGitHubQueueService';
 import { getSuperAgentCapabilities, recommendSuperAgent, startSuperAgentSessionFromTask } from '../../services/superAgentService';
-import { isOneOf, toBoundedInt, toStringParam } from '../../utils/validation';
+import { isOneOf, sanitizeRecord, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
 
@@ -78,14 +79,14 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
 
     try {
       const recommendation = recommendSuperAgent({
-        ...req.body,
         guild_id: guildId,
         objective,
+        priority: toStringParam(req.body?.priority) || undefined,
       });
       return res.json({ ok: true, recommendation });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(400).json({ ok: false, error: 'SUPER_AGENT_RECOMMEND_FAILED', message });
+      logger.warn('[GOVERNANCE] recommend super agent failed: %s', error instanceof Error ? error.message : String(error));
+      return res.status(400).json({ ok: false, error: 'SUPER_AGENT_RECOMMEND_FAILED', message: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -99,19 +100,20 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     const requestedBy = toStringParam(req.user?.id) || 'api';
     try {
       const result = await startSuperAgentSessionFromTask({
-        ...req.body,
         guild_id: guildId,
         objective,
         requestedBy,
         isAdmin: true,
+        priority: toStringParam(req.body?.priority) || undefined,
       });
       return res.status(202).json({ ok: true, ...result, approvalPending: Boolean(result.pendingApproval) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.startsWith('PRIVACY_PREFLIGHT_BLOCKED:')) {
-        return res.status(403).json({ ok: false, error: 'PRIVACY_PREFLIGHT_BLOCKED', message: message.slice('PRIVACY_PREFLIGHT_BLOCKED:'.length) || 'privacy policy blocked this request' });
+        return res.status(403).json({ ok: false, error: 'PRIVACY_PREFLIGHT_BLOCKED', message: 'Privacy preflight check blocked this operation' });
       }
-      return res.status(409).json({ ok: false, error: 'SUPER_AGENT_SESSION_START_FAILED', message });
+      logger.warn('[GOVERNANCE] start super agent session failed: %s', message);
+      return res.status(409).json({ ok: false, error: 'SUPER_AGENT_SESSION_START_FAILED', message: 'Failed to start super agent session' });
     }
   });
 
@@ -135,7 +137,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
   router.get('/agent/actions/policies', requireAdmin, async (req, res) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
-      return res.status(400).json({ error: 'guildId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required' });
     }
 
     const [savedPolicies, actionCatalog] = await Promise.all([
@@ -158,15 +160,15 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     const enabled = typeof enabledRaw === 'boolean' ? enabledRaw : String(enabledRaw || '').trim() !== 'false';
 
     if (!guildId || !actionName) {
-      return res.status(400).json({ error: 'guildId and actionName are required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId and actionName are required' });
     }
 
     if (!listActions().some((action) => action.name === actionName)) {
-      return res.status(400).json({ error: 'unknown actionName' });
+      return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', message: 'unknown actionName' });
     }
 
     if (!isActionRunMode(runMode)) {
-      return res.status(400).json({ error: 'invalid runMode (auto|approval_required|disabled)' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'invalid runMode (auto|approval_required|disabled)' });
     }
 
     try {
@@ -180,8 +182,8 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.json({ ok: true, policy });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'ACTION_POLICY_UPDATE_FAILED', message });
+      logger.warn('[GOVERNANCE] policy update failed: %s', error instanceof Error ? error.message : String(error));
+      return res.status(500).json({ ok: false, error: 'ACTION_POLICY_UPDATE_FAILED', message: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -191,11 +193,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
 
     if (!guildId) {
-      return res.status(400).json({ error: 'guildId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required' });
     }
 
     if (statusValue && !isOneOf(statusValue, ['pending', 'approved', 'rejected', 'expired'])) {
-      return res.status(400).json({ error: 'invalid status' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'invalid status' });
     }
 
     const items = await listActionApprovalRequests({
@@ -261,11 +263,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     const reason = toStringParam(req.body?.reason);
 
     if (!requestId) {
-      return res.status(400).json({ error: 'requestId is required' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'requestId is required' });
     }
 
     if (!isOneOf(decision, ['approve', 'reject'])) {
-      return res.status(400).json({ error: 'decision must be approve|reject' });
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'decision must be approve|reject' });
     }
 
     const actorId = toStringParam(req.user?.id) || 'api';
@@ -277,7 +279,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     });
 
     if (!updated) {
-      return res.status(404).json({ ok: false, error: 'REQUEST_NOT_FOUND' });
+      return res.status(404).json({ ok: false, error: 'REQUEST_NOT_FOUND', message: 'Approval request not found' });
     }
 
     return res.json({ ok: true, request: updated });
@@ -414,19 +416,15 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
         summary: toStringParam(req.body?.summary) || undefined,
         targetBaseBranch: toStringParam(req.body?.targetBaseBranch) || undefined,
         proposedBranch: toStringParam(req.body?.proposedBranch) || undefined,
-        sourceActionLogId: Number(req.body?.sourceActionLogId),
+        sourceActionLogId: toFiniteNumber(req.body?.sourceActionLogId, 0),
         riskTier: (riskTierRaw || undefined) as OpencodeRiskTier | undefined,
-        scoreCard: req.body?.scoreCard && typeof req.body.scoreCard === 'object' && !Array.isArray(req.body.scoreCard)
-          ? req.body.scoreCard as Record<string, unknown>
-          : undefined,
+        scoreCard: sanitizeRecord(req.body?.scoreCard) || undefined,
         evidenceBundleId: toStringParam(req.body?.evidenceBundleId) || undefined,
         files: Array.isArray(req.body?.files)
           ? req.body.files.map((item: unknown) => toStringParam(item)).filter(Boolean)
           : undefined,
         diffPatch: toStringParam(req.body?.diffPatch) || undefined,
-        metadata: req.body?.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
-          ? req.body.metadata as Record<string, unknown>
-          : undefined,
+        metadata: sanitizeRecord(req.body?.metadata) || undefined,
       });
       return res.status(201).json({ ok: true, item: created });
     } catch (error) {

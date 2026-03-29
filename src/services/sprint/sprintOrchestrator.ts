@@ -9,12 +9,16 @@ import {
   SPRINT_PHASE_TIMEOUT_MS,
   SPRINT_PIPELINES_TABLE,
   SPRINT_DRY_RUN,
+  MCP_FAST_FAIL_TIMEOUT_MS,
 } from '../../config';
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection } from './sprintPreamble';
+import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
+import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, type LoopState } from '../skills/loopDetection';
+import { writeLocalCache, readLocalCache } from '../localStateCache';
+import { executeHooks } from './sprintHooks';
 import { ingestRetroInsights } from '../entityNervousSystem';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
@@ -24,6 +28,7 @@ import { getAction } from '../skills/actions/registry';
 import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getMcpWorkerUrl, callMcpWorkerTool, parseMcpTextBlocks, type McpWorkerKind } from '../skills/actions/mcpDelegate';
+import { resolveWorkerByKind } from '../mcpSkillRouter';
 import { createActionApprovalRequest } from '../skills/actionGovernanceStore';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import { runWorkerGenerationPipeline } from '../workerGeneration/workerGenerationPipeline';
@@ -50,7 +55,7 @@ const PHASE_WORKER_KIND: Partial<Record<SprintPhase, McpWorkerKind>> = {
 };
 
 // Phase → external adapter fallback for when MCP workers are absent
-const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, { adapterId: 'openshell' | 'nemoclaw' | 'openclaw' | 'openjarvis'; action: string }>> = {
+const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, { adapterId: 'nemoclaw' | 'openjarvis'; action: string }>> = {
   review: { adapterId: 'nemoclaw', action: 'code.review' },
   'security-audit': { adapterId: 'nemoclaw', action: 'code.review' },
   'ops-validate': { adapterId: 'openjarvis', action: 'jarvis.ask' },
@@ -58,7 +63,6 @@ const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, { adapterId: 'openshel
 
 // Worker health cache — skip known-dead workers quickly instead of waiting for full timeout
 const WORKER_HEALTH_CACHE_TTL_MS = 60_000;
-const MCP_FAST_FAIL_TIMEOUT_MS = Math.max(3_000, Math.min(SPRINT_PHASE_TIMEOUT_MS, Number(process.env.MCP_FAST_FAIL_TIMEOUT_MS || 10_000)));
 const workerHealthCache = new Map<string, { healthy: boolean; checkedAt: number }>();
 
 const isWorkerKnownDead = (workerUrl: string): boolean => {
@@ -73,11 +77,15 @@ const isWorkerKnownDead = (workerUrl: string): boolean => {
 
 const recordWorkerHealth = (workerUrl: string, healthy: boolean): void => {
   workerHealthCache.set(workerUrl, { healthy, checkedAt: Date.now() });
-  // Prevent unbounded growth
+  // Evict oldest entries when cache exceeds limit
   if (workerHealthCache.size > 50) {
-    const oldest = [...workerHealthCache.entries()]
-      .sort((a, b) => a[1].checkedAt - b[1].checkedAt)[0];
-    if (oldest) workerHealthCache.delete(oldest[0]);
+    const sorted = [...workerHealthCache.entries()]
+      .sort((a, b) => a[1].checkedAt - b[1].checkedAt);
+    // Remove 20% of oldest entries to avoid re-triggering eviction on every insert
+    const toRemove = Math.max(1, Math.floor(sorted.length * 0.2));
+    for (let i = 0; i < toRemove; i++) {
+      workerHealthCache.delete(sorted[i][0]);
+    }
   }
 };
 
@@ -103,7 +111,7 @@ export type AutonomyLevel = 'full-auto' | 'approve-ship' | 'approve-impl' | 'man
 
 export type PhaseResult = {
   phase: SprintPhase;
-  status: 'success' | 'failed' | 'blocked' | 'skipped' | 'awaiting-approval';
+  status: 'success' | 'failed' | 'blocked' | 'skipped' | 'awaiting-approval' | 'approved';
   output: string;
   artifacts: string[];
   sessionId?: string;
@@ -132,6 +140,8 @@ export type SprintPipeline = {
   generatedWorkerName?: string;
   /** Code changes applied during implement phase (for rollback and ship) */
   codeChanges?: CodeChange[];
+  /** Loop detection state — tracks consecutive identical action calls. */
+  loopState: LoopState;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -151,8 +161,10 @@ const PHASE_TRANSITIONS: Record<string, (result: PhaseResult, pipeline: SprintPi
 
   review: (r, p) => {
     if (r.status === 'success') {
-      // Insert security-audit before qa if high-risk content detected
-      if (r.output.includes('SECURITY') || r.output.includes('security concern')) {
+      // Insert security-audit before qa if review explicitly flags security concerns
+      // Use word-boundary matching to avoid false positives from "no SECURITY issues"
+      if (/\bSECURITY[_\s]?(ISSUE|CONCERN|VULN|RISK|FINDING)/i.test(r.output) ||
+          /\bsecurity concern\b/i.test(r.output)) {
         return 'security-audit';
       }
       return 'qa';
@@ -257,6 +269,7 @@ export const createSprintPipeline = (params: {
     totalPhasesExecuted: 0,
     changedFiles: [],
     rollbackPlan: '',
+    loopState: createLoopState(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -282,6 +295,13 @@ export const createSprintPipeline = (params: {
   // Best-effort persist to Supabase
   persistPipeline(pipeline).catch(() => {});
 
+  // Fire SprintStart lifecycle hook (best-effort, non-blocking)
+  executeHooks({
+    hookPoint: 'SprintStart',
+    sprintId,
+    meta: { triggerType: params.triggerType, objective: params.objective, guildId: params.guildId },
+  }).catch(() => {});
+
   return pipeline;
 };
 
@@ -295,6 +315,18 @@ export const listSprintPipelines = (guildId?: string, limit = 20): SprintPipelin
   return filtered
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, limit);
+};
+
+/** Mark a pipeline as blocked (e.g., after an unhandled crash during execution). */
+export const markPipelineBlocked = (sprintId: string, reason: string): void => {
+  const pipeline = pipelines.get(sprintId);
+  if (!pipeline) return;
+  const terminal: SprintPhase[] = ['complete', 'cancelled', 'blocked'];
+  if (terminal.includes(pipeline.currentPhase)) return;
+  pipeline.currentPhase = 'blocked';
+  pipeline.error = reason;
+  pipeline.updatedAt = new Date().toISOString();
+  persistPipeline(pipeline).catch(() => {});
 };
 
 // ──── Phase execution ─────────────────────────────────────────────────────────
@@ -354,6 +386,61 @@ const executePhaseAction = async (
     };
   }
 
+  // ── Phase tool enforcement (Cline PLAN_MODE_RESTRICTED_TOOLS pattern) ──
+  const blockReason = isActionBlockedInPhase(phase, action.category);
+  if (blockReason) {
+    logger.warn('[SPRINT] phase enforcement blocked action=%s phase=%s reason=%s', actionName, phase, blockReason);
+    return {
+      phase,
+      status: 'failed',
+      output: blockReason,
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 0,
+    };
+  }
+
+  // ── Action loop detection (Cline loop-detection.ts pattern) ──
+  const argSig = actionSignature(
+    { phase, objective: pipeline.objective } as Record<string, unknown>,
+  );
+  const loopCheck = checkActionLoop(pipeline.loopState, actionName, argSig);
+  if (loopCheck.hardBlock) {
+    logger.error('[SPRINT] loop hard-block: action=%s repeated %d times, aborting', actionName, loopCheck.count);
+    return {
+      phase,
+      status: 'failed',
+      output: `Loop detection hard-block: "${actionName}" called ${loopCheck.count} consecutive times with identical parameters. Aborting to prevent infinite loop.`,
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 0,
+    };
+  }
+  const loopWarning = loopCheck.softWarning ? formatLoopWarning(actionName, loopCheck.count) : '';
+
+  // ── ActionPreExec lifecycle hook — can cancel or inject context ──
+  const preExecHook = await executeHooks({
+    hookPoint: 'ActionPreExec',
+    sprintId: pipeline.sprintId,
+    phase,
+    actionName,
+    meta: { objective: pipeline.objective },
+  }).catch(() => ({} as { cancel?: boolean; cancelReason?: string; context?: string }));
+
+  if (preExecHook.cancel) {
+    return {
+      phase,
+      status: 'failed',
+      output: preExecHook.cancelReason || 'ActionPreExec hook cancelled execution',
+      artifacts: [],
+      startedAt,
+      completedAt: new Date().toISOString(),
+      iterationCount: 0,
+    };
+  }
+
   try {
     // ── Worker generation path: feature-request/cs-ticket implement generates dynamic workers ──
     if (phase === 'implement' && (pipeline.triggerType === 'feature-request' || pipeline.triggerType === 'cs-ticket')) {
@@ -393,7 +480,11 @@ const executePhaseAction = async (
     if (phase === 'implement' && CODE_MOD_TRIGGERS.includes(pipeline.triggerType)) {
       logger.info('[SPRINT] code-modification path for phase=%s trigger=%s', phase, pipeline.triggerType);
       try {
-        const planOutput = pipeline.phaseResults['plan-0']?.output;
+        const planKey = Object.keys(pipeline.phaseResults)
+          .filter((k) => k.startsWith('plan-'))
+          .sort()
+          .pop();
+        const planOutput = planKey ? pipeline.phaseResults[planKey]?.output : undefined;
         const codeResult = await raceWithTimeout(
           generateAndApplyCodeChanges({
             objective: pipeline.objective,
@@ -460,10 +551,12 @@ const executePhaseAction = async (
 
     // ── Standard path: LLM-based action execution ──
     const goal = buildPhaseGoal(pipeline, phase, systemPrompt);
+    const goalWithLoopWarning = loopWarning ? `${goal}\n\n${loopWarning}` : goal;
 
-    // ── MCP worker delegation: prefer remote worker if configured ──
+    // ── MCP worker delegation: prefer health-aware router, fall back to env-var lookup ──
     const workerKind = PHASE_WORKER_KIND[phase];
-    const workerUrl = workerKind ? getMcpWorkerUrl(workerKind) : '';
+    const routerResult = workerKind ? resolveWorkerByKind(workerKind) : null;
+    const workerUrl = routerResult?.workerUrl || (workerKind ? getMcpWorkerUrl(workerKind) : '');
 
     if (workerUrl && !isWorkerKnownDead(workerUrl)) {
       logger.info('[SPRINT] delegating phase=%s to MCP worker=%s', phase, workerKind);
@@ -473,7 +566,7 @@ const executePhaseAction = async (
             workerUrl,
             toolName: actionName,
             args: {
-              goal,
+              goal: goalWithLoopWarning,
               sprintId: pipeline.sprintId,
               phase,
               objective: pipeline.objective,
@@ -509,9 +602,9 @@ const executePhaseAction = async (
     if (externalMapping) {
       try {
         const adapterResult = await executeExternalAction(externalMapping.adapterId, externalMapping.action, {
-          code: pipeline.changedFiles.join('\n'),
+          code: pipeline.codeChanges?.map((c) => `--- ${c.filePath} ---\n${c.newContent || ''}`).join('\n\n') || pipeline.changedFiles.join('\n'),
           goal: pipeline.objective,
-          question: `Sprint phase "${phase}" objective: ${pipeline.objective}`,
+          question: `Sprint phase "${phase}" objective: ${pipeline.objective}. Changed files: ${pipeline.changedFiles.join(', ')}`,
         });
         if (adapterResult.ok && adapterResult.output.length > 0) {
           logger.info('[SPRINT] external adapter %s.%s succeeded for phase=%s (duration=%dms)', externalMapping.adapterId, externalMapping.action, phase, adapterResult.durationMs);
@@ -534,7 +627,7 @@ const executePhaseAction = async (
     // ── Local action fallback ──
     const result = await raceWithTimeout(
       action.execute({
-        goal,
+        goal: goalWithLoopWarning,
         args: {
           sprintId: pipeline.sprintId,
           phase,
@@ -551,6 +644,18 @@ const executePhaseAction = async (
       SPRINT_PHASE_TIMEOUT_MS,
       `Phase ${phase} timed out after ${SPRINT_PHASE_TIMEOUT_MS}ms`,
     );
+
+    // ── Post-action context accumulation (Cline PostToolUse hook pattern) ──
+    accumulateActionContext(pipeline.sprintId, phase, result);
+
+    // ── ActionPostExec lifecycle hook (best-effort) ──
+    executeHooks({
+      hookPoint: 'ActionPostExec',
+      sprintId: pipeline.sprintId,
+      phase,
+      actionName,
+      meta: { ok: result.ok, summary: result.summary?.slice(0, 500) },
+    }).catch(() => {});
 
     return {
       phase,
@@ -639,6 +744,8 @@ const buildPhaseGoal = (pipeline: SprintPipeline, phase: SprintPhase, systemProm
 
 // ──── Pipeline advancement ────────────────────────────────────────────────────
 
+const inProgressPhases = new Set<string>();
+
 export const advanceSprintPhase = async (sprintId: string): Promise<{
   ok: boolean;
   pipeline: SprintPipeline;
@@ -649,6 +756,25 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
   if (!pipeline) {
     return { ok: false, pipeline: {} as SprintPipeline, message: 'Pipeline not found' };
   }
+
+  if (inProgressPhases.has(sprintId)) {
+    return { ok: false, pipeline, message: 'Phase already in progress for this pipeline' };
+  }
+  inProgressPhases.add(sprintId);
+
+  try {
+    return await advanceSprintPhaseInner(pipeline, sprintId);
+  } finally {
+    inProgressPhases.delete(sprintId);
+  }
+};
+
+const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: string): Promise<{
+  ok: boolean;
+  pipeline: SprintPipeline;
+  phaseResult?: PhaseResult;
+  message: string;
+}> => {
 
   if (pipeline.currentPhase === 'complete' || pipeline.currentPhase === 'cancelled') {
     return { ok: false, pipeline, message: `Pipeline already ${pipeline.currentPhase}` };
@@ -687,9 +813,32 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
   }
 
   const phaseStartMs = Date.now();
+
+  // Fire PhaseStart lifecycle hook — can cancel phase execution
+  const phaseStartHook = await executeHooks({
+    hookPoint: 'PhaseStart',
+    sprintId,
+    phase: currentPhase,
+    meta: { objective: pipeline.objective, totalPhasesExecuted: pipeline.totalPhasesExecuted },
+  }).catch(() => ({} as { cancel?: boolean; cancelReason?: string; context?: string }));
+
+  if (phaseStartHook.cancel) {
+    const reason = phaseStartHook.cancelReason || 'PhaseStart hook cancelled execution';
+    logger.warn('[SPRINT] PhaseStart hook cancelled phase=%s: %s', currentPhase, reason);
+    return { ok: false, pipeline, message: reason };
+  }
+
   const phaseResult = await executePhaseAction(pipeline, currentPhase);
   const phaseDurationMs = Date.now() - phaseStartMs;
   recordPhaseMetric(currentPhase, phaseDurationMs, phaseResult.status === 'failed');
+
+  // Fire PhaseComplete lifecycle hook (best-effort)
+  executeHooks({
+    hookPoint: 'PhaseComplete',
+    sprintId,
+    phase: currentPhase,
+    meta: { status: phaseResult.status, durationMs: phaseDurationMs },
+  }).catch(() => {});
 
   // ── Autoplan: multi-lens review after plan phase ──
   if (currentPhase === 'plan' && phaseResult.status === 'success') {
@@ -760,18 +909,24 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
     });
     if (traceResult.ok) {
       learningAppendix.push(`[TRACE] stored (run_id=${pipeline.sprintId})`);
+    } else {
+      logger.warn('[SPRINT] self-learning trace failed for sprint=%s: %s', sprintId, traceResult.output.join('; ') || 'unknown');
     }
 
     // 2. Trigger optimization if enough traces have accumulated
     const optimizeResult = await executeExternalAction('openjarvis', 'jarvis.optimize', {});
     if (optimizeResult.ok && optimizeResult.output.length > 0) {
       learningAppendix.push(`[OPTIMIZE] ${optimizeResult.output.slice(0, 5).join('; ')}`);
+    } else if (!optimizeResult.ok) {
+      logger.warn('[SPRINT] self-learning optimize failed for sprint=%s: %s', sprintId, optimizeResult.output.join('; ') || 'unknown');
     }
 
     // 3. Run benchmark for before/after comparison
     const benchResult = await executeExternalAction('openjarvis', 'jarvis.bench', {});
     if (benchResult.ok && benchResult.output.length > 0) {
       learningAppendix.push(`[BENCH] ${benchResult.output.slice(0, 5).join('; ')}`);
+    } else if (!benchResult.ok) {
+      logger.warn('[SPRINT] self-learning bench failed for sprint=%s: %s', sprintId, benchResult.output.join('; ') || 'unknown');
     }
 
     if (learningAppendix.length > 0) {
@@ -833,23 +988,15 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
     );
   }
 
-  // Track implement↔review loops
-  if (currentPhase === 'review' && phaseResult.status !== 'success') {
+  // Track implement↔review loops (count ANY failure that loops back to implement)
+  const loopsBackToImplement = currentPhase === 'review' || currentPhase === 'qa' || currentPhase === 'security-audit' || currentPhase === 'ops-validate';
+  if (loopsBackToImplement && phaseResult.status !== 'success') {
     pipeline.implementReviewLoopCount++;
     recordLoopBack();
 
     // Rollback code changes before re-implementing so the next iteration starts clean
     if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
-      logger.info('[SPRINT] rolling back %d code change(s) after review failure', pipeline.codeChanges.length);
-      await rollbackCodeChanges(pipeline.codeChanges);
-      pipeline.codeChanges = undefined;
-    }
-  }
-
-  // Rollback code changes when qa fails and loops back to implement
-  if (currentPhase === 'qa' && phaseResult.status !== 'success') {
-    if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
-      logger.info('[SPRINT] rolling back %d code change(s) after qa failure', pipeline.codeChanges.length);
+      logger.info('[SPRINT] rolling back %d code change(s) after %s failure', pipeline.codeChanges.length, currentPhase);
       await rollbackCodeChanges(pipeline.codeChanges);
       pipeline.codeChanges = undefined;
     }
@@ -899,6 +1046,23 @@ export const advanceSprintPhase = async (sprintId: string): Promise<{
   if (nextPhase === 'complete') {
     pipeline.completedAt = new Date().toISOString();
     logger.info('[SPRINT] pipeline=%s completed successfully', sprintId);
+    // Clean up accumulated context + persist final snapshot to local file cache
+    clearSprintContext(sprintId);
+    writeLocalCache(`sprint-${sprintId}`, {
+      sprintId,
+      objective: pipeline.objective,
+      guildId: pipeline.guildId,
+      totalPhasesExecuted: pipeline.totalPhasesExecuted,
+      changedFiles: pipeline.changedFiles,
+      completedAt: pipeline.completedAt,
+    }, 7 * 24 * 60 * 60_000); // keep for 7 days
+
+    // Fire SprintComplete lifecycle hook
+    executeHooks({
+      hookPoint: 'SprintComplete',
+      sprintId,
+      meta: { objective: pipeline.objective, changedFiles: pipeline.changedFiles, totalPhasesExecuted: pipeline.totalPhasesExecuted },
+    }).catch(() => {});
   } else if (nextPhase === 'blocked') {
     pipeline.error = `Phase ${currentPhase} failed: ${phaseResult.output.slice(0, 200)}`;
     logger.warn('[SPRINT] pipeline=%s blocked at phase=%s', sprintId, currentPhase);
@@ -966,20 +1130,42 @@ export const approveSprintPhase = async (sprintId: string, approvedBy: string): 
     return { ok: false, message: 'No phase awaiting approval' };
   }
 
-  logger.info('[SPRINT] phase=%s approved by=%s pipeline=%s', pipeline.currentPhase, approvedBy, sprintId);
+  const approvedPhase = pipeline.currentPhase;
+  logger.info('[SPRINT] phase=%s approved by=%s pipeline=%s — re-executing', approvedPhase, approvedBy, sprintId);
 
-  // Re-execute the phase without approval gate by temporarily overriding
-  lastResult.status = 'success';
-  lastResult.output = `Approved by ${approvedBy} — re-executing phase`;
+  // Mark approval in the result for audit trail
+  lastResult.status = 'approved';
+  lastResult.output = `Approved by ${approvedBy}`;
 
-  // Determine next phase based on approval
-  const transition = PHASE_TRANSITIONS[pipeline.currentPhase];
-  const nextPhase = transition ? transition(lastResult, pipeline) : 'blocked';
-  pipeline.currentPhase = nextPhase;
-  pipeline.updatedAt = new Date().toISOString();
+  // Temporarily override autonomy to execute this phase without re-triggering approval
+  const originalAutonomy = pipeline.autonomyLevel;
+  pipeline.autonomyLevel = 'full-auto';
 
-  persistPipeline(pipeline).catch(() => {});
-  return { ok: true, message: `Phase approved, advancing to ${nextPhase}` };
+  try {
+    // Re-execute the approved phase (now runs without approval gate)
+    const result = await advanceSprintPhase(sprintId);
+
+    // Restore autonomy level
+    pipeline.autonomyLevel = originalAutonomy;
+
+    if (!result.ok) {
+      persistPipeline(pipeline).catch(() => {});
+      return { ok: true, message: `Phase ${approvedPhase} approved and executed, but failed: ${result.message}` };
+    }
+
+    // Continue the pipeline until next approval gate or completion
+    void runFullSprintPipeline(sprintId).catch((err) =>
+      logger.error('[SPRINT] pipeline resume after approval failed: %s', err instanceof Error ? err.message : String(err)),
+    );
+
+    return { ok: true, message: `Phase ${approvedPhase} approved and executed, pipeline resuming` };
+  } catch (err) {
+    pipeline.autonomyLevel = originalAutonomy;
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error('[SPRINT] phase re-execution after approval failed: %s', msg);
+    persistPipeline(pipeline).catch(() => {});
+    return { ok: false, message: `Phase execution failed after approval: ${msg}` };
+  }
 };
 
 export const cancelSprintPipeline = (sprintId: string): { ok: boolean; message: string } => {
@@ -1072,6 +1258,7 @@ const rehydrateActivePipelinesInner = async (): Promise<number> => {
         totalPhasesExecuted: Number(row.total_phases_executed || 0),
         changedFiles: Array.isArray(row.changed_files) ? row.changed_files as string[] : [],
         rollbackPlan: '',
+        loopState: createLoopState(),
         createdAt: String(row.created_at || new Date().toISOString()),
         updatedAt: String(row.updated_at || new Date().toISOString()),
         completedAt: row.completed_at ? String(row.completed_at) : undefined,
@@ -1080,6 +1267,29 @@ const rehydrateActivePipelinesInner = async (): Promise<number> => {
       pipelines.set(sprintId, pipeline);
     }
     logger.info('[SPRINT] rehydrated %d active pipelines from Supabase', data.length);
+
+    // Resume non-approval-blocked pipelines so they don't stall after restart
+    for (const row of data as Array<Record<string, unknown>>) {
+      const sprintId = String(row.sprint_id || '');
+      const pipeline = pipelines.get(sprintId);
+      if (!pipeline) continue;
+
+      // Check if the most recent phase result is awaiting-approval — don't resume those
+      const latestKey = Object.keys(pipeline.phaseResults)
+        .filter((k) => k.startsWith(`${pipeline.currentPhase}-`))
+        .sort()
+        .pop();
+      const latestResult = latestKey ? pipeline.phaseResults[latestKey] : undefined;
+      if (latestResult?.status === 'awaiting-approval') {
+        logger.info('[SPRINT] rehydrated pipeline=%s at phase=%s awaiting approval — not resuming', sprintId, pipeline.currentPhase);
+        continue;
+      }
+
+      void runFullSprintPipeline(sprintId).catch((err) =>
+        logger.warn('[SPRINT] rehydrated pipeline resume failed sprint=%s: %s', sprintId, err instanceof Error ? err.message : String(err)),
+      );
+    }
+
     return data.length;
   } catch (error) {
     logger.warn('[SPRINT] rehydration failed: %s', error instanceof Error ? error.message : String(error));

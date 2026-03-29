@@ -48,6 +48,12 @@ const formatCitation = (citation: MemoryCitation): string => {
 export const ragRetrieveAction: ActionDefinition = {
   name: 'rag.retrieve',
   description: '길드 장기기억/메모리에서 근거를 검색해 RAG 컨텍스트를 생성합니다.',
+  category: 'data',
+  parameters: [
+    { name: 'query', required: true, description: 'Search query for guild memory', example: '주간 운영 보고서' },
+    { name: 'limit', required: false, description: 'Max results (1-20, default 6)', example: '6' },
+    { name: 'type', required: false, description: 'Memory type filter (lore, observation, etc.)' },
+  ],
   execute: async ({ goal, args, guildId }) => {
     if (!guildId) {
       return {

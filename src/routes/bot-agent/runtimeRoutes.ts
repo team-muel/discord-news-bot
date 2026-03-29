@@ -42,7 +42,7 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
 const probeOpencodeWorkerHealth = async () => {
   const required = parseBool(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
   const workerUrl = String(process.env.MCP_OPENCODE_WORKER_URL || '').trim();
-  const timeoutMs = Math.max(1000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000));
+  const timeoutMs = Math.max(1000, Math.min(30_000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000)));
   if (!required && !workerUrl) {
     return {
       required: false,

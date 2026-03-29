@@ -90,7 +90,14 @@ const extractNextSkills = (body: string): Array<{ condition: string; next: strin
     .filter((item): item is { condition: string; next: string } => item !== null);
 };
 
+const SAFE_SKILL_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
 export const loadSkillPrompt = (skillName: string): SkillPromptDefinition | null => {
+  if (!SAFE_SKILL_NAME_RE.test(skillName)) {
+    logger.warn('[SKILL-PROMPT] rejected invalid skillName=%s', skillName);
+    return null;
+  }
+
   const cached = cache.get(skillName);
   if (cached) {
     return cached;

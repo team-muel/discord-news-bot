@@ -135,7 +135,7 @@ describe('agentCollab actions', () => {
     expect(result.ok).toBe(false);
     expect(result.agentRole).toBe('review');
     expect(result.error).toBe('NEMOCLAW_REVIEW_BLOCKED');
-    expect(result.artifacts[1]).toContain('eval() is not allowed');
+    expect(result.artifacts[1]).toContain('eval is not allowed');
   });
 
   it('openjarvis action includes runtime readiness artifact', async () => {

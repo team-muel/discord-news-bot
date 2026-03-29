@@ -92,6 +92,16 @@ export const startAutomationModules = (client: Client) => {
   }
 };
 
+/** Stop all running automation modules (for graceful shutdown). */
+export const stopAutomationModules = (): void => {
+  for (const module of getAutomationModules()) {
+    try {
+      module.stop();
+    } catch { /* best-effort */ }
+  }
+  activeClient = null;
+};
+
 export const triggerAutomationJob = async (jobName: AutomationJobName, context?: AutomationTriggerContext) => {
   const state = jobStates[jobName];
   if (!state) {

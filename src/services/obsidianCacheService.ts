@@ -25,10 +25,18 @@ const flushHitCounts = async (): Promise<void> => {
   const db = getSupabaseClient();
   for (const [filePath, increment] of batch) {
     try {
+      // Read current hit_count then add increment (not atomic, but avoids blind overwrite)
+      const { data: row } = await db
+        .from('obsidian_cache')
+        .select('hit_count')
+        .eq('file_path', filePath)
+        .limit(1)
+        .single();
+      const currentCount = Number.isFinite(Number(row?.hit_count)) ? Number(row?.hit_count) : 0;
       await db
         .from('obsidian_cache')
         .update({
-          hit_count: increment,
+          hit_count: currentCount + increment,
           last_accessed_at: new Date().toISOString(),
         })
         .eq('file_path', filePath);
@@ -104,7 +112,7 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
     // Batch hit counter increment instead of per-read Supabase UPDATE
     // Guard against unbounded map growth from many unique file paths
     if (pendingHitCounts.size < MAX_PENDING_HIT_ENTRIES) {
-      pendingHitCounts.set(filePath, (pendingHitCounts.get(filePath) || (data.hit_count || 0)) + 1);
+      pendingHitCounts.set(filePath, (pendingHitCounts.get(filePath) ?? 0) + 1);
     }
 
     logger.debug('[OBSIDIAN-CACHE] HIT %s', filePath);

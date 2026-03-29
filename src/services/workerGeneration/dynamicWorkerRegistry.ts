@@ -127,8 +127,14 @@ export const loadDynamicWorkerFromFile = async (
   approvalId: string,
 ): Promise<{ ok: boolean; actionName?: string; error?: string }> => {
   try {
+    // Security: ensure filePath resolves within allowed runtime directory
+    const artifactDir = DYNAMIC_WORKER_RUNTIME_DIR || path.join(os.tmpdir(), 'muel-dynamic-workers');
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(artifactDir + path.sep) && resolved !== artifactDir) {
+      return { ok: false, error: 'file path outside allowed runtime directory' };
+    }
     // Native ESM dynamic import – works with .mjs files at runtime
-    const importSpec = resolveImportSpec(filePath);
+    const importSpec = resolveImportSpec(resolved);
     const mod = await import(importSpec) as Record<string, unknown>;
 
     const def = Object.values(mod).find(

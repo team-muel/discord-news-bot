@@ -2,10 +2,7 @@
 
 This document defines release gates for harness-level production readiness.
 
-Boundary note:
-
-- role names and surfaces such as `opencode` in this document refer to repository-local runtime contracts and worker surfaces
-- validate current naming interpretation and implemented runtime support in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before treating them as external framework evidence
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 ## Gate 1: Build and Contract Integrity
 

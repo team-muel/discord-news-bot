@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
+import logger from '../../../logger';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
@@ -57,6 +58,7 @@ const runSandboxCmd = async (name: string, cmd: string[]): Promise<{ stdout: str
 export const nemoclawAdapter: ExternalToolAdapter = {
   id: 'nemoclaw',
   capabilities: ['agent.onboard', 'agent.status', 'agent.connect', 'code.review'],
+  liteCapabilities: ['code.review'],
 
   isAvailable: async () => {
     if (!ENABLED) return false;
@@ -123,7 +125,8 @@ export const nemoclawAdapter: ExternalToolAdapter = {
             if (parsed.response && parsed.response.length > 10) {
               return makeResult(true, `AI code review via sandbox ${name}`, parsed.response.split('\n').slice(0, 40));
             }
-          } catch {
+          } catch (sandboxErr) {
+            logger.debug('[NEMOCLAW] sandbox inference unavailable: %s', sandboxErr instanceof Error ? sandboxErr.message : String(sandboxErr));
             // Sandbox inference unavailable — fall through to host LLM
           }
 
@@ -174,7 +177,8 @@ export const nemoclawAdapter: ExternalToolAdapter = {
                   return makeResult(true, `Code review via host LLM (${endpoint.url})${mode}`, content.split('\n').slice(0, 40));
                 }
               }
-            } catch {
+            } catch (hostErr) {
+              logger.debug('[NEMOCLAW] host endpoint %s failed: %s', endpoint.url, hostErr instanceof Error ? hostErr.message : String(hostErr));
               // Try next host URL
             }
           }

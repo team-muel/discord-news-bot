@@ -25,10 +25,14 @@ vi.mock('../llmClient', () => ({
   isAnyLlmConfigured: () => true,
 }));
 
-vi.mock('../../utils/env', () => ({
-  parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
-  parseIntegerEnv: (_v: unknown, fallback: number) => fallback,
-}));
+vi.mock('../../utils/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/env')>();
+  return {
+    ...actual,
+    parseBooleanEnv: () => true,
+    parseIntegerEnv: (_v: unknown, fallback: number) => fallback,
+  };
+});
 
 vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: () => false,

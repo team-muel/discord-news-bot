@@ -10,6 +10,7 @@ import {
 import {
   createSprintPipeline,
   runFullSprintPipeline,
+  markPipelineBlocked,
   type SprintTriggerType,
   type AutonomyLevel,
 } from './sprintOrchestrator';
@@ -35,6 +36,11 @@ export const recordRuntimeError = (error: { message: string; code?: string }): v
 
   const now = Date.now();
   errorAccumulator.recentErrors.push({ ...error, at: new Date().toISOString() });
+
+  // Cap size before pruning by time
+  if (errorAccumulator.recentErrors.length > 1000) {
+    errorAccumulator.recentErrors.splice(0, errorAccumulator.recentErrors.length - 1000);
+  }
 
   // Prune old errors
   const cutoff = new Date(now - ERROR_WINDOW_MS).toISOString();
@@ -189,6 +195,7 @@ const triggerSprint = async (params: {
   // Run pipeline asynchronously (don't block the trigger)
   runFullSprintPipeline(pipeline.sprintId).catch((error) => {
     logger.error('[SPRINT-TRIGGER] pipeline run failed sprint=%s error=%s', pipeline.sprintId, error);
+    markPipelineBlocked(pipeline.sprintId, `Pipeline run crashed: ${error instanceof Error ? error.message : String(error)}`);
   });
 
   return pipeline;

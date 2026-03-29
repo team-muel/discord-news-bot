@@ -5,11 +5,7 @@ Status note:
 - Reference specification for executor safety and rollout constraints.
 - This document does not control current WIP priority; use `EXECUTION_BOARD.md` and `SPRINT_BACKLOG_MEMORY_AGENT.md` for active work.
 
-Boundary note:
-
-- `opencode` in this document refers to the repository-local execution surface and compatibility naming layer
-- current name-collision interpretation and runtime-backed surface truth must be checked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
-- current naming migration and neutral alias policy lives in `docs/ROLE_RENAME_MAP.md`
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 목표:
 

@@ -2,12 +2,7 @@
 
 Use this as a baseline for deploying Muel as a server-operations runtime.
 
-Boundary note:
-
-- role-related env vars in this file configure repository-local runtime actions and advisory workers
-- they do not automatically discover or wrap arbitrary local external OSS CLIs or servers
-- broader local tool adapter design is documented separately in `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`
-- name collision interpretation and current runtime availability are tracked in `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
+> Role naming: `docs/ROLE_RENAME_MAP.md` | Runtime surface truth: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`
 
 Current first slice note:
 

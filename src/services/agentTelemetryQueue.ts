@@ -292,6 +292,12 @@ const recoverDurableQueue = async (): Promise<void> => {
       logger.info('[AGENT-TELEMETRY-QUEUE] recovered %d queued durable tasks', (data || []).length);
       scheduleDrain();
     }
+
+    // If we fetched a full batch, schedule another recovery pass after a short delay
+    if ((data || []).length >= DURABLE_RECOVERY_BATCH) {
+      recoveryStarted = false;
+      setTimeout(() => { void recoverDurableQueue(); }, 5_000);
+    }
   } catch (error) {
     markDurableUnavailable(error);
   }

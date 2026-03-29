@@ -1,4 +1,5 @@
 import { forgetGuildRagData, forgetUserRagData } from '../../privacyForgetService';
+import logger from '../../../logger';
 import type { ActionDefinition } from './types';
 
 const toBool = (value: unknown, fallback: boolean): boolean => {
@@ -16,8 +17,12 @@ const toBool = (value: unknown, fallback: boolean): boolean => {
 export const privacyForgetGuildAction: ActionDefinition = {
   name: 'privacy.forget.guild',
   description: '길드 단위 RAG 메모리(Supabase + Obsidian)를 완전 삭제합니다.',
+  category: 'ops',
+  parameters: [
+    { name: 'confirm', required: true, description: 'Must be "true" to proceed with deletion' },
+  ],
   execute: async ({ args, guildId, requestedBy }) => {
-    const targetGuildId = String(args?.guildId || guildId || '').trim();
+    const targetGuildId = String(guildId || '').trim();
     const confirm = String(args?.confirm || '').trim();
 
     if (!targetGuildId) {
@@ -65,13 +70,14 @@ export const privacyForgetGuildAction: ActionDefinition = {
         ],
       };
     } catch (error) {
+      logger.warn('[PRIVACY] forgetGuildRagData failed guild=%s: %s', targetGuildId, error instanceof Error ? error.message : String(error));
       return {
         ok: false,
         name: 'privacy.forget.guild',
         summary: '길드 RAG 메모리 삭제 실패',
         artifacts: [targetGuildId],
         verification: ['forgetGuildRagData exception'],
-        error: error instanceof Error ? error.message : String(error),
+        error: 'FORGET_GUILD_FAILED',
       };
     }
   },
@@ -145,6 +151,7 @@ export const privacyForgetUserAction: ActionDefinition = {
         ],
       };
     } catch (error) {
+      logger.warn('[PRIVACY] forgetUserRagData failed user=%s guild=%s: %s', targetUserId, targetGuildId || 'all', error instanceof Error ? error.message : String(error));
       return {
         ok: false,
         name: 'privacy.forget.user',
@@ -154,7 +161,7 @@ export const privacyForgetUserAction: ActionDefinition = {
           `targetGuildId=${targetGuildId || 'all'}`,
         ],
         verification: ['forgetUserRagData exception'],
-        error: error instanceof Error ? error.message : String(error),
+        error: 'FORGET_USER_FAILED',
       };
     }
   },

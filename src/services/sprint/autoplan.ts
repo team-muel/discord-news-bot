@@ -197,8 +197,8 @@ const parseLensResponse = (raw: string, lens: PlanLens): Omit<LensReview, 'durat
   if (!jsonMatch) {
     return {
       lens,
-      verdict: 'approve',
-      feedback: raw.slice(0, 1000),
+      verdict: 'refine',
+      feedback: `[parse-failed] ${raw.slice(0, 1000)}`,
       tasteDecisions: [],
     };
   }
@@ -207,7 +207,7 @@ const parseLensResponse = (raw: string, lens: PlanLens): Omit<LensReview, 'durat
     const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
     const verdict = ['approve', 'refine', 'reject'].includes(String(parsed.verdict))
       ? (String(parsed.verdict) as 'approve' | 'refine' | 'reject')
-      : 'approve';
+      : 'refine';
 
     return {
       lens,
@@ -220,8 +220,8 @@ const parseLensResponse = (raw: string, lens: PlanLens): Omit<LensReview, 'durat
   } catch {
     return {
       lens,
-      verdict: 'approve',
-      feedback: raw.slice(0, 1000),
+      verdict: 'refine',
+      feedback: `[parse-failed] ${raw.slice(0, 1000)}`,
       tasteDecisions: [],
     };
   }

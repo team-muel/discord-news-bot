@@ -32,6 +32,8 @@ const ERROR_LOG_DB_ENABLED = parseBooleanEnv(process.env.ERROR_LOG_DB_ENABLED, t
 const ERROR_LOG_TABLE = String(process.env.ERROR_LOG_TABLE || 'system_error_events').trim();
 
 let dbDisabled = false;
+let dbDisabledAtMs = 0;
+const DB_DISABLED_RETRY_MS = 10 * 60_000; // retry after 10 minutes
 
 const toText = (value: unknown): string => String(value || '').trim();
 
@@ -57,8 +59,13 @@ const toErrorMessage = (value: unknown): string => {
 };
 
 const persistStructuredError = async (row: Record<string, unknown>) => {
-  if (!ERROR_LOG_DB_ENABLED || dbDisabled || !isSupabaseConfigured()) {
+  if (!ERROR_LOG_DB_ENABLED || !isSupabaseConfigured()) {
     return;
+  }
+  // Retry after TTL if previously disabled
+  if (dbDisabled) {
+    if (Date.now() - dbDisabledAtMs < DB_DISABLED_RETRY_MS) return;
+    dbDisabled = false;
   }
 
   try {
@@ -68,6 +75,7 @@ const persistStructuredError = async (row: Record<string, unknown>) => {
       const message = toText(error.message).toLowerCase();
       if (message.includes(ERROR_LOG_TABLE.toLowerCase()) || message.includes('does not exist') || toText((error as any)?.code) === '42P01') {
         dbDisabled = true;
+        dbDisabledAtMs = Date.now();
       }
     }
   } catch {

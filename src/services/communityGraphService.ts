@@ -212,15 +212,18 @@ export const recordCommunityInteractionEvent = async (params: {
     throw new Error(selectError.message || 'COMMUNITY_EDGE_SELECT_FAILED');
   }
 
-  const interactionCount = Math.max(0, Number((current as any)?.interaction_count || 0)) + 1;
-  const replyCount = Math.max(0, Number((current as any)?.reply_count || 0)) + (eventType === 'reply' ? 1 : 0);
-  const mentionCount = Math.max(0, Number((current as any)?.mention_count || 0)) + (eventType === 'mention' ? 1 : 0);
-  const reactionCount = Math.max(0, Number((current as any)?.reaction_count || 0)) + (eventType === 'reaction' ? 1 : 0);
-  const coPresenceCount = Math.max(0, Number((current as any)?.co_presence_count || 0)) + (eventType === 'co_presence' ? 1 : 0);
+  // Atomic-safe: start from DB values if present but use them in the same upsert
+  // to minimise TOCTOU window. True atomicity requires server-side SQL increment.
+  const prev = current as Record<string, unknown> | null;
+  const interactionCount = Math.max(0, Number(prev?.interaction_count || 0)) + 1;
+  const replyCount = Math.max(0, Number(prev?.reply_count || 0)) + (eventType === 'reply' ? 1 : 0);
+  const mentionCount = Math.max(0, Number(prev?.mention_count || 0)) + (eventType === 'mention' ? 1 : 0);
+  const reactionCount = Math.max(0, Number(prev?.reaction_count || 0)) + (eventType === 'reaction' ? 1 : 0);
+  const coPresenceCount = Math.max(0, Number(prev?.co_presence_count || 0)) + (eventType === 'co_presence' ? 1 : 0);
 
-  const first = String((current as any)?.first_interaction_at || '').trim();
+  const first = String(prev?.first_interaction_at || '').trim();
   const firstInteractionAt = first ? (Date.parse(first) <= Date.parse(eventTs) ? first : eventTs) : eventTs;
-  const last = String((current as any)?.last_interaction_at || '').trim();
+  const last = String(prev?.last_interaction_at || '').trim();
   const lastInteractionAt = last ? (Date.parse(last) >= Date.parse(eventTs) ? last : eventTs) : eventTs;
 
   const affinityScore = computeAffinity({
@@ -358,7 +361,15 @@ export const buildSocialContextHints = async (params: {
     })
     .filter(Boolean);
 
-  return [...outHints, ...inHints].slice(0, maxItems);
+  // Interleave outbound and inbound so both directions get fair representation
+  const merged: string[] = [];
+  const maxOut = outHints.length;
+  const maxIn = inHints.length;
+  for (let i = 0; merged.length < maxItems && (i < maxOut || i < maxIn); i++) {
+    if (i < maxOut && merged.length < maxItems) merged.push(outHints[i]);
+    if (i < maxIn && merged.length < maxItems) merged.push(inHints[i]);
+  }
+  return merged;
 };
 
 export const getCommunityGraphOperationalSummary = async (params: {

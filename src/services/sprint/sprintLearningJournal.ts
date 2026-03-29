@@ -16,17 +16,24 @@ import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { searchObsidianVaultWithAdapter, readObsidianFileWithAdapter } from '../obsidian/router';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import {
+  SPRINT_LEARNING_JOURNAL_ENABLED,
+  SPRINT_LEARNING_JOURNAL_GUILD_ID,
+  SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW,
+  SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED,
+  SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED,
+  SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE,
+} from '../../config';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
 
-const JOURNAL_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_ENABLED, true);
-const JOURNAL_GUILD_ID = String(process.env.SPRINT_LEARNING_JOURNAL_GUILD_ID || 'system').trim();
-const JOURNAL_PATTERN_WINDOW = Math.max(3, parseIntegerEnv(process.env.SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW, 10));
-const JOURNAL_LLM_RECONFIG_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED, true);
-const JOURNAL_AUTO_APPLY_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED, true);
-const JOURNAL_AUTO_APPLY_MIN_CONFIDENCE = Math.max(0.5, Math.min(1, Number(process.env.SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE) || 0.75));
+const JOURNAL_ENABLED = SPRINT_LEARNING_JOURNAL_ENABLED;
+const JOURNAL_GUILD_ID = SPRINT_LEARNING_JOURNAL_GUILD_ID;
+const JOURNAL_PATTERN_WINDOW = SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW;
+const JOURNAL_LLM_RECONFIG_ENABLED = SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED;
+const JOURNAL_AUTO_APPLY_ENABLED = SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED;
+const JOURNAL_AUTO_APPLY_MIN_CONFIDENCE = SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE;
 
 const JOURNAL_TABLE = 'sprint_journal_entries';
 
@@ -495,7 +502,12 @@ export const applyReconfigToPhaseOrder = (
     log: [],
   };
 
-  if (!JOURNAL_AUTO_APPLY_ENABLED || !hints) return result;
+  if (!hints) return result;
+
+  if (!JOURNAL_AUTO_APPLY_ENABLED) {
+    result.log.push('[DISABLED] JOURNAL_AUTO_APPLY_ENABLED=false — skipping mutations');
+    return result;
+  }
 
   const eligible = hints.proposals.filter(
     (p) => p.confidence >= JOURNAL_AUTO_APPLY_MIN_CONFIDENCE,

@@ -304,9 +304,10 @@ const githubRequest = async <T>(params: {
   if (!expected.includes(response.status)) {
     const bodyText = await response.text();
     const retryable = response.status >= 500 || response.status === 429;
+    logger.warn('[OPENCODE-PUBLISH] GitHub API %s %s failed (%d): %s', params.method, params.path, response.status, bodyText.slice(0, 500));
     throw new PublishWorkerError(
       'GITHUB_HTTP_ERROR',
-      `GitHub API ${params.method} ${params.path} failed (${response.status}): ${bodyText.slice(0, 500)}`,
+      `GitHub API ${params.method} ${params.path} failed (${response.status})`,
       retryable,
     );
   }

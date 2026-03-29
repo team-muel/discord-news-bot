@@ -36,9 +36,9 @@ describe('buildNewsFingerprint', () => {
     expect(a).not.toBe(b);
   });
 
-  it('40자 hex 문자열을 반환한다 (SHA-1)', () => {
+  it('64자 hex 문자열을 반환한다 (SHA-256)', () => {
     const fp = buildNewsFingerprint({ guildId: 'g1', goal: 'test', canonicalUrls: [] });
-    expect(fp).toMatch(/^[0-9a-f]{40}$/);
+    expect(fp).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 

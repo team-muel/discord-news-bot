@@ -17,6 +17,8 @@ type Bucket = {
 
 const buckets = new Map<string, Bucket>();
 
+const MAX_BUCKETS = 10_000;
+
 const SWEEP_INTERVAL_MS = 30_000;
 setInterval(() => {
   const now = Date.now();
@@ -47,6 +49,12 @@ export const createRateLimiter = (options: RateLimitOptions) => {
 
   const runMemoryLimit = (key: string): { allowed: boolean; retryAfterSec: number } => {
     const now = Date.now();
+    if (buckets.size >= MAX_BUCKETS) {
+      for (const [k, b] of buckets) {
+        if (b.resetAtMs <= now) buckets.delete(k);
+        if (buckets.size < MAX_BUCKETS) break;
+      }
+    }
     const current = buckets.get(key);
     if (!current || current.resetAtMs <= now) {
       buckets.set(key, { count: 1, resetAtMs: now + windowMs });
@@ -94,7 +102,11 @@ export const createRateLimiter = (options: RateLimitOptions) => {
           return;
         }
         next();
-      })();
+      })().catch(() => {
+        if (!res.headersSent) {
+          res.status(503).json({ error: 'RATE_LIMIT_ERROR', message: 'Rate limit check failed.' });
+        }
+      });
       return;
     }
 
