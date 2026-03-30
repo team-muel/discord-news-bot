@@ -76,9 +76,18 @@ If a role or tool name appears only in `.github` customization files or planning
 
 ## Relationship To Other Docs
 
-- `docs/ROLE_RENAME_MAP.md` explains migration and compatibility policy for legacy-to-neutral naming.
 - `docs/ARCHITECTURE_INDEX.md` explains current runtime structure and boundaries.
 - `docs/RUNBOOK_MUEL_PLATFORM.md` explains operator procedure.
 - `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` explains IDE collaboration behavior.
 - `docs/planning/LOCAL_TOOL_ADAPTER_ARCHITECTURE.md` explains the future generalized local tool layer that does not yet exist.
 - `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md` explains the concrete plan for integrating NVIDIA OpenShell, NemoClaw, OpenClaw, Stanford OpenJarvis, and Nemotron as real Tool layer components.
+
+## Naming Compatibility Policy
+
+**Current status: Phase C complete (2026-03-24).**
+
+All internal source code, types, actions, worker specs, tests, docs, and prompts now use neutral names as canonical labels. Legacy names are still accepted as input aliases for backward compatibility in `normalizeAgentRole()`, `McpWorkerKind`, worker spec aliases, and `ROLE_TOOLS`.
+
+- Phase A (completed): docs and prompts prefer new names; runtime accepts both legacy and new labels.
+- Phase B (completed): scripts/workflows/env prefer new names; legacy labels remain as deprecated aliases.
+- Phase C (completed 2026-03-24): all source code uses neutral names as canonical; legacy aliases kept only at input boundaries; external OSS adapter IDs (nemoclaw, openjarvis, openshell, openclaw) remain unchanged.
