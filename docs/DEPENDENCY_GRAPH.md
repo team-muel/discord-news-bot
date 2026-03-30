@@ -1,24 +1,24 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 267
+- Nodes: 275
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/services/supabaseClient.ts | 72 |
-| src/logger.ts | 71 |
-| src/utils/env.ts | 67 |
-| src/config.ts | 27 |
-| src/services/skills/actions/types.ts | 26 |
+| src/logger.ts | 82 |
+| src/services/supabaseClient.ts | 73 |
+| src/utils/env.ts | 69 |
+| src/config.ts | 28 |
+| src/services/skills/actions/types.ts | 27 |
 | src/services/llmClient.ts | 22 |
-| src/middleware/auth.ts | 16 |
+| src/middleware/auth.ts | 17 |
 | src/services/multiAgentService.ts | 16 |
 | src/services/skills/types.ts | 16 |
-| src/utils/validation.ts | 13 |
+| src/utils/validation.ts | 14 |
 | src/discord/messages.ts | 12 |
-| src/utils/obsidianEnv.ts | 11 |
+| src/routes/bot-agent/types.ts | 11 |
 
 ## Mermaid
 
@@ -34,7 +34,10 @@ graph LR
   "server.ts" --> "src/config.ts"
   "server.ts" --> "src/init.ts"
   "server.ts" --> "src/logger.ts"
+  "server.ts" --> "src/services/automationBot.ts"
+  "server.ts" --> "src/services/mcpSkillRouter.ts"
   "server.ts" --> "src/services/runtimeBootstrap.ts"
+  "server.ts" --> "src/services/tradingEngine.ts"
   "src/app.ts" --> "src/config.ts"
   "src/app.ts" --> "src/middleware/auth.ts"
   "src/app.ts" --> "src/routes/auth.ts"
@@ -145,6 +148,7 @@ graph LR
   "src/discord/messages.ts":::file
   "src/discord/runtime/buttonInteractions.ts" --> "src/discord/messages.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/discord/runtime/sessionControl.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/logger.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/adminAllowlistService.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/agentRuntimeReadinessService.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/multiAgentService.ts"
@@ -157,7 +161,7 @@ graph LR
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/utils/codeThread.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/utils/sessionArtifactStore.ts"
-  "src/discord/runtime/gatewayPreflight.ts":::file
+  "src/discord/runtime/gatewayPreflight.ts" --> "src/utils/network.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/logger.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/services/agentOpsService.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/services/privacyForgetService.ts"
@@ -214,6 +218,7 @@ graph LR
   "src/routes/bot-agent/gotRoutes.ts" --> "src/services/agentGotStore.ts"
   "src/routes/bot-agent/gotRoutes.ts" --> "src/services/agentOpsService.ts"
   "src/routes/bot-agent/gotRoutes.ts" --> "src/utils/validation.ts"
+  "src/routes/bot-agent/governanceRoutes.ts" --> "src/logger.ts"
   "src/routes/bot-agent/governanceRoutes.ts" --> "src/middleware/auth.ts"
   "src/routes/bot-agent/governanceRoutes.ts" --> "src/routes/bot-agent/types.ts"
   "src/routes/bot-agent/governanceRoutes.ts" --> "src/services/agentRoleWorkerService.ts"
@@ -253,6 +258,14 @@ graph LR
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/privacyForgetService.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/utils/obsidianEnv.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/utils/validation.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/middleware/auth.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/routes/bot-agent/types.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/services/evalAutoPromoteLoopService.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/services/evalAutoPromoteService.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/services/langgraph/shadowGraphRunner.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/services/rewardSignalLoopService.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/services/rewardSignalService.ts"
+  "src/routes/bot-agent/rewardEvalRoutes.ts" --> "src/utils/validation.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/middleware/auth.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/routes/bot-agent/types.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agentRoleWorkerService.ts"
@@ -304,6 +317,7 @@ graph LR
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/learningRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/memoryRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/qualityPrivacyRoutes.ts"
+  "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/rewardEvalRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/runtimeRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/sprintRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/toolsRoutes.ts"
@@ -313,8 +327,6 @@ graph LR
   "src/routes/health.ts" --> "src/config.ts"
   "src/routes/health.ts" --> "src/contracts/bot.ts"
   "src/routes/health.ts" --> "src/services/automationBot.ts"
-  "src/routes/health.ts" --> "src/services/llmClient.ts"
-  "src/routes/health.ts" --> "src/utils/env.ts"
   "src/routes/quant.ts":::file
   "src/routes/research.ts" --> "src/contracts/researchPreset.ts"
   "src/routes/research.ts" --> "src/middleware/auth.ts"
@@ -396,6 +408,7 @@ graph LR
   "src/services/agentRuntimeReadinessService.ts" --> "src/services/workerGeneration/workerProposalMetrics.ts"
   "src/services/agentRuntimeReadinessService.ts" --> "src/utils/env.ts"
   "src/services/agentRuntimeTypes.ts":::file
+  "src/services/agentSessionStore.ts" --> "src/logger.ts"
   "src/services/agentSessionStore.ts" --> "src/services/multiAgentService.ts"
   "src/services/agentSessionStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/agentSloService.ts" --> "src/logger.ts"
@@ -453,6 +466,7 @@ graph LR
   "src/services/botAutoRecoveryService.ts" --> "src/logger.ts"
   "src/services/communityGraphService.ts" --> "src/services/agentConsentService.ts"
   "src/services/communityGraphService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/conversationTurnService.ts" --> "src/logger.ts"
   "src/services/conversationTurnService.ts" --> "src/services/supabaseClient.ts"
   "src/services/conversationTurnService.ts" --> "src/utils/env.ts"
   "src/services/discordChannelTelemetryService.ts" --> "src/logger.ts"
@@ -483,6 +497,14 @@ graph LR
   "src/services/entityNervousSystem.ts" --> "src/services/rewardSignalService.ts"
   "src/services/entityNervousSystem.ts" --> "src/services/supabaseClient.ts"
   "src/services/entityNervousSystem.ts" --> "src/utils/env.ts"
+  "src/services/evalAutoPromoteLoopService.ts" --> "src/logger.ts"
+  "src/services/evalAutoPromoteLoopService.ts" --> "src/services/evalAutoPromoteService.ts"
+  "src/services/evalAutoPromoteLoopService.ts" --> "src/utils/env.ts"
+  "src/services/evalAutoPromoteService.ts" --> "src/logger.ts"
+  "src/services/evalAutoPromoteService.ts" --> "src/services/llmClient.ts"
+  "src/services/evalAutoPromoteService.ts" --> "src/services/rewardSignalService.ts"
+  "src/services/evalAutoPromoteService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/evalAutoPromoteService.ts" --> "src/utils/env.ts"
   "src/services/finopsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/finopsService.ts" --> "src/utils/env.ts"
   "src/services/goNoGoService.ts" --> "src/services/agentTelemetryQueue.ts"
@@ -535,10 +557,12 @@ graph LR
   "src/services/langgraph/stateContract.ts" --> "src/services/promptCompiler.ts"
   "src/services/llmClient.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/llmClient.ts" --> "src/services/supabaseClient.ts"
+  "src/services/llmClient.ts" --> "src/utils/network.ts"
   "src/services/llmExperimentAnalyticsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/llmStructuredParseService.ts" --> "src/services/securityCandidateContract.ts"
   "src/services/localAiTradingClient.ts" --> "src/config.ts"
   "src/services/localAiTradingClient.ts" --> "src/contracts/trade.ts"
+  "src/services/localStateCache.ts" --> "src/utils/atomicWrite.ts"
   "src/services/mcpSkillRouter.ts" --> "src/logger.ts"
   "src/services/mcpSkillRouter.ts" --> "src/utils/env.ts"
   "src/services/mcpSkillRouter.ts" --> "src/utils/ttlCache.ts"
@@ -592,6 +616,7 @@ graph LR
   "src/services/multiAgentTypes.ts" --> "src/services/agentRuntimeTypes.ts"
   "src/services/multiAgentTypes.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/multiAgentTypes.ts" --> "src/services/skills/types.ts"
+  "src/services/newsCaptureDedupService.ts" --> "src/logger.ts"
   "src/services/newsCaptureDedupService.ts" --> "src/services/supabaseClient.ts"
   "src/services/newsCaptureDedupService.ts" --> "src/utils/ttlCache.ts"
   "src/services/newsChannelStore.ts" --> "src/services/supabaseClient.ts"
@@ -659,6 +684,9 @@ graph LR
   "src/services/retrievalEvalService.ts" --> "src/services/obsidian/router.ts"
   "src/services/retrievalEvalService.ts" --> "src/services/supabaseClient.ts"
   "src/services/retrievalEvalService.ts" --> "src/utils/obsidianEnv.ts"
+  "src/services/rewardSignalLoopService.ts" --> "src/logger.ts"
+  "src/services/rewardSignalLoopService.ts" --> "src/services/rewardSignalService.ts"
+  "src/services/rewardSignalLoopService.ts" --> "src/utils/env.ts"
   "src/services/rewardSignalService.ts" --> "src/logger.ts"
   "src/services/rewardSignalService.ts" --> "src/services/entityNervousSystem.ts"
   "src/services/rewardSignalService.ts" --> "src/services/supabaseClient.ts"
@@ -683,11 +711,13 @@ graph LR
   "src/services/runtimeBootstrap.ts" --> "src/services/automationBot.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/botAutoRecoveryService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/discordTopologySyncService.ts"
+  "src/services/runtimeBootstrap.ts" --> "src/services/evalAutoPromoteLoopService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/mcpSkillRouter.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/obsidianLoreSyncService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/opencodePublishWorker.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/retrievalEvalLoopService.ts"
+  "src/services/runtimeBootstrap.ts" --> "src/services/rewardSignalLoopService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/runtimeAlertService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/sprint/autonomousGit.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/sprint/sprintOrchestrator.ts"
@@ -781,6 +811,7 @@ graph LR
   "src/services/skills/actions/plannerRules.ts" --> "src/logger.ts"
   "src/services/skills/actions/plannerRules.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/policy.ts" --> "src/utils/env.ts"
+  "src/services/skills/actions/privacy.ts" --> "src/logger.ts"
   "src/services/skills/actions/privacy.ts" --> "src/services/privacyForgetService.ts"
   "src/services/skills/actions/privacy.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/queryUtils.ts":::file
@@ -833,6 +864,7 @@ graph LR
   "src/services/skills/engine.ts" --> "src/services/skills/modules/webhook.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/registry.ts"
   "src/services/skills/engine.ts" --> "src/services/skills/types.ts"
+  "src/services/skills/loopDetection.ts":::file
   "src/services/skills/modules/casualChat.ts" --> "src/services/llmClient.ts"
   "src/services/skills/modules/casualChat.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/common.ts" --> "src/services/llmClient.ts"
@@ -884,19 +916,24 @@ graph LR
   "src/services/sprint/sprintCodeWriter.ts" --> "src/logger.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/services/llmClient.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/services/sprint/scopeGuard.ts"
+  "src/services/sprint/sprintCodeWriter.ts" --> "src/utils/atomicWrite.ts"
+  "src/services/sprint/sprintHooks.ts":::file
+  "src/services/sprint/sprintLearningJournal.ts" --> "src/config.ts"
   "src/services/sprint/sprintLearningJournal.ts" --> "src/logger.ts"
   "src/services/sprint/sprintLearningJournal.ts" --> "src/services/llmClient.ts"
   "src/services/sprint/sprintLearningJournal.ts" --> "src/services/obsidian/authoring.ts"
   "src/services/sprint/sprintLearningJournal.ts" --> "src/services/obsidian/router.ts"
   "src/services/sprint/sprintLearningJournal.ts" --> "src/services/supabaseClient.ts"
-  "src/services/sprint/sprintLearningJournal.ts" --> "src/utils/env.ts"
   "src/services/sprint/sprintLearningJournal.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/config.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/logger.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/entityNervousSystem.ts"
+  "src/services/sprint/sprintOrchestrator.ts" --> "src/services/localStateCache.ts"
+  "src/services/sprint/sprintOrchestrator.ts" --> "src/services/mcpSkillRouter.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actions/mcpDelegate.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/actions/registry.ts"
+  "src/services/sprint/sprintOrchestrator.ts" --> "src/services/skills/loopDetection.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/actionableErrors.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/autoplan.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/crossModelVoice.ts"
@@ -905,6 +942,7 @@ graph LR
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/scopeGuard.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/skillPromptLoader.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintCodeWriter.ts"
+  "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintHooks.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintLearningJournal.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/sprint/sprintPreamble.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/supabaseClient.ts"
@@ -912,6 +950,8 @@ graph LR
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/services/sprint/sprintOrchestrator.ts" --> "src/services/workerGeneration/workerGenerationPipeline.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/config.ts"
+  "src/services/sprint/sprintPreamble.ts" --> "src/services/skills/actions/registry.ts"
+  "src/services/sprint/sprintPreamble.ts" --> "src/services/skills/actions/types.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/services/sprint/sprintLearningJournal.ts"
   "src/services/sprint/sprintTriggers.ts" --> "src/config.ts"
   "src/services/sprint/sprintTriggers.ts" --> "src/logger.ts"
@@ -922,6 +962,7 @@ graph LR
   "src/services/structuredErrorLogService.ts" --> "src/services/supabaseClient.ts"
   "src/services/structuredErrorLogService.ts" --> "src/utils/env.ts"
   "src/services/supabaseClient.ts" --> "src/config.ts"
+  "src/services/supabaseClient.ts" --> "src/utils/env.ts"
   "src/services/supabaseExtensionOpsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/supabaseRateLimitService.ts" --> "src/logger.ts"
   "src/services/supabaseRateLimitService.ts" --> "src/services/supabaseClient.ts"
@@ -936,10 +977,12 @@ graph LR
   "src/services/taskRoutingMetricsService.ts" --> "src/services/taskRoutingService.ts"
   "src/services/taskRoutingService.ts" --> "src/services/supabaseClient.ts"
   "src/services/toolLearningService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/logger.ts"
   "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/tools/adapters/openclawCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/adapters/openclawCliAdapter.ts" --> "src/utils/env.ts"
+  "src/services/tools/adapters/openjarvisAdapter.ts" --> "src/logger.ts"
   "src/services/tools/adapters/openjarvisAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/adapters/openjarvisAdapter.ts" --> "src/utils/env.ts"
   "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
@@ -1014,6 +1057,7 @@ graph LR
   "src/services/youtubeSubscriptionsMonitor.ts" --> "src/utils/async.ts"
   "src/types/auth.ts":::file
   "src/utils/async.ts":::file
+  "src/utils/atomicWrite.ts":::file
   "src/utils/codeThread.ts" --> "src/discord/messages.ts"
   "src/utils/codeThread.ts" --> "src/services/multiAgentService.ts"
   "src/utils/codeThread.ts" --> "src/utils/sessionArtifactStore.ts"

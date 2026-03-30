@@ -70,6 +70,7 @@ jobs:
       - name: API contract smoke test
         env:
           START_BOT: "false"
+          RESEARCH_PRESET_ADMIN_USER_IDS: "dev-smoke-user"
         run: |
           npm run start:server > server.log 2>&1 &
           for i in {1..25}; do

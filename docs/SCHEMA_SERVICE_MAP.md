@@ -47,7 +47,7 @@
 | bot_state | - |
 | candles | - |
 | community_actor_profiles | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
-| community_interaction_events | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts |
+| community_interaction_events | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/rewardSignalService.ts |
 | community_relationship_edges | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
 | discord_login_sessions | src/services/discordLoginSessionStore.ts |
 | distributed_locks | src/services/distributedLockService.ts |
@@ -73,7 +73,7 @@
 | retrieval_ranker_active_profiles | src/services/entityNervousSystem.ts<br/>src/services/retrievalEvalService.ts |
 | retrieval_ranker_experiments | src/services/retrievalEvalService.ts |
 | settings | - |
-| sources | src/services/agentSloService.ts<br/>src/services/crawlerRuntimeRegistry.ts<br/>src/services/goNoGoService.ts<br/>src/services/newsChannelStore.ts<br/>src/services/newsSentimentMonitor.ts<br/>src/services/sourceMonitorStore.ts<br/>src/services/youtubeSubscriptionStore.ts<br/>src/services/youtubeSubscriptionsMonitor.ts |
+| sources | src/services/agentSloService.ts<br/>src/services/goNoGoService.ts<br/>src/services/newsChannelStore.ts<br/>src/services/newsSentimentMonitor.ts<br/>src/services/sourceMonitorStore.ts<br/>src/services/youtubeSubscriptionStore.ts<br/>src/services/youtubeSubscriptionsMonitor.ts |
 | sprint_journal_entries | - |
 | sprint_pipelines | - |
 | system_error_events | - |
