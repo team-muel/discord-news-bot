@@ -1,7 +1,9 @@
-import { fetchStockChartImageUrl, fetchStockQuote } from '../services/stockService';
-import { generateInvestmentAnalysis } from '../services/investmentAnalysisService';
 import { listActions, getAction } from '../services/skills/actions/registry';
+import { runGoalActions } from '../services/skills/actionRunner';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
+
+const MCP_GUILD_ID = 'MCP';
+const MCP_REQUESTER = 'mcp-adapter';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -89,12 +91,17 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
       return toTextResult('symbol is required', true);
     }
 
-    const quote = await fetchStockQuote(symbol);
-    if (!quote) {
+    const result = await runGoalActions({
+      goal: `stock.quote ${symbol}`,
+      guildId: MCP_GUILD_ID,
+      requestedBy: MCP_REQUESTER,
+    });
+
+    if (!result.hasSuccess) {
       return toTextResult(`quote not available for ${symbol}`, true);
     }
 
-    return toTextResult(JSON.stringify(quote, null, 2));
+    return toTextResult(result.output);
   }
 
   if (request.name === 'stock.chart') {
@@ -103,12 +110,17 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
       return toTextResult('symbol is required', true);
     }
 
-    const chartUrl = await fetchStockChartImageUrl(symbol);
-    if (!chartUrl) {
+    const result = await runGoalActions({
+      goal: `stock.chart ${symbol}`,
+      guildId: MCP_GUILD_ID,
+      requestedBy: MCP_REQUESTER,
+    });
+
+    if (!result.hasSuccess) {
       return toTextResult(`chart not available for ${symbol}`, true);
     }
 
-    return toTextResult(chartUrl);
+    return toTextResult(result.output);
   }
 
   if (request.name === 'investment.analysis') {
@@ -117,8 +129,13 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
       return toTextResult('query is required', true);
     }
 
-    const output = await generateInvestmentAnalysis(query);
-    return toTextResult(output || 'empty analysis');
+    const result = await runGoalActions({
+      goal: `investment.analysis ${query}`,
+      guildId: MCP_GUILD_ID,
+      requestedBy: MCP_REQUESTER,
+    });
+
+    return toTextResult(result.output || 'empty analysis', !result.hasSuccess);
   }
 
   if (request.name === 'action.catalog') {
@@ -132,7 +149,6 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
     }
     const actionName = compact(args.actionName);
     const goal = compact(args.goal);
-    const actionArgs = toObject(args.args);
     if (!actionName || !goal) {
       return toTextResult('actionName and goal are required', true);
     }
@@ -142,8 +158,13 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
       return toTextResult(`unknown action: ${actionName}`, true);
     }
 
-    const result = await action.execute({ goal, args: actionArgs });
-    return toTextResult(JSON.stringify(result, null, 2), !result.ok);
+    const result = await runGoalActions({
+      goal: `${actionName} ${goal}`,
+      guildId: MCP_GUILD_ID,
+      requestedBy: MCP_REQUESTER,
+    });
+
+    return toTextResult(JSON.stringify({ handled: result.handled, output: result.output, hasSuccess: result.hasSuccess }, null, 2), !result.hasSuccess);
   }
 
   return toTextResult(`unknown tool: ${request.name}`, true);

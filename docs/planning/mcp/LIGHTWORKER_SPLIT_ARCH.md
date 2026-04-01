@@ -4,7 +4,7 @@ Goal: keep Muel core small and move unstable crawling logic into isolated MCP wo
 
 ## Architecture
 
-1. Core (`discord-news-bot`)
+1. Core (`muel-platform`)
 
 - Intent routing
 - Agent planning

@@ -1,6 +1,6 @@
 # Planning Docs Index
 
-**상태: 전체 로드맵/WIP 종결 (2026-03-24)** — 현재 Active WIP 없음. 신규 사이클 시작 시 새 Roadmap + Execution Board 항목을 신설한다.
+**상태: M-10 Codebase Health 사이클 진행 중 (2026-04-01~)**
 
 ## Daily Operating Set
 
@@ -83,9 +83,7 @@
 - MEMORY_QUEUE_POLICY_V1.md
 - MEMORY_DEADLETTER_SOP_V1.md
 - CONTROL_PLANE_POLICY_TABLE.md
-- W3_CONTROL_PLANE_STABILIZATION_RESULTS.md
 - TRADING_ISOLATION_READINESS_V1.md
-- W4_CANARY_CUTOVER_RESULTS.md
 
 Archived documents: [docs/archive/README.md](../archive/README.md)
 
@@ -145,8 +143,6 @@ Archived documents: [docs/archive/README.md](../archive/README.md)
 
 ### Historical Snapshot / Evidence
 
-- `W3_CONTROL_PLANE_STABILIZATION_RESULTS.md`
-- `W4_CANARY_CUTOVER_RESULTS.md`
 - `gate-runs/*`
 - Archived items → [docs/archive/](../archive/README.md)
 

@@ -57,15 +57,15 @@ sudo chown -R muel:muel /opt/muel
 
 ```bash
 cd /opt/muel
-sudo -u muel git clone <your-repo-url> discord-news-bot
-cd /opt/muel/discord-news-bot
+sudo -u muel git clone <your-repo-url> muel-platform
+cd /opt/muel/muel-platform
 sudo -u muel npm ci --omit=dev --no-audit --no-fund
 sudo -u muel cp config/env/opencode-worker.gcp.env.example config/env/opencode-worker.gcp.env
 ```
 
 필수 수정:
 
-- `OPENCODE_LOCAL_WORKER_ROOT=/opt/muel/discord-news-bot`
+- `OPENCODE_LOCAL_WORKER_ROOT=/opt/muel/muel-platform`
 - `OPENCODE_LOCAL_WORKER_ALLOW_WRITE=false` 유지 권장
 - `OPENCODE_LOCAL_WORKER_AUTH_TOKEN=<long-random-token>` 설정 권장
 - `OPENCODE_LOCAL_WORKER_REQUIRE_AUTH=true` 운영 권장

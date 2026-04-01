@@ -21,7 +21,9 @@
 
 ## Active Now (WIP <= 3)
 
-_없음 — 2026-03-24 기준 모든 로드맵/WIP 항목 종결._
+1. [M-10] 코드베이스 구조 정리 — agent* 서비스 하위 디렉토리 재구성 + import 경로 정리
+2. [M-10] CI/인프라 안정화 — openjarvis-unattended 스크립트 복원, smoke-api 환경변수 수정, 생성 docs 동기화
+3. [M-10] 프로젝트 이름 통일 — infra 파일(systemd, render.yaml, env) `discord-news-bot` → `muel-platform` 완료; GitHub 리포 rename 대기
 
 ## Closed on 2026-03-24 (All Remaining WIP)
 
