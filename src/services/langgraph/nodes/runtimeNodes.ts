@@ -1,4 +1,4 @@
-import type { AgentPriority } from '../../agentRuntimeTypes';
+import type { AgentPriority } from '../../agent/agentRuntimeTypes';
 import { appendTrace, type LangGraphState } from '../stateContract';
 
 type NonTaskIntent = 'task' | 'casual_chat' | 'uncertain';

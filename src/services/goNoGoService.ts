@@ -1,7 +1,7 @@
 import { getMemoryJobQueueStats } from './memoryJobRunner';
 import { getMemoryQualityMetrics } from './memoryQualityMetricsService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
+import { getAgentTelemetryQueueSnapshot } from './agent/agentTelemetryQueue';
 
 const toNumberEnv = (value: string | undefined, fallback: number, min: number, max: number): number => {
   const parsed = Number(value);

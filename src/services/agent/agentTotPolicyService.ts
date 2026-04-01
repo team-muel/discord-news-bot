@@ -1,6 +1,6 @@
-import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from '../utils/env';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import logger from '../../logger';
+import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from '../../utils/env';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type AgentTotPolicySnapshot = {
   shadowEnabled: boolean;

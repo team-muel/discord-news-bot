@@ -59,6 +59,8 @@ jobs:
         run: npm run contracts:validate
       - name: Validate go/no-go run logs
         run: npm run gates:validate
+      - name: Refresh rollback rehearsal summary
+        run: node scripts/summarize-rollback-rehearsals.mjs --days=7 --dryRun=false --sinks=markdown
       - name: Validate go/no-go run logs (strict checklist)
         run: npm run gates:validate:strict
       - name: Validate rollback readiness checklist (strict)

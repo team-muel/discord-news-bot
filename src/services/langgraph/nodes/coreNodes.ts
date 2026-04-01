@@ -1,5 +1,5 @@
-import { getAgentPrivacyPolicySnapshot } from '../../agentPrivacyPolicyService';
-import type { AgentDeliberationMode, AgentIntent, AgentPolicyGateDecision } from '../../agentRuntimeTypes';
+import { getAgentPrivacyPolicySnapshot } from '../../agent/agentPrivacyPolicyService';
+import type { AgentDeliberationMode, AgentIntent, AgentPolicyGateDecision } from '../../agent/agentRuntimeTypes';
 import { generateText } from '../../llmClient';
 import { parseLlmStructuredRecord } from '../../llmStructuredParseService';
 import { compilePromptGoal, type PromptCompileResult } from '../../promptCompiler';

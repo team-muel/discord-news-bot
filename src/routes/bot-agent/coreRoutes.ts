@@ -11,8 +11,8 @@ import {
   serializeAgentSessionForApi,
   startAgentSession,
 } from '../../services/multiAgentService';
-import { getAgentOpsSnapshot, triggerDailyLearningRun, triggerGuildOnboardingSession } from '../../services/agentOpsService';
-import { triggerGotCutoverAutopilotRun } from '../../services/agentOpsService';
+import { getAgentOpsSnapshot, triggerDailyLearningRun, triggerGuildOnboardingSession } from '../../services/agent/agentOpsService';
+import { triggerGotCutoverAutopilotRun } from '../../services/agent/agentOpsService';
 import { getConversationThreadBySession, listConversationThreads, listConversationTurns } from '../../services/conversationTurnService';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
 

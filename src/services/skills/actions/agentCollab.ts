@@ -1,4 +1,4 @@
-﻿import { buildAgentRuntimeReadinessReport } from '../../agentRuntimeReadinessService';
+﻿import { buildAgentRuntimeReadinessReport } from '../../agent/agentRuntimeReadinessService';
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import {
   recommendSuperAgent,

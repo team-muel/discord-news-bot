@@ -24,8 +24,8 @@ vi.mock('./automationBot', () => ({
 vi.mock('./memoryJobRunner', () => ({ startMemoryJobRunner }));
 vi.mock('./obsidianLoreSyncService', () => ({ startObsidianLoreSyncLoop }));
 vi.mock('./retrievalEvalLoopService', () => ({ startRetrievalEvalLoop }));
-vi.mock('./agentSloService', () => ({ startAgentSloAlertLoop }));
-vi.mock('./agentOpsService', () => ({
+vi.mock('./agent/agentSloService', () => ({ startAgentSloAlertLoop }));
+vi.mock('./agent/agentOpsService', () => ({
   startAgentDailyLearningLoop,
   startGotCutoverAutopilotLoop,
 }));

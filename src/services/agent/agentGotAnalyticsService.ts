@@ -1,5 +1,5 @@
-import { parseIntegerEnv, parseNumberEnv } from '../utils/env';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { parseIntegerEnv, parseNumberEnv } from '../../utils/env';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type DashboardParams = {
   guildId: string;

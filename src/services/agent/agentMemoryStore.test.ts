@@ -26,7 +26,7 @@ const makeMockClient = (chainResult: { data?: unknown; error?: unknown }) => ({
   from: vi.fn(() => makeChain(chainResult)),
 });
 
-vi.mock('./supabaseClient', () => ({
+vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: vi.fn(() => false),
   getSupabaseClient: vi.fn(() => { throw new Error('SUPABASE_NOT_CONFIGURED'); }),
 }));
@@ -35,7 +35,7 @@ vi.mock('./agentConsentService', () => ({
   hasMemoryConsent: vi.fn(async () => true),
 }));
 
-import * as supabaseClient from './supabaseClient';
+import * as supabaseClient from '../supabaseClient';
 import * as agentConsentService from './agentConsentService';
 import {
   isMemoryType,

@@ -1,8 +1,8 @@
-import { parseBoundedNumberEnv } from '../utils/env';
+import { parseBoundedNumberEnv } from '../../utils/env';
 import { getAgentAnswerQualityReviewSummary } from './agentQualityReviewService';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
-import { getCommunityGraphOperationalSummary } from './communityGraphService';
-import { buildGoNoGoReport } from './goNoGoService';
+import { getCommunityGraphOperationalSummary } from '../communityGraphService';
+import { buildGoNoGoReport } from '../goNoGoService';
 
 const MAX_HALLUCINATION_FAIL_RATE = parseBoundedNumberEnv(
   process.env.AGENT_SOCIAL_QUALITY_MAX_HALLUCINATION_FAIL_RATE,

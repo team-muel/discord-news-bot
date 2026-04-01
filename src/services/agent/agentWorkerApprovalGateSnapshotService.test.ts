@@ -31,22 +31,22 @@ vi.mock('node:fs/promises', () => ({
   },
 }));
 
-vi.mock('./workerGeneration/workerApprovalStore', () => ({
+vi.mock('../workerGeneration/workerApprovalStore', () => ({
   getWorkerApprovalStoreSnapshot: mockGetWorkerApprovalStoreSnapshot,
   listApprovals: mockListApprovals,
 }));
 
-vi.mock('./skills/actionGovernanceStore', () => ({
+vi.mock('../skills/actionGovernanceStore', () => ({
   getGuildActionPolicy: mockGetGuildActionPolicy,
   listGuildActionPolicies: mockListGuildActionPolicies,
   listActionApprovalRequests: mockListActionApprovalRequests,
 }));
 
-vi.mock('./opencodeOpsService', () => ({
+vi.mock('../opencodeOpsService', () => ({
   getOpencodeExecutionSummary: mockGetOpencodeExecutionSummary,
 }));
 
-vi.mock('./supabaseClient', () => ({
+vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: mockIsSupabaseConfigured,
   getSupabaseClient: mockGetSupabaseClient,
 }));

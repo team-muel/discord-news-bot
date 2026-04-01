@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listSupabaseCronJobs = vi.fn(async () => []);
 
-vi.mock('./agentRoleWorkerService', () => ({
+vi.mock('./agent/agentRoleWorkerService', () => ({
   listAgentRoleWorkerSpecs: vi.fn(() => ([
     { id: 'local-orchestrator', title: 'Local Orchestrator worker', envKey: 'MCP_LOCAL_ORCHESTRATOR_WORKER_URL', url: 'http://127.0.0.1:8790' },
     { id: 'opendev', title: 'OpenDev worker', envKey: 'MCP_OPENDEV_WORKER_URL', url: 'http://127.0.0.1:8791' },
@@ -35,7 +35,7 @@ vi.mock('../discord/auth', () => ({
   })),
 }));
 
-vi.mock('./agentOpsService', () => ({
+vi.mock('./agent/agentOpsService', () => ({
   getAgentOpsSnapshot: vi.fn(() => ({
     dailyLearningEnabled: true,
     dailyLearningHour: 4,
@@ -69,7 +69,7 @@ vi.mock('./retrievalEvalLoopService', () => ({
   })),
 }));
 
-vi.mock('./agentSloService', () => ({
+vi.mock('./agent/agentSloService', () => ({
   getAgentSloAlertLoopStats: vi.fn(() => ({
     enabled: true,
     running: true,

@@ -1,6 +1,6 @@
-import type { AgentSession } from './multiAgentService';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import logger from '../logger';
+import type { AgentSession } from '../multiAgentService';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import logger from '../../logger';
 
 let disabled = false;
 
@@ -128,7 +128,7 @@ export const persistAgentSession = async (session: AgentSession): Promise<void> 
     if (error) {
       if (isMissingTableError(error)) {
         disabled = true;
-        logger.warn('[AGENT-SESSION-STORE] Permanently disabled — missing table: %s', String(error.message || '').slice(0, 200));
+        logger.warn('[AGENT-SESSION-STORE] Permanently disabled ??missing table: %s', String(error.message || '').slice(0, 200));
       }
       return;
     }
@@ -150,7 +150,7 @@ export const persistAgentSession = async (session: AgentSession): Promise<void> 
       const { error: stepError } = await client.from('agent_steps').upsert(stepRows, { onConflict: 'id' });
       if (stepError && isMissingTableError(stepError)) {
         disabled = true;
-        logger.warn('[AGENT-SESSION-STORE] Permanently disabled — missing steps table: %s', String(stepError.message || '').slice(0, 200));
+        logger.warn('[AGENT-SESSION-STORE] Permanently disabled ??missing steps table: %s', String(stepError.message || '').slice(0, 200));
       }
     }
   } catch {

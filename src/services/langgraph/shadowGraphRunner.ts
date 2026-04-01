@@ -22,7 +22,7 @@ import {
 } from './stateContract';
 import { executeLangGraph, type LangGraphNodeHandler } from './executor';
 import { runCompilePromptNode, runRouteIntentNode, runPolicyGateNode } from './nodes/coreNodes';
-import type { AgentPriority } from '../agentRuntimeTypes';
+import type { AgentPriority } from '../agent/agentRuntimeTypes';
 
 const SHADOW_RUNNER_ENABLED = parseBooleanEnv(process.env.SHADOW_GRAPH_RUNNER_ENABLED, false);
 const SHADOW_TIMEOUT_MS = Math.max(5_000, Math.min(120_000, Number(process.env.SHADOW_GRAPH_TIMEOUT_MS || 30_000) || 30_000));

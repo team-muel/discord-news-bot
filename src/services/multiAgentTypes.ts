@@ -13,14 +13,14 @@ export type {
   AgentIntent,
   AgentDeliberationMode,
   AgentPolicyGateDecision,
-} from './agentRuntimeTypes';
+} from './agent/agentRuntimeTypes';
 
 export type AgentSessionStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type AgentStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type AgentStep = {
   id: string;
-  role: import('./agentRuntimeTypes').AgentRole;
+  role: import('./agent/agentRuntimeTypes').AgentRole;
   title: string;
   status: AgentStepStatus;
   startedAt: string | null;
@@ -36,9 +36,9 @@ export type AgentSession = {
   goal: string;
   conversationThreadId?: number | null;
   conversationTurnIndex?: number | null;
-  priority: import('./agentRuntimeTypes').AgentPriority;
+  priority: import('./agent/agentRuntimeTypes').AgentPriority;
   requestedSkillId: SkillId | null;
-  routedIntent: import('./agentRuntimeTypes').AgentIntent;
+  routedIntent: import('./agent/agentRuntimeTypes').AgentIntent;
   status: AgentSessionStatus;
   createdAt: string;
   updatedAt: string;
@@ -47,10 +47,10 @@ export type AgentSession = {
   result: string | null;
   error: string | null;
   cancelRequested: boolean;
-  deliberationMode?: import('./agentRuntimeTypes').AgentDeliberationMode;
+  deliberationMode?: import('./agent/agentRuntimeTypes').AgentDeliberationMode;
   riskScore?: number;
   policyGate?: {
-    decision: import('./agentRuntimeTypes').AgentPolicyGateDecision;
+    decision: import('./agent/agentRuntimeTypes').AgentPolicyGateDecision;
     reasons: string[];
   };
   ormAssessment?: {
@@ -89,7 +89,7 @@ export type AgentRuntimeSnapshot = {
 export type AgentSessionShadowSummary = {
   traceLength: number;
   lastNode: string | null;
-  intent: import('./agentRuntimeTypes').AgentIntent | null;
+  intent: import('./agent/agentRuntimeTypes').AgentIntent | null;
   hasError: boolean;
   elapsedMs: number | null;
   uniqueNodeCount: number;
@@ -115,9 +115,9 @@ export type AgentSessionApiView = Omit<AgentSession, 'shadowGraph'> & {
   shadowGraphSummary: AgentSessionShadowSummary | null;
   progressSummary: AgentSessionProgressSummary;
   privacySummary: {
-    deliberationMode: import('./agentRuntimeTypes').AgentDeliberationMode;
+    deliberationMode: import('./agent/agentRuntimeTypes').AgentDeliberationMode;
     riskScore: number;
-    decision: import('./agentRuntimeTypes').AgentPolicyGateDecision;
+    decision: import('./agent/agentRuntimeTypes').AgentPolicyGateDecision;
     reasons: string[];
   };
   shadowGraph?: LangGraphState | null;

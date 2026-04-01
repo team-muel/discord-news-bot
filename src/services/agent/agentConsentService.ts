@@ -1,5 +1,5 @@
-import { parseBooleanEnv } from '../utils/env';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { parseBooleanEnv } from '../../utils/env';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type AgentUserConsentSnapshot = {
   guildId: string;

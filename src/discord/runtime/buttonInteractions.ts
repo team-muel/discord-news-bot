@@ -27,7 +27,7 @@ import {
 } from '../../services/workerGeneration/workerGenerationPipeline';
 import { cleanupSandbox } from '../../services/workerGeneration/workerSandbox';
 import { runArchitectReleaseGate } from '../../services/workerGeneration/workerExecutors';
-import { evaluateWorkerActivationGate } from '../../services/agentRuntimeReadinessService';
+import { evaluateWorkerActivationGate } from '../../services/agent/agentRuntimeReadinessService';
 import logger from '../../logger';
 import { DISCORD_MESSAGES } from '../messages';
 import {

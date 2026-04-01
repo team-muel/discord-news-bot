@@ -1,6 +1,6 @@
-import { parseIntegerEnv } from '../utils/env';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import logger from '../logger';
+import { parseIntegerEnv } from '../../utils/env';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import logger from '../../logger';
 
 export type WorkflowPriority = 'fast' | 'balanced' | 'precise';
 export type WorkflowRole = 'planner' | 'researcher' | 'critic';
@@ -19,45 +19,45 @@ const DEFAULT_STEPS: Record<WorkflowPriority, WorkflowStepTemplate[]> = {
   fast: [
     {
       role: 'planner',
-      title: '목표 실행 계획 수립',
+      title: '목표 ?�행 계획 ?�립',
       skipWhenFast: true,
     },
     {
       role: 'researcher',
-      title: '실행안/근거 초안 작성',
+      title: '?�행??근거 초안 ?�성',
     },
     {
       role: 'critic',
-      title: '리스크 검토 및 보완',
+      title: '리스??검??�?보완',
       skipWhenFast: true,
     },
   ],
   balanced: [
     {
       role: 'planner',
-      title: '목표 실행 계획 수립',
+      title: '목표 ?�행 계획 ?�립',
     },
     {
       role: 'researcher',
-      title: '실행안/근거 초안 작성',
+      title: '?�행??근거 초안 ?�성',
     },
     {
       role: 'critic',
-      title: '리스크 검토 및 보완',
+      title: '리스??검??�?보완',
     },
   ],
   precise: [
     {
       role: 'planner',
-      title: '목표 실행 계획 수립',
+      title: '목표 ?�행 계획 ?�립',
     },
     {
       role: 'researcher',
-      title: '실행안/근거 초안 작성',
+      title: '?�행??근거 초안 ?�성',
     },
     {
       role: 'critic',
-      title: '리스크 검토 및 보완',
+      title: '리스??검??�?보완',
     },
   ],
 };

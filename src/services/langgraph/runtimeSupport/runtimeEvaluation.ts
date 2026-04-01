@@ -1,5 +1,5 @@
 import { parseLlmStructuredRecord } from '../../llmStructuredParseService';
-import type { AgentPriority } from '../../agentRuntimeTypes';
+import type { AgentPriority } from '../../agent/agentRuntimeTypes';
 import {
   buildEvidenceBundleId,
   extractMemoryCitations,

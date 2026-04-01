@@ -1,6 +1,6 @@
 import type { Guild } from 'discord.js';
 import logger from '../../logger';
-import { onGuildJoined } from '../../services/agentOpsService';
+import { onGuildJoined } from '../../services/agent/agentOpsService';
 import { forgetGuildRagData } from '../../services/privacyForgetService';
 
 const toErrorMessage = (error: unknown): string => {

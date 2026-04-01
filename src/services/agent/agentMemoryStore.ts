@@ -1,10 +1,10 @@
 import crypto from 'crypto';
-import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
-import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
+import { assessMemoryPoisonRisk, buildPoisonTags } from '../memoryPoisonGuard';
+import { sanitizeForObsidianWrite } from '../obsidianSanitizationWorker';
 import { hasMemoryConsent } from './agentConsentService';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { runWithConcurrency } from '../utils/async';
-import { generateQueryEmbedding, generateEmbedding, storeMemoryEmbedding, isEmbeddingEnabled } from './memoryEmbeddingService';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { runWithConcurrency } from '../../utils/async';
+import { generateQueryEmbedding, generateEmbedding, storeMemoryEmbedding, isEmbeddingEnabled } from '../memoryEmbeddingService';
 
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;

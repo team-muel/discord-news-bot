@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('./llmClient', () => ({
+vi.mock('../llmClient', () => ({
   generateText: vi.fn().mockResolvedValue('테스트 응답입니다.'),
 }));
 

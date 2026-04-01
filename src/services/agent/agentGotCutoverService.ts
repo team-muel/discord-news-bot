@@ -1,8 +1,8 @@
 import crypto from 'crypto';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { buildGotPerformanceDashboard } from './agentGotAnalyticsService';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { TtlCache } from '../utils/ttlCache';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { TtlCache } from '../../utils/ttlCache';
 
 export type AgentGotCutoverDecision = {
   guildId: string;

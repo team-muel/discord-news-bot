@@ -3,8 +3,8 @@ import { isAutomationEnabled, startAutomationJobs, startAutomationModules } from
 import { startMemoryJobRunner } from './memoryJobRunner';
 import { startObsidianLoreSyncLoop } from './obsidianLoreSyncService';
 import { startRetrievalEvalLoop } from './retrievalEvalLoopService';
-import { startAgentSloAlertLoop } from './agentSloService';
-import { startAgentDailyLearningLoop, startGotCutoverAutopilotLoop } from './agentOpsService';
+import { startAgentSloAlertLoop } from './agent/agentSloService';
+import { startAgentDailyLearningLoop, startGotCutoverAutopilotLoop } from './agent/agentOpsService';
 import { autoSyncGuildTopologiesOnReady } from './discordTopologySyncService';
 import { startRewardSignalLoop } from './rewardSignalLoopService';
 import { startEvalAutoPromoteLoop } from './evalAutoPromoteLoopService';

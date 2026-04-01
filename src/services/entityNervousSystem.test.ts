@@ -24,7 +24,7 @@ vi.mock('./supabaseClient', () => ({
 }));
 
 // Mock agentMemoryStore
-vi.mock('./agentMemoryStore', () => ({
+vi.mock('./agent/agentMemoryStore', () => ({
   queueMemoryJob: vi.fn(() => Promise.resolve({ id: 'mjob_test', status: 'queued' })),
 }));
 
@@ -41,7 +41,7 @@ describe('entityNervousSystem', () => {
   describe('Circuit 1: precipitateSessionToMemory', () => {
     it('enqueues a durable_extraction job for completed sessions', async () => {
       const { precipitateSessionToMemory } = await import('./entityNervousSystem');
-      const { queueMemoryJob } = await import('./agentMemoryStore');
+      const { queueMemoryJob } = await import('./agent/agentMemoryStore');
 
       const result = await precipitateSessionToMemory({
         sessionId: 'sess-001',
@@ -69,7 +69,7 @@ describe('entityNervousSystem', () => {
 
     it('skips cancelled sessions', async () => {
       const { precipitateSessionToMemory } = await import('./entityNervousSystem');
-      const { queueMemoryJob } = await import('./agentMemoryStore');
+      const { queueMemoryJob } = await import('./agent/agentMemoryStore');
 
       const result = await precipitateSessionToMemory({
         sessionId: 'sess-002',
@@ -87,7 +87,7 @@ describe('entityNervousSystem', () => {
 
     it('skips sessions with too few steps', async () => {
       const { precipitateSessionToMemory } = await import('./entityNervousSystem');
-      const { queueMemoryJob } = await import('./agentMemoryStore');
+      const { queueMemoryJob } = await import('./agent/agentMemoryStore');
 
       const result = await precipitateSessionToMemory({
         sessionId: 'sess-003',

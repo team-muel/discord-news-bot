@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { AgentPriority } from '../../agentRuntimeTypes';
+import type { AgentPriority } from '../../agent/agentRuntimeTypes';
 
 type SessionFormattingView = {
   goal: string;

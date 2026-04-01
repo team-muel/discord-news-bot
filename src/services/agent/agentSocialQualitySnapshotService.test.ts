@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   buildAgentRuntimeReadinessReport: vi.fn(),
 }));
 
-vi.mock('./communityGraphService', () => ({
+vi.mock('../communityGraphService', () => ({
   getCommunityGraphOperationalSummary: mocks.getCommunityGraphOperationalSummary,
 }));
 
@@ -15,7 +15,7 @@ vi.mock('./agentQualityReviewService', () => ({
   getAgentAnswerQualityReviewSummary: mocks.getAgentAnswerQualityReviewSummary,
 }));
 
-vi.mock('./goNoGoService', () => ({
+vi.mock('../goNoGoService', () => ({
   buildGoNoGoReport: mocks.buildGoNoGoReport,
 }));
 

@@ -4,7 +4,7 @@
  * Extracted from multiAgentService.ts to isolate intent routing
  * and conversational response logic into a focused module.
  */
-import { generateText } from './llmClient';
+import { generateText } from '../llmClient';
 
 export const buildPolicyBlockMessage = (reasons: string[]): string => {
   const joined = reasons.slice(0, 4).join(', ') || 'privacy_policy';

@@ -1,6 +1,6 @@
 import type { Message } from 'discord.js';
 import logger from '../../logger';
-import { createMemoryItem } from '../../services/agentMemoryStore';
+import { createMemoryItem } from '../../services/agent/agentMemoryStore';
 import { recordCommunityInteractionEvent } from '../../services/communityGraphService';
 import { recordDiscordChannelMessageSignal } from '../../services/discordChannelTelemetryService';
 import { getGuildActionPolicy } from '../../services/skills/actionGovernanceStore';

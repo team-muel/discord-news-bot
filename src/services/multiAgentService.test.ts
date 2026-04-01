@@ -8,11 +8,11 @@ vi.mock('./llmClient', () => ({
   generateText: vi.fn().mockResolvedValue('mocked response'),
 }));
 
-vi.mock('./agentMemoryService', () => ({
+vi.mock('./agent/agentMemoryService', () => ({
   buildAgentMemoryHints: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('./agentSessionStore', () => ({
+vi.mock('./agent/agentSessionStore', () => ({
   persistAgentSession: vi.fn().mockResolvedValue(undefined),
 }));
 

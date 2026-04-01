@@ -1,4 +1,4 @@
-import type { AgentPriority } from '../../agentRuntimeTypes';
+import type { AgentPriority } from '../../agent/agentRuntimeTypes';
 import type { SkillId } from '../../skills/types';
 
 export type ExecutionStrategy = 'requested_skill' | 'fast_path' | 'full_review';

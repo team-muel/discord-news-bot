@@ -32,11 +32,11 @@ vi.mock('./supabaseClient', () => ({
   getSupabaseClient: vi.fn(() => mockClient),
 }));
 
-vi.mock('./agentConsentService', () => ({
+vi.mock('./agent/agentConsentService', () => ({
   hasSocialGraphConsent: vi.fn(async () => true),
 }));
 
-import * as consentService from './agentConsentService';
+import * as consentService from './agent/agentConsentService';
 import { recordCommunityInteractionEvent } from './communityGraphService';
 
 describe('communityGraphService consent gating', () => {

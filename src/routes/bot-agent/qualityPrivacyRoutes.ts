@@ -1,14 +1,14 @@
 ﻿import { requireAdmin, requireAuth } from '../../middleware/auth';
-import { getUserConsentSnapshot, upsertUserConsentSnapshot } from '../../services/agentConsentService';
-import { getAgentPrivacyPolicySnapshot, upsertAgentPrivacyPolicy } from '../../services/agentPrivacyPolicyService';
-import { buildPrivacyTuningRecommendation, listPrivacyGateSamples, reviewPrivacyGateSample } from '../../services/agentPrivacyTuningService';
+import { getUserConsentSnapshot, upsertUserConsentSnapshot } from '../../services/agent/agentConsentService';
+import { getAgentPrivacyPolicySnapshot, upsertAgentPrivacyPolicy } from '../../services/agent/agentPrivacyPolicyService';
+import { buildPrivacyTuningRecommendation, listPrivacyGateSamples, reviewPrivacyGateSample } from '../../services/agent/agentPrivacyTuningService';
 import { isUserAdmin } from '../../services/adminAllowlistService';
-import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../../services/agentRetentionPolicyService';
+import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../../services/agent/agentRetentionPolicyService';
 import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previewForgetUserRagData } from '../../services/privacyForgetService';
 import { getObsidianAdapterRuntimeStatus } from '../../services/obsidian/router';
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidianQualityService';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
-import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agentQualityReviewService';
+import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agent/agentQualityReviewService';
 import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';

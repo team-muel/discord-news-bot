@@ -1,8 +1,8 @@
-import { parseIntegerEnv } from '../utils/env';
-import type { SkillId } from './skills/types';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { listSkills } from './skills/registry';
-import logger from '../logger';
+import { parseIntegerEnv } from '../../utils/env';
+import type { SkillId } from '../skills/types';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { listSkills } from '../skills/registry';
+import logger from '../../logger';
 
 const AGENT_MAX_CONCURRENT_SESSIONS = Math.max(1, parseIntegerEnv(process.env.AGENT_MAX_CONCURRENT_SESSIONS, 4));
 const AGENT_MAX_GOAL_LENGTH = Math.max(40, parseIntegerEnv(process.env.AGENT_MAX_GOAL_LENGTH, 1200));
@@ -132,27 +132,27 @@ export const validateAgentSessionRequest = (params: {
 
   const goal = String(params.goal || '').trim();
   if (!goal) {
-    return { ok: false, message: '목표가 비어 있습니다.' };
+    return { ok: false, message: '목표가 비어 ?�습?�다.' };
   }
 
   if (goal.length > snapshot.maxGoalLength) {
     return {
       ok: false,
-      message: `목표 길이가 너무 깁니다. 최대 ${snapshot.maxGoalLength}자까지 허용됩니다.`,
+      message: `목표 길이가 ?�무 깁니?? 최�? ${snapshot.maxGoalLength}?�까지 ?�용?�니??`,
     };
   }
 
   if (params.runningSessions >= snapshot.maxConcurrentSessions) {
     return {
       ok: false,
-      message: `동시 실행 세션 한도를 초과했습니다. 현재 한도: ${snapshot.maxConcurrentSessions}`,
+      message: `?�시 ?�행 ?�션 ?�도�?초과?�습?�다. ?�재 ?�도: ${snapshot.maxConcurrentSessions}`,
     };
   }
 
   if (params.requestedSkillId && restrictedSkills.has(params.requestedSkillId) && !params.isAdmin) {
     return {
       ok: false,
-      message: `스킬 ${params.requestedSkillId}은 관리자 전용입니다.`,
+      message: `?�킬 ${params.requestedSkillId}?� 관리자 ?�용?�니??`,
     };
   }
 

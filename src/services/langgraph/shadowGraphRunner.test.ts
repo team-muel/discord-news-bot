@@ -13,7 +13,7 @@ vi.mock('../llmClient', () => ({
   generateText: vi.fn().mockResolvedValue('task'),
 }));
 
-vi.mock('../agentPrivacyPolicyService', () => ({
+vi.mock('../agent/agentPrivacyPolicyService', () => ({
   getAgentPrivacyPolicySnapshot: () => ({
     modeDefault: 'direct',
     reviewRules: [],

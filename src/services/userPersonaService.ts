@@ -1,4 +1,4 @@
-import { createMemoryItem } from './agentMemoryStore';
+import { createMemoryItem } from './agent/agentMemoryStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type PersonaSnapshotParams = {

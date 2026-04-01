@@ -9,7 +9,7 @@ import {
   listGuildAgentSessions,
   startAgentSession,
 } from '../../services/multiAgentService';
-import { getAgentOpsSnapshot, triggerDailyLearningRun, triggerGuildOnboardingSession } from '../../services/agentOpsService';
+import { getAgentOpsSnapshot, triggerDailyLearningRun, triggerGuildOnboardingSession } from '../../services/agent/agentOpsService';
 import { listGuildAllowedDomains, upsertGuildDomainPolicy } from '../../services/skills/actionGovernanceStore';
 import { isUserLearningEnabled, setUserLearningEnabled } from '../../services/userLearningPrefsService';
 import { DISCORD_MESSAGES } from '../messages';

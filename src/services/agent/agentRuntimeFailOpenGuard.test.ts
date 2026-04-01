@@ -7,7 +7,7 @@ describe('runtime fail-open guards', () => {
     vi.stubEnv('JWT_SECRET', 'test-secret-not-default');
     vi.stubEnv('ACTION_POLICY_FAIL_OPEN_ON_ERROR', 'true');
 
-    await expect(import('./skills/actionGovernanceStore')).rejects.toThrow(
+    await expect(import('../skills/actionGovernanceStore')).rejects.toThrow(
       'ACTION_POLICY_FAIL_OPEN_ON_ERROR must be false in production',
     );
 

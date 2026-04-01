@@ -1,6 +1,6 @@
-import type { AgentIntent, AgentPriority } from '../agentRuntimeTypes';
+import type { AgentIntent, AgentPriority } from '../agent/agentRuntimeTypes';
 import type { PromptCompileResult } from '../promptCompiler';
-import type { AgentOutcome } from '../agentOutcomeContract';
+import type { AgentOutcome } from '../agent/agentOutcomeContract';
 
 export type LangGraphNodeId =
   | 'ingest'

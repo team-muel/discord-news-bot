@@ -1,6 +1,6 @@
 ﻿import { requireAdmin } from '../../middleware/auth';
 import logger from '../../logger';
-import { listAgentRoleWorkerSpecs } from '../../services/agentRoleWorkerService';
+import { listAgentRoleWorkerSpecs } from '../../services/agent/agentRoleWorkerService';
 import { getAction, listActions } from '../../services/skills/actions/registry';
 import { decideActionApprovalRequest, isActionRunMode, listActionApprovalRequests, listGuildActionPolicies, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 import { getOpencodeExecutionSummary } from '../../services/opencodeOpsService';

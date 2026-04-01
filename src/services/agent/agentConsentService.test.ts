@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./supabaseClient', () => ({
+vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: vi.fn(() => false),
   getSupabaseClient: vi.fn(() => { throw new Error('SUPABASE_NOT_CONFIGURED'); }),
 }));
 
-import * as supabaseClient from './supabaseClient';
+import * as supabaseClient from '../supabaseClient';
 import { __resetConsentMemoryForTests, getUserConsentSnapshot, upsertUserConsentSnapshot } from './agentConsentService';
 
 describe('agentConsentService', () => {

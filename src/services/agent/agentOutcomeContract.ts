@@ -1,4 +1,4 @@
-import type { ActionExecutionResult } from './skills/actions/types';
+import type { ActionExecutionResult } from '../skills/actions/types';
 
 export type AgentOutcomeState = 'success' | 'degraded' | 'failure';
 

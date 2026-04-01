@@ -1,4 +1,4 @@
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type ReviewStrategy = 'baseline' | 'tot' | 'got';
 

@@ -43,7 +43,7 @@ import {
   getAgentOpsSnapshot,
   triggerDailyLearningRun,
   triggerGuildOnboardingSession,
-} from './services/agentOpsService';
+} from './services/agent/agentOpsService';
 import { forgetUserRagData } from './services/privacyForgetService';
 import {
   getArtifact,
@@ -68,7 +68,7 @@ import {
   getWorkerProposalMetricsSnapshot,
 } from './services/workerGeneration/workerProposalMetrics';
 import { cleanupSandbox } from './services/workerGeneration/workerSandbox';
-import { evaluateWorkerActivationGate } from './services/agentRuntimeReadinessService';
+import { evaluateWorkerActivationGate } from './services/agent/agentRuntimeReadinessService';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from './services/skills/actionGovernanceStore';
 // ─── Discord layer modules ────────────────────────────────────────────────────
 import {

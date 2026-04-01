@@ -77,7 +77,7 @@ export const precipitateSessionToMemory = async (input: SessionPrecipitationInpu
 
   try {
     // Lazy import to avoid circular dependency
-    const { queueMemoryJob } = await import('./agentMemoryStore');
+    const { queueMemoryJob } = await import('./agent/agentMemoryStore');
 
     const content = input.status === 'failed'
       ? `[실패한 세션] 목표: ${input.goal}\n오류: ${input.result || '알 수 없음'}`

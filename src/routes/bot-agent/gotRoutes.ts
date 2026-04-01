@@ -1,10 +1,10 @@
 import { client } from '../../bot';
 import { requireAdmin } from '../../middleware/auth';
-import { getAgentGotPolicySnapshot } from '../../services/agentGotPolicyService';
-import { getGotRunById, listGotNodes, listGotRuns, listGotSelectionEvents } from '../../services/agentGotStore';
-import { buildGotPerformanceDashboard } from '../../services/agentGotAnalyticsService';
-import { getAgentGotCutoverDecision } from '../../services/agentGotCutoverService';
-import { triggerGotCutoverAutopilotRun } from '../../services/agentOpsService';
+import { getAgentGotPolicySnapshot } from '../../services/agent/agentGotPolicyService';
+import { getGotRunById, listGotNodes, listGotRuns, listGotSelectionEvents } from '../../services/agent/agentGotStore';
+import { buildGotPerformanceDashboard } from '../../services/agent/agentGotAnalyticsService';
+import { getAgentGotCutoverDecision } from '../../services/agent/agentGotCutoverService';
+import { triggerGotCutoverAutopilotRun } from '../../services/agent/agentOpsService';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';

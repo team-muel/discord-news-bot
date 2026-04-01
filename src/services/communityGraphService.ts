@@ -1,5 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { hasSocialGraphConsent } from './agentConsentService';
+import { hasSocialGraphConsent } from './agent/agentConsentService';
 
 export type CommunityInteractionEventType = 'reply' | 'mention' | 'reaction' | 'co_presence';
 

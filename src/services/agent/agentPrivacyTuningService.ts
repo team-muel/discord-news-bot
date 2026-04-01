@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getAgentPrivacyPolicySnapshot } from './agentPrivacyPolicyService';
 import type { AgentPolicyGateDecision, AgentDeliberationMode } from './agentRuntimeTypes';
 

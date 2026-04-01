@@ -1,6 +1,6 @@
-import { isMemoryType, searchGuildMemory } from '../../agentMemoryStore';
-import type { MemoryType } from '../../agentMemoryStore';
-import { buildAgentMemoryHints } from '../../agentMemoryService';
+import { isMemoryType, searchGuildMemory } from '../../agent/agentMemoryStore';
+import type { MemoryType } from '../../agent/agentMemoryStore';
+import { buildAgentMemoryHints } from '../../agent/agentMemoryService';
 import type { ActionDefinition } from './types';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();

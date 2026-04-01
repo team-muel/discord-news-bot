@@ -7,20 +7,20 @@ import {
   listSupabaseCronJobs,
 } from '../../services/supabaseExtensionOpsService';
 import { getPlatformLightweightingReport } from '../../services/platformLightweightingService';
-import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs, probeHttpWorkerHealth } from '../../services/agentRoleWorkerService';
+import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs, probeHttpWorkerHealth } from '../../services/agent/agentRoleWorkerService';
 import { getRuntimeSchedulerPolicySnapshot } from '../../services/runtimeSchedulerPolicyService';
 import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../../services/efficiencyOptimizationService';
-import { getAgentTelemetryQueueSnapshot } from '../../services/agentTelemetryQueue';
+import { getAgentTelemetryQueueSnapshot } from '../../services/agent/agentTelemetryQueue';
 import { summarizeOpencodeQueueReadiness } from '../../services/opencodeGitHubQueueService';
 import { getMemoryJobRunnerStats } from '../../services/memoryJobRunner';
 import { getObsidianLoreSyncLoopStats } from '../../services/obsidianLoreSyncService';
 import { getRetrievalEvalLoopStats } from '../../services/retrievalEvalLoopService';
-import { buildAgentRuntimeReadinessReport } from '../../services/agentRuntimeReadinessService';
-import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloAlertEvents } from '../../services/agentSloService';
+import { buildAgentRuntimeReadinessReport } from '../../services/agent/agentRuntimeReadinessService';
+import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloAlertEvents } from '../../services/agent/agentSloService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../../services/finopsService';
 import { getLlmExperimentSummary } from '../../services/llmExperimentAnalyticsService';
-import { buildSocialQualityOperationalSnapshot } from '../../services/agentSocialQualitySnapshotService';
-import { buildWorkerApprovalGateSnapshot } from '../../services/agentWorkerApprovalGateSnapshotService';
+import { buildSocialQualityOperationalSnapshot } from '../../services/agent/agentSocialQualitySnapshotService';
+import { buildWorkerApprovalGateSnapshot } from '../../services/agent/agentWorkerApprovalGateSnapshotService';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';

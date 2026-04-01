@@ -1,7 +1,7 @@
-import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
-import { logStructuredError } from './structuredErrorLogService';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import logger from '../../logger';
+import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { logStructuredError } from '../structuredErrorLogService';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type TelemetryTask = {
   id: string;

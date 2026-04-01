@@ -14,7 +14,7 @@ vi.mock('../../superAgentService', () => ({
   startSuperAgentSessionFromTask: startSuperAgentSessionFromTaskMock,
 }));
 
-vi.mock('../../agentRuntimeReadinessService', () => ({
+vi.mock('../../agent/agentRuntimeReadinessService', () => ({
   buildAgentRuntimeReadinessReport: buildAgentRuntimeReadinessReportMock,
 }));
 

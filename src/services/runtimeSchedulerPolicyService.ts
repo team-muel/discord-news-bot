@@ -1,8 +1,8 @@
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from './automationBot';
-import { getAgentSloAlertLoopStats } from './agentSloService';
-import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs } from './agentRoleWorkerService';
+import { getAgentSloAlertLoopStats } from './agent/agentSloService';
+import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs } from './agent/agentRoleWorkerService';
 import { getLoginSessionCleanupLoopStats } from '../discord/auth';
-import { getAgentOpsSnapshot } from './agentOpsService';
+import { getAgentOpsSnapshot } from './agent/agentOpsService';
 import { getMemoryJobRunnerStats } from './memoryJobRunner';
 import { getObsidianLoreSyncLoopStats } from './obsidianLoreSyncService';
 import { getRetrievalEvalLoopStats } from './retrievalEvalLoopService';

@@ -1,5 +1,5 @@
-import logger from '../logger';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import logger from '../../logger';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type GotNodeType = 'root' | 'hypothesis' | 'evidence' | 'critique' | 'merge' | 'decision' | 'patch';
 

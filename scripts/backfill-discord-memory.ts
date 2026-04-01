@@ -8,7 +8,7 @@ import {
   type Message,
   type TextChannel,
 } from 'discord.js';
-import { createMemoryItem } from '../src/services/agentMemoryStore';
+import { createMemoryItem } from '../src/services/agent/agentMemoryStore';
 import { recordCommunityInteractionEvent } from '../src/services/communityGraphService';
 import { getSupabaseClient, isSupabaseConfigured } from '../src/services/supabaseClient';
 

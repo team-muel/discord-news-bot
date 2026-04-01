@@ -10,8 +10,8 @@ import {
   queueMemoryJob,
   resolveMemoryConflict,
   searchGuildMemory,
-} from '../../services/agentMemoryStore';
-import type { MemoryType } from '../../services/agentMemoryStore';
+} from '../../services/agent/agentMemoryStore';
+import type { MemoryType } from '../../services/agent/agentMemoryStore';
 import { cancelMemoryJob, getMemoryJobQueueStats, getMemoryJobRunnerStats, listMemoryJobDeadletters, requeueDeadletterJob } from '../../services/memoryJobRunner';
 import { getObsidianLoreSyncLoopStats } from '../../services/obsidianLoreSyncService';
 import { getRetrievalEvalLoopStats } from '../../services/retrievalEvalLoopService';

@@ -1,5 +1,5 @@
-import { parseIntegerEnv } from '../utils/env';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { parseIntegerEnv } from '../../utils/env';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type AgentRetentionPolicySnapshot = {
   guildId: string;

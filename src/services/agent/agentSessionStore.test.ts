@@ -1,13 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('./supabaseClient', () => ({
+vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: vi.fn(() => true),
   getSupabaseClient: vi.fn(),
 }));
 
 import { persistAgentSession } from './agentSessionStore';
-import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import type { AgentSession } from './multiAgentService';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import type { AgentSession } from '../multiAgentService';
 
 const makeSession = (): AgentSession => ({
   id: 's-1',

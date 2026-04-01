@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import logger from '../logger';
-import { buildAgentMemoryHints } from './agentMemoryService';
+import { buildAgentMemoryHints } from './agent/agentMemoryService';
 import { TtlCache } from '../utils/ttlCache';
-import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agentPolicyService';
-import { persistAgentSession } from './agentSessionStore';
+import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agent/agentPolicyService';
+import { persistAgentSession } from './agent/agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn } from './conversationTurnService';
 import { generateText, generateTextWithMeta, isAnyLlmConfigured } from './llmClient';
 import { ensureSessionBudget, getErrorMessage, withTimeout } from './langgraph/runtimeSupport/runtimeBudget';
@@ -27,7 +27,7 @@ import {
 import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillExecutionResult, SkillId } from './skills/types';
-import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agentWorkflowService';
+import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agent/agentWorkflowService';
 import { appendTrace, type LangGraphNodeId, type LangGraphState } from './langgraph/stateContract';
 import { executeLangGraph } from './langgraph/executor';
 import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode } from './langgraph/nodes/coreNodes';
@@ -39,8 +39,8 @@ import {
 } from './langgraph/nodes/runtimeNodes';
 import { runSelectExecutionStrategyNode } from './langgraph/nodes/strategyNodes';
 import { executeSessionBranchRuntime } from './langgraph/sessionRuntime/branchRuntime';
-import { getAgentPrivacyPolicySnapshot, primeAgentPrivacyPolicyCache } from './agentPrivacyPolicyService';
-import { recordPrivacyGateSample } from './agentPrivacyTuningService';
+import { getAgentPrivacyPolicySnapshot, primeAgentPrivacyPolicyCache } from './agent/agentPrivacyPolicyService';
+import { recordPrivacyGateSample } from './agent/agentPrivacyTuningService';
 import {
   getAgentTotPolicySnapshot,
   getTotReplayCandidates,
@@ -48,16 +48,16 @@ import {
   primeAgentTotPolicyCache,
   recordTotCandidatePair,
   type AgentTotPolicySnapshot,
-} from './agentTotPolicyService';
+} from './agent/agentTotPolicyService';
 import {
   getAgentGotPolicySnapshot,
   primeAgentGotPolicyCache,
   resolveGotBudgetForPriority,
   type AgentGotPolicySnapshot,
-} from './agentGotPolicyService';
-import { getAgentGotCutoverDecision } from './agentGotCutoverService';
-import { recordGotShadowRun } from './agentGotStore';
-import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agentTelemetryQueue';
+} from './agent/agentGotPolicyService';
+import { getAgentGotCutoverDecision } from './agent/agentGotCutoverService';
+import { recordGotShadowRun } from './agent/agentGotStore';
+import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agent/agentTelemetryQueue';
 import { isShadowRunnerEnabled, runShadowGraph, persistShadowDivergence, type ShadowRunResult } from './langgraph/shadowGraphRunner';
 import { precipitateSessionToMemory } from './entityNervousSystem';
 import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
@@ -67,7 +67,7 @@ import type {
   AgentIntent,
   AgentDeliberationMode,
   AgentPolicyGateDecision,
-} from './agentRuntimeTypes';
+} from './agent/agentRuntimeTypes';
 import type {
   AgentSession,
   AgentSessionStatus,
@@ -84,7 +84,7 @@ import {
   buildPolicyBlockMessage,
   generateCasualChatResult,
   generateIntentClarificationResult,
-} from './agentIntentClassifier';
+} from './agent/agentIntentClassifier';
 
 // Re-export all types for backward compatibility
 export type {

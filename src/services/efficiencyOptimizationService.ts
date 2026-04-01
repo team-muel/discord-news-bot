@@ -1,4 +1,4 @@
-import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
+import { getAgentTelemetryQueueSnapshot } from './agent/agentTelemetryQueue';
 import { getMemoryJobQueueStats, getMemoryJobRunnerStats } from './memoryJobRunner';
 import { getPlatformLightweightingReport } from './platformLightweightingService';
 import { getRuntimeSchedulerPolicySnapshot } from './runtimeSchedulerPolicyService';
