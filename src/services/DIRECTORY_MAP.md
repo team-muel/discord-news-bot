@@ -3,38 +3,40 @@
 ## Domain Groupings
 
 The `src/services/` directory contains 100+ service files. This README documents the logical domain groupings
-to help navigate the codebase. Files are organized conceptually even though they share a flat directory.
+to help navigate the codebase.
 
-### Agent Runtime (`agent*`)
-Core multi-agent session lifecycle, policy, telemetry, and governance.
+### Agent Runtime & Reasoning (`agent/`)
+All agent-related services live in the `agent/` subdirectory.
+Core multi-agent session lifecycle, policy, telemetry, governance, reasoning, and quality review.
+- `agent/agentRuntimeTypes.ts` — Shared agent role/priority/intent types
+- `agent/agentIntentClassifier.ts` — Intent classification and casual chat generation
+- `agent/agentPolicyService.ts` — Session validation and policy enforcement
+- `agent/agentPrivacyPolicyService.ts` — Privacy deliberation mode and risk scoring
+- `agent/agentPrivacyTuningService.ts` — Privacy gate sample recording
+- `agent/agentMemoryService.ts` — Memory hint hydration for sessions
+- `agent/agentMemoryStore.ts` — Persistent memory CRUD
+- `agent/agentSessionStore.ts` — Session persistence to Supabase
+- `agent/agentWorkflowService.ts` — Step template profiles
+- `agent/agentOpsService.ts` — Ops-triggered agent invocations
+- `agent/agentRoleWorkerService.ts` — HTTP role worker health probing
+- `agent/agentRuntimeReadinessService.ts` — Runtime readiness checks
+- `agent/agentTelemetryQueue.ts` — Async telemetry task queue
+- `agent/agentSloService.ts` — SLO metrics tracking
+- `agent/agentConsentService.ts` — User consent management
+- `agent/agentRetentionPolicyService.ts` — Data retention policies
+- `agent/agentGotPolicyService.ts` — GoT budget and policy
+- `agent/agentGotCutoverService.ts` — GoT/ToT cutover decisions
+- `agent/agentGotStore.ts` — GoT shadow run persistence
+- `agent/agentGotAnalyticsService.ts` — GoT analytics
+- `agent/agentTotPolicyService.ts` — ToT policy and auto-tuning
+- `agent/agentQualityReviewService.ts` — Quality review metrics
+- `agent/agentOutcomeContract.ts` — Outcome contract types
+- `agent/agentSocialQualitySnapshotService.ts` — Social quality snapshot
+- `agent/agentWorkerApprovalGateSnapshotService.ts` — Worker approval gate snapshot
+- `agent/agentRuntimeFailOpenGuard.test.ts` — Fail-open guard tests
 - `multiAgentService.ts` — Session orchestration hub (start/cancel/execute sessions)
 - `multiAgentTypes.ts` — Shared type definitions (AgentSession, AgentStep, etc.)
-- `agentIntentClassifier.ts` — Intent classification and casual chat generation
 - `multiAgentRuntimeQueue.ts` — Queue and concurrency management
-- `agentPolicyService.ts` — Session validation and policy enforcement
-- `agentPrivacyPolicyService.ts` — Privacy deliberation mode and risk scoring
-- `agentPrivacyTuningService.ts` — Privacy gate sample recording
-- `agentMemoryService.ts` — Memory hint hydration for sessions
-- `agentMemoryStore.ts` — Persistent memory CRUD
-- `agentSessionStore.ts` — Session persistence to Supabase
-- `agentWorkflowService.ts` — Step template profiles
-- `agentOpsService.ts` — Ops-triggered agent invocations
-- `agentRoleWorkerService.ts` — HTTP role worker health probing
-- `agentRuntimeReadinessService.ts` — Runtime readiness checks
-- `agentRuntimeTypes.ts` — Shared agent role/priority/intent types
-- `agentTelemetryQueue.ts` — Async telemetry task queue
-- `agentSloService.ts` — SLO metrics tracking
-- `agentConsentService.ts` — User consent management
-- `agentRetentionPolicyService.ts` — Data retention policies
-
-### Agent Reasoning (`agentGot*`, `agentTot*`, `agentQuality*`)
-Graph of Thought, Tree of Thought, and quality review.
-- `agentGotPolicyService.ts` — GoT budget and policy
-- `agentGotCutoverService.ts` — GoT/ToT cutover decisions
-- `agentGotStore.ts` — GoT shadow run persistence
-- `agentGotAnalyticsService.ts` — GoT analytics
-- `agentTotPolicyService.ts` — ToT policy and auto-tuning
-- `agentQualityReviewService.ts` — Quality review metrics
 
 ### Skills & Actions (`skills/`)
 Composable skill registry, execution engine, and action implementations.
