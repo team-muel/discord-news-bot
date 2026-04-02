@@ -118,12 +118,12 @@ Startup phase `service-init`:
 Startup phase `discord-ready`:
 
 - `automation-modules` (`src/services/automationBot.ts`)
-- `agent-daily-learning` (`src/services/agentOpsService.ts`)
-- `got-cutover-autopilot` (`src/services/agentOpsService.ts`)
+- `agent-daily-learning` (`src/services/agent/agentOpsService.ts`)
+- `got-cutover-autopilot` (`src/services/agent/agentOpsService.ts`)
 - `login-session-cleanup` when owner=`app` (`src/discord/auth.ts`)
 - `obsidian-sync-loop` (`src/services/obsidianLoreSyncService.ts`)
 - `retrieval-eval-loop` (`src/services/retrievalEvalLoopService.ts`)
-- `agent-slo-alert-loop` (`src/services/agentSloService.ts`)
+- `agent-slo-alert-loop` (`src/services/agent/agentSloService.ts`)
 
 Startup phase `database`:
 

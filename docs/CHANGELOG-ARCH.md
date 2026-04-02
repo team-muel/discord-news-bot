@@ -21,6 +21,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-02 - M-10 Codebase Health: Agent Services Subdirectory Restructure
+
+- Why: `src/services/` flat directory에 100+ 파일이 혼재해 탐색이 어려웠다. agent 관련 25개 서비스 + 9개 테스트를 `src/services/agent/`로 분리하여 도메인 경계를 명확히 한다.
+- Scope: 34개 파일을 `src/services/` → `src/services/agent/`로 이동. 33개 외부 파일의 import 경로, 11개 `vi.mock()` 경로, 동적 `import()` 및 인라인 타입 참조를 일괄 수정.
+- Impacted Routes: `src/routes/bot-agent/` (6개 route 파일 import 경로 변경)
+- Impacted Services: `src/services/agent/*` (25 source + 9 test), `src/bot.ts`, `src/services/multiAgentService.ts`, `src/services/multiAgentTypes.ts`, `src/services/runtimeBootstrap.ts`, `src/services/runtimeSchedulerPolicyService.ts`, `src/services/langgraph/` (6 files), `src/services/skills/actionRunner.ts`, `src/services/skills/actions/` (2 files), `src/discord/` (4 files)
+- Impacted Tables/RPC: N/A (import path changes only)
+- Risk/Regression Notes: 런타임 동작 변경 없음. import 경로만 변경. 모든 export/import이 동일한 모듈을 참조.
+- Validation: `npx tsc --noEmit` (0 errors), `npx vitest run` (88 files, 550 tests passed), `npm run docs:build`, `npm run docs:check`.
+
 ## 2026-03-27 - Entity Nervous System Feedback Circuits
 
 - Why: Discord 안에서 동작하는 자율 진화 엔티티라는 목표에 맞춰, 기존의 분리된 루프들을 감각→기억, 보상→행동, 자기 성찰→자기 수정의 닫힌 피드백 회로로 연결할 필요가 있었다.

@@ -354,26 +354,3 @@ function assembleContext(
 
   return parts.join('\n---\n\n');
 }
-
-/**
- * Extract key sections from document (for summary)
- */
-export function extractKeySections(content: string, maxLength: number = 500): string {
-  // Extract first significant heading and its content
-  const lines = content.split('\n');
-  let section = '';
-  let inSection = false;
-
-  for (const line of lines) {
-    if (line.startsWith('# ') || line.startsWith('## ')) {
-      if (inSection && section.length > maxLength) break;
-      inSection = true;
-      section += line + '\n';
-    } else if (inSection) {
-      section += line + '\n';
-      if (section.length > maxLength) break;
-    }
-  }
-
-  return section.slice(0, maxLength) || content.slice(0, maxLength);
-}
