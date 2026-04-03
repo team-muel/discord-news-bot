@@ -14,18 +14,20 @@
 
 import { isAnyLlmConfigured } from '../llmClient';
 import {
-  initObsidianHeadless,
-  searchObsidianVault,
-  readObsidianFile,
-  getObsidianGraphMetadata,
-} from './obsidianHeadlessService';
+  isObsidianCapabilityAvailable,
+  warmupObsidianAdapters,
+  searchObsidianVaultWithAdapter,
+  readObsidianFileWithAdapter,
+  getObsidianGraphMetadataWithAdapter,
+  writeObsidianNoteWithAdapter,
+} from './router';
+import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import {
   initObsidianCache,
   loadDocumentsWithCache,
   getCacheStats,
   clearExpiredCache,
 } from './obsidianCacheService';
-import { writeObsidianNoteWithAdapter } from './router';
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 
@@ -101,11 +103,19 @@ export async function initObsidianRAG(): Promise<boolean> {
   if (initialized) return true;
 
   try {
-    const headlessReady = await initObsidianHeadless();
+    // Check adapter availability (replaces initObsidianHeadless)
+    const adapterReady = isObsidianCapabilityAvailable('search_vault') || isObsidianCapabilityAvailable('read_file');
+    if (adapterReady) {
+      const vaultPath = getObsidianVaultRoot();
+      if (vaultPath) {
+        await warmupObsidianAdapters(vaultPath);
+      }
+    }
+
     const cacheReady = await initObsidianCache();
 
-    logger.info('[OBSIDIAN-RAG] Initialized (headless=%s cache=%s)', 
-      String(headlessReady), String(cacheReady)
+    logger.info('[OBSIDIAN-RAG] Initialized (adapter=%s cache=%s)', 
+      String(adapterReady), String(cacheReady)
     );
 
     // Periodic cache cleanup (every hour)
@@ -162,8 +172,11 @@ export async function queryObsidianRAG(
 
     // 3. Load documents with cache
     logger.debug('[OBSIDIAN-RAG] Loading %d documents', documentPaths.length);
-    const documents = await loadDocumentsWithCache(documentPaths, async (path) => {
-      const content = await readObsidianFile(path);
+    const vaultPath = getObsidianVaultRoot();
+    const documents = await loadDocumentsWithCache(documentPaths, async (filePath) => {
+      const content = vaultPath
+        ? await readObsidianFileWithAdapter({ vaultPath, filePath })
+        : null;
       if (content) cacheStatus.hits++;
       else cacheStatus.misses++;
       return content;
@@ -172,7 +185,7 @@ export async function queryObsidianRAG(
     // 4. Get graph metadata for relationship context (TTL-cached in memory)
     let graphMetadata = graphMetaCache.get(GRAPH_META_CACHE_KEY);
     if (!graphMetadata) {
-      graphMetadata = await getObsidianGraphMetadata();
+      graphMetadata = await getObsidianGraphMetadataWithAdapter({ vaultPath: vaultPath || '' });
       graphMetaCache.set(GRAPH_META_CACHE_KEY, graphMetadata, GRAPH_META_CACHE_TTL_MS);
     }
 
@@ -271,7 +284,10 @@ async function findRelatedDocuments(
   try {
     // Search by tag in parallel to reduce total query latency.
     const perTagLimit = Math.max(1, Math.ceil(limit / Math.max(1, routes.tags.length)));
-    const searches = routes.tags.map((tag) => searchObsidianVault(`tag:${tag}`, perTagLimit));
+    const ragVaultPath = getObsidianVaultRoot() || '';
+    const searches = routes.tags.map((tag) =>
+      searchObsidianVaultWithAdapter({ vaultPath: ragVaultPath, query: `tag:${tag}`, limit: perTagLimit }),
+    );
     const tagResultsList = await Promise.all(searches);
 
     for (const tagResults of tagResultsList) {

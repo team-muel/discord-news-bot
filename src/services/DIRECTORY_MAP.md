@@ -98,8 +98,7 @@ A/B evaluation, retrieval eval, reward signal loop.
 
 ### Obsidian RAG (`obsidian/`)
 Knowledge retrieval via Obsidian vault graph.
-- `obsidian/obsidianRagService.ts` — RAG query orchestration
-- `obsidian/obsidianHeadlessService.ts` — Headless CLI integration
+- `obsidian/obsidianRagService.ts` — RAG query orchestration (2-hop traversal, reactive learning, gap detection)
 - `obsidian/obsidianCacheService.ts` — Cache layer
 - `obsidian/obsidianBootstrapService.ts` — Guild vault bootstrap
 - `obsidian/obsidianLoreSyncService.ts` — Bidirectional sync

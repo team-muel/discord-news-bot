@@ -4,7 +4,7 @@
 export type {
   ObsidianCapability, ObsidianNode, ObsidianSearchResult,
   ObsidianLoreQuery, ObsidianSearchQuery, ObsidianReadFileQuery,
-  ObsidianNoteWriteInput, ObsidianVaultAdapter,
+  ObsidianNoteWriteInput, ObsidianTask, ObsidianVaultAdapter,
 } from './types';
 export { supportsCapability } from './types';
 
@@ -15,14 +15,12 @@ export type { GuildKnowledgeManifest, GuildBootstrapSummary } from './obsidianBo
 
 export { initObsidianCache, getCachedDocument, getCachedDocumentsBatch, cacheDocument, loadDocumentsWithCache, getCacheStats, clearExpiredCache } from './obsidianCacheService';
 
-export { initObsidianHeadless, searchObsidianVault, readObsidianFile, getObsidianGraphMetadata, parseObsidianFrontmatter } from './obsidianHeadlessService';
-
 export { startObsidianLoreSyncLoop, stopObsidianLoreSyncLoop, getObsidianLoreSyncLoopStats } from './obsidianLoreSyncService';
 
 export { getLatestObsidianGraphAuditSnapshot } from './obsidianQualityService';
 export type { ObsidianGraphAuditSnapshot } from './obsidianQualityService';
 
-export { initObsidianRAG, queryObsidianRAG, inferIntent } from './obsidianRagService';
+export { initObsidianRAG, queryObsidianRAG, inferIntent, flushKnowledgeGaps, getKnowledgeGapCount, appendToDailyNote, readDailyNote, writeRetroToVault } from './obsidianRagService';
 export type { RAGQueryResult } from './obsidianRagService';
 
 export { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';

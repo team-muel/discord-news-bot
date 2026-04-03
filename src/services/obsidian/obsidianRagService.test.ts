@@ -1,24 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock external dependencies before importing
-vi.mock('./obsidianHeadlessService', () => ({
-  initObsidianHeadless: vi.fn().mockResolvedValue(true),
-  searchObsidianVault: vi.fn().mockResolvedValue([]),
-  readObsidianFile: vi.fn().mockResolvedValue(null),
-  getObsidianGraphMetadata: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock('./obsidianCacheService', () => ({
-  initObsidianCache: vi.fn().mockResolvedValue(true),
-  loadDocumentsWithCache: vi.fn().mockResolvedValue(new Map()),
-  getCacheStats: vi.fn().mockResolvedValue(null),
-  clearExpiredCache: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('./router', () => ({
+  isObsidianCapabilityAvailable: vi.fn().mockReturnValue(true),
+  warmupObsidianAdapters: vi.fn().mockResolvedValue(undefined),
+  searchObsidianVaultWithAdapter: vi.fn().mockResolvedValue([]),
+  readObsidianFileWithAdapter: vi.fn().mockResolvedValue(null),
+  getObsidianGraphMetadataWithAdapter: vi.fn().mockResolvedValue({}),
   writeObsidianNoteWithAdapter: vi.fn().mockResolvedValue({ path: 'insights/test.md' }),
   appendDailyNoteWithAdapter: vi.fn().mockResolvedValue(true),
   readDailyNoteWithAdapter: vi.fn().mockResolvedValue('# Daily'),
+}));
+
+vi.mock('../../utils/obsidianEnv', () => ({
+  getObsidianVaultRoot: vi.fn().mockReturnValue('/mock-vault'),
 }));
 
 vi.mock('../../logger', () => ({
