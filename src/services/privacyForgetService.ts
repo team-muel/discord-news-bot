@@ -80,11 +80,7 @@ const resolveInsideVault = (...segments: string[]): string | null => {
 
 const getGuildLockKey = (guildId: string): string => `obsidian:guild:${guildId}`;
 
-const isMissingTableError = (error: any): boolean => {
-  const code = String(error?.code || '').trim();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || message.includes('does not exist') || message.includes('relation');
-};
+import { isMissingTableError } from '../utils/supabaseErrors';
 
 const addCount = (counts: ForgetTableCounts, key: string, count: number | null | undefined) => {
   const value = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;

@@ -85,17 +85,9 @@ type NewsHistoryRow = {
   created_at: string | null;
 };
 
-const isHistoryUnavailableError = (error: any): boolean => {
-  const code = String(error?.code || '');
-  const msg = String(error?.message || '').toLowerCase();
-  return code === 'PGRST205'
-    || code === '42P01'
-    || code === '42703'
-    || code === 'PGRST204'
-    || msg.includes('news_sentiment')
-    || msg.includes('event_signature')
-    || msg.includes('sentiment_score');
-};
+import { isSchemaUnavailableError } from '../utils/supabaseErrors';
+
+const isHistoryUnavailableError = (error: any): boolean => isSchemaUnavailableError(error, 'news_sentiment', 'event_signature', 'sentiment_score');
 
 const decodeXml = (text: string): string => {
   return text

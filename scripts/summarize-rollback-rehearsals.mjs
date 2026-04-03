@@ -2,37 +2,13 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { createClient } from '@supabase/supabase-js';
+import { parseArg, parseBool, parseSinks } from './lib/cliArgs.mjs';
+import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 
 const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'rollback-rehearsals');
 const OUTPUT = path.join(RUNS_DIR, 'WEEKLY_SUMMARY.md');
 const VALID_SINKS = new Set(['markdown', 'supabase', 'stdout']);
-
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
-const SUPABASE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const item = process.argv.find((arg) => arg.startsWith(prefix));
-  return item ? item.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
-
-const parseSinks = (raw) => {
-  const tokens = String(raw || '')
-    .split(/[;,]/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  const values = tokens.length > 0 ? tokens : ['markdown'];
-  const deduped = [...new Set(values)].filter((sink) => VALID_SINKS.has(sink));
-  return deduped.length > 0 ? deduped : ['markdown'];
-};
 
 const readMaybeJson = (filePath) => {
   try {
@@ -173,7 +149,7 @@ const writeSupabaseArtifact = async () => {
     return;
   }
 
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const client = createScriptClient();
   const { error } = await client
     .from('agent_weekly_reports')
     .upsert(payload, { onConflict: 'report_key' });
@@ -181,12 +157,8 @@ const writeSupabaseArtifact = async () => {
   if (error) {
     const errorCode = String(error.code || '').toUpperCase();
     const errorMessage = String(error.message || '');
-    const relationMissing = errorCode === '42P01' || errorCode === 'PGRST205' || errorCode === 'PGRST204'
-      || /relation\s+"?agent_weekly_reports"?\s+does\s+not\s+exist/i.test(errorMessage)
-      || /could not find.*agent_weekly_reports/i.test(errorMessage)
-      || errorMessage.includes('agent_weekly_reports');
     const unsupportedKind = errorCode === '23514' && /report_kind_check/i.test(errorMessage);
-    if (relationMissing && allowMissingSupabaseTable) {
+    if (isMissingRelationError(error, 'agent_weekly_reports') && allowMissingSupabaseTable) {
       console.log('[ROLLBACK-WEEKLY] supabase skipped: table public.agent_weekly_reports not found (apply migration first)');
       return;
     }

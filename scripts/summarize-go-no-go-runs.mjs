@@ -1,36 +1,12 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { createClient } from '@supabase/supabase-js';
+import { parseArg, parseBool, parseSinks } from './lib/cliArgs.mjs';
+import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 
 const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
 const VALID_SINKS = new Set(['markdown', 'supabase', 'stdout']);
-
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
-const SUPABASE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const item = process.argv.find((arg) => arg.startsWith(prefix));
-  return item ? item.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
-
-const parseSinks = (raw) => {
-  const tokens = String(raw || '')
-    .split(/[;,]/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  const values = tokens.length > 0 ? tokens : ['markdown'];
-  const deduped = [...new Set(values)].filter((sink) => VALID_SINKS.has(sink));
-  return deduped.length > 0 ? deduped : ['markdown'];
-};
 
 const days = Math.max(1, Number(parseArg('days', '7')) || 7);
 const dryRun = parseBool(parseArg('dryRun', 'false'));
@@ -90,12 +66,6 @@ const clamp01 = (value) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.max(0, Math.min(1, n));
-};
-
-const isMissingRelationError = (error, tableName) => {
-  const code = String(error?.code || '').toUpperCase();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
 };
 
 const normalizeOverall = (value) => {
@@ -700,7 +670,7 @@ const fetchStrategyQualityNormalization = async () => {
     return result;
   }
 
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const client = createScriptClient();
 
   let retrievalRows = [];
   try {
@@ -958,14 +928,13 @@ const writeSupabaseArtifact = async () => {
     return;
   }
 
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const client = createScriptClient();
   const { error } = await client
     .from('agent_weekly_reports')
     .upsert(payload, { onConflict: 'report_key' });
 
   if (error) {
-    const relationMissing = String(error.code || '').toUpperCase() === '42P01' || /agent_weekly_reports/i.test(String(error.message || ''));
-    if (relationMissing && allowMissingSupabaseTable) {
+    if (isMissingRelationError(error, 'agent_weekly_reports') && allowMissingSupabaseTable) {
       console.log('[GO-NO-GO] supabase skipped: table public.agent_weekly_reports not found (apply migration first)');
       return;
     }

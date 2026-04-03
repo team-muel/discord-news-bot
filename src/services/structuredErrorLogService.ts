@@ -1,6 +1,7 @@
 import logger from '../logger';
 import { parseBooleanEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { isMissingTableError } from '../utils/supabaseErrors';
 
 export type StructuredErrorCode =
   | 'API_TIMEOUT'
@@ -72,8 +73,7 @@ const persistStructuredError = async (row: Record<string, unknown>) => {
     const client = getSupabaseClient();
     const { error } = await client.from(ERROR_LOG_TABLE).insert(row);
     if (error) {
-      const message = toText(error.message).toLowerCase();
-      if (message.includes(ERROR_LOG_TABLE.toLowerCase()) || message.includes('does not exist') || toText((error as any)?.code) === '42P01') {
+      if (isMissingTableError(error, ERROR_LOG_TABLE)) {
         dbDisabled = true;
         dbDisabledAtMs = Date.now();
       }

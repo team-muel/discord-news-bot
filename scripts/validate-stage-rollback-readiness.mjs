@@ -1,15 +1,10 @@
 /* eslint-disable no-console */
 import fs from 'fs';
 import path from 'path';
+import { parseArg } from './lib/cliArgs.mjs';
 
 const ROOT = process.cwd();
 const DEFAULT_SUMMARY_PATH = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'rollback-rehearsals', 'WEEKLY_SUMMARY.md');
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const arg = process.argv.find((item) => item.startsWith(prefix));
-  return arg ? arg.slice(prefix.length) : fallback;
-};
 
 const asNumber = (value, fallback) => {
   const n = Number(value);

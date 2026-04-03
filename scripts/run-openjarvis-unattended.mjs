@@ -10,25 +10,12 @@ import {
   transitionWorkflow,
 } from './openjarvis-workflow-state.mjs';
 import { loadOpenjarvisRoutingPolicy } from './openjarvis-routing-policy.mjs';
+import { parseArg, parseBool } from './lib/cliArgs.mjs';
 
 const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
 const TMP_DIR = path.join(ROOT, 'tmp', 'autonomy');
 const SUMMARY_PATH = path.join(TMP_DIR, 'openjarvis-unattended-last-run.json');
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  if (!normalized) return fallback;
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  return fallback;
-};
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const VALID_ROUTE_MODES = new Set(['auto', 'delivery', 'operations']);

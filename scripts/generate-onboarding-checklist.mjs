@@ -2,21 +2,10 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
+import { parseArg, parseBool } from './lib/cliArgs.mjs';
 
 const ROOT = process.cwd();
 const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
 
 const dryRun = parseBool(parseArg('dryRun', 'false'));
 const name = String(parseArg('name', '')).trim();

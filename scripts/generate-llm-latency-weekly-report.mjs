@@ -2,44 +2,16 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { createClient } from '@supabase/supabase-js';
+import { parseArg, parseBool, parseSinks } from './lib/cliArgs.mjs';
+import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
-const SUPABASE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
 const OBSIDIAN_VAULT_PATH = String(process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
 
 const ROOT = process.cwd();
 const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'llm-latency');
 const VALID_SINKS = new Set(['supabase', 'obsidian', 'markdown', 'stdout']);
 
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const item = process.argv.find((arg) => arg.startsWith(prefix));
-  return item ? item.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
-
-const isMissingRelationError = (error, tableName) => {
-  const code = String(error?.code || '').toUpperCase();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
-};
-
-const parseSinks = (raw) => {
-  const tokens = String(raw || '')
-    .split(/[;,]/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-
-  const sinks = tokens.length > 0 ? tokens : ['supabase', 'obsidian'];
-  const deduped = [...new Set(sinks)].filter((sink) => VALID_SINKS.has(sink));
-  return deduped.length > 0 ? deduped : ['supabase'];
-};
+const localParseSinks = (raw) => parseSinks(raw, [...VALID_SINKS], ['supabase', 'obsidian']);
 
 const toMsWindow = (hours, fallbackHours) => {
   const parsed = Number(hours);
@@ -248,8 +220,7 @@ const writeSupabaseArtifact = async (client, params) => {
     .upsert(payload, { onConflict: 'report_key' });
 
   if (error) {
-    const relationMissing = String(error.code || '').toUpperCase() === '42P01' || /agent_weekly_reports/i.test(String(error.message || ''));
-    if (relationMissing && params.allowMissingSupabaseTable) {
+    if (isMissingRelationError(error, 'agent_weekly_reports') && params.allowMissingSupabaseTable) {
       console.log('[LLM-LATENCY] supabase skipped: table public.agent_weekly_reports not found (apply migration first)');
       return;
     }
@@ -265,7 +236,7 @@ async function main() {
   }
 
   const dryRun = parseBool(parseArg('dryRun', 'false'));
-  const sinks = parseSinks(parseArg('sinks', process.env.LLM_WEEKLY_REPORT_SINKS || 'supabase,obsidian'));
+  const sinks = localParseSinks(parseArg('sinks', process.env.LLM_WEEKLY_REPORT_SINKS || 'supabase,obsidian'));
   const allowMissingSupabaseTable = parseBool(parseArg('allowMissingSupabaseTable', process.env.LLM_WEEKLY_REPORT_ALLOW_MISSING_TABLE || 'true'), true);
   const allowMissingSourceTable = parseBool(
     parseArg('allowMissingSourceTable', process.env.LLM_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_TABLE || 'false'),
@@ -285,7 +256,7 @@ async function main() {
   const candidateTo = toIso(parseArg('candidateTo', ''), 0);
   const candidateFrom = toIso(parseArg('candidateFrom', ''), candidateWindowMs);
 
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const client = createScriptClient();
 
   let baselineRows;
   let candidateRows;

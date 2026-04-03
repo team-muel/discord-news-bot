@@ -4,17 +4,7 @@ import logger from '../../logger';
 
 let disabled = false;
 
-const isMissingTableError = (error: any) => {
-  const code = String(error?.code || '');
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || code === 'PGRST205' || message.includes('agent_sessions') || message.includes('agent_steps');
-};
-
-const isMissingColumnError = (error: any, column: string) => {
-  const code = String(error?.code || '');
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42703' || message.includes(String(column || '').toLowerCase());
-};
+import { isMissingTableError, isMissingColumnError } from '../../utils/supabaseErrors';
 
 const isConversationColumnMissing = (error: any) => {
   return isMissingColumnError(error, 'conversation_thread_id') || isMissingColumnError(error, 'conversation_turn_index');

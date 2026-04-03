@@ -74,14 +74,8 @@ const setStoreError = (error: unknown) => {
     : String(error || 'unknown error');
 };
 
-const isMissingTableError = (error: any): boolean => {
-  const code = String(error?.code || '');
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01'
-    || code === 'PGRST205'
-    || message.includes('worker_approvals')
-    || message.includes(APPROVAL_DB_TABLE.toLowerCase());
-};
+import { isMissingTableError as _isMissingTableBase } from '../../utils/supabaseErrors';
+const isMissingTableError = (error: any): boolean => _isMissingTableBase(error, 'worker_approvals', APPROVAL_DB_TABLE);
 
 const shouldUseSupabaseStore = (): boolean => {
   if (supabaseStoreDisabled) {

@@ -1,14 +1,11 @@
 import logger from '../logger';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { isMissingTableError } from '../utils/supabaseErrors';
 
 const unavailableLockNames = new Set<string>();
 const MAX_UNAVAILABLE_LOCK_NAMES = 200;
 
-const isLockTableUnavailableError = (error: any): boolean => {
-  const code = String(error?.code || '');
-  const msg = String(error?.message || '').toLowerCase();
-  return code === 'PGRST205' || code === '42P01' || code === 'PGRST204' || msg.includes('distributed_locks');
-};
+const isLockTableUnavailableError = (error: any): boolean => isMissingTableError(error, 'distributed_locks');
 
 export const acquireDistributedLease = async (params: {
   name: string;

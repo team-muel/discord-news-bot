@@ -27,11 +27,7 @@ const nowIso = () => new Date().toISOString();
 
 const toConsentKey = (guildId: string, userId: string) => `${guildId}::${userId}`;
 
-const isMissingTableError = (error: any): boolean => {
-  const code = String(error?.code || '').trim();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || message.includes('does not exist') || message.includes('relation');
-};
+import { isMissingTableError } from '../../utils/supabaseErrors';
 
 const buildDefaultSnapshot = (guildId: string, userId: string): AgentUserConsentSnapshot => ({
   guildId,

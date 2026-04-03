@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 282
+- Nodes: 283
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -361,6 +361,7 @@ graph LR
   "src/services/adminAllowlistService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agent/agentConsentService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agent/agentConsentService.ts" --> "src/utils/env.ts"
+  "src/services/agent/agentConsentService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/agent/agentGotAnalyticsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agent/agentGotAnalyticsService.ts" --> "src/utils/env.ts"
   "src/services/agent/agentGotCutoverService.ts" --> "src/services/agent/agentGotAnalyticsService.ts"
@@ -411,6 +412,7 @@ graph LR
   "src/services/agent/agentQualityReviewService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agent/agentRetentionPolicyService.ts" --> "src/services/supabaseClient.ts"
   "src/services/agent/agentRetentionPolicyService.ts" --> "src/utils/env.ts"
+  "src/services/agent/agentRetentionPolicyService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/agent/agentRoleWorkerService.ts":::file
   "src/services/agent/agentRuntimeReadinessService.ts" --> "src/services/agent/agentTelemetryQueue.ts"
   "src/services/agent/agentRuntimeReadinessService.ts" --> "src/services/goNoGoService.ts"
@@ -422,6 +424,7 @@ graph LR
   "src/services/agent/agentSessionStore.ts" --> "src/logger.ts"
   "src/services/agent/agentSessionStore.ts" --> "src/services/multiAgentService.ts"
   "src/services/agent/agentSessionStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/agent/agentSessionStore.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/agent/agentSloService.ts" --> "src/logger.ts"
   "src/services/agent/agentSloService.ts" --> "src/services/agent/agentRuntimeReadinessService.ts"
   "src/services/agent/agentSloService.ts" --> "src/services/goNoGoService.ts"
@@ -498,6 +501,7 @@ graph LR
   "src/services/discordTopologySyncService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/distributedLockService.ts" --> "src/logger.ts"
   "src/services/distributedLockService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/distributedLockService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/efficiencyOptimizationService.ts" --> "src/services/agent/agentTelemetryQueue.ts"
   "src/services/efficiencyOptimizationService.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/efficiencyOptimizationService.ts" --> "src/services/platformLightweightingService.ts"
@@ -535,6 +539,7 @@ graph LR
   "src/services/langgraph/nodes/intentExemplarStore.ts" --> "src/logger.ts"
   "src/services/langgraph/nodes/intentExemplarStore.ts" --> "src/services/agent/agentRuntimeTypes.ts"
   "src/services/langgraph/nodes/intentExemplarStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/langgraph/nodes/intentExemplarStore.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/langgraph/nodes/intentOutcomeAttributor.ts" --> "src/logger.ts"
   "src/services/langgraph/nodes/intentOutcomeAttributor.ts" --> "src/services/langgraph/nodes/intentExemplarStore.ts"
   "src/services/langgraph/nodes/intentSignalEnricher.ts" --> "src/logger.ts"
@@ -660,6 +665,7 @@ graph LR
   "src/services/newsSentimentMonitor.ts" --> "src/services/sourceMonitorStore.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/services/supabaseClient.ts"
   "src/services/newsSentimentMonitor.ts" --> "src/utils/network.ts"
+  "src/services/newsSentimentMonitor.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/observability/outcomeSignal.ts" --> "src/logger.ts"
   "src/services/obsidian/adapters/headlessCliAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/services/obsidian/types.ts"
@@ -709,6 +715,7 @@ graph LR
   "src/services/privacyForgetService.ts" --> "src/services/supabaseClient.ts"
   "src/services/privacyForgetService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/privacyForgetService.ts" --> "src/utils/obsidianFileLock.ts"
+  "src/services/privacyForgetService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/promptCompiler.ts" --> "src/utils/env.ts"
   "src/services/researchPresetStore.ts" --> "src/contracts/researchPreset.ts"
   "src/services/retrievalEvalLoopService.ts" --> "src/logger.ts"
@@ -1008,11 +1015,13 @@ graph LR
   "src/services/structuredErrorLogService.ts" --> "src/logger.ts"
   "src/services/structuredErrorLogService.ts" --> "src/services/supabaseClient.ts"
   "src/services/structuredErrorLogService.ts" --> "src/utils/env.ts"
+  "src/services/structuredErrorLogService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/supabaseClient.ts" --> "src/config.ts"
   "src/services/supabaseClient.ts" --> "src/utils/env.ts"
   "src/services/supabaseExtensionOpsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/supabaseRateLimitService.ts" --> "src/logger.ts"
   "src/services/supabaseRateLimitService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/supabaseRateLimitService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/superAgentService.ts" --> "src/services/langgraph/nodes/coreNodes.ts"
   "src/services/superAgentService.ts" --> "src/services/multiAgentService.ts"
   "src/services/superAgentService.ts" --> "src/services/skills/actionGovernanceStore.ts"
@@ -1086,6 +1095,7 @@ graph LR
   "src/services/workerGeneration/workerApprovalStore.ts" --> "src/logger.ts"
   "src/services/workerGeneration/workerApprovalStore.ts" --> "src/services/supabaseClient.ts"
   "src/services/workerGeneration/workerApprovalStore.ts" --> "src/utils/env.ts"
+  "src/services/workerGeneration/workerApprovalStore.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/workerGeneration/workerExecutors.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/services/workerGeneration/workerExecutors.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/services/workerGeneration/workerGenerationPipeline.ts" --> "src/logger.ts"
@@ -1117,6 +1127,7 @@ graph LR
   "src/utils/obsidianEnv.ts":::file
   "src/utils/obsidianFileLock.ts":::file
   "src/utils/sessionArtifactStore.ts":::file
+  "src/utils/supabaseErrors.ts":::file
   "src/utils/ttlCache.ts":::file
   "src/utils/validation.ts":::file
   classDef file fill:#f7f7f7,stroke:#777,stroke-width:1px;

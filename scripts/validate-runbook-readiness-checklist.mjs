@@ -1,22 +1,11 @@
 /* eslint-disable no-console */
 import fs from 'fs';
 import path from 'path';
+import { parseArg, parseBool } from './lib/cliArgs.mjs';
 
 const ROOT = process.cwd();
 const ROLLBACK_SUMMARY_PATH = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'rollback-rehearsals', 'WEEKLY_SUMMARY.md');
 const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'runbook-checklists');
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
 
 const asNumber = (value, fallback) => {
   const n = Number(value);

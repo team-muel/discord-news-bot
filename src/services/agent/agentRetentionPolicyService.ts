@@ -25,11 +25,7 @@ const memoryPolicies = new Map<string, AgentRetentionPolicySnapshot>();
 
 const nowIso = () => new Date().toISOString();
 
-const isMissingTableError = (error: any): boolean => {
-  const code = String(error?.code || '').trim();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || message.includes('does not exist') || message.includes('relation');
-};
+import { isMissingTableError } from '../../utils/supabaseErrors';
 
 const clampDays = (value: unknown, fallback: number): number => {
   const numeric = Number(value);

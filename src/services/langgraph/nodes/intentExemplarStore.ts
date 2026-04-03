@@ -9,6 +9,7 @@
 
 import logger from '../../../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../../supabaseClient';
+import { isMissingTableError } from '../../../utils/supabaseErrors';
 import type { IntentClassification, IntentTaxonomy } from '../../agent/agentRuntimeTypes';
 
 // ──── Types ─────────────────────────────────────────────────────────────────
@@ -53,9 +54,7 @@ const ensureTable = async (): Promise<boolean> => {
       .limit(1);
 
     if (error) {
-      const code = String(error.code || '');
-      const msg = String(error.message || '').toLowerCase();
-      if (code === '42P01' || code === 'PGRST205' || msg.includes('intent_exemplars')) {
+      if (isMissingTableError(error, 'intent_exemplars')) {
         logger.info('[INTENT-EXEMPLAR] Table not found; store disabled until migration runs');
         tableDisabled = true;
         return false;

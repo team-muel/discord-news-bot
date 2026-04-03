@@ -1,18 +1,10 @@
 import logger from '../logger';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { isSchemaUnavailableError } from '../utils/supabaseErrors';
 
 let missingInfrastructureLogged = false;
 
-const isMissingInfraError = (error: any): boolean => {
-  const code = String(error?.code || '');
-  const msg = String(error?.message || '').toLowerCase();
-  return code === 'PGRST205'
-    || code === '42P01'
-    || code === '42883'
-    || code === 'PGRST202'
-    || msg.includes('api_rate_limits')
-    || msg.includes('acquire_rate_limit');
-};
+const isMissingInfraError = (error: any): boolean => isSchemaUnavailableError(error, 'api_rate_limits', 'acquire_rate_limit');
 
 export const consumeSupabaseRateLimit = async (params: {
   key: string;

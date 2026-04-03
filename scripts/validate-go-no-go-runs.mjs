@@ -1,21 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import { parseArg, parseBool } from './lib/cliArgs.mjs';
 
 const ROOT = process.cwd();
 const DEFAULT_RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
 const SCHEMA_PATH = path.join(ROOT, 'docs', 'planning', 'GO_NO_GO_RUN_SCHEMA.json');
 
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const item = process.argv.find((arg) => arg.startsWith(prefix));
-  return item ? item.slice(prefix.length) : fallback;
-};
-
-const parseBoolArg = (name, fallback = false) => {
-  const raw = String(parseArg(name, fallback ? 'true' : 'false')).trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
+const parseBoolArg = (name, fallback = false) =>
+  parseBool(parseArg(name, fallback ? 'true' : 'false'), fallback);
 
 const runsDirArg = String(parseArg('dir', '')).trim();
 const RUNS_DIR = runsDirArg

@@ -3,12 +3,11 @@ import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 import { execFileSync, execFile } from 'child_process';
 import { promisify } from 'node:util';
+import { parseArg as _parseArg, parseBool as _parseBool } from './lib/cliArgs.mjs';
+import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = process.cwd();
-
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
-const SUPABASE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
 
 // D-01: OpenJarvis bench integration
 const JARVIS_BENCH_ENABLED = ['1', 'true', 'yes', 'on'].includes(
@@ -22,11 +21,7 @@ const JARVIS_OPTIMIZE_AFTER_GATE_ENABLED = ['1', 'true', 'yes', 'on'].includes(
 );
 const OPENJARVIS_SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
 
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-};
+const parseArg = (name, fallback = '') => _parseArg(name, fallback);
 
 const asNumber = (value, fallback = null) => {
   const n = Number(value);
@@ -46,16 +41,7 @@ const resolveMetric = (cliArgName, dataSource, fallback = null) => {
   return fallback;
 };
 
-const parseBoolArg = (name, fallback = false) => {
-  const raw = String(parseArg(name, fallback ? 'true' : 'false')).trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
-
-const isMissingRelationError = (error, tableName) => {
-  const code = String(error?.code || '').toUpperCase();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
-};
+const parseBoolArg = (name, fallback = false) => _parseBool(parseArg(name, fallback ? 'true' : 'false'));
 
 const isGlobalGuildReport = (value) => {
   const normalized = String(value ?? '').trim();
@@ -262,7 +248,7 @@ const triggerJarvisOptimizeAfterGate = async (gateArgs) => {
       // Persist optimize result to Supabase for trace→learning→bench loop (D-03)
       if (SUPABASE_URL && SUPABASE_KEY && optimizeOutput) {
         try {
-          const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+          const client = createScriptClient();
           await client.from('agent_weekly_reports').upsert({
             report_key: `jarvis_optimize:${new Date().toISOString().slice(0, 10)}`,
             report_kind: 'jarvis_optimize_result',
@@ -349,7 +335,7 @@ async function main() {
     ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTO_JUDGE_WEEKLY_ALLOW_MISSING_SOURCE_REPORTS || 'false').trim().toLowerCase()),
   );
 
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const client = createScriptClient();
   let snapshots;
   try {
     snapshots = await latestByKind(

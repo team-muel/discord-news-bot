@@ -2,7 +2,8 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { createClient } from '@supabase/supabase-js';
+import { parseArg, parseBool, parseSinks } from './lib/cliArgs.mjs';
+import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 
 const ROOT = process.cwd();
 const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'self-improvement');
@@ -10,31 +11,7 @@ const ROLLBACK_WEEKLY_MARKDOWN = path.join(ROOT, 'docs', 'planning', 'gate-runs'
 const MEMORY_QUEUE_OBSERVABILITY_DIR = path.join(ROOT, 'docs', 'planning', 'memory-queue-observability');
 const VALID_SINKS = new Set(['markdown', 'stdout']);
 
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
-const SUPABASE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
 const ACTION_APPROVAL_TABLE = String(process.env.ACTION_APPROVAL_TABLE || 'agent_action_approval_requests').trim();
-
-const parseArg = (name, fallback = '') => {
-  const prefix = `--${name}=`;
-  const item = process.argv.find((arg) => arg.startsWith(prefix));
-  return item ? item.slice(prefix.length) : fallback;
-};
-
-const parseBool = (value, fallback = false) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-};
-
-const parseSinks = (raw) => {
-  const tokens = String(raw || '')
-    .split(/[;,]/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  const values = tokens.length > 0 ? tokens : ['markdown'];
-  const deduped = [...new Set(values)].filter((sink) => VALID_SINKS.has(sink));
-  return deduped.length > 0 ? deduped : ['markdown'];
-};
 
 const OPENJARVIS_SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
 const OPENJARVIS_OPTIMIZE_ENABLED = parseBool(process.env.OPENJARVIS_OPTIMIZE_ENABLED, false);
@@ -114,12 +91,6 @@ const pickPreferredReport = (rows, kind, guildId) => {
   if (global) return global;
 
   return matches[0] || null;
-};
-
-const isMissingRelationError = (error, tableName) => {
-  const code = String(error?.code || '').toUpperCase();
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || code === 'PGRST205' || message.includes(String(tableName || '').toLowerCase());
 };
 
 const fetchLabeledQualitySignals = async (client, params) => {
@@ -1019,7 +990,7 @@ async function main() {
   const limit = Math.max(20, Math.min(500, Number(parseArg('limit', '120')) || 120));
 
   const generatedAt = new Date().toISOString();
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const client = createScriptClient();
   let reports;
   try {
     reports = await fetchLatestByKind(client, {
