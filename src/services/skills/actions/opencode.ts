@@ -101,6 +101,20 @@ export const opencodeExecuteAction: ActionDefinition = {
       if (adapter) {
         const available = await adapter.isAvailable();
         if (available) {
+          // Verify sandbox exists; auto-create if missing (D-05 gap closure)
+          const listResult = await executeExternalAction('openshell', 'sandbox.list', {});
+          const sandboxExists = listResult.ok && listResult.output.some((line) => line.includes(OPENSHELL_DEFAULT_SANDBOX_ID));
+          if (!sandboxExists) {
+            logger.info('[OPENCODE] sandbox=%s not found, attempting auto-create', OPENSHELL_DEFAULT_SANDBOX_ID);
+            const createResult = await executeExternalAction('openshell', 'sandbox.create', {
+              from: String(process.env.OPENSHELL_DEFAULT_SANDBOX_IMAGE || 'ollama'),
+            });
+            if (!createResult.ok) {
+              logger.warn('[OPENCODE] sandbox auto-create failed: %s, falling through to MCP', createResult.error);
+              // Fall through to MCP delegation below
+            }
+          }
+
           logger.info('[OPENCODE] routing implement.execute through OpenShell sandbox=%s', OPENSHELL_DEFAULT_SANDBOX_ID);
           const sandboxResult = await executeExternalAction('openshell', 'sandbox.exec', {
             sandboxId: OPENSHELL_DEFAULT_SANDBOX_ID,

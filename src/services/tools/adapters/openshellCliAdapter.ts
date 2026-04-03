@@ -10,6 +10,13 @@ const ENABLED = parseBooleanEnv(process.env.OPENSHELL_ENABLED, false);
 
 const WSL_DISTRO = String(process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
 
+/**
+ * D-04: Remote gateway fallback — when local Docker/WSL sandbox creation fails,
+ * route through a remote host via `openshell sandbox create --remote user@host`.
+ * Set OPENSHELL_REMOTE_GATEWAY=user@host to enable.
+ */
+const REMOTE_GATEWAY = String(process.env.OPENSHELL_REMOTE_GATEWAY || '').trim().replace(/[^a-zA-Z0-9@._:-]/g, '');
+
 const sanitizeArg = (value: string, maxLen = 200): string =>
   String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[;&|`$(){}]/g, '').trim().slice(0, maxLen);
 
@@ -55,8 +62,17 @@ export const openshellAdapter: ExternalToolAdapter = {
       switch (action) {
         case 'sandbox.create': {
           const from = sanitizeArg(String(args.from || 'ollama'));
-          const { stdout } = await runCli(['sandbox', 'create', '--from', from]);
-          return makeResult(true, `Sandbox created from ${from}`, stdout.trim().split('\n'));
+          try {
+            const { stdout } = await runCli(['sandbox', 'create', '--from', from]);
+            return makeResult(true, `Sandbox created from ${from}`, stdout.trim().split('\n'));
+          } catch (localErr) {
+            // D-04: Fallback to remote gateway when local Docker/WSL fails
+            if (REMOTE_GATEWAY) {
+              const { stdout } = await runCli(['sandbox', 'create', '--from', from, '--remote', REMOTE_GATEWAY]);
+              return makeResult(true, `Sandbox created from ${from} via remote ${REMOTE_GATEWAY}`, stdout.trim().split('\n'));
+            }
+            throw localErr;
+          }
         }
         case 'sandbox.list': {
           const { stdout } = await runCli(['sandbox', 'list']);

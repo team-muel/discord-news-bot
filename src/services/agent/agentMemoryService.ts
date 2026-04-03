@@ -8,6 +8,7 @@ import { readObsidianLoreWithAdapter } from '../obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { generateQueryEmbedding, isEmbeddingEnabled } from '../memoryEmbeddingService';
 import { loadSelfNotes } from '../entityNervousSystem';
+import { batchCountMemoryLinks } from '../memoryEvolutionService';
 
 const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));
 const memoryHintCache = new TtlCache<string[]>(200);
@@ -23,6 +24,8 @@ type MemoryHintCandidate = {
   pinned: boolean;
   updatedAt: string;
   ownerUserId: string;
+  tier: string;
+  linkCount: number;
 };
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
@@ -261,6 +264,8 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<M
         pinned,
         updatedAt,
         ownerUserId,
+        tier: String(row?.tier || 'raw'),
+        linkCount: 0, // populated in batch below
       };
     }).filter(Boolean) as MemoryHintCandidate[];
   } catch {
@@ -301,13 +306,54 @@ export const buildAgentMemoryHints = async (params: {
     loadSelfNotes(safeGuildId),
   ]);
 
+  // ADR-006: Batch-fetch link counts for graph-based scoring
+  const memoryIds = memoryHints.map((item) => {
+    const idMatch = item.text.match(/\[memory:(\S+?)[\s\]]/);
+    return idMatch?.[1] || '';
+  }).filter(Boolean);
+  const linkCounts = memoryIds.length > 0
+    ? await batchCountMemoryLinks(memoryIds, safeGuildId).catch(() => new Map<string, number>())
+    : new Map<string, number>();
+
+  // Populate linkCount on each hint
+  for (const item of memoryHints) {
+    const idMatch = item.text.match(/\[memory:(\S+?)[\s\]]/);
+    const id = idMatch?.[1] || '';
+    if (id) item.linkCount = linkCounts.get(id) || 0;
+  }
+
+  // ADR-006: Tier weight — higher tiers get priority
+  const tierWeight = (tier: string): number => {
+    switch (tier) {
+      case 'schema': return 0.06;
+      case 'concept': return 0.04;
+      case 'summary': return 0.02;
+      default: return 0; // raw
+    }
+  };
+
+  // ADR-006: Link-based graph centrality bonus (diminishing returns)
+  const linkBonus = (count: number): number => {
+    if (count <= 0) return 0;
+    return Math.min(0.06, Math.log2(count + 1) * 0.02);
+  };
+
   const socialByUser = parseSocialUserScores(socialHints);
   const rankedMemoryHints = memoryHints
     .map((item) => {
       const socialScore = item.ownerUserId ? (socialByUser.get(item.ownerUserId) || 0) : 0;
       const recencyScore = parseIsoRecencyScore(item.updatedAt);
       const pinnedBoost = item.pinned ? 0.08 : 0;
-      const rank = clamp01((item.confidence * 0.45) + (recencyScore * 0.35) + (socialScore * 0.20) + pinnedBoost);
+      const tierBoost = tierWeight(item.tier);
+      const graphBoost = linkBonus(item.linkCount);
+      const rank = clamp01(
+        (item.confidence * 0.40) +
+        (recencyScore * 0.30) +
+        (socialScore * 0.15) +
+        pinnedBoost +
+        tierBoost +
+        graphBoost,
+      );
       return {
         ...item,
         rank,

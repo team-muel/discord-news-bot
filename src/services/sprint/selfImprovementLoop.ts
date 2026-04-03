@@ -459,6 +459,56 @@ export const computeSystemGradient = async (): Promise<SystemGradient> => {
       }
     }
 
+    // Signal: Bench regression from jarvis.bench (sprint journal data)
+    const { data: recentJournal } = await client
+      .from('sprint_journal_entries')
+      .select('bench_score, completed_at')
+      .not('bench_score', 'is', null)
+      .gte('completed_at', twoWeeksAgo)
+      .order('completed_at', { ascending: true })
+      .limit(20);
+    if (recentJournal && recentJournal.length >= 2) {
+      const scores = recentJournal
+        .map((r: { bench_score?: number }) => r.bench_score)
+        .filter((s): s is number => typeof s === 'number' && Number.isFinite(s));
+      if (scores.length >= 2) {
+        const latest = scores[scores.length - 1];
+        const previous = scores[scores.length - 2];
+        const delta = latest - previous;
+        if (delta < -0.05) {
+          signals.push({
+            source: 'jarvis-bench',
+            severity: delta < -0.15 ? 'high' : 'medium',
+            score: Math.min(10, Math.abs(delta) * 20),
+            description: `Bench score declined ${previous.toFixed(2)} → ${latest.toFixed(2)} (Δ${delta.toFixed(2)})`,
+            suggestedAction: 'Trigger bench regression root-cause sprint',
+          });
+        }
+      }
+    }
+
+    // Signal: Optimize suggestions from jarvis.optimize
+    const { data: optimizeData } = await client
+      .from('agent_weekly_reports')
+      .select('baseline_summary')
+      .eq('report_kind', 'jarvis_optimize_result')
+      .gte('created_at', twoWeeksAgo)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (optimizeData && optimizeData.length > 0) {
+      const opt = optimizeData[0].baseline_summary as { improved?: boolean; suggestions?: unknown[] } | undefined;
+      const suggestionCount = Array.isArray(opt?.suggestions) ? opt.suggestions.length : 0;
+      if (suggestionCount > 0 && !opt?.improved) {
+        signals.push({
+          source: 'jarvis-optimize',
+          severity: suggestionCount >= 5 ? 'medium' : 'low',
+          score: Math.min(8, suggestionCount * 1.5),
+          description: `${suggestionCount} optimization suggestion(s) from jarvis.optimize (not yet applied)`,
+          suggestedAction: 'Review and apply jarvis.optimize suggestions in next sprint',
+        });
+      }
+    }
+
     signals.sort((a, b) => b.score - a.score);
     const totalScore = signals.reduce((s, g) => s + g.score, 0);
 
@@ -535,7 +585,7 @@ export const computeConvergenceReport = async (): Promise<ConvergenceReport> => 
       rawPatternTrend === 'improving' ? 'degrading' :
       rawPatternTrend === 'degrading' ? 'improving' : rawPatternTrend;
 
-    // Bench scores from journal
+    // Bench scores from journal — structured JSON parsing, regex fallback
     const { data: journal } = await client
       .from('sprint_journal_entries')
       .select('bench_results, completed_at')
@@ -544,15 +594,39 @@ export const computeConvergenceReport = async (): Promise<ConvergenceReport> => 
     const benchScores: number[] = [];
     if (journal) {
       for (const e of journal) {
-        const results = e.bench_results as string[] | undefined;
+        const results = e.bench_results as (string | Record<string, unknown>)[] | undefined;
         if (results) {
           for (const r of results) {
+            // Prefer structured JSON bench results (from parseBenchResult)
+            if (r && typeof r === 'object' && 'benchScore' in r) {
+              const score = (r as { benchScore?: number }).benchScore;
+              if (typeof score === 'number' && Number.isFinite(score)) { benchScores.push(score); break; }
+            }
+            // Regex fallback for legacy string entries
             const m = String(r).match(/score[:\s=]+(\d+(?:\.\d+)?)/i);
             if (m) { benchScores.push(Number(m[1])); break; }
           }
         }
       }
     }
+
+    // Also fetch optimize results (D-03: trace→learning→bench loop)
+    const { data: optimizeResults } = await client
+      .from('agent_weekly_reports')
+      .select('baseline_summary, created_at')
+      .eq('report_kind', 'jarvis_optimize_result')
+      .gte('created_at', sixWeeksAgo)
+      .order('created_at', { ascending: true });
+    if (optimizeResults) {
+      for (const opt of optimizeResults) {
+        const summary = opt.baseline_summary as { result?: { score?: number }; improved?: boolean } | undefined;
+        if (summary?.result?.score && typeof summary.result.score === 'number') {
+          // Use optimize result score as supplementary bench data point
+          benchScores.push(summary.result.score);
+        }
+      }
+    }
+
     const benchScoreTrend = computeTrend(benchScores);
 
     let crossLoopSuccessRate: number | null = null;

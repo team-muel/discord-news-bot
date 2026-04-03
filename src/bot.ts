@@ -1038,11 +1038,26 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
 
         // E-03: Trigger OpenClaw skill.create for lacuna-detected capabilities
         if (parseBooleanEnv(process.env.OPENCLAW_LACUNA_SKILL_CREATE_ENABLED, false)) {
-          const skillName = [...candidate.missingActionNames][0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || '';
+          const rawName = [...candidate.missingActionNames][0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || '';
+          const skillName = rawName.slice(0, 100);
           if (skillName) {
             executeExternalAction('openclaw', 'agent.skill.create', { name: skillName })
               .then((r) => {
-                if (r.ok) logger.info('[WORKER-GEN] OpenClaw skill.create triggered for lacuna=%s', skillName);
+                if (r.ok) {
+                  logger.info('[WORKER-GEN] OpenClaw skill.create triggered for lacuna=%s', skillName);
+                  // Track success for monitoring
+                  if (isSupabaseConfigured()) {
+                    getSupabaseClient().from('agent_action_logs').insert({
+                      guild_id: candidate.guildId || null,
+                      action_name: 'openclaw.skill.create',
+                      goal: `lacuna:${skillName}`,
+                      result_ok: true,
+                      created_at: new Date().toISOString(),
+                    }).then(() => {}, () => {});
+                  }
+                } else {
+                  logger.debug('[WORKER-GEN] OpenClaw skill.create failed for lacuna=%s: %s', skillName, r.error);
+                }
               })
               .catch(() => { /* non-blocking */ });
           }

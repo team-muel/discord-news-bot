@@ -125,11 +125,14 @@ export const SPRINT_DRY_RUN = parseBooleanEnv(process.env.SPRINT_DRY_RUN, false)
 export const SPRINT_FAST_PATH_ENABLED = parseBooleanEnv(process.env.SPRINT_FAST_PATH_ENABLED, true);
 export const SPRINT_FAST_PATH_VITEST_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_VITEST_TIMEOUT_MS, 60_000);
 export const SPRINT_FAST_PATH_TSC_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_TSC_TIMEOUT_MS, 30_000);
+export const SPRINT_FAST_PATH_SANDBOX_ENABLED = parseBooleanEnv(process.env.SPRINT_FAST_PATH_SANDBOX_ENABLED, false);
+export const SPRINT_FAST_PATH_SANDBOX_ID = process.env.SPRINT_FAST_PATH_SANDBOX_ID || '';
 
 // ──── Cross-Model Outside Voice ────
 export const SPRINT_CROSS_MODEL_ENABLED = parseBooleanEnv(process.env.SPRINT_CROSS_MODEL_ENABLED, false);
 export const SPRINT_CROSS_MODEL_PROVIDER = process.env.SPRINT_CROSS_MODEL_PROVIDER || '';
 export const SPRINT_CROSS_MODEL_PHASES = process.env.SPRINT_CROSS_MODEL_PHASES || 'review,security-audit';
+export const SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED = parseBooleanEnv(process.env.SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED, false);
 
 // ──── Scope Guard (freeze/guard) ────
 export const SPRINT_SCOPE_GUARD_ENABLED = parseBooleanEnv(process.env.SPRINT_SCOPE_GUARD_ENABLED, true);
@@ -264,9 +267,12 @@ export default {
   SPRINT_FAST_PATH_ENABLED,
   SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
   SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+  SPRINT_FAST_PATH_SANDBOX_ENABLED,
+  SPRINT_FAST_PATH_SANDBOX_ID,
   SPRINT_CROSS_MODEL_ENABLED,
   SPRINT_CROSS_MODEL_PROVIDER,
   SPRINT_CROSS_MODEL_PHASES,
+  SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED,
   SPRINT_SCOPE_GUARD_ENABLED,
   SPRINT_SCOPE_GUARD_ALLOWED_DIRS,
   SPRINT_SCOPE_GUARD_PROTECTED_FILES,
@@ -377,11 +383,14 @@ export const sprintConfig = {
     enabled: SPRINT_FAST_PATH_ENABLED,
     vitestTimeoutMs: SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
     tscTimeoutMs: SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+    sandboxEnabled: SPRINT_FAST_PATH_SANDBOX_ENABLED,
+    sandboxId: SPRINT_FAST_PATH_SANDBOX_ID,
   },
   crossModel: {
     enabled: SPRINT_CROSS_MODEL_ENABLED,
     provider: SPRINT_CROSS_MODEL_PROVIDER,
     phases: SPRINT_CROSS_MODEL_PHASES,
+    nemoclawEnabled: SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED,
   },
   scopeGuard: {
     enabled: SPRINT_SCOPE_GUARD_ENABLED,

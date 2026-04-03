@@ -60,7 +60,8 @@
     "docs:build": "npm run docs:routes && npm run docs:deps && npm run docs:schema-map",
     "docs:check": "npm run docs:build && git diff --exit-code -- docs/ROUTES_INVENTORY.md docs/DEPENDENCY_GRAPH.md docs/SCHEMA_SERVICE_MAP.md",
     "openjarvis:autonomy:run": "node scripts/run-openjarvis-unattended.mjs --strict=true",
-    "tools:probe": "tsx scripts/probe-external-tools.ts"
+    "tools:probe": "tsx scripts/probe-external-tools.ts",
+    "tools:onboarding": "node scripts/generate-onboarding-checklist.mjs"
   },
   "dependencies": {
     "@sentry/node": "^7.59.0",

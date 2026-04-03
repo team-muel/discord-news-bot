@@ -171,6 +171,10 @@ describe('selfImprovementLoop', () => {
           return { select: () => ({ in: () => ({ gte: () => ({ limit: () =>
             Promise.resolve({ data: Array.from({ length: 12 }, (_, i) => ({ error: 'ACTION_NOT_IMPLEMENTED', goal: `g${i}` })), error: null }) }) }) }) };
         }
+        if (table === 'sprint_journal_entries') {
+          return { select: () => ({ not: () => ({ gte: () => ({ order: () => ({ limit: () =>
+            Promise.resolve({ data: [], error: null }) }) }) }) }) };
+        }
         return { select: () => ({
           eq: () => ({ gte: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }),
           in: () => ({ gte: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }),

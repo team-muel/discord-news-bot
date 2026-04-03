@@ -8,28 +8,39 @@ export type BenchResult = {
   benchScore: number | null;
   latencyMs: number | null;
   throughput: number | null;
+  schemaVersion: string | null;
   raw: string[];
 };
+
+/** Known jarvis bench --json schema versions. Future versions may change output shape. */
+const SUPPORTED_BENCH_SCHEMA_VERSIONS = ['1', '1.0', '1.1'];
 
 /**
  * Parse `jarvis bench --json` stdout into a structured BenchResult.
  * Tolerant: returns null score on malformed/empty output.
+ * Version-guarded: logs a warning if schema_version field is unrecognized.
  */
 export const parseBenchResult = (output: string[]): BenchResult => {
   const raw = output.slice(0, 20);
   const joined = output.join('\n').trim();
-  if (!joined) return { benchScore: null, latencyMs: null, throughput: null, raw };
+  if (!joined) return { benchScore: null, latencyMs: null, throughput: null, schemaVersion: null, raw };
   try {
     const parsed = JSON.parse(joined) as Record<string, unknown>;
+    const schemaVersion = typeof parsed.schema_version === 'string' ? parsed.schema_version
+      : typeof parsed.version === 'string' ? parsed.version : null;
+    if (schemaVersion && !SUPPORTED_BENCH_SCHEMA_VERSIONS.includes(schemaVersion)) {
+      logger.warn('[OPENJARVIS] bench schema_version=%s is not in supported set [%s]; parsing may be inaccurate',
+        schemaVersion, SUPPORTED_BENCH_SCHEMA_VERSIONS.join(','));
+    }
     const score = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : null;
     const latency = typeof parsed.latency_ms === 'number' && Number.isFinite(parsed.latency_ms) ? parsed.latency_ms : null;
     const throughput = typeof parsed.throughput === 'number' && Number.isFinite(parsed.throughput) ? parsed.throughput : null;
-    return { benchScore: score, latencyMs: latency, throughput, raw };
+    return { benchScore: score, latencyMs: latency, throughput, schemaVersion, raw };
   } catch {
     // Fallback: try to extract score from first line like "score: 0.85"
     const scoreMatch = joined.match(/score[:\s]+([0-9]+(?:\.[0-9]+)?)/i);
     const benchScore = scoreMatch ? Number(scoreMatch[1]) : null;
-    return { benchScore: Number.isFinite(benchScore) ? benchScore : null, latencyMs: null, throughput: null, raw };
+    return { benchScore: Number.isFinite(benchScore) ? benchScore : null, latencyMs: null, throughput: null, schemaVersion: null, raw };
   }
 };
 

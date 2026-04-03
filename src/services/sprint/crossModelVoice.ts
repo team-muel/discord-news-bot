@@ -12,8 +12,10 @@ import {
   SPRINT_CROSS_MODEL_ENABLED,
   SPRINT_CROSS_MODEL_PROVIDER,
   SPRINT_CROSS_MODEL_PHASES,
+  SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED,
 } from '../../config';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { executeExternalAction } from '../tools/externalAdapterRegistry';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -88,7 +90,46 @@ export const requestCrossModelReview = async (params: {
   ].join('\n');
 
   try {
-    // Use configured provider, or auto-select muel-nemotron (120B) for independent second opinion
+    // ── NemoClaw sandbox path: fault-isolated independent review ──
+    if (SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED) {
+      try {
+        const codePayload = [
+          `## Objective\n${params.objective}`,
+          `## Changed Files\n${params.changedFiles.join('\n')}`,
+          `## Primary Review Output\n${params.primaryOutput.slice(0, 3000)}`,
+        ].join('\n\n');
+
+        const adapterResult = await executeExternalAction('nemoclaw', 'code.review', {
+          code: codePayload,
+          goal: `Independent cross-model review for phase "${params.phase}": assess, agree/disagree with primary review.`,
+        });
+
+        if (adapterResult.ok && adapterResult.output.length > 0) {
+          const raw = adapterResult.output.join('\n').slice(0, 3000);
+          const agreements = extractSection(raw, 'Agreements');
+          const disagreements = extractSection(raw, 'Disagreements');
+
+          logger.info(
+            '[CROSS-MODEL] nemoclaw sandbox review: phase=%s duration=%dms',
+            params.phase, adapterResult.durationMs,
+          );
+
+          return {
+            enabled: true,
+            provider: 'nemoclaw-sandbox',
+            review: raw,
+            agreements: agreements.split('\n').filter((l) => l.startsWith('-')).map((l) => l.slice(1).trim()),
+            disagreements: disagreements.split('\n').filter((l) => l.startsWith('-')).map((l) => l.slice(1).trim()),
+            durationMs: adapterResult.durationMs,
+          };
+        }
+        logger.info('[CROSS-MODEL] nemoclaw adapter unavailable or empty, falling through to LLM path');
+      } catch (nemoclawErr) {
+        logger.warn('[CROSS-MODEL] nemoclaw sandbox failed (non-fatal): %s', nemoclawErr instanceof Error ? nemoclawErr.message : String(nemoclawErr));
+      }
+    }
+
+    // ── LLM path: configured provider (muel-nemotron default) ──
     const modelOverride = SPRINT_CROSS_MODEL_PROVIDER || 'muel-nemotron';
     const raw = await generateText({
       system,

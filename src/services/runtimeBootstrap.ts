@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import { isAutomationEnabled, startAutomationJobs, startAutomationModules } from './automationBot';
 import { startMemoryJobRunner } from './memoryJobRunner';
+import { startConsolidationLoop } from './memoryConsolidationService';
 import { startObsidianLoreSyncLoop } from './obsidianLoreSyncService';
 import { startRetrievalEvalLoop } from './retrievalEvalLoopService';
 import { startAgentSloAlertLoop } from './agent/agentSloService';
@@ -18,6 +19,7 @@ import { startSprintScheduledTriggers } from './sprint/sprintTriggers';
 import { checkGitConfigHealth } from './sprint/autonomousGit';
 import { initMcpSkillRouter } from './mcpSkillRouter';
 import { syncHighRiskActionsToSandboxPolicy } from './skills/actionRunner';
+import { autoLoadAdapters } from './tools/adapterAutoLoader';
 import logger from '../logger';
 
 const runtimeState = {
@@ -47,6 +49,7 @@ const startSharedLoops = (source: 'server-process' | 'discord-ready') => {
   }
 
   startMemoryJobRunner();
+  startConsolidationLoop();
   runtimeState.sharedLoopsStarted = true;
   runtimeState.sharedLoopsSource = source;
 };
@@ -82,6 +85,19 @@ export const startServerProcessRuntime = (): void => {
   // D-06: Sync high-risk actions to OpenShell sandbox policy at startup
   void syncHighRiskActionsToSandboxPolicy().catch((error) => {
     logger.debug('[SANDBOX-POLICY] startup sync skipped: %s', getErrorMessage(error));
+  });
+
+  // D-06: Periodic re-sync every 6 hours to catch env changes without restart
+  const SANDBOX_POLICY_RESYNC_MS = 6 * 60 * 60_000;
+  setInterval(() => {
+    void syncHighRiskActionsToSandboxPolicy().catch((error) => {
+      logger.debug('[SANDBOX-POLICY] periodic sync skipped: %s', getErrorMessage(error));
+    });
+  }, SANDBOX_POLICY_RESYNC_MS);
+
+  // M-15 / F-02: Auto-load dynamic adapters from adapters/ directory
+  void autoLoadAdapters().catch((error) => {
+    logger.debug('[ADAPTER-LOADER] startup auto-load skipped: %s', getErrorMessage(error));
   });
 
   runtimeState.serverStarted = true;

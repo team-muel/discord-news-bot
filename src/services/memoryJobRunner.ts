@@ -4,6 +4,7 @@ import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
 import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { evolveMemoryLinks } from './memoryEvolutionService';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
 const MEMORY_JOBS_POLL_INTERVAL_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 8_000));
@@ -409,6 +410,18 @@ const processDurableExtraction = async (params: {
     throw new Error(insertError.message || 'DURABLE_EXTRACTION_INSERT_FAILED');
   }
 
+  // ADR-006: A-MEM style memory evolution — link to related memories
+  const evolution = await evolveMemoryLinks({
+    newMemoryId: row.id,
+    guildId: params.guildId,
+    title: sanitized.cleaned.title || '',
+    content: sanitized.cleaned.content || '',
+    summary: sanitized.cleaned.summary || '',
+  }).catch((err) => {
+    logger.debug('[MEMORY-JOB] evolution skipped for %s: %s', row.id, err instanceof Error ? err.message : String(err));
+    return null;
+  });
+
   return {
     inserted: true,
     reason: poisonAssessment.reviewRequired ? 'INSERTED_REVIEW_REQUIRED' : 'INSERTED',
@@ -416,6 +429,7 @@ const processDurableExtraction = async (params: {
     poisonReasons: poisonAssessment.reasons,
     conflictKey,
     memoryItemId: row.id,
+    evolution: evolution ? { linksCreated: evolution.linksCreated, memoriesBoosted: evolution.memoriesBoosted } : undefined,
   };
 };
 

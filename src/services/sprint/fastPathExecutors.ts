@@ -22,8 +22,11 @@ import {
   SPRINT_FAST_PATH_ENABLED,
   SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
   SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+  SPRINT_FAST_PATH_SANDBOX_ENABLED,
+  SPRINT_FAST_PATH_SANDBOX_ID,
 } from '../../config';
 import { createSprintBranch, commitSprintChanges, createSprintPr } from './autonomousGit';
+import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import type { SprintPhase } from './sprintOrchestrator';
 import type { ActionExecutionResult } from '../skills/actions/types';
 
@@ -85,19 +88,59 @@ const runCommand = (
   });
 };
 
+// ──── OpenShell sandbox execution helper ──────────────────────────────────────
+
+const executeSandboxCommand = async (
+  command: string,
+  phase: string,
+  timeoutMs: number,
+): Promise<SubprocessResult | null> => {
+  if (!SPRINT_FAST_PATH_SANDBOX_ENABLED || !SPRINT_FAST_PATH_SANDBOX_ID) return null;
+  try {
+    const result = await executeExternalAction('openshell', 'sandbox.exec', {
+      sandboxId: SPRINT_FAST_PATH_SANDBOX_ID,
+      command,
+      mode: 'read_only',
+    });
+    if (!result.ok) {
+      logger.info('[FAST-PATH] sandbox exec failed for %s: %s, falling through to host', phase, result.error || result.summary);
+      return null;
+    }
+    const stdout = result.output.join('\n');
+    const hasError = stdout.includes('FAIL') || stdout.includes('error TS') || stdout.includes('ERR_');
+    return {
+      exitCode: hasError ? 1 : 0,
+      stdout: stdout.slice(0, 4000),
+      stderr: '',
+      durationMs: result.durationMs,
+    };
+  } catch (err) {
+    logger.warn('[FAST-PATH] sandbox exec threw for %s: %s, falling through to host',
+      phase, err instanceof Error ? err.message : String(err));
+    return null;
+  }
+};
+
 // ──── QA fast-path: vitest run ────────────────────────────────────────────────
 
 const executeQaFastPath = async (
   objective: string,
   changedFiles: string[],
 ): Promise<ActionExecutionResult> => {
-  logger.info('[FAST-PATH] qa: running vitest');
-  const result = await runCommand(
+  // Prefer sandbox execution for fault isolation
+  const sandboxResult = await executeSandboxCommand(
+    'cd /workspace && npx vitest run --reporter=verbose',
+    'qa',
+    SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
+  );
+  const result = sandboxResult ?? await runCommand(
     'npx',
     ['vitest', 'run', '--reporter=verbose'],
     SPRINT_FAST_PATH_VITEST_TIMEOUT_MS,
     buildDeterministicChildEnv(),
   );
+  const executionMode = sandboxResult ? 'sandbox' : 'host';
+  logger.info('[FAST-PATH] qa: running vitest (%s)', executionMode);
 
   const passed = result.exitCode === 0;
   const output = result.stdout || result.stderr;
@@ -136,13 +179,20 @@ const executeOpsValidateFastPath = async (
   objective: string,
   changedFiles: string[],
 ): Promise<ActionExecutionResult> => {
-  logger.info('[FAST-PATH] ops-validate: running tsc --noEmit');
-  const result = await runCommand(
+  // Prefer sandbox execution for fault isolation
+  const sandboxResult = await executeSandboxCommand(
+    'cd /workspace && npx tsc --noEmit',
+    'ops-validate',
+    SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
+  );
+  const result = sandboxResult ?? await runCommand(
     'npx',
     ['tsc', '--noEmit'],
     SPRINT_FAST_PATH_TSC_TIMEOUT_MS,
     buildDeterministicChildEnv(),
   );
+  const executionMode = sandboxResult ? 'sandbox' : 'host';
+  logger.info('[FAST-PATH] ops-validate: running tsc --noEmit (%s)', executionMode);
 
   const passed = result.exitCode === 0;
   const errorLines = result.stdout.split('\n').filter((l) => l.includes('error TS'));

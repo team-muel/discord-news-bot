@@ -62,24 +62,43 @@ ALTER TABLE obsidian_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE obsidian_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE obsidian_query_log ENABLE ROW LEVEL SECURITY;
 
--- Policy: Anyone can read cache (world-readable)
-CREATE POLICY cache_read ON obsidian_cache FOR SELECT
-  USING (true);
+DO $$
+BEGIN
+  -- Policy: Anyone can read cache (world-readable)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'cache_read'
+  ) THEN
+    CREATE POLICY cache_read ON obsidian_cache FOR SELECT USING (true);
+  END IF;
 
--- Policy: Only service role can write cache
-CREATE POLICY cache_write ON obsidian_cache FOR INSERT
-  WITH CHECK (auth.role() = 'service_role');
+  -- Policy: Only service role can write cache
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'cache_write'
+  ) THEN
+    CREATE POLICY cache_write ON obsidian_cache FOR INSERT WITH CHECK (auth.role() = 'service_role');
+  END IF;
 
-CREATE POLICY cache_update ON obsidian_cache FOR UPDATE
-  USING (auth.role() = 'service_role');
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'cache_update'
+  ) THEN
+    CREATE POLICY cache_update ON obsidian_cache FOR UPDATE USING (auth.role() = 'service_role');
+  END IF;
 
--- Policy: Log reads
-CREATE POLICY query_log_read ON obsidian_query_log FOR SELECT
-  USING (true);
+  -- Policy: Log reads
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_query_log' AND policyname = 'query_log_read'
+  ) THEN
+    CREATE POLICY query_log_read ON obsidian_query_log FOR SELECT USING (true);
+  END IF;
 
--- Policy: Anyone can insert logs
-CREATE POLICY query_log_write ON obsidian_query_log FOR INSERT
-  WITH CHECK (true);
+  -- Policy: Anyone can insert logs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_query_log' AND policyname = 'query_log_write'
+  ) THEN
+    CREATE POLICY query_log_write ON obsidian_query_log FOR INSERT WITH CHECK (true);
+  END IF;
+END
+$$;
 
 -- Function: Auto-clear expired cache entries (optional, call periodically)
 CREATE OR REPLACE FUNCTION clear_expired_obsidian_cache()

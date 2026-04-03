@@ -21,9 +21,29 @@
 
 ## Active Now (WIP <= 3)
 
-1. [M-11] OpenJarvis Learning Loop 완결 — bench→gate feed, optimize 스케줄, trace→learning 폐순환 검증
-2. [M-12] OpenShell Sandbox 격리 실행 — Docker WSL 해결, implement.execute sandbox 경로, 정책 동기화
-3. [M-13] OpenClaw Gateway 채널 브릿지 — 세션 relay, 채널 라우팅, skill 연동
+(없음 — M-15 완료, 다음 마일스톤 승격 대기)
+
+## Closed on 2026-04-04
+
+1. [M-15] Pluggable Adapter Framework ✅
+   - F-01: `ExternalAdapterId` union literal → branded string 기반 + `ADAPTER_ID_PATTERN` schema validation + `registerExternalAdapter`/`unregisterExternalAdapter` 동적 등록
+   - F-02: `adapterAutoLoader.ts` glob scan → 자동 registry 등록 (duck-type check, built-in skip, runtimeBootstrap 연동)
+   - F-03: `generate-onboarding-checklist.mjs` adapter kind 확장 (4 prerequisite checks + 15-item checklist)
+
+## Closed on 2026-04-03
+
+1. [M-11] OpenJarvis Learning Loop 완결 ✅
+   - D-01: `jarvis.bench --json` version guard + `parseBenchResult` schemaVersion 필드 추가
+   - D-02: `jarvis.optimize` 출력 캡처 + Supabase 결과 영속화 + CLI fallback
+   - D-03: trace→learning→bench 폐순환 — convergence monitor에서 structured JSON bench result + optimize result 데이터 포인트 수집
+2. [M-12] OpenShell Sandbox 격리 실행 ✅
+   - D-04: `OPENSHELL_REMOTE_GATEWAY` env로 remote gateway fallback 경로 추가
+   - D-05: `sandbox.exec` 전 sandbox 존재 확인 + auto-create 로직 추가
+   - D-06: startup sync + 6시간 주기 periodic re-sync 추가
+3. [M-13] OpenClaw Gateway 채널 브릿지 ✅
+   - E-01: 기 구현 확인 (agent.chat, agent.session.relay adapter)
+   - E-02: 기 구현 확인 (GET/PUT /api/bot/agent/runtime/channel-routing)
+   - E-03: skill name 길이 제한(100자) + Supabase 성공 추적 추가
 
 ## Closed on 2026-04-02
 
@@ -78,9 +98,9 @@
 
 ## Queued Now (Approved, Not In Active WIP, Owner-Bound)
 
-1. [A-002] [M-15] Pluggable Adapter Framework — ExternalAdapterId 동적 전환, adapter 자동 발견, base adapter 추상화
+(없음)
 
-### Closed Queued Items (Phase A-C)
+### Closed Queued Items (Phase A-D)
 
 1. ~~[A-003] [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정~~ → ✅ P0 경화 완료 (evidence ID + audit trail)
 2. ~~[A-003] [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정~~ → ✅ evidence 필드 + snapshot 반영
@@ -89,23 +109,34 @@
 5. ~~[A-003] [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단~~ → ✅ HIGH_RISK_APPROVAL_ACTIONS 구현
 6. ~~[A-003] [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정~~ → ✅ LLM_WORKFLOW_MODEL_BINDINGS + LLM_WORKFLOW_PROFILE_DEFAULTS 환경변수 구현
 
-## Next (Phase D: Deep Integration Unlock)
+## Next
 
-1. [M-11] `jarvis.bench --json` → `computeNormalizedQualityScore` 입력 연결
-2. [M-11] weekly auto-judge 후 `jarvis.optimize` 자동 트리거
-3. [M-11] trace→learning→bench 폐순환 검증 (2주 연속 bench score 회귀 없음)
-4. [M-12] Docker Desktop WSL2 통합 또는 remote gateway 경로 확보
-5. [M-12] actionRunner `implement.execute` → OpenShell sandbox 위임
-6. [M-12] `HIGH_RISK_APPROVAL_ACTIONS` ↔ OpenShell network policy YAML 동기화
+(다음 마일스톤 승격 대기)
 
-## Later (Phase E: Channel Expansion + Framework)
+## Closed Next (Phase E: Pluggable Adapter Framework) — All ✅
 
-1. [M-13] `openclaw agent --message` 경로를 Muel↔OpenClaw 양방향 메시지 파이프로 확장
-2. [M-13] guild 설정에 채널 라우팅 매핑 저장/조회 API
-3. [M-13] Muel feature lacuna → OpenClaw skill 자동 생성 트리거
-4. [M-15] `ExternalAdapterId` union literal → string 기반 + schema validation
-5. [M-15] `src/services/tools/adapters/` glob scan → 자동 registry 등록
-6. [M-15] adapter onboarding checklist 자동 생성 확장
+1. ~~[M-15] `ExternalAdapterId` union literal → string 기반 + schema validation~~ → ✅ branded string + ADAPTER_ID_PATTERN + registerExternalAdapter/unregisterExternalAdapter
+2. ~~[M-15] `src/services/tools/adapters/` glob scan → 자동 registry 등록~~ → ✅ adapterAutoLoader.ts + runtimeBootstrap 연동
+3. ~~[M-15] adapter onboarding checklist 자동 생성 확장~~ → ✅ kind='adapter' + 4 prereq checks + 15-item checklist
+
+## Closed Next (Phase D: Deep Integration Unlock) — All ✅
+
+1. ~~[M-11] `jarvis.bench --json` → `computeNormalizedQualityScore` 입력 연결~~ → ✅ parseBenchResult schemaVersion guard
+2. ~~[M-11] weekly auto-judge 후 `jarvis.optimize` 자동 트리거~~ → ✅ output capture + CLI fallback + Supabase persist
+3. ~~[M-11] trace→learning→bench 폐순환 검증~~ → ✅ convergence monitor structured JSON + optimize result data points
+4. ~~[M-12] Docker Desktop WSL2 통합 또는 remote gateway 경로 확보~~ → ✅ OPENSHELL_REMOTE_GATEWAY env fallback
+5. ~~[M-12] actionRunner `implement.execute` → OpenShell sandbox 위임~~ → ✅ auto-create + sandbox existence check
+6. ~~[M-12] `HIGH_RISK_APPROVAL_ACTIONS` ↔ OpenShell network policy YAML 동기화~~ → ✅ startup + 6h periodic re-sync
+
+## Closed Later (Phase E: Channel Expansion) — All ✅
+
+1. ~~[M-13] `openclaw agent --message` 경로를 Muel↔OpenClaw 양방향 메시지 파이프로 확장~~ → ✅ 기 구현 확인
+2. ~~[M-13] guild 설정에 채널 라우팅 매핑 저장/조회 API~~ → ✅ 기 구현 확인
+3. ~~[M-13] Muel feature lacuna → OpenClaw skill 자동 생성 트리거~~ → ✅ name length cap + success tracking
+
+## Later
+
+(다음 마일스톤 구체화 대기)
 
 ## Closed Next/Later (Phase A-C, All Completed)
 

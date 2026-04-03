@@ -71,14 +71,12 @@ describe('externalAdapterRegistry', () => {
 
   it('getExternalAdapter returns undefined for unknown ID', async () => {
     const { getExternalAdapter } = await import('./externalAdapterRegistry');
-    // @ts-expect-error testing with invalid id
     const adapter = getExternalAdapter('nonexistent');
     expect(adapter).toBeUndefined();
   });
 
   it('executeExternalAction returns ADAPTER_NOT_FOUND for unknown adapter', async () => {
     const { executeExternalAction } = await import('./externalAdapterRegistry');
-    // @ts-expect-error testing with invalid id
     const result = await executeExternalAction('nonexistent', 'test');
     expect(result.ok).toBe(false);
     expect(result.error).toBe('ADAPTER_NOT_FOUND');
@@ -102,5 +100,88 @@ describe('externalAdapterRegistry', () => {
       expect(s).toHaveProperty('capabilities');
       expect(typeof s.available).toBe('boolean');
     }
+  });
+});
+
+describe('externalAdapterTypes — M-15 schema validation', () => {
+  it('validateAdapterId accepts valid lowercase IDs', async () => {
+    const { validateAdapterId } = await import('./externalAdapterTypes');
+    expect(validateAdapterId('my-adapter')).toBe('my-adapter');
+    expect(validateAdapterId('tool123')).toBe('tool123');
+    expect(validateAdapterId('openshell')).toBe('openshell');
+  });
+
+  it('validateAdapterId rejects invalid IDs', async () => {
+    const { validateAdapterId } = await import('./externalAdapterTypes');
+    expect(validateAdapterId('')).toBeNull();
+    expect(validateAdapterId('a')).toBeNull(); // too short (min 2)
+    expect(validateAdapterId('has space')).toBeNull();
+    expect(validateAdapterId('has_underscore')).toBeNull();
+    expect(validateAdapterId(123)).toBeNull();
+    expect(validateAdapterId(null)).toBeNull();
+  });
+
+  it('validateAdapterId normalizes to lowercase', async () => {
+    const { validateAdapterId } = await import('./externalAdapterTypes');
+    // 'MyAdapter' → 'myadapter' which is valid
+    expect(validateAdapterId('MyAdapter')).toBe('myadapter');
+  });
+
+  it('KNOWN_ADAPTER_IDS contains the 4 built-ins', async () => {
+    const { KNOWN_ADAPTER_IDS } = await import('./externalAdapterTypes');
+    expect(KNOWN_ADAPTER_IDS.has('openshell')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.has('nemoclaw')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.has('openclaw')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.has('openjarvis')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.size).toBe(4);
+  });
+});
+
+describe('dynamic adapter registration — M-15', () => {
+  it('registerExternalAdapter adds a new adapter', async () => {
+    const { registerExternalAdapter, getExternalAdapter, unregisterExternalAdapter } = await import('./externalAdapterRegistry');
+    const testAdapter = {
+      id: 'test-dynamic' as const,
+      capabilities: ['test.action'] as const,
+      isAvailable: async () => true,
+      execute: async (action: string) => ({
+        ok: true, adapterId: 'test-dynamic', action, summary: 'ok', output: [], durationMs: 0,
+      }),
+    };
+    const registered = registerExternalAdapter(testAdapter);
+    expect(registered).toBe(true);
+    expect(getExternalAdapter('test-dynamic')).toBeDefined();
+
+    // Cleanup
+    unregisterExternalAdapter('test-dynamic');
+    expect(getExternalAdapter('test-dynamic')).toBeUndefined();
+  });
+
+  it('rejects registration of built-in adapter IDs', async () => {
+    const { registerExternalAdapter } = await import('./externalAdapterRegistry');
+    const fakeAdapter = {
+      id: 'openshell' as const,
+      capabilities: ['fake'] as const,
+      isAvailable: async () => true,
+      execute: async (action: string) => ({
+        ok: true, adapterId: 'openshell', action, summary: 'fake', output: [], durationMs: 0,
+      }),
+    };
+    const registered = registerExternalAdapter(fakeAdapter);
+    expect(registered).toBe(false);
+  });
+
+  it('rejects registration with invalid ID', async () => {
+    const { registerExternalAdapter } = await import('./externalAdapterRegistry');
+    const badAdapter = {
+      id: '' as const,
+      capabilities: [] as const,
+      isAvailable: async () => true,
+      execute: async (action: string) => ({
+        ok: true, adapterId: '', action, summary: 'bad', output: [], durationMs: 0,
+      }),
+    };
+    const registered = registerExternalAdapter(badAdapter);
+    expect(registered).toBe(false);
   });
 });

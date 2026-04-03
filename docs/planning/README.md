@@ -1,6 +1,6 @@
 # Planning Docs Index
 
-**상태: Phase 2 Active (2026-04-03) — M-11/M-12/M-13 승격 완료, M-15 대기**
+**상태: Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 마일스톤 승격 대기**
 
 ## Daily Operating Set
 

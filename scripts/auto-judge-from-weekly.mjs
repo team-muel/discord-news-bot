@@ -225,6 +225,7 @@ const collectJarvisBenchScore = async () => {
 /**
  * D-02: Trigger jarvis.optimize after weekly auto-judge completes.
  * Sends gate verdict summary as optimization hints.
+ * Captures optimize output and logs result validation.
  * Graceful no-op when disabled or unreachable.
  */
 const triggerJarvisOptimizeAfterGate = async (gateArgs) => {
@@ -251,9 +252,43 @@ const triggerJarvisOptimizeAfterGate = async (gateArgs) => {
       signal: AbortSignal.timeout(30_000),
     });
     if (resp.ok) {
-      console.log('[GO-NO-GO][JARVIS-OPTIMIZE] triggered successfully');
+      let optimizeOutput = null;
+      try {
+        optimizeOutput = await resp.json();
+      } catch { /* non-json response */ }
+      const improved = optimizeOutput?.improved === true || optimizeOutput?.status === 'optimized';
+      console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] triggered successfully improved=${improved} status=${optimizeOutput?.status || 'unknown'}`);
+
+      // Persist optimize result to Supabase for trace→learning→bench loop (D-03)
+      if (SUPABASE_URL && SUPABASE_KEY && optimizeOutput) {
+        try {
+          const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+          await client.from('agent_weekly_reports').upsert({
+            report_key: `jarvis_optimize:${new Date().toISOString().slice(0, 10)}`,
+            report_kind: 'jarvis_optimize_result',
+            guild_id: null,
+            baseline_summary: {
+              hints,
+              result: optimizeOutput,
+              improved,
+              triggeredAt: new Date().toISOString(),
+            },
+            created_at: new Date().toISOString(),
+          }, { onConflict: 'report_key' }).then(() => {}, () => {});
+        } catch { /* best-effort persistence */ }
+      }
     } else {
       console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] response ${resp.status} (non-blocking)`);
+      // Fallback: try CLI if HTTP serve returned non-OK
+      try {
+        const { stdout } = await execFileAsync('jarvis', ['optimize', '--json'], {
+          timeout: 30_000,
+          windowsHide: true,
+        });
+        console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] CLI fallback output: ${stdout.trim().slice(0, 200)}`);
+      } catch (cliErr) {
+        console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] CLI fallback failed (non-blocking): ${cliErr?.message || cliErr}`);
+      }
     }
   } catch (err) {
     console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] failed (non-blocking): ${err?.message || err}`);

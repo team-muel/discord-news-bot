@@ -45,11 +45,22 @@ CREATE TABLE IF NOT EXISTS user_learning_prefs (
 -- RLS: 사용자는 자신의 행만 조회/수정 가능
 ALTER TABLE user_learning_prefs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "user can manage own prefs"
-  ON user_learning_prefs
-  FOR ALL
-  USING (true)   -- service-role key bypasses; adjust for user auth if needed
-  WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_learning_prefs'
+      AND policyname = 'user can manage own prefs'
+  ) THEN
+    CREATE POLICY "user can manage own prefs"
+      ON user_learning_prefs
+      FOR ALL
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END
+$$;
 
 -- ═══════════════════════════════════════════════
 -- 완료 확인

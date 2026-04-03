@@ -3,22 +3,54 @@ import { nemoclawAdapter } from './adapters/nemoclawCliAdapter';
 import { openclawAdapter } from './adapters/openclawCliAdapter';
 import { openjarvisAdapter } from './adapters/openjarvisAdapter';
 import type { ExternalAdapterId, ExternalToolAdapter, ExternalAdapterResult } from './externalAdapterTypes';
+import { validateAdapterId } from './externalAdapterTypes';
+import logger from '../../logger';
 
-const ADAPTERS: ReadonlyArray<ExternalToolAdapter> = [
+/** Built-in adapters loaded at module init. */
+const BUILTIN_ADAPTERS: ReadonlyArray<ExternalToolAdapter> = [
   openshellAdapter,
   nemoclawAdapter,
   openclawAdapter,
   openjarvisAdapter,
 ];
 
-const adapterMap = new Map<ExternalAdapterId, ExternalToolAdapter>(
-  ADAPTERS.map((a) => [a.id, a]),
+/** Mutable map — built-ins + dynamically registered adapters. */
+const adapterMap = new Map<string, ExternalToolAdapter>(
+  BUILTIN_ADAPTERS.map((a) => [a.id, a]),
 );
+
+/**
+ * M-15 / F-01: Register a dynamic adapter at runtime.
+ * Validates the adapter ID against ADAPTER_ID_PATTERN.
+ * Returns true on success, false if ID is invalid or already taken by a built-in.
+ */
+export const registerExternalAdapter = (adapter: ExternalToolAdapter): boolean => {
+  const id = validateAdapterId(adapter.id);
+  if (!id) {
+    logger.warn('[ADAPTER-REGISTRY] rejected adapter registration: invalid id=%s', adapter.id);
+    return false;
+  }
+  if (adapterMap.has(id) && BUILTIN_ADAPTERS.some((b) => b.id === id)) {
+    logger.warn('[ADAPTER-REGISTRY] rejected adapter registration: built-in id=%s cannot be overwritten', id);
+    return false;
+  }
+  adapterMap.set(id, { ...adapter, id });
+  logger.info('[ADAPTER-REGISTRY] registered dynamic adapter id=%s capabilities=%s', id, adapter.capabilities.join(','));
+  return true;
+};
+
+/**
+ * M-15 / F-01: Unregister a dynamic adapter. Built-in adapters cannot be removed.
+ */
+export const unregisterExternalAdapter = (id: ExternalAdapterId): boolean => {
+  if (BUILTIN_ADAPTERS.some((b) => b.id === id)) return false;
+  return adapterMap.delete(id);
+};
 
 export const getExternalAdapter = (id: ExternalAdapterId): ExternalToolAdapter | undefined =>
   adapterMap.get(id);
 
-export const listExternalAdapters = (): ReadonlyArray<ExternalToolAdapter> => ADAPTERS;
+export const listExternalAdapters = (): ReadonlyArray<ExternalToolAdapter> => [...adapterMap.values()];
 
 export const executeExternalAction = async (
   adapterId: ExternalAdapterId,
@@ -57,8 +89,9 @@ export const executeExternalAction = async (
 export const getExternalAdapterStatus = async (): Promise<
   Array<{ id: ExternalAdapterId; available: boolean; capabilities: readonly string[]; liteMode?: boolean; liteCapabilities?: readonly string[] }>
 > => {
+  const adapters = [...adapterMap.values()];
   const results = await Promise.all(
-    ADAPTERS.map(async (a) => {
+    adapters.map(async (a) => {
       const available = await a.isAvailable();
       const liteMode = available && a.liteCapabilities ? a.capabilities.length !== a.liteCapabilities.length : undefined;
       return {

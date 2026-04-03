@@ -300,7 +300,10 @@ const writeSupabaseArtifact = async (stats, markdown) => {
   if (error) {
     const errorCode = String(error.code || '').toUpperCase();
     const errorMessage = String(error.message || '');
-    const relationMissing = errorCode === '42P01' || /relation\s+"?agent_weekly_reports"?\s+does\s+not\s+exist/i.test(errorMessage);
+    const relationMissing = errorCode === '42P01' || errorCode === 'PGRST205' || errorCode === 'PGRST204'
+      || /relation\s+"?agent_weekly_reports"?\s+does\s+not\s+exist/i.test(errorMessage)
+      || /could not find.*agent_weekly_reports/i.test(errorMessage)
+      || errorMessage.includes('agent_weekly_reports');
     const unsupportedKind = errorCode === '23514' && /report_kind_check/i.test(errorMessage);
     if (relationMissing && allowMissingSupabaseTable) {
       console.log('[MEMORY-QUEUE-WEEKLY] supabase skipped: table public.agent_weekly_reports not found (apply migration first)');

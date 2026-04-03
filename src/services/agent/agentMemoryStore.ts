@@ -9,7 +9,7 @@ import { generateQueryEmbedding, generateEmbedding, storeMemoryEmbedding, isEmbe
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;
 const CONFLICT_STATUSES = ['open', 'resolved', 'ignored'] as const;
-const JOB_TYPES = ['short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot'] as const;
+const JOB_TYPES = ['short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot', 'consolidation'] as const;
 
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 export type MemoryFeedbackAction = (typeof FEEDBACK_ACTIONS)[number];
