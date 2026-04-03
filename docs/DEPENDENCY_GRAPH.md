@@ -1,18 +1,18 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/tradingEngine.ts
-- Nodes: 279
+- Nodes: 282
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/logger.ts | 87 |
-| src/services/supabaseClient.ts | 76 |
-| src/utils/env.ts | 71 |
+| src/logger.ts | 91 |
+| src/services/supabaseClient.ts | 78 |
+| src/utils/env.ts | 73 |
 | src/config.ts | 29 |
 | src/services/skills/actions/types.ts | 27 |
-| src/services/llmClient.ts | 22 |
+| src/services/llmClient.ts | 23 |
 | src/middleware/auth.ts | 17 |
 | src/services/multiAgentService.ts | 16 |
 | src/services/skills/types.ts | 16 |
@@ -375,6 +375,7 @@ graph LR
   "src/services/agent/agentMemoryService.ts" --> "src/services/communityGraphService.ts"
   "src/services/agent/agentMemoryService.ts" --> "src/services/entityNervousSystem.ts"
   "src/services/agent/agentMemoryService.ts" --> "src/services/memoryEmbeddingService.ts"
+  "src/services/agent/agentMemoryService.ts" --> "src/services/memoryEvolutionService.ts"
   "src/services/agent/agentMemoryService.ts" --> "src/services/memoryPoisonGuard.ts"
   "src/services/agent/agentMemoryService.ts" --> "src/services/obsidian/router.ts"
   "src/services/agent/agentMemoryService.ts" --> "src/services/supabaseClient.ts"
@@ -588,10 +589,19 @@ graph LR
   "src/services/mcpSkillRouter.ts" --> "src/utils/ttlCache.ts"
   "src/services/mcpWorkerClient.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/mcpWorkerClient.ts" --> "src/services/workerExecution.ts"
+  "src/services/memoryConsolidationService.ts" --> "src/logger.ts"
+  "src/services/memoryConsolidationService.ts" --> "src/services/llmClient.ts"
+  "src/services/memoryConsolidationService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/memoryConsolidationService.ts" --> "src/utils/env.ts"
   "src/services/memoryEmbeddingService.ts" --> "src/logger.ts"
   "src/services/memoryEmbeddingService.ts" --> "src/services/supabaseClient.ts"
   "src/services/memoryEmbeddingService.ts" --> "src/utils/env.ts"
+  "src/services/memoryEvolutionService.ts" --> "src/logger.ts"
+  "src/services/memoryEvolutionService.ts" --> "src/services/memoryEmbeddingService.ts"
+  "src/services/memoryEvolutionService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/memoryEvolutionService.ts" --> "src/utils/env.ts"
   "src/services/memoryJobRunner.ts" --> "src/logger.ts"
+  "src/services/memoryJobRunner.ts" --> "src/services/memoryEvolutionService.ts"
   "src/services/memoryJobRunner.ts" --> "src/services/memoryPoisonGuard.ts"
   "src/services/memoryJobRunner.ts" --> "src/services/obsidianSanitizationWorker.ts"
   "src/services/memoryJobRunner.ts" --> "src/services/supabaseClient.ts"
@@ -736,6 +746,7 @@ graph LR
   "src/services/runtimeBootstrap.ts" --> "src/services/discordTopologySyncService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/evalAutoPromoteLoopService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/mcpSkillRouter.ts"
+  "src/services/runtimeBootstrap.ts" --> "src/services/memoryConsolidationService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/memoryJobRunner.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/obsidianLoreSyncService.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/opencodePublishWorker.ts"
@@ -746,6 +757,7 @@ graph LR
   "src/services/runtimeBootstrap.ts" --> "src/services/sprint/autonomousGit.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/sprint/sprintOrchestrator.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/sprint/sprintTriggers.ts"
+  "src/services/runtimeBootstrap.ts" --> "src/services/tools/adapterAutoLoader.ts"
   "src/services/runtimeBootstrap.ts" --> "src/services/tradingEngine.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/discord/auth.ts"
   "src/services/runtimeSchedulerPolicyService.ts" --> "src/services/agent/agentOpsService.ts"
@@ -926,12 +938,14 @@ graph LR
   "src/services/sprint/crossModelVoice.ts" --> "src/config.ts"
   "src/services/sprint/crossModelVoice.ts" --> "src/logger.ts"
   "src/services/sprint/crossModelVoice.ts" --> "src/services/llmClient.ts"
+  "src/services/sprint/crossModelVoice.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/config.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/logger.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/skills/actions/types.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/sprint/autonomousGit.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/sprint/sprintCodeWriter.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/sprint/sprintOrchestrator.ts"
+  "src/services/sprint/fastPathExecutors.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/services/sprint/llmJudge.ts" --> "src/config.ts"
   "src/services/sprint/llmJudge.ts" --> "src/logger.ts"
   "src/services/sprint/llmJudge.ts" --> "src/services/llmClient.ts"
@@ -1010,6 +1024,9 @@ graph LR
   "src/services/taskRoutingMetricsService.ts" --> "src/services/taskRoutingService.ts"
   "src/services/taskRoutingService.ts" --> "src/services/supabaseClient.ts"
   "src/services/toolLearningService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/tools/adapterAutoLoader.ts" --> "src/logger.ts"
+  "src/services/tools/adapterAutoLoader.ts" --> "src/services/tools/externalAdapterRegistry.ts"
+  "src/services/tools/adapterAutoLoader.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/logger.ts"
   "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/adapters/nemoclawCliAdapter.ts" --> "src/utils/env.ts"
@@ -1021,6 +1038,7 @@ graph LR
   "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/tools/adapters/scriptCliToolAdapter.ts" --> "src/services/tools/types.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/logger.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/nemoclawCliAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openclawCliAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openjarvisAdapter.ts"

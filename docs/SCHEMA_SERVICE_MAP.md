@@ -60,7 +60,8 @@
 | market_regime | - |
 | memory_conflicts | src/services/agent/agentMemoryStore.ts<br/>src/services/memoryJobRunner.ts<br/>src/services/memoryQualityMetricsService.ts |
 | memory_feedback | src/services/agent/agentMemoryStore.ts<br/>src/services/memoryQualityMetricsService.ts<br/>src/services/privacyForgetService.ts |
-| memory_items | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/memoryEmbeddingService.ts<br/>src/services/memoryJobRunner.ts<br/>src/services/memoryQualityMetricsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
+| memory_item_links | src/services/memoryConsolidationService.ts<br/>src/services/memoryEvolutionService.ts |
+| memory_items | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/memoryConsolidationService.ts<br/>src/services/memoryEmbeddingService.ts<br/>src/services/memoryEvolutionService.ts<br/>src/services/memoryJobRunner.ts<br/>src/services/memoryQualityMetricsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
 | memory_job_deadletters | src/services/memoryJobRunner.ts |
 | memory_jobs | src/services/agent/agentMemoryStore.ts<br/>src/services/finopsService.ts<br/>src/services/memoryJobRunner.ts<br/>src/services/memoryQualityMetricsService.ts |
 | memory_retrieval_logs | src/services/agent/agentMemoryStore.ts<br/>src/services/finopsService.ts<br/>src/services/memoryQualityMetricsService.ts<br/>src/services/rewardSignalService.ts |
@@ -96,5 +97,5 @@
 | get_platform_extension_status | src/services/supabaseExtensionOpsService.ts |
 | get_platform_hypopg_candidates | src/services/supabaseExtensionOpsService.ts |
 | get_platform_pg_statements_top | src/services/supabaseExtensionOpsService.ts |
-| search_memory_items_hybrid | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts |
+| search_memory_items_hybrid | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/memoryEvolutionService.ts |
 
