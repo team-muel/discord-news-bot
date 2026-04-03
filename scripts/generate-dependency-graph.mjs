@@ -11,7 +11,7 @@ const ENTRYPOINTS = [
   'src/app.ts',
   'src/bot.ts',
   'src/services/multiAgentService.ts',
-  'src/services/tradingEngine.ts',
+  'src/services/trading/tradingEngine.ts',
 ];
 
 const toMermaid = (graph) => {
