@@ -1,5 +1,5 @@
 import type { AgentIntent, AgentPriority } from '../agent/agentRuntimeTypes';
-import type { PromptCompileResult } from '../promptCompiler';
+import type { PromptCompileResult } from '../infra/promptCompiler';
 import type { AgentOutcome } from '../agent/agentOutcomeContract';
 
 export type LangGraphNodeId =

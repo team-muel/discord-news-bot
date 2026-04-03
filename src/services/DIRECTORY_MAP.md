@@ -2,8 +2,8 @@
 
 ## Domain Groupings
 
-The `src/services/` directory contains 100+ service files. This README documents the logical domain groupings
-to help navigate the codebase.
+The `src/services/` directory organizes 100+ service files into domain subdirectories.
+Each subdirectory has a barrel `index.ts` for clean imports.
 
 ### Agent Runtime & Reasoning (`agent/`)
 All agent-related services live in the `agent/` subdirectory.
@@ -33,8 +33,8 @@ Core multi-agent session lifecycle, policy, telemetry, governance, reasoning, an
 - `agent/agentOutcomeContract.ts` — Outcome contract types
 - `agent/agentSocialQualitySnapshotService.ts` — Social quality snapshot
 - `agent/agentWorkerApprovalGateSnapshotService.ts` — Worker approval gate snapshot
-- `agent/agentRuntimeFailOpenGuard.test.ts` — Fail-open guard tests
 - `multiAgentService.ts` — Session orchestration hub (start/cancel/execute sessions)
+- `multiAgentReasoningStrategies.ts` — ToT/self-refine/least-to-most/beam eval strategies (extracted)
 - `multiAgentTypes.ts` — Shared type definitions (AgentSession, AgentStep, etc.)
 - `multiAgentRuntimeQueue.ts` — Queue and concurrency management
 
@@ -56,34 +56,59 @@ Autonomous plan→implement→review→qa→ship cycle.
 - `sprint/autoplan.ts` — Multi-lens plan review
 - `sprint/llmJudge.ts` — LLM-as-judge evaluation
 
-### Trading (`trading*`, `aiTrading*`, `trades*`)
+### Trading (`trading/`)
 Cryptocurrency trading engine and Binance integration.
-- `tradingEngine.ts` — Core trading loop (CVD strategy)
-- `tradingStrategyService.ts` — Strategy calculation
-- `aiTradingClient.ts` — Remote trading API client
-- `localAiTradingClient.ts` — Local Binance execution
-- `tradesStore.ts` — Trade persistence
-- `distributedLockService.ts` — Multi-instance trade lock
+- `trading/tradingEngine.ts` — Core trading loop (CVD strategy)
+- `trading/tradingStrategyService.ts` — Strategy calculation
+- `trading/aiTradingClient.ts` — Remote trading API client
+- `trading/localAiTradingClient.ts` — Local Binance execution
+- `trading/tradesStore.ts` — Trade persistence
+- `trading/stockService.ts` — Stock quote and chart data
+- `trading/investmentAnalysisService.ts` — LLM investment analysis
 
-### News & Monitoring (`news*`, `youtube*`, `source*`)
+### News & Monitoring (`news/`)
 RSS/Google Finance news ingestion and YouTube monitoring.
-- `newsCaptureDedupService.ts` — Semantic deduplication
-- `newsChannelStore.ts` — Channel subscription CRUD
-- `newsMonitorWorkerClient.ts` — Worker client
-- `newsSentimentMonitor.ts` — Sentiment scoring
-- `youtubeSubscriptionsMonitor.ts` — YouTube subscription tracking
-- `youtubeCommunityScraper.ts` — Community tab scraping
-- `sourceMonitorStore.ts` — Source monitor persistence
+- `news/newsCaptureDedupService.ts` — Semantic deduplication
+- `news/newsChannelStore.ts` — Channel subscription CRUD
+- `news/newsMonitorWorkerClient.ts` — Worker client
+- `news/newsSentimentMonitor.ts` — Sentiment scoring
+- `news/youtubeSubscriptionsMonitor.ts` — YouTube subscription tracking
+- `news/youtubeCommunityScraper.ts` — Community tab scraping
+- `news/sourceMonitorStore.ts` — Source monitor persistence
+- `news/youtubeMonitorWorkerClient.ts` — YouTube worker client
+- `news/youtubeSubscriptionStore.ts` — YouTube subscription CRUD
 
-### Obsidian RAG (`obsidian*`)
+### Memory (`memory/`)
+Memory lifecycle: embedding, evolution, consolidation, quality.
+- `memory/memoryEmbeddingService.ts` — Vector embedding generation
+- `memory/memoryEvolutionService.ts` — A-MEM inspired inter-memory linking
+- `memory/memoryConsolidationService.ts` — H-MEM inspired batch consolidation
+- `memory/memoryJobRunner.ts` — Async job queue runner
+- `memory/memoryPoisonGuard.ts` — Poison risk assessment
+- `memory/memoryQualityMetricsService.ts` — Quality metrics
+
+### Eval & Reward (`eval/`)
+A/B evaluation, retrieval eval, reward signal loop.
+- `eval/evalAutoPromoteService.ts` — A/B run creation and execution
+- `eval/evalAutoPromoteLoopService.ts` — Periodic eval promotion loop
+- `eval/retrievalEvalService.ts` — Retrieval eval cases and tuning
+- `eval/retrievalEvalLoopService.ts` — Retrieval eval loop
+- `eval/rewardSignalService.ts` — Reward snapshot computation
+- `eval/rewardSignalLoopService.ts` — Reward signal loop
+
+### Obsidian RAG (`obsidian/`)
 Knowledge retrieval via Obsidian vault graph.
-- `obsidianRagService.ts` — RAG query orchestration
-- `obsidianHeadlessService.ts` — Headless CLI integration
-- `obsidianCacheService.ts` — Cache layer
-- `obsidianBootstrapService.ts` — Guild vault bootstrap
-- `obsidianLoreSyncService.ts` — Bidirectional sync
-- `obsidianQualityService.ts` — Content quality metrics
-- `obsidian/` — Router, authoring, adapters
+- `obsidian/obsidianRagService.ts` — RAG query orchestration
+- `obsidian/obsidianHeadlessService.ts` — Headless CLI integration
+- `obsidian/obsidianCacheService.ts` — Cache layer
+- `obsidian/obsidianBootstrapService.ts` — Guild vault bootstrap
+- `obsidian/obsidianLoreSyncService.ts` — Bidirectional sync
+- `obsidian/obsidianQualityService.ts` — Content quality metrics
+- `obsidian/obsidianSanitizationWorker.ts` — Write sanitization
+- `obsidian/router.ts` — Adapter routing
+- `obsidian/authoring.ts` — Document authoring
+- `obsidian/types.ts` — Shared types
+- `obsidian/adapters/` — Vault adapter implementations
 
 ### LangGraph (`langgraph/`)
 State graph execution for agent sessions.
@@ -99,13 +124,20 @@ External CLI tool integration and execution.
 - `tools/externalAdapterRegistry.ts` — Adapter registration
 - `tools/toolRouter.ts` — Tool routing
 - `tools/toolExecutor.ts` — Sandboxed execution
+- `tools/adapters/ollamaAdapter.ts` — Ollama model management adapter
+- `tools/adapters/litellmAdminAdapter.ts` — LiteLLM proxy admin adapter
+- `tools/adapters/mcpIndexingAdapter.ts` — MCP indexing tool adapter
 
-### Infrastructure
+### Infrastructure (`infra/` + root)
 Database, auth, observability, and cross-cutting concerns.
-- `supabaseClient.ts` — Supabase client singleton
-- `baseRepository.ts` — Repository pattern base (error handling, normalization)
+- `supabaseClient.ts` — Supabase client singleton (root — high fan-in)
+- `llmClient.ts` — Provider-agnostic LLM client (root — high fan-in)
+- `infra/baseRepository.ts` — Repository pattern base (error handling, normalization)
+- `infra/promptCompiler.ts` — Prompt compilation
+- `infra/distributedLockService.ts` — Distributed lease locking
+- `infra/supabaseRateLimitService.ts` — Supabase-backed rate limiting
+- `infra/supabaseExtensionOpsService.ts` — PG extension and cron management
+- `infra/pgCronBootstrapService.ts` — pg_cron job registration and migration SQL
 - `authService.ts` — OAuth flow
-- `llmClient.ts` — Provider-agnostic LLM client
-- `promptCompiler.ts` — Prompt compilation
 - `observability/` — Telemetry and monitoring
 - `runtime-alerts/` — Alert rules and routing

@@ -1,4 +1,4 @@
-import { generateInvestmentAnalysis } from '../../investmentAnalysisService';
+import { generateInvestmentAnalysis } from '../../trading/investmentAnalysisService';
 import type { ActionDefinition } from './types';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();

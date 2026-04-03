@@ -5,7 +5,7 @@ export {
   resumeTradingEngine,
   runTradingEngineOnce,
   startTradingEngine,
-} from '../services/tradingEngine';
+} from '../services/trading/tradingEngine';
 
 export {
   getDefaultTradingStrategyConfig,
@@ -13,11 +13,11 @@ export {
   resetTradingStrategyConfig,
   updateTradingStrategyConfig,
   normalizeTradingStrategyConfig,
-} from '../services/tradingStrategyService';
+} from '../services/trading/tradingStrategyService';
 
 export {
   closeAiTradingPosition,
   executeAiTradingOrder,
   getAiTradingPosition,
   isAiTradingConfigured,
-} from '../services/aiTradingClient';
+} from '../services/trading/aiTradingClient';

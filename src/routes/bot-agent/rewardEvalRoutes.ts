@@ -1,8 +1,8 @@
 import { requireAdmin } from '../../middleware/auth';
-import { computeRewardSnapshot, persistRewardSnapshot, getRecentRewardSnapshots, computeRewardTrend } from '../../services/rewardSignalService';
-import { getRewardSignalLoopStatus } from '../../services/rewardSignalLoopService';
-import { createEvalRun, getRecentEvalRuns, runEvalPipeline } from '../../services/evalAutoPromoteService';
-import { getEvalAutoPromoteLoopStatus } from '../../services/evalAutoPromoteLoopService';
+import { computeRewardSnapshot, persistRewardSnapshot, getRecentRewardSnapshots, computeRewardTrend } from '../../services/eval/rewardSignalService';
+import { getRewardSignalLoopStatus } from '../../services/eval/rewardSignalLoopService';
+import { createEvalRun, getRecentEvalRuns, runEvalPipeline } from '../../services/eval/evalAutoPromoteService';
+import { getEvalAutoPromoteLoopStatus } from '../../services/eval/evalAutoPromoteLoopService';
 import {
   getRecentShadowDivergence,
   getShadowDivergenceBySession,

@@ -2,19 +2,19 @@ import { Router } from 'express';
 import type { TradingStrategyConfigPatch } from '../contracts/tradingStrategy';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
-import { closeAiTradingPosition, getAiTradingPosition, isAiTradingConfigured } from '../services/aiTradingClient';
+import { closeAiTradingPosition, getAiTradingPosition, isAiTradingConfigured } from '../services/trading/aiTradingClient';
 import {
   getTradingEngineRuntimeSnapshot,
   pauseTradingEngine,
   resumeTradingEngine,
   runTradingEngineOnce,
-} from '../services/tradingEngine';
+} from '../services/trading/tradingEngine';
 import {
   getDefaultTradingStrategyConfig,
   getTradingStrategyConfig,
   resetTradingStrategyConfig,
   updateTradingStrategyConfig,
-} from '../services/tradingStrategyService';
+} from '../services/trading/tradingStrategyService';
 import { toStringParam } from '../utils/validation';
 
 export function createTradingRouter(): Router {

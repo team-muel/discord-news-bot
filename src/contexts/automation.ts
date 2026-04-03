@@ -16,13 +16,13 @@ export {
   startNewsSentimentMonitor,
   stopNewsSentimentMonitor,
   triggerNewsSentimentMonitor,
-} from '../services/newsSentimentMonitor';
+} from '../services/news/newsSentimentMonitor';
 
 export {
   getYouTubeSubscriptionsMonitorSnapshot,
   startYouTubeSubscriptionsMonitor,
   stopYouTubeSubscriptionsMonitor,
   triggerYouTubeSubscriptionsMonitor,
-} from '../services/youtubeSubscriptionsMonitor';
+} from '../services/news/youtubeSubscriptionsMonitor';
 
 export { startRuntimeAlerts, stopRuntimeAlerts } from '../services/runtimeAlertService';

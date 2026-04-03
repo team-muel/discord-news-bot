@@ -2,13 +2,13 @@ import logger from '../../logger';
 import { parseIntegerEnv } from '../../utils/env';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { TtlCache } from '../../utils/ttlCache';
-import { assessMemoryPoisonRisk } from '../memoryPoisonGuard';
+import { assessMemoryPoisonRisk } from '../memory/memoryPoisonGuard';
 import { buildSocialContextHints } from '../communityGraphService';
 import { readObsidianLoreWithAdapter } from '../obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { generateQueryEmbedding, isEmbeddingEnabled } from '../memoryEmbeddingService';
+import { generateQueryEmbedding, isEmbeddingEnabled } from '../memory/memoryEmbeddingService';
 import { loadSelfNotes } from '../entityNervousSystem';
-import { batchCountMemoryLinks } from '../memoryEvolutionService';
+import { batchCountMemoryLinks } from '../memory/memoryEvolutionService';
 
 const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));
 const memoryHintCache = new TtlCache<string[]>(200);

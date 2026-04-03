@@ -21,9 +21,9 @@ vi.mock('./automationBot', () => ({
   startAutomationJobs,
   startAutomationModules,
 }));
-vi.mock('./memoryJobRunner', () => ({ startMemoryJobRunner }));
-vi.mock('./obsidianLoreSyncService', () => ({ startObsidianLoreSyncLoop }));
-vi.mock('./retrievalEvalLoopService', () => ({ startRetrievalEvalLoop }));
+vi.mock('./memory/memoryJobRunner', () => ({ startMemoryJobRunner }));
+vi.mock('./obsidian/obsidianLoreSyncService', () => ({ startObsidianLoreSyncLoop }));
+vi.mock('./eval/retrievalEvalLoopService', () => ({ startRetrievalEvalLoop }));
 vi.mock('./agent/agentSloService', () => ({ startAgentSloAlertLoop }));
 vi.mock('./agent/agentOpsService', () => ({
   startAgentDailyLearningLoop,
@@ -31,7 +31,7 @@ vi.mock('./agent/agentOpsService', () => ({
 }));
 vi.mock('./discordTopologySyncService', () => ({ autoSyncGuildTopologiesOnReady }));
 vi.mock('./runtimeAlertService', () => ({ startRuntimeAlerts }));
-vi.mock('./tradingEngine', () => ({ startTradingEngine }));
+vi.mock('./trading/tradingEngine', () => ({ startTradingEngine }));
 vi.mock('./opencodePublishWorker', () => ({ startOpencodePublishWorker }));
 vi.mock('./botAutoRecoveryService', () => ({ startBotAutoRecovery }));
 vi.mock('../discord/auth', () => ({ startLoginSessionCleanupLoop }));

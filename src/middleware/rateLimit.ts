@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { consumeSupabaseRateLimit } from '../services/supabaseRateLimitService';
+import { consumeSupabaseRateLimit } from '../services/infra/supabaseRateLimitService';
 
 type RateLimitOptions = {
   windowMs: number;

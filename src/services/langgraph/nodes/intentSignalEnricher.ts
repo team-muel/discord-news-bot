@@ -11,7 +11,7 @@
  * 4. User/guild intent history (from intent_exemplars)
  */
 
-import type { PromptCompileResult } from '../../promptCompiler';
+import type { PromptCompileResult } from '../../infra/promptCompiler';
 import type { IntentTaxonomy } from '../../agent/agentRuntimeTypes';
 import logger from '../../../logger';
 

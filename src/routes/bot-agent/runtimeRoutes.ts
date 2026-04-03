@@ -5,16 +5,16 @@ import {
   getHypoPgCandidates,
   getSupabaseExtensionOpsSnapshot,
   listSupabaseCronJobs,
-} from '../../services/supabaseExtensionOpsService';
+} from '../../services/infra/supabaseExtensionOpsService';
 import { getPlatformLightweightingReport } from '../../services/platformLightweightingService';
 import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs, probeHttpWorkerHealth } from '../../services/agent/agentRoleWorkerService';
 import { getRuntimeSchedulerPolicySnapshot } from '../../services/runtimeSchedulerPolicyService';
 import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../../services/efficiencyOptimizationService';
 import { getAgentTelemetryQueueSnapshot } from '../../services/agent/agentTelemetryQueue';
 import { summarizeOpencodeQueueReadiness } from '../../services/opencodeGitHubQueueService';
-import { getMemoryJobRunnerStats } from '../../services/memoryJobRunner';
-import { getObsidianLoreSyncLoopStats } from '../../services/obsidianLoreSyncService';
-import { getRetrievalEvalLoopStats } from '../../services/retrievalEvalLoopService';
+import { getMemoryJobRunnerStats } from '../../services/memory/memoryJobRunner';
+import { getObsidianLoreSyncLoopStats } from '../../services/obsidian/obsidianLoreSyncService';
+import { getRetrievalEvalLoopStats } from '../../services/eval/retrievalEvalLoopService';
 import { buildAgentRuntimeReadinessReport } from '../../services/agent/agentRuntimeReadinessService';
 import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloAlertEvents } from '../../services/agent/agentSloService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../../services/finopsService';

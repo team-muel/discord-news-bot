@@ -1,25 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../services/rewardSignalService', () => ({
+vi.mock('../../services/eval/rewardSignalService', () => ({
   computeRewardSnapshot: vi.fn(),
   persistRewardSnapshot: vi.fn(),
   getRecentRewardSnapshots: vi.fn(),
   computeRewardTrend: vi.fn(),
 }));
 
-vi.mock('../../services/rewardSignalLoopService', () => ({
+vi.mock('../../services/eval/rewardSignalLoopService', () => ({
   getRewardSignalLoopStatus: vi.fn(() => ({
     enabled: true, running: false, lastRunAt: null, lastSummary: null, intervalHours: 6,
   })),
 }));
 
-vi.mock('../../services/evalAutoPromoteService', () => ({
+vi.mock('../../services/eval/evalAutoPromoteService', () => ({
   createEvalRun: vi.fn(),
   getRecentEvalRuns: vi.fn(),
   runEvalPipeline: vi.fn(),
 }));
 
-vi.mock('../../services/evalAutoPromoteLoopService', () => ({
+vi.mock('../../services/eval/evalAutoPromoteLoopService', () => ({
   getEvalAutoPromoteLoopStatus: vi.fn(() => ({
     enabled: true, running: false, lastRunAt: null, lastSummary: null, intervalHours: 6,
   })),
@@ -30,10 +30,10 @@ vi.mock('../../services/supabaseClient', () => ({
   getSupabaseClient: vi.fn(),
 }));
 
-import { computeRewardSnapshot, computeRewardTrend, getRecentRewardSnapshots } from '../../services/rewardSignalService';
-import { runEvalPipeline, getRecentEvalRuns, createEvalRun } from '../../services/evalAutoPromoteService';
-import { getRewardSignalLoopStatus } from '../../services/rewardSignalLoopService';
-import { getEvalAutoPromoteLoopStatus } from '../../services/evalAutoPromoteLoopService';
+import { computeRewardSnapshot, computeRewardTrend, getRecentRewardSnapshots } from '../../services/eval/rewardSignalService';
+import { runEvalPipeline, getRecentEvalRuns, createEvalRun } from '../../services/eval/evalAutoPromoteService';
+import { getRewardSignalLoopStatus } from '../../services/eval/rewardSignalLoopService';
+import { getEvalAutoPromoteLoopStatus } from '../../services/eval/evalAutoPromoteLoopService';
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -1,4 +1,4 @@
-import { fetchStockChartImageUrl, fetchStockQuote } from '../../stockService';
+import { fetchStockChartImageUrl, fetchStockQuote } from '../../trading/stockService';
 import type { ActionDefinition } from './types';
 
 const extractTicker = (goal: string, args?: Record<string, unknown>): string | null => {

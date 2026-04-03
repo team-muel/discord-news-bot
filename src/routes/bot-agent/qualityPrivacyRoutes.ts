@@ -6,7 +6,7 @@ import { isUserAdmin } from '../../services/adminAllowlistService';
 import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../../services/agent/agentRetentionPolicyService';
 import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previewForgetUserRagData } from '../../services/privacyForgetService';
 import { getObsidianAdapterRuntimeStatus } from '../../services/obsidian/router';
-import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidianQualityService';
+import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agent/agentQualityReviewService';
 import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';

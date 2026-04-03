@@ -2,9 +2,9 @@ import { Router } from 'express';
 import type { TradeStatus } from '../contracts/trade';
 import { MAX_MANUAL_TRADE_ENTRY_PRICE, MAX_MANUAL_TRADE_LEVERAGE, MAX_MANUAL_TRADE_QTY } from '../config';
 import { requireAdmin, requireAuth } from '../middleware/auth';
-import { executeAiTradingOrder, isAiTradingConfigured } from '../services/aiTradingClient';
+import { executeAiTradingOrder, isAiTradingConfigured } from '../services/trading/aiTradingClient';
 import { isSupabaseConfigured } from '../services/supabaseClient';
-import { createTrade, listTrades } from '../services/tradesStore';
+import { createTrade, listTrades } from '../services/trading/tradesStore';
 import { isOneOf, sanitizeRecord, toBoundedInt, toStringParam } from '../utils/validation';
 
 const TRADE_STATUS_VALUES = ['open', 'closed', 'canceled', 'error'] as const;

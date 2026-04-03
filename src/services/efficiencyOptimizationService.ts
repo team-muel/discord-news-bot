@@ -1,5 +1,5 @@
 import { getAgentTelemetryQueueSnapshot } from './agent/agentTelemetryQueue';
-import { getMemoryJobQueueStats, getMemoryJobRunnerStats } from './memoryJobRunner';
+import { getMemoryJobQueueStats, getMemoryJobRunnerStats } from './memory/memoryJobRunner';
 import { getPlatformLightweightingReport } from './platformLightweightingService';
 import { getRuntimeSchedulerPolicySnapshot } from './runtimeSchedulerPolicyService';
 import {
@@ -7,7 +7,7 @@ import {
   evaluateHypoPgIndexes,
   getHypoPgCandidates,
   getSupabaseExtensionOpsSnapshot,
-} from './supabaseExtensionOpsService';
+} from './infra/supabaseExtensionOpsService';
 
 export type EfficiencyMode = 'idle-improvement' | 'balanced-flow' | 'queue-drain';
 

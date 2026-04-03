@@ -1,0 +1,106 @@
+import logger from '../../logger';
+import { getSupabaseClient } from '../supabaseClient';
+
+export const updateSourceState = async (params: {
+  id: number;
+  patch: Record<string, string | null>;
+  logPrefix: string;
+}) => {
+  const db = getSupabaseClient();
+  const { error } = await db
+    .from('sources')
+    .update({ ...params.patch, last_check_at: new Date().toISOString() })
+    .eq('id', params.id);
+
+  if (error) {
+    logger.warn('%s failed to update source=%s: %s', params.logPrefix, String(params.id), error.message);
+  }
+};
+
+export const claimSourceLock = async (params: {
+  id: number;
+  instanceId: string;
+  lockLeaseMs: number;
+  logPrefix: string;
+}): Promise<boolean> => {
+  const db = getSupabaseClient();
+  const nowIso = new Date().toISOString();
+  const leaseUntilIso = new Date(Date.now() + params.lockLeaseMs).toISOString();
+
+  const tryClaimLockTokenNull = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .is('lock_token', null)
+      .select('id')
+      .limit(1);
+  };
+
+  const tryClaimOwnLockToken = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .eq('lock_token', params.instanceId)
+      .select('id')
+      .limit(1);
+  };
+
+  const tryClaimExpiredLock = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .lt('lock_expires_at', nowIso)
+      .select('id')
+      .limit(1);
+  };
+
+  const tryClaimNullExpiresAt = async () => {
+    return db
+      .from('sources')
+      .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
+      .eq('id', params.id)
+      .eq('is_active', true)
+      .is('lock_expires_at', null)
+      .select('id')
+      .limit(1);
+  };
+
+  const attempts = [tryClaimLockTokenNull, tryClaimOwnLockToken, tryClaimExpiredLock, tryClaimNullExpiresAt];
+
+  for (const attempt of attempts) {
+    const { data, error } = await attempt();
+    if (error) {
+      logger.warn('%s lock claim failed source=%s: %s', params.logPrefix, String(params.id), error.message);
+      return false;
+    }
+
+    if (Array.isArray(data) && data.length > 0) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const releaseSourceLock = async (params: {
+  id: number;
+  instanceId: string;
+  logPrefix: string;
+}) => {
+  const db = getSupabaseClient();
+  const { error } = await db
+    .from('sources')
+    .update({ lock_token: null, lock_expires_at: null })
+    .eq('id', params.id)
+    .eq('lock_token', params.instanceId);
+
+  if (error) {
+    logger.warn('%s lock release failed source=%s: %s', params.logPrefix, String(params.id), error.message);
+  }
+};

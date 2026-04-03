@@ -37,7 +37,7 @@ import {
 import { recordCommunityInteractionEvent } from './services/communityGraphService';
 import { recordReactionRewardSignal } from './services/discordReactionRewardService';
 import { isAnyLlmConfigured } from './services/llmClient';
-import { queryObsidianRAG, initObsidianRAG } from './services/obsidianRagService';
+import { queryObsidianRAG, initObsidianRAG } from './services/obsidian/obsidianRagService';
 import { generateText } from './services/llmClient';
 import {
   getAgentOpsSnapshot,
@@ -137,7 +137,7 @@ import { handleGuildCreateLifecycle, handleGuildDeleteLifecycle } from './discor
 import { loginDiscordClientWithTimeout } from './discord/runtime/loginAttempt';
 import { probeDiscordGatewayConnectivity } from './discord/runtime/gatewayPreflight';
 import { DISCORD_MESSAGES } from './discord/messages';
-import { isStockFeatureEnabled } from './services/stockService';
+import { isStockFeatureEnabled } from './services/trading/stockService';
 
 
 const discordIntents = [

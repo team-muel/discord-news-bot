@@ -7,7 +7,7 @@ import {
   recordWorkerGenerationResult,
   recordWorkerApprovalDecision,
   getWorkerProposalMetricsSnapshot,
-} from '../../services/workerGeneration/workerProposalMetrics';
+} from './workerProposalMetrics';
 
 describe('workerProposalMetrics', () => {
   it('스냅샷은 항상 startedAt 필드를 포함한다', () => {

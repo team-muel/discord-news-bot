@@ -16,12 +16,12 @@ import {
   deleteYouTubeSubscription,
   listYouTubeSubscriptions,
   type YouTubeSubscription,
-} from '../../services/youtubeSubscriptionStore';
+} from '../../services/news/youtubeSubscriptionStore';
 import {
   createNewsChannelSubscription,
   deleteNewsChannelSubscription,
   listNewsChannelSubscriptions,
-} from '../../services/newsChannelStore';
+} from '../../services/news/newsChannelStore';
 import { DISCORD_MESSAGES } from '../messages';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

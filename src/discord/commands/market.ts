@@ -14,11 +14,11 @@ import {
   fetchStockChartImageUrl,
   fetchStockQuote,
   isStockFeatureEnabled,
-} from '../../services/stockService';
+} from '../../services/trading/stockService';
 import {
   generateInvestmentAnalysis,
   isInvestmentAnalysisEnabled,
-} from '../../services/investmentAnalysisService';
+} from '../../services/trading/investmentAnalysisService';
 import { DISCORD_MESSAGES } from '../messages';
 import { DISCORD_MARKET_ANALYSIS_LIMIT } from '../runtimePolicy';
 

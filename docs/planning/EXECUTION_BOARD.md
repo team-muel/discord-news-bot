@@ -21,7 +21,26 @@
 
 ## Active Now (WIP <= 3)
 
-(없음 — M-15 완료, 다음 마일스톤 승격 대기)
+(empty — next milestone pending triage)
+
+## Closed on 2026-04-06
+
+1. [M-17] Infrastructure Optimization ✅
+   - Axis 1: pg_cron bootstrap service — `pgCronBootstrapService.ts` + migration SQL
+   - Axis 2: Obsidian graph→Supabase sync — wikilink extraction + memory_item_links upsert
+   - Axis 3: Tool adapter expansion — ollama, litellm-admin, mcp-indexing adapters (auto-loaded)
+   - Axis 4: Planner pattern cache — TTL-based goal→plan cache with Jaccard similarity
+   - Axis 5: render.yaml production activation — 9 new env vars
+   - Bonus: services/ subdirectory reorganization — eval/, infra/, memory/, news/, obsidian/, trading/ (113 files, all imports updated)
+
+## Closed on 2026-04-05
+
+1. [M-16] Dormant Asset Activation ✅
+   - self-improvement loop, cross-model voice, ToT shadow, LangGraph executor shadow 프로덕션 활성화
+   - ENS Circuit 2를 sprint completion/blocked에 연결
+   - memory consolidation/evolution config 중앙화 (config.ts memoryConfig namespace)
+   - GCP e2-small 업그레이드 스크립트 (24/7 jarvis serve)
+   - pilot 프로필: `config/env/production-pilot.profile.env`
 
 ## Closed on 2026-04-04
 

@@ -120,7 +120,7 @@ export const adjustBehaviorFromReward = async (guildId: string): Promise<RewardB
   if (!isSupabaseConfigured()) return null;
 
   try {
-    const { computeRewardTrend } = await import('./rewardSignalService');
+    const { computeRewardTrend } = await import('./eval/rewardSignalService');
     const trend = await computeRewardTrend(guildId);
     if (!trend) return null;
 

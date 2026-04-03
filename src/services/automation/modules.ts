@@ -5,13 +5,13 @@ import {
   startNewsSentimentMonitor,
   stopNewsSentimentMonitor,
   triggerNewsSentimentMonitor,
-} from '../newsSentimentMonitor';
+} from '../news/newsSentimentMonitor';
 import {
   getYouTubeSubscriptionsMonitorSnapshot,
   startYouTubeSubscriptionsMonitor,
   stopYouTubeSubscriptionsMonitor,
   triggerYouTubeSubscriptionsMonitor,
-} from '../youtubeSubscriptionsMonitor';
+} from '../news/youtubeSubscriptionsMonitor';
 import type { AutomationJobName } from './types';
 
 export type AutomationModuleSnapshot = {

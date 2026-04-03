@@ -12,11 +12,11 @@ import {
   searchGuildMemory,
 } from '../../services/agent/agentMemoryStore';
 import type { MemoryType } from '../../services/agent/agentMemoryStore';
-import { cancelMemoryJob, getMemoryJobQueueStats, getMemoryJobRunnerStats, listMemoryJobDeadletters, requeueDeadletterJob } from '../../services/memoryJobRunner';
-import { getObsidianLoreSyncLoopStats } from '../../services/obsidianLoreSyncService';
-import { getRetrievalEvalLoopStats } from '../../services/retrievalEvalLoopService';
-import { getMemoryQualityMetrics } from '../../services/memoryQualityMetricsService';
-import { createRetrievalEvalSet, getRetrievalEvalRun, listRetrievalEvalCases, runRetrievalAutoTuning, runRetrievalEval, upsertRetrievalEvalCase } from '../../services/retrievalEvalService';
+import { cancelMemoryJob, getMemoryJobQueueStats, getMemoryJobRunnerStats, listMemoryJobDeadletters, requeueDeadletterJob } from '../../services/memory/memoryJobRunner';
+import { getObsidianLoreSyncLoopStats } from '../../services/obsidian/obsidianLoreSyncService';
+import { getRetrievalEvalLoopStats } from '../../services/eval/retrievalEvalLoopService';
+import { getMemoryQualityMetrics } from '../../services/memory/memoryQualityMetricsService';
+import { createRetrievalEvalSet, getRetrievalEvalRun, listRetrievalEvalCases, runRetrievalAutoTuning, runRetrievalEval, upsertRetrievalEvalCase } from '../../services/eval/retrievalEvalService';
 import { buildGoNoGoReport } from '../../services/goNoGoService';
 import { isOneOf, toBoundedInt, toStringParam } from '../../utils/validation';
 

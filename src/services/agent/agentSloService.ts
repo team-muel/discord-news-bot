@@ -4,7 +4,7 @@ import { runWithConcurrency } from '../../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from '../goNoGoService';
 import { summarizeOpencodeQueueReadiness } from '../opencodeGitHubQueueService';
-import { getMemoryQueueHealthSnapshot } from '../memoryJobRunner';
+import { getMemoryQueueHealthSnapshot } from '../memory/memoryJobRunner';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type SloLayer = 'intelligence' | 'engine' | 'agents' | 'tools_memory' | 'learning';

@@ -3,7 +3,7 @@ import type { AgentDeliberationMode, AgentIntent, AgentPolicyGateDecision, Inten
 import { toLegacyIntent } from '../../agent/agentRuntimeTypes';
 import { generateText } from '../../llmClient';
 import { parseLlmStructuredRecord } from '../../llmStructuredParseService';
-import { compilePromptGoal, type PromptCompileResult } from '../../promptCompiler';
+import { compilePromptGoal, type PromptCompileResult } from '../../infra/promptCompiler';
 import type { IntentSignalBundle } from './intentSignalEnricher';
 import { loadTopExemplars, type IntentExemplar } from './intentExemplarStore';
 

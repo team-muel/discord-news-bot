@@ -44,7 +44,7 @@ vi.mock('./agent/agentOpsService', () => ({
   })),
 }));
 
-vi.mock('./memoryJobRunner', () => ({
+vi.mock('./memory/memoryJobRunner', () => ({
   getMemoryJobRunnerStats: vi.fn(() => ({
     enabled: true,
     startedAt: '2026-03-20T00:00:00.000Z',
@@ -53,7 +53,7 @@ vi.mock('./memoryJobRunner', () => ({
   })),
 }));
 
-vi.mock('./obsidianLoreSyncService', () => ({
+vi.mock('./obsidian/obsidianLoreSyncService', () => ({
   getObsidianLoreSyncLoopStats: vi.fn(() => ({
     enabled: true,
     running: true,
@@ -61,7 +61,7 @@ vi.mock('./obsidianLoreSyncService', () => ({
   })),
 }));
 
-vi.mock('./retrievalEvalLoopService', () => ({
+vi.mock('./eval/retrievalEvalLoopService', () => ({
   getRetrievalEvalLoopStats: vi.fn(() => ({
     enabled: true,
     running: false,
@@ -89,7 +89,7 @@ vi.mock('./runtimeAlertService', () => ({
   })),
 }));
 
-vi.mock('./tradingEngine', () => ({
+vi.mock('./trading/tradingEngine', () => ({
   getTradingEngineRuntimeSnapshot: vi.fn(() => ({
     started: true,
     startedAt: '2026-03-20T00:00:00.000Z',
@@ -125,7 +125,7 @@ vi.mock('./runtimeBootstrap', () => ({
   })),
 }));
 
-vi.mock('./supabaseExtensionOpsService', () => ({ listSupabaseCronJobs }));
+vi.mock('./infra/supabaseExtensionOpsService', () => ({ listSupabaseCronJobs }));
 
 describe('getRuntimeSchedulerPolicySnapshot', () => {
   beforeEach(() => {

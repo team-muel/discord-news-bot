@@ -124,6 +124,51 @@ services:
         value: muel-s
       - key: SPRINT_GITHUB_REPO
         value: muel-platform
+      # Self-improvement loop (approve-ship gate protects production)
+      - key: SELF_IMPROVEMENT_CONVERGENCE_ENABLED
+        value: "true"
+      - key: SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED
+        value: "true"
+      - key: SELF_IMPROVEMENT_LACUNA_SPRINT_ENABLED
+        value: "true"
+      - key: SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED
+        value: "true"
+      - key: SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED
+        value: "true"
+      # Cross-model voice for sprint review phases
+      - key: SPRINT_CROSS_MODEL_ENABLED
+        value: "true"
+      - key: SPRINT_CROSS_MODEL_PROVIDER
+        value: muel-nemotron
+      # LangGraph executor shadow (graph fidelity validation)
+      - key: LANGGRAPH_EXECUTOR_SHADOW_ENABLED
+        value: "true"
+      - key: LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE
+        value: "0.10"
+      # ToT shadow evaluation (background comparison)
+      - key: TOT_SHADOW_ENABLED
+        value: "true"
+      - key: TOT_AUTO_TUNE_ENABLED
+        value: "true"
+      # Jarvis trace feed for learning loop
+      - key: JARVIS_TRACE_FEED_ENABLED
+        value: "true"
+      - key: OLLAMA_ADAPTER_ENABLED
+        value: "true"
+      - key: LITELLM_ADMIN_ADAPTER_ENABLED
+        value: "true"
+      - key: MCP_INDEXING_ADAPTER_ENABLED
+        value: "true"
+      - key: PG_CRON_BOOTSTRAP_ENABLED
+        value: "true"
+      - key: PLANNER_PATTERN_CACHE_ENABLED
+        value: "true"
+      - key: PLANNER_PATTERN_CACHE_TTL_MS
+        value: "1800000"
+      - key: OBSIDIAN_SYNC_LOOP_ENABLED
+        value: "true"
+      - key: OBSIDIAN_SYNC_LOOP_INTERVAL_MIN
+        value: "60"
 
   - type: web
     name: muel-litellm-proxy

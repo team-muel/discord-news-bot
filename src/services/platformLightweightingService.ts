@@ -1,4 +1,4 @@
-import { getSupabaseExtensionOpsSnapshot } from './supabaseExtensionOpsService';
+import { getSupabaseExtensionOpsSnapshot } from './infra/supabaseExtensionOpsService';
 import { getRuntimeSchedulerPolicySnapshot } from './runtimeSchedulerPolicyService';
 
 export type LightweightingItem = {

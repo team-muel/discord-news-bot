@@ -23,6 +23,7 @@ import { executeHooks } from './sprintHooks';
 import { ingestRetroInsights } from '../entityNervousSystem';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
+import { adjustBehaviorFromReward } from '../entityNervousSystem';
 import { isJudgePhase, judgePhaseOutput, formatJudgeAppendix } from './llmJudge';
 import { runAutoplan, formatAutoplanAppendix } from './autoplan';
 import { getAction } from '../skills/actions/registry';
@@ -1068,9 +1069,19 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       sprintId,
       meta: { objective: pipeline.objective, changedFiles: pipeline.changedFiles, totalPhasesExecuted: pipeline.totalPhasesExecuted },
     }).catch(() => {});
+
+    // ENS Circuit 2: sprint success is a positive signal — re-evaluate behavior
+    void adjustBehaviorFromReward(pipeline.guildId).catch((err) =>
+      logger.debug('[SPRINT] ENS behavior adjustment after completion failed: %s', err instanceof Error ? err.message : String(err)),
+    );
   } else if (nextPhase === 'blocked') {
     pipeline.error = `Phase ${currentPhase} failed: ${phaseResult.output.slice(0, 200)}`;
     logger.warn('[SPRINT] pipeline=%s blocked at phase=%s', sprintId, currentPhase);
+
+    // ENS Circuit 2: sprint failure is a negative signal — boost exploration
+    void adjustBehaviorFromReward(pipeline.guildId).catch((err) =>
+      logger.debug('[SPRINT] ENS behavior adjustment after block failed: %s', err instanceof Error ? err.message : String(err)),
+    );
   }
 
   persistPipeline(pipeline).catch(() => {});

@@ -11,6 +11,69 @@ const PLANNER_SELF_CONSISTENCY_TEMPERATURE = parseBoundedNumberEnv(process.env.P
 const PLANNER_RULES_FIRST_ENABLED = parseBooleanEnv(process.env.PLANNER_RULES_FIRST_ENABLED, true);
 const PLANNER_CATALOG_MAX_ACTIONS = Math.max(5, parseIntegerEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12));
 const PLANNER_ADAPTIVE_SAMPLES_ENABLED = parseBooleanEnv(process.env.PLANNER_ADAPTIVE_SAMPLES_ENABLED, true);
+const PLANNER_PATTERN_CACHE_ENABLED = parseBooleanEnv(process.env.PLANNER_PATTERN_CACHE_ENABLED, true);
+const PLANNER_PATTERN_CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_TTL_MS, 30 * 60_000));
+const PLANNER_PATTERN_CACHE_MAX_SIZE = Math.max(10, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_MAX_SIZE, 100));
+const PLANNER_PATTERN_CACHE_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.PLANNER_PATTERN_CACHE_MIN_SIMILARITY, 0.75, 0.5, 1);
+
+// ──── Pattern Cache ────────────────────────────────────────────────────────────
+
+type CachedPlan = {
+  goalTerms: Set<string>;
+  actions: ActionPlan[];
+  createdAt: number;
+};
+
+const patternCache: CachedPlan[] = [];
+
+const evictExpiredEntries = (): void => {
+  const now = Date.now();
+  for (let i = patternCache.length - 1; i >= 0; i--) {
+    if (now - patternCache[i].createdAt > PLANNER_PATTERN_CACHE_TTL_MS) {
+      patternCache.splice(i, 1);
+    }
+  }
+};
+
+const findCachedPlan = (goalTerms: Set<string>): ActionPlan[] | null => {
+  if (!PLANNER_PATTERN_CACHE_ENABLED || patternCache.length === 0) return null;
+  evictExpiredEntries();
+
+  let bestMatch: CachedPlan | null = null;
+  let bestScore = 0;
+
+  for (const entry of patternCache) {
+    const score = jaccardSets(goalTerms, entry.goalTerms);
+    if (score >= PLANNER_PATTERN_CACHE_MIN_SIMILARITY && score > bestScore) {
+      bestScore = score;
+      bestMatch = entry;
+    }
+  }
+
+  return bestMatch ? bestMatch.actions : null;
+};
+
+const cachePlan = (goalTerms: Set<string>, actions: ActionPlan[]): void => {
+  if (!PLANNER_PATTERN_CACHE_ENABLED || actions.length === 0) return;
+  evictExpiredEntries();
+
+  // Enforce max size — evict oldest
+  while (patternCache.length >= PLANNER_PATTERN_CACHE_MAX_SIZE) {
+    patternCache.shift();
+  }
+
+  patternCache.push({ goalTerms, actions, createdAt: Date.now() });
+};
+
+// ──── Exported cache stats (for diagnostics) ──────────────────────────────────
+
+export const getPlannerCacheStats = () => ({
+  enabled: PLANNER_PATTERN_CACHE_ENABLED,
+  size: patternCache.length,
+  maxSize: PLANNER_PATTERN_CACHE_MAX_SIZE,
+  ttlMs: PLANNER_PATTERN_CACHE_TTL_MS,
+  minSimilarity: PLANNER_PATTERN_CACHE_MIN_SIMILARITY,
+});
 
 /** Reduce LLM calls for simple goals — short or single-action-likely goals use k=1 */
 const resolveAdaptiveSamples = (goal: string): number => {
@@ -195,11 +258,21 @@ const requestPlanCandidate = async (params: {
 };
 
 export const planActions = async (goal: string): Promise<ActionChainPlan> => {
+  const goalTerms = toGoalTerms(goal);
+
+  // Pattern cache fast-path: reuse plan from a similar recent goal
+  const cachedActions = findCachedPlan(goalTerms);
+  if (cachedActions) {
+    const withRag = await applyRagPriority(cachedActions, goal);
+    return { actions: withRag.slice(0, 3) };
+  }
+
   // Rules-first fast-path: if regex rules produce a plan, skip LLM entirely.
   if (PLANNER_RULES_FIRST_ENABLED) {
     const rulesPlan = await buildFallbackPlan(goal);
     if (rulesPlan.length > 0) {
       const withRag = await applyRagPriority(rulesPlan, goal);
+      cachePlan(goalTerms, withRag.slice(0, 3));
       return { actions: withRag.slice(0, 3) };
     }
   }
@@ -230,6 +303,7 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     if (!single || single.length === 0) {
       return { actions: await fallbackPlan(goal) };
     }
+    cachePlan(goalTerms, single);
     return { actions: single };
   }
 
@@ -239,6 +313,7 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     if (!single || single.length === 0) {
       return { actions: await fallbackPlan(goal) };
     }
+    cachePlan(goalTerms, single);
     return { actions: single };
   }
 
@@ -252,5 +327,6 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     return { actions: await fallbackPlan(goal) };
   }
 
+  cachePlan(goalTerms, consensus);
   return { actions: consensus };
 };

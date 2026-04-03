@@ -1,5 +1,5 @@
 import { getAutomationRuntimeSnapshot } from '../automationBot';
-import { getTradingEngineRuntimeSnapshot } from '../tradingEngine';
+import { getTradingEngineRuntimeSnapshot } from '../trading/tradingEngine';
 import {
   RUNTIME_ALERT_AUTOMATION_PARTIAL_FAIL_MIN_COUNT,
   RUNTIME_ALERT_AUTOMATION_PARTIAL_FAIL_MIN_RATIO,

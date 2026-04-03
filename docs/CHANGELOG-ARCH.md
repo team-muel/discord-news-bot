@@ -21,6 +21,16 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-06 - M-17 Infrastructure Optimization + Services Subdirectory Restructure Phase 2
+
+- Why: (1) setInterval 기반 스케줄러를 Supabase pg_cron으로 이관해 단일 진실 원천 통합. (2) Obsidian wikilink 그래프를 Supabase에 동기화해 graph-first retrieval 강화. (3) ollama/litellm-admin/mcp-indexing 어댑터 추가로 외부 도구 커버리지 확대. (4) Planner 반복 목표에 TTL pattern cache 적용. (5) services/ 디렉토리 6개 도메인 서브디렉토리 분리 (eval/, infra/, memory/, news/, obsidian/, trading/).
+- Scope: 113 files — 13 new, ~40 renamed/moved, ~60 import path updates
+- Impacted Routes: `src/routes/bot-agent/` (memoryRoutes, qualityPrivacyRoutes, rewardEvalRoutes, runtimeRoutes), `src/routes/trades.ts`, `src/routes/trading.ts`
+- Impacted Services: `src/services/infra/pgCronBootstrapService.ts` (new), `src/services/tools/adapters/{ollamaAdapter,litellmAdminAdapter,mcpIndexingAdapter}.ts` (new), `src/services/eval/index.ts`, `src/services/infra/index.ts`, `src/services/memory/index.ts`, `src/services/news/index.ts`, `src/services/obsidian/index.ts`, `src/services/trading/index.ts` (new barrels), `scripts/sync-obsidian-lore.ts` (wikilink extraction), `src/services/skills/actions/planner.ts` (pattern cache)
+- Impacted Tables/RPC: `ensure_pg_cron_job` (new RPC via migration SQL), `memory_item_links` (graph sync writes)
+- Risk/Regression Notes: 런타임 동작 변경 없음 for subdirectory moves. pg_cron migration SQL은 Supabase SQL editor에서 수동 실행 필요. Pattern cache는 `PLANNER_PATTERN_CACHE_ENABLED` env로 opt-in.
+- Validation: `npx tsc --noEmit` (0 errors), `npx vitest run` (97 files, 635 tests passed).
+
 ## 2026-04-02 - M-10 Codebase Health: Agent Services Subdirectory Restructure
 
 - Why: `src/services/` flat directory에 100+ 파일이 혼재해 탐색이 어려웠다. agent 관련 25개 서비스 + 9개 테스트를 `src/services/agent/`로 분리하여 도메인 경계를 명확히 한다.

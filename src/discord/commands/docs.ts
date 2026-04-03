@@ -1,5 +1,5 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type { RAGQueryResult } from '../../services/obsidianRagService';
+import type { RAGQueryResult } from '../../services/obsidian/obsidianRagService';
 import type { LlmTextRequest } from '../../services/llmClient';
 import { getSemanticAnswerCache, putSemanticAnswerCache } from '../../services/semanticAnswerCacheService';
 import { buildRagQueryPlanForGuild } from '../../services/taskRoutingService';

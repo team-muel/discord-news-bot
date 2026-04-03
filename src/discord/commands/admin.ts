@@ -2,7 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInte
 import { buildAdminCard, buildSimpleEmbed, EMBED_ERROR, EMBED_INFO, EMBED_SUCCESS, EMBED_WARN } from '../ui';
 import { isAnyLlmConfigured } from '../../services/llmClient';
 import { isSupabaseConfigured } from '../../services/supabaseClient';
-import { isStockFeatureEnabled } from '../../services/stockService';
+import { isStockFeatureEnabled } from '../../services/trading/stockService';
 import { isUserAdmin } from '../../services/adminAllowlistService';
 import {
   forgetGuildRagData,

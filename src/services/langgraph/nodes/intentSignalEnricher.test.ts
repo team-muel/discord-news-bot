@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { enrichIntentSignals, collectGraphNeighborTags } from './intentSignalEnricher';
-import type { PromptCompileResult } from '../../promptCompiler';
+import type { PromptCompileResult } from '../../infra/promptCompiler';
 
 const mockCompiled: PromptCompileResult = {
   originalGoal: 'test',

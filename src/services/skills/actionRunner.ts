@@ -3,7 +3,7 @@ import {
   buildNewsFingerprint,
   isNewsFingerprinted,
   recordNewsFingerprint,
-} from '../newsCaptureDedupService';
+} from '../news/newsCaptureDedupService';
 import { getAction } from './actions/registry';
 import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
 import { planActions } from './actions/planner';
@@ -16,7 +16,7 @@ import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStat
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
 import { createMemoryItem } from '../agent/agentMemoryStore';
-import { compilePromptGoal } from '../promptCompiler';
+import { compilePromptGoal } from '../infra/promptCompiler';
 import { buildWorkerApprovalGateSnapshot } from '../agent/agentWorkerApprovalGateSnapshotService';
 import { setGateProviderProfileOverride } from '../llmClient';
 import type { LlmProviderProfile } from '../llmClient';

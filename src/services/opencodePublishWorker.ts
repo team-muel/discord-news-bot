@@ -1,7 +1,7 @@
 import logger from '../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
-import { acquireDistributedLease, releaseDistributedLease } from './distributedLockService';
+import { acquireDistributedLease, releaseDistributedLease } from './infra/distributedLockService';
 
 type PublishJobRow = {
   id: number;

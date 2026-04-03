@@ -3,7 +3,7 @@ import { client, startBot } from './src/bot';
 import { setDefaultResultOrder } from 'dns';
 import logger from './src/logger';
 import initMonitoring from './src/init';
-import { initObsidianRAG } from './src/services/obsidianRagService';
+import { initObsidianRAG } from './src/services/obsidian/obsidianRagService';
 import { recordRuntimeError } from './src/services/sprint/sprintTriggers';
 
 // Initialize monitoring (Sentry) if configured

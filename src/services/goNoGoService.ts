@@ -1,5 +1,5 @@
-import { getMemoryJobQueueStats } from './memoryJobRunner';
-import { getMemoryQualityMetrics } from './memoryQualityMetricsService';
+import { getMemoryJobQueueStats } from './memory/memoryJobRunner';
+import { getMemoryQualityMetrics } from './memory/memoryQualityMetricsService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAgentTelemetryQueueSnapshot } from './agent/agentTelemetryQueue';
 

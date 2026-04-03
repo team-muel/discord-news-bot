@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
-import { bootstrapObsidianGuildKnowledgeTree } from '../src/services/obsidianBootstrapService';
+import { bootstrapObsidianGuildKnowledgeTree } from '../src/services/obsidian/obsidianBootstrapService';
 
 type CliOptions = {
   guildIds: string[];

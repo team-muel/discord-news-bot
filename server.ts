@@ -3,7 +3,7 @@ import logger from './src/logger';
 import initMonitoring from './src/init';
 import { BOT_START_FAILURE_EXIT_ENABLED, PORT, START_BOT } from './src/config';
 import { startServerProcessRuntime } from './src/services/runtimeBootstrap';
-import { stopTradingEngine } from './src/services/tradingEngine';
+import { stopTradingEngine } from './src/services/trading/tradingEngine';
 import { stopAutomationModules } from './src/services/automationBot';
 import { stopMcpSkillRouter } from './src/services/mcpSkillRouter';
 

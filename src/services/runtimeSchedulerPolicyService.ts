@@ -3,12 +3,12 @@ import { getAgentSloAlertLoopStats } from './agent/agentSloService';
 import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs } from './agent/agentRoleWorkerService';
 import { getLoginSessionCleanupLoopStats } from '../discord/auth';
 import { getAgentOpsSnapshot } from './agent/agentOpsService';
-import { getMemoryJobRunnerStats } from './memoryJobRunner';
-import { getObsidianLoreSyncLoopStats } from './obsidianLoreSyncService';
-import { getRetrievalEvalLoopStats } from './retrievalEvalLoopService';
-import { listSupabaseCronJobs } from './supabaseExtensionOpsService';
+import { getMemoryJobRunnerStats } from './memory/memoryJobRunner';
+import { getObsidianLoreSyncLoopStats } from './obsidian/obsidianLoreSyncService';
+import { getRetrievalEvalLoopStats } from './eval/retrievalEvalLoopService';
+import { listSupabaseCronJobs } from './infra/supabaseExtensionOpsService';
 import { getRuntimeAlertsStats } from './runtimeAlertService';
-import { getTradingEngineRuntimeSnapshot } from './tradingEngine';
+import { getTradingEngineRuntimeSnapshot } from './trading/tradingEngine';
 import { getOpencodePublishWorkerStats } from './opencodePublishWorker';
 import { getRuntimeBootstrapState } from './runtimeBootstrap';
 

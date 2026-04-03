@@ -37,6 +37,7 @@ type SyncStats = {
   insertedRows: number;
   updatedRows: number;
   duplicateRowsDeleted: number;
+  graphLinksUpserted: number;
 };
 
 const DEFAULT_INCLUDE_GLOBS = String(process.env.OBSIDIAN_SYNC_DEFAULT_INCLUDE_GLOBS || '**/*.md')
@@ -390,6 +391,7 @@ const notifyDiscordWebhook = async (stats: SyncStats): Promise<void> => {
     `inserted=${stats.insertedRows}`,
     `updated=${stats.updatedRows}`,
     `dedupDeleted=${stats.duplicateRowsDeleted}`,
+    `graphLinks=${stats.graphLinksUpserted}`,
     `skipped=${stats.skippedTargets}`,
   ].join(' | ');
 
@@ -445,6 +447,81 @@ const upsertLoreMemoryItem = async (
   }
 };
 
+/** Extract wikilinks ([[page]] or [[page|alias]]) from Obsidian markdown content. */
+const extractWikiLinks = (content: string): string[] => {
+  const matches = content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g);
+  const links = new Set<string>();
+  for (const match of matches) {
+    const target = match[1].trim();
+    if (target && !target.startsWith('http')) {
+      links.add(target);
+    }
+  }
+  return [...links];
+};
+
+/**
+ * Upsert graph relationships between lore docs based on Obsidian wikilinks.
+ * Links are inserted as 'related' type into memory_item_links.
+ * Both source and target must exist as memory_items (via lore ID convention).
+ */
+const upsertGraphLinks = async (
+  supabase: SupabaseClient<any>,
+  doc: LoreDoc,
+  allDocs: LoreDoc[],
+): Promise<number> => {
+  const wikiLinks = extractWikiLinks(doc.content);
+  if (wikiLinks.length === 0) return 0;
+
+  const sourceId = lorMemoryItemId(doc.guildId, doc.source);
+  let upserted = 0;
+
+  // Build a lookup of relative path (without .md) → LoreDoc for same guild
+  const targetLookup = new Map<string, LoreDoc>();
+  for (const d of allDocs) {
+    if (d.guildId !== doc.guildId) continue;
+    const key = d.relativePath.replace(/\.md$/i, '').toLowerCase();
+    targetLookup.set(key, d);
+    // Also index by filename only for short wikilinks
+    const filename = key.split('/').pop() || '';
+    if (filename && !targetLookup.has(filename)) {
+      targetLookup.set(filename, d);
+    }
+  }
+
+  for (const link of wikiLinks) {
+    const normalized = link.toLowerCase().replace(/\.md$/i, '');
+    const targetDoc = targetLookup.get(normalized);
+    if (!targetDoc) continue;
+
+    const targetId = lorMemoryItemId(targetDoc.guildId, targetDoc.source);
+    if (sourceId === targetId) continue;
+
+    const { error } = await supabase
+      .from('memory_item_links')
+      .upsert(
+        {
+          source_id: sourceId,
+          target_id: targetId,
+          guild_id: doc.guildId,
+          relation_type: 'related',
+          strength: 0.600,
+          created_by: 'sync-obsidian-lore',
+        },
+        { onConflict: 'source_id,target_id,relation_type' },
+      );
+
+    if (error) {
+      // Non-fatal: target memory_item might not exist yet due to ordering
+      console.warn(`[obsidian-sync] graph link skip: ${doc.relativePath} → ${link}: ${error.message}`);
+      continue;
+    }
+    upserted += 1;
+  }
+
+  return upserted;
+};
+
 const main = async () => {
   const {
     guildIds: requestedGuildIds,
@@ -477,6 +554,8 @@ const main = async () => {
 
   console.log(`[obsidian-sync] Start targetCount=${targets.length} dryRun=${dryRun}`);
 
+  const allSyncedDocs: LoreDoc[] = [];
+
   const stats: SyncStats = {
     dryRun,
     scannedTargets: targets.length,
@@ -486,6 +565,7 @@ const main = async () => {
     insertedRows: 0,
     updatedRows: 0,
     duplicateRowsDeleted: 0,
+    graphLinksUpserted: 0,
   };
 
   for (const target of targets) {
@@ -497,6 +577,7 @@ const main = async () => {
     }
 
     stats.docsFound += docs.length;
+    allSyncedDocs.push(...docs);
 
     for (const doc of docs) {
       const { data: existingRows, error: selectError } = await supabase
@@ -580,6 +661,18 @@ const main = async () => {
   console.log(
     `[obsidian-sync] Done touched=${stats.touchedRows} inserted=${stats.insertedRows} updated=${stats.updatedRows} dedupDeleted=${stats.duplicateRowsDeleted} skipped=${stats.skippedTargets}`,
   );
+
+  // Phase 2: Sync graph relationships (wikilinks → memory_item_links)
+  if (!dryRun && allSyncedDocs.length > 0) {
+    console.log(`[obsidian-sync] Phase 2: syncing graph links for ${allSyncedDocs.length} docs`);
+    for (const doc of allSyncedDocs) {
+      const linked = await upsertGraphLinks(supabase, doc, allSyncedDocs);
+      stats.graphLinksUpserted += linked;
+    }
+    if (stats.graphLinksUpserted > 0) {
+      console.log(`[obsidian-sync] Graph links upserted: ${stats.graphLinksUpserted}`);
+    }
+  }
 
   await notifyDiscordWebhook(stats);
 };

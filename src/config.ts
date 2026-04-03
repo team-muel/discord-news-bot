@@ -423,3 +423,15 @@ export const supabaseConfig = {
   adminAllowlistRoleValue: ADMIN_ALLOWLIST_ROLE_VALUE,
   adminAllowlistCacheTtlMs: ADMIN_ALLOWLIST_CACHE_TTL_MS,
 } as const;
+
+export const memoryConfig = {
+  consolidationEnabled: parseBooleanEnv(process.env.MEMORY_CONSOLIDATION_ENABLED, true),
+  consolidationIntervalMs: Math.max(60_000, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_INTERVAL_MS, 6 * 60 * 60_000)),
+  consolidationMinGroupSize: Math.max(2, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_MIN_GROUP_SIZE, 3)),
+  consolidationMaxBatch: Math.max(1, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_MAX_BATCH, 5)),
+  consolidationRawAgeHours: Math.max(1, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_RAW_AGE_HOURS, 6)),
+  evolutionEnabled: parseBooleanEnv(process.env.MEMORY_EVOLUTION_ENABLED, true),
+  evolutionMaxLinks: Math.max(1, Math.min(10, parseIntegerEnv(process.env.MEMORY_EVOLUTION_MAX_LINKS, 5))),
+  evolutionMinSimilarity: Math.max(0, Math.min(1, Number(process.env.MEMORY_EVOLUTION_MIN_SIMILARITY || 0.25))),
+  evolutionConfidenceBoost: Math.max(0, Math.min(0.1, Number(process.env.MEMORY_EVOLUTION_CONFIDENCE_BOOST || 0.03))),
+} as const;
