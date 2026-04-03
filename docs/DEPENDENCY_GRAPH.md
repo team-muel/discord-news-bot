@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts, src/services/trading/tradingEngine.ts
-- Nodes: 284
+- Nodes: 285
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -9,7 +9,7 @@
 | --- | --- |
 | src/logger.ts | 92 |
 | src/services/supabaseClient.ts | 78 |
-| src/utils/env.ts | 71 |
+| src/utils/env.ts | 72 |
 | src/config.ts | 31 |
 | src/services/skills/actions/types.ts | 27 |
 | src/services/llmClient.ts | 24 |
@@ -709,6 +709,8 @@ graph LR
   "src/services/obsidian/adapters/headlessCliAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/utils/env.ts"
+  "src/services/obsidian/adapters/nativeCliAdapter.ts" --> "src/services/obsidian/types.ts"
+  "src/services/obsidian/adapters/nativeCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/obsidian/adapters/scriptCliAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/scriptCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/obsidian/authoring.ts" --> "src/logger.ts"
@@ -736,6 +738,7 @@ graph LR
   "src/services/obsidian/router.ts" --> "src/services/observability/outcomeSignal.ts"
   "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/headlessCliAdapter.ts"
   "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/localFsAdapter.ts"
+  "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/nativeCliAdapter.ts"
   "src/services/obsidian/router.ts" --> "src/services/obsidian/adapters/scriptCliAdapter.ts"
   "src/services/obsidian/router.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/router.ts" --> "src/utils/env.ts"

@@ -2,6 +2,7 @@ import { parseBooleanEnv } from '../../utils/env';
 import logger from '../../logger';
 import { headlessCliObsidianAdapter } from './adapters/headlessCliAdapter.ts';
 import { localFsObsidianAdapter } from './adapters/localFsAdapter.ts';
+import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
 import { scriptCliObsidianAdapter } from './adapters/scriptCliAdapter.ts';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
 import type {
@@ -16,7 +17,7 @@ import type {
 } from './types';
 import { supportsCapability } from './types';
 
-const DEFAULT_ORDER = ['headless-cli', 'script-cli', 'local-fs'];
+const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli', 'local-fs'];
 
 const parseAdapterOrder = (value: string | undefined): string[] => String(value || '')
   .split(',')
@@ -38,6 +39,7 @@ const ORDER_ENV_BY_CAPABILITY: Record<ObsidianCapability, string | undefined> = 
 const OBSIDIAN_ADAPTER_STRICT = parseBooleanEnv(process.env.OBSIDIAN_ADAPTER_STRICT, false);
 
 const registry: Record<string, ObsidianVaultAdapter> = {
+  [nativeCliObsidianAdapter.id]: nativeCliObsidianAdapter,
   [headlessCliObsidianAdapter.id]: headlessCliObsidianAdapter,
   [scriptCliObsidianAdapter.id]: scriptCliObsidianAdapter,
   [localFsObsidianAdapter.id]: localFsObsidianAdapter,
@@ -87,7 +89,7 @@ const getOrderedAdapters = (capability?: ObsidianCapability): ObsidianVaultAdapt
     return ordered;
   }
 
-  return [headlessCliObsidianAdapter, scriptCliObsidianAdapter, localFsObsidianAdapter];
+  return [nativeCliObsidianAdapter, headlessCliObsidianAdapter, scriptCliObsidianAdapter, localFsObsidianAdapter];
 };
 
 const pickAdapter = (capability: ObsidianCapability): ObsidianVaultAdapter | null => {
