@@ -9,6 +9,7 @@ import type {
   ObsidianReadFileQuery,
   ObsidianSearchQuery,
   ObsidianSearchResult,
+  ObsidianTask,
   ObsidianVaultAdapter,
 } from '../types';
 
@@ -337,14 +338,80 @@ const readLore = async (params: ObsidianLoreQuery): Promise<string[]> => {
   return out;
 };
 
+// ── daily_note (daily:append / daily:read) ─────────
+const dailyAppend = async (params: { content: string }): Promise<boolean> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safeContent = String(params.content || '').slice(0, 2000);
+  if (!safeContent) return false;
+
+  const output = await runNativeCli([
+    'daily:append',
+    `content=${safeContent}`,
+    `vault=${vaultName}`,
+  ]);
+
+  return output !== null;
+};
+
+const dailyRead = async (): Promise<string | null> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+
+  return runNativeCli([
+    'daily:read',
+    `vault=${vaultName}`,
+  ]);
+};
+
+// ── task_management (tasks / task toggle) ──────────
+const listTasks = async (): Promise<ObsidianTask[]> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+
+  const output = await runNativeCli([
+    'tasks',
+    `vault=${vaultName}`,
+    'format=json',
+  ]);
+
+  const items = tryParseJsonArray<Record<string, unknown>>(output);
+  return items
+    .filter((item) => typeof item === 'object' && item !== null && 'text' in item)
+    .map((item) => ({
+      filePath: String((item as any).file ?? (item as any).path ?? ''),
+      line: Number((item as any).line ?? 0),
+      text: String((item as any).text ?? ''),
+      completed: Boolean((item as any).completed ?? (item as any).done ?? false),
+      tags: Array.isArray((item as any).tags) ? (item as any).tags.map(String) : undefined,
+    }));
+};
+
+const toggleTask = async (params: { filePath: string; line: number }): Promise<boolean> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safePath = sanitizeArg(params.filePath, 400);
+  const safeLine = Math.max(0, Math.trunc(params.line));
+  if (!safePath) return false;
+
+  const output = await runNativeCli([
+    'task',
+    `path=${safePath}:${safeLine}`,
+    'toggle',
+    `vault=${vaultName}`,
+  ]);
+
+  return output !== null;
+};
+
 // ── Export ──────────────────────────────────────────
 export const nativeCliObsidianAdapter: ObsidianVaultAdapter = {
   id: 'native-cli',
-  capabilities: ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note'],
+  capabilities: ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'],
   isAvailable: () => NATIVE_CLI_ENABLED && getNativeCliPath().length > 0,
   readLore,
   searchVault,
   readFile: readFileFromVault,
   getGraphMetadata,
   writeNote,
+  dailyAppend,
+  dailyRead,
+  listTasks,
+  toggleTask,
 };

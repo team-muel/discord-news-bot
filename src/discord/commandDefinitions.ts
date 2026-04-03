@@ -307,6 +307,24 @@ const ALL_COMMANDS = [
     .setName('유저 메모 추가')
     .setType(ApplicationCommandType.User),
   new SlashCommandBuilder()
+    .setName('할일')
+    .setDescription('Obsidian 할일 목록을 조회하거나 완료 처리합니다')
+    .setDMPermission(false)
+    .addSubcommand((sub) =>
+      sub.setName('목록').setDescription('미완료 및 최근 할일 목록을 조회합니다')
+        .addStringOption((o) =>
+          o.setName('공개범위').setDescription('응답 공개 범위')
+            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('완료').setDescription('할일을 완료 처리합니다')
+        .addIntegerOption((o) =>
+          o.setName('번호').setDescription('할일 번호 (목록의 번호)').setMinValue(1).setMaxValue(100).setRequired(true),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName('관리자')
     .setDescription('관리자 도구 모음')
     .setDMPermission(false)

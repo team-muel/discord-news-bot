@@ -13,6 +13,7 @@ import type {
   ObsidianReadFileQuery,
   ObsidianSearchQuery,
   ObsidianSearchResult,
+  ObsidianTask,
   ObsidianVaultAdapter,
 } from './types';
 import { supportsCapability } from './types';
@@ -32,6 +33,8 @@ const ORDER_ENV_BY_CAPABILITY: Record<ObsidianCapability, string | undefined> = 
   read_file: process.env.OBSIDIAN_ADAPTER_ORDER_READ_FILE,
   graph_metadata: process.env.OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA,
   write_note: process.env.OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE,
+  daily_note: process.env.OBSIDIAN_ADAPTER_ORDER_DAILY_NOTE,
+  task_management: process.env.OBSIDIAN_ADAPTER_ORDER_TASK_MANAGEMENT,
   set_property: undefined,
   set_tags: undefined,
   run_plugin_command: undefined,
@@ -45,7 +48,7 @@ const registry: Record<string, ObsidianVaultAdapter> = {
   [localFsObsidianAdapter.id]: localFsObsidianAdapter,
 };
 
-const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note'];
+const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'];
 
 const getAdapterOrderForCapability = (capability: ObsidianCapability): string[] => {
   const capabilityOrder = parseAdapterOrder(ORDER_ENV_BY_CAPABILITY[capability]);
@@ -341,4 +344,80 @@ export const warmupObsidianAdapters = async (vaultPath: string): Promise<void> =
     });
 
   await Promise.all(tasks);
+};
+
+// ── Daily Note ─────────────────────────────────────
+
+export const appendDailyNoteWithAdapter = async (content: string): Promise<boolean> => {
+  const adapter = pickAdapter('daily_note');
+  if (!adapter || !adapter.dailyAppend) {
+    logAdapterSignal({ capability: 'daily_note', outcome: 'failure', primary: null, detail: 'no_adapter' });
+    return false;
+  }
+
+  try {
+    const ok = await adapter.dailyAppend({ content });
+    logAdapterSignal({ capability: 'daily_note', outcome: ok ? 'success' : 'failure', primary: adapter.id, detail: ok ? 'append_ok' : 'append_empty' });
+    return ok;
+  } catch (error) {
+    logger.warn('[OBSIDIAN-ADAPTER] daily_note append failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logAdapterSignal({ capability: 'daily_note', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    return false;
+  }
+};
+
+export const readDailyNoteWithAdapter = async (): Promise<string | null> => {
+  const adapter = pickAdapter('daily_note');
+  if (!adapter || !adapter.dailyRead) {
+    logAdapterSignal({ capability: 'daily_note', outcome: 'failure', primary: null, detail: 'no_adapter_read' });
+    return null;
+  }
+
+  try {
+    const content = await adapter.dailyRead();
+    logAdapterSignal({ capability: 'daily_note', outcome: content !== null ? 'success' : 'failure', primary: adapter.id, detail: content !== null ? 'read_ok' : 'read_empty' });
+    return content;
+  } catch (error) {
+    logger.warn('[OBSIDIAN-ADAPTER] daily_note read failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logAdapterSignal({ capability: 'daily_note', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    return null;
+  }
+};
+
+// ── Task Management ────────────────────────────────
+
+export const listObsidianTasksWithAdapter = async (): Promise<ObsidianTask[]> => {
+  const adapter = pickAdapter('task_management');
+  if (!adapter || !adapter.listTasks) {
+    logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: null, detail: 'no_adapter' });
+    return [];
+  }
+
+  try {
+    const tasks = await adapter.listTasks();
+    logAdapterSignal({ capability: 'task_management', outcome: tasks.length > 0 ? 'success' : 'failure', primary: adapter.id, detail: `listed_${tasks.length}` });
+    return tasks;
+  } catch (error) {
+    logger.warn('[OBSIDIAN-ADAPTER] task_management list failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    return [];
+  }
+};
+
+export const toggleObsidianTaskWithAdapter = async (filePath: string, line: number): Promise<boolean> => {
+  const adapter = pickAdapter('task_management');
+  if (!adapter || !adapter.toggleTask) {
+    logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: null, detail: 'no_adapter_toggle' });
+    return false;
+  }
+
+  try {
+    const ok = await adapter.toggleTask({ filePath, line });
+    logAdapterSignal({ capability: 'task_management', outcome: ok ? 'success' : 'failure', primary: adapter.id, detail: ok ? 'toggle_ok' : 'toggle_failed' });
+    return ok;
+  } catch (error) {
+    logger.warn('[OBSIDIAN-ADAPTER] task_management toggle failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    return false;
+  }
 };

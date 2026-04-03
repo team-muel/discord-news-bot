@@ -38,6 +38,7 @@ import { recordCommunityInteractionEvent } from './services/communityGraphServic
 import { recordReactionRewardSignal } from './services/discordReactionRewardService';
 import { isAnyLlmConfigured } from './services/llmClient';
 import { queryObsidianRAG, initObsidianRAG } from './services/obsidian/obsidianRagService';
+import { listObsidianTasksWithAdapter, toggleObsidianTaskWithAdapter } from './services/obsidian/router';
 import { generateText } from './services/llmClient';
 import {
   getAgentOpsSnapshot,
@@ -129,6 +130,7 @@ import { createAgentHandlers } from './discord/commands/agent';
 import { createVibeHandlers } from './discord/commands/vibe';
 import { createDocsHandlers } from './discord/commands/docs';
 import { createPersonaHandlers } from './discord/commands/persona';
+import { createTasksHandlers } from './discord/commands/tasks';
 import { startDiscordReadyWorkloads } from './discord/runtime/readyWorkloads';
 import { processPassiveMemoryCapture } from './discord/runtime/passiveMemoryCapture';
 import { handleCsChannelMessage, recordRuntimeError } from './services/sprint/sprintTriggers';
@@ -1238,6 +1240,12 @@ const personaHandlers = createPersonaHandlers({
   getErrorMessage,
 });
 
+const tasksHandlers = createTasksHandlers({
+  listObsidianTasksWithAdapter,
+  toggleObsidianTaskWithAdapter,
+  getErrorMessage,
+});
+
 const attachCommandHandlers = () => {
   if (commandHandlersAttached) {
     return;
@@ -1372,6 +1380,15 @@ const attachCommandHandlers = () => {
         }
         case '문서': {
           await docsHandlers.handleDocsCommand(interaction);
+          return;
+        }
+        case '할일': {
+          const sub = interaction.options.getSubcommand();
+          if (sub === '목록') {
+            await tasksHandlers.handleTasksListCommand(interaction);
+          } else if (sub === '완료') {
+            await tasksHandlers.handleTasksToggleCommand(interaction);
+          }
           return;
         }
         case '유저': {

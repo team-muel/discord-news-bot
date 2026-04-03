@@ -227,4 +227,128 @@ describe('nativeCliObsidianAdapter', () => {
       ).rejects.toThrow('native CLI returned no output');
     });
   });
+
+  describe('dailyAppend', () => {
+    it('appends content to daily note', async () => {
+      mockExecFile.mockImplementation(makeExecCallback('OK') as never);
+
+      const result = await nativeCliObsidianAdapter.dailyAppend!({ content: 'Agent processed 5 queries today.' });
+
+      expect(result).toBe(true);
+      const callArgs = mockExecFile.mock.calls[0];
+      const args = callArgs[1] as string[];
+      expect(args[0]).toBe('daily:append');
+      expect(args.some((a: string) => a.startsWith('content='))).toBe(true);
+    });
+
+    it('returns false for empty content', async () => {
+      const result = await nativeCliObsidianAdapter.dailyAppend!({ content: '' });
+      expect(result).toBe(false);
+    });
+
+    it('returns false on CLI error', async () => {
+      mockExecFile.mockImplementation(makeExecError('failed') as never);
+
+      const result = await nativeCliObsidianAdapter.dailyAppend!({ content: 'test' });
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('dailyRead', () => {
+    it('reads daily note content', async () => {
+      mockExecFile.mockImplementation(
+        makeExecCallback('# 2026-04-03\n- Task 1\n- Task 2') as never,
+      );
+
+      const content = await nativeCliObsidianAdapter.dailyRead!();
+      expect(content).toContain('Task 1');
+    });
+
+    it('returns null on CLI error', async () => {
+      mockExecFile.mockImplementation(makeExecError('no daily note') as never);
+
+      const content = await nativeCliObsidianAdapter.dailyRead!();
+      expect(content).toBeNull();
+    });
+  });
+
+  describe('listTasks', () => {
+    it('parses task list from JSON output', async () => {
+      const tasks = [
+        { file: 'projects/bot.md', line: 5, text: 'Fix login bug', completed: false },
+        { file: 'daily/2026-04-03.md', line: 12, text: 'Write tests', completed: true, tags: ['dev'] },
+      ];
+      mockExecFile.mockImplementation(
+        makeExecCallback(JSON.stringify(tasks)) as never,
+      );
+
+      const result = await nativeCliObsidianAdapter.listTasks!();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].filePath).toBe('projects/bot.md');
+      expect(result[0].text).toBe('Fix login bug');
+      expect(result[0].completed).toBe(false);
+      expect(result[1].completed).toBe(true);
+      expect(result[1].tags).toEqual(['dev']);
+    });
+
+    it('returns empty on CLI error', async () => {
+      mockExecFile.mockImplementation(makeExecError('timeout') as never);
+
+      const result = await nativeCliObsidianAdapter.listTasks!();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty for non-array output', async () => {
+      mockExecFile.mockImplementation(makeExecCallback('not json') as never);
+
+      const result = await nativeCliObsidianAdapter.listTasks!();
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('toggleTask', () => {
+    it('toggles task successfully', async () => {
+      mockExecFile.mockImplementation(makeExecCallback('Toggled') as never);
+
+      const result = await nativeCliObsidianAdapter.toggleTask!({
+        filePath: 'projects/bot.md',
+        line: 5,
+      });
+
+      expect(result).toBe(true);
+      const callArgs = mockExecFile.mock.calls[0];
+      const args = callArgs[1] as string[];
+      expect(args[0]).toBe('task');
+      expect(args.some((a: string) => a.includes(':5'))).toBe(true);
+      expect(args).toContain('toggle');
+    });
+
+    it('returns false for empty path', async () => {
+      const result = await nativeCliObsidianAdapter.toggleTask!({
+        filePath: '',
+        line: 1,
+      });
+
+      expect(result).toBe(false);
+    });
+
+    it('returns false on CLI error', async () => {
+      mockExecFile.mockImplementation(makeExecError('failed') as never);
+
+      const result = await nativeCliObsidianAdapter.toggleTask!({
+        filePath: 'notes/test.md',
+        line: 3,
+      });
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('capabilities', () => {
+    it('includes daily_note and task_management', () => {
+      expect(nativeCliObsidianAdapter.capabilities).toContain('daily_note');
+      expect(nativeCliObsidianAdapter.capabilities).toContain('task_management');
+    });
+  });
 });

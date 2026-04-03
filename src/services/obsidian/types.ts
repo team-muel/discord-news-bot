@@ -6,7 +6,9 @@ export type ObsidianCapability =
   | 'write_note'
   | 'set_property'
   | 'set_tags'
-  | 'run_plugin_command';
+  | 'run_plugin_command'
+  | 'daily_note'
+  | 'task_management';
 
 export type ObsidianNode = {
   filePath: string;
@@ -49,6 +51,14 @@ export type ObsidianNoteWriteInput = {
   properties?: Record<string, string | number | boolean | null>;
 };
 
+export type ObsidianTask = {
+  filePath: string;
+  line: number;
+  text: string;
+  completed: boolean;
+  tags?: string[];
+};
+
 export type ObsidianVaultAdapter = {
   id: string;
   capabilities: ReadonlyArray<ObsidianCapability>;
@@ -59,6 +69,10 @@ export type ObsidianVaultAdapter = {
   readFile?: (params: ObsidianReadFileQuery) => Promise<string | null>;
   getGraphMetadata?: (params: { vaultPath: string }) => Promise<Record<string, ObsidianNode>>;
   writeNote?: (params: ObsidianNoteWriteInput) => Promise<{ path: string }>;
+  dailyAppend?: (params: { content: string }) => Promise<boolean>;
+  dailyRead?: () => Promise<string | null>;
+  listTasks?: () => Promise<ObsidianTask[]>;
+  toggleTask?: (params: { filePath: string; line: number }) => Promise<boolean>;
 };
 
 export const supportsCapability = (

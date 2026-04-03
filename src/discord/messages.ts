@@ -253,6 +253,17 @@ export const DISCORD_MESSAGES = {
     askInputRequired: '질문을 입력해주세요.',
     searchInputRequired: '검색어를 입력해주세요.',
   },
+  tasks: {
+    titleList: '📋 Obsidian 할일 목록',
+    titleToggled: '✅ 할일 변경 완료',
+    titleError: '할일 오류',
+    noTasks: '등록된 할일이 없습니다.',
+    toggleSuccess: (text: string) => `"${text}" 상태가 변경되었습니다.`,
+    toggleFailed: '할일 상태 변경에 실패했습니다.',
+    listHeader: (total: number, done: number) => `전체 **${total}**개 | 완료 **${done}**개 | 미완료 **${total - done}**개`,
+    taskLine: (idx: number, text: string, done: boolean, file: string) =>
+      `**${idx}.** ${done ? '~~' : ''}${text}${done ? '~~' : ''} ${done ? '✅' : '⬜'}\n   \`${file}\``,
+  },
   bot: {
     guildOnly: '서버 채널에서만 사용할 수 있습니다.',
     forgetRequesterOnly: '이 확인 버튼은 요청자만 사용할 수 있습니다.',
