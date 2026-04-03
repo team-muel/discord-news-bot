@@ -21,7 +21,9 @@
 
 ## Active Now (WIP <= 3)
 
-_없음 — M-10 항목 모두 완료. 다음 milestone 승격 대기._
+1. [M-11] OpenJarvis Learning Loop 완결 — bench→gate feed, optimize 스케줄, trace→learning 폐순환 검증
+2. [M-12] OpenShell Sandbox 격리 실행 — Docker WSL 해결, implement.execute sandbox 경로, 정책 동기화
+3. [M-13] OpenClaw Gateway 채널 브릿지 — 세션 relay, 채널 라우팅, skill 연동
 
 ## Closed on 2026-04-02
 
@@ -76,6 +78,10 @@ _없음 — M-10 항목 모두 완료. 다음 milestone 승격 대기._
 
 ## Queued Now (Approved, Not In Active WIP, Owner-Bound)
 
+1. [A-002] [M-15] Pluggable Adapter Framework — ExternalAdapterId 동적 전환, adapter 자동 발견, base adapter 추상화
+
+### Closed Queued Items (Phase A-C)
+
 1. ~~[A-003] [M-04] 동적 worker 품질 게이트(정적/정책/샌드박스) 운영 규칙 고정~~ → ✅ P0 경화 완료 (evidence ID + audit trail)
 2. ~~[A-003] [M-05] Opencode adapter 계약(입출력/승인흐름/감사로그) 명세 확정~~ → ✅ evidence 필드 + snapshot 반영
 3. ~~[A-003] [M-04] [M-07] 단계별 go/no-go 게이트(신뢰성/품질/안전/거버넌스) 운영 강제~~ → ✅ GATE_VERDICT_ENFORCEMENT_ENABLED + cached gate verdict + GATE_VERDICT_NO_GO classification
@@ -83,7 +89,27 @@ _없음 — M-10 항목 모두 완료. 다음 milestone 승격 대기._
 5. ~~[A-003] [M-05] Opencode 고위험 액션 approval_required 강제 + 무증거 반영 차단~~ → ✅ HIGH_RISK_APPROVAL_ACTIONS 구현
 6. ~~[A-003] [M-05] [M-06] workflow 슬롯별 모델 바인딩/폴백 매트릭스 운영 설정 고정~~ → ✅ LLM_WORKFLOW_MODEL_BINDINGS + LLM_WORKFLOW_PROFILE_DEFAULTS 환경변수 구현
 
-## Next (D31-D60: Autonomous Loops)
+## Next (Phase D: Deep Integration Unlock)
+
+1. [M-11] `jarvis.bench --json` → `computeNormalizedQualityScore` 입력 연결
+2. [M-11] weekly auto-judge 후 `jarvis.optimize` 자동 트리거
+3. [M-11] trace→learning→bench 폐순환 검증 (2주 연속 bench score 회귀 없음)
+4. [M-12] Docker Desktop WSL2 통합 또는 remote gateway 경로 확보
+5. [M-12] actionRunner `implement.execute` → OpenShell sandbox 위임
+6. [M-12] `HIGH_RISK_APPROVAL_ACTIONS` ↔ OpenShell network policy YAML 동기화
+
+## Later (Phase E: Channel Expansion + Framework)
+
+1. [M-13] `openclaw agent --message` 경로를 Muel↔OpenClaw 양방향 메시지 파이프로 확장
+2. [M-13] guild 설정에 채널 라우팅 매핑 저장/조회 API
+3. [M-13] Muel feature lacuna → OpenClaw skill 자동 생성 트리거
+4. [M-15] `ExternalAdapterId` union literal → string 기반 + schema validation
+5. [M-15] `src/services/tools/adapters/` glob scan → 자동 registry 등록
+6. [M-15] adapter onboarding checklist 자동 생성 확장
+
+## Closed Next/Later (Phase A-C, All Completed)
+
+### Next (D31-D60: Autonomous Loops) — All ✅
 
 1. ~~[M-03] 요청 없음 구간에서도 누락 기능 탐지 -> 제안 큐 자동 생성 강화~~ → ✅ lacuna type 분류(missing_action/retry_exhaustion/external_failure) + scored ranking
 2. ~~[M-05] Opencode executor 파일럿(approval_required 고정)~~ → ✅ HIGH_RISK_APPROVAL_ACTIONS 기 구현
@@ -95,7 +121,7 @@ _없음 — M-10 항목 모두 완료. 다음 milestone 승격 대기._
 8. ~~[M-06] [M-07] provider profile 자동 회귀 규칙(quality gate fail 시 fallback) 적용~~ → ✅ gate verdict profile override + actionRunner enforcement
 9. ~~[M-05] 실패 패턴 수집 -> 패치 제안 -> 회귀 검증 self-improvement loop v1~~ → ✅ 패턴 지속성 DB 기록 + 이전 주 회귀 검증 + improvement_score
 
-## Later (D61-D90: Frontier Hardening)
+### Later (D61-D90: Frontier Hardening) — All ✅
 
 1. ~~[M-08] 멀티길드 스케일 테스트(파일럿 3+) 및 안정화~~ → ✅ run-multi-guild-scale-test.mjs (auto-discover/env/CLI 3+길드 baseline + per-guild 평가)
 2. ~~[M-08] 실패 주입/보안 주입 테스트 운영화~~ → ✅ run-failure-injection-test.mjs (llm_timeout/supabase_unavailable/queue_overflow/health_degrade + XSS/SQLi 검증)

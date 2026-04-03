@@ -25,7 +25,53 @@
 
 ## Current Active Pack (Aligned to Active Now)
 
-_없음 — 2026-03-24 기준 모든 로드맵/WIP 항목 종결._
+### A-003 [M-11] [M-12] Deep Integration Unlock — OpenJarvis + OpenShell
+
+- 상태: **Active (2026-04-03 승격)**
+- 작업 단위:
+  - D-01: `jarvis.bench --json` 출력을 `computeNormalizedQualityScore` 입력으로 파싱/연결
+    - 완료 기준: bench 결과가 go/no-go gate verdict에 자동 반영 (gate-run 로그에 bench_score 필드 출현)
+  - D-02: weekly auto-judge 완료 후 `jarvis.optimize` 자동 트리거 hook 추가
+    - 완료 기준: 주간 1회 optimize 실행 + 결과 Supabase 로깅
+  - D-03: trace→learning→bench 폐순환 2주 검증
+    - 완료 기준: 2주 연속 bench score 회귀 없음 (이전 주 대비 하락 0건)
+  - D-04: Docker Desktop WSL2 socket 노출 또는 `openshell sandbox create --remote` 경로 확보
+    - 완료 기준: `openshell sandbox create` 성공 (exit code 0)
+  - D-05: actionRunner `implement.execute` → OpenShell sandbox 위임 경로 구현
+    - 완료 기준: sandbox 외부 코드 실행 0건 (action log 검증)
+  - D-06: `HIGH_RISK_APPROVAL_ACTIONS` ↔ OpenShell network policy YAML 동기화
+    - 완료 기준: approval_required 액션이 sandbox network policy "deny by default"와 일치
+- 리스크:
+  - Docker Desktop WSL 통합이 외부 의존 → D-04 블록 시 `--remote user@host` 경로로 우회
+  - OpenJarvis 0.1.0 API 안정성 → `jarvis bench --json` 출력 스키마 변경 가능성 → version guard 추가
+
+### A-001 [M-13] OpenClaw Gateway Channel Bridge
+
+- 상태: **Active (2026-04-03 승격)**
+- 작업 단위:
+  - E-01: `openclaw agent --message` 경로를 Muel↔OpenClaw 양방향 메시지 파이프로 확장
+    - 완료 기준: Discord 메시지가 OpenClaw 세션으로 relay 성공
+  - E-02: guild 설정에 `channels: { discord: native, whatsapp: openclaw, telegram: openclaw }` 매핑 저장/조회 API
+    - 완료 기준: `/api/bot/agent/runtime/channel-routing` GET/PUT 동작
+  - E-03: Muel feature lacuna → OpenClaw `skill.create` 자동 트리거
+    - 완료 기준: lacuna→skill 자동 생성 1건 이상 검증
+- 리스크:
+  - OpenClaw 빠른 릴리스 속도(80 releases)로 인한 호환성 → CLI 버전 고정 + adapter 내 version guard
+
+### A-002 [M-15] Pluggable Adapter Framework (Queued)
+
+- 상태: **Queued (Active Now 3개 중 1개 종결 후 승격)**
+- 작업 단위:
+  - F-01: `ExternalAdapterId` union literal → string 기반 + adapter schema validation
+    - 완료 기준: 신규 adapter 등록 시 `externalAdapterTypes.ts` 수정 불필요
+  - F-02: `src/services/tools/adapters/` glob scan → 자동 registry 등록
+    - 완료 기준: 파일 추가만으로 adapter 활성화
+  - F-03: `generate-onboarding-checklist.mjs` 확장: adapter별 probe/capability/env 요구사항 자동 생성
+    - 완료 기준: 신규 tool 추가 시 checklist 자동 생성
+- 리스크:
+  - 기존 4개 adapter 테스트 호환성 → union type을 deprecated alias로 유지하며 단계 전환
+
+## Recently Closed (Phase A-C)
 
 ### A-003 [M-04] [M-05] [M-06] Worker Gate + Approval + Model Binding Hardening
 
