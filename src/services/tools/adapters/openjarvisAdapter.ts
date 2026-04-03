@@ -4,6 +4,35 @@ import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
 
+export type BenchResult = {
+  benchScore: number | null;
+  latencyMs: number | null;
+  throughput: number | null;
+  raw: string[];
+};
+
+/**
+ * Parse `jarvis bench --json` stdout into a structured BenchResult.
+ * Tolerant: returns null score on malformed/empty output.
+ */
+export const parseBenchResult = (output: string[]): BenchResult => {
+  const raw = output.slice(0, 20);
+  const joined = output.join('\n').trim();
+  if (!joined) return { benchScore: null, latencyMs: null, throughput: null, raw };
+  try {
+    const parsed = JSON.parse(joined) as Record<string, unknown>;
+    const score = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : null;
+    const latency = typeof parsed.latency_ms === 'number' && Number.isFinite(parsed.latency_ms) ? parsed.latency_ms : null;
+    const throughput = typeof parsed.throughput === 'number' && Number.isFinite(parsed.throughput) ? parsed.throughput : null;
+    return { benchScore: score, latencyMs: latency, throughput, raw };
+  } catch {
+    // Fallback: try to extract score from first line like "score: 0.85"
+    const scoreMatch = joined.match(/score[:\s]+([0-9]+(?:\.[0-9]+)?)/i);
+    const benchScore = scoreMatch ? Number(scoreMatch[1]) : null;
+    return { benchScore: Number.isFinite(benchScore) ? benchScore : null, latencyMs: null, throughput: null, raw };
+  }
+};
+
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 30_000;
 const ENABLED = parseBooleanEnv(process.env.OPENJARVIS_ENABLED, false);

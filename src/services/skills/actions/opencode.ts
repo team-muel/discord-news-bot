@@ -1,8 +1,12 @@
 import type { ActionDefinition, ActionExecutionResult } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
-import { executeExternalAction } from '../../tools/externalAdapterRegistry';
+import { executeExternalAction, getExternalAdapter } from '../../tools/externalAdapterRegistry';
+import { parseBooleanEnv } from '../../../utils/env';
+import logger from '../../../logger';
 
 const OPENCODE_TOOL_NAME = String(process.env.MCP_OPENCODE_TOOL_NAME || 'opencode.run').trim() || 'opencode.run';
+const OPENSHELL_SANDBOX_DELEGATION = parseBooleanEnv(process.env.OPENSHELL_SANDBOX_DELEGATION, false);
+const OPENSHELL_DEFAULT_SANDBOX_ID = String(process.env.OPENSHELL_DEFAULT_SANDBOX_ID || '').trim();
 const MAX_TASK_LENGTH = 2400;
 const MAX_SPRINT_TASK_LENGTH = 12_000;
 
@@ -89,6 +93,37 @@ export const opencodeExecuteAction: ActionDefinition = {
         verification: ['dangerous command guardrail'],
         error: 'OPENCODE_DANGEROUS_COMMAND_BLOCKED',
       }, 'task validation failed');
+    }
+
+    // D-05: OpenShell sandbox delegation — when enabled, route execution through sandboxed environment
+    if (OPENSHELL_SANDBOX_DELEGATION && OPENSHELL_DEFAULT_SANDBOX_ID) {
+      const adapter = getExternalAdapter('openshell');
+      if (adapter) {
+        const available = await adapter.isAvailable();
+        if (available) {
+          logger.info('[OPENCODE] routing implement.execute through OpenShell sandbox=%s', OPENSHELL_DEFAULT_SANDBOX_ID);
+          const sandboxResult = await executeExternalAction('openshell', 'sandbox.exec', {
+            sandboxId: OPENSHELL_DEFAULT_SANDBOX_ID,
+            command: task,
+            mode,
+          });
+          return withOpencodeRouting({
+            ok: sandboxResult.ok,
+            name: 'opencode.execute',
+            summary: sandboxResult.ok
+              ? `OpenShell sandbox 실행 완료: ${sandboxResult.output[0]?.slice(0, 140) || 'done'}`
+              : `OpenShell sandbox 실행 실패: ${sandboxResult.summary}`,
+            artifacts: sandboxResult.output.slice(0, 10),
+            verification: ['openshell sandbox delegation', sandboxResult.ok ? 'sandbox exec success' : 'sandbox exec failed'],
+            error: sandboxResult.ok ? undefined : sandboxResult.error,
+            durationMs: sandboxResult.durationMs,
+          }, `openshell sandbox delegation (sandbox=${OPENSHELL_DEFAULT_SANDBOX_ID})`);
+        } else {
+          logger.debug('[OPENCODE] OpenShell sandbox unavailable, falling back to direct execution sandbox=%s', OPENSHELL_DEFAULT_SANDBOX_ID);
+        }
+      } else {
+        logger.debug('[OPENCODE] OpenShell adapter not registered, falling back to direct execution');
+      }
     }
 
     const delegated = await runDelegatedAction({

@@ -27,7 +27,7 @@ const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string 
 
 export const openshellAdapter: ExternalToolAdapter = {
   id: 'openshell',
-  capabilities: ['sandbox.create', 'sandbox.list', 'policy.set'],
+  capabilities: ['sandbox.create', 'sandbox.list', 'sandbox.exec', 'sandbox.destroy', 'policy.set'],
 
   isAvailable: async () => {
     if (!ENABLED) return false;
@@ -61,6 +61,23 @@ export const openshellAdapter: ExternalToolAdapter = {
         case 'sandbox.list': {
           const { stdout } = await runCli(['sandbox', 'list']);
           return makeResult(true, 'Sandbox list retrieved', stdout.trim().split('\n'));
+        }
+        case 'sandbox.exec': {
+          const sandboxId = sanitizeArg(String(args.sandboxId || ''));
+          const command = sanitizeArg(String(args.command || ''), 2000);
+          if (!sandboxId) return makeResult(false, 'Sandbox ID required', [], 'MISSING_SANDBOX_ID');
+          if (!command) return makeResult(false, 'Command required', [], 'MISSING_COMMAND');
+          const mode = sanitizeArg(String(args.mode || 'read_only'), 20);
+          const cliArgs = ['sandbox', 'exec', sandboxId, '--', command];
+          if (mode === 'workspace_write') cliArgs.splice(3, 0, '--write');
+          const { stdout } = await runCli(cliArgs);
+          return makeResult(true, `Sandbox ${sandboxId} exec completed`, stdout.trim().split('\n'));
+        }
+        case 'sandbox.destroy': {
+          const sandboxId = sanitizeArg(String(args.sandboxId || ''));
+          if (!sandboxId) return makeResult(false, 'Sandbox ID required', [], 'MISSING_SANDBOX_ID');
+          const { stdout } = await runCli(['sandbox', 'destroy', sandboxId]);
+          return makeResult(true, `Sandbox ${sandboxId} destroyed`, stdout.trim().split('\n'));
         }
         case 'policy.set': {
           const policy = sanitizeArg(String(args.policy || ''));

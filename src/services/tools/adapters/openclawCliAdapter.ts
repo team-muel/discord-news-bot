@@ -18,7 +18,7 @@ const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string 
 
 export const openclawAdapter: ExternalToolAdapter = {
   id: 'openclaw',
-  capabilities: ['agent.chat', 'agent.skill.create'],
+  capabilities: ['agent.chat', 'agent.skill.create', 'agent.session.relay'],
 
   isAvailable: async () => {
     if (!ENABLED) return false;
@@ -55,6 +55,17 @@ export const openclawAdapter: ExternalToolAdapter = {
           if (!skillName) return makeResult(false, 'Skill name required', [], 'MISSING_NAME');
           const { stdout } = await runCli(['skill', 'create', skillName]);
           return makeResult(true, `Skill ${skillName} created`, stdout.trim().split('\n'));
+        }
+        case 'agent.session.relay': {
+          const message = String(args.message || '').slice(0, 4000);
+          if (!message) return makeResult(false, 'Message required for relay', [], 'MISSING_MESSAGE');
+          const channel = String(args.channel || 'discord').slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '');
+          const sessionId = String(args.sessionId || '').slice(0, 100).replace(/[^a-zA-Z0-9_-]/g, '');
+          const cliArgs = ['agent', 'relay', '--channel', channel];
+          if (sessionId) cliArgs.push('--session', sessionId);
+          cliArgs.push(stripShellMeta(message));
+          const { stdout } = await runCli(cliArgs);
+          return makeResult(true, `Message relayed via ${channel}`, stdout.trim().split('\n'));
         }
         default:
           return makeResult(false, `Unknown action: ${action}`, [], 'UNKNOWN_ACTION');

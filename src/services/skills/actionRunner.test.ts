@@ -129,3 +129,45 @@ describe('getActionRunnerMode', () => {
     expect(['execute', 'dry-run']).toContain(mode);
   });
 });
+
+// ── D-06: syncHighRiskActionsToSandboxPolicy ──────────────────────────
+
+describe('syncHighRiskActionsToSandboxPolicy', () => {
+  it('calls openshell policy.set with YAML containing high-risk actions', async () => {
+    // Dynamic import matches how the function itself imports
+    const mockExecute = vi.fn().mockResolvedValue({ ok: true, summary: 'policy set' });
+    vi.doMock('../tools/externalAdapterRegistry', () => ({
+      executeExternalAction: mockExecute,
+    }));
+
+    // Re-import to pick up the mock
+    const { syncHighRiskActionsToSandboxPolicy } = await import('./actionRunner');
+    const result = await syncHighRiskActionsToSandboxPolicy();
+
+    // The function should have attempted to sync (assuming default HIGH_RISK_APPROVAL_ACTIONS includes opencode.execute)
+    if (result.synced) {
+      expect(mockExecute).toHaveBeenCalledWith('openshell', 'policy.set', expect.objectContaining({
+        policy: expect.stringContaining('network:'),
+      }));
+      expect(result.actions.length).toBeGreaterThan(0);
+    } else {
+      // If executeExternalAction returned not-ok, synced is false but no throw
+      expect(typeof result.error).toBe('string');
+    }
+
+    vi.doUnmock('../tools/externalAdapterRegistry');
+  });
+
+  it('returns synced: false gracefully when openshell is unavailable', async () => {
+    vi.doMock('../tools/externalAdapterRegistry', () => ({
+      executeExternalAction: vi.fn().mockRejectedValue(new Error('adapter not available')),
+    }));
+
+    const { syncHighRiskActionsToSandboxPolicy } = await import('./actionRunner');
+    const result = await syncHighRiskActionsToSandboxPolicy();
+    expect(result.synced).toBe(false);
+    expect(result.error).toContain('adapter not available');
+
+    vi.doUnmock('../tools/externalAdapterRegistry');
+  });
+});

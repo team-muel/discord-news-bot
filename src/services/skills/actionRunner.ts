@@ -27,6 +27,39 @@ const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
   String(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute').split(',').map((s) => s.trim()).filter(Boolean),
 );
 
+/**
+ * D-06: Sync HIGH_RISK_APPROVAL_ACTIONS to OpenShell network policy YAML.
+ * Sends the current high-risk action list as deny-by-default rules to OpenShell policy.set.
+ * Returns { synced, actions, error? }. Graceful no-op when OpenShell is unavailable.
+ */
+export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: boolean; actions: string[]; error?: string }> => {
+  const { executeExternalAction } = await import('../tools/externalAdapterRegistry');
+  const actions = [...HIGH_RISK_APPROVAL_ACTIONS];
+  if (actions.length === 0) {
+    return { synced: false, actions, error: 'no high-risk actions configured' };
+  }
+  try {
+    const policyYaml = [
+      '# Auto-synced from HIGH_RISK_APPROVAL_ACTIONS',
+      `# Generated: ${new Date().toISOString()}`,
+      'network:',
+      '  default: deny',
+      '  rules:',
+      ...actions.map((a) => `    - action: "${a}"\n      network: deny\n      approval_required: true`),
+    ].join('\n');
+    const result = await executeExternalAction('openshell', 'policy.set', { policy: policyYaml });
+    if (result.ok) {
+      logger.info('[ACTION-RUNNER] high-risk actions synced to OpenShell policy: %d actions', actions.length);
+      return { synced: true, actions };
+    }
+    return { synced: false, actions, error: result.error || result.summary };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.debug('[ACTION-RUNNER] OpenShell policy sync skipped: %s', msg);
+    return { synced: false, actions, error: msg };
+  }
+};
+
 /** Gate verdict enforcement: block execution when latest gate-run overall = 'no-go'. */
 const GATE_VERDICT_ENFORCEMENT_ENABLED = parseBooleanEnv(process.env.GATE_VERDICT_ENFORCEMENT_ENABLED, false);
 const GATE_VERDICT_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000));
