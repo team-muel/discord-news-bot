@@ -49,6 +49,7 @@ export type JournalEntry = {
   retroOutput: string;
   optimizeHints: string[];
   benchResults: string[];
+  benchScore?: number | null;
   phaseTimings: Record<string, number>;
   failedPhases: string[];
   succeededPhases: string[];
@@ -112,6 +113,9 @@ const formatJournalMarkdown = (entry: JournalEntry): string => {
 
   if (entry.benchResults.length > 0) {
     sections.push('## Benchmark Results');
+    if (entry.benchScore != null && Number.isFinite(entry.benchScore)) {
+      sections.push(`- **Bench Score:** ${entry.benchScore}`);
+    }
     for (const bench of entry.benchResults.slice(0, 10)) {
       sections.push(`- ${bench}`);
     }

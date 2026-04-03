@@ -36,6 +36,43 @@ const parseSinks = (raw) => {
   return deduped.length > 0 ? deduped : ['markdown'];
 };
 
+const OPENJARVIS_SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
+const OPENJARVIS_OPTIMIZE_ENABLED = parseBool(process.env.OPENJARVIS_OPTIMIZE_ENABLED, false);
+
+/**
+ * D-02: Trigger jarvis.optimize after weekly self-improvement patterns are persisted.
+ * Sends pattern summary to OpenJarvis serve endpoint for model/prompt optimization.
+ * Graceful no-op when disabled or unreachable.
+ */
+const triggerJarvisOptimize = async (patterns) => {
+  if (!OPENJARVIS_OPTIMIZE_ENABLED) {
+    console.log('[SELF-IMPROVEMENT] jarvis.optimize trigger skipped (OPENJARVIS_OPTIMIZE_ENABLED=false)');
+    return;
+  }
+  try {
+    const hints = patterns.slice(0, 10).map((p) => ({
+      id: p.id,
+      severity: p.severity,
+      signal: p.signal,
+      patchProposal: p.patchProposal,
+    }));
+    const resp = await fetch(`${OPENJARVIS_SERVE_URL}/v1/optimize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hints, source: 'weekly-self-improvement' }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      console.log(`[SELF-IMPROVEMENT] jarvis.optimize triggered: ${JSON.stringify(data).slice(0, 200)}`);
+    } else {
+      console.log(`[SELF-IMPROVEMENT] jarvis.optimize returned ${resp.status}`);
+    }
+  } catch (err) {
+    console.log(`[SELF-IMPROVEMENT] jarvis.optimize failed (non-blocking): ${err?.message || err}`);
+  }
+};
+
 const toMsWindow = (days, fallbackDays) => {
   const parsed = Number(days);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -1116,6 +1153,9 @@ async function main() {
 
   if (!dryRun) {
     await persistSelfImprovementPatterns(client, { generatedAt, guildId, patterns, regression });
+
+    // D-02: Trigger jarvis.optimize after weekly self-improvement patterns are persisted
+    await triggerJarvisOptimize(patterns);
   }
 
   const context = {

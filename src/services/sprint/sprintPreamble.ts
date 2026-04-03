@@ -123,6 +123,7 @@ type LearningInsight = {
   storedAt: string;
   optimizeHints: string[];
   benchResults: string[];
+  benchScore?: number | null;
 };
 
 const LEARNING_MAX_ENTRIES = 20;
@@ -142,6 +143,9 @@ export const getRecentLearningContext = (maxEntries = 5): string => {
   const recent = learningStore.slice(-maxEntries);
   const lines = recent.flatMap((insight) => {
     const parts: string[] = [`- Sprint ${insight.sprintId} (${insight.storedAt}):`];
+    if (insight.benchScore != null && Number.isFinite(insight.benchScore)) {
+      parts.push(`  BenchScore: ${insight.benchScore}`);
+    }
     if (insight.optimizeHints.length > 0) {
       parts.push(`  Optimize: ${insight.optimizeHints.slice(0, 3).join('; ')}`);
     }

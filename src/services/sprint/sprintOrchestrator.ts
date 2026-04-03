@@ -17,6 +17,7 @@ import { formatActionableOutput } from './actionableErrors';
 import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
 import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, type LoopState } from '../skills/loopDetection';
+import { parseBenchResult } from '../tools/adapters/openjarvisAdapter';
 import { writeLocalCache, readLocalCache } from '../localStateCache';
 import { executeHooks } from './sprintHooks';
 import { ingestRetroInsights } from '../entityNervousSystem';
@@ -923,8 +924,10 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
 
     // 3. Run benchmark for before/after comparison
     const benchResult = await executeExternalAction('openjarvis', 'jarvis.bench', {});
+    const benchParsed = benchResult.ok ? parseBenchResult(benchResult.output) : null;
     if (benchResult.ok && benchResult.output.length > 0) {
-      learningAppendix.push(`[BENCH] ${benchResult.output.slice(0, 5).join('; ')}`);
+      const scoreLabel = benchParsed?.benchScore != null ? ` (score=${benchParsed.benchScore})` : '';
+      learningAppendix.push(`[BENCH] ${benchResult.output.slice(0, 5).join('; ')}${scoreLabel}`);
     } else if (!benchResult.ok) {
       logger.warn('[SPRINT] self-learning bench failed for sprint=%s: %s', sprintId, benchResult.output.join('; ') || 'unknown');
     }
@@ -939,6 +942,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
         storedAt: new Date().toISOString(),
         optimizeHints: optimizeResult.ok ? optimizeResult.output.slice(0, 5) : [],
         benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
+        benchScore: benchParsed?.benchScore ?? null,
       });
     }
 
@@ -967,6 +971,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       retroOutput: phaseResult.output.slice(0, 3000),
       optimizeHints: optimizeResult.ok ? optimizeResult.output.slice(0, 5) : [],
       benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
+      benchScore: benchParsed?.benchScore ?? null,
       phaseTimings,
       failedPhases,
       succeededPhases,

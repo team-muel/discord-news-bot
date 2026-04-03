@@ -15,6 +15,7 @@ import {
   type AutonomyLevel,
 } from './sprintOrchestrator';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { runSelfImprovementChecks } from './selfImprovementLoop';
 
 // ──── Error Detection Trigger ─────────────────────────────────────────────────
 
@@ -217,6 +218,7 @@ const parseCronIntervalMs = (raw: string): number => {
 
 let securityAuditTimer: ReturnType<typeof setInterval> | null = null;
 let improvementTimer: ReturnType<typeof setInterval> | null = null;
+let selfImprovementLoopTimer: ReturnType<typeof setInterval> | null = null;
 
 export const startSprintScheduledTriggers = (): void => {
   if (!SPRINT_ENABLED) return;
@@ -242,9 +244,22 @@ export const startSprintScheduledTriggers = (): void => {
     improvementTimer.unref();
     logger.info('[SPRINT-TRIGGER] scheduled improvement every %dms', improvementIntervalMs);
   }
+
+  // Self-improvement recursive loop: runs every 6 hours
+  const SELF_IMPROVE_INTERVAL_MS = 6 * 60 * 60_000;
+  if (!selfImprovementLoopTimer) {
+    selfImprovementLoopTimer = setInterval(() => {
+      runSelfImprovementChecks().catch((e) =>
+        logger.error('[SPRINT-TRIGGER] self-improvement loop failed: %s', e),
+      );
+    }, SELF_IMPROVE_INTERVAL_MS);
+    selfImprovementLoopTimer.unref();
+    logger.info('[SPRINT-TRIGGER] self-improvement recursive loop every %dms', SELF_IMPROVE_INTERVAL_MS);
+  }
 };
 
 export const stopSprintScheduledTriggers = (): void => {
   if (securityAuditTimer) { clearInterval(securityAuditTimer); securityAuditTimer = null; }
   if (improvementTimer) { clearInterval(improvementTimer); improvementTimer = null; }
+  if (selfImprovementLoopTimer) { clearInterval(selfImprovementLoopTimer); selfImprovementLoopTimer = null; }
 };

@@ -1,12 +1,26 @@
 /* eslint-disable no-console */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
-import { execFileSync } from 'child_process';
+import { execFileSync, execFile } from 'child_process';
+import { promisify } from 'node:util';
 
+const execFileAsync = promisify(execFile);
 const ROOT = process.cwd();
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
+
+// D-01: OpenJarvis bench integration
+const JARVIS_BENCH_ENABLED = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.JARVIS_BENCH_GATE_FEED_ENABLED || 'false').trim().toLowerCase(),
+);
+const JARVIS_BENCH_TIMEOUT_MS = Math.max(5000, Number(process.env.JARVIS_BENCH_TIMEOUT_MS || '60000') || 60000);
+
+// D-02: jarvis.optimize auto trigger after weekly gate
+const JARVIS_OPTIMIZE_AFTER_GATE_ENABLED = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.JARVIS_OPTIMIZE_AFTER_GATE_ENABLED || 'false').trim().toLowerCase(),
+);
+const OPENJARVIS_SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
 
 const parseArg = (name, fallback = '') => {
   const prefix = `--${name}=`;
@@ -184,6 +198,68 @@ const collectLiveRuntimeEvidence = async (params) => {
   };
 };
 
+/**
+ * D-01: Collect OpenJarvis bench score to feed into gate quality signal.
+ * Returns { benchScore, latencyMs } or null on failure/disabled.
+ */
+const collectJarvisBenchScore = async () => {
+  if (!JARVIS_BENCH_ENABLED) return null;
+  try {
+    const { stdout } = await execFileAsync('jarvis', ['bench', '--json'], {
+      timeout: JARVIS_BENCH_TIMEOUT_MS,
+      windowsHide: true,
+    });
+    const joined = stdout.trim();
+    if (!joined) return null;
+    const parsed = JSON.parse(joined);
+    const score = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : null;
+    const latencyMs = typeof parsed.latency_ms === 'number' && Number.isFinite(parsed.latency_ms) ? parsed.latency_ms : null;
+    console.log(`[GO-NO-GO][JARVIS-BENCH] score=${score} latencyMs=${latencyMs}`);
+    return { benchScore: score, latencyMs };
+  } catch (err) {
+    console.log(`[GO-NO-GO][JARVIS-BENCH] skipped (non-blocking): ${err?.message || err}`);
+    return null;
+  }
+};
+
+/**
+ * D-02: Trigger jarvis.optimize after weekly auto-judge completes.
+ * Sends gate verdict summary as optimization hints.
+ * Graceful no-op when disabled or unreachable.
+ */
+const triggerJarvisOptimizeAfterGate = async (gateArgs) => {
+  if (!JARVIS_OPTIMIZE_AFTER_GATE_ENABLED) {
+    console.log('[GO-NO-GO][JARVIS-OPTIMIZE] trigger skipped (JARVIS_OPTIMIZE_AFTER_GATE_ENABLED=false)');
+    return;
+  }
+  try {
+    const hints = {
+      source: 'weekly-auto-judge',
+      stage: gateArgs.stage,
+      scope: gateArgs.scope,
+      qualityGateOverride: gateArgs.qualityGateOverride,
+      providerProfileHint: gateArgs.providerProfileHint,
+      p95LatencyMs: gateArgs.p95LatencyMs,
+      citationRate: gateArgs.citationRate,
+      retrievalHitAtK: gateArgs.retrievalHitAtK,
+      benchScore: gateArgs.benchScore,
+    };
+    const resp = await fetch(`${OPENJARVIS_SERVE_URL}/v1/optimize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hints }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (resp.ok) {
+      console.log('[GO-NO-GO][JARVIS-OPTIMIZE] triggered successfully');
+    } else {
+      console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] response ${resp.status} (non-blocking)`);
+    }
+  } catch (err) {
+    console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] failed (non-blocking): ${err?.message || err}`);
+  }
+};
+
 const latestByKind = async (client, kinds, params) => {
   const fromIso = new Date(Date.now() - params.windowMs).toISOString();
   const query = client
@@ -348,6 +424,9 @@ async function main() {
   const liveSafetySignals = liveRuntimeEvidence?.safetySignals || null;
   const runtimeFlags = liveRuntimeEvidence?.runtimeFlags || null;
 
+  // D-01: Collect jarvis bench score and feed into gate args
+  const jarvisBench = await collectJarvisBenchScore();
+
   const baseArgs = {
     stage,
     scope,
@@ -384,6 +463,8 @@ async function main() {
     unattendedHealthSnapshotAttached: runtimeFlags?.unattendedHealthSnapshotAttached,
     workerApprovalGatesSnapshotAttached: runtimeFlags?.workerApprovalGatesSnapshotAttached,
     sandboxDelegationVerified: runtimeFlags?.sandboxDelegationVerified,
+    benchScore: jarvisBench?.benchScore,
+    benchLatencyMs: jarvisBench?.latencyMs,
     autoCreateClosureDoc: true,
     dryRun,
   };
@@ -430,6 +511,9 @@ async function main() {
       env: process.env,
     });
   }
+
+  // D-02: Trigger jarvis.optimize after weekly gate assessment
+  await triggerJarvisOptimizeAfterGate(baseArgs);
 }
 
 main().catch((error) => {
