@@ -25,7 +25,14 @@
 
 ## Closed on 2026-04-06
 
-1. [M-17] Infrastructure Optimization ✅
+1. [M-18] Platform Lightweighting Phase B ✅
+   - timer-001: pg_cron job expansion — login cleanup, obsidian sync, SLO check added to pgCronBootstrapService
+   - dup-001: Unified memory search — `searchMemoryHybrid` shared helper (agentMemoryStore, agentMemoryService, memoryEvolutionService)
+   - timer-002: Ops loop owner toggles — `OBSIDIAN_SYNC_LOOP_OWNER`, `AGENT_SLO_ALERT_LOOP_OWNER` env vars for app/db delegation
+   - timer-002: Scheduler policy snapshot now reflects dynamic owner for obsidian sync and SLO loops
+   - dup-002: Deferred (low priority) — no dead code found in llmClient, consolidation opp only
+
+2. [M-17] Infrastructure Optimization ✅
    - Axis 1: pg_cron bootstrap service — `pgCronBootstrapService.ts` + migration SQL
    - Axis 2: Obsidian graph→Supabase sync — wikilink extraction + memory_item_links upsert
    - Axis 3: Tool adapter expansion — ollama, litellm-admin, mcp-indexing adapters (auto-loaded)

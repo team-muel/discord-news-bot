@@ -18,7 +18,7 @@
 import logger from '../../logger';
 import { memoryConfig } from '../../config';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { generateQueryEmbedding, isEmbeddingEnabled } from './memoryEmbeddingService';
+import { searchMemoryHybrid } from '../agent/agentMemoryStore';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
 
@@ -81,67 +81,24 @@ export const evolveMemoryLinks = async (params: {
     const client = getSupabaseClient();
     let candidates: EvolutionCandidate[] = [];
 
-    // Strategy 1: Vector similarity via hybrid RPC (if embeddings enabled)
-    const canHybrid = isEmbeddingEnabled() && typeof (client as { rpc?: unknown }).rpc === 'function';
-    if (canHybrid) {
-      const queryEmbedding = await generateQueryEmbedding(queryText.slice(0, 1000)).catch(() => null);
+    // Use shared hybrid search helper (vector + lexical fallback)
+    const rawItems = await searchMemoryHybrid({
+      guildId: params.guildId,
+      query: queryText.slice(0, 400),
+      type: null,
+      limit: EVOLUTION_MAX_LINKS + 2, // fetch extra to exclude self
+      minSimilarity: EVOLUTION_MIN_SIMILARITY,
+    });
 
-      const { data, error } = await client.rpc('search_memory_items_hybrid', {
-        p_guild_id: params.guildId,
-        p_query: queryText.slice(0, 400),
-        p_type: null,
-        p_limit: EVOLUTION_MAX_LINKS + 2, // fetch extra to exclude self
-        p_min_similarity: EVOLUTION_MIN_SIMILARITY,
-        p_query_embedding: queryEmbedding ? `[${queryEmbedding.join(',')}]` : null,
-      });
-
-      if (!error && data) {
-        candidates = (data as Array<Record<string, unknown>>)
-          .filter((row) => String(row.id || '') !== params.newMemoryId)
-          .slice(0, EVOLUTION_MAX_LINKS)
-          .map((row) => ({
-            id: String(row.id || ''),
-            title: String(row.title || row.summary || '').slice(0, 120),
-            similarity: clamp01(Number(row.similarity ?? row.score ?? 0.3)),
-            confidence: clamp01(Number(row.confidence ?? 0.5)),
-          }));
-      }
-    }
-
-    // Strategy 2: Lexical fallback using ilike on keywords
-    if (candidates.length === 0) {
-      const keywords = queryText
-        .toLowerCase()
-        .replace(/[^a-z0-9가-힣\s]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length >= 2)
-        .slice(0, 4);
-
-      if (keywords.length > 0) {
-        const orFilter = keywords
-          .map((k) => `title.ilike.%${k}%,summary.ilike.%${k}%`)
-          .join(',');
-
-        const { data, error } = await client
-          .from('memory_items')
-          .select('id, title, summary, confidence')
-          .eq('guild_id', params.guildId)
-          .eq('status', 'active')
-          .neq('id', params.newMemoryId)
-          .or(orFilter)
-          .order('updated_at', { ascending: false })
-          .limit(EVOLUTION_MAX_LINKS);
-
-        if (!error && data) {
-          candidates = (data as Array<Record<string, unknown>>).map((row) => ({
-            id: String(row.id || ''),
-            title: String(row.title || row.summary || '').slice(0, 120),
-            similarity: 0.35, // lexical match gets a moderate default
-            confidence: clamp01(Number(row.confidence ?? 0.5)),
-          }));
-        }
-      }
-    }
+    candidates = rawItems
+      .filter((row) => String(row.id || '') !== params.newMemoryId)
+      .slice(0, EVOLUTION_MAX_LINKS)
+      .map((row) => ({
+        id: String(row.id || ''),
+        title: String(row.title || row.summary || '').slice(0, 120),
+        similarity: clamp01(Number(row.similarity ?? row.score ?? 0.3)),
+        confidence: clamp01(Number(row.confidence ?? 0.5)),
+      }));
 
     if (candidates.length === 0) return EMPTY_RESULT;
 

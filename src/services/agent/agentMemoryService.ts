@@ -6,7 +6,7 @@ import { assessMemoryPoisonRisk } from '../memory/memoryPoisonGuard';
 import { buildSocialContextHints } from '../communityGraphService';
 import { readObsidianLoreWithAdapter } from '../obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { generateQueryEmbedding, isEmbeddingEnabled } from '../memory/memoryEmbeddingService';
+import { searchMemoryHybrid } from './agentMemoryStore';
 import { loadSelfNotes } from '../entityNervousSystem';
 import { batchCountMemoryLinks } from '../memory/memoryEvolutionService';
 
@@ -165,54 +165,15 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<M
   try {
     const client = getSupabaseClient();
     const terms = safeGoalTerms(goal);
+    const queryText = terms.join(' ');
 
-    // Try hybrid search (vector + lexical) when embeddings are enabled
-    const canUseHybridRpc = isEmbeddingEnabled() && typeof (client as { rpc?: unknown }).rpc === 'function';
-    let items: Array<any> = [];
-
-    if (canUseHybridRpc && terms.length > 0) {
-      const queryText = terms.join(' ');
-      const queryEmbedding = await generateQueryEmbedding(queryText).catch(() => null);
-
-      const { data: hybridItems, error: hybridError } = await client.rpc('search_memory_items_hybrid', {
-        p_guild_id: guildId,
-        p_query: queryText,
-        p_type: null,
-        p_limit: 12,
-        p_min_similarity: 0.08,
-        p_query_embedding: queryEmbedding ? `[${queryEmbedding.join(',')}]` : null,
-      });
-
-      if (!hybridError && hybridItems && hybridItems.length > 0) {
-        items = hybridItems;
-      }
-    }
-
-    // Fallback to classic ilike search
-    if (items.length === 0) {
-
-      let query = client
-        .from('memory_items')
-        .select('id, type, title, content, summary, confidence, pinned, updated_at, owner_user_id')
-        .eq('guild_id', guildId)
-        .eq('status', 'active')
-        .order('pinned', { ascending: false })
-        .order('priority', { ascending: false })
-        .order('updated_at', { ascending: false })
-        .limit(12);
-
-      if (terms.length > 0) {
-        const orFilter = terms
-          .map((term) => `content.ilike.%${term}%,summary.ilike.%${term}%,title.ilike.%${term}%`)
-          .join(',');
-        query = query.or(orFilter);
-      }
-
-      const { data: classicItems, error: classicError } = await query;
-      if (!classicError && classicItems) {
-        items = classicItems;
-      }
-    }
+    const items = await searchMemoryHybrid({
+      guildId,
+      query: queryText,
+      type: null,
+      limit: 12,
+      extraSelect: 'owner_user_id, priority, tier',
+    });
 
     if (items.length === 0) {
       return [];

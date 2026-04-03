@@ -169,6 +169,12 @@ services:
         value: "true"
       - key: OBSIDIAN_SYNC_LOOP_INTERVAL_MIN
         value: "60"
+      - key: OBSIDIAN_SYNC_LOOP_OWNER
+        value: "app"
+      - key: AGENT_SLO_ALERT_LOOP_OWNER
+        value: "app"
+      - key: DISCORD_LOGIN_SESSION_CLEANUP_OWNER
+        value: "db"
 
   - type: web
     name: muel-litellm-proxy

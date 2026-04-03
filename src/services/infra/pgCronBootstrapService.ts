@@ -8,6 +8,7 @@
  *   - memory_consolidation: raw→summary→concept tier promotion
  *   - memory_deadletter_recovery: retry failed memory jobs
  *   - agent_slo_check: periodic SLO alert evaluation
+ *   - login_session_cleanup: purge expired Discord login sessions
  *   - obsidian_lore_sync: vault→Supabase sync trigger
  *
  * The service is idempotent: calling bootstrap multiple times only creates missing jobs.
@@ -19,6 +20,8 @@
  *   PG_CRON_CONSOLIDATION_SCHEDULE -- default '0 star/6 * * *'  (every 6h)
  *   PG_CRON_DEADLETTER_SCHEDULE -- default 'star/30 * * * *'    (every 30min)
  *   PG_CRON_SLO_CHECK_SCHEDULE -- default 'star/15 * * * *'     (every 15min)
+ *   PG_CRON_LOGIN_CLEANUP_SCHEDULE -- default '0 star/1 * * *'  (every 1h)
+ *   PG_CRON_OBSIDIAN_SYNC_SCHEDULE -- default '0 star/2 * * *'  (every 2h)
  */
 
 import logger from '../../logger';
@@ -29,6 +32,8 @@ const ENABLED = parseBooleanEnv(process.env.PG_CRON_BOOTSTRAP_ENABLED, false);
 const CONSOLIDATION_SCHEDULE = String(process.env.PG_CRON_CONSOLIDATION_SCHEDULE || '0 */6 * * *').trim();
 const DEADLETTER_SCHEDULE = String(process.env.PG_CRON_DEADLETTER_SCHEDULE || '*/30 * * * *').trim();
 const SLO_CHECK_SCHEDULE = String(process.env.PG_CRON_SLO_CHECK_SCHEDULE || '*/15 * * * *').trim();
+const LOGIN_CLEANUP_SCHEDULE = String(process.env.PG_CRON_LOGIN_CLEANUP_SCHEDULE || '0 */1 * * *').trim();
+const OBSIDIAN_SYNC_SCHEDULE = String(process.env.PG_CRON_OBSIDIAN_SYNC_SCHEDULE || '0 */2 * * *').trim();
 
 /** Validate cron expression (basic 5-field check). */
 const isValidCron = (expr: string): boolean => /^[\d*/,-]+(\s+[\d*/,-]+){4}$/.test(expr.trim());
@@ -70,6 +75,22 @@ const CRON_JOBS: CronJobSpec[] = [
       body := '{}'::jsonb
     )`,
     description: 'Run SLO alert evaluation cycle',
+  },
+  {
+    jobName: 'muel_login_session_cleanup',
+    schedule: LOGIN_CLEANUP_SCHEDULE,
+    command: `DELETE FROM public.discord_login_sessions WHERE expires_at < NOW()`,
+    description: 'Purge expired Discord login sessions (replaces app setInterval when owner=db)',
+  },
+  {
+    jobName: 'muel_obsidian_lore_sync',
+    schedule: OBSIDIAN_SYNC_SCHEDULE,
+    command: `SELECT net.http_post(
+      url := current_setting('app.service_url') || '/api/internal/obsidian/sync',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+      body := '{}'::jsonb
+    )`,
+    description: 'Trigger Obsidian vault→Supabase lore sync via HTTP',
   },
 ];
 

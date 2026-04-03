@@ -8,10 +8,10 @@ vi.mock('../supabaseClient', () => ({
   getSupabaseClient: () => ({ from: mockFrom, rpc: mockRpc }),
 }));
 
-// Mock embedding
-vi.mock('./memoryEmbeddingService', () => ({
-  isEmbeddingEnabled: () => false,
-  generateQueryEmbedding: vi.fn().mockResolvedValue(null),
+// Mock shared search helper from agentMemoryStore
+const mockSearchMemoryHybrid = vi.fn();
+vi.mock('../agent/agentMemoryStore', () => ({
+  searchMemoryHybrid: (...args: unknown[]) => mockSearchMemoryHybrid(...args),
 }));
 
 import { evolveMemoryLinks, batchCountMemoryLinks } from './memoryEvolutionService';
@@ -54,17 +54,16 @@ describe('memoryEvolutionService', () => {
         { id: 'mem_old2', title: 'deployment notes', summary: 'deploy to production', confidence: 0.7 },
       ];
 
+      mockSearchMemoryHybrid.mockResolvedValue(existingMemories);
+
       mockFrom.mockImplementation((table: string) => {
         if (table === 'memory_items') {
           const c: Record<string, any> = {};
-          const methods = ['select', 'eq', 'neq', 'or', 'order', 'limit'];
+          const methods = ['select', 'eq', 'neq', 'or', 'order', 'limit', 'update'];
           for (const m of methods) {
             c[m] = vi.fn().mockReturnValue(c);
           }
           c.limit = vi.fn().mockReturnValue({ data: existingMemories, error: null });
-
-          // For the update (boost) call
-          c.update = vi.fn().mockReturnValue(c);
           return c;
         }
         if (table === 'memory_item_links') {

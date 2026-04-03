@@ -134,15 +134,35 @@ const logRetrievalEvent = async (params: {
   }
 };
 
-export async function searchGuildMemory(params: SearchParams) {
-  const client = ensureSupabase();
-  const startedAt = Date.now();
-  const cleanQuery = safeLike(params.query);
+/**
+ * Shared hybrid memory search: vector RPC first, classic ilike fallback.
+ * Eliminates duplication across agentMemoryStore, agentMemoryService, memoryEvolutionService.
+ */
+export type HybridSearchParams = {
+  guildId: string;
+  query: string;
+  type?: MemoryType | null;
+  limit: number;
+  minSimilarity?: number;
+  /** Extra select columns for classic fallback (default: id, guild_id, type, title, content, summary, confidence, pinned, updated_at, status) */
+  extraSelect?: string;
+};
 
-  const runClassicSearch = async (): Promise<Array<Record<string, unknown>>> => {
+export const searchMemoryHybrid = async (
+  params: HybridSearchParams,
+): Promise<Array<Record<string, unknown>>> => {
+  const client = ensureSupabase();
+  const cleanQuery = safeLike(params.query);
+  const minSim = params.minSimilarity ?? MEMORY_HYBRID_MIN_SIMILARITY;
+
+  const runClassic = async (): Promise<Array<Record<string, unknown>>> => {
+    const selectCols = params.extraSelect
+      ? `id, guild_id, type, title, content, summary, confidence, pinned, updated_at, status, ${params.extraSelect}`
+      : 'id, guild_id, type, title, content, summary, confidence, pinned, updated_at, status';
+
     let query = client
       .from('memory_items')
-      .select('id, guild_id, channel_id, type, title, content, summary, confidence, pinned, updated_at, status')
+      .select(selectCols)
       .eq('guild_id', params.guildId)
       .eq('status', 'active')
       .order('pinned', { ascending: false })
@@ -157,17 +177,15 @@ export async function searchGuildMemory(params: SearchParams) {
       query = query.or(`content.ilike.%${cleanQuery}%,summary.ilike.%${cleanQuery}%,title.ilike.%${cleanQuery}%`);
     }
 
-    const classic = await query;
-    if (classic.error) {
-      throw new Error(classic.error.message || 'MEMORY_SEARCH_FAILED');
+    const result = await query;
+    if (result.error) {
+      throw new Error(result.error.message || 'MEMORY_SEARCH_FAILED');
     }
-    return (classic.data || []) as Array<Record<string, unknown>>;
+    return (result.data || []) as unknown as Array<Record<string, unknown>>;
   };
 
-  let items: Array<Record<string, unknown>> = [];
   const canUseHybridRpc = typeof (client as { rpc?: unknown }).rpc === 'function';
   if (cleanQuery && canUseHybridRpc) {
-    // Generate query embedding for vector search (best-effort, non-blocking fallback)
     const queryEmbedding = isEmbeddingEnabled()
       ? await generateQueryEmbedding(cleanQuery).catch(() => null)
       : null;
@@ -177,18 +195,30 @@ export async function searchGuildMemory(params: SearchParams) {
       p_query: cleanQuery,
       p_type: params.type || null,
       p_limit: params.limit,
-      p_min_similarity: MEMORY_HYBRID_MIN_SIMILARITY,
+      p_min_similarity: minSim,
       p_query_embedding: queryEmbedding ? `[${queryEmbedding.join(',')}]` : null,
     });
 
     if (hybrid.error) {
-      items = await runClassicSearch();
-    } else {
-      items = (hybrid.data || []) as Array<Record<string, unknown>>;
+      return runClassic();
     }
-  } else {
-    items = await runClassicSearch();
+    return (hybrid.data || []) as unknown as Array<Record<string, unknown>>;
   }
+
+  return runClassic();
+};
+
+export async function searchGuildMemory(params: SearchParams) {
+  const client = ensureSupabase();
+  const startedAt = Date.now();
+
+  const items = await searchMemoryHybrid({
+    guildId: params.guildId,
+    query: params.query,
+    type: params.type,
+    limit: params.limit,
+    extraSelect: 'channel_id',
+  });
 
   const ids = items.map((item) => String(item.id)).filter(Boolean);
 
@@ -314,7 +344,7 @@ export async function searchGuildMemory(params: SearchParams) {
 
   await logRetrievalEvent({
     guildId: params.guildId,
-    query: cleanQuery,
+    query: params.query,
     requestedTopK: params.limit,
     returned: responseItems.length,
     queryLatencyMs: Date.now() - startedAt,

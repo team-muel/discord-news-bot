@@ -64,6 +64,9 @@ const SLO_ALERT_TABLE = String(process.env.AGENT_SLO_ALERT_TABLE || 'agent_slo_a
 
 const SLO_LOOP_ENABLED = parseBooleanEnv(process.env.AGENT_SLO_ALERT_LOOP_ENABLED, true);
 const SLO_LOOP_INTERVAL_MIN = Math.max(1, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_INTERVAL_MIN, 15));
+export type SloLoopOwner = 'app' | 'db';
+const SLO_LOOP_OWNER: SloLoopOwner =
+  String(process.env.AGENT_SLO_ALERT_LOOP_OWNER || 'app').trim().toLowerCase() === 'db' ? 'db' : 'app';
 const SLO_LOOP_MAX_GUILDS = Math.max(1, Math.min(500, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_MAX_GUILDS, 100)));
 const SLO_LOOP_CONCURRENCY = Math.max(1, Math.min(20, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_CONCURRENCY, 4)));
 
@@ -89,6 +92,7 @@ let sloLoopRunning = false;
 
 export const getAgentSloAlertLoopStats = () => ({
   enabled: SLO_LOOP_ENABLED,
+  owner: SLO_LOOP_OWNER,
   running: Boolean(sloLoopTimer),
   inFlight: sloLoopRunning,
   intervalMin: SLO_LOOP_INTERVAL_MIN,
@@ -650,6 +654,10 @@ const scheduleNextSloLoop = () => {
 
 export const startAgentSloAlertLoop = () => {
   if (!SLO_LOOP_ENABLED || sloLoopTimer) {
+    return;
+  }
+  if (SLO_LOOP_OWNER !== 'app') {
+    logger.info('[AGENT-SLO] app loop skipped (owner=%s, delegated to pg_cron)', SLO_LOOP_OWNER);
     return;
   }
   scheduleNextSloLoop();

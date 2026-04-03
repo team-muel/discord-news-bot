@@ -164,11 +164,11 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
     {
       id: 'obsidian-sync-loop',
       title: 'Obsidian lore sync loop',
-      owner: 'app',
-      startup: 'discord-ready',
+      owner: obsidianSync.owner === 'db' ? 'db' : 'app',
+      startup: obsidianSync.owner === 'db' ? 'database' : 'discord-ready',
       enabled: Boolean(obsidianSync.enabled),
       running: Boolean(obsidianSync.running),
-      schedule: `every ${obsidianSync.intervalMin}m`,
+      schedule: obsidianSync.owner === 'db' ? 'pg_cron' : `every ${obsidianSync.intervalMin}m`,
       source: ['src/services/obsidianLoreSyncService.ts', 'src/discord/runtime/readyWorkloads.ts'],
     },
     {
@@ -184,11 +184,11 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
     {
       id: 'agent-slo-alert-loop',
       title: 'Agent SLO alert loop',
-      owner: 'app',
-      startup: 'discord-ready',
+      owner: agentSloAlerts.owner === 'db' ? 'db' : 'app',
+      startup: agentSloAlerts.owner === 'db' ? 'database' : 'discord-ready',
       enabled: Boolean(agentSloAlerts.enabled),
       running: Boolean(agentSloAlerts.running || agentSloAlerts.inFlight),
-      schedule: `every ${agentSloAlerts.intervalMin}m`,
+      schedule: agentSloAlerts.owner === 'db' ? 'pg_cron' : `every ${agentSloAlerts.intervalMin}m`,
       source: ['src/services/agentSloService.ts', 'src/services/runtimeBootstrap.ts', 'src/discord/runtime/readyWorkloads.ts'],
     },
     {

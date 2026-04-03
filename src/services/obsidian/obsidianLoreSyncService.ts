@@ -6,6 +6,9 @@ const OBSIDIAN_SYNC_LOOP_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_SYNC_LOO
 const OBSIDIAN_SYNC_LOOP_INTERVAL_MIN = Math.max(5, parseIntegerEnv(process.env.OBSIDIAN_SYNC_LOOP_INTERVAL_MIN, 60));
 const OBSIDIAN_SYNC_LOOP_RUN_ON_START = parseBooleanEnv(process.env.OBSIDIAN_SYNC_LOOP_RUN_ON_START, true);
 const OBSIDIAN_SYNC_LOOP_TIMEOUT_MS = Math.max(30_000, parseIntegerEnv(process.env.OBSIDIAN_SYNC_LOOP_TIMEOUT_MS, 10 * 60_000));
+export type LoopOwner = 'app' | 'db';
+const OBSIDIAN_SYNC_LOOP_OWNER: LoopOwner =
+  String(process.env.OBSIDIAN_SYNC_LOOP_OWNER || 'app').trim().toLowerCase() === 'db' ? 'db' : 'app';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -95,6 +98,10 @@ export const startObsidianLoreSyncLoop = () => {
   if (!OBSIDIAN_SYNC_LOOP_ENABLED || timer) {
     return;
   }
+  if (OBSIDIAN_SYNC_LOOP_OWNER !== 'app') {
+    logger.info('[OBSIDIAN-SYNC-LOOP] app loop skipped (owner=%s, delegated to pg_cron)', OBSIDIAN_SYNC_LOOP_OWNER);
+    return;
+  }
 
   const intervalMs = OBSIDIAN_SYNC_LOOP_INTERVAL_MIN * 60_000;
   timer = setInterval(() => {
@@ -118,6 +125,7 @@ export const stopObsidianLoreSyncLoop = () => {
 
 export const getObsidianLoreSyncLoopStats = () => ({
   enabled: OBSIDIAN_SYNC_LOOP_ENABLED,
+  owner: OBSIDIAN_SYNC_LOOP_OWNER,
   running,
   intervalMin: OBSIDIAN_SYNC_LOOP_INTERVAL_MIN,
   runOnStart: OBSIDIAN_SYNC_LOOP_RUN_ON_START,
