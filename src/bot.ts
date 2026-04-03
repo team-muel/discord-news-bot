@@ -68,8 +68,11 @@ import {
   getWorkerProposalMetricsSnapshot,
 } from './services/workerGeneration/workerProposalMetrics';
 import { cleanupSandbox } from './services/workerGeneration/workerSandbox';
+import { executeExternalAction } from './services/tools/externalAdapterRegistry';
+import { parseBooleanEnv } from './utils/env';
 import { evaluateWorkerActivationGate } from './services/agent/agentRuntimeReadinessService';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from './services/skills/actionGovernanceStore';
+import { triggerLacunaSprintIfNeeded, type LacunaCandidate } from './services/sprint/selfImprovementLoop';
 // ─── Discord layer modules ────────────────────────────────────────────────────
 import {
   buildSimpleEmbed,
@@ -1032,10 +1035,37 @@ const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
       recordWorkerGenerationResult(result.ok, result.ok ? undefined : result.error);
       if (result.ok) {
         generated += 1;
+
+        // E-03: Trigger OpenClaw skill.create for lacuna-detected capabilities
+        if (parseBooleanEnv(process.env.OPENCLAW_LACUNA_SKILL_CREATE_ENABLED, false)) {
+          const skillName = [...candidate.missingActionNames][0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || '';
+          if (skillName) {
+            executeExternalAction('openclaw', 'agent.skill.create', { name: skillName })
+              .then((r) => {
+                if (r.ok) logger.info('[WORKER-GEN] OpenClaw skill.create triggered for lacuna=%s', skillName);
+              })
+              .catch(() => { /* non-blocking */ });
+          }
+        }
       }
     }
 
     logger.info('[WORKER-GEN] background sweep completed generated=%d candidates=%d', generated, candidates.length);
+
+    // Step 1: Lacuna → Sprint auto-trigger when capability gaps accumulate
+    if (candidates.length > 0) {
+      const lacunaCandidates: LacunaCandidate[] = candidates.map((c) => ({
+        guildId: c.guildId,
+        goal: c.goal,
+        normalizedGoal: c.normalizedGoal,
+        count: c.count,
+        distinctRequestersSize: c.distinctRequesters.size,
+        score: scoreLacunaCandidate(c),
+        lacunaType: c.lacunaType,
+        missingActionNames: [...c.missingActionNames].slice(0, 10),
+      }));
+      triggerLacunaSprintIfNeeded(lacunaCandidates).catch(() => { /* non-blocking */ });
+    }
   } catch (error) {
     logger.warn('[WORKER-GEN] background sweep failed: %s', getErrorMessage(error));
   } finally {

@@ -9,7 +9,7 @@
 | Table | Services |
 | --- | --- |
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
-| agent_action_logs | src/services/agent/agentWorkerApprovalGateSnapshotService.ts<br/>src/services/finopsService.ts<br/>src/services/opencodeOpsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts<br/>src/services/taskRoutingAnalyticsService.ts<br/>src/services/taskRoutingMetricsService.ts<br/>src/services/toolLearningService.ts |
+| agent_action_logs | src/services/agent/agentWorkerApprovalGateSnapshotService.ts<br/>src/services/finopsService.ts<br/>src/services/opencodeOpsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts<br/>src/services/sprint/selfImprovementLoop.ts<br/>src/services/taskRoutingAnalyticsService.ts<br/>src/services/taskRoutingMetricsService.ts<br/>src/services/toolLearningService.ts |
 | agent_action_policies | - |
 | agent_answer_quality_reviews | src/services/agent/agentGotAnalyticsService.ts<br/>src/services/agent/agentQualityReviewService.ts |
 | agent_conversation_threads | src/services/privacyForgetService.ts |
@@ -39,7 +39,7 @@
 | agent_tot_candidate_pairs | src/services/agent/agentGotAnalyticsService.ts<br/>src/services/agent/agentTotPolicyService.ts |
 | agent_tot_policies | src/services/agent/agentTotPolicyService.ts<br/>src/services/entityNervousSystem.ts |
 | agent_user_privacy_preferences | - |
-| agent_weekly_reports | - |
+| agent_weekly_reports | src/services/sprint/selfImprovementLoop.ts |
 | agent_workflow_profiles | src/services/agent/agentWorkflowService.ts |
 | alert_slots | - |
 | api_idempotency_keys | - |
@@ -53,6 +53,7 @@
 | distributed_locks | src/services/distributedLockService.ts |
 | error_history | - |
 | guild_lore_docs | src/services/agent/agentMemoryService.ts |
+| intent_exemplars | src/services/langgraph/nodes/intentExemplarStore.ts |
 | logs | - |
 | macro_data | - |
 | macro_series | - |
@@ -74,8 +75,8 @@
 | retrieval_ranker_experiments | src/services/retrievalEvalService.ts |
 | settings | - |
 | sources | src/services/agent/agentSloService.ts<br/>src/services/goNoGoService.ts<br/>src/services/newsChannelStore.ts<br/>src/services/newsSentimentMonitor.ts<br/>src/services/sourceMonitorStore.ts<br/>src/services/youtubeSubscriptionStore.ts<br/>src/services/youtubeSubscriptionsMonitor.ts |
-| sprint_journal_entries | - |
-| sprint_pipelines | - |
+| sprint_journal_entries | src/services/sprint/selfImprovementLoop.ts |
+| sprint_pipelines | src/services/sprint/selfImprovementLoop.ts |
 | system_error_events | - |
 | trades | - |
 | trading_engine_configs | - |

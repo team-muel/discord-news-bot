@@ -17,6 +17,7 @@ import { rehydrateActivePipelines } from './sprint/sprintOrchestrator';
 import { startSprintScheduledTriggers } from './sprint/sprintTriggers';
 import { checkGitConfigHealth } from './sprint/autonomousGit';
 import { initMcpSkillRouter } from './mcpSkillRouter';
+import { syncHighRiskActionsToSandboxPolicy } from './skills/actionRunner';
 import logger from '../logger';
 
 const runtimeState = {
@@ -77,6 +78,11 @@ export const startServerProcessRuntime = (): void => {
 
   // Validate sprint git config at startup
   checkGitConfigHealth();
+
+  // D-06: Sync high-risk actions to OpenShell sandbox policy at startup
+  void syncHighRiskActionsToSandboxPolicy().catch((error) => {
+    logger.debug('[SANDBOX-POLICY] startup sync skipped: %s', getErrorMessage(error));
+  });
 
   runtimeState.serverStarted = true;
 };

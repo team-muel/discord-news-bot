@@ -10,6 +10,7 @@ import {
   purgeExpiredDiscordLoginSessions,
   upsertDiscordLoginSession,
 } from '../services/discordLoginSessionStore';
+import { AUTH_MAX_GUILDS_IN_CACHE, AUTH_MAX_USERS_PER_GUILD } from './runtimePolicy';
 import { getErrorMessage } from './ui';
 import logger from '../logger';
 
@@ -36,18 +37,16 @@ export const AUTO_LOGIN_ON_FIRST_COMMAND = !['0', 'false', 'no', 'off']
 
 // ─── In-process cache ────────────────────────────────────────────────────────
 export const loggedInUsersByGuild = new Map<string, Map<string, number>>();
-const MAX_GUILDS_IN_CACHE = 500;
-const MAX_USERS_PER_GUILD = 5000;
 let loginSessionCleanupTimer: NodeJS.Timeout | null = null;
 
 export const cacheLoginSession = (guildId: string, userId: string, expiresAt: number): void => {
   let guildUsers = loggedInUsersByGuild.get(guildId);
   if (!guildUsers) {
-    if (loggedInUsersByGuild.size >= MAX_GUILDS_IN_CACHE) return;
+    if (loggedInUsersByGuild.size >= AUTH_MAX_GUILDS_IN_CACHE) return;
     guildUsers = new Map<string, number>();
     loggedInUsersByGuild.set(guildId, guildUsers);
   }
-  if (!guildUsers.has(userId) && guildUsers.size >= MAX_USERS_PER_GUILD) return;
+  if (!guildUsers.has(userId) && guildUsers.size >= AUTH_MAX_USERS_PER_GUILD) return;
   guildUsers.set(userId, expiresAt);
 };
 

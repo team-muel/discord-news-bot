@@ -22,6 +22,14 @@ import { getLlmExperimentSummary } from '../../services/llmExperimentAnalyticsSe
 import { buildSocialQualityOperationalSnapshot } from '../../services/agent/agentSocialQualitySnapshotService';
 import { buildWorkerApprovalGateSnapshot } from '../../services/agent/agentWorkerApprovalGateSnapshotService';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
+import {
+  computeSystemGradient,
+  computeConvergenceReport,
+  getCrossLoopOriginsSnapshot,
+  evaluateCrossLoopOutcomes,
+} from '../../services/sprint/selfImprovementLoop';
+import { syncHighRiskActionsToSandboxPolicy } from '../../services/skills/actionRunner';
+import { getSupabaseClient, isSupabaseConfigured } from '../../services/supabaseClient';
 
 import { BotAgentRouteDeps } from './types';
 
@@ -477,6 +485,125 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         return res.status(503).json({ ok: false, error: 'CONFIG', message });
       }
       return res.status(500).json({ ok: false, error: 'LLM_EXPERIMENT_SUMMARY_FAILED', message });
+    }
+  });
+
+  // ── E-02: Channel routing configuration (guild → channel → provider mapping) ──
+
+  const VALID_CHANNEL_PROVIDERS = new Set(['native', 'openclaw', 'openshell', 'disabled']);
+  const channelRoutingCache = new Map<string, Record<string, string>>();
+  const DEFAULT_CHANNEL_ROUTING: Record<string, string> = { discord: 'native', whatsapp: 'openclaw', telegram: 'openclaw' };
+
+  const loadChannelRouting = async (guildId: string): Promise<Record<string, string>> => {
+    const cached = channelRoutingCache.get(guildId);
+    if (cached) return cached;
+    if (!isSupabaseConfigured()) return DEFAULT_CHANNEL_ROUTING;
+    try {
+      const db = getSupabaseClient();
+      const { data } = await db
+        .from('guild_channel_routing')
+        .select('channels')
+        .eq('guild_id', guildId)
+        .maybeSingle();
+      if (data?.channels && typeof data.channels === 'object') {
+        const channels = data.channels as Record<string, string>;
+        channelRoutingCache.set(guildId, channels);
+        return channels;
+      }
+    } catch { /* fall through to default */ }
+    return DEFAULT_CHANNEL_ROUTING;
+  };
+
+  const saveChannelRouting = async (guildId: string, channels: Record<string, string>): Promise<void> => {
+    channelRoutingCache.set(guildId, channels);
+    if (!isSupabaseConfigured()) return;
+    try {
+      const db = getSupabaseClient();
+      await db
+        .from('guild_channel_routing')
+        .upsert({ guild_id: guildId, channels, updated_at: new Date().toISOString() }, { onConflict: 'guild_id' });
+    } catch { /* non-blocking: cache is authoritative during outage */ }
+  };
+
+  router.get('/agent/runtime/channel-routing', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    const channels = await loadChannelRouting(guildId);
+    return res.json({ ok: true, guildId, channels });
+  });
+
+  router.put('/agent/runtime/channel-routing', requireAdmin, adminActionRateLimiter, async (req, res) => {
+    const guildId = toStringParam(req.body?.guildId);
+    const channels = req.body?.channels as Record<string, string> | undefined;
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+    if (!channels || typeof channels !== 'object' || Array.isArray(channels)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'channels object is required (must be key-value map, not array)' });
+    }
+    // Validate channel provider values
+    for (const [channel, provider] of Object.entries(channels)) {
+      if (typeof provider !== 'string' || !VALID_CHANNEL_PROVIDERS.has(provider)) {
+        return res.status(400).json({
+          ok: false,
+          error: 'VALIDATION',
+          message: `Invalid provider "${String(provider)}" for channel "${channel}". Valid: ${[...VALID_CHANNEL_PROVIDERS].join(', ')}`,
+        });
+      }
+    }
+    const sanitized: Record<string, string> = {};
+    for (const [k, v] of Object.entries(channels)) {
+      const key = String(k).slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '');
+      if (key) sanitized[key] = String(v);
+    }
+    await saveChannelRouting(guildId, sanitized);
+    return res.json({ ok: true, guildId, channels: sanitized, updatedAt: new Date().toISOString() });
+  });
+
+  // ── D-06: Sync HIGH_RISK_APPROVAL_ACTIONS to OpenShell network policy ──
+
+  router.post('/agent/runtime/sandbox-policy-sync', requireAdmin, adminActionRateLimiter, async (_req, res) => {
+    try {
+      const result = await syncHighRiskActionsToSandboxPolicy();
+      return res.json({ ok: result.synced, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'SANDBOX_POLICY_SYNC_FAILED', message });
+    }
+  });
+
+  // ──── Self-Improvement Loop Endpoints ───────────────────────────────────────
+
+  router.get('/agent/runtime/self-improvement/gradient', requireAdmin, async (_req, res) => {
+    try {
+      const gradient = await computeSystemGradient();
+      return res.json({ ok: true, gradient });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'GRADIENT_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/self-improvement/convergence', requireAdmin, async (_req, res) => {
+    try {
+      const report = await computeConvergenceReport();
+      return res.json({ ok: true, convergence: report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'CONVERGENCE_FAILED', message });
+    }
+  });
+
+  router.get('/agent/runtime/self-improvement/cross-loop', requireAdmin, async (_req, res) => {
+    try {
+      const origins = getCrossLoopOriginsSnapshot();
+      const outcomes = await evaluateCrossLoopOutcomes();
+      return res.json({ ok: true, origins: origins.slice(0, 50), outcomes });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'CROSS_LOOP_FAILED', message });
     }
   });
 

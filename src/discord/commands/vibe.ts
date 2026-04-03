@@ -4,7 +4,8 @@ import { getAgentSession } from '../../services/multiAgentService';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
-import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP } from '../runtimePolicy';
+import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP, DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES } from '../runtimePolicy';
+import { seedFeedbackReactions } from '../session';
 import logger from '../../logger';
 
 type VibeDeps = {
@@ -32,7 +33,6 @@ const processedMessageUntilMs = new Map<string, number>();
 const AUTO_WORKER_PROPOSAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_ENABLED || 'false').trim());
 const AUTO_WORKER_PROPOSAL_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS || 15 * 60_000));
 const autoWorkerProposalUntilMs = new Map<string, number>();
-const AUTO_WORKER_PROPOSAL_MAX_ENTRIES = 500;
 
 const logVibeNonCritical = (scope: string, error: unknown, getErrorMessage: (error: unknown) => string): void => {
   logger.debug('[VIBE] %s: %s', scope, getErrorMessage(error));
@@ -116,7 +116,7 @@ const acquireAutoProposalSlot = (key: string): boolean => {
   autoWorkerProposalUntilMs.set(key, now + AUTO_WORKER_PROPOSAL_COOLDOWN_MS);
 
   // Opportunistic cleanup to keep the map bounded
-  if (autoWorkerProposalUntilMs.size > AUTO_WORKER_PROPOSAL_MAX_ENTRIES) {
+  if (autoWorkerProposalUntilMs.size > DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES) {
     for (const [id, until] of autoWorkerProposalUntilMs.entries()) {
       if (until <= now) autoWorkerProposalUntilMs.delete(id);
     }
@@ -247,6 +247,10 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleProgress, content, EMBED_INFO)) }, session.id, runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
 
     const completed = getAgentSession(session.id);
+    if (completed?.status === 'completed' || completed?.status === 'failed') {
+      const replyForSeed = await interaction.fetchReply().catch(() => null);
+      await seedFeedbackReactions(replyForSeed);
+    }
     const resultText = String(completed?.result || '');
     if (shouldSuggestPolicyGuidance(resultText)) {
       await interaction.followUp({
@@ -334,6 +338,14 @@ export const createVibeHandlers = (deps: VibeDeps) => {
 
     await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeProgress, content, EMBED_INFO)) }, session.id, codeGoal, { showDebugBlocks: false, maxLinks: 2 });
 
+    {
+      const makeCompleted = getAgentSession(session.id);
+      if (makeCompleted?.status === 'completed' || makeCompleted?.status === 'failed') {
+        const replyForSeed = await interaction.fetchReply().catch(() => null);
+        await seedFeedbackReactions(replyForSeed);
+      }
+    }
+
     if (deps.codeThreadEnabled) {
       const completed = getAgentSession(session.id);
       if (completed?.status === 'completed') {
@@ -402,6 +414,9 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     await deps.streamSessionProgress({ update: (content) => progressMessage.edit(content) }, session.id, request, { showDebugBlocks: false, maxLinks: 2 });
 
     const completed = getAgentSession(session.id);
+    if (completed?.status === 'completed' || completed?.status === 'failed') {
+      await seedFeedbackReactions(progressMessage);
+    }
     const resultText = String(completed?.result || '');
     if (shouldSuggestPolicyGuidance(resultText)) {
       await message.reply(`⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`).catch((error) => {

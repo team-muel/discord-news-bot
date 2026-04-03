@@ -7,6 +7,7 @@ import { recordTaskRoutingMetric } from '../../services/taskRoutingMetricsServic
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
+import { seedFeedbackReactions } from '../session';
 import {
   DISCORD_DOCS_ANSWER_LIMIT,
   DISCORD_DOCS_ANSWER_TARGET_CHARS,
@@ -91,6 +92,8 @@ export const createDocsHandlers = (deps: DocsDeps) => {
         await interaction.editReply(
           buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
         );
+        const cachedReply = await interaction.fetchReply().catch(() => null);
+        await seedFeedbackReactions(cachedReply);
         return;
       }
     }
@@ -219,6 +222,8 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     await interaction.editReply(
       buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
     );
+    const askReply = await interaction.fetchReply().catch(() => null);
+    await seedFeedbackReactions(askReply);
   };
 
   /**

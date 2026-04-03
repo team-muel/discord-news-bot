@@ -6,10 +6,16 @@ import { recordDiscordChannelMessageSignal } from '../../services/discordChannel
 import { getGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 import { isUserLearningEnabled } from '../../services/userLearningPrefsService';
 import { TtlCache } from '../../utils/ttlCache';
+import {
+  PASSIVE_MEMORY_LEARNING_POLICY_TTL_MS,
+  PASSIVE_MEMORY_CO_PRESENCE_WINDOW_MS,
+  PASSIVE_MEMORY_CO_PRESENCE_MAX_TARGETS,
+  PASSIVE_MEMORY_CONTENT_LIMIT,
+  PASSIVE_MEMORY_EXCERPT_LIMIT,
+} from '../runtimePolicy';
 
 const LEARNING_POLICY_ACTION = 'memory_learning';
 const learningPolicyCache = new TtlCache<boolean>(200);
-const LEARNING_POLICY_TTL_MS = 30_000;
 
 const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
   const cached = learningPolicyCache.get(guildId);
@@ -18,7 +24,7 @@ const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
   }
 
   const policy = await getGuildActionPolicy(guildId, LEARNING_POLICY_ACTION);
-  learningPolicyCache.set(guildId, policy.enabled, LEARNING_POLICY_TTL_MS);
+  learningPolicyCache.set(guildId, policy.enabled, PASSIVE_MEMORY_LEARNING_POLICY_TTL_MS);
   return policy.enabled;
 };
 
@@ -35,9 +41,6 @@ const getErrorMessage = (error: unknown): string => {
     return String(error);
   }
 };
-
-const CO_PRESENCE_WINDOW_MS = 30 * 60 * 1000;
-const CO_PRESENCE_MAX_TARGETS = 2;
 
 const collectCoPresenceSignals = async (
   message: Message,
@@ -62,7 +65,7 @@ const collectCoPresenceSignals = async (
       if (excludedTargetIds.has(authorId)) {
         continue;
       }
-      if ((message.createdTimestamp - candidate.createdTimestamp) > CO_PRESENCE_WINDOW_MS) {
+      if ((message.createdTimestamp - candidate.createdTimestamp) > PASSIVE_MEMORY_CO_PRESENCE_WINDOW_MS) {
         continue;
       }
 
@@ -73,7 +76,7 @@ const collectCoPresenceSignals = async (
         weight: 0.2,
       });
 
-      if (out.length >= CO_PRESENCE_MAX_TARGETS) {
+      if (out.length >= PASSIVE_MEMORY_CO_PRESENCE_MAX_TARGETS) {
         break;
       }
     }
@@ -166,7 +169,7 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
     channelId: message.channelId,
     type: 'episode',
     title: `discord:${message.author.id}:${new Date().toISOString().slice(0, 10)}`,
-    content: content.slice(0, 2000),
+    content: content.slice(0, PASSIVE_MEMORY_CONTENT_LIMIT),
     tags: ['discord-chat', 'auto-captured', `user:${message.author.id}`, `channel:${message.channelId}`],
     confidence: 0.55,
     actorId: 'system',
@@ -176,7 +179,7 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
       sourceMessageId: message.id,
       sourceAuthorId: message.author.id,
       sourceRef: `discord://guild/${message.guildId}/channel/${message.channelId}/message/${message.id}`,
-      excerpt: content.slice(0, 300),
+      excerpt: content.slice(0, PASSIVE_MEMORY_EXCERPT_LIMIT),
     },
   }).catch((error) => {
     logger.debug('[MEMORY] passive capture skipped: %s', getErrorMessage(error));

@@ -136,3 +136,29 @@ export const SESSION_PROGRESS_INTERVAL_MS = parsePositiveInt(process.env.DISCORD
 export const SESSION_PROGRESS_UPDATE_BUCKET_MS = parsePositiveInt(process.env.DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS, 10_000, 1000);
 export const SESSION_RESULT_CLIP_LIMIT_DEBUG = parsePositiveInt(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_DEBUG, 1700, 200);
 export const SESSION_RESULT_CLIP_LIMIT_USER = parsePositiveInt(process.env.DISCORD_SESSION_RESULT_CLIP_LIMIT_USER, 1200, 200);
+
+// ─── Auth cache limits ────────────────────────────────────────────────────────
+export const AUTH_MAX_GUILDS_IN_CACHE = parsePositiveInt(process.env.DISCORD_AUTH_MAX_GUILDS_IN_CACHE, 500, 10);
+export const AUTH_MAX_USERS_PER_GUILD = parsePositiveInt(process.env.DISCORD_AUTH_MAX_USERS_PER_GUILD, 5000, 50);
+
+// ─── Passive memory capture ───────────────────────────────────────────────────
+export const PASSIVE_MEMORY_LEARNING_POLICY_TTL_MS = parsePositiveInt(process.env.DISCORD_LEARNING_POLICY_TTL_MS, 30_000, 5_000);
+export const PASSIVE_MEMORY_CO_PRESENCE_WINDOW_MS = parsePositiveInt(process.env.DISCORD_CO_PRESENCE_WINDOW_MS, 30 * 60 * 1000, 60_000);
+export const PASSIVE_MEMORY_CO_PRESENCE_MAX_TARGETS = parsePositiveInt(process.env.DISCORD_CO_PRESENCE_MAX_TARGETS, 2, 1);
+export const PASSIVE_MEMORY_CONTENT_LIMIT = parsePositiveInt(process.env.DISCORD_PASSIVE_MEMORY_CONTENT_LIMIT, 2000, 100);
+export const PASSIVE_MEMORY_EXCERPT_LIMIT = parsePositiveInt(process.env.DISCORD_PASSIVE_MEMORY_EXCERPT_LIMIT, 300, 50);
+
+// ─── Feedback reaction seeding ────────────────────────────────────────────────
+export const FEEDBACK_REACTION_SEED_ENABLED = (() => {
+  const raw = String(process.env.DISCORD_FEEDBACK_REACTION_SEED_ENABLED || 'true').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+})();
+export const FEEDBACK_REACTION_SEED_UP = String(process.env.DISCORD_FEEDBACK_REACTION_SEED_UP || '👍').trim();
+export const FEEDBACK_REACTION_SEED_DOWN = String(process.env.DISCORD_FEEDBACK_REACTION_SEED_DOWN || '👎').trim();
+
+// ─── Vibe worker proposal ─────────────────────────────────────────────────────
+export const DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES = clamp(
+  parseIntegerEnv(process.env.DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES, 500),
+  50,
+  5000,
+);

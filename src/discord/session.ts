@@ -8,6 +8,9 @@ import { buildReasoningGoalForGuild } from '../services/taskRoutingService';
 import { recordTaskRoutingMetric } from '../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from './messages';
 import {
+  FEEDBACK_REACTION_SEED_DOWN,
+  FEEDBACK_REACTION_SEED_ENABLED,
+  FEEDBACK_REACTION_SEED_UP,
   SESSION_PROGRESS_INTERVAL_MS,
   SESSION_PROGRESS_TIMEOUT_MS,
   SESSION_PROGRESS_UPDATE_BUCKET_MS,
@@ -29,6 +32,19 @@ export type ProgressSink = {
 export type ProgressRenderOptions = {
   showDebugBlocks: boolean;
   maxLinks: number;
+};
+
+// ─── Feedback reaction seeding ────────────────────────────────────────────────
+/**
+ * Add 👍/👎 seed reactions to a bot reply so users can one-click feedback.
+ * Silently swallows errors — reactions are best-effort.
+ */
+export const seedFeedbackReactions = async (
+  message: { react: (emoji: string) => Promise<unknown> } | null | undefined,
+): Promise<void> => {
+  if (!FEEDBACK_REACTION_SEED_ENABLED || !message) return;
+  await message.react(FEEDBACK_REACTION_SEED_UP).catch(() => {});
+  await message.react(FEEDBACK_REACTION_SEED_DOWN).catch(() => {});
 };
 
 // ─── Internal utils ───────────────────────────────────────────────────────────
