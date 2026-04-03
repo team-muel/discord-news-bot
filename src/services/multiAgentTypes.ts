@@ -11,6 +11,9 @@ export type {
   AgentRole,
   AgentPriority,
   AgentIntent,
+  IntentTaxonomy,
+  IntentClassification,
+  IntentClassificationSource,
   AgentDeliberationMode,
   AgentPolicyGateDecision,
 } from './agent/agentRuntimeTypes';
@@ -71,6 +74,7 @@ export type AgentSession = {
     scoreGainVsBaseline?: number;
   };
   memoryHints: string[];
+  intentClassification?: import('./agent/agentRuntimeTypes').IntentClassification | null;
   steps: AgentStep[];
   shadowGraph: LangGraphState | null;
 };

@@ -339,3 +339,41 @@ export const getConversationThreadBySession = async (params: {
     turns,
   };
 };
+
+export const fetchRecentTurnsForUser = async (params: {
+  guildId: string;
+  requestedBy: string;
+  limit?: number;
+}): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> => {
+  if (!isSupabaseConfigured()) return [];
+  const guildId = sanitizeGuildId(params.guildId);
+  if (!guildId || !params.requestedBy) return [];
+
+  try {
+    const latest = await getLatestThread({ guildId, requestedBy: params.requestedBy });
+    if (!latest) return [];
+    const lastMs = Date.parse(String(latest.last_turn_at || ''));
+    if (!Number.isFinite(lastMs) || (Date.now() - lastMs) > THREAD_IDLE_MS) return [];
+
+    const limit = Math.max(2, Math.min(10, Number(params.limit || 4)));
+    const client = ensureConfigured();
+    const { data, error } = await client
+      .from(TURN_TABLE)
+      .select('turn_type,content')
+      .eq('guild_id', guildId)
+      .eq('thread_id', latest.id)
+      .in('turn_type', ['user', 'assistant'])
+      .order('turn_index', { ascending: false })
+      .limit(limit);
+
+    if (error || !data) return [];
+    return (data as Array<{ turn_type: string; content: string }>)
+      .reverse()
+      .map((row) => ({
+        role: row.turn_type === 'user' ? 'user' as const : 'assistant' as const,
+        content: toText(row.content, 300),
+      }));
+  } catch {
+    return [];
+  }
+};

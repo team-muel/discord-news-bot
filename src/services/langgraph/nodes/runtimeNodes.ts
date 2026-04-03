@@ -99,11 +99,12 @@ export const runNonTaskIntentNode = async (params: {
   routedIntent: NonTaskIntent;
   goal: string;
   intentHints: string[];
-  generateCasualReply: (goal: string) => Promise<string>;
+  recentTurns?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  generateCasualReply: (goal: string, recentTurns?: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<string>;
   generateClarification: (goal: string, intentHints: string[]) => Promise<string>;
 }): Promise<null | { traceNote: 'casual_chat' | 'intent_clarification'; result: string }> => {
   if (params.routedIntent === 'casual_chat') {
-    const result = await params.generateCasualReply(params.goal);
+    const result = await params.generateCasualReply(params.goal, params.recentTurns);
     return {
       traceNote: 'casual_chat',
       result,

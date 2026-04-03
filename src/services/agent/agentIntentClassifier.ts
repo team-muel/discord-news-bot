@@ -66,24 +66,37 @@ export const buildCasualChatFallback = (goal: string): string => {
   return '들려줘서 고마워요. 지금 마음이나 상황을 한두 문장만 더 말해주면, 거기에 맞춰 같이 이야기해볼게요.';
 };
 
-export const generateCasualChatResult = async (goal: string): Promise<string> => {
+export const generateCasualChatResult = async (
+  goal: string,
+  recentTurns?: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<string> => {
   try {
+    const conversationContext = (recentTurns && recentTurns.length > 0)
+      ? recentTurns.map((t) => `${t.role === 'user' ? '사용자' : '뮤엘'}: ${t.content}`).join('\n')
+      : '';
+
+    const userLines = [
+      '사용자 발화에 대해 자연스럽게 답해라.',
+      '출력은 일반 대화 문장만 작성한다.',
+      '근거/검증/confidence 같은 섹션 제목을 쓰지 않는다.',
+    ];
+    if (conversationContext) {
+      userLines.push('이전 대화 맥락:', conversationContext, '');
+    }
+    userLines.push(`사용자: ${String(goal || '').trim()}`);
+
     const output = await generateText({
       system: [
         '너는 공감형 한국어 대화 파트너다.',
         '도구 호출을 유도하거나 작업 실행으로 전환하지 않는다.',
         '과거 데이터베이스/장기기억(메모리, Obsidian)을 먼저 뒤지지 않는다.',
         '감정적 호소나 짧은 일상어에는 현재 맥락에 공감한 뒤 가벼운 질문 1개로 핑퐁을 유도한다.',
+        '이전 대화가 주어지면 그 흐름을 이어받아 답한다.',
         '질문 예시 톤: 무슨 일 있었어?, 어떤 빵 먹었어?',
         '짧고 자연스럽게 공감하고, 필요하면 한 가지 되묻기만 한다.',
         '진단, 단정, 과도한 조언은 피한다.',
       ].join('\n'),
-      user: [
-        '사용자 발화에 대해 자연스럽게 답해라.',
-        '출력은 일반 대화 문장만 작성한다.',
-        '근거/검증/confidence 같은 섹션 제목을 쓰지 않는다.',
-        `사용자: ${String(goal || '').trim()}`,
-      ].join('\n'),
+      user: userLines.join('\n'),
       actionName: 'chat.casual',
       temperature: 0.5,
       maxTokens: 220,

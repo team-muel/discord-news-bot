@@ -3234,3 +3234,45 @@ begin
   end if;
 end
 $$;
+
+-- ==========================================
+-- Intent Intelligence Layer (ADR-006)
+-- ==========================================
+
+create table if not exists public.intent_exemplars (
+  id serial primary key,
+  guild_id text not null,
+  message text not null,
+  signal_snapshot jsonb default '{}'::jsonb,
+  classified_intent text not null,
+  confidence float,
+  was_correct boolean,
+  session_id text,
+  session_reward float,
+  user_correction text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_intent_exemplars_guild
+  on public.intent_exemplars (guild_id, classified_intent);
+
+create index if not exists idx_intent_exemplars_quality
+  on public.intent_exemplars (was_correct, session_reward desc nulls last);
+
+create index if not exists idx_intent_exemplars_session
+  on public.intent_exemplars (session_id) where session_id is not null;
+
+alter table public.intent_exemplars enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='intent_exemplars' and policyname='intent_exemplars_service_role'
+  ) then
+    create policy intent_exemplars_service_role on public.intent_exemplars
+      for all
+      using (auth.role() = 'service_role')
+      with check (auth.role() = 'service_role');
+  end if;
+end
+$$;

@@ -4,7 +4,7 @@ import { buildAgentMemoryHints } from './agent/agentMemoryService';
 import { TtlCache } from '../utils/ttlCache';
 import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agent/agentPolicyService';
 import { persistAgentSession } from './agent/agentSessionStore';
-import { bindSessionAssistantTurn, bindSessionUserTurn } from './conversationTurnService';
+import { bindSessionAssistantTurn, bindSessionUserTurn, fetchRecentTurnsForUser } from './conversationTurnService';
 import { generateText, generateTextWithMeta, isAnyLlmConfigured } from './llmClient';
 import { ensureSessionBudget, getErrorMessage, withTimeout } from './langgraph/runtimeSupport/runtimeBudget';
 import {
@@ -30,7 +30,7 @@ import type { SkillExecutionResult, SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agent/agentWorkflowService';
 import { appendTrace, type LangGraphNodeId, type LangGraphState } from './langgraph/stateContract';
 import { executeLangGraph } from './langgraph/executor';
-import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode } from './langgraph/nodes/coreNodes';
+import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode, runClassifyIntentNode } from './langgraph/nodes/coreNodes';
 import {
   runHydrateMemoryNode,
   runNonTaskIntentNode,
@@ -38,6 +38,9 @@ import {
   runTaskPolicyGateTransitionNode,
 } from './langgraph/nodes/runtimeNodes';
 import { runSelectExecutionStrategyNode } from './langgraph/nodes/strategyNodes';
+import { enrichIntentSignals } from './langgraph/nodes/intentSignalEnricher';
+import { persistIntentExemplar } from './langgraph/nodes/intentExemplarStore';
+import { attributeAndPersistIntentOutcome } from './langgraph/nodes/intentOutcomeAttributor';
 import { executeSessionBranchRuntime } from './langgraph/sessionRuntime/branchRuntime';
 import { getAgentPrivacyPolicySnapshot, primeAgentPrivacyPolicyCache } from './agent/agentPrivacyPolicyService';
 import { recordPrivacyGateSample } from './agent/agentPrivacyTuningService';
@@ -91,6 +94,9 @@ export type {
   AgentRole,
   AgentPriority,
   AgentIntent,
+  IntentTaxonomy,
+  IntentClassification,
+  IntentClassificationSource,
   AgentDeliberationMode,
   AgentPolicyGateDecision,
   AgentSession,
@@ -1188,6 +1194,38 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
     requestedBy: session.requestedBy,
   }).catch(() => { /* best-effort precipitation */ });
 
+  // Intent Intelligence Layer: attribute classification correctness (ADR-006)
+  const intentConfidence = session.intentClassification?.confidence ?? 0.5;
+  const intentPrimary = session.intentClassification?.primary || session.shadowGraph?.intent || 'info_seek';
+  const failedStepCount = session.steps.filter((s) => s.status === 'failed').length;
+  const completedStepCount = session.steps.filter((s) => s.status === 'completed').length;
+  const totalSteps = session.steps.length;
+
+  // Compute lightweight session-level reward from outcome
+  const sessionReward = totalSteps > 0
+    ? Math.max(0, Math.min(1, completedStepCount / totalSteps - failedStepCount * 0.2))
+    : (status === 'completed' ? 0.6 : status === 'failed' ? 0.2 : null);
+
+  // Heuristic: early step failure with low classification confidence suggests misrouting
+  const earlyStepFailureWithLowConfidence = (
+    failedStepCount > 0 &&
+    totalSteps >= 2 &&
+    intentConfidence < 0.5
+  );
+
+  void attributeAndPersistIntentOutcome({
+    sessionId: session.id,
+    guildId: session.guildId,
+    intentConfidence,
+    intentPrimary,
+    sessionStatus: status,
+    sessionReward,
+    userClarifiedWithinTurns: earlyStepFailureWithLowConfidence,
+    stepFailureCount: failedStepCount,
+  }).catch((err) => {
+    logger.warn('[SESSION-CLEANUP] Intent attribution failed session=%s: %s', session.id, err instanceof Error ? err.message : String(err));
+  });
+
   // Capture shadow trace before releasing in-memory structures
   const shadowTraceNodes: LangGraphNodeId[] = session.shadowGraph
     ? session.shadowGraph.trace.map((t) => t.node).filter((n): n is LangGraphNodeId => (LANGGRAPH_NODE_IDS as string[]).includes(n))
@@ -1346,16 +1384,54 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       );
     }
 
-    session.routedIntent = await runRouteIntentNode({
+    // ── Intent Intelligence Layer (ADR-006) ──────────────────────────────
+    // Enrich signals before classification (timeout-guarded to prevent session hang)
+    const intentSignals = await withTimeout(enrichIntentSignals({
+      guildId: session.guildId,
+      requestedBy: session.requestedBy,
+      goal: taskGoal,
+      compiledPrompt,
+      memoryHints: intentHints,
+    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_ENRICHMENT_TIMEOUT').catch(() => null);
+
+    // Full 3-stage classification
+    const intentClassification = await runClassifyIntentNode({
       goal: compiledPrompt.normalizedGoal || taskGoal,
       requestedSkillId: session.requestedSkillId,
       intentHints,
+      signals: intentSignals,
+      guildId: session.guildId,
     });
+
+    // Backward-compat: set legacy routedIntent
+    session.routedIntent = intentClassification.legacyIntent;
+
+    // Store full classification for outcome attribution at session end
+    session.intentClassification = intentClassification;
+
+    // Persist exemplar for future few-shot learning (best-effort, fire-and-forget)
+    void persistIntentExemplar({
+      guildId: session.guildId,
+      message: compiledPrompt.normalizedGoal || taskGoal,
+      signalSnapshot: intentSignals ? {
+        intentTags: intentSignals.compiledPrompt.intentTags,
+        graphClusterHint: intentSignals.graphClusterHint,
+        graphNeighborTags: intentSignals.graphNeighborTags.slice(0, 5),
+        turnPosition: intentSignals.turnPosition,
+      } : {},
+      classification: intentClassification,
+      sessionId: session.id,
+    });
+
     session.shadowGraph = {
       ...ensureShadowGraph(session),
       intent: session.routedIntent,
     };
-    traceShadowNode(session, 'route_intent', session.routedIntent);
+    traceShadowNode(
+      session,
+      'route_intent',
+      `${intentClassification.primary}(${intentClassification.confidence.toFixed(2)})→${session.routedIntent}|src=${intentClassification.source}`,
+    );
 
     const policyTransition = runTaskPolicyGateTransitionNode({
       routedIntent: session.routedIntent,
@@ -1397,10 +1473,17 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
     touch(session);
 
     ensureSessionBudget(sessionStartedAtMs, AGENT_SESSION_TIMEOUT_MS);
+
+    // Fetch recent conversation turns for casual chat continuity (best-effort)
+    const recentTurns = session.routedIntent === 'casual_chat'
+      ? await fetchRecentTurnsForUser({ guildId: session.guildId, requestedBy: session.requestedBy, limit: 4 }).catch(() => [])
+      : [];
+
     const nonTaskOutcome = await runNonTaskIntentNode({
       routedIntent: session.routedIntent,
       goal: session.goal,
       intentHints,
+      recentTurns,
       generateCasualReply: generateCasualChatResult,
       generateClarification: generateIntentClarificationResult,
     });
