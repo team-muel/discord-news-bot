@@ -181,8 +181,11 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       '',
       `라우팅: ${ragPlan.route}`,
       DISCORD_MESSAGES.docs.summaryLine(ragResult.intent, ragResult.executionTimeMs, ragResult.cacheStatus.hits),
+      ragResult.graphDensity
+        ? DISCORD_MESSAGES.docs.graphDensityLine(ragResult.graphDensity.avgBacklinks, ragResult.graphDensity.maxBacklinks, ragResult.graphDensity.connectedRatio)
+        : '',
       accessNotice,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
     if (interaction.guildId) {
       void recordTaskRoutingMetric({
@@ -330,6 +333,9 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
     lines.push('');
     lines.push(DISCORD_MESSAGES.docs.cacheLine(ragResult.cacheStatus.hits, ragResult.cacheStatus.misses));
+    if (ragResult.graphDensity) {
+      lines.push(DISCORD_MESSAGES.docs.graphDensityLine(ragResult.graphDensity.avgBacklinks, ragResult.graphDensity.maxBacklinks, ragResult.graphDensity.connectedRatio));
+    }
     if (accessNotice) {
       lines.push(accessNotice);
     }

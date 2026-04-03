@@ -241,6 +241,8 @@ export const DISCORD_MESSAGES = {
     noSource: '(없음)',
     summaryLine: (intent: string, elapsedMs: number, cacheHits: number) =>
       `카테고리: \`${intent}\` | ${elapsedMs}ms | 캐시 ${cacheHits}히트`,
+    graphDensityLine: (avg: number, max: number, ratio: number) =>
+      `그래프: 평균←${avg} 최대←${max} 연결${Math.round(ratio * 100)}%`,
     askTitle: (question: string) => `📚 ${question}`,
     titleNoSearchResult: '검색 결과 없음',
     noSearchResult: (keyword: string) => `"${keyword}"에 관련된 문서가 없습니다.`,

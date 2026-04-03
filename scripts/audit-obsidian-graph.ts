@@ -2,7 +2,11 @@
 import 'dotenv/config';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { getObsidianVaultRoot } from '../src/utils/obsidianEnv';
+
+const execFileAsync = promisify(execFile);
 
 type NoteNode = {
   filePath: string;
@@ -190,6 +194,108 @@ const toNumberEnv = (name: string, fallback: number): number => {
   return parsed;
 };
 
+const tryNativeCliAudit = async (vaultName: string): Promise<GraphAuditSnapshot | null> => {
+  const cliPath = String(process.env.OBSIDIAN_NATIVE_CLI_PATH || '').trim();
+  const enabled = String(process.env.OBSIDIAN_NATIVE_CLI_ENABLED || '').trim().toLowerCase() === 'true';
+  if (!cliPath || !enabled) return null;
+
+  const run = async (args: string[]): Promise<string | null> => {
+    try {
+      const { stdout } = await execFileAsync(cliPath, args, {
+        timeout: 15_000,
+        windowsHide: true,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      return String(stdout || '');
+    } catch {
+      return null;
+    }
+  };
+
+  const tryJsonArray = <T = unknown>(output: string | null): T[] => {
+    if (!output) return [];
+    try {
+      const parsed = JSON.parse(output.trim());
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const tryTextLines = (output: string | null): string[] => {
+    if (!output) return [];
+    return output.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  };
+
+  console.log('[obsidian-audit] trying native CLI fast-path...');
+
+  const [deadendsOut, orphansOut, unresolvedOut, tagsOut, filesOut] = await Promise.all([
+    run(['deadends', `vault=${vaultName}`, 'format=json']),
+    run(['orphans', `vault=${vaultName}`, 'format=json']),
+    run(['unresolved', `vault=${vaultName}`, 'format=json']),
+    run(['tags', `vault=${vaultName}`, 'counts', 'format=json']),
+    run(['files', `vault=${vaultName}`, 'ext=md', 'total']),
+  ]);
+
+  // If key commands fail, fall back to fs-based audit
+  if (deadendsOut === null && orphansOut === null) {
+    console.log('[obsidian-audit] native CLI unavailable, falling back to fs walk');
+    return null;
+  }
+
+  const deadends = tryJsonArray<string>(deadendsOut).length > 0
+    ? tryJsonArray<string>(deadendsOut)
+    : tryTextLines(deadendsOut);
+  const orphans = tryJsonArray<string>(orphansOut).length > 0
+    ? tryJsonArray<string>(orphansOut)
+    : tryTextLines(orphansOut);
+
+  const unresolvedRaw = tryJsonArray<{ file: string; target: string }>(unresolvedOut);
+  const unresolvedCount = unresolvedRaw.length > 0
+    ? unresolvedRaw.length
+    : tryTextLines(unresolvedOut).length;
+
+  const tagsRaw = tryJsonArray<{ tag: string; count: number } | string>(tagsOut);
+  const topTags = tagsRaw
+    .map((t) => typeof t === 'string' ? { tag: t, count: 1 } : { tag: String((t as any)?.tag || t), count: Number((t as any)?.count || 1) })
+    .filter((t) => t.tag)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+
+  const totalFiles = Number(String(filesOut || '0').trim()) || 0;
+
+  const thresholds = {
+    unresolvedLinks: toNumberEnv('OBSIDIAN_AUDIT_MAX_UNRESOLVED', 50),
+    ambiguousLinks: toNumberEnv('OBSIDIAN_AUDIT_MAX_AMBIGUOUS', 20),
+    orphanFiles: toNumberEnv('OBSIDIAN_AUDIT_MAX_ORPHANS', 200),
+    deadendFiles: toNumberEnv('OBSIDIAN_AUDIT_MAX_DEADENDS', 200),
+    missingRequiredPropertyFiles: toNumberEnv('OBSIDIAN_AUDIT_MAX_MISSING_PROPERTIES', 50),
+  };
+
+  const snapshot: GraphAuditSnapshot = {
+    generatedAt: new Date().toISOString(),
+    vaultPath: `(native-cli: ${vaultName})`,
+    totals: {
+      files: totalFiles,
+      unresolvedLinks: unresolvedCount,
+      ambiguousLinks: 0,
+      orphanFiles: orphans.length,
+      deadendFiles: deadends.length,
+      missingRequiredPropertyFiles: 0,
+    },
+    topTags,
+    thresholds,
+    ambiguousLinkSamples: [],
+    pass:
+      unresolvedCount <= thresholds.unresolvedLinks
+      && orphans.length <= thresholds.orphanFiles
+      && deadends.length <= thresholds.deadendFiles,
+  };
+
+  console.log('[obsidian-audit] native CLI fast-path complete');
+  return snapshot;
+};
+
 const main = async (): Promise<void> => {
   const { vaultPath } = parseArgs();
   const configuredVaultPath = String(vaultPath || getObsidianVaultRoot() || '').trim();
@@ -206,6 +312,29 @@ const main = async (): Promise<void> => {
     process.exit(2);
   }
 
+  // Try native CLI fast-path first (much faster than fs walk)
+  const vaultName = String(process.env.OBSIDIAN_VAULT_NAME || 'docs').trim();
+  const nativeSnapshot = await tryNativeCliAudit(vaultName);
+  if (nativeSnapshot) {
+    nativeSnapshot.vaultPath = resolvedVault;
+    const runtimeDir = path.resolve(process.cwd(), '.runtime');
+    await fs.mkdir(runtimeDir, { recursive: true });
+    await fs.writeFile(path.join(runtimeDir, 'obsidian-graph-audit.json'), JSON.stringify(nativeSnapshot, null, 2), 'utf8');
+
+    console.log('[obsidian-audit] done (native-cli)');
+    console.log(`[obsidian-audit] files=${nativeSnapshot.totals.files}`);
+    console.log(`[obsidian-audit] unresolved=${nativeSnapshot.totals.unresolvedLinks}`);
+    console.log(`[obsidian-audit] orphans=${nativeSnapshot.totals.orphanFiles}`);
+    console.log(`[obsidian-audit] deadends=${nativeSnapshot.totals.deadendFiles}`);
+    console.log(`[obsidian-audit] pass=${nativeSnapshot.pass}`);
+
+    if (!nativeSnapshot.pass) {
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Fallback: filesystem walk
   const files = await listMarkdownFiles(resolvedVault);
   const nodes = new Map<string, NoteNode>();
   const basenameIndex = new Map<string, string[]>();

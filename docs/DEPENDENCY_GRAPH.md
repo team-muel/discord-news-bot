@@ -732,6 +732,7 @@ graph LR
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/llmClient.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/obsidianCacheService.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/obsidianHeadlessService.ts"
+  "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/router.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/utils/ttlCache.ts"
   "src/services/obsidian/obsidianSanitizationWorker.ts" --> "src/utils/env.ts"
   "src/services/obsidian/router.ts" --> "src/logger.ts"

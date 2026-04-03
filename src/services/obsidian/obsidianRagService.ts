@@ -25,6 +25,7 @@ import {
   getCacheStats,
   clearExpiredCache,
 } from './obsidianCacheService';
+import { writeObsidianNoteWithAdapter } from './router';
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 
@@ -73,6 +74,7 @@ export interface RAGQueryResult {
   documentCount: number;
   cacheStatus: { hits: number; misses: number };
   executionTimeMs: number;
+  graphDensity?: { avgBacklinks: number; maxBacklinks: number; connectedRatio: number };
 }
 
 type GuildScopeMode = 'off' | 'prefer' | 'strict';
@@ -175,6 +177,9 @@ export async function queryObsidianRAG(
     // 5. Assemble context
     const contextText = assembleContext(documents, graphMetadata, contextMode);
 
+    // 6. Compute graph density metrics
+    const graphDensity = computeGraphDensity(Array.from(documents.keys()), graphMetadata);
+
     // Log stats
     const stats = await getCacheStats();
     if (stats && options?.debug) {
@@ -198,6 +203,7 @@ export async function queryObsidianRAG(
       documentCount: documents.size,
       cacheStatus,
       executionTimeMs: Date.now() - startTime,
+      graphDensity,
     };
   } catch (error) {
     logger.error('[OBSIDIAN-RAG] Query failed: %o', error);
@@ -268,6 +274,20 @@ async function findRelatedDocuments(
       });
     }
 
+    // Graph-first boost: use cached graph metadata to boost scores by connectivity
+    const graphMetadata = graphMetaCache.get(GRAPH_META_CACHE_KEY);
+    if (graphMetadata && Object.keys(graphMetadata).length > 0) {
+      for (const [filePath, baseScore] of scoredResults) {
+        const meta = graphMetadata[filePath];
+        if (!meta) continue;
+        const backlinkCount = Array.isArray(meta.backlinks) ? meta.backlinks.length : 0;
+        const linkCount = Array.isArray(meta.links) ? meta.links.length : 0;
+        // Logarithmic boost: highly-connected docs get priority (max ~0.3 boost)
+        const connectivityBoost = Math.min(0.3, Math.log2(1 + backlinkCount + linkCount) * 0.05);
+        scoredResults.set(filePath, baseScore + connectivityBoost);
+      }
+    }
+
     const rankedPaths = [...scoredResults.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([filePath]) => filePath);
@@ -323,15 +343,18 @@ function assembleContext(
   let docIndex = 1;
   for (const [path, doc] of documents.entries()) {
     const meta = graphMetadata[path];
+    const backlinkCount = Array.isArray(meta?.backlinks) ? meta.backlinks.length : 0;
+    const linkCount = Array.isArray(meta?.links) ? meta.links.length : 0;
 
-    // Header with metadata
+    // Header with metadata + connection density
     const header = [
       `【문서 ${docIndex}】 ${path}`,
       meta?.title ? `제목: ${meta.title}` : null,
       meta?.tags?.length ? `태그: ${meta.tags.join(', ')}` : null,
       meta?.category ? `분류: ${meta.category}` : null,
+      (backlinkCount > 0 || linkCount > 0) ? `연결: ←${backlinkCount} →${linkCount}` : null,
       meta?.backlinks?.length 
-        ? `링크: ${meta.backlinks.slice(0, 3).join(', ')}${meta.backlinks.length > 3 ? '...' : ''}`
+        ? `인용: ${meta.backlinks.slice(0, 3).join(', ')}${meta.backlinks.length > 3 ? ` 외 ${meta.backlinks.length - 3}건` : ''}`
         : null,
     ]
       .filter(Boolean)
@@ -353,4 +376,98 @@ function assembleContext(
   }
 
   return parts.join('\n---\n\n');
+}
+
+/**
+ * Compute graph density metrics for the returned document set
+ */
+function computeGraphDensity(
+  filePaths: string[],
+  graphMetadata: Record<string, any>,
+): { avgBacklinks: number; maxBacklinks: number; connectedRatio: number } {
+  if (filePaths.length === 0) {
+    return { avgBacklinks: 0, maxBacklinks: 0, connectedRatio: 0 };
+  }
+
+  let totalBacklinks = 0;
+  let maxBacklinks = 0;
+  let connectedCount = 0;
+
+  for (const filePath of filePaths) {
+    const meta = graphMetadata[filePath];
+    const count = Array.isArray(meta?.backlinks) ? meta.backlinks.length : 0;
+    totalBacklinks += count;
+    if (count > maxBacklinks) maxBacklinks = count;
+    if (count > 0) connectedCount++;
+  }
+
+  return {
+    avgBacklinks: Math.round((totalBacklinks / filePaths.length) * 10) / 10,
+    maxBacklinks,
+    connectedRatio: Math.round((connectedCount / filePaths.length) * 100) / 100,
+  };
+}
+
+/**
+ * Write sprint retro summary to Obsidian vault for graph-first retrieval
+ */
+export async function writeRetroToVault(params: {
+  sprintId: string;
+  guildId?: string;
+  summary: string;
+  lessonsLearned: { keep: string[]; stop: string[]; start: string[] };
+  metrics?: Record<string, number | string>;
+}): Promise<{ path: string } | null> {
+  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `${dateStr}_retro_${params.sprintId}.md`;
+
+  const content = [
+    `# Sprint Retro: ${params.sprintId}`,
+    '',
+    `> Generated: ${new Date().toISOString()}`,
+    '',
+    '## Summary',
+    params.summary,
+    '',
+    '## Keep',
+    ...params.lessonsLearned.keep.map((item) => `- ${item}`),
+    '',
+    '## Stop',
+    ...params.lessonsLearned.stop.map((item) => `- ${item}`),
+    '',
+    '## Start',
+    ...params.lessonsLearned.start.map((item) => `- ${item}`),
+    '',
+    params.metrics ? '## Metrics' : '',
+    params.metrics
+      ? Object.entries(params.metrics).map(([k, v]) => `- **${k}**: ${v}`).join('\n')
+      : '',
+  ].filter((line) => line !== undefined).join('\n');
+
+  const tags = ['retro', `sprint-${params.sprintId}`, 'lessons-learned'];
+
+  try {
+    const result = await writeObsidianNoteWithAdapter({
+      guildId: params.guildId || '',
+      vaultPath,
+      fileName: `retros/${fileName}`,
+      content,
+      tags,
+      properties: {
+        schema: 'retro/v1',
+        sprint_id: params.sprintId,
+        created_at: new Date().toISOString(),
+      },
+    });
+
+    if (result) {
+      logger.info('[OBSIDIAN-RAG] Retro written to vault: %s', result.path);
+    }
+    return result;
+  } catch (error) {
+    logger.warn('[OBSIDIAN-RAG] Failed to write retro to vault: %s', error instanceof Error ? error.message : String(error));
+    return null;
+  }
 }
