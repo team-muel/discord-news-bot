@@ -617,7 +617,7 @@ const processQueuedJob = async (): Promise<boolean> => {
   const nextAttempts = Math.max(0, Number(queued.attempts || 0)) + 1;
   const { data: claimedRows, error: claimError } = await client
     .from('memory_jobs')
-    .update({ status: 'running', started_at: nowIso(), attempts: nextAttempts, next_attempt_at: null })
+    .update({ status: 'running', started_at: nowIso(), attempts: nextAttempts, next_attempt_at: nowIso() })
     .eq('id', queued.id)
     .eq('status', 'queued')
     .select('id, guild_id, job_type, attempts, input, output, window_started_at, window_ended_at')
@@ -654,7 +654,7 @@ const processQueuedJob = async (): Promise<boolean> => {
         error: null,
         deadlettered_at: null,
         deadletter_reason: null,
-        next_attempt_at: null,
+        next_attempt_at: nowIso(),
       })
       .eq('id', claimed.id)
       .eq('status', 'running');
@@ -675,7 +675,7 @@ const processQueuedJob = async (): Promise<boolean> => {
     const message = toErrorMessage(error);
     const shouldFail = nextAttempts >= MEMORY_JOBS_MAX_RETRIES;
     currentPhase = shouldFail ? 'deadletter' : 'retry';
-    const nextAttemptAt = shouldFail ? null : toNextAttemptIso(nextAttempts);
+    const nextAttemptAt = shouldFail ? nowIso() : toNextAttemptIso(nextAttempts);
     runnerStats.failed += 1;
     runnerStats.lastErrorAt = nowIso();
     runnerStats.lastErrorMessage = message;
