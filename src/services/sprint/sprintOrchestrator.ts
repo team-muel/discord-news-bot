@@ -14,13 +14,13 @@ import {
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext } from './sprintPreamble';
+import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
 import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, type LoopState } from '../skills/loopDetection';
 import { parseBenchResult } from '../tools/adapters/openjarvisAdapter';
 import { writeLocalCache, readLocalCache } from '../localStateCache';
 import { executeHooks } from './sprintHooks';
-import { ingestRetroInsights } from '../entityNervousSystem';
+import { ingestRetroInsights, precipitateSessionToMemory } from '../entityNervousSystem';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
 import { adjustBehaviorFromReward } from '../entityNervousSystem';
@@ -35,6 +35,45 @@ import { createActionApprovalRequest } from '../skills/actionGovernanceStore';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import { runWorkerGenerationPipeline } from '../workerGeneration/workerGenerationPipeline';
 import { generateAndApplyCodeChanges, rollbackCodeChanges, type CodeChange } from './sprintCodeWriter';
+import { buildStructuralDiffSection } from './sprintDiffSummarizer';
+import { recordWorkflowEvent } from '../workflow/workflowPersistenceService';
+import { persistTrafficRoutingDecision, type TrafficRoutingDecision } from '../workflow/trafficRoutingService';
+import {
+  PHASE_WORKER_KIND,
+  PHASE_EXTERNAL_ADAPTER,
+  getPhaseExternalAdapterMap,
+  isWorkerKnownDead,
+  recordWorkerHealth,
+  getWorkerHealthCacheSnapshot,
+  isAdapterCircuitOpen,
+  recordAdapterResult,
+  getAdapterCircuitBreakerSnapshot,
+  buildExternalAdapterArgs,
+  buildSecondaryAdapterArgs,
+} from './sprintWorkerRouter';
+import {
+  recordPhaseMetric as _recordPhaseMetric,
+  recordPipelineCreated as _recordPipelineCreated,
+  recordLoopBack as _recordLoopBack,
+  getSprintMetrics as _getSprintMetrics,
+  type SprintMetricsSummary,
+} from './sprintMetricsCollector';
+import {
+  shadowPipelineCreated,
+  shadowPhaseCompleted,
+  shadowFilesChanged,
+  shadowPipelineCancelled,
+  shadowPipelineBlocked,
+} from './eventSourcing/bridge';
+
+// Re-export for backward compatibility
+export { getPhaseExternalAdapterMap, getWorkerHealthCacheSnapshot, getAdapterCircuitBreakerSnapshot } from './sprintWorkerRouter';
+export { recordPhaseMetric, recordPipelineCreated, recordLoopBack, getSprintMetrics, type SprintMetricsSummary } from './sprintMetricsCollector';
+
+// Local aliases for internal usage
+const recordPhaseMetric = _recordPhaseMetric;
+const recordPipelineCreated = _recordPipelineCreated;
+const recordLoopBack = _recordLoopBack;
 
 // Race a promise against a timeout, cleaning up the timer when the main promise resolves
 const raceWithTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
@@ -44,55 +83,6 @@ const raceWithTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: str
   });
   return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
 };
-
-// Phase → MCP worker kind mapping for delegation
-const PHASE_WORKER_KIND: Partial<Record<SprintPhase, McpWorkerKind>> = {
-  plan: 'architect',
-  implement: 'implement',
-  review: 'review',
-  'security-audit': 'review',
-  'ops-validate': 'operate',
-  ship: 'operate',
-  retro: 'architect',
-};
-
-// Phase → external adapter fallback for when MCP workers are absent
-const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, { adapterId: 'nemoclaw' | 'openjarvis'; action: string }>> = {
-  review: { adapterId: 'nemoclaw', action: 'code.review' },
-  'security-audit': { adapterId: 'nemoclaw', action: 'code.review' },
-  'ops-validate': { adapterId: 'openjarvis', action: 'jarvis.ask' },
-};
-
-// Worker health cache — skip known-dead workers quickly instead of waiting for full timeout
-const WORKER_HEALTH_CACHE_TTL_MS = 60_000;
-const workerHealthCache = new Map<string, { healthy: boolean; checkedAt: number }>();
-
-const isWorkerKnownDead = (workerUrl: string): boolean => {
-  const entry = workerHealthCache.get(workerUrl);
-  if (!entry) return false;
-  if (Date.now() - entry.checkedAt > WORKER_HEALTH_CACHE_TTL_MS) {
-    workerHealthCache.delete(workerUrl);
-    return false;
-  }
-  return !entry.healthy;
-};
-
-const recordWorkerHealth = (workerUrl: string, healthy: boolean): void => {
-  workerHealthCache.set(workerUrl, { healthy, checkedAt: Date.now() });
-  // Evict oldest entries when cache exceeds limit
-  if (workerHealthCache.size > 50) {
-    const sorted = [...workerHealthCache.entries()]
-      .sort((a, b) => a[1].checkedAt - b[1].checkedAt);
-    // Remove 20% of oldest entries to avoid re-triggering eviction on every insert
-    const toRemove = Math.max(1, Math.floor(sorted.length * 0.2));
-    for (let i = 0; i < toRemove; i++) {
-      workerHealthCache.delete(sorted[i][0]);
-    }
-  }
-};
-
-// Expose for diagnostics
-export const getWorkerHealthCacheSnapshot = () => Object.fromEntries(workerHealthCache);
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -107,7 +97,8 @@ export type SprintTriggerType =
   | 'feature-request'
   | 'scheduled'
   | 'manual'
-  | 'self-improvement';
+  | 'self-improvement'
+  | 'observation';
 
 export type AutonomyLevel = 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
 
@@ -120,6 +111,15 @@ export type PhaseResult = {
   startedAt: string;
   completedAt: string;
   iterationCount: number;
+  /** GAP-006: Which adapter handled this phase (undefined = local action fallback) */
+  adapterMeta?: {
+    adapterId: string;
+    action: string;
+    durationMs: number;
+    ok: boolean;
+    error?: string;
+    secondary?: { adapterId: string; action: string };
+  };
 };
 
 export type SprintPipeline = {
@@ -217,8 +217,8 @@ const refreshReconfigHints = async (): Promise<void> => {
   try {
     cachedReconfigHints = await loadWorkflowReconfigHints();
     cachedReconfigHintsAt = Date.now();
-  } catch {
-    // best-effort
+  } catch (err) {
+    logger.debug('[SPRINT] reconfig-hints refresh failed: %s', err instanceof Error ? err.message : String(err));
   }
 };
 
@@ -297,6 +297,9 @@ export const createSprintPipeline = (params: {
   // Best-effort persist to Supabase
   persistPipeline(pipeline).catch(() => {});
 
+  // Dual-write: shadow as Ventyd event (best-effort)
+  shadowPipelineCreated(pipeline).catch(() => {});
+
   // Fire SprintStart lifecycle hook (best-effort, non-blocking)
   executeHooks({
     hookPoint: 'SprintStart',
@@ -329,6 +332,7 @@ export const markPipelineBlocked = (sprintId: string, reason: string): void => {
   pipeline.error = reason;
   pipeline.updatedAt = new Date().toISOString();
   persistPipeline(pipeline).catch(() => {});
+  shadowPipelineBlocked(sprintId, reason).catch(() => {});
 };
 
 // ──── Phase execution ─────────────────────────────────────────────────────────
@@ -500,6 +504,8 @@ const executePhaseAction = async (
 
         if (codeResult.ok) {
           pipeline.codeChanges = codeResult.changes;
+          // Cache full diffs for lazy resolution by external adapters (no truncation)
+          writeLocalCache(`sprint-${pipeline.sprintId}-diffs`, codeResult.changes, 2 * 60 * 60_000);
           for (const change of codeResult.changes) {
             if (!pipeline.changedFiles.includes(change.filePath)) {
               pipeline.changedFiles.push(change.filePath);
@@ -553,12 +559,28 @@ const executePhaseAction = async (
 
     // ── Standard path: LLM-based action execution ──
     const goal = buildPhaseGoal(pipeline, phase, systemPrompt);
-    const goalWithLoopWarning = loopWarning ? `${goal}\n\n${loopWarning}` : goal;
+
+    // ── Layer 2: Enrich phase context from external adapters (best-effort, non-blocking) ──
+    let enrichedGoal = goal;
+    try {
+      const enrichment = await raceWithTimeout(
+        enrichPhaseContext(phase, pipeline.objective, pipeline.changedFiles),
+        10_000,
+        'ENRICHMENT_TIMEOUT',
+      );
+      if (enrichment) {
+        enrichedGoal = `${goal}\n\n${enrichment}`;
+      }
+    } catch (err) {
+      logger.debug('[SPRINT] phase enrichment failed phase=%s: %s', phase, err instanceof Error ? err.message : String(err));
+    }
+
+    const goalWithLoopWarning = loopWarning ? `${enrichedGoal}\n\n${loopWarning}` : enrichedGoal;
 
     // ── MCP worker delegation: prefer health-aware router, fall back to env-var lookup ──
     const workerKind = PHASE_WORKER_KIND[phase];
     const routerResult = workerKind ? resolveWorkerByKind(workerKind) : null;
-    const workerUrl = routerResult?.workerUrl || (workerKind ? getMcpWorkerUrl(workerKind) : '');
+    const workerUrl = routerResult?.workerUrl || (workerKind ? getMcpWorkerUrl(workerKind as McpWorkerKind) : '');
 
     if (workerUrl && !isWorkerKnownDead(workerUrl)) {
       logger.info('[SPRINT] delegating phase=%s to MCP worker=%s', phase, workerKind);
@@ -602,27 +624,92 @@ const executePhaseAction = async (
     // ── External adapter fallback: try real external tools before LLM-only fallback ──
     const externalMapping = PHASE_EXTERNAL_ADAPTER[phase];
     if (externalMapping) {
-      try {
-        const adapterResult = await executeExternalAction(externalMapping.adapterId, externalMapping.action, {
-          code: pipeline.codeChanges?.map((c) => `--- ${c.filePath} ---\n${c.newContent || ''}`).join('\n\n') || pipeline.changedFiles.join('\n'),
-          goal: pipeline.objective,
-          question: `Sprint phase "${phase}" objective: ${pipeline.objective}. Changed files: ${pipeline.changedFiles.join(', ')}`,
-        });
-        if (adapterResult.ok && adapterResult.output.length > 0) {
-          logger.info('[SPRINT] external adapter %s.%s succeeded for phase=%s (duration=%dms)', externalMapping.adapterId, externalMapping.action, phase, adapterResult.durationMs);
+      // GAP-001: Skip adapter if circuit breaker is open (too many recent failures)
+      if (isAdapterCircuitOpen(externalMapping.adapterId)) {
+        logger.info('[SPRINT] skipping adapter %s for phase=%s (circuit breaker open)', externalMapping.adapterId, phase);
+      } else {
+        // Bootstrap OpenClaw session with tool catalog for implement phase
+        if (phase === 'implement' && externalMapping.adapterId === 'openclaw') {
+          try {
+            const { bootstrapOpenClawSession } = await import('../tools/adapters/openclawCliAdapter');
+            const sessionId = `sprint-${pipeline.sprintId}`;
+            await raceWithTimeout(bootstrapOpenClawSession(sessionId), 5_000, 'OpenClaw bootstrap timeout');
+          } catch (err) {
+            logger.debug('[SPRINT] OpenClaw bootstrap failed: %s', err instanceof Error ? err.message : String(err));
+          }
+        }
+
+        const adapterArgs = buildExternalAdapterArgs(phase, pipeline);
+        const attemptAdapter = async (): Promise<{ ok: boolean; output: string; durationMs: number; error?: string } | null> => {
+          try {
+            const adapterResult = await executeExternalAction(externalMapping.adapterId, externalMapping.action, adapterArgs);
+            const adapterOutput = adapterResult.ok ? adapterResult.output.join('\n').trim() : '';
+            return { ok: adapterResult.ok && adapterOutput.length >= 50, output: adapterOutput, durationMs: adapterResult.durationMs, error: adapterResult.error };
+          } catch (err) {
+            return { ok: false, output: '', durationMs: 0, error: err instanceof Error ? err.message : String(err) };
+          }
+        };
+
+        // GAP-003: Try once, retry once on transient failure with short backoff
+        let attempt = await attemptAdapter();
+        if (attempt && !attempt.ok && attempt.error && /timeout|ECONN|EPIPE|5\d\d/i.test(attempt.error)) {
+          logger.info('[SPRINT] retrying adapter %s.%s for phase=%s after transient error: %s', externalMapping.adapterId, externalMapping.action, phase, attempt.error);
+          await new Promise((r) => setTimeout(r, 500));
+          attempt = await attemptAdapter();
+        }
+
+        if (attempt?.ok && attempt.output.length >= 50) {
+          recordAdapterResult(externalMapping.adapterId, true);
+          logger.info('[SPRINT] external adapter %s.%s succeeded for phase=%s (duration=%dms, outputLen=%d)', externalMapping.adapterId, externalMapping.action, phase, attempt.durationMs, attempt.output.length);
+
+          // ── Secondary adapter: composite phase execution ──
+          let combinedOutput = attempt.output;
+          if (externalMapping.secondary && !isAdapterCircuitOpen(externalMapping.secondary.adapterId)) {
+            try {
+              const secondaryArgs = buildSecondaryAdapterArgs(phase, pipeline, attempt.output);
+              const secondaryResult = await raceWithTimeout(
+                executeExternalAction(externalMapping.secondary.adapterId, externalMapping.secondary.action, secondaryArgs),
+                15_000,
+                `Secondary adapter timeout for ${externalMapping.secondary.adapterId}`,
+              );
+              if (secondaryResult.ok && secondaryResult.output.join('\n').trim().length >= 20) {
+                recordAdapterResult(externalMapping.secondary.adapterId, true);
+                const secondaryOutput = secondaryResult.output.join('\n').trim().slice(0, 3000);
+                combinedOutput = `${attempt.output}\n\n--- Secondary Analysis (${externalMapping.secondary.adapterId}.${externalMapping.secondary.action}) ---\n${secondaryOutput}`;
+                logger.info('[SPRINT] secondary adapter %s.%s succeeded for phase=%s (duration=%dms)', externalMapping.secondary.adapterId, externalMapping.secondary.action, phase, secondaryResult.durationMs);
+              } else {
+                recordAdapterResult(externalMapping.secondary.adapterId, false);
+              }
+            } catch (secErr) {
+              logger.debug('[SPRINT] secondary adapter %s failed for phase=%s: %s', externalMapping.secondary.adapterId, phase, secErr instanceof Error ? secErr.message : String(secErr));
+            }
+          }
+
           return {
             phase,
             status: 'success',
-            output: adapterResult.output.join('\n'),
+            output: combinedOutput,
             artifacts: [],
             startedAt,
             completedAt: new Date().toISOString(),
             iterationCount: 1,
+            // GAP-006: Persist adapter metadata for forensics
+            adapterMeta: {
+              adapterId: externalMapping.adapterId,
+              action: externalMapping.action,
+              durationMs: attempt.durationMs,
+              ok: true,
+              secondary: externalMapping.secondary ? { adapterId: externalMapping.secondary.adapterId, action: externalMapping.secondary.action } : undefined,
+            },
           };
         }
-        logger.info('[SPRINT] external adapter %s.%s unavailable or empty for phase=%s, falling through to local action', externalMapping.adapterId, externalMapping.action, phase);
-      } catch (adapterError) {
-        logger.warn('[SPRINT] external adapter %s.%s failed: %s', externalMapping.adapterId, externalMapping.action, adapterError instanceof Error ? adapterError.message : String(adapterError));
+        // Record failure for circuit breaker
+        recordAdapterResult(externalMapping.adapterId, false);
+        if (attempt?.ok && attempt.output.length < 50) {
+          logger.warn('[SPRINT] external adapter %s.%s returned low-quality output for phase=%s (len=%d, min=50), falling through', externalMapping.adapterId, externalMapping.action, phase, attempt?.output.length ?? 0);
+        } else {
+          logger.info('[SPRINT] external adapter %s.%s unavailable/failed for phase=%s (%s), falling through to local action', externalMapping.adapterId, externalMapping.action, phase, attempt?.error || 'empty output');
+        }
       }
     }
 
@@ -721,17 +808,7 @@ const buildPhaseGoal = (pipeline: SprintPipeline, phase: SprintPhase, systemProm
   // Inject actual code diffs for review/security-audit/implement (re-implement) phases
   if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
     if (phase === 'review' || phase === 'security-audit') {
-      const diffSections: string[] = ['[CODE_DIFFS] Review the following actual code modifications:'];
-      for (const change of pipeline.codeChanges) {
-        const origSnippet = change.originalContent.slice(0, 1500);
-        const newSnippet = change.newContent.slice(0, 1500);
-        diffSections.push(
-          `\n### ${change.filePath}`,
-          `**Before (truncated):**\n\`\`\`typescript\n${origSnippet}\n\`\`\``,
-          `**After (truncated):**\n\`\`\`typescript\n${newSnippet}\n\`\`\``,
-        );
-      }
-      sections.push(diffSections.join('\n'));
+      sections.push(buildStructuralDiffSection(pipeline.codeChanges));
     } else if (phase === 'implement' && pipeline.implementReviewLoopCount > 0) {
       // Re-implement: feed structured diff context so the LLM knows what was tried and rejected
       const rejectedSummary = pipeline.codeChanges.map(
@@ -832,7 +909,8 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
 
   const phaseResult = await executePhaseAction(pipeline, currentPhase);
   const phaseDurationMs = Date.now() - phaseStartMs;
-  recordPhaseMetric(currentPhase, phaseDurationMs, phaseResult.status === 'failed');
+  const phaseDeterministic = isDeterministicPhase(currentPhase);
+  recordPhaseMetric(currentPhase, phaseDurationMs, phaseResult.status === 'failed', phaseDeterministic);
 
   // Fire PhaseComplete lifecycle hook (best-effort)
   executeHooks({
@@ -850,8 +928,8 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       if (journalSection) {
         phaseResult.output += `\n\n${journalSection}`;
       }
-    } catch {
-      // Journal enrichment is best-effort
+    } catch (err) {
+      logger.debug('[SPRINT] journal enrichment failed: %s', err instanceof Error ? err.message : String(err));
     }
 
     const autoplanResult = await runAutoplan({
@@ -947,6 +1025,19 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       });
     }
 
+    // 4. Skill discovery: detect missing skills from trace patterns
+    const skillDiscoveryResult = await executeExternalAction('openjarvis', 'jarvis.skill.discover', { limit: 5 });
+    if (skillDiscoveryResult.ok && skillDiscoveryResult.output.length > 0) {
+      learningAppendix.push(`[SKILL-DISCOVER] ${skillDiscoveryResult.output.slice(0, 3).join('; ')}`);
+      logger.info('[SPRINT] skill discovery found candidates for sprint=%s', sprintId);
+    }
+
+    // 5. Telemetry snapshot: capture energy/latency metrics post-sprint
+    const telemetryResult = await executeExternalAction('openjarvis', 'jarvis.telemetry', { window: '1h' });
+    if (telemetryResult.ok && telemetryResult.output.length > 0) {
+      learningAppendix.push(`[TELEMETRY] ${telemetryResult.output.slice(0, 3).join('; ')}`);
+    }
+
     // ── Obsidian journal: persist retro insights to vault for pattern accumulation ──
     const phaseTimings: Record<string, number> = {};
     const failedPhases: string[] = [];
@@ -976,12 +1067,36 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       phaseTimings,
       failedPhases,
       succeededPhases,
+      scaffoldingRatio: (() => {
+        const allPhaseNames = Object.keys(pipeline.phaseResults).map((k) => k.replace(/-\d+$/, ''));
+        const deterministicCount = allPhaseNames.filter((p) => isDeterministicPhase(p as SprintPhase)).length;
+        return allPhaseNames.length > 0 ? deterministicCount / allPhaseNames.length : 0;
+      })(),
       completedAt: new Date().toISOString(),
     };
 
     recordSprintJournalEntry(journalEntry).catch((err) =>
       logger.warn('[SPRINT] journal entry write failed: %s', err instanceof Error ? err.message : String(err)),
     );
+
+    // ── SOP auto-update: extract lessons from retro and persist to tribal knowledge ──
+    const sopAction = getAction('sop.update');
+    if (sopAction && failedPhases.length > 0) {
+      const lessons: string[] = [];
+      for (const fp of failedPhases) {
+        lessons.push(`Sprint ${pipeline.sprintId}: ${fp} phase failed during "${pipeline.objective.slice(0, 100)}"`);
+      }
+      if (pipeline.implementReviewLoopCount > 1) {
+        lessons.push(`Sprint ${pipeline.sprintId}: implement↔review looped ${pipeline.implementReviewLoopCount} times — review threshold may need adjustment`);
+      }
+      void sopAction.execute({
+        goal: 'Auto-update SOP from retro',
+        args: { lessons, section: 'Sprint Lessons Learned' },
+        guildId: pipeline.guildId,
+      }).catch((err) =>
+        logger.debug('[SPRINT] sop.update best-effort failed: %s', err instanceof Error ? err.message : String(err)),
+      );
+    }
 
     // Circuit 3: Ingest retro insights as self-notes for future session context
     void ingestRetroInsights({
@@ -992,6 +1107,19 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     }).catch((err) =>
       logger.warn('[SPRINT] retro insight ingestion failed: %s', err instanceof Error ? err.message : String(err)),
     );
+
+    // Layer 3 Bridge: precipitate sprint outcome as agent memory for cross-system context
+    void precipitateSessionToMemory({
+      sessionId: `sprint-${pipeline.sprintId}`,
+      guildId: pipeline.guildId,
+      goal: pipeline.objective,
+      result: phaseResult.output.slice(0, 2000),
+      status: 'completed',
+      stepCount: pipeline.totalPhasesExecuted,
+      requestedBy: 'sprint-pipeline',
+    }).catch((err) =>
+      logger.debug('[SPRINT] memory precipitation failed: %s', err instanceof Error ? err.message : String(err)),
+    );
   }
 
   // Track implement↔review loops (count ANY failure that loops back to implement)
@@ -999,6 +1127,19 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
   if (loopsBackToImplement && phaseResult.status !== 'success') {
     pipeline.implementReviewLoopCount++;
     recordLoopBack();
+
+    // Signal bus: phase looping detected
+    if (pipeline.implementReviewLoopCount >= 2) {
+      try {
+        const { emitSignal } = await import('../runtime/signalBus');
+        emitSignal('workflow.phase.looping', 'sprintOrchestrator', pipeline.guildId, {
+          sprintId, loopCount: pipeline.implementReviewLoopCount,
+          fromPhase: currentPhase, toPhase: 'implement',
+        });
+      } catch (err) {
+        logger.debug('[SPRINT] signal-emit workflow.phase.looping failed: %s', err instanceof Error ? err.message : String(err));
+      }
+    }
 
     // Rollback code changes before re-implementing so the next iteration starts clean
     if (pipeline.codeChanges && pipeline.codeChanges.length > 0) {
@@ -1019,6 +1160,20 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     if (!pipeline.changedFiles.includes(f)) {
       pipeline.changedFiles.push(f);
     }
+  }
+
+  // Dual-write: shadow phase completion + file changes as Ventyd events (best-effort)
+  shadowPhaseCompleted(sprintId, {
+    phase: currentPhase,
+    status: phaseResult.status,
+    output: phaseResult.output,
+    artifacts: phaseResult.artifacts,
+    startedAt: phaseResult.startedAt,
+    completedAt: phaseResult.completedAt,
+    iterationCount: phaseResult.iterationCount,
+  }).catch(() => {});
+  if (newFiles.length > 0) {
+    shadowFilesChanged(sprintId, newFiles).catch(() => {});
   }
 
   // Handle awaiting-approval
@@ -1049,6 +1204,31 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
   pipeline.currentPhase = nextPhase;
   pipeline.updatedAt = new Date().toISOString();
 
+  // Emit workflow event for sprint ↔ workflow cross-reference (best-effort)
+  void recordWorkflowEvent({
+    sessionId: `sprint-${sprintId}`,
+    eventType: 'sprint_phase_transition',
+    fromState: currentPhase,
+    toState: nextPhase,
+    handoffFrom: getPhaseLeadAgent(currentPhase as SprintPhase),
+    handoffTo: nextPhase !== 'complete' && nextPhase !== 'blocked'
+      ? getPhaseLeadAgent(nextPhase as SprintPhase)
+      : undefined,
+    decisionReason: phaseResult.status === 'success'
+      ? `Phase ${currentPhase} succeeded (${phaseDurationMs}ms)`
+      : `Phase ${currentPhase} ${phaseResult.status}: ${phaseResult.output.slice(0, 200)}`,
+    evidenceId: sprintId,
+    payload: {
+      sprintId,
+      guildId: pipeline.guildId,
+      objective: pipeline.objective.slice(0, 200),
+      phaseStatus: phaseResult.status,
+      phaseDurationMs,
+      totalPhasesExecuted: pipeline.totalPhasesExecuted,
+      changedFilesCount: pipeline.changedFiles.length,
+    },
+  }).catch(() => {});
+
   if (nextPhase === 'complete') {
     pipeline.completedAt = new Date().toISOString();
     logger.info('[SPRINT] pipeline=%s completed successfully', sprintId);
@@ -1074,6 +1254,18 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     void adjustBehaviorFromReward(pipeline.guildId).catch((err) =>
       logger.debug('[SPRINT] ENS behavior adjustment after completion failed: %s', err instanceof Error ? err.message : String(err)),
     );
+
+    // Signal bus: sprint completed
+    try {
+      const { emitSignal } = await import('../runtime/signalBus');
+      emitSignal('workflow.sprint.completed', 'sprintOrchestrator', pipeline.guildId, {
+        sprintId, triggerType: pipeline.triggerType,
+        phasesExecuted: pipeline.totalPhasesExecuted,
+        changedFiles: pipeline.changedFiles,
+      });
+    } catch (err) {
+      logger.debug('[SPRINT] signal-emit sprint.completed failed: %s', err instanceof Error ? err.message : String(err));
+    }
   } else if (nextPhase === 'blocked') {
     pipeline.error = `Phase ${currentPhase} failed: ${phaseResult.output.slice(0, 200)}`;
     logger.warn('[SPRINT] pipeline=%s blocked at phase=%s', sprintId, currentPhase);
@@ -1082,6 +1274,18 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     void adjustBehaviorFromReward(pipeline.guildId).catch((err) =>
       logger.debug('[SPRINT] ENS behavior adjustment after block failed: %s', err instanceof Error ? err.message : String(err)),
     );
+
+    // Signal bus: sprint failed
+    try {
+      const { emitSignal } = await import('../runtime/signalBus');
+      emitSignal('workflow.sprint.failed', 'sprintOrchestrator', pipeline.guildId, {
+        sprintId, triggerType: pipeline.triggerType,
+        phasesExecuted: pipeline.totalPhasesExecuted,
+        changedFiles: pipeline.changedFiles,
+      });
+    } catch (err) {
+      logger.debug('[SPRINT] signal-emit sprint.failed failed: %s', err instanceof Error ? err.message : String(err));
+    }
   }
 
   persistPipeline(pipeline).catch(() => {});
@@ -1193,6 +1397,7 @@ export const cancelSprintPipeline = (sprintId: string): { ok: boolean; message: 
   pipeline.completedAt = new Date().toISOString();
 
   persistPipeline(pipeline).catch(() => {});
+  shadowPipelineCancelled(sprintId).catch(() => {});
   logger.info('[SPRINT] pipeline=%s cancelled', sprintId);
   return { ok: true, message: 'Pipeline cancelled' };
 };
@@ -1311,59 +1516,6 @@ const rehydrateActivePipelinesInner = async (): Promise<number> => {
     logger.warn('[SPRINT] rehydration failed: %s', error instanceof Error ? error.message : String(error));
     return 0;
   }
-};
-
-// ──── Observability / Metrics ──────────────────────────────────────────────────
-
-const sprintMetrics = {
-  totalPipelinesCreated: 0,
-  totalPhasesExecuted: 0,
-  totalPhasesFailed: 0,
-  totalLoopBacks: 0,
-  phaseTimingsMs: [] as Array<{ phase: string; durationMs: number; at: string }>,
-};
-
-/** Record a phase execution metric (called internally after each phase). */
-export const recordPhaseMetric = (phase: string, durationMs: number, failed: boolean): void => {
-  sprintMetrics.totalPhasesExecuted++;
-  if (failed) sprintMetrics.totalPhasesFailed++;
-  sprintMetrics.phaseTimingsMs.push({ phase, durationMs, at: new Date().toISOString() });
-  // Keep only last 200 entries to bound memory
-  if (sprintMetrics.phaseTimingsMs.length > 200) {
-    sprintMetrics.phaseTimingsMs = sprintMetrics.phaseTimingsMs.slice(-200);
-  }
-};
-
-export const recordPipelineCreated = (): void => {
-  sprintMetrics.totalPipelinesCreated++;
-};
-
-export const recordLoopBack = (): void => {
-  sprintMetrics.totalLoopBacks++;
-};
-
-export type SprintMetricsSummary = {
-  totalPipelinesCreated: number;
-  totalPhasesExecuted: number;
-  totalPhasesFailed: number;
-  totalLoopBacks: number;
-  avgPhaseDurationMs: number;
-  recentTimings: Array<{ phase: string; durationMs: number; at: string }>;
-};
-
-export const getSprintMetrics = (): SprintMetricsSummary => {
-  const timings = sprintMetrics.phaseTimingsMs;
-  const avg = timings.length > 0
-    ? Math.round(timings.reduce((s, t) => s + t.durationMs, 0) / timings.length)
-    : 0;
-  return {
-    totalPipelinesCreated: sprintMetrics.totalPipelinesCreated,
-    totalPhasesExecuted: sprintMetrics.totalPhasesExecuted,
-    totalPhasesFailed: sprintMetrics.totalPhasesFailed,
-    totalLoopBacks: sprintMetrics.totalLoopBacks,
-    avgPhaseDurationMs: avg,
-    recentTimings: timings.slice(-20),
-  };
 };
 
 // ──── Snapshot ─────────────────────────────────────────────────────────────────

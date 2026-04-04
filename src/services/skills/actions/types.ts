@@ -103,6 +103,7 @@ export type ActionCategory =
   | 'content'   // news, youtube, community
   | 'code'      // code generation, execution
   | 'ops'       // privacy, governance, release
+  | 'automation' // n8n workflows, delegation tasks
   | 'tool';     // CLI tools, web fetch
 
 export type ActionDefinition = {

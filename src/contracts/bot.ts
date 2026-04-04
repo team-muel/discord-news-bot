@@ -186,4 +186,12 @@ export type HealthResponse = {
   uptimeSec: number;
   bot: BotRuntimeStatus;
   automation: AutomationRuntimeStatus;
+  n8n?: {
+    adapterAvailable: boolean;
+    delegationEnabled: boolean;
+    delegationFirst: boolean;
+    cacheAvailable: boolean | null;
+    configuredTasks: number;
+    totalTasks: number;
+  };
 };

@@ -1,7 +1,9 @@
 ---
 description: "Sprint Phase: Review — find bugs that pass CI but break in production. Auto-fix obvious issues, flag completeness gaps, and verify release safety."
-applyTo: "**"
+applyTo: "src/**"
 ---
+
+<!-- Token Budget: ~400 base, ~1,500 with references -->
 
 # /review
 
@@ -60,6 +62,29 @@ applyTo: "**"
 | Critical findings    | `/implement` (with precise findings) |
 | Security concerns    | `/security-audit`                    |
 | Operational concerns | `/ops-validate`                      |
+
+## HITL Decision
+
+### Act (auto-fix without asking)
+
+- Typos, missing null checks, trivial type errors
+- Import ordering and unused import removal
+- Formatting inconsistencies
+- Adding missing `await` on obvious async calls
+
+### Ask (flag for human decision)
+
+- Architectural concerns that need `/plan` re-scope
+- Ambiguous intent where multiple valid fixes exist
+- Changes that could alter user-visible behavior
+- Security findings that require design trade-offs
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/review-priorities-detail.md` — detailed review checklist by priority
+- `references/discord-output-rules.md` — Discord message sanitization and embed limits
 
 ## Runtime Counterpart
 

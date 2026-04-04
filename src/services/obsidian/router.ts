@@ -5,6 +5,7 @@ import { localFsObsidianAdapter } from './adapters/localFsAdapter.ts';
 import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
 import { scriptCliObsidianAdapter } from './adapters/scriptCliAdapter.ts';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
+import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import type {
   ObsidianCapability,
   ObsidianLoreQuery,
@@ -151,7 +152,13 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
     return [];
   }
 
-  const hints = await adapter.readLore(params);
+  let hints: string[] = [];
+  try {
+    hints = await adapter.readLore(params);
+  } catch (error) {
+    logger.warn('[OBSIDIAN-ADAPTER] read_lore failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+  }
+
   if (hints.length > 0) {
     logAdapterSignal({ capability: 'read_lore', outcome: 'success', primary: adapter.id, detail: 'primary_hit' });
     return hints;
@@ -170,10 +177,15 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
     if (!supportsCapability(fallback, 'read_lore')) {
       continue;
     }
-    const fallbackHints = await fallback.readLore(params);
-    if (fallbackHints.length > 0) {
-      logAdapterSignal({ capability: 'read_lore', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_hit' });
-      return fallbackHints;
+    try {
+      const fallbackHints = await fallback.readLore(params);
+      if (fallbackHints.length > 0) {
+        logAdapterSignal({ capability: 'read_lore', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_hit' });
+        return fallbackHints;
+      }
+    } catch (err) {
+      logger.debug('[OBSIDIAN-ROUTER] readLore fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      // Continue fallback chain.
     }
   }
 
@@ -182,6 +194,14 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
 };
 
 export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput): Promise<{ path: string } | null> => {
+  const sanitized = sanitizeForObsidianWrite({ content: params.content });
+  if (sanitized.blocked) {
+    logger.warn('[OBSIDIAN-ADAPTER] write_note blocked by sanitizer: %s (file: %s)', sanitized.reasons.join(', '), params.fileName);
+    logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: null, detail: `sanitizer_blocked:${sanitized.reasons.join(',')}` });
+    return null;
+  }
+  const sanitizedParams: ObsidianNoteWriteInput = { ...params, content: sanitized.cleaned.content };
+
   const adapter = pickAdapter('write_note');
   if (!adapter || !adapter.writeNote) {
     logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: null, detail: 'no_adapter' });
@@ -189,7 +209,7 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
   }
 
   try {
-    const primary = await adapter.writeNote(params);
+    const primary = await adapter.writeNote(sanitizedParams);
     logAdapterSignal({ capability: 'write_note', outcome: 'success', primary: adapter.id, detail: 'primary_write_ok' });
     return primary;
   } catch (error) {
@@ -207,10 +227,11 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
         continue;
       }
       try {
-        const fallbackResult = await fallback.writeNote(params);
+        const fallbackResult = await fallback.writeNote(sanitizedParams);
         logAdapterSignal({ capability: 'write_note', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_write_ok' });
         return fallbackResult;
-      } catch {
+      } catch (err) {
+        logger.debug('[OBSIDIAN-ROUTER] writeNote fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
         // Continue fallback chain.
       }
     }
@@ -226,32 +247,45 @@ export const searchObsidianVaultWithAdapter = async (params: ObsidianSearchQuery
     return [];
   }
 
+  let primaryResults: ObsidianSearchResult[] = [];
+  let primaryFailed = false;
   try {
-    const primary = await adapter.searchVault(params);
-    if (primary.length > 0 || OBSIDIAN_ADAPTER_STRICT) {
-      logAdapterSignal({ capability: 'search_vault', outcome: primary.length > 0 ? 'success' : 'failure', primary: adapter.id, detail: primary.length > 0 ? 'primary_hit' : 'strict_empty' });
-      return primary;
-    }
-
-    for (const fallback of getOrderedAdapters('search_vault')) {
-      if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.searchVault) {
-        continue;
-      }
-      if (!supportsCapability(fallback, 'search_vault')) {
-        continue;
-      }
-      const fallbackResults = await fallback.searchVault(params);
-      if (fallbackResults.length > 0) {
-        logAdapterSignal({ capability: 'search_vault', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_hit' });
-        return fallbackResults;
-      }
-    }
+    primaryResults = await adapter.searchVault(params);
   } catch (error) {
     logger.warn('[OBSIDIAN-ADAPTER] search_vault failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
-    logAdapterSignal({ capability: 'search_vault', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    primaryFailed = true;
   }
 
-  logAdapterSignal({ capability: 'search_vault', outcome: 'failure', primary: adapter.id, detail: 'all_empty' });
+  if (primaryResults.length > 0) {
+    logAdapterSignal({ capability: 'search_vault', outcome: 'success', primary: adapter.id, detail: 'primary_hit' });
+    return primaryResults;
+  }
+
+  if (OBSIDIAN_ADAPTER_STRICT && !primaryFailed) {
+    logAdapterSignal({ capability: 'search_vault', outcome: 'failure', primary: adapter.id, detail: 'strict_empty' });
+    return [];
+  }
+
+  for (const fallback of getOrderedAdapters('search_vault')) {
+    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.searchVault) {
+      continue;
+    }
+    if (!supportsCapability(fallback, 'search_vault')) {
+      continue;
+    }
+    try {
+      const fallbackResults = await fallback.searchVault(params);
+      if (fallbackResults.length > 0) {
+        logAdapterSignal({ capability: 'search_vault', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: primaryFailed ? 'primary_error_fallback_hit' : 'fallback_hit' });
+        return fallbackResults;
+      }
+    } catch (err) {
+      logger.debug('[OBSIDIAN-ROUTER] searchVault fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      // Continue fallback chain.
+    }
+  }
+
+  logAdapterSignal({ capability: 'search_vault', outcome: 'failure', primary: adapter.id, detail: primaryFailed ? 'primary_error_all_fallback_empty' : 'all_empty' });
   return [];
 };
 
@@ -262,32 +296,45 @@ export const readObsidianFileWithAdapter = async (params: ObsidianReadFileQuery)
     return null;
   }
 
+  let primaryContent: string | null = null;
+  let primaryFailed = false;
   try {
-    const primary = await adapter.readFile(params);
-    if (primary !== null || OBSIDIAN_ADAPTER_STRICT) {
-      logAdapterSignal({ capability: 'read_file', outcome: primary !== null ? 'success' : 'failure', primary: adapter.id, detail: primary !== null ? 'primary_hit' : 'strict_empty' });
-      return primary;
-    }
-
-    for (const fallback of getOrderedAdapters('read_file')) {
-      if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.readFile) {
-        continue;
-      }
-      if (!supportsCapability(fallback, 'read_file')) {
-        continue;
-      }
-      const fallbackContent = await fallback.readFile(params);
-      if (fallbackContent !== null) {
-        logAdapterSignal({ capability: 'read_file', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_hit' });
-        return fallbackContent;
-      }
-    }
+    primaryContent = await adapter.readFile(params);
   } catch (error) {
     logger.warn('[OBSIDIAN-ADAPTER] read_file failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
-    logAdapterSignal({ capability: 'read_file', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    primaryFailed = true;
   }
 
-  logAdapterSignal({ capability: 'read_file', outcome: 'failure', primary: adapter.id, detail: 'all_empty' });
+  if (primaryContent !== null) {
+    logAdapterSignal({ capability: 'read_file', outcome: 'success', primary: adapter.id, detail: 'primary_hit' });
+    return primaryContent;
+  }
+
+  if (OBSIDIAN_ADAPTER_STRICT && !primaryFailed) {
+    logAdapterSignal({ capability: 'read_file', outcome: 'failure', primary: adapter.id, detail: 'strict_empty' });
+    return null;
+  }
+
+  for (const fallback of getOrderedAdapters('read_file')) {
+    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.readFile) {
+      continue;
+    }
+    if (!supportsCapability(fallback, 'read_file')) {
+      continue;
+    }
+    try {
+      const fallbackContent = await fallback.readFile(params);
+      if (fallbackContent !== null) {
+        logAdapterSignal({ capability: 'read_file', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: primaryFailed ? 'primary_error_fallback_hit' : 'fallback_hit' });
+        return fallbackContent;
+      }
+    } catch (err) {
+      logger.debug('[OBSIDIAN-ROUTER] readFile fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      // Continue fallback chain.
+    }
+  }
+
+  logAdapterSignal({ capability: 'read_file', outcome: 'failure', primary: adapter.id, detail: primaryFailed ? 'primary_error_all_fallback_empty' : 'all_empty' });
   return null;
 };
 
@@ -298,32 +345,45 @@ export const getObsidianGraphMetadataWithAdapter = async (params: { vaultPath: s
     return {};
   }
 
+  let primaryResult: Record<string, ObsidianNode> = {};
+  let primaryFailed = false;
   try {
-    const primary = await adapter.getGraphMetadata(params);
-    if (Object.keys(primary).length > 0 || OBSIDIAN_ADAPTER_STRICT) {
-      logAdapterSignal({ capability: 'graph_metadata', outcome: Object.keys(primary).length > 0 ? 'success' : 'failure', primary: adapter.id, detail: Object.keys(primary).length > 0 ? 'primary_hit' : 'strict_empty' });
-      return primary;
-    }
-
-    for (const fallback of getOrderedAdapters('graph_metadata')) {
-      if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.getGraphMetadata) {
-        continue;
-      }
-      if (!supportsCapability(fallback, 'graph_metadata')) {
-        continue;
-      }
-      const fallbackMetadata = await fallback.getGraphMetadata(params);
-      if (Object.keys(fallbackMetadata).length > 0) {
-        logAdapterSignal({ capability: 'graph_metadata', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_hit' });
-        return fallbackMetadata;
-      }
-    }
+    primaryResult = await adapter.getGraphMetadata(params);
   } catch (error) {
     logger.warn('[OBSIDIAN-ADAPTER] graph_metadata failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
-    logAdapterSignal({ capability: 'graph_metadata', outcome: 'failure', primary: adapter.id, detail: 'exception' });
+    primaryFailed = true;
   }
 
-  logAdapterSignal({ capability: 'graph_metadata', outcome: 'failure', primary: adapter.id, detail: 'all_empty' });
+  if (Object.keys(primaryResult).length > 0) {
+    logAdapterSignal({ capability: 'graph_metadata', outcome: 'success', primary: adapter.id, detail: 'primary_hit' });
+    return primaryResult;
+  }
+
+  if (OBSIDIAN_ADAPTER_STRICT && !primaryFailed) {
+    logAdapterSignal({ capability: 'graph_metadata', outcome: 'failure', primary: adapter.id, detail: 'strict_empty' });
+    return {};
+  }
+
+  for (const fallback of getOrderedAdapters('graph_metadata')) {
+    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.getGraphMetadata) {
+      continue;
+    }
+    if (!supportsCapability(fallback, 'graph_metadata')) {
+      continue;
+    }
+    try {
+      const fallbackMetadata = await fallback.getGraphMetadata(params);
+      if (Object.keys(fallbackMetadata).length > 0) {
+        logAdapterSignal({ capability: 'graph_metadata', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: primaryFailed ? 'primary_error_fallback_hit' : 'fallback_hit' });
+        return fallbackMetadata;
+      }
+    } catch (err) {
+      logger.debug('[OBSIDIAN-ROUTER] graphMetadata fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      // Continue fallback chain.
+    }
+  }
+
+  logAdapterSignal({ capability: 'graph_metadata', outcome: 'failure', primary: adapter.id, detail: primaryFailed ? 'primary_error_all_fallback_empty' : 'all_empty' });
   return {};
 };
 
@@ -420,4 +480,46 @@ export const toggleObsidianTaskWithAdapter = async (filePath: string, line: numb
     logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: adapter.id, detail: 'exception' });
     return false;
   }
+};
+
+export type ObsidianVaultHealthStatus = {
+  healthy: boolean;
+  issues: string[];
+  adapterStatus: ReturnType<typeof getObsidianAdapterRuntimeStatus>;
+  writeCapable: boolean;
+  readCapable: boolean;
+  searchCapable: boolean;
+};
+
+export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
+  const adapterStatus = getObsidianAdapterRuntimeStatus();
+  const issues: string[] = [];
+
+  const writeCapable = adapterStatus.selectedByCapability.write_note !== null;
+  const readCapable = adapterStatus.selectedByCapability.read_file !== null || adapterStatus.selectedByCapability.read_lore !== null;
+  const searchCapable = adapterStatus.selectedByCapability.search_vault !== null;
+
+  if (!writeCapable) {
+    issues.push('No adapter available for write_note — all Obsidian writes are no-ops');
+  }
+  if (!readCapable) {
+    issues.push('No adapter available for read operations — retrieval disabled');
+  }
+  if (!searchCapable) {
+    issues.push('No adapter available for search_vault — search disabled');
+  }
+
+  const availableCount = adapterStatus.adapters.filter((a) => a.available).length;
+  if (availableCount === 0) {
+    issues.push('No Obsidian adapters available — vault is completely disconnected');
+  }
+
+  return {
+    healthy: issues.length === 0,
+    issues,
+    adapterStatus,
+    writeCapable,
+    readCapable,
+    searchCapable,
+  };
 };

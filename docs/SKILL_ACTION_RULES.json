@@ -288,6 +288,50 @@
           "queryArg": "goal"
         }
       ]
+    },
+    {
+      "id": "n8n-status-intent",
+      "pattern": "n8n\\s*상태|n8n\\s*status|n8n\\s*health|n8n\\s*연결|n8n\\s*확인|위임\\s*상태|delegation\\s*status",
+      "plans": [
+        {
+          "actionName": "n8n.status",
+          "reason": "n8n-status-intent",
+          "queryArg": "none"
+        }
+      ]
+    },
+    {
+      "id": "n8n-workflow-list-intent",
+      "pattern": "n8n\\s*워크플로\\s*목록|n8n\\s*workflow\\s*list|n8n\\s*워크플로\\s*조회|n8n에\\s*뭐\\s*있",
+      "plans": [
+        {
+          "actionName": "n8n.workflow.list",
+          "reason": "n8n-workflow-list-intent",
+          "queryArg": "none"
+        }
+      ]
+    },
+    {
+      "id": "n8n-workflow-execute-intent",
+      "pattern": "n8n\\s*워크플로\\s*실행|n8n\\s*workflow\\s*execute|n8n\\s*실행|n8n으로\\s*실행",
+      "plans": [
+        {
+          "actionName": "n8n.workflow.execute",
+          "reason": "n8n-workflow-execute-intent",
+          "queryArg": "none"
+        }
+      ]
+    },
+    {
+      "id": "n8n-workflow-trigger-intent",
+      "pattern": "n8n\\s*웹훅|n8n\\s*webhook|n8n\\s*트리거|n8n\\s*trigger",
+      "plans": [
+        {
+          "actionName": "n8n.workflow.trigger",
+          "reason": "n8n-workflow-trigger-intent",
+          "queryArg": "none"
+        }
+      ]
     }
   ]
 }

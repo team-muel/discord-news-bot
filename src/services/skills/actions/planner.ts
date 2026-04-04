@@ -4,17 +4,29 @@ import { getActionUtilityScore } from '../actionRunner';
 import type { ActionChainPlan, ActionPlan } from './types';
 import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../../utils/env';
+import { runExternalAction } from '../../tools/toolRouter';
+import type { ExternalAdapterId } from '../../tools/externalAdapterTypes';
 
-const PLANNER_SELF_CONSISTENCY_ENABLED = parseBooleanEnv(process.env.PLANNER_SELF_CONSISTENCY_ENABLED, true);
-const PLANNER_SELF_CONSISTENCY_SAMPLES = Math.max(1, Math.min(5, parseIntegerEnv(process.env.PLANNER_SELF_CONSISTENCY_SAMPLES, 3)));
-const PLANNER_SELF_CONSISTENCY_TEMPERATURE = parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_TEMPERATURE, 0.35, 0, 1);
-const PLANNER_RULES_FIRST_ENABLED = parseBooleanEnv(process.env.PLANNER_RULES_FIRST_ENABLED, true);
-const PLANNER_CATALOG_MAX_ACTIONS = Math.max(5, parseIntegerEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12));
-const PLANNER_ADAPTIVE_SAMPLES_ENABLED = parseBooleanEnv(process.env.PLANNER_ADAPTIVE_SAMPLES_ENABLED, true);
-const PLANNER_PATTERN_CACHE_ENABLED = parseBooleanEnv(process.env.PLANNER_PATTERN_CACHE_ENABLED, true);
-const PLANNER_PATTERN_CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_TTL_MS, 30 * 60_000));
-const PLANNER_PATTERN_CACHE_MAX_SIZE = Math.max(10, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_MAX_SIZE, 100));
-const PLANNER_PATTERN_CACHE_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.PLANNER_PATTERN_CACHE_MIN_SIMILARITY, 0.75, 0.5, 1);
+// ──── Planner Configuration ────────────────────────────────────────────────
+// All planner env vars consolidated into a single config object.
+// To tune planner behavior, set PLANNER_* env vars (see defaults below).
+
+const PLANNER_CONFIG = {
+  selfConsistency: {
+    enabled: parseBooleanEnv(process.env.PLANNER_SELF_CONSISTENCY_ENABLED, true),
+    samples: Math.max(1, Math.min(5, parseIntegerEnv(process.env.PLANNER_SELF_CONSISTENCY_SAMPLES, 3))),
+    temperature: parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_TEMPERATURE, 0.35, 0, 1),
+    adaptiveSamplesEnabled: parseBooleanEnv(process.env.PLANNER_ADAPTIVE_SAMPLES_ENABLED, true),
+  },
+  rulesFirstEnabled: parseBooleanEnv(process.env.PLANNER_RULES_FIRST_ENABLED, true),
+  catalogMaxActions: Math.max(5, parseIntegerEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12)),
+  patternCache: {
+    enabled: parseBooleanEnv(process.env.PLANNER_PATTERN_CACHE_ENABLED, true),
+    ttlMs: Math.max(60_000, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_TTL_MS, 30 * 60_000)),
+    maxSize: Math.max(10, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_MAX_SIZE, 100)),
+    minSimilarity: parseBoundedNumberEnv(process.env.PLANNER_PATTERN_CACHE_MIN_SIMILARITY, 0.75, 0.5, 1),
+  },
+} as const;
 
 // ──── Pattern Cache ────────────────────────────────────────────────────────────
 
@@ -29,14 +41,14 @@ const patternCache: CachedPlan[] = [];
 const evictExpiredEntries = (): void => {
   const now = Date.now();
   for (let i = patternCache.length - 1; i >= 0; i--) {
-    if (now - patternCache[i].createdAt > PLANNER_PATTERN_CACHE_TTL_MS) {
+    if (now - patternCache[i].createdAt > PLANNER_CONFIG.patternCache.ttlMs) {
       patternCache.splice(i, 1);
     }
   }
 };
 
 const findCachedPlan = (goalTerms: Set<string>): ActionPlan[] | null => {
-  if (!PLANNER_PATTERN_CACHE_ENABLED || patternCache.length === 0) return null;
+  if (!PLANNER_CONFIG.patternCache.enabled || patternCache.length === 0) return null;
   evictExpiredEntries();
 
   let bestMatch: CachedPlan | null = null;
@@ -44,7 +56,7 @@ const findCachedPlan = (goalTerms: Set<string>): ActionPlan[] | null => {
 
   for (const entry of patternCache) {
     const score = jaccardSets(goalTerms, entry.goalTerms);
-    if (score >= PLANNER_PATTERN_CACHE_MIN_SIMILARITY && score > bestScore) {
+    if (score >= PLANNER_CONFIG.patternCache.minSimilarity && score > bestScore) {
       bestScore = score;
       bestMatch = entry;
     }
@@ -54,11 +66,11 @@ const findCachedPlan = (goalTerms: Set<string>): ActionPlan[] | null => {
 };
 
 const cachePlan = (goalTerms: Set<string>, actions: ActionPlan[]): void => {
-  if (!PLANNER_PATTERN_CACHE_ENABLED || actions.length === 0) return;
+  if (!PLANNER_CONFIG.patternCache.enabled || actions.length === 0) return;
   evictExpiredEntries();
 
   // Enforce max size — evict oldest
-  while (patternCache.length >= PLANNER_PATTERN_CACHE_MAX_SIZE) {
+  while (patternCache.length >= PLANNER_CONFIG.patternCache.maxSize) {
     patternCache.shift();
   }
 
@@ -68,17 +80,17 @@ const cachePlan = (goalTerms: Set<string>, actions: ActionPlan[]): void => {
 // ──── Exported cache stats (for diagnostics) ──────────────────────────────────
 
 export const getPlannerCacheStats = () => ({
-  enabled: PLANNER_PATTERN_CACHE_ENABLED,
+  enabled: PLANNER_CONFIG.patternCache.enabled,
   size: patternCache.length,
-  maxSize: PLANNER_PATTERN_CACHE_MAX_SIZE,
-  ttlMs: PLANNER_PATTERN_CACHE_TTL_MS,
-  minSimilarity: PLANNER_PATTERN_CACHE_MIN_SIMILARITY,
+  maxSize: PLANNER_CONFIG.patternCache.maxSize,
+  ttlMs: PLANNER_CONFIG.patternCache.ttlMs,
+  minSimilarity: PLANNER_CONFIG.patternCache.minSimilarity,
 });
 
 /** Reduce LLM calls for simple goals — short or single-action-likely goals use k=1 */
 const resolveAdaptiveSamples = (goal: string): number => {
-  if (!PLANNER_ADAPTIVE_SAMPLES_ENABLED || !PLANNER_SELF_CONSISTENCY_ENABLED) {
-    return PLANNER_SELF_CONSISTENCY_SAMPLES;
+  if (!PLANNER_CONFIG.selfConsistency.adaptiveSamplesEnabled || !PLANNER_CONFIG.selfConsistency.enabled) {
+    return PLANNER_CONFIG.selfConsistency.samples;
   }
   const text = String(goal || '').trim();
   // Very short goals are almost always single-action
@@ -86,7 +98,7 @@ const resolveAdaptiveSamples = (goal: string): number => {
   // Simple imperative goals don't benefit from multi-sample consensus
   const simplePatterns = /^(검색|찾아|알려|보여|조회|요약|상태|확인|정보)/;
   if (simplePatterns.test(text)) return 1;
-  return PLANNER_SELF_CONSISTENCY_SAMPLES;
+  return PLANNER_CONFIG.selfConsistency.samples;
 };
 
 const toGoalTerms = (text: string): Set<string> => {
@@ -106,7 +118,7 @@ const jaccardSets = (a: Set<string>, b: Set<string>): number => {
 };
 
 /** Rank actions by Jaccard similarity to the goal and return top-N catalog lines. */
-const buildPrunedCatalog = (goal: string, maxActions = PLANNER_CATALOG_MAX_ACTIONS): string => {
+const buildPrunedCatalog = (goal: string, maxActions = PLANNER_CONFIG.catalogMaxActions): string => {
   const goalTerms = toGoalTerms(goal);
   const termIndex = getActionTermIndex();
   const actions = listActions();
@@ -126,6 +138,45 @@ const buildPrunedCatalog = (goal: string, maxActions = PLANNER_CATALOG_MAX_ACTIO
     .slice(0, maxActions);
 
   return ranked.map(({ action }) => `- ${action.name}: ${action.description}`).join('\n');
+};
+
+// ──── Dynamic n8n workflow catalog ─────────────────────────────────────────────
+
+const N8N_CATALOG_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.N8N_CATALOG_CACHE_TTL_MS, 5 * 60_000));
+
+let n8nCatalogCache: { lines: string[]; fetchedAt: number } | null = null;
+
+/**
+ * Fetch live n8n workflow names. Cached to avoid API calls on every plan.
+ * Returns empty array if n8n is unavailable — never blocks planner.
+ */
+const fetchN8nWorkflowCatalog = async (): Promise<string[]> => {
+  const now = Date.now();
+  if (n8nCatalogCache && now - n8nCatalogCache.fetchedAt < N8N_CATALOG_CACHE_TTL_MS) {
+    return n8nCatalogCache.lines;
+  }
+
+  try {
+    const result = await runExternalAction('n8n' as ExternalAdapterId, 'workflow.list', { limit: 25 });
+    if (!result.ok) {
+      n8nCatalogCache = { lines: [], fetchedAt: now };
+      return [];
+    }
+
+    const parsed = JSON.parse(result.output[0] || '{}') as { data?: Array<{ id: string; name: string }> };
+    const workflows = parsed.data || [];
+    const lines = workflows.map((w) => `  - n8n.workflow.execute(workflowId="${w.id}"): ${w.name}`);
+    n8nCatalogCache = { lines, fetchedAt: now };
+    return lines;
+  } catch {
+    n8nCatalogCache = { lines: [], fetchedAt: now };
+    return [];
+  }
+};
+
+/** @internal Exported for testing only. */
+export const _resetN8nCatalogCache = (): void => {
+  n8nCatalogCache = null;
 };
 
 const applyRagPriority = async (plans: ActionPlan[], goal: string): Promise<ActionPlan[]> => {
@@ -268,7 +319,7 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
   }
 
   // Rules-first fast-path: if regex rules produce a plan, skip LLM entirely.
-  if (PLANNER_RULES_FIRST_ENABLED) {
+  if (PLANNER_CONFIG.rulesFirstEnabled) {
     const rulesPlan = await buildFallbackPlan(goal);
     if (rulesPlan.length > 0) {
       const withRag = await applyRagPriority(rulesPlan, goal);
@@ -283,7 +334,11 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
 
   const actions = listActions();
   const catalog = buildPrunedCatalog(goal);
-  const prompt = [
+
+  // Always inject live n8n workflow catalog (cached, no-op when unavailable)
+  const n8nHint = await fetchN8nWorkflowCatalog();
+
+  const promptLines = [
     '아래 목표를 가장 잘 수행할 액션 체인을 선택하세요.',
     '출력은 JSON 한 줄만 허용합니다.',
     '{"actions":[{"actionName":"...","args":{},"reason":"..."}]}',
@@ -294,11 +349,17 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
     '',
     '액션 목록:',
     catalog,
-    '',
-    `목표: ${goal}`,
-  ].join('\n');
+  ];
 
-  if (!PLANNER_SELF_CONSISTENCY_ENABLED || PLANNER_SELF_CONSISTENCY_SAMPLES <= 1) {
+  if (n8nHint.length > 0) {
+    promptLines.push('', 'n8n 실행 가능한 워크플로 (n8n.workflow.execute의 workflowId로 사용):');
+    promptLines.push(...n8nHint);
+  }
+
+  promptLines.push('', `목표: ${goal}`);
+  const prompt = promptLines.join('\n');
+
+  if (!PLANNER_CONFIG.selfConsistency.enabled || PLANNER_CONFIG.selfConsistency.samples <= 1) {
     const single = await requestPlanCandidate({ goal, prompt, temperature: 0 });
     if (!single || single.length === 0) {
       return { actions: await fallbackPlan(goal) };
@@ -318,7 +379,7 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
   }
 
   const temperatures = Array.from({ length: k }, (_, index) => (
-    index === 0 ? 0 : PLANNER_SELF_CONSISTENCY_TEMPERATURE
+    index === 0 ? 0 : PLANNER_CONFIG.selfConsistency.temperature
   ));
   const candidates = await Promise.all(temperatures.map((temperature) => requestPlanCandidate({ goal, prompt, temperature })));
   const validCandidates = candidates.filter((candidate): candidate is ActionPlan[] => Boolean(candidate && candidate.length > 0));

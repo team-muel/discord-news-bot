@@ -6,20 +6,7 @@ import {
   startAgentSession,
 } from '../../services/multiAgentService';
 import { DISCORD_MESSAGES } from '../messages';
-
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-};
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export const SESSION_BUTTON_ACTIONS = new Set(['session_run', 'session_remove']);
 

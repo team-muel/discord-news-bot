@@ -12,6 +12,7 @@ import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDoma
 import { logActionExecutionEvent } from './actionExecutionLogService';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
+import { CircuitBreaker } from '../../utils/circuitBreaker';
 import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
@@ -21,6 +22,21 @@ import { buildWorkerApprovalGateSnapshot } from '../agent/agentWorkerApprovalGat
 import { setGateProviderProfileOverride } from '../llmClient';
 import type { LlmProviderProfile } from '../llmClient';
 import logger from '../../logger';
+import {
+  type FailureDiagnostics,
+  type SkillActionResult,
+  type ActionRunnerDiagnosticsSnapshot,
+  createEmptyDiagnostics,
+  classifyFailureCode,
+  isExternalUnavailableError,
+  updateActionRunnerDiagnostics,
+  getActionRunnerDiagnosticsSnapshot,
+  recordFailureCode,
+} from './actionRunnerDiagnostics';
+
+// Re-export for backward compatibility
+export { getActionRunnerDiagnosticsSnapshot, type ActionRunnerDiagnosticsSnapshot } from './actionRunnerDiagnostics';
+export type { SkillActionResult, FailureDiagnostics } from './actionRunnerDiagnostics';
 
 /** Actions that require approval_required enforcement regardless of guild policy runMode. */
 const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
@@ -83,71 +99,11 @@ const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string 
       if (first !== undefined) cachedGateVerdict.delete(first);
     }
     return { overall, providerProfileTarget };
-  } catch {
+  } catch (err) {
+    logger.debug('[ACTION-RUNNER] guild-policy lookup failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
     const cached = cachedGateVerdict.get(guildId);
     return { overall: cached?.overall || null, providerProfileTarget: cached?.providerProfileTarget || null };
   }
-};
-
-type FailureDiagnostics = {
-  totalFailures: number;
-  missingAction: number;
-  policyBlocked: number;
-  governanceUnavailable: number;
-  finopsBlocked: number;
-  externalFailures: number;
-  unknownFailures: number;
-};
-
-type SkillActionResult = {
-  handled: boolean;
-  output: string;
-  hasSuccess: boolean;
-  externalUnavailable: boolean;
-  diagnostics: FailureDiagnostics;
-};
-
-export type ActionRunnerDiagnosticsSnapshot = {
-  lastUpdatedAt: string | null;
-  totalRuns: number;
-  handledRuns: number;
-  successRuns: number;
-  failedRuns: number;
-  externalUnavailableRuns: number;
-  failureTotals: FailureDiagnostics;
-  trend: {
-    windowSize: number;
-    comparedRuns: number;
-    failureRateDelta: number | null;
-    missingActionDelta: number | null;
-    policyBlockedDelta: number | null;
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  };
-  topFailureCodes: Array<{
-    code: string;
-    count: number;
-    share: number;
-  }>;
-  recentRuns: Array<{
-    at: string;
-    totalFailures: number;
-    failed: boolean;
-    missingAction: number;
-    policyBlocked: number;
-  }>;
-  lastRun: {
-    handled: boolean;
-    hasSuccess: boolean;
-    externalUnavailable: boolean;
-    diagnostics: FailureDiagnostics;
-  } | null;
-};
-
-type ActionRunnerRunSample = {
-  at: string;
-  failureTotal: number;
-  missingAction: number;
-  policyBlocked: number;
 };
 
 type GoalActionInput = {
@@ -199,7 +155,6 @@ const ACTION_NEWS_CAPTURE_MIN_ITEMS = Math.max(1, Math.min(5, parseIntegerEnv(pr
 const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = Math.max(6, Math.min(24 * 30, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72)));
 const ACTION_NEWS_CAPTURE_MAX_ITEMS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5)));
 const ACTION_NEWS_CAPTURE_SOURCE = String(process.env.ACTION_NEWS_CAPTURE_SOURCE || 'google_news_rss').trim() || 'google_news_rss';
-const ACTION_RUNNER_TREND_WINDOW_RUNS = Math.max(4, Math.min(50, parseIntegerEnv(process.env.ACTION_RUNNER_TREND_WINDOW_RUNS, 10)));
 const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000));
 const DEFAULT_CACHEABLE_ACTIONS = [
   'code.generate',
@@ -240,8 +195,11 @@ const actionResultCache = new TtlCache<{
   };
 }>(ACTION_CACHE_MAX_ENTRIES);
 
-const breakerState = new Map<string, { failures: number; openedUntilMs: number }>();
-const BREAKER_MAX_ENTRIES = 500;
+const actionCircuitBreaker = new CircuitBreaker({
+  failureThreshold: ACTION_CIRCUIT_FAILURE_THRESHOLD,
+  cooldownMs: ACTION_CIRCUIT_OPEN_MS,
+  maxEntries: 500,
+});
 
 // Per-action utility scores: rolling success rate for planner feedback
 const actionUtilityScores = new Map<string, { runs: number; successes: number; lastFailedAt: number }>();
@@ -289,215 +247,6 @@ const getFinopsBudgetStatusSafely = async (guildId: string) => {
     return null;
   }
 };
-
-const createEmptyDiagnostics = (): FailureDiagnostics => ({
-  totalFailures: 0,
-  missingAction: 0,
-  policyBlocked: 0,
-  governanceUnavailable: 0,
-  finopsBlocked: 0,
-  externalFailures: 0,
-  unknownFailures: 0,
-});
-
-const cloneDiagnostics = (source: FailureDiagnostics): FailureDiagnostics => ({
-  totalFailures: Number(source.totalFailures || 0),
-  missingAction: Number(source.missingAction || 0),
-  policyBlocked: Number(source.policyBlocked || 0),
-  governanceUnavailable: Number(source.governanceUnavailable || 0),
-  finopsBlocked: Number(source.finopsBlocked || 0),
-  externalFailures: Number(source.externalFailures || 0),
-  unknownFailures: Number(source.unknownFailures || 0),
-});
-
-const actionRunnerDiagnosticsState: ActionRunnerDiagnosticsSnapshot = {
-  lastUpdatedAt: null,
-  totalRuns: 0,
-  handledRuns: 0,
-  successRuns: 0,
-  failedRuns: 0,
-  externalUnavailableRuns: 0,
-  failureTotals: createEmptyDiagnostics(),
-  trend: {
-    windowSize: ACTION_RUNNER_TREND_WINDOW_RUNS,
-    comparedRuns: 0,
-    failureRateDelta: null,
-    missingActionDelta: null,
-    policyBlockedDelta: null,
-    direction: 'unknown',
-  },
-  topFailureCodes: [],
-  recentRuns: [],
-  lastRun: null,
-};
-
-const actionRunnerRecentRuns: ActionRunnerRunSample[] = [];
-const actionRunnerFailureCodeCounts = new Map<string, number>();
-
-const round = (value: number): number => Number(value.toFixed(4));
-
-const computeTrendDirection = (deltas: Array<number | null>): 'up' | 'down' | 'flat' | 'unknown' => {
-  const available = deltas.filter((value): value is number => Number.isFinite(value));
-  if (available.length === 0) {
-    return 'unknown';
-  }
-
-  const score = available.reduce((sum, value) => sum + value, 0);
-  if (score > 0.03) {
-    return 'up';
-  }
-  if (score < -0.03) {
-    return 'down';
-  }
-  return 'flat';
-};
-
-const computeTrendSnapshot = () => {
-  const windowSize = ACTION_RUNNER_TREND_WINDOW_RUNS;
-  const latest = actionRunnerRecentRuns.slice(-windowSize);
-  const previous = actionRunnerRecentRuns.slice(-(windowSize * 2), -windowSize);
-  if (latest.length === 0 || previous.length === 0) {
-    return {
-      windowSize,
-      comparedRuns: 0,
-      failureRateDelta: null,
-      missingActionDelta: null,
-      policyBlockedDelta: null,
-      direction: 'unknown' as const,
-    };
-  }
-
-  const failureRate = (samples: ActionRunnerRunSample[]): number => {
-    const failed = samples.filter((sample) => sample.failureTotal > 0).length;
-    return failed / samples.length;
-  };
-  const averageBy = (samples: ActionRunnerRunSample[], key: 'missingAction' | 'policyBlocked'): number => {
-    const total = samples.reduce((sum, sample) => sum + sample[key], 0);
-    return total / samples.length;
-  };
-
-  const failureRateDelta = round(failureRate(latest) - failureRate(previous));
-  const missingActionDelta = round(averageBy(latest, 'missingAction') - averageBy(previous, 'missingAction'));
-  const policyBlockedDelta = round(averageBy(latest, 'policyBlocked') - averageBy(previous, 'policyBlocked'));
-
-  return {
-    windowSize,
-    comparedRuns: latest.length + previous.length,
-    failureRateDelta,
-    missingActionDelta,
-    policyBlockedDelta,
-    direction: computeTrendDirection([failureRateDelta, missingActionDelta, policyBlockedDelta]),
-  };
-};
-
-const computeTopFailureCodes = (): Array<{ code: string; count: number; share: number }> => {
-  const totalFailures = Math.max(0, Number(actionRunnerDiagnosticsState.failureTotals.totalFailures || 0));
-  if (totalFailures <= 0 || actionRunnerFailureCodeCounts.size === 0) {
-    return [];
-  }
-
-  return Array.from(actionRunnerFailureCodeCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([code, count]) => ({
-      code,
-      count,
-      share: round(count / totalFailures),
-    }));
-};
-
-const updateActionRunnerDiagnostics = (result: SkillActionResult) => {
-  const nowIso = new Date().toISOString();
-  actionRunnerDiagnosticsState.lastUpdatedAt = nowIso;
-  actionRunnerDiagnosticsState.totalRuns += 1;
-  if (result.handled) {
-    actionRunnerDiagnosticsState.handledRuns += 1;
-  }
-  if (result.hasSuccess) {
-    actionRunnerDiagnosticsState.successRuns += 1;
-  }
-  if (result.diagnostics.totalFailures > 0) {
-    actionRunnerDiagnosticsState.failedRuns += 1;
-  }
-  if (result.externalUnavailable) {
-    actionRunnerDiagnosticsState.externalUnavailableRuns += 1;
-  }
-
-  const totals = actionRunnerDiagnosticsState.failureTotals;
-  totals.totalFailures += result.diagnostics.totalFailures;
-  totals.missingAction += result.diagnostics.missingAction;
-  totals.policyBlocked += result.diagnostics.policyBlocked;
-  totals.governanceUnavailable += result.diagnostics.governanceUnavailable;
-  totals.finopsBlocked += result.diagnostics.finopsBlocked;
-  totals.externalFailures += result.diagnostics.externalFailures;
-  totals.unknownFailures += result.diagnostics.unknownFailures;
-
-  actionRunnerDiagnosticsState.lastRun = {
-    handled: result.handled,
-    hasSuccess: result.hasSuccess,
-    externalUnavailable: result.externalUnavailable,
-    diagnostics: cloneDiagnostics(result.diagnostics),
-  };
-
-  actionRunnerRecentRuns.push({
-    at: nowIso,
-    failureTotal: Number(result.diagnostics.totalFailures || 0),
-    missingAction: Number(result.diagnostics.missingAction || 0),
-    policyBlocked: Number(result.diagnostics.policyBlocked || 0),
-  });
-  const maxRuns = ACTION_RUNNER_TREND_WINDOW_RUNS * 2;
-  while (actionRunnerRecentRuns.length > maxRuns) {
-    actionRunnerRecentRuns.shift();
-  }
-
-  actionRunnerDiagnosticsState.trend = computeTrendSnapshot();
-  actionRunnerDiagnosticsState.topFailureCodes = computeTopFailureCodes();
-  actionRunnerDiagnosticsState.recentRuns = actionRunnerRecentRuns.map((sample) => ({
-    at: sample.at,
-    totalFailures: sample.failureTotal,
-    failed: sample.failureTotal > 0,
-    missingAction: sample.missingAction,
-    policyBlocked: sample.policyBlocked,
-  }));
-};
-
-export const getActionRunnerDiagnosticsSnapshot = (): ActionRunnerDiagnosticsSnapshot => ({
-  lastUpdatedAt: actionRunnerDiagnosticsState.lastUpdatedAt,
-  totalRuns: actionRunnerDiagnosticsState.totalRuns,
-  handledRuns: actionRunnerDiagnosticsState.handledRuns,
-  successRuns: actionRunnerDiagnosticsState.successRuns,
-  failedRuns: actionRunnerDiagnosticsState.failedRuns,
-  externalUnavailableRuns: actionRunnerDiagnosticsState.externalUnavailableRuns,
-  failureTotals: cloneDiagnostics(actionRunnerDiagnosticsState.failureTotals),
-  trend: {
-    windowSize: actionRunnerDiagnosticsState.trend.windowSize,
-    comparedRuns: actionRunnerDiagnosticsState.trend.comparedRuns,
-    failureRateDelta: actionRunnerDiagnosticsState.trend.failureRateDelta,
-    missingActionDelta: actionRunnerDiagnosticsState.trend.missingActionDelta,
-    policyBlockedDelta: actionRunnerDiagnosticsState.trend.policyBlockedDelta,
-    direction: actionRunnerDiagnosticsState.trend.direction,
-  },
-  topFailureCodes: actionRunnerDiagnosticsState.topFailureCodes.map((item) => ({
-    code: item.code,
-    count: item.count,
-    share: item.share,
-  })),
-  recentRuns: actionRunnerDiagnosticsState.recentRuns.map((sample) => ({
-    at: sample.at,
-    totalFailures: sample.totalFailures,
-    failed: sample.failed,
-    missingAction: sample.missingAction,
-    policyBlocked: sample.policyBlocked,
-  })),
-  lastRun: actionRunnerDiagnosticsState.lastRun
-    ? {
-      handled: actionRunnerDiagnosticsState.lastRun.handled,
-      hasSuccess: actionRunnerDiagnosticsState.lastRun.hasSuccess,
-      externalUnavailable: actionRunnerDiagnosticsState.lastRun.externalUnavailable,
-      diagnostics: cloneDiagnostics(actionRunnerDiagnosticsState.lastRun.diagnostics),
-    }
-    : null,
-});
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -592,7 +341,8 @@ const canonicalizeUrl = (urlText: string): string => {
     }
     url.hash = '';
     return url.toString();
-  } catch {
+  } catch (err) {
+    logger.debug('[ACTION-RUNNER] url-parse fallback: %s', err instanceof Error ? err.message : String(err));
     return urlText.trim();
   }
 };
@@ -622,7 +372,8 @@ const parseNewsArtifact = (artifact: string): ParsedNewsArtifact | null => {
   let domain = '';
   try {
     domain = normalizeDomain(new URL(url).hostname);
-  } catch {
+  } catch (err) {
+    logger.debug('[ACTION-RUNNER] domain extraction failed url=%s: %s', url?.slice(0, 80), err instanceof Error ? err.message : String(err));
     return null;
   }
 
@@ -661,7 +412,8 @@ const isNewsCaptureAllowedByPolicy = async (params: {
     if (!capturePolicy.enabled || capturePolicy.runMode === 'disabled' || capturePolicy.runMode === 'approval_required') {
       return false;
     }
-  } catch {
+  } catch (err) {
+    logger.debug('[ACTION-RUNNER] capture-policy check failed guildId=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
     return false;
   }
 
@@ -689,7 +441,8 @@ const captureExternalNewsMemory = async (params: {
   try {
     const dbDomainList = await listGuildAllowedDomains(params.guildId);
     dbDomains = new Set(dbDomainList);
-  } catch {
+  } catch (err) {
+    logger.debug('[ACTION-RUNNER] domains DB load failed guildId=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
     return;
   }
   const effectiveDomainFilter = new Set([...ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS, ...dbDomains]);
@@ -814,57 +567,24 @@ const captureExternalNewsMemory = async (params: {
       goal: params.goal,
       ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
     });
-  } catch {
-    // Best-effort capture: action response should not fail because of memory persistence.
+  } catch (err) {
+    logger.debug('[ACTION-RUNNER] news memory-persist failed: %s', err instanceof Error ? err.message : String(err));
   }
 };
 
 const isCircuitOpen = (actionName: string): boolean => {
-  if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
-    return false;
-  }
-
-  const state = breakerState.get(actionName);
-  if (!state) {
-    return false;
-  }
-
-  if (Date.now() >= state.openedUntilMs) {
-    breakerState.set(actionName, { failures: 0, openedUntilMs: 0 });
-    return false;
-  }
-
-  return state.openedUntilMs > 0;
+  if (!ACTION_CIRCUIT_BREAKER_ENABLED) return false;
+  return actionCircuitBreaker.isOpen(actionName);
 };
 
 const recordSuccess = (actionName: string) => {
   updateActionUtility(actionName, true);
-  if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
-    return;
-  }
-  breakerState.set(actionName, { failures: 0, openedUntilMs: 0 });
+  if (ACTION_CIRCUIT_BREAKER_ENABLED) actionCircuitBreaker.recordSuccess(actionName);
 };
 
 const recordFailure = (actionName: string) => {
   updateActionUtility(actionName, false);
-  if (!ACTION_CIRCUIT_BREAKER_ENABLED) {
-    return;
-  }
-  // Evict oldest entries to bound memory
-  if (breakerState.size >= BREAKER_MAX_ENTRIES) {
-    const oldest = breakerState.keys().next().value;
-    if (oldest !== undefined) breakerState.delete(oldest);
-  }
-  const current = breakerState.get(actionName) || { failures: 0, openedUntilMs: 0 };
-  const failures = current.failures + 1;
-  if (failures >= ACTION_CIRCUIT_FAILURE_THRESHOLD) {
-    breakerState.set(actionName, {
-      failures,
-      openedUntilMs: Date.now() + ACTION_CIRCUIT_OPEN_MS,
-    });
-    return;
-  }
-  breakerState.set(actionName, { failures, openedUntilMs: 0 });
+  if (ACTION_CIRCUIT_BREAKER_ENABLED) actionCircuitBreaker.recordFailure(actionName);
 };
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
@@ -881,47 +601,6 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 };
 
-const isExternalUnavailableError = (errorCode?: string): boolean => {
-  const code = String(errorCode || '').toUpperCase();
-  if (!code) {
-    return false;
-  }
-
-  return code.includes('WORKER')
-    || code.includes('MCP_')
-    || code === 'ACTION_TIMEOUT'
-    || code === 'WEB_FETCH_FAILED';
-};
-
-const classifyFailureCode = (code: string | undefined): 'missingAction' | 'policyBlocked' | 'governanceUnavailable' | 'finopsBlocked' | 'externalFailures' | 'unknownFailures' => {
-  const error = String(code || '').trim().toUpperCase();
-  if (!error) {
-    return 'unknownFailures';
-  }
-  if (error === 'ACTION_NOT_IMPLEMENTED' || error === 'DYNAMIC_WORKER_NOT_FOUND') {
-    return 'missingAction';
-  }
-  if (error === 'ACTION_NOT_ALLOWED' || error === 'ACTION_DISABLED_BY_POLICY' || error === 'ACTION_APPROVAL_REQUIRED') {
-    return 'policyBlocked';
-  }
-  if (error === 'ALLOWLIST_BLOCKED' || error === 'GATE_VERDICT_NO_GO') {
-    return 'policyBlocked';
-  }
-  if (error === 'ACTION_POLICY_UNAVAILABLE') {
-    return 'governanceUnavailable';
-  }
-  if (error.includes('FINOPS') || error.includes('BUDGET')) {
-    return 'finopsBlocked';
-  }
-  if (error.startsWith('RSS_')) {
-    return 'externalFailures';
-  }
-  if (isExternalUnavailableError(error)) {
-    return 'externalFailures';
-  }
-  return 'unknownFailures';
-};
-
 export const runGoalActions = async (input: GoalActionInput): Promise<SkillActionResult> => {
   const diagnostics = createEmptyDiagnostics();
 
@@ -933,12 +612,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
   const recordFailureCategory = (code: string | undefined) => {
     diagnostics.totalFailures += 1;
     const normalizedCode = String(code || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
-    actionRunnerFailureCodeCounts.set(normalizedCode, (actionRunnerFailureCodeCounts.get(normalizedCode) || 0) + 1);
-    // Bound failure code map to prevent unbounded growth
-    if (actionRunnerFailureCodeCounts.size > 500) {
-      const first = actionRunnerFailureCodeCounts.keys().next().value;
-      if (first !== undefined) actionRunnerFailureCodeCounts.delete(first);
-    }
+    recordFailureCode(normalizedCode);
     const key = classifyFailureCode(normalizedCode);
     diagnostics[key] += 1;
   };
@@ -1093,7 +767,8 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     let governance;
     try {
       governance = await getGuildActionPolicy(input.guildId, action.name);
-    } catch {
+    } catch (err) {
+      logger.warn('[ACTION-RUNNER] action-governance failed action=%s guildId=%s: %s', action.name, input.guildId, err instanceof Error ? err.message : String(err));
       recordFailureCategory('ACTION_POLICY_UNAVAILABLE');
       lines.push(`액션: ${action.name}`);
       lines.push('상태: 실패 (ACTION_POLICY_UNAVAILABLE)');
@@ -1463,4 +1138,305 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     externalUnavailable,
     diagnostics,
   });
+};
+
+// ─── Pipeline-aware Execution (Judgment Loop) ─────────────────────────────────
+
+import {
+  executePipeline,
+  actionChainToPipelinePlan,
+  createPipelineContext,
+  type PipelineResult,
+  type PipelineStep,
+  type PipelineContext as PipelineCtx,
+  type StepExecutor,
+} from './pipelineEngine';
+import {
+  generateSessionId,
+  createWorkflowSession,
+  updateWorkflowSessionStatus,
+  insertWorkflowStep,
+  updateWorkflowStep,
+  recordWorkflowEvent,
+} from '../workflow/workflowPersistenceService';
+
+const PIPELINE_MODE_ENABLED = parseBooleanEnv(process.env.PIPELINE_MODE_ENABLED, false);
+
+/**
+ * Pipeline-aware goal execution — upgrade of `runGoalActions` with:
+ * - Inter-action data flow (A's output feeds B's input)
+ * - Conditional branching based on intermediate results
+ * - Mid-execution replanning on failure
+ * - Parallel execution of independent actions
+ * - Full workflow persistence to Supabase
+ *
+ * Falls back to `runGoalActions` when PIPELINE_MODE_ENABLED=false.
+ */
+export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActionResult> => {
+  if (!PIPELINE_MODE_ENABLED) {
+    return runGoalActions(input);
+  }
+
+  const diagnostics = createEmptyDiagnostics();
+
+  if (!ACTION_RUNNER_ENABLED) {
+    return {
+      handled: false,
+      output: '',
+      hasSuccess: false,
+      externalUnavailable: false,
+      diagnostics,
+    };
+  }
+
+  const sessionId = generateSessionId();
+
+  // Persist workflow session
+  await createWorkflowSession({
+    sessionId,
+    workflowName: 'goal-pipeline',
+    stage: 'planning',
+    scope: input.guildId,
+    status: 'proposed',
+  });
+
+  await recordWorkflowEvent({
+    sessionId,
+    eventType: 'session_start',
+    toState: 'proposed',
+    decisionReason: `Goal: ${input.goal.slice(0, 200)}`,
+    payload: { guildId: input.guildId, requestedBy: input.requestedBy },
+  });
+
+  // Plan actions
+  const compiledPrompt = compilePromptGoal(input.goal);
+  const planningGoal = compiledPrompt.compiledGoal || input.goal;
+  const executionGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || input.goal;
+
+  const chain = await planActions(planningGoal);
+  if (!chain.actions || chain.actions.length === 0) {
+    await updateWorkflowSessionStatus(sessionId, 'failed', true);
+    return {
+      handled: false,
+      output: '',
+      hasSuccess: false,
+      externalUnavailable: false,
+      diagnostics,
+    };
+  }
+
+  await updateWorkflowSessionStatus(sessionId, 'executing');
+  await recordWorkflowEvent({
+    sessionId,
+    eventType: 'state_transition',
+    fromState: 'proposed',
+    toState: 'executing',
+    decisionReason: `Planned ${chain.actions.length} actions`,
+  });
+
+  // Convert planner output to pipeline plan
+  const plan = actionChainToPipelinePlan(chain.actions);
+  const ctx = createPipelineContext({
+    goal: executionGoal,
+    guildId: input.guildId,
+    requestedBy: input.requestedBy,
+  });
+
+  // Step executor: bridges pipeline engine to existing action execution logic
+  const stepExecutor: StepExecutor = async (actionName, args, pipeCtx) => {
+    const action = getAction(actionName) ?? getDynamicAction(actionName);
+    if (!action) {
+      return {
+        ok: false,
+        name: actionName,
+        summary: 'ACTION_NOT_IMPLEMENTED',
+        artifacts: [],
+        verification: [],
+        error: 'ACTION_NOT_IMPLEMENTED',
+      };
+    }
+
+    if (!isActionAllowed(actionName)) {
+      return {
+        ok: false,
+        name: actionName,
+        summary: 'ACTION_NOT_ALLOWED',
+        artifacts: [],
+        verification: [],
+        error: 'ACTION_NOT_ALLOWED',
+      };
+    }
+
+    if (isCircuitOpen(actionName)) {
+      return {
+        ok: false,
+        name: actionName,
+        summary: 'CIRCUIT_OPEN',
+        artifacts: [],
+        verification: [],
+        error: 'CIRCUIT_OPEN',
+      };
+    }
+
+    const executionInput = normalizeActionInput({
+      actionName: action.name,
+      input: {
+        goal: pipeCtx.goal,
+        args,
+        guildId: pipeCtx.guildId,
+        requestedBy: pipeCtx.requestedBy,
+      },
+    });
+
+    const effectiveTimeoutMs = ACTION_TIMEOUT_MS;
+
+    try {
+      const result = await withTimeout(
+        Promise.resolve(action.execute(executionInput)),
+        effectiveTimeoutMs,
+      ).then((r) => normalizeActionResult({ actionName: action.name, result: r }));
+
+      if (result.ok) {
+        recordSuccess(action.name);
+      } else {
+        recordFailure(action.name);
+      }
+      return result;
+    } catch (error) {
+      recordFailure(action.name);
+      const normalized = toWorkerExecutionError(error, 'UNKNOWN_ERROR');
+      return {
+        ok: false,
+        name: action.name,
+        summary: 'Action execution failed',
+        artifacts: [],
+        verification: [`error_code=${normalized.code}`],
+        error: normalized.code || normalized.message,
+      };
+    }
+  };
+
+  // Replanner: re-invokes the LLM planner with context about what failed
+  const replanner = async (replanGoal: string, _pipeCtx: PipelineCtx): Promise<PipelineStep[]> => {
+    try {
+      const replanChain = await planActions(replanGoal);
+      if (!replanChain.actions || replanChain.actions.length === 0) return [];
+
+      await recordWorkflowEvent({
+        sessionId,
+        eventType: 'replan',
+        decisionReason: replanGoal.slice(0, 500),
+        payload: { newActionCount: replanChain.actions.length },
+      });
+
+      return replanChain.actions.map((a, i) => ({
+        name: `replan-step-${i + 1}-${a.actionName}`,
+        type: 'action' as const,
+        actionName: a.actionName,
+        args: a.args,
+        reason: a.reason,
+        pipeOutput: true,
+      }));
+    } catch (err) {
+      logger.debug('[ACTION-RUNNER] pipeline-build replan failed: %s', err instanceof Error ? err.message : String(err));
+      return [];
+    }
+  };
+
+  // Execute pipeline
+  const pipelineResult = await executePipeline(plan, stepExecutor, replanner, ctx);
+
+  // Persist each step result
+  for (let i = 0; i < pipelineResult.steps.length; i++) {
+    const step = pipelineResult.steps[i];
+    await insertWorkflowStep({
+      sessionId,
+      stepOrder: i + 1,
+      stepName: step.stepName,
+      agentRole: step.agentRole,
+      status: step.ok ? 'passed' : 'failed',
+      durationMs: step.durationMs,
+      details: {
+        type: step.stepType,
+        error: step.error,
+        outputCount: step.output.length,
+        artifactCount: step.artifacts.length,
+      },
+    });
+
+    // Log to execution log for continuity with existing diagnostics
+    await logActionExecutionEvent({
+      guildId: input.guildId,
+      requestedBy: input.requestedBy,
+      goal: input.goal,
+      actionName: step.stepName,
+      ok: step.ok,
+      summary: step.ok ? 'Pipeline step passed' : `Pipeline step failed: ${step.error || 'unknown'}`,
+      artifacts: step.artifacts,
+      verification: [`pipeline_session=${sessionId}`, `step_type=${step.stepType}`],
+      durationMs: step.durationMs,
+      retryCount: 0,
+      circuitOpen: false,
+      error: step.error,
+      estimatedCostUsd: 0,
+      finopsMode: 'normal',
+      agentRole: step.agentRole,
+    });
+  }
+
+  // Finalize session
+  const finalStatus = pipelineResult.ok ? 'released' : 'failed';
+  await updateWorkflowSessionStatus(sessionId, finalStatus, true);
+  await recordWorkflowEvent({
+    sessionId,
+    eventType: 'session_complete',
+    fromState: 'executing',
+    toState: finalStatus,
+    decisionReason: pipelineResult.ok
+      ? `Pipeline completed: ${pipelineResult.steps.length} steps`
+      : `Pipeline failed: ${pipelineResult.steps.filter((s) => !s.ok).length} failed steps`,
+    payload: {
+      totalDurationMs: pipelineResult.totalDurationMs,
+      replanned: pipelineResult.replanned,
+      replanCount: pipelineResult.replanCount,
+    },
+  });
+
+  // Build output
+  const lines: string[] = ['파이프라인 실행 결과'];
+  lines.push(`세션: ${sessionId}`);
+  lines.push(`총 단계: ${pipelineResult.steps.length}`);
+  lines.push(`소요시간: ${pipelineResult.totalDurationMs}ms`);
+  if (pipelineResult.replanned) {
+    lines.push(`재계획: ${pipelineResult.replanCount}회`);
+  }
+
+  for (const step of pipelineResult.steps) {
+    lines.push(`\n[${step.stepName}] ${step.ok ? '성공' : '실패'} (${step.durationMs}ms)`);
+    if (step.artifacts.length > 0) {
+      lines.push(`산출물:\n${step.artifacts.map((a) => `- ${a}`).join('\n')}`);
+    }
+    if (step.error) {
+      lines.push(`오류: ${step.error}`);
+    }
+  }
+
+  const hasSuccess = pipelineResult.steps.some((s) => s.ok);
+  const failedSteps = pipelineResult.steps.filter((s) => !s.ok);
+  for (const f of failedSteps) {
+    diagnostics.totalFailures += 1;
+    const key = classifyFailureCode(f.error);
+    diagnostics[key] += 1;
+  }
+
+  const result: SkillActionResult = {
+    handled: true,
+    output: lines.filter(Boolean).join('\n'),
+    hasSuccess,
+    externalUnavailable: failedSteps.some((s) => isExternalUnavailableError(s.error)),
+    diagnostics,
+  };
+
+  updateActionRunnerDiagnostics(result);
+  return result;
 };

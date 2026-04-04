@@ -38,6 +38,10 @@ export class TtlCache<T> {
     return this.store.size;
   }
 
+  delete(key: string): boolean {
+    return this.store.delete(key);
+  }
+
   pruneExpired(): number {
     let removed = 0;
     const now = Date.now();

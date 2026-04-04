@@ -19,6 +19,7 @@ import logger from '../../logger';
 import { memoryConfig } from '../../config';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { searchMemoryHybrid } from '../agent/agentMemoryStore';
+import { generateText, isAnyLlmConfigured } from '../llmClient';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
 
@@ -26,12 +27,14 @@ const EVOLUTION_ENABLED = memoryConfig.evolutionEnabled;
 const EVOLUTION_MAX_LINKS = memoryConfig.evolutionMaxLinks;
 const EVOLUTION_MIN_SIMILARITY = memoryConfig.evolutionMinSimilarity;
 const EVOLUTION_CONFIDENCE_BOOST = memoryConfig.evolutionConfidenceBoost;
+const EVOLUTION_LLM_CLASSIFY = memoryConfig.evolutionLlmClassify;
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
 export type EvolutionCandidate = {
   id: string;
   title: string;
+  summary: string;
   similarity: number;
   confidence: number;
 };
@@ -51,11 +54,61 @@ const EMPTY_RESULT: EvolutionResult = { evolved: false, linksCreated: 0, memorie
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
-const classifyRelation = (similarity: number, _newTitle: string, _existingTitle: string): LinkRelation => {
-  // High similarity suggests direct relationship; very high might be reinforcement
-  // Future: LLM-based classification for contradicts/supersedes
+const classifyRelationHeuristic = (similarity: number): LinkRelation => {
   if (similarity >= 0.85) return 'derived_from';
   return 'related';
+};
+
+const CLASSIFY_SYSTEM = `You classify the relationship between two memory items.
+Respond with EXACTLY one of: related, derived_from, contradicts, supersedes
+
+Definitions:
+- related: the two items share a topic but are complementary
+- derived_from: the new item is a more specific version or elaboration of the existing item
+- contradicts: the new item conflicts with or negates part of the existing item
+- supersedes: the new item fully replaces the existing item with newer information
+
+Output ONLY the single relationship word, nothing else.`;
+
+const VALID_RELATIONS = new Set<LinkRelation>(['related', 'derived_from', 'contradicts', 'supersedes']);
+
+const classifyRelationLlm = async (
+  newTitle: string,
+  newSummary: string,
+  existingTitle: string,
+  existingSummary: string,
+  similarity: number,
+): Promise<LinkRelation> => {
+  const fallback = classifyRelationHeuristic(similarity);
+  if (!isAnyLlmConfigured()) return fallback;
+
+  try {
+    const user = `New memory:\nTitle: ${newTitle}\nSummary: ${newSummary}\n\nExisting memory:\nTitle: ${existingTitle}\nSummary: ${existingSummary}\n\nSimilarity score: ${similarity.toFixed(2)}`;
+    const raw = await generateText({
+      system: CLASSIFY_SYSTEM,
+      user,
+      maxTokens: 16,
+      temperature: 0.1,
+    });
+    const parsed = raw.trim().toLowerCase().replace(/[^a-z_]/g, '') as LinkRelation;
+    if (VALID_RELATIONS.has(parsed)) return parsed;
+    logger.debug('[MEMORY-EVOLUTION] LLM classify returned invalid: %s, using heuristic', raw);
+    return fallback;
+  } catch (err) {
+    logger.debug('[MEMORY-EVOLUTION] LLM classify failed, using heuristic: %s', err instanceof Error ? err.message : String(err));
+    return fallback;
+  }
+};
+
+const classifyRelation = async (
+  similarity: number,
+  newTitle: string,
+  newSummary: string,
+  existingTitle: string,
+  existingSummary: string,
+): Promise<LinkRelation> => {
+  if (!EVOLUTION_LLM_CLASSIFY) return classifyRelationHeuristic(similarity);
+  return classifyRelationLlm(newTitle, newSummary, existingTitle, existingSummary, similarity);
 };
 
 // ──── Core ────────────────────────────────────────────────────────────────────
@@ -96,6 +149,7 @@ export const evolveMemoryLinks = async (params: {
       .map((row) => ({
         id: String(row.id || ''),
         title: String(row.title || row.summary || '').slice(0, 120),
+        summary: String(row.summary || row.content || '').slice(0, 200),
         similarity: clamp01(Number(row.similarity ?? row.score ?? 0.3)),
         confidence: clamp01(Number(row.confidence ?? 0.5)),
       }));
@@ -109,7 +163,13 @@ export const evolveMemoryLinks = async (params: {
     for (const candidate of candidates) {
       if (!candidate.id) continue;
 
-      const relation = classifyRelation(candidate.similarity, params.title, candidate.title);
+      const relation = await classifyRelation(
+        candidate.similarity,
+        params.title,
+        params.summary,
+        candidate.title,
+        candidate.summary,
+      );
 
       // Insert link (unique constraint prevents duplicates)
       const { error: linkError } = await client
@@ -130,7 +190,7 @@ export const evolveMemoryLinks = async (params: {
         logger.debug('[MEMORY-EVOLUTION] link insert failed: %s', linkError.message);
       }
 
-      // Boost confidence of related memory (reinforcement)
+      // Boost or penalize confidence based on relation type
       if (relation === 'related' || relation === 'derived_from') {
         const newConfidence = clamp01(candidate.confidence + EVOLUTION_CONFIDENCE_BOOST);
         if (newConfidence > candidate.confidence) {
@@ -144,6 +204,39 @@ export const evolveMemoryLinks = async (params: {
             .eq('status', 'active');
 
           if (!boostError) {
+            memoriesBoosted++;
+          }
+        }
+      } else if (relation === 'supersedes') {
+        // Superseded memory gets confidence penalty and archived
+        const { error: supersedeError } = await client
+          .from('memory_items')
+          .update({
+            confidence: Number(clamp01(candidate.confidence * 0.5).toFixed(3)),
+            status: 'archived',
+            updated_by: 'evolution-service',
+          })
+          .eq('id', candidate.id)
+          .eq('status', 'active');
+
+        if (!supersedeError) {
+          memoriesBoosted++;
+          logger.info('[MEMORY-EVOLUTION] superseded mem=%s by new=%s', candidate.id, params.newMemoryId);
+        }
+      } else if (relation === 'contradicts') {
+        // Contradicting memories get confidence reduction but stay active
+        const reducedConfidence = clamp01(candidate.confidence - EVOLUTION_CONFIDENCE_BOOST * 2);
+        if (reducedConfidence < candidate.confidence) {
+          const { error: contradictError } = await client
+            .from('memory_items')
+            .update({
+              confidence: Number(reducedConfidence.toFixed(3)),
+              updated_by: 'evolution-service',
+            })
+            .eq('id', candidate.id)
+            .eq('status', 'active');
+
+          if (!contradictError) {
             memoriesBoosted++;
           }
         }

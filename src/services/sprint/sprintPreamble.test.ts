@@ -38,6 +38,8 @@ describe('sprintPreamble', () => {
     it('plan/implement 단계에서 Search Before Building을 포함한다', () => {
       const planPreamble = buildSprintPreamble('sprint-plan', 'plan');
       expect(planPreamble).toContain('Search Before Building');
+      expect(planPreamble).toContain('Reuse First');
+      expect(planPreamble).toContain('New File Creation Rules');
     });
 
     it('implement 단계에서 Completeness 섹션을 포함한다', () => {

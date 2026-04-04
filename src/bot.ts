@@ -35,7 +35,8 @@ import {
   startAgentSession,
 } from './services/multiAgentService';
 import { recordCommunityInteractionEvent } from './services/communityGraphService';
-import { recordReactionRewardSignal } from './services/discordReactionRewardService';
+import { recordReactionRewardSignal } from './services/discord-support/discordReactionRewardService';
+import { trackUserActivity } from './services/discord-support/userCrmService';
 import { isAnyLlmConfigured } from './services/llmClient';
 import { queryObsidianRAG, initObsidianRAG } from './services/obsidian/obsidianRagService';
 import { listObsidianTasksWithAdapter, toggleObsidianTaskWithAdapter } from './services/obsidian/router';
@@ -74,6 +75,11 @@ import { parseBooleanEnv } from './utils/env';
 import { evaluateWorkerActivationGate } from './services/agent/agentRuntimeReadinessService';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from './services/skills/actionGovernanceStore';
 import { triggerLacunaSprintIfNeeded, type LacunaCandidate } from './services/sprint/selfImprovementLoop';
+import {
+  evaluateAutoProposalPromotionGate,
+  enforceImplementApprovalRequiredPilot,
+  startAutoWorkerProposalBackgroundLoop,
+} from './services/workerGeneration/backgroundProposalSweep';
 // ─── Discord layer modules ────────────────────────────────────────────────────
 import {
   buildSimpleEmbed,
@@ -130,9 +136,10 @@ import { createAgentHandlers } from './discord/commands/agent';
 import { createVibeHandlers } from './discord/commands/vibe';
 import { createDocsHandlers } from './discord/commands/docs';
 import { createPersonaHandlers } from './discord/commands/persona';
+import { createCrmHandlers } from './discord/commands/crm';
 import { createTasksHandlers } from './discord/commands/tasks';
 import { startDiscordReadyWorkloads } from './discord/runtime/readyWorkloads';
-import { processPassiveMemoryCapture } from './discord/runtime/passiveMemoryCapture';
+import { processPassiveMemoryCapture, isGuildLearningEnabled } from './discord/runtime/passiveMemoryCapture';
 import { handleCsChannelMessage, recordRuntimeError } from './services/sprint/sprintTriggers';
 import { handleButtonInteraction } from './discord/runtime/buttonInteractions';
 import { handleGuildCreateLifecycle, handleGuildDeleteLifecycle } from './discord/runtime/guildLifecycle';
@@ -146,12 +153,13 @@ const discordIntents = [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildMessages,
   GatewayIntentBits.GuildMessageReactions,
+  GatewayIntentBits.GuildMembers,
   ...(DISCORD_MESSAGE_CONTENT_INTENT_ENABLED ? [GatewayIntentBits.MessageContent] : []),
 ];
 
 export const client = new Client({
   intents: discordIntents,
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember],
 });
 
 const MANUAL_RECONNECT_COOLDOWN_MS = parseInt(
@@ -231,20 +239,6 @@ let commandHandlersAttached = false;
 let activeToken: string | null = null;
 let reconnectInProgress = false;
 const DYNAMIC_WORKER_RESTORE_ON_BOOT = String(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT || 'true').trim().toLowerCase() !== 'false';
-const AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED || 'true').trim());
-const AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS = Math.max(5 * 60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS || 30 * 60_000));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS = Math.max(1, Math.min(30, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS || 7)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS = Math.max(1, Math.min(72, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS || 6)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT = Math.max(1, Math.min(20, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT || 2)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS = Math.max(1, Math.min(10, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS || 1)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN = Math.max(1, Math.min(10, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN || 2)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD = Math.max(1, Math.min(20, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD || 5)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS || 7 * 24 * 60 * 60_000));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS || 6 * 60 * 60_000));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = Math.max(6, Math.min(120, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH || 8)));
-const IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY || process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY || 4)));
-let autoWorkerProposalBackgroundTimer: NodeJS.Timeout | null = null;
-let autoWorkerProposalBackgroundRunning = false;
 
 const restoreApprovedDynamicWorkers = async () => {
   if (!DYNAMIC_WORKER_RESTORE_ON_BOOT) {
@@ -653,460 +647,6 @@ const adminHandlers = createAdminHandlers({
   requestManualReconnect: runManualReconnect,
 });
 
-const normalizePromotionGoal = (input: string): string =>
-  String(input || '').toLowerCase().replace(/\s+/g, ' ').trim();
-
-const toActionLogRow = (row: unknown): {
-  requestedBy: string;
-  goal: string;
-  status: string;
-  actionName: string;
-  summary: string;
-  artifacts: Array<Record<string, unknown>>;
-} => {
-  const raw = (row && typeof row === 'object' && !Array.isArray(row))
-    ? row as Record<string, unknown>
-    : {};
-  const artifacts = Array.isArray(raw.artifacts)
-    ? raw.artifacts.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
-    : [];
-
-  return {
-    requestedBy: String(raw.requested_by || '').trim(),
-    goal: String(raw.goal || '').trim(),
-    status: String(raw.status || '').trim().toLowerCase(),
-    actionName: String(raw.action_name || '').trim(),
-    summary: String(raw.summary || '').trim(),
-    artifacts,
-  };
-};
-
-const evaluateAutoProposalPromotionGate = async (params: {
-  guildId: string;
-  request: string;
-  windowDays: number;
-  minFrequency: number;
-  minDistinctRequesters: number;
-  minOutcomeScore: number;
-  maxPolicyBlockRate: number;
-}): Promise<{
-  ok: boolean;
-  frequency: number;
-  distinctRequesters: number;
-  avgOutcomeScore: number;
-  policyBlockRate: number;
-}> => {
-  if (!isSupabaseConfigured()) {
-    return {
-      ok: true,
-      frequency: params.minFrequency,
-      distinctRequesters: params.minDistinctRequesters,
-      avgOutcomeScore: 1,
-      policyBlockRate: 0,
-    };
-  }
-
-  const normalizedRequest = normalizePromotionGoal(params.request);
-  if (!normalizedRequest) {
-    return {
-      ok: false,
-      frequency: 0,
-      distinctRequesters: 0,
-      avgOutcomeScore: 0,
-      policyBlockRate: 0,
-    };
-  }
-
-  const sinceIso = new Date(Date.now() - params.windowDays * 24 * 60 * 60 * 1000).toISOString();
-  const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('agent_action_logs')
-    .select('requested_by, goal, status, action_name, summary, artifacts, created_at')
-    .eq('guild_id', params.guildId)
-    .in('action_name', ['task_routing_vibe', 'task_routing_docs', 'task_routing_feedback'])
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(5000);
-
-  if (error) {
-    return {
-      ok: false,
-      frequency: 0,
-      distinctRequesters: 0,
-      avgOutcomeScore: 0,
-      policyBlockRate: 1,
-    };
-  }
-
-  const rows = (data || []).map((row) => toActionLogRow(row));
-  const routingRows = rows.filter((row) => {
-    if (row.actionName !== 'task_routing_vibe' && row.actionName !== 'task_routing_docs') {
-      return false;
-    }
-    return normalizePromotionGoal(row.goal) === normalizedRequest;
-  });
-
-  const frequency = routingRows.length;
-  const distinctRequesters = new Set(routingRows.map((row) => row.requestedBy).filter(Boolean)).size;
-
-  const feedbackRows = rows.filter((row) => row.actionName === 'task_routing_feedback' && normalizePromotionGoal(row.goal) === normalizedRequest);
-  const outcomeScores = feedbackRows
-    .map((row) => Number(row.artifacts[0]?.outcomeScore))
-    .filter((value) => Number.isFinite(value))
-    .map((value) => Math.max(0, Math.min(1, value)));
-
-  const avgOutcomeScore = outcomeScores.length > 0
-    ? outcomeScores.reduce((acc, value) => acc + value, 0) / outcomeScores.length
-    : (routingRows.length > 0
-      ? routingRows.filter((row) => row.status === 'success').length / routingRows.length
-      : 0);
-
-  const policyBlockedCount = feedbackRows.filter((row) => {
-    const artifact = row.artifacts[0];
-    const blockedByArtifact = Number(
-      (artifact as Record<string, unknown> | undefined)?.policyBlocked
-      ?? (artifact as Record<string, unknown> | undefined)?.policy_blocked
-      ?? 0,
-    );
-    if (Number.isFinite(blockedByArtifact) && blockedByArtifact > 0) {
-      return true;
-    }
-
-    const summary = String(row.summary || '').toLowerCase();
-    return /policy[_\s-]?blocked\s*=\s*([1-9]\d*)/.test(summary)
-      || (summary.includes('policy') && (summary.includes('block') || summary.includes('차단')));
-  }).length;
-  const policyBlockRate = feedbackRows.length > 0 ? policyBlockedCount / feedbackRows.length : 0;
-
-  const ok = frequency >= params.minFrequency
-    && distinctRequesters >= params.minDistinctRequesters
-    && avgOutcomeScore >= params.minOutcomeScore
-    && policyBlockRate <= params.maxPolicyBlockRate;
-
-  return {
-    ok,
-    frequency,
-    distinctRequesters,
-    avgOutcomeScore,
-    policyBlockRate,
-  };
-};
-
-const normalizeBackgroundProposalGoal = (goal: string): string =>
-  String(goal || '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 220);
-
-const enforceImplementApprovalRequiredPilot = async (): Promise<void> => {
-  const guildIds = [...client.guilds.cache.keys()];
-  if (guildIds.length === 0) {
-    return;
-  }
-
-  let changed = 0;
-  await runWithConcurrency(guildIds, async (guildId) => {
-    try {
-      // Action name 'opencode.execute' is a persisted Supabase policy key — kept for backward compatibility
-      const policy = await getGuildActionPolicy(guildId, 'opencode.execute');
-      if (policy.enabled && policy.runMode === 'approval_required') {
-        return;
-      }
-
-      await upsertGuildActionPolicy({
-        guildId,
-        actionName: 'opencode.execute',
-        enabled: true,
-        runMode: 'approval_required',
-        actorId: 'system:implement-pilot',
-      });
-      changed += 1;
-    } catch (error) {
-      logger.warn('[IMPLEMENT-PILOT] policy enforce failed guild=%s reason=%s', guildId, getErrorMessage(error));
-    }
-  }, IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY);
-
-  if (changed > 0) {
-    logger.info('[IMPLEMENT-PILOT] approval_required enforced guilds=%d', changed);
-  }
-};
-
-const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
-  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED || autoWorkerProposalBackgroundRunning) {
-    return;
-  }
-  if (!isSupabaseConfigured()) {
-    return;
-  }
-
-  autoWorkerProposalBackgroundRunning = true;
-  try {
-    const client = getSupabaseClient();
-    const nowMs = Date.now();
-    const lookbackSinceIso = new Date(nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS * 24 * 60 * 60_000).toISOString();
-    const noRequestSinceIso = new Date(nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS * 60 * 60_000).toISOString();
-    const dedupSinceMs = nowMs - AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS;
-
-    const [missingRes, retryExhaustRes, recentRequestRes, allApprovals] = await Promise.all([
-      client
-        .from('agent_action_logs')
-        .select('guild_id, requested_by, goal, action_name, error, created_at')
-        .in('error', ['ACTION_NOT_IMPLEMENTED', 'DYNAMIC_WORKER_NOT_FOUND'])
-        .gte('created_at', lookbackSinceIso)
-        .order('created_at', { ascending: false })
-        .limit(5000),
-      client
-        .from('agent_action_logs')
-        .select('guild_id, requested_by, goal, action_name, error, retry_count, created_at')
-        .eq('status', 'failed')
-        .not('error', 'in', '("ACTION_NOT_IMPLEMENTED","DYNAMIC_WORKER_NOT_FOUND")')
-        .gte('retry_count', 2)
-        .gte('created_at', lookbackSinceIso)
-        .order('created_at', { ascending: false })
-        .limit(3000),
-      client
-        .from('agent_action_logs')
-        .select('guild_id, created_at')
-        .in('action_name', ['task_routing_vibe', 'task_routing_docs'])
-        .gte('created_at', noRequestSinceIso)
-        .order('created_at', { ascending: false })
-        .limit(5000),
-      listApprovals({ status: 'all' }),
-    ]);
-
-    if (missingRes.error) {
-      throw new Error(missingRes.error.message || 'BACKGROUND_MISSING_ACTION_QUERY_FAILED');
-    }
-    if (retryExhaustRes.error) {
-      logger.warn('[WORKER-GEN] retry-exhaust query failed: %s', retryExhaustRes.error.message);
-    }
-    if (recentRequestRes.error) {
-      throw new Error(recentRequestRes.error.message || 'BACKGROUND_RECENT_REQUEST_QUERY_FAILED');
-    }
-
-    const recentRequestGuildIds = new Set(
-      ((recentRequestRes.data || []) as Array<Record<string, unknown>>)
-        .map((row) => String(row.guild_id || '').trim())
-        .filter(Boolean),
-    );
-
-    const pendingCountByGuild = new Map<string, number>();
-    const recentApprovalByGuild = new Map<string, number>();
-    const recentGoalApprovalKeys = new Set<string>();
-    for (const approval of allApprovals) {
-      if (approval.status === 'pending') {
-        pendingCountByGuild.set(approval.guildId, (pendingCountByGuild.get(approval.guildId) || 0) + 1);
-      }
-
-      const createdAtMs = Date.parse(approval.createdAt);
-      if (Number.isFinite(createdAtMs) && createdAtMs >= dedupSinceMs) {
-        const goalKey = `${approval.guildId}::${normalizeBackgroundProposalGoal(approval.goal)}`;
-        recentGoalApprovalKeys.add(goalKey);
-
-        const lastCreatedAtMs = recentApprovalByGuild.get(approval.guildId) || 0;
-        if (createdAtMs > lastCreatedAtMs) {
-          recentApprovalByGuild.set(approval.guildId, createdAtMs);
-        }
-      }
-    }
-
-    type LacunaType = 'missing_action' | 'retry_exhaustion' | 'external_failure';
-    type LacunaGroup = {
-      guildId: string;
-      goal: string;
-      normalizedGoal: string;
-      count: number;
-      distinctRequesters: Set<string>;
-      lastSeenAtMs: number;
-      missingActionNames: Set<string>;
-      lacunaType: LacunaType;
-      errorCodes: Set<string>;
-    };
-    const groups = new Map<string, LacunaGroup>();
-
-    const upsertGroup = (
-      row: Record<string, unknown>,
-      lacunaType: LacunaType,
-    ): void => {
-      const guildId = String(row.guild_id || '').trim();
-      if (!guildId || recentRequestGuildIds.has(guildId)) {
-        return;
-      }
-      const goal = String(row.goal || '').trim();
-      if (goal.length < AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH) {
-        return;
-      }
-      const normalizedGoal = normalizeBackgroundProposalGoal(goal);
-      if (!normalizedGoal) {
-        return;
-      }
-      const key = `${guildId}::${normalizedGoal}`;
-      const requestedBy = String(row.requested_by || '').trim();
-      const createdAtMs = Date.parse(String(row.created_at || ''));
-      const actionName = String(row.action_name || '').trim();
-      const errorCode = String(row.error || '').trim();
-      const existing = groups.get(key);
-
-      if (!existing) {
-        const distinctRequesters = new Set<string>();
-        if (requestedBy) distinctRequesters.add(requestedBy);
-        const missingActionNames = new Set<string>();
-        if (actionName) missingActionNames.add(actionName);
-        const errorCodes = new Set<string>();
-        if (errorCode) errorCodes.add(errorCode);
-
-        groups.set(key, {
-          guildId,
-          goal,
-          normalizedGoal,
-          count: 1,
-          distinctRequesters,
-          lastSeenAtMs: Number.isFinite(createdAtMs) ? createdAtMs : 0,
-          missingActionNames,
-          lacunaType,
-          errorCodes,
-        });
-        return;
-      }
-      existing.count += 1;
-      if (requestedBy) existing.distinctRequesters.add(requestedBy);
-      if (actionName) existing.missingActionNames.add(actionName);
-      if (errorCode) existing.errorCodes.add(errorCode);
-      if (Number.isFinite(createdAtMs) && createdAtMs > existing.lastSeenAtMs) {
-        existing.lastSeenAtMs = createdAtMs;
-      }
-      // Promote to higher-signal lacuna type: missing_action > retry_exhaustion > external_failure
-      if (lacunaType === 'missing_action' && existing.lacunaType !== 'missing_action') {
-        existing.lacunaType = lacunaType;
-      }
-    };
-
-    for (const row of (missingRes.data || []) as Array<Record<string, unknown>>) {
-      upsertGroup(row, 'missing_action');
-    }
-    for (const row of (retryExhaustRes.data || []) as Array<Record<string, unknown>>) {
-      const errorCode = String(row.error || '').toUpperCase();
-      const isExternal = errorCode.includes('WORKER') || errorCode.includes('MCP_') || errorCode === 'ACTION_TIMEOUT' || errorCode === 'WEB_FETCH_FAILED' || errorCode.startsWith('RSS_');
-      upsertGroup(row, isExternal ? 'external_failure' : 'retry_exhaustion');
-    }
-
-    const metrics = getWorkerProposalMetricsSnapshot();
-    const qualityGuardHit = metrics.generationRequested >= 6 && metrics.generationSuccessRate < 0.45;
-    if (qualityGuardHit) {
-      logger.warn('[WORKER-GEN] background sweep skipped by quality guard successRate=%.3f requested=%d', metrics.generationSuccessRate, metrics.generationRequested);
-      return;
-    }
-
-    const lacunaTypeWeight = (type: LacunaType): number =>
-      type === 'missing_action' ? 3 : type === 'retry_exhaustion' ? 2 : 1;
-
-    const scoreLacunaCandidate = (g: LacunaGroup): number => {
-      const recencyDays = Math.max(0.1, (nowMs - g.lastSeenAtMs) / (24 * 60 * 60_000));
-      const recencyDecay = 1 / (1 + Math.log2(recencyDays));
-      return g.count * g.distinctRequesters.size * lacunaTypeWeight(g.lacunaType) * recencyDecay;
-    };
-
-    const candidates = [...groups.values()]
-      .filter((group) => group.count >= AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT)
-      .filter((group) => group.distinctRequesters.size >= AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS)
-      .filter((group) => !recentGoalApprovalKeys.has(`${group.guildId}::${group.normalizedGoal}`))
-      .filter((group) => (pendingCountByGuild.get(group.guildId) || 0) < AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD)
-      .filter((group) => {
-        const lastApprovalAtMs = recentApprovalByGuild.get(group.guildId) || 0;
-        return lastApprovalAtMs <= 0 || (nowMs - lastApprovalAtMs) >= AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS;
-      })
-      .sort((a, b) => scoreLacunaCandidate(b) - scoreLacunaCandidate(a))
-      .slice(0, AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN);
-
-    if (candidates.length === 0) {
-      logger.info('[WORKER-GEN] background sweep no candidates (no-request window=%dh)', AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS);
-      return;
-    }
-
-    let generated = 0;
-    for (const candidate of candidates) {
-      const errorContext = [...candidate.errorCodes].slice(0, 5).join(',');
-      const requestText = `${candidate.goal}\n\n[auto-proposal:${candidate.lacunaType} count=${candidate.count}, distinct_requesters=${candidate.distinctRequesters.size}, actions=${[...candidate.missingActionNames].slice(0, 5).join(',')}, errors=${errorContext}, score=${scoreLacunaCandidate(candidate).toFixed(1)}]`;
-      const result = await runWorkerGenerationPipeline({
-        goal: requestText,
-        guildId: candidate.guildId,
-        requestedBy: 'system:auto-proposal-background',
-      });
-
-      recordWorkerGenerationResult(result.ok, result.ok ? undefined : result.error);
-      if (result.ok) {
-        generated += 1;
-
-        // E-03: Trigger OpenClaw skill.create for lacuna-detected capabilities
-        if (parseBooleanEnv(process.env.OPENCLAW_LACUNA_SKILL_CREATE_ENABLED, false)) {
-          const rawName = [...candidate.missingActionNames][0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || '';
-          const skillName = rawName.slice(0, 100);
-          if (skillName) {
-            executeExternalAction('openclaw', 'agent.skill.create', { name: skillName })
-              .then((r) => {
-                if (r.ok) {
-                  logger.info('[WORKER-GEN] OpenClaw skill.create triggered for lacuna=%s', skillName);
-                  // Track success for monitoring
-                  if (isSupabaseConfigured()) {
-                    getSupabaseClient().from('agent_action_logs').insert({
-                      guild_id: candidate.guildId || null,
-                      action_name: 'openclaw.skill.create',
-                      goal: `lacuna:${skillName}`,
-                      result_ok: true,
-                      created_at: new Date().toISOString(),
-                    }).then(() => {}, () => {});
-                  }
-                } else {
-                  logger.debug('[WORKER-GEN] OpenClaw skill.create failed for lacuna=%s: %s', skillName, r.error);
-                }
-              })
-              .catch(() => { /* non-blocking */ });
-          }
-        }
-      }
-    }
-
-    logger.info('[WORKER-GEN] background sweep completed generated=%d candidates=%d', generated, candidates.length);
-
-    // Step 1: Lacuna → Sprint auto-trigger when capability gaps accumulate
-    if (candidates.length > 0) {
-      const lacunaCandidates: LacunaCandidate[] = candidates.map((c) => ({
-        guildId: c.guildId,
-        goal: c.goal,
-        normalizedGoal: c.normalizedGoal,
-        count: c.count,
-        distinctRequestersSize: c.distinctRequesters.size,
-        score: scoreLacunaCandidate(c),
-        lacunaType: c.lacunaType,
-        missingActionNames: [...c.missingActionNames].slice(0, 10),
-      }));
-      triggerLacunaSprintIfNeeded(lacunaCandidates).catch(() => { /* non-blocking */ });
-    }
-  } catch (error) {
-    logger.warn('[WORKER-GEN] background sweep failed: %s', getErrorMessage(error));
-  } finally {
-    autoWorkerProposalBackgroundRunning = false;
-  }
-};
-
-const startAutoWorkerProposalBackgroundLoop = () => {
-  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED) {
-    return;
-  }
-
-  if (autoWorkerProposalBackgroundTimer) {
-    clearInterval(autoWorkerProposalBackgroundTimer);
-    autoWorkerProposalBackgroundTimer = null;
-  }
-
-  void runBackgroundAutoWorkerProposalSweep();
-  autoWorkerProposalBackgroundTimer = setInterval(() => {
-    void runBackgroundAutoWorkerProposalSweep();
-  }, AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS);
-  autoWorkerProposalBackgroundTimer.unref();
-};
-
 const vibeHandlers = createVibeHandlers({
   getReplyVisibility,
   startVibeSession,
@@ -1246,6 +786,11 @@ const tasksHandlers = createTasksHandlers({
   getErrorMessage,
 });
 
+const crmHandlers = createCrmHandlers({
+  getReplyVisibility,
+  hasAdminPermission,
+});
+
 const attachCommandHandlers = () => {
   if (commandHandlersAttached) {
     return;
@@ -1322,6 +867,15 @@ const attachCommandHandlers = () => {
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) {
       return;
+    }
+
+    // CRM: track command usage
+    if (interaction.guildId) {
+      trackUserActivity({
+        userId: interaction.user.id,
+        guildId: interaction.guildId,
+        counter: 'command_count',
+      });
     }
 
     try {
@@ -1438,6 +992,28 @@ const attachCommandHandlers = () => {
           await agentHandlers.handleAgentCommand(interaction, '중지');
           return;
         }
+        case '내정보': {
+          await crmHandlers.handleMyInfoCommand(interaction);
+          return;
+        }
+        case '유저정보': {
+          await crmHandlers.handleUserInfoCommand(interaction);
+          return;
+        }
+        case '지표리뷰': {
+          await interaction.deferReply({ ephemeral: true });
+          try {
+            const { generateMetricReviewSnapshot, formatMetricReviewForDiscord } = await import('./services/metricReviewFormatter');
+            const snapshot = await generateMetricReviewSnapshot();
+            const content = formatMetricReviewForDiscord(snapshot);
+            // Discord message limit is 2000 chars
+            const trimmed = content.length > 1900 ? content.slice(0, 1900) + '\n\n_(잘림)_' : content;
+            await interaction.editReply({ content: trimmed });
+          } catch (err) {
+            await interaction.editReply({ content: `Metric Review 생성 실패: ${err instanceof Error ? err.message : String(err)}` });
+          }
+          return;
+        }
         default: {
           await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titleUnknownCommand, DISCORD_MESSAGES.common.unknownCommand, EMBED_WARN), ephemeral: true });
         }
@@ -1467,6 +1043,15 @@ const attachCommandHandlers = () => {
       return;
     }
 
+    // CRM: track message activity
+    if (message.guildId) {
+      trackUserActivity({
+        userId: message.author.id,
+        guildId: message.guildId,
+        counter: 'message_count',
+      });
+    }
+
     try {
       try {
         await vibeHandlers.handleVibeMessage(message);
@@ -1474,9 +1059,15 @@ const attachCommandHandlers = () => {
         logger.warn('[BOT] vibe message handling failed: %o', error);
       }
 
-      void processPassiveMemoryCapture(message).catch((error) => {
-        logger.debug('[BOT] passive memory capture skipped: %s', getErrorMessage(error));
-      });
+      // Skip passive memory (including Discord API fetch) when guild learning is disabled
+      if (message.guildId) {
+        const learningEnabled = await isGuildLearningEnabled(message.guildId).catch(() => false);
+        if (learningEnabled) {
+          void processPassiveMemoryCapture(message).catch((error) => {
+            logger.debug('[BOT] passive memory capture skipped: %s', getErrorMessage(error));
+          });
+        }
+      }
 
       // C-13: Route CS channel messages to sprint trigger pipeline
       void handleCsChannelMessage(message.channelId, message.content || '', message.author.id).catch((error) => {
@@ -1499,7 +1090,7 @@ client.on('clientReady', () => {
 
   void registerSlashCommands().catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', err instanceof Error ? err.message : String(err)));
   void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', err instanceof Error ? err.message : String(err)));
-  void enforceImplementApprovalRequiredPilot().catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', err instanceof Error ? err.message : String(err)));
+  void enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]).catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', err instanceof Error ? err.message : String(err)));
   startAutoWorkerProposalBackgroundLoop();
   startDiscordReadyWorkloads(client);
 });
@@ -1510,6 +1101,17 @@ client.on('guildCreate', (guild) => {
 
 client.on('guildDelete', (guild) => {
   handleGuildDeleteLifecycle(guild);
+});
+
+// CRM: track member join/leave (touch-only, no counter increment)
+client.on('guildMemberAdd', (member) => {
+  if (member.user.bot) return;
+  trackUserActivity({ userId: member.id, guildId: member.guild.id, counter: 'session_count', delta: 0 });
+});
+
+client.on('guildMemberRemove', (member) => {
+  if (member.user?.bot) return;
+  trackUserActivity({ userId: member.id, guildId: member.guild.id, counter: 'session_count', delta: 0 });
 });
 
 client.on('messageReactionAdd', async (reaction, user) => {
@@ -1538,8 +1140,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
       direction: 'add',
     });
 
+    // CRM: track reaction activity (giver + receiver)
+    trackUserActivity({ userId: user.id, guildId, counter: 'reaction_given_count' });
     const targetUserId = String(reaction.message.author?.id || '').trim();
     if (targetUserId && targetUserId !== user.id && !reaction.message.author?.bot) {
+      trackUserActivity({ userId: targetUserId, guildId, counter: 'reaction_received_count' });
       await recordCommunityInteractionEvent({
         guildId,
         actorUserId: user.id,

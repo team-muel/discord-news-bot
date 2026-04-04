@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseBooleanEnv } from '../../utils/env';
-import { getOpencodeExecutionSummary } from '../opencodeOpsService';
+import { getOpencodeExecutionSummary } from '../opencode/opencodeOpsService';
 import { getGuildActionPolicy, listActionApprovalRequests, listGuildActionPolicies } from '../skills/actionGovernanceStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getWorkerApprovalStoreSnapshot, listApprovals } from '../workerGeneration/workerApprovalStore';

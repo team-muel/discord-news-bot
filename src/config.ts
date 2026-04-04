@@ -55,42 +55,6 @@ export const ADMIN_ALLOWLIST_CACHE_TTL_MS = parseIntegerEnv(process.env.ADMIN_AL
 export const SUPABASE_URL = process.env.SUPABASE_URL || '';
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 export const SUPABASE_TRADES_TABLE = process.env.SUPABASE_TRADES_TABLE || 'trades';
-// Single-service deployment default: execute via in-process/local trading path.
-export const AI_TRADING_MODE = process.env.AI_TRADING_MODE || 'local';
-export const AI_TRADING_DRY_RUN = parseBooleanEnv(process.env.AI_TRADING_DRY_RUN, false);
-export const AI_TRADING_BASE_URL = process.env.AI_TRADING_BASE_URL || '';
-export const AI_TRADING_INTERNAL_TOKEN = process.env.AI_TRADING_INTERNAL_TOKEN || '';
-export const AI_TRADING_ORDER_PATH = process.env.AI_TRADING_ORDER_PATH || '/internal/binance/order';
-export const AI_TRADING_POSITION_PATH = process.env.AI_TRADING_POSITION_PATH || '/internal/binance/position';
-export const AI_TRADING_TIMEOUT_MS = parseIntegerEnv(process.env.AI_TRADING_TIMEOUT_MS, 15000);
-export const BINANCE_API_KEY = process.env.BINANCE_API_KEY || '';
-export const BINANCE_API_SECRET = process.env.BINANCE_API_SECRET || process.env.BINANCE_SECRET_KEY || process.env.BINANCE_SECRET || '';
-export const BINANCE_FUTURES = parseBooleanEnv(process.env.BINANCE_FUTURES, true);
-export const BINANCE_HEDGE_MODE = parseBooleanEnv(process.env.BINANCE_HEDGE_MODE, false);
-export const BINANCE_SPOT_MIN_BASE_QTY = parseNumberEnv(process.env.BINANCE_SPOT_MIN_BASE_QTY, 0.000001);
-
-export const START_TRADING_BOT = parseBooleanEnv(process.env.START_TRADING_BOT, false);
-export const TRADING_EXCHANGE = process.env.TRADING_EXCHANGE || 'binance';
-export const TRADING_SYMBOLS = process.env.TRADING_SYMBOLS || process.env.SYMBOLS || process.env.TRADING_SYMBOL || process.env.SYMBOL || 'BTC/USDT';
-export const TRADING_TIMEFRAME = process.env.TRADING_TIMEFRAME || process.env.TIMEFRAME || '30m';
-export const TRADING_CVD_LEN = parseIntegerEnv(process.env.TRADING_CVD_LEN || process.env.CVD_LEN, 19);
-export const TRADING_DELTA_COEF = parseNumberEnv(process.env.TRADING_DELTA_COEF || process.env.DELTA_COEF, 1.0);
-export const TRADING_RISK_PCT = parseNumberEnv(process.env.TRADING_RISK_PCT || process.env.RISK_PCT, 2.0);
-export const TRADING_TP_PCT = parseNumberEnv(process.env.TRADING_TP_PCT || process.env.TP_PCT, 4.0);
-export const TRADING_SL_PCT = parseNumberEnv(process.env.TRADING_SL_PCT || process.env.SL_PCT, 2.0);
-export const TRADING_LEVERAGE = parseNumberEnv(process.env.TRADING_LEVERAGE || process.env.LEVERAGE, 20);
-export const TRADING_INITIAL_CAPITAL = parseNumberEnv(process.env.TRADING_INITIAL_CAPITAL || process.env.INITIAL_CAPITAL, 3000);
-export const TRADING_EQUITY_SPLIT = parseBooleanEnv(process.env.TRADING_EQUITY_SPLIT ?? process.env.EQUITY_SPLIT, true);
-export const TRADING_POLL_SECONDS = parseIntegerEnv(process.env.TRADING_POLL_SECONDS || process.env.POLL_SECONDS, 20);
-export const TRADING_CANDLE_LOOKBACK = parseIntegerEnv(process.env.TRADING_CANDLE_LOOKBACK || process.env.CANDLE_LOOKBACK, 400);
-export const TRADING_TICK_FETCH_LIMIT = parseIntegerEnv(process.env.TRADING_TICK_FETCH_LIMIT || process.env.TICK_FETCH_LIMIT, 1000);
-export const TRADING_TICK_MAX_PAGES = parseIntegerEnv(process.env.TRADING_TICK_MAX_PAGES || process.env.TICK_MAX_PAGES, 3);
-export const TRADING_DRY_RUN = parseBooleanEnv(process.env.TRADING_DRY_RUN ?? process.env.DRY_RUN, true);
-export const TRADING_CANDLES_TABLE = process.env.TRADING_CANDLES_TABLE || 'candles';
-export const TRADING_STATE_TABLE = process.env.TRADING_STATE_TABLE || 'bot_state';
-export const MAX_MANUAL_TRADE_QTY = parsePositiveNumberEnv(process.env.MAX_MANUAL_TRADE_QTY, 10_000);
-export const MAX_MANUAL_TRADE_LEVERAGE = parsePositiveNumberEnv(process.env.MAX_MANUAL_TRADE_LEVERAGE, 125);
-export const MAX_MANUAL_TRADE_ENTRY_PRICE = parsePositiveNumberEnv(process.env.MAX_MANUAL_TRADE_ENTRY_PRICE, 10_000_000);
 
 export const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, 60000);
@@ -111,6 +75,7 @@ export const SPRINT_AUTONOMY_LEVEL = (process.env.SPRINT_AUTONOMY_LEVEL || 'appr
 export const SPRINT_MAX_IMPL_REVIEW_LOOPS = parseIntegerEnv(process.env.SPRINT_MAX_IMPL_REVIEW_LOOPS, 3);
 export const SPRINT_MAX_TOTAL_PHASES = parseIntegerEnv(process.env.SPRINT_MAX_TOTAL_PHASES, 12);
 export const SPRINT_CHANGED_FILE_CAP = parseIntegerEnv(process.env.SPRINT_CHANGED_FILE_CAP, 10);
+export const SPRINT_NEW_FILE_CAP = parseIntegerEnv(process.env.SPRINT_NEW_FILE_CAP, 3);
 export const SPRINT_PHASE_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_PHASE_TIMEOUT_MS, 120_000);
 export const SPRINT_TRIGGER_ERROR_THRESHOLD = parseIntegerEnv(process.env.SPRINT_TRIGGER_ERROR_THRESHOLD, 5);
 export const SPRINT_TRIGGER_CS_CHANNEL_IDS = process.env.SPRINT_TRIGGER_CS_CHANNEL_IDS || '';
@@ -121,6 +86,8 @@ export const SPRINT_GITHUB_TOKEN = process.env.SPRINT_GITHUB_TOKEN || '';
 export const SPRINT_GITHUB_OWNER = process.env.SPRINT_GITHUB_OWNER || '';
 export const SPRINT_GITHUB_REPO = process.env.SPRINT_GITHUB_REPO || '';
 export const SPRINT_PIPELINES_TABLE = process.env.SPRINT_PIPELINES_TABLE || 'sprint_pipelines';
+export const VENTYD_EVENTS_TABLE = process.env.VENTYD_EVENTS_TABLE || 'ventyd_events';
+export const VENTYD_ENABLED = parseBooleanEnv(process.env.VENTYD_ENABLED, true);
 export const SPRINT_DRY_RUN = parseBooleanEnv(process.env.SPRINT_DRY_RUN, false);
 export const SPRINT_FAST_PATH_ENABLED = parseBooleanEnv(process.env.SPRINT_FAST_PATH_ENABLED, true);
 export const SPRINT_FAST_PATH_VITEST_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_VITEST_TIMEOUT_MS, 60_000);
@@ -173,6 +140,34 @@ export const SELF_IMPROVEMENT_BENCH_REGRESSION_WEEKS = parseIntegerEnv(process.e
 export const SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED, false);
 export const SELF_IMPROVEMENT_CONVERGENCE_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_CONVERGENCE_ENABLED, false);
 
+// ──── Observer Layer (Phase F: Autonomous Agent Evolution) ────
+export const OBSERVER_ENABLED = parseBooleanEnv(process.env.OBSERVER_ENABLED, false);
+export const OBSERVER_SCAN_INTERVAL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSERVER_SCAN_INTERVAL_MS, 5 * 60_000));
+export const OBSERVER_ERROR_PATTERN_ENABLED = parseBooleanEnv(process.env.OBSERVER_ERROR_PATTERN_ENABLED, true);
+export const OBSERVER_ERROR_PATTERN_MIN_FREQUENCY = Math.max(1, parseIntegerEnv(process.env.OBSERVER_ERROR_PATTERN_MIN_FREQUENCY, 3));
+export const OBSERVER_MEMORY_GAP_ENABLED = parseBooleanEnv(process.env.OBSERVER_MEMORY_GAP_ENABLED, true);
+export const OBSERVER_MEMORY_GAP_STALE_HOURS = Math.max(1, parseIntegerEnv(process.env.OBSERVER_MEMORY_GAP_STALE_HOURS, 48));
+export const OBSERVER_PERF_DRIFT_ENABLED = parseBooleanEnv(process.env.OBSERVER_PERF_DRIFT_ENABLED, true);
+export const OBSERVER_PERF_DRIFT_THRESHOLD_PCT = Math.max(1, parseNumberEnv(process.env.OBSERVER_PERF_DRIFT_THRESHOLD_PCT, 20));
+export const OBSERVER_CODE_HEALTH_ENABLED = parseBooleanEnv(process.env.OBSERVER_CODE_HEALTH_ENABLED, false);
+export const OBSERVER_CONVERGENCE_DIGEST_ENABLED = parseBooleanEnv(process.env.OBSERVER_CONVERGENCE_DIGEST_ENABLED, true);
+export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, false);
+
+
+
+// ──── Traffic Routing (LangGraph Phase 2 Cutover) ────
+export const TRAFFIC_ROUTING_ENABLED = parseBooleanEnv(process.env.TRAFFIC_ROUTING_ENABLED, false);
+export const TRAFFIC_ROUTING_MODE = (process.env.TRAFFIC_ROUTING_MODE || 'shadow') as 'main' | 'shadow' | 'langgraph';
+export const TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD = parseNumberEnv(process.env.TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD, 0.3);
+export const TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD = parseNumberEnv(process.env.TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD, -0.2);
+export const TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES = parseIntegerEnv(process.env.TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES, 50);
+export const TRAFFIC_ROUTING_STATS_WINDOW_HOURS = parseIntegerEnv(process.env.TRAFFIC_ROUTING_STATS_WINDOW_HOURS, 72);
+
+// ──── Supabase Infrastructure (pg_cron, pgvector) ────
+export const PG_CRON_BOOTSTRAP_ENABLED = parseBooleanEnv(process.env.PG_CRON_BOOTSTRAP_ENABLED, true);
+export const PG_CRON_REPLACES_APP_LOOPS = parseBooleanEnv(process.env.PG_CRON_REPLACES_APP_LOOPS, false);
+export const MEMORY_EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, true);
+
 export default {
   PORT,
   FRONTEND_ORIGIN,
@@ -206,40 +201,6 @@ export default {
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   SUPABASE_TRADES_TABLE,
-  AI_TRADING_MODE,
-  AI_TRADING_DRY_RUN,
-  AI_TRADING_BASE_URL,
-  AI_TRADING_INTERNAL_TOKEN,
-  AI_TRADING_ORDER_PATH,
-  AI_TRADING_POSITION_PATH,
-  AI_TRADING_TIMEOUT_MS,
-  BINANCE_API_KEY,
-  BINANCE_API_SECRET,
-  BINANCE_FUTURES,
-  BINANCE_HEDGE_MODE,
-  BINANCE_SPOT_MIN_BASE_QTY,
-  START_TRADING_BOT,
-  TRADING_EXCHANGE,
-  TRADING_SYMBOLS,
-  TRADING_TIMEFRAME,
-  TRADING_CVD_LEN,
-  TRADING_DELTA_COEF,
-  TRADING_RISK_PCT,
-  TRADING_TP_PCT,
-  TRADING_SL_PCT,
-  TRADING_LEVERAGE,
-  TRADING_INITIAL_CAPITAL,
-  TRADING_EQUITY_SPLIT,
-  TRADING_POLL_SECONDS,
-  TRADING_CANDLE_LOOKBACK,
-  TRADING_TICK_FETCH_LIMIT,
-  TRADING_TICK_MAX_PAGES,
-  TRADING_DRY_RUN,
-  TRADING_CANDLES_TABLE,
-  TRADING_STATE_TABLE,
-  MAX_MANUAL_TRADE_QTY,
-  MAX_MANUAL_TRADE_LEVERAGE,
-  MAX_MANUAL_TRADE_ENTRY_PRICE,
   LOG_LEVEL,
   BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS,
   OBSIDIAN_HEADLESS_ENABLED,
@@ -254,6 +215,7 @@ export default {
   SPRINT_MAX_IMPL_REVIEW_LOOPS,
   SPRINT_MAX_TOTAL_PHASES,
   SPRINT_CHANGED_FILE_CAP,
+  SPRINT_NEW_FILE_CAP,
   SPRINT_PHASE_TIMEOUT_MS,
   SPRINT_TRIGGER_ERROR_THRESHOLD,
   SPRINT_TRIGGER_CS_CHANNEL_IDS,
@@ -307,47 +269,6 @@ export const discordConfig = {
   inviteScopes: DISCORD_INVITE_SCOPES,
 } as const;
 
-export const tradingConfig = {
-  mode: AI_TRADING_MODE,
-  dryRun: AI_TRADING_DRY_RUN,
-  baseUrl: AI_TRADING_BASE_URL,
-  internalToken: AI_TRADING_INTERNAL_TOKEN,
-  orderPath: AI_TRADING_ORDER_PATH,
-  positionPath: AI_TRADING_POSITION_PATH,
-  timeoutMs: AI_TRADING_TIMEOUT_MS,
-  exchange: TRADING_EXCHANGE,
-  symbols: TRADING_SYMBOLS,
-  timeframe: TRADING_TIMEFRAME,
-  cvdLen: TRADING_CVD_LEN,
-  deltaCoef: TRADING_DELTA_COEF,
-  riskPct: TRADING_RISK_PCT,
-  tpPct: TRADING_TP_PCT,
-  slPct: TRADING_SL_PCT,
-  leverage: TRADING_LEVERAGE,
-  initialCapital: TRADING_INITIAL_CAPITAL,
-  equitySplit: TRADING_EQUITY_SPLIT,
-  pollSeconds: TRADING_POLL_SECONDS,
-  candleLookback: TRADING_CANDLE_LOOKBACK,
-  tickFetchLimit: TRADING_TICK_FETCH_LIMIT,
-  tickMaxPages: TRADING_TICK_MAX_PAGES,
-  tradingDryRun: TRADING_DRY_RUN,
-  candlesTable: TRADING_CANDLES_TABLE,
-  stateTable: TRADING_STATE_TABLE,
-  startTradingBot: START_TRADING_BOT,
-  binance: {
-    apiKey: BINANCE_API_KEY,
-    apiSecret: BINANCE_API_SECRET,
-    futures: BINANCE_FUTURES,
-    hedgeMode: BINANCE_HEDGE_MODE,
-    spotMinBaseQty: BINANCE_SPOT_MIN_BASE_QTY,
-  },
-  limits: {
-    maxManualTradeQty: MAX_MANUAL_TRADE_QTY,
-    maxManualTradeLeverage: MAX_MANUAL_TRADE_LEVERAGE,
-    maxManualTradeEntryPrice: MAX_MANUAL_TRADE_ENTRY_PRICE,
-  },
-} as const;
-
 export const obsidianConfig = {
   headlessEnabled: OBSIDIAN_HEADLESS_ENABLED,
   email: OBSIDIAN_EMAIL,
@@ -364,6 +285,7 @@ export const sprintConfig = {
   maxImplReviewLoops: SPRINT_MAX_IMPL_REVIEW_LOOPS,
   maxTotalPhases: SPRINT_MAX_TOTAL_PHASES,
   changedFileCap: SPRINT_CHANGED_FILE_CAP,
+  newFileCap: SPRINT_NEW_FILE_CAP,
   phaseTimeoutMs: SPRINT_PHASE_TIMEOUT_MS,
   dryRun: SPRINT_DRY_RUN,
   pipelinesTable: SPRINT_PIPELINES_TABLE,
@@ -405,6 +327,24 @@ export const sprintConfig = {
     enabled: SPRINT_AUTOPLAN_ENABLED,
     lenses: SPRINT_AUTOPLAN_LENSES,
   },
+  trafficRouting: {
+    enabled: TRAFFIC_ROUTING_ENABLED,
+    mode: TRAFFIC_ROUTING_MODE,
+    shadowDivergeThreshold: TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD,
+    qualityDeltaThreshold: TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD,
+    minShadowSamples: TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES,
+    statsWindowHours: TRAFFIC_ROUTING_STATS_WINDOW_HOURS,
+  },
+  observer: {
+    enabled: OBSERVER_ENABLED,
+    scanIntervalMs: OBSERVER_SCAN_INTERVAL_MS,
+    errorPattern: { enabled: OBSERVER_ERROR_PATTERN_ENABLED, minFrequency: OBSERVER_ERROR_PATTERN_MIN_FREQUENCY },
+    memoryGap: { enabled: OBSERVER_MEMORY_GAP_ENABLED, staleHours: OBSERVER_MEMORY_GAP_STALE_HOURS },
+    perfDrift: { enabled: OBSERVER_PERF_DRIFT_ENABLED, thresholdPct: OBSERVER_PERF_DRIFT_THRESHOLD_PCT },
+    codeHealth: { enabled: OBSERVER_CODE_HEALTH_ENABLED },
+    convergenceDigest: { enabled: OBSERVER_CONVERGENCE_DIGEST_ENABLED },
+    discordPulse: { enabled: OBSERVER_DISCORD_PULSE_ENABLED },
+  },
 } as const;
 
 export const authConfig = {
@@ -434,4 +374,19 @@ export const memoryConfig = {
   evolutionMaxLinks: Math.max(1, Math.min(10, parseIntegerEnv(process.env.MEMORY_EVOLUTION_MAX_LINKS, 5))),
   evolutionMinSimilarity: Math.max(0, Math.min(1, Number(process.env.MEMORY_EVOLUTION_MIN_SIMILARITY || 0.25))),
   evolutionConfidenceBoost: Math.max(0, Math.min(0.1, Number(process.env.MEMORY_EVOLUTION_CONFIDENCE_BOOST || 0.03))),
+  evolutionLlmClassify: parseBooleanEnv(process.env.MEMORY_EVOLUTION_LLM_CLASSIFY, false),
+  embeddingEnabled: MEMORY_EMBEDDING_ENABLED,
+  userEmbeddingEnabled: parseBooleanEnv(process.env.USER_EMBEDDING_ENABLED, true),
+  userEmbeddingRefreshIntervalMs: Math.max(60_000, parseIntegerEnv(process.env.USER_EMBEDDING_REFRESH_INTERVAL_MS, 24 * 60 * 60_000)),
+  userEmbeddingMinItems: Math.max(1, parseIntegerEnv(process.env.USER_EMBEDDING_MIN_ITEMS, 3)),
+} as const;
+
+export const infraConfig = {
+  pgCron: {
+    bootstrapEnabled: PG_CRON_BOOTSTRAP_ENABLED,
+    replacesAppLoops: PG_CRON_REPLACES_APP_LOOPS,
+  },
+  embedding: {
+    enabled: MEMORY_EMBEDDING_ENABLED,
+  },
 } as const;

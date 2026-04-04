@@ -6,9 +6,11 @@
  * shadow, this runner executes real graph node handlers and compares the
  * shadow output against the main session result.
  *
- * Phase 1 (current): Shadow execution with divergence logging
- * Phase 2 (planned): Dual-run with traffic routing
- * Phase 3 (planned): Full cutover
+ * Phase 1 (active):  Shadow execution with divergence logging
+ * Phase 2 (active):  Dual-run with traffic routing — trafficRoutingService
+ *                     decides per-session whether shadow result can be promoted
+ *                     as the primary output (gated by divergence quality + rollout %)
+ * Phase 3 (planned): Full cutover — LangGraph executor as sole primary path
  */
 
 import logger from '../../logger';
@@ -412,3 +414,50 @@ export const getShadowDivergenceStats = async (
     return { stats: null, error: 'query_failed' };
   }
 };
+
+// ──── Phase 2: Shadow Promotion Eligibility ─────────────────────────
+
+/**
+ * Determines whether a shadow run result is eligible to be promoted
+ * as the primary session output. Used by the traffic router when
+ * the route is 'shadow' and the shadow completed successfully.
+ *
+ * Criteria:
+ *   - No error in shadow run
+ *   - No divergence (or divergence only in terminal nodes)
+ *   - Shadow produced non-empty finalText
+ *   - Quality delta >= 0 (shadow not worse than main)
+ */
+export const isShadowResultPromotable = (
+  result: ShadowRunResult,
+  mainFinalStatus: string,
+): { promotable: boolean; reason: string } => {
+  if (result.error) {
+    return { promotable: false, reason: `shadow_error:${result.error}` };
+  }
+
+  if (!result.shadowState.finalText || result.shadowState.finalText.trim().length === 0) {
+    return { promotable: false, reason: 'shadow_empty_output' };
+  }
+
+  if (result.shadowState.policyBlocked) {
+    return { promotable: false, reason: 'shadow_policy_blocked' };
+  }
+
+  const qualityDelta = computeQualityDelta(result, mainFinalStatus);
+  if (qualityDelta !== null && qualityDelta < 0) {
+    return { promotable: false, reason: `shadow_quality_negative:${qualityDelta.toFixed(3)}` };
+  }
+
+  // Divergence in terminal nodes (compose_response, persist_and_emit) is acceptable
+  if (result.divergeAtIndex !== null) {
+    const divergeNode = result.visitedNodes[result.divergeAtIndex];
+    const terminalNodes = new Set(['compose_response', 'persist_and_emit']);
+    if (!terminalNodes.has(divergeNode)) {
+      return { promotable: false, reason: `shadow_diverged_at:${divergeNode}` };
+    }
+  }
+
+  return { promotable: true, reason: 'shadow_quality_acceptable' };
+};
+

@@ -11,6 +11,8 @@ const LLM_API_TIMEOUT_LARGE_MS = Math.max(LLM_API_TIMEOUT_MS, Number(process.env
 const LLM_PROVIDER_TOTAL_TIMEOUT_MS = Math.max(1_000, Number(process.env.LLM_PROVIDER_TOTAL_TIMEOUT_MS || 25_000));
 const LLM_PROVIDER_MAX_ATTEMPTS = Math.max(1, Math.min(6, Number(process.env.LLM_PROVIDER_MAX_ATTEMPTS || 2) || 2));
 const LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED || 'false').trim());
+/** Hedged request: if primary hasn't responded within this delay, fire next provider in parallel. 0 = disabled. */
+const LLM_HEDGE_DELAY_MS = Math.max(0, Number(process.env.LLM_HEDGE_DELAY_MS || 3000));
 const LLM_CALL_LOG_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_CALL_LOG_ENABLED || 'true').trim());
 const LLM_CALL_LOG_TABLE = String(process.env.LLM_CALL_LOG_TABLE || 'agent_llm_call_logs').trim();
 const LLM_EXPERIMENT_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_EXPERIMENT_ENABLED || 'false').trim());
@@ -25,6 +27,56 @@ const LLM_EXPERIMENT_GUILD_ALLOWLIST = new Set(
 );
 const LLM_COST_INPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_INPUT_PER_1K_CHARS_USD || 0.0005) || 0.0005);
 const LLM_COST_OUTPUT_PER_1K_CHARS_USD = Math.max(0, Number(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD || 0.0015) || 0.0015);
+
+// === LLM Response Cache ===
+const LLM_RESPONSE_CACHE_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LLM_RESPONSE_CACHE_ENABLED || 'true').trim());
+const LLM_RESPONSE_CACHE_TTL_MS = Math.max(1_000, Number(process.env.LLM_RESPONSE_CACHE_TTL_MS || 60_000));
+const LLM_RESPONSE_CACHE_MAX_ENTRIES = Math.max(10, Number(process.env.LLM_RESPONSE_CACHE_MAX_ENTRIES || 200));
+
+type CachedLlmResponse = {
+  response: LlmTextWithMetaResponse;
+  expiresAt: number;
+};
+
+const llmResponseCache = new Map<string, CachedLlmResponse>();
+
+const buildCacheKey = (params: LlmTextRequest): string | null => {
+  // Only cache deterministic requests (temperature 0 or very low)
+  const temp = params.temperature ?? 0.7;
+  if (temp > 0.1) return null;
+  // Don't cache streaming/large requests
+  if (String(params.user || '').length > 8_000) return null;
+
+  const raw = [
+    params.system || '',
+    params.user || '',
+    String(temp),
+    String(params.topP ?? ''),
+    String(params.maxTokens ?? ''),
+    params.provider || '',
+    params.model || '',
+  ].join('::');
+  return crypto.createHash('sha256').update(raw, 'utf8').digest('hex').slice(0, 24);
+};
+
+const getCachedResponse = (key: string): LlmTextWithMetaResponse | null => {
+  const entry = llmResponseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    llmResponseCache.delete(key);
+    return null;
+  }
+  return entry.response;
+};
+
+const setCachedResponse = (key: string, response: LlmTextWithMetaResponse): void => {
+  // Evict oldest entries if at capacity
+  if (llmResponseCache.size >= LLM_RESPONSE_CACHE_MAX_ENTRIES) {
+    const firstKey = llmResponseCache.keys().next().value;
+    if (firstKey) llmResponseCache.delete(firstKey);
+  }
+  llmResponseCache.set(key, { response, expiresAt: Date.now() + LLM_RESPONSE_CACHE_TTL_MS });
+};
 
 export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface' | 'openjarvis' | 'litellm' | 'kimi';
 
@@ -83,6 +135,9 @@ const getOpenClawFallbackModels = () => String(process.env.OPENCLAW_FALLBACK_MOD
   .filter(Boolean);
 const OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS = Math.max(1_000, Number(process.env.OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS || 45_000));
 const openclawModelCooldownUntilMs = new Map<string, number>();
+/** Caches the resolved OpenClaw completions endpoint path suffix after first successful probe.
+ *  Avoids repeated 404 → fallback round-trips on every request. */
+let openclawResolvedPathSuffix: string | null = null;
 const getOpenClawBaseUrl = () => String(
   process.env.OPENCLAW_BASE_URL
     || process.env.OPENCLAW_API_BASE_URL
@@ -897,16 +952,17 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
       ],
     });
 
-    let requestUrl = `${baseUrl}/v1/chat/completions`;
+    let requestUrl = `${baseUrl}${openclawResolvedPathSuffix || '/v1/chat/completions'}`;
     let response = await fetchWithTimeout(requestUrl, {
       method: 'POST',
       headers,
       body: payload,
     });
 
-    if (response.status === 404) {
+    if (response.status === 404 && !openclawResolvedPathSuffix) {
       const firstBody = await response.text();
-      const fallbackUrl = `${baseUrl}/chat/completions`;
+      const fallbackSuffix = '/chat/completions';
+      const fallbackUrl = `${baseUrl}${fallbackSuffix}`;
       const fallbackResponse = await fetchWithTimeout(fallbackUrl, {
         method: 'POST',
         headers,
@@ -914,6 +970,7 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
       });
 
       if (fallbackResponse.ok) {
+        openclawResolvedPathSuffix = fallbackSuffix;
         const data = (await fallbackResponse.json()) as Record<string, any>;
         return String(data?.choices?.[0]?.message?.content || '').trim();
       }
@@ -951,6 +1008,9 @@ const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
     }
 
     const data = (await response.json()) as Record<string, any>;
+    if (!openclawResolvedPathSuffix) {
+      openclawResolvedPathSuffix = '/v1/chat/completions';
+    }
     return String(data?.choices?.[0]?.message?.content || '').trim();
   }
 
@@ -1087,6 +1147,15 @@ export const generateText = async (params: LlmTextRequest): Promise<string> => {
 export const generateTextWithMeta = async (
   params: LlmTextRequest & { includeLogprobs?: boolean },
 ): Promise<LlmTextWithMetaResponse> => {
+  // Response cache: skip API call for identical deterministic requests
+  const cacheKey = LLM_RESPONSE_CACHE_ENABLED ? buildCacheKey(params) : null;
+  if (cacheKey) {
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return { ...cached, latencyMs: 0, estimatedCostUsd: 0 };
+    }
+  }
+
   const selection = resolveProviderWithExperiment(params);
   const provider = selection.provider || resolveLlmProvider();
   if (!provider) {
@@ -1149,18 +1218,65 @@ export const generateTextWithMeta = async (
     let lastError: unknown = null;
     let finalProvider: LlmProvider = provider;
 
-    for (const targetProvider of providerChain) {
-      if (Date.now() > providerChainDeadlineMs) {
-        lastError = new Error('LLM_PROVIDER_CHAIN_TIMEOUT');
-        break;
-      }
-      try {
-        response = await callProvider(targetProvider);
-        finalProvider = targetProvider;
-        break;
-      } catch (error) {
-        lastError = error;
-        finalProvider = targetProvider;
+    // Hedged request: if chain has 2+ providers and hedge delay > 0,
+    // fire the second provider after a short delay and race them.
+    const canHedge = LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED
+      && LLM_HEDGE_DELAY_MS > 0
+      && providerChain.length >= 2;
+
+    if (canHedge) {
+      const [primary, secondary] = providerChain;
+
+      const hedged = await new Promise<{ response: LlmTextWithMetaResponse; provider: LlmProvider }>((resolve, reject) => {
+        let settled = false;
+        let failures = 0;
+        const settle = (res: LlmTextWithMetaResponse, p: LlmProvider) => {
+          if (!settled) { settled = true; resolve({ response: res, provider: p }); }
+        };
+        const fail = (err: unknown) => {
+          failures += 1;
+          if (failures >= 2 || (failures >= 1 && !hedgeTimer)) {
+            reject(err instanceof Error ? err : new Error('LLM_REQUEST_FAILED'));
+          }
+        };
+
+        // Fire primary immediately
+        callProvider(primary).then((r) => settle(r, primary)).catch(fail);
+
+        // Fire secondary after hedge delay
+        let hedgeTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+          hedgeTimer = null;
+          if (!settled && Date.now() <= providerChainDeadlineMs) {
+            callProvider(secondary).then((r) => settle(r, secondary)).catch(fail);
+          }
+        }, LLM_HEDGE_DELAY_MS);
+
+        // Overall deadline
+        setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('LLM_PROVIDER_CHAIN_TIMEOUT'));
+          }
+        }, Math.max(0, providerChainDeadlineMs - Date.now()));
+      });
+
+      response = hedged.response;
+      finalProvider = hedged.provider;
+    } else {
+      // Original sequential fallback for single-provider or hedge-disabled scenarios
+      for (const targetProvider of providerChain) {
+        if (Date.now() > providerChainDeadlineMs) {
+          lastError = new Error('LLM_PROVIDER_CHAIN_TIMEOUT');
+          break;
+        }
+        try {
+          response = await callProvider(targetProvider);
+          finalProvider = targetProvider;
+          break;
+        } catch (error) {
+          lastError = error;
+          finalProvider = targetProvider;
+        }
       }
     }
 
@@ -1192,6 +1308,11 @@ export const generateTextWithMeta = async (
       estimatedCostUsd,
       qualityScore,
     });
+
+    // Cache successful deterministic responses
+    if (cacheKey && enriched.text) {
+      setCachedResponse(cacheKey, enriched);
+    }
 
     return enriched;
   } catch (error) {

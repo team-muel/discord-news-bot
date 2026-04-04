@@ -57,7 +57,6 @@ const recommendNonEmpty = (key, why) => {
 
 const startBot = isTruthy(process.env.START_BOT, false);
 const startAutomation = isTruthy(process.env.START_AUTOMATION_JOBS, false);
-const startTrading = isTruthy(process.env.START_TRADING_BOT, false);
 const aiProvider = read('AI_PROVIDER').toLowerCase();
 const deploymentProfile = read('DEPLOYMENT_PROFILE').toLowerCase() || 'auto';
 
@@ -81,7 +80,7 @@ const profileHints = {
 };
 
 console.log('[env-check] Muel environment validation start');
-console.log(`[env-check] mode START_BOT=${startBot} START_AUTOMATION_JOBS=${startAutomation} START_TRADING_BOT=${startTrading} AI_PROVIDER=${aiProvider || 'auto'} DEPLOYMENT_PROFILE=${deploymentProfile}`);
+console.log(`[env-check] mode START_BOT=${startBot} START_AUTOMATION_JOBS=${startAutomation} AI_PROVIDER=${aiProvider || 'auto'} DEPLOYMENT_PROFILE=${deploymentProfile}`);
 
 if (deploymentProfile && deploymentProfile !== 'auto' && !profileHints[deploymentProfile]) {
   add('WARN', 'DEPLOYMENT_PROFILE', '지원값은 auto|api-only|bot-only|full|prod 입니다.');
@@ -323,10 +322,6 @@ if (read('DISCORD_COMMAND_GUILD_ID')) {
 // Automation & trading optional warnings
 if (startAutomation && !read('YOUTUBE_MONITOR_INTERVAL_MS')) {
   add('WARN', 'YOUTUBE_MONITOR_INTERVAL_MS', '자동화 주기를 명시하면 운영 예측성이 높아집니다.');
-}
-if (startTrading) {
-  recommendNonEmpty('TRADING_SYMBOLS', '트레이딩 루프 심볼 정의');
-  recommendNonEmpty('TRADING_TIMEFRAME', '트레이딩 캔들 주기');
 }
 
 if (findings.length === 0) {

@@ -3,7 +3,7 @@ import logger from '../../logger';
 import { listAgentRoleWorkerSpecs } from '../../services/agent/agentRoleWorkerService';
 import { getAction, listActions } from '../../services/skills/actions/registry';
 import { decideActionApprovalRequest, isActionRunMode, listActionApprovalRequests, listGuildActionPolicies, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
-import { getOpencodeExecutionSummary } from '../../services/opencodeOpsService';
+import { getOpencodeExecutionSummary } from '../../services/opencode/opencodeOpsService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../../services/workerExecution';
 import {
   createOpencodeChangeRequest,
@@ -15,7 +15,7 @@ import {
   listOpencodePublishJobs,
   summarizeOpencodeQueueReadiness,
   type OpencodeRiskTier,
-} from '../../services/opencodeGitHubQueueService';
+} from '../../services/opencode/opencodeGitHubQueueService';
 import { getSuperAgentCapabilities, recommendSuperAgent, startSuperAgentSessionFromTask } from '../../services/superAgentService';
 import { isOneOf, sanitizeRecord, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 

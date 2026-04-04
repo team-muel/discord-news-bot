@@ -1,7 +1,9 @@
 ---
 description: "Sprint Phase: Build — implement the smallest safe change set from a plan or bug report. Focused on TypeScript/Node.js production code, tests, and type safety."
-applyTo: "**"
+applyTo: "src/**"
 ---
+
+<!-- Token Budget: ~400 base, ~1,200 with references -->
 
 # /implement
 
@@ -21,11 +23,12 @@ applyTo: "**"
 
 ## Process
 
-1. **Scope the patch** — identify the minimal file set from the plan or bug report.
-2. **Implement** — make the smallest valid change; preserve existing contracts unless explicitly required.
-3. **Validate locally** — run `tsc --noEmit` and relevant test suites.
-4. **Document changes** — what changed, why, how validated, remaining risk.
-5. **Hand off** — pass to `/review` for defensive review.
+1. **Reuse gate** — search the existing codebase for services/functions that overlap with the objective. If an existing file covers 70%+ of the need, extend it. Cite 3 files searched and why none suffice before creating any new file.
+2. **Scope the patch** — identify the minimal file set from the plan or bug report. New files per sprint are capped (default: 3, enforced by scope guard).
+3. **Implement** — make the smallest valid change; preserve existing contracts unless explicitly required.
+4. **Validate locally** — run `tsc --noEmit` and relevant test suites.
+5. **Document changes** — what changed, why, how validated, remaining risk.
+6. **Hand off** — pass to `/review` for defensive review.
 
 ## Inputs
 
@@ -47,6 +50,8 @@ applyTo: "**"
 
 ## Guardrails
 
+- **Reuse over creation**: extending an existing 500-line file is almost always better than creating a new 200-line file. New abstractions must justify their existence.
+- New files per sprint are hard-capped by `SPRINT_NEW_FILE_CAP` (default: 3, enforced by `scopeGuard.checkNewFileCreation`). Test files don't count.
 - Do not perform unrelated refactors.
 - Prefer `muelIndexing` MCP tools for symbol discovery before broad text search.
 - Escalate architectural reshaping to `/plan` before broad refactors.
@@ -59,6 +64,30 @@ applyTo: "**"
 | Implementation complete        | `/review`       |
 | Architecture questions surface | `/plan`         |
 | Operational concerns surface   | `/ops-validate` |
+
+## HITL Decision
+
+### Act (proceed without asking)
+
+- Fixing typecheck or lint errors
+- Adding or updating tests for existing behavior
+- Renaming internal variables or functions
+- Applying a fix explicitly described in `/review` findings
+
+### Ask (confirm before proceeding)
+
+- Changing public API signatures or Discord command options
+- Creating or modifying database migrations
+- Deleting files or removing exports
+- Adding new external dependencies
+- Changing env var names or defaults in `config.ts`
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/backward-compat-checklist.md` — when touching public APIs or shared contracts
+- `references/test-patterns.md` — when writing or modifying Vitest tests
 
 ## Runtime Counterpart
 

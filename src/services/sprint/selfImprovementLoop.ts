@@ -56,12 +56,13 @@ export type CrossLoopOrigin = {
   objective: string;
 };
 
-type GradientSignal = {
+export type GradientSignal = {
   source: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   score: number;
   description: string;
   suggestedAction: string;
+  kr?: 'agent-quality' | 'system-reliability' | 'operational-efficiency';
 };
 
 export type SystemGradient = {
@@ -655,6 +656,20 @@ export const computeConvergenceReport = async (): Promise<ConvergenceReport> => 
 
     logger.info('[SELF-IMPROVE] convergence: verdict=%s quality=%s patterns=%s bench=%s points=%d',
       overallVerdict, qualityScoreTrend, highSeverityPatternTrend, benchScoreTrend, dataPoints);
+
+    // Signal bus: emit convergence verdict
+    try {
+      const { emitSignal } = await import('../runtime/signalBus');
+      if (overallVerdict !== 'insufficient-data') {
+        const signalName = overallVerdict === 'degrading' ? 'convergence.degrading'
+          : overallVerdict === 'improving' ? 'convergence.improving' : 'convergence.stable';
+        emitSignal(signalName, 'selfImprovementLoop', 'system', {
+          overallVerdict, benchScoreTrend, qualityScoreTrend, dataPoints,
+        });
+      }
+    } catch {
+      // Best-effort
+    }
 
     // Persist
     client.from('agent_weekly_reports').upsert({

@@ -71,6 +71,20 @@ All sprint pipeline configuration is defined in `src/config.ts`.
 | `SPRINT_AUTOPLAN_ENABLED` | boolean | `false` | Enable multi-lens autoplan sub-pipeline |
 | `SPRINT_AUTOPLAN_LENSES` | string | `ceo,engineering,security` | Comma-separated planning lenses |
 
+## External Adapter Integration
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `OPENCLAW_ENABLED` | boolean | `false` | Enable OpenClaw adapter for sprint phases |
+| `OPENCLAW_GATEWAY_URL` | string | `""` | OpenClaw Gateway HTTP endpoint (e.g., `http://34.56.232.61:18789`) |
+| `OPENCLAW_GATEWAY_TOKEN` | string | `""` | Bearer token for OpenClaw Gateway authentication |
+| `OPENJARVIS_ENABLED` | boolean | `false` | Enable OpenJarvis adapter for sprint phases |
+| `NEMOCLAW_ENABLED` | boolean | `false` | Enable NemoClaw adapter for sprint phases |
+| `OPENSHELL_ENABLED` | boolean | `false` | Enable OpenShell adapter (qa/security-audit secondary) |
+| `DEEPWIKI_ADAPTER_ENABLED` | boolean | `false` | Enable DeepWiki adapter (plan/retro enrichment) |
+| `N8N_ENABLED` | boolean | `false` | Enable n8n adapter (ops-validate enrichment) |
+| `SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED` | boolean | `false` | Enable NemoClaw as cross-model outside voice for review phases |
+
 ## Recommended Profiles
 
 ### Development (local)

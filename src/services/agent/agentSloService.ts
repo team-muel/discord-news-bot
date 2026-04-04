@@ -3,7 +3,7 @@ import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../u
 import { runWithConcurrency } from '../../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from '../goNoGoService';
-import { summarizeOpencodeQueueReadiness } from '../opencodeGitHubQueueService';
+import { summarizeOpencodeQueueReadiness } from '../opencode/opencodeGitHubQueueService';
 import { getMemoryQueueHealthSnapshot } from '../memory/memoryJobRunner';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 

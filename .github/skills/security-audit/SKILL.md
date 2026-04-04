@@ -1,7 +1,9 @@
 ---
 description: "Sprint Phase: Security — OWASP Top 10 + STRIDE threat model. Zero-noise findings with confidence gate and concrete exploit scenarios."
-applyTo: "**"
+applyTo: "src/**"
 ---
+
+<!-- Token Budget: ~400 base, ~1,800 with references -->
 
 # /security-audit
 
@@ -58,6 +60,27 @@ applyTo: "**"
 | No critical findings | `/ops-validate`                      |
 | Findings to fix      | `/implement` (with fix requirements) |
 | Architecture concern | `/plan` (re-design)                  |
+
+## HITL Decision
+
+### Act (proceed without asking)
+
+- Running OWASP/STRIDE analysis on changed files
+- Flagging findings with confidence >= 8/10
+- Excluding documented false positives
+
+### Ask (confirm before proceeding)
+
+- Findings that require architectural redesign
+- Trade-offs between security and functionality
+- Changing auth flows or permission models
+- Adding or modifying cryptographic operations
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/owasp-stride-checklist.md` — full OWASP Top 10 + STRIDE mapped to this repo
 
 ## Runtime Counterpart
 

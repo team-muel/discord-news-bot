@@ -123,8 +123,23 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
   ];
 
   const failed = checks.filter((check) => check.status === 'fail');
+  const decision = failed.length === 0 ? 'go' : 'no-go';
+
+  // Signal bus: emit go/no-go verdict
+  try {
+    const { emitSignal } = await import('./runtime/signalBus');
+    emitSignal(
+      decision === 'go' ? 'gonogo.go' : 'gonogo.no-go',
+      'goNoGoService',
+      params.guildId || 'system',
+      { decision, failedChecks: failed.map((c) => c.id), failedCount: failed.length },
+    );
+  } catch {
+    // Best-effort signal emission
+  }
+
   return {
-    decision: failed.length === 0 ? 'go' : 'no-go',
+    decision,
     scope: metrics.scope,
     windowDays: metrics.windowDays,
     generatedAt: new Date().toISOString(),

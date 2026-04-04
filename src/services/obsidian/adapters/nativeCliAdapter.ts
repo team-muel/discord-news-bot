@@ -148,8 +148,8 @@ const getGraphMetadata = async (): Promise<Record<string, ObsidianNode>> => {
     'counts',
     'format=json',
   ]);
-  const tagsData = tryParseJsonArray<{ tag: string; count: number }>(tagsOutput);
-  const globalTags = new Set(tagsData.map((t) => (t as any)?.tag ?? String(t)).filter(Boolean));
+  const tagsData = tryParseJsonArray<Record<string, unknown>>(tagsOutput);
+  const globalTags = new Set(tagsData.map((t) => String(t.tag ?? t)).filter(Boolean));
 
   const metadata: Record<string, ObsidianNode> = {};
 
@@ -177,16 +177,16 @@ const getGraphMetadata = async (): Promise<Record<string, ObsidianNode>> => {
       runNativeCli(['tags', `path=${safeFile}`, `vault=${vaultName}`, 'format=json']),
     ]);
 
-    const backlinks = tryParseJsonArray<{ file: string }>(backlinksOutput)
-      .map((b) => (b as any)?.file ?? String(b))
+    const backlinks = tryParseJsonArray<Record<string, unknown>>(backlinksOutput)
+      .map((b) => String(b.file ?? b))
       .filter(Boolean);
 
-    const links = tryParseJsonArray<string>(linksOutput)
-      .map((l) => typeof l === 'string' ? l : (l as any)?.file ?? String(l))
+    const links = tryParseJsonArray<Record<string, unknown>>(linksOutput)
+      .map((l) => typeof l === 'string' ? l : String((l as Record<string, unknown>).file ?? l))
       .filter(Boolean);
 
-    const tags = tryParseJsonArray<string>(fileTagsOutput)
-      .map((t) => typeof t === 'string' ? t : (t as any)?.tag ?? String(t))
+    const tags = tryParseJsonArray<Record<string, unknown>>(fileTagsOutput)
+      .map((t) => typeof t === 'string' ? t : String((t as Record<string, unknown>).tag ?? t))
       .filter(Boolean);
 
     if (metadata[filePath]) {
@@ -312,8 +312,8 @@ const readLore = async (params: ObsidianLoreQuery): Promise<string[]> => {
 
     if (!content) continue;
 
-    const backlinks = tryParseJsonArray<{ file: string }>(backlinksOutput)
-      .map((b) => (b as any)?.file ?? String(b))
+    const backlinks = tryParseJsonArray<Record<string, unknown>>(backlinksOutput)
+      .map((b) => String(b.file ?? b))
       .filter(Boolean);
 
     const excerpt = String(content)
@@ -376,11 +376,11 @@ const listTasks = async (): Promise<ObsidianTask[]> => {
   return items
     .filter((item) => typeof item === 'object' && item !== null && 'text' in item)
     .map((item) => ({
-      filePath: String((item as any).file ?? (item as any).path ?? ''),
-      line: Number((item as any).line ?? 0),
-      text: String((item as any).text ?? ''),
-      completed: Boolean((item as any).completed ?? (item as any).done ?? false),
-      tags: Array.isArray((item as any).tags) ? (item as any).tags.map(String) : undefined,
+      filePath: String(item.file ?? item.path ?? ''),
+      line: Number(item.line ?? 0),
+      text: String(item.text ?? ''),
+      completed: Boolean(item.completed ?? item.done ?? false),
+      tags: Array.isArray(item.tags) ? (item.tags as unknown[]).map(String) : undefined,
     }));
 };
 

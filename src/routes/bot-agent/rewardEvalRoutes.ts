@@ -8,6 +8,10 @@ import {
   getShadowDivergenceBySession,
   getShadowDivergenceStats,
 } from '../../services/langgraph/shadowGraphRunner';
+import {
+  getRecentTrafficRoutingDecisions,
+  getTrafficRouteDistribution,
+} from '../../services/workflow/trafficRoutingService';
 import { toStringParam, toBoundedInt } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
@@ -232,6 +236,52 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ ok: false, error: 'SHADOW_STATS_FAILED', message });
+    }
+  });
+
+  // ─── Traffic Routing Decisions ──────────────────────────────────────
+
+  /** Get recent traffic routing decisions for a guild */
+  router.get('/agent/traffic/decisions', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query.guildId);
+    const limit = toBoundedInt(req.query.limit, 20, { min: 1, max: 100 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const { data, error } = await getRecentTrafficRoutingDecisions(guildId, limit);
+      if (error) {
+        const status = error === 'SUPABASE_NOT_CONFIGURED' ? 503 : 500;
+        return res.status(status).json({ ok: false, error: 'TRAFFIC_QUERY_FAILED', message: error });
+      }
+      return res.json({ ok: true, decisions: data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'TRAFFIC_DECISIONS_FAILED', message });
+    }
+  });
+
+  /** Get traffic route distribution for a guild (percentage breakdown) */
+  router.get('/agent/traffic/distribution', requireAdmin, async (req, res) => {
+    const guildId = toStringParam(req.query.guildId);
+    const windowHours = toBoundedInt(req.query.windowHours, 24, { min: 1, max: 720 });
+
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const { distribution, total, error } = await getTrafficRouteDistribution(guildId, windowHours);
+      if (error) {
+        const status = error === 'SUPABASE_NOT_CONFIGURED' ? 503 : 500;
+        return res.status(status).json({ ok: false, error: 'TRAFFIC_QUERY_FAILED', message: error });
+      }
+      return res.json({ ok: true, distribution, total, windowHours });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, error: 'TRAFFIC_DISTRIBUTION_FAILED', message });
     }
   });
 }

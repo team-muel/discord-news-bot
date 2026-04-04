@@ -61,7 +61,13 @@ import {
 import { getAgentGotCutoverDecision } from './agent/agentGotCutoverService';
 import { recordGotShadowRun } from './agent/agentGotStore';
 import { enqueueTelemetryTask, registerTelemetryTaskHandler } from './agent/agentTelemetryQueue';
-import { isShadowRunnerEnabled, runShadowGraph, persistShadowDivergence, type ShadowRunResult } from './langgraph/shadowGraphRunner';
+import { isShadowRunnerEnabled, runShadowGraph, persistShadowDivergence, isShadowResultPromotable, type ShadowRunResult } from './langgraph/shadowGraphRunner';
+import {
+  TRAFFIC_ROUTING_ENABLED,
+  resolveTrafficRoute,
+  persistTrafficRoutingDecision,
+  type TrafficRoutingDecision,
+} from './workflow/trafficRoutingService';
 import { precipitateSessionToMemory } from './entityNervousSystem';
 import { MultiAgentRuntimeQueue } from './multiAgentRuntimeQueue';
 import type {
@@ -447,7 +453,8 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
 
   void runLangGraphExecutorShadowReplay(session, status);
 
-  // Phase-1 shadow graph: run real node handlers in parallel and log divergence
+  // Phase 1+2 shadow graph: run real node handlers in parallel, log divergence,
+  // and persist traffic routing decision for Phase 2 audit trail
   if (isShadowRunnerEnabled()) {
     void runShadowGraph({
       sessionId: session.id,
@@ -457,13 +464,52 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
       goal: session.goal,
       mainPathNodes: shadowTraceNodes,
       loadMemoryHints: (input) => withTimeout(buildAgentMemoryHints(input), AGENT_MEMORY_HINT_TIMEOUT_MS, 'SHADOW_MEMORY_HINT_TIMEOUT').catch(() => []),
-    }).then((result: ShadowRunResult) => {
+    }).then(async (result: ShadowRunResult) => {
       void persistShadowDivergence({
         sessionId: session.id,
         guildId: session.guildId,
         result,
         mainFinalStatus: status,
       });
+
+      // Phase 2: Record traffic routing decision + promotion eligibility
+      if (TRAFFIC_ROUTING_ENABLED) {
+        try {
+          const gotDecision = await getAgentGotCutoverDecision({
+            guildId: session.guildId,
+            sessionId: session.id,
+          });
+          const routeDecision = await resolveTrafficRoute({
+            sessionId: session.id,
+            guildId: session.guildId,
+            priority: session.priority,
+            gotCutoverDecision: gotDecision,
+          });
+
+          const promotability = isShadowResultPromotable(result, status);
+          void persistTrafficRoutingDecision({
+            sessionId: session.id,
+            guildId: session.guildId,
+            decision: {
+              ...routeDecision,
+              policySnapshot: {
+                ...routeDecision.policySnapshot,
+                shadowPromotable: promotability.promotable,
+                shadowPromotionReason: promotability.reason,
+              },
+            },
+          });
+
+          if (routeDecision.route !== 'main' && promotability.promotable) {
+            logger.info(
+              '[TRAFFIC-ROUTING] shadow promotable session=%s route=%s reason=%s',
+              session.id, routeDecision.route, promotability.reason,
+            );
+          }
+        } catch (err) {
+          logger.debug('[TRAFFIC-ROUTING] decision failed session=%s: %s', session.id, err instanceof Error ? err.message : String(err));
+        }
+      }
     }).catch(() => {
       // Best-effort shadow execution
     });

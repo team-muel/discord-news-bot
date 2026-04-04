@@ -76,3 +76,99 @@ applyTo: "src/**"
 
 - Always sanitize user-facing Discord replies, including text wrapped in Deliverable blocks. Debug markers can leak.
 - `tools.ts` has a known garbled description text (encoding issue). Quote descriptions carefully.
+
+## New File Creation — Reuse-First Checklist
+
+Agents (including IDE copilots) frequently create 10+ new files per sprint instead of extending existing services.
+**Before creating any new `.ts` file**, answer ALL five questions. If any answer is "yes", extend existing code instead.
+
+1. **Does a service in `src/services/` already handle 70%+ of this responsibility?** Search by keyword, domain, and function name.
+2. **Can this logic be a new exported function in an existing file?** Adding 50 lines to an existing service beats a new 200-line file.
+3. **Is this a new "layer" on top of something that already works?** observer→intent→synthesis layering is the anti-pattern. Flatten.
+4. **Will the new file need its own barrel export, types file, and test file?** If yes, the blast radius is 4+ files for one feature — almost certainly too many.
+5. **Am I creating this because I was inspired by an article/pattern rather than because existing code is insufficient?** Inspiration isn't justification.
+
+**Hard cap**: `SPRINT_NEW_FILE_CAP` (default 3) is enforced by `scopeGuard.checkNewFileCreation()`. Test files for modified code are exempt.
+
+## Harness Design Anti-Patterns
+
+These mirror classic software anti-patterns but apply to agent/skill design. Catch them early.
+
+| Anti-Pattern               | Classic Equivalent  | Symptom                                              | Fix                                                                                          |
+| -------------------------- | ------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **God Skill**              | God Class           | One SKILL.md handles 300+ lines of mixed concerns    | Split into focused skill + `references/`                                                     |
+| **Spaghetti Instructions** | Spaghetti Code      | All instructions mixed in one file without structure | Separate by concern, use `applyTo` scoping                                                   |
+| **Hardcoded Tool Calls**   | Tight Coupling      | Direct API/curl calls without MCP abstraction        | Route through MCP or worker client                                                           |
+| **Leaky Abstraction**      | Leaky Abstraction   | Sub-agent depends on MCP implementation details      | Keep skill ↔ MCP boundary clean                                                              |
+| **Circular Skill Calls**   | Circular Dependency | A→B→C→A infinite loop risk                           | Cap loops (`SPRINT_MAX_IMPL_REVIEW_LOOPS`), define exit conditions                           |
+| **Skill Explosion**        | Class Explosion     | 20+ tiny skills each loaded into system prompt       | Consolidate with Facade pattern: one entry SKILL.md + `references/`                          |
+| **Feature Envy**           | Feature Envy        | One skill over-references another skill's data       | Move shared data to common reference or MCP                                                  |
+| **Stale CLAUDE.md**        | Stale Config        | Dynamic info in static config file                   | Keep copilot-instructions.md static; pass dynamic info via conversation or instruction files |
+
+### When to Create a New Skill vs. a Reference File
+
+- **New Skill**: independent workflow with its own lead agent, input/output contract, and phase transition
+- **Reference file**: domain-specific detail loaded on demand by an existing skill
+- Rule of thumb: if it doesn't have a "Next Skills" routing table, it's a reference, not a skill
+
+## Cross-Domain Rules
+
+These rules enforce data transformation correctness at domain boundaries. Full specifications live in `docs/contracts/`.
+
+### Discord → Memory
+
+- **Always** use `resolveChannelMeta(channel)` from `src/utils/discordChannelMeta.ts` — never raw `channel.type` checks or `(channel as any).parentId`.
+- Tags must use correct prefix: `channel:` for channels, `thread:` for threads/forum posts.
+- Source references must be hierarchical URIs: `discord://guild/<id>/channel/<id>/thread/<id>`.
+- Thread context columns (`is_thread`, `parent_channel_id`, `channel_type`) are mandatory for memory writes.
+
+### Memory → Obsidian
+
+- **All** Obsidian writes must go through `writeObsidianNoteWithAdapter()` in `src/services/obsidian/router.ts` — never call adapter `writeNote()` directly.
+- Content is auto-sanitized by the centralized gate (`sanitizeForObsidianWrite()`). Do not bypass.
+- Every note must include YAML frontmatter with `title`, `created`, `source`, `tags`, `guild_id`.
+- `OBSIDIAN_VAULT_PATH` defaults to empty string — writes are silent no-ops without it. Do not assume vault is configured.
+
+### Discord → Community Graph
+
+- Private thread interactions must be **excluded** from the community graph (`isPrivateThread` → early return).
+- Use `resolveChannelMeta()` for channel type — same utility as Discord → Memory.
+- Thread messages create dual signals: thread presence + parent channel inherited presence.
+
+### Sprint Pipeline
+
+- Phase transitions must persist to Supabase — never store sprint state in local files.
+- Actions are scoped to phases via `PHASE_TOOL_CATEGORIES` — do not execute out-of-scope actions.
+- Retro phase must write to Obsidian vault via `writeRetroToVault()` (fire-and-forget).
+
+### Obsidian Retrieval
+
+- Default to graph-first retrieval (link graph traversal + tag filtering), NOT chunk-based RAG.
+- Fall back to vector similarity only when graph results are insufficient (< 3 results).
+- Strip wikilinks `[[note]]` before surfacing content in Discord responses.
+
+## Knowledge Feedback Loop
+
+This file is the **team's shared knowledge base**. It should grow from real experience, not speculation.
+
+### When to Add Here
+
+- You were corrected by a human and the correction applies to future work
+- You read 3+ files to discover a non-obvious pattern
+- A multi-step wiring checklist was needed and didn't exist
+- A `/retro` found a recurring gotcha across sprints
+
+### How to Propose Additions
+
+During `/retro`, if a new gotcha is discovered:
+
+1. Check if it's already documented here
+2. If not, add it under the appropriate section with a one-line description
+3. Keep entries actionable and specific — not vague warnings
+
+### Relationship to IDE Agent Memory
+
+- **This file** = team knowledge (shared, versioned in git, reviewed)
+- **IDE agent memory** (`/memories/`) = personal experience (per-user, not versioned)
+- Overlap is expected. When a personal memory proves universally useful, promote it here.
+- When this file is updated, relevant IDE agent memory should be checked for staleness.

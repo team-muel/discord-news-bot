@@ -1,5 +1,6 @@
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { callMcpTool, parseMcpTextBlocks } from '../mcpWorkerClient';
+import { delegateNewsMonitorCandidates, shouldDelegate } from '../automation/n8nDelegationService';
 
 export type WorkerNewsItem = {
   title: string;
@@ -16,6 +17,23 @@ const WORKER_TIMEOUT_MS = Math.max(2_000, parseIntegerEnv(process.env.NEWS_MONIT
 const WORKER_STRICT = parseBooleanEnv(process.env.NEWS_MONITOR_MCP_STRICT, true);
 
 export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise<WorkerNewsItem[] | null> => {
+  // n8n delegation: try fetching news candidates via n8n first
+  if (shouldDelegate('news-monitor-candidates')) {
+    const n8n = await delegateNewsMonitorCandidates(limit);
+    if (n8n.delegated && n8n.ok && n8n.data?.items?.length) {
+      return n8n.data.items.map((item) => ({
+        title: String(item.title || ''),
+        link: String(item.link || ''),
+        sourceName: item.sourceName ? String(item.sourceName) : null,
+        publisherName: item.publisherName ? String(item.publisherName) : null,
+        publishedAtUnix: Number.isFinite(Number(item.publishedAtUnix)) ? Number(item.publishedAtUnix) : null,
+        key: String(item.key || ''),
+        lexicalSignature: item.lexicalSignature ? String(item.lexicalSignature) : '',
+      }));
+    }
+    // Fall through to MCP worker
+  }
+
   if (!WORKER_URL) {
     if (WORKER_STRICT) {
       throw new Error('NEWS_MONITOR_WORKER_NOT_CONFIGURED');

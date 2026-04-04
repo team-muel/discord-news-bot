@@ -1,6 +1,7 @@
 import type { ActionDefinition } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { extractQuery } from './queryUtils';
+import { delegateNewsRssFetch } from '../../automation/n8nDelegationService';
 
 const stripCdata = (value: string): string => value.replace(/<!\[CDATA\[|\]\]>/g, '').trim();
 
@@ -69,6 +70,27 @@ export const newsGoogleSearchAction: ActionDefinition = {
     });
     if (delegated) {
       return delegated;
+    }
+
+    // n8n delegation: try delegating RSS fetch to n8n before inline fallback
+    const n8nResult = await delegateNewsRssFetch(query, limit);
+    if (n8nResult.delegated && n8nResult.ok && n8nResult.data?.items) {
+      const items = n8nResult.data.items
+        .filter((item) => item.title && item.link)
+        .slice(0, limit)
+        .map((item) => {
+          const meta = [item.source, item.pubDate].filter(Boolean).join(' | ');
+          return meta ? `${item.title}\\n${item.link}\\n${meta}` : `${item.title}\\n${item.link}`;
+        });
+      if (items.length > 0) {
+        return {
+          ok: true,
+          name: 'news.google.search',
+          summary: `n8n 위임으로 뉴스 ${items.length}건 수집`,
+          artifacts: items,
+          verification: ['n8n delegation path', `durationMs=${n8nResult.durationMs}`],
+        };
+      }
     }
 
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ko&gl=KR&ceid=KR:ko`;

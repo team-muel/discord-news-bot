@@ -43,8 +43,10 @@ export const seedFeedbackReactions = async (
   message: { react: (emoji: string) => Promise<unknown> } | null | undefined,
 ): Promise<void> => {
   if (!FEEDBACK_REACTION_SEED_ENABLED || !message) return;
-  await message.react(FEEDBACK_REACTION_SEED_UP).catch(() => {});
-  await message.react(FEEDBACK_REACTION_SEED_DOWN).catch(() => {});
+  await Promise.all([
+    message.react(FEEDBACK_REACTION_SEED_UP).catch(() => {}),
+    message.react(FEEDBACK_REACTION_SEED_DOWN).catch(() => {}),
+  ]);
 };
 
 // ─── Internal utils ───────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ description: "Sprint Phase: Ship — sync main, run all tests, audit coverage, c
 applyTo: "**"
 ---
 
+<!-- Token Budget: ~350 base, ~900 with references -->
+
 # /ship
 
 > All gates passed. Ship it.
@@ -57,6 +59,28 @@ applyTo: "**"
 | PR created/merged | `/retro`        |
 | CI fails          | `/qa` (re-test) |
 | Deploy fails      | `/ops-validate` |
+
+## HITL Decision
+
+### Act (proceed without asking)
+
+- Syncing with main branch
+- Running full test suite
+- Auditing coverage delta
+- Generating PR body from template
+
+### Ask (confirm before proceeding)
+
+- Creating the PR (unless autonomy = full-auto)
+- Triggering production deploy
+- Force-resolving merge conflicts
+- Overriding failed gate checks
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/pr-body-template.md` — PR body structure with sprint trace and gate checklist
 
 ## Runtime Counterpart
 

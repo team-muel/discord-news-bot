@@ -5,7 +5,7 @@ import { queueMemoryJob } from './agentMemoryStore';
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { listGuildAgentSessions, startAgentSession } from '../multiAgentService';
 import { autoBootstrapGuildKnowledgeOnJoin } from '../obsidian/obsidianBootstrapService';
-import { autoSyncGuildTopologyOnJoin } from '../discordTopologySyncService';
+import { autoSyncGuildTopologyOnJoin } from '../discord-support/discordTopologySyncService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 const AGENT_AUTO_ONBOARDING_ENABLED = parseBooleanEnv(process.env.AGENT_AUTO_ONBOARDING_ENABLED, true);

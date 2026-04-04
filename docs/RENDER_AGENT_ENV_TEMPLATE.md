@@ -78,6 +78,18 @@ Provider fallback controls:
 - MCP_NEMOCLAW_WORKER_URL= (optional, NemoClaw worker base url)
 - MCP_OPENJARVIS_WORKER_URL= (optional, OpenJarvis worker base url)
 - MCP_LOCAL_ORCHESTRATOR_WORKER_URL= (optional, local-orchestrator worker base url)
+
+## External OSS Adapters (Sprint Pipeline)
+
+- OPENCLAW_ENABLED=true (optional, enable OpenClaw adapter)
+- OPENCLAW_GATEWAY_URL=http://34.56.232.61:18789 (optional, OpenClaw Gateway HTTP endpoint)
+- OPENCLAW_GATEWAY_TOKEN=[secret] (optional, OpenClaw Gateway bearer token)
+- OPENJARVIS_ENABLED=true (optional, enable OpenJarvis adapter)
+- NEMOCLAW_ENABLED=true (optional, enable NemoClaw adapter)
+- OPENSHELL_ENABLED=true (optional, enable OpenShell sandbox adapter for qa/security-audit secondary)
+- DEEPWIKI_ADAPTER_ENABLED=true (optional, enable DeepWiki adapter for plan/retro enrichment)
+- N8N_ENABLED=true (optional, enable n8n adapter for ops-validate enrichment)
+- SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED=true (optional, NemoClaw as cross-model outside voice)
 - LOCAL_CLI_TOOL_ENABLED=false (optional, true면 단일 명시적 CLI tool slice 활성화)
 - LOCAL_CLI_TOOL_NAME=local.cli (optional, catalog/action에서 보일 tool name)
 - LOCAL_CLI_TOOL_DESCRIPTION=Configured local CLI tool (optional)

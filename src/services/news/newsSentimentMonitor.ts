@@ -4,6 +4,7 @@ import { fetchWithTimeout } from '../../utils/network';
 import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { fetchNewsMonitorCandidatesByWorker } from './newsMonitorWorkerClient';
+import { delegateArticleContextFetch, delegateNewsSummarize, shouldDelegate } from '../automation/n8nDelegationService';
 
 type NewsItem = {
   title: string;
@@ -151,6 +152,15 @@ const enforceTwoToThreeLines = (text: string): string => {
 };
 
 const loadArticleContext = async (link: string): Promise<{ title: string; description: string }> => {
+  // n8n delegation: try delegating article context fetch
+  if (shouldDelegate('article-context-fetch')) {
+    const n8n = await delegateArticleContextFetch(link);
+    if (n8n.delegated && n8n.ok && n8n.data) {
+      return { title: String(n8n.data.title || '').slice(0, 300), description: String(n8n.data.description || '').slice(0, 1200) };
+    }
+    // Fall through to inline on delegation failure
+  }
+
   try {
     const response = await fetchWithTimeout(link, {
       headers: {
@@ -220,6 +230,16 @@ const appendSignatureHistory = (raw: string | null, signature: string): string =
 };
 
 const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
+  // n8n delegation: try summarization via n8n workflow
+  if (shouldDelegate('news-summarize')) {
+    const article = await loadArticleContext(item.link);
+    const n8n = await delegateNewsSummarize(item.title, item.link, article.description);
+    if (n8n.delegated && n8n.ok && n8n.data?.summary) {
+      return enforceTwoToThreeLines(String(n8n.data.summary));
+    }
+    // Fall through to inline on delegation failure
+  }
+
   const apiKey = (process.env.OPENAI_API_KEY || '').trim();
   if (!NEWS_KR_SUMMARY_ENABLED || !apiKey) {
     return '';

@@ -17,6 +17,7 @@ import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { searchObsidianVaultWithAdapter, readObsidianFileWithAdapter } from '../obsidian/router';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import { doc } from '../obsidian/obsidianDocBuilder';
 import {
   SPRINT_LEARNING_JOURNAL_ENABLED,
   SPRINT_LEARNING_JOURNAL_GUILD_ID,
@@ -53,6 +54,8 @@ export type JournalEntry = {
   phaseTimings: Record<string, number>;
   failedPhases: string[];
   succeededPhases: string[];
+  /** Ratio of deterministic (scaffolding) phases to total phases in this sprint (0-1). */
+  scaffoldingRatio?: number;
   completedAt: string;
 };
 
@@ -79,64 +82,55 @@ export type PipelineMutation = {
 // ──── Write: Record sprint retro to Obsidian ──────────────────────────────────
 
 const formatJournalMarkdown = (entry: JournalEntry): string => {
-  const sections: string[] = [
-    `# Sprint Journal: ${entry.sprintId}`,
-    '',
-    `**Objective:** ${entry.objective.slice(0, 500)}`,
-    `**Completed:** ${entry.completedAt}`,
-    `**Guild:** ${entry.guildId}`,
-    '',
-    '## Execution Summary',
-    `- Total phases executed: ${entry.totalPhases}`,
-    `- Implement↔review loops: ${entry.implementReviewLoops}`,
-    `- Changed files: ${entry.changedFiles.length}`,
-    `- Succeeded: ${entry.succeededPhases.join(', ') || 'none'}`,
-    `- Failed: ${entry.failedPhases.join(', ') || 'none'}`,
-    '',
-  ];
+  const builder = doc()
+    .title(`Sprint Journal: ${entry.sprintId}`)
+    .section('Overview')
+    .line(`**Objective:** ${entry.objective.slice(0, 500)}`)
+    .line(`**Completed:** ${entry.completedAt}`)
+    .line(`**Guild:** ${entry.guildId}`);
+
+  builder.section('Execution Summary')
+    .bullet(`Total phases executed: ${entry.totalPhases}`)
+    .bullet(`Implement↔review loops: ${entry.implementReviewLoops}`)
+    .bullet(`Changed files: ${entry.changedFiles.length}`)
+    .bullet(`Succeeded: ${entry.succeededPhases.join(', ') || 'none'}`)
+    .bullet(`Failed: ${entry.failedPhases.join(', ') || 'none'}`);
 
   if (Object.keys(entry.phaseTimings).length > 0) {
-    sections.push('## Phase Timings (ms)');
+    builder.section('Phase Timings (ms)');
     for (const [phase, ms] of Object.entries(entry.phaseTimings)) {
-      sections.push(`- ${phase}: ${ms}`);
+      builder.bullet(`${phase}: ${ms}`);
     }
-    sections.push('');
   }
 
   if (entry.optimizeHints.length > 0) {
-    sections.push('## Optimization Hints');
-    for (const hint of entry.optimizeHints.slice(0, 10)) {
-      sections.push(`- ${hint}`);
-    }
-    sections.push('');
+    builder.section('Optimization Hints');
+    builder.bullets(entry.optimizeHints.slice(0, 10));
   }
 
   if (entry.benchResults.length > 0) {
-    sections.push('## Benchmark Results');
+    builder.section('Benchmark Results');
     if (entry.benchScore != null && Number.isFinite(entry.benchScore)) {
-      sections.push(`- **Bench Score:** ${entry.benchScore}`);
+      builder.bullet(`**Bench Score:** ${entry.benchScore}`);
     }
-    for (const bench of entry.benchResults.slice(0, 10)) {
-      sections.push(`- ${bench}`);
-    }
-    sections.push('');
+    builder.bullets(entry.benchResults.slice(0, 10));
   }
 
   if (entry.retroOutput) {
-    sections.push('## Retro Output');
-    sections.push(entry.retroOutput.slice(0, 3000));
-    sections.push('');
+    builder.section('Retro Output').line(entry.retroOutput.slice(0, 3000));
   }
 
   if (entry.changedFiles.length > 0) {
-    sections.push('## Changed Files');
+    builder.section('Changed Files');
     for (const file of entry.changedFiles.slice(0, 20)) {
-      sections.push(`- [[${file}]]`);
+      builder.line(`- [[${file}]]`);
     }
-    sections.push('');
   }
 
-  return sections.join('\n');
+  // Automatic backlink: journal follows the sprint it documents
+  builder.references(`sprint-pipelines/${entry.sprintId}`, entry.sprintId);
+
+  return builder.build().markdown;
 };
 
 const buildJournalTags = (entry: JournalEntry): string[] => {

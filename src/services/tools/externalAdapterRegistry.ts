@@ -2,6 +2,9 @@ import { openshellAdapter } from './adapters/openshellCliAdapter';
 import { nemoclawAdapter } from './adapters/nemoclawCliAdapter';
 import { openclawAdapter } from './adapters/openclawCliAdapter';
 import { openjarvisAdapter } from './adapters/openjarvisAdapter';
+import { n8nAdapter } from './adapters/n8nAdapter';
+import { deepwikiAdapter } from './adapters/deepwikiAdapter';
+import { obsidianExternalAdapter } from './adapters/obsidianAdapter';
 import type { ExternalAdapterId, ExternalToolAdapter, ExternalAdapterResult } from './externalAdapterTypes';
 import { validateAdapterId } from './externalAdapterTypes';
 import logger from '../../logger';
@@ -12,6 +15,9 @@ const BUILTIN_ADAPTERS: ReadonlyArray<ExternalToolAdapter> = [
   nemoclawAdapter,
   openclawAdapter,
   openjarvisAdapter,
+  n8nAdapter,
+  deepwikiAdapter,
+  obsidianExternalAdapter,
 ];
 
 /** Mutable map — built-ins + dynamically registered adapters. */

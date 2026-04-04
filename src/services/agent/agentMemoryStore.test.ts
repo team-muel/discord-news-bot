@@ -219,3 +219,43 @@ describe('createMemoryItem', () => {
     expect(fakeClient.from).not.toHaveBeenCalled();
   });
 });
+
+// ──────────────────────────────────────────────────────────
+describe('searchMemoryTiered', () => {
+  it('is exported and callable', async () => {
+    // searchMemoryTiered depends on Supabase, so we just verify it exists as an export
+    const mod = await import('./agentMemoryStore');
+    expect(typeof mod.searchMemoryTiered).toBe('function');
+  });
+
+  it('returns empty array when Supabase is not configured', async () => {
+    vi.mocked(supabaseClient.isSupabaseConfigured).mockReturnValue(false);
+    vi.mocked(supabaseClient.getSupabaseClient).mockImplementation(() => {
+      throw new Error('SUPABASE_NOT_CONFIGURED');
+    });
+
+    const { searchMemoryTiered } = await import('./agentMemoryStore');
+    const result = await searchMemoryTiered({ guildId: 'g1', query: 'test', limit: 5 });
+    expect(result).toEqual([]);
+  });
+
+  it('falls back to flat search when flatSearch=true', async () => {
+    const rows = [
+      { id: 'mem_1', tier: 'raw', title: 'test', confidence: 0.5 },
+    ];
+    const chain = makeChain({ data: rows, error: null });
+    vi.mocked(supabaseClient.isSupabaseConfigured).mockReturnValue(true);
+    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(
+      { from: vi.fn(() => chain), rpc: vi.fn(() => chain) } as any,
+    );
+
+    const { searchMemoryTiered } = await import('./agentMemoryStore');
+    const result = await searchMemoryTiered({
+      guildId: 'g1',
+      query: '',
+      limit: 5,
+      flatSearch: true,
+    });
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+});

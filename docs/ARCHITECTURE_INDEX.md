@@ -40,6 +40,21 @@ Primary operations entrypoint:
 - `bot.ts`: Discord bot-only process bootstrap.
 - `src/app.ts`: Express middleware and route composition.
 - `src/bot.ts`: Discord command/event runtime and bot orchestration.
+
+## Domain Boundary Contracts
+
+Cross-domain data flow rules that enforce transformation correctness at service boundaries:
+
+- `docs/contracts/DISCORD_TO_MEMORY.md` — channel metadata, tag format, thread context
+- `docs/contracts/MEMORY_TO_OBSIDIAN.md` — sanitization gate, frontmatter, adapter routing
+- `docs/contracts/OBSIDIAN_READ_LOOP.md` — graph-first retrieval strategy
+- `docs/contracts/DISCORD_SOCIAL_GRAPH.md` — community graph, private thread exclusion
+- `docs/contracts/SPRINT_DATA_FLOW.md` — phase transitions, action scoping, retro writes
+
+Context isolation map: `docs/CONTEXT_ISOLATION.md`
+
+## Runtime Details
+
 - `src/routes/bot.ts` + `src/routes/botAgentRoutes.ts`: bot control-plane routes split into core and agent composition boundary.
 - `src/routes/bot-agent/*.ts`: agent domain routes (`core`, `runtime`, `got`, `qualityPrivacy`, `governance`, `tools`, `memory`, `learning`) registered by composer.
 - `src/services/runtimeBootstrap.ts`: centralized startup boundaries for server process runtime and Discord-ready runtime.

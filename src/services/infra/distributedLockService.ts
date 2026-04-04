@@ -49,7 +49,7 @@ export const acquireDistributedLease = async (params: {
       return { ok: true };
     }
 
-    const code = String((insertError as any)?.code || '');
+    const code = String((insertError as unknown as Record<string, unknown>)?.code || '');
     if (code !== '23505') {
       throw insertError;
     }

@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, statSync 
 import { atomicWriteFileSync } from '../utils/atomicWrite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import logger from '../logger';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,11 +47,12 @@ export function readLocalCache<T = unknown>(key: string): T | null {
     const envelope = JSON.parse(raw) as { expiresAt?: number; data: T };
     if (envelope.expiresAt && Date.now() > envelope.expiresAt) {
       // Expired — lazy cleanup
-      try { unlinkSync(fp); } catch { /* ignore */ }
+      try { unlinkSync(fp); } catch (_e) { /* expired entry cleanup */ }
       return null;
     }
     return envelope.data;
-  } catch {
+  } catch (err) {
+    logger.debug('[LOCAL-CACHE] read failed key=%s: %s', key, err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -68,8 +70,8 @@ export function writeLocalCache<T = unknown>(key: string, data: T, ttlMs?: numbe
     if (json.length > MAX_ENTRY_BYTES) return; // reject oversized entries silently
     atomicWriteFileSync(filePath(key), json, 'utf-8');
     evictIfNeeded();
-  } catch {
-    // Best-effort write — never throw
+  } catch (err) {
+    logger.debug('[LOCAL-CACHE] write failed key=%s: %s', key, err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -96,9 +98,11 @@ function evictIfNeeded(): void {
     const excess = entries.length - MAX_ENTRIES;
     if (excess <= 0) return;
     for (let i = 0; i < excess; i++) {
-      try { unlinkSync(entries[i].file); } catch { /* ignore */ }
+      try { unlinkSync(entries[i].file); } catch (_e) { /* eviction cleanup */ }
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    logger.debug('[LOCAL-CACHE] eviction failed: %s', err instanceof Error ? err.message : String(err));
+  }
 }
 
 /** Return number of cached entries. */
@@ -106,7 +110,8 @@ export function localCacheSize(): number {
   try {
     ensureCacheDir();
     return readdirSync(CACHE_DIR).filter((f) => f.endsWith('.json')).length;
-  } catch {
+  } catch (err) {
+    logger.debug('[LOCAL-CACHE] size check failed: %s', err instanceof Error ? err.message : String(err));
     return 0;
   }
 }

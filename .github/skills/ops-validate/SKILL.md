@@ -1,7 +1,9 @@
 ---
 description: "Sprint Phase: Ops Gate — validate operational readiness, rollback safety, deployment reliability, and unattended automation before release."
-applyTo: "**"
+applyTo: "{scripts/**,config/**,.github/workflows/**,render.yaml,Dockerfile*}"
 ---
+
+<!-- Token Budget: ~400 base, ~1,500 with references -->
 
 # /ops-validate
 
@@ -61,6 +63,29 @@ applyTo: "**"
 | Ops validation passes | `/ship`                              |
 | Ops issues found      | `/implement` (with fix requirements) |
 | Incident/recovery     | stays in `/ops-validate` loop        |
+
+## HITL Decision
+
+### Act (proceed without asking)
+
+- Running dry-run paths for changed automation
+- Checking idempotency of scripts
+- Verifying rollback plan documentation
+- Assessing blast radius from file changes
+
+### Ask (confirm before proceeding)
+
+- Executing rollback in production
+- Changing cron schedules or scheduler configuration
+- Modifying secrets or credential handling
+- Approving deployment to production
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/rollback-playbook.md` — rollback procedures, decision matrix, post-rollback checklist
+- `references/idempotency-checklist.md` — script, workflow, and cron idempotency verification
 
 ## Runtime Counterpart
 

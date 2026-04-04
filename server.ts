@@ -2,8 +2,7 @@ import 'dotenv/config';
 import logger from './src/logger';
 import initMonitoring from './src/init';
 import { BOT_START_FAILURE_EXIT_ENABLED, PORT, START_BOT } from './src/config';
-import { startServerProcessRuntime } from './src/services/runtimeBootstrap';
-import { stopTradingEngine } from './src/services/trading/tradingEngine';
+import { startServerProcessRuntime } from './src/services/runtime/runtimeBootstrap';
 import { stopAutomationModules } from './src/services/automationBot';
 import { stopMcpSkillRouter } from './src/services/mcpSkillRouter';
 
@@ -95,7 +94,6 @@ const shutdownServer = (signal: NodeJS.Signals) => {
   logger.info('[PROCESS] Received %s, shutting down HTTP server...', signal);
 
   // Stop background services before closing the HTTP server
-  try { stopTradingEngine(); } catch { /* best-effort */ }
   try { stopAutomationModules(); } catch { /* best-effort */ }
   try { stopMcpSkillRouter(); } catch { /* best-effort */ }
 

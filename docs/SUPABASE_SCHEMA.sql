@@ -1,4 +1,4 @@
--- Supabase schema bootstrap (idempotent)
+﻿-- Supabase schema bootstrap (idempotent)
 -- Run in Supabase SQL Editor.
 
 -- ==========================================
@@ -1891,13 +1891,13 @@ execute function public.set_updated_at();
 insert into public.agent_skill_catalog (
   guild_id, skill_id, enabled, title, description, input_guide, output_guide, system_prompt, executor_key, admin_only, temperature, max_tokens, sort_order
 ) values
-  ('*', 'casual_chat', true, '일상 대화 응답', '감정 표현/잡담 입력을 공감형 자연어로 응답합니다.', '감정 표현, 안부, 짧은 일상 발화', '도구 없이 공감 + 필요 시 1개 되묻기', '너는 공감형 한국어 대화 파트너다.', 'casual_chat', false, 0.5, 220, 10),
-  ('*', 'ops-plan', true, '운영 계획 수립', '목표를 실행 가능한 단계로 분해하고 우선순위를 제안합니다.', '운영 목표, 제한사항, 기간, 성공조건', '단계별 실행계획 + 실패시 대안 + 우선순위', '너는 디스코드 서버 운영 자동화 계획가다.', 'ops-plan', false, 0.2, 900, 20),
-  ('*', 'ops-execution', true, '운영 실행안 생성', '계획을 실제 운영자가 사용할 수 있는 체크리스트로 변환합니다.', '목표 + 계획안 + 리소스 제약', '즉시 실행 체크리스트 + 자동화 포인트 + 관찰 지표', '너는 서버 운영 실행 담당 에이전트다.', 'ops-execution', false, 0.25, 1000, 30),
-  ('*', 'ops-critique', true, '운영 리스크 검토', '실행안의 리스크와 보완책을 검토합니다.', '목표 + 실행안', '리스크 목록 + 완화안 + 즉시 적용 가드레일', '너는 운영 품질/보안 검토 에이전트다.', 'ops-critique', false, 0.1, 800, 40),
-  ('*', 'guild-onboarding-blueprint', true, '길드 온보딩 설계', '서버 초대 후 온보딩 절차와 동의 기반 학습 플로우를 설계합니다.', '서버 성격, 권한 정책, 수집 범위', '온보딩 상태머신 + 동의 UX + 초기 데이터 수집 전략', '너는 디스코드 길드 온보딩 아키텍트다.', 'guild-onboarding-blueprint', false, 0.2, 1200, 50),
-  ('*', 'incident-review', true, '장애/오답 회고', '장애나 오답 사례를 회고하고 재발 방지 규칙을 도출합니다.', '사건 요약, 영향, 현재 대응', '원인 가설 + 검증 절차 + 재발 방지 체크리스트', '너는 운영 회고 에이전트다.', 'incident-review', true, 0.15, 900, 60),
-  ('*', 'webhook', true, '웹훅 설계/운영', '웹훅 이벤트 계약, 검증, 재시도, 운영 가드레일까지 포함한 실행안을 생성합니다.', '이벤트 종류, 공급자, 인증 방식, 처리 목표, 실패 정책', '엔드포인트 계약 + 검증/보안 + 재시도/멱등성 + 운영 체크리스트', '너는 웹훅 통합 아키텍트다.', 'webhook', false, 0.2, 1200, 70)
+  ('*', 'casual_chat', true, '?쇱긽 ????묐떟', '媛먯젙 ?쒗쁽/?〓떞 ?낅젰??怨듦컧???먯뿰?대줈 ?묐떟?⑸땲??', '媛먯젙 ?쒗쁽, ?덈?, 吏㏃? ?쇱긽 諛쒗솕', '?꾧뎄 ?놁씠 怨듦컧 + ?꾩슂 ??1媛??섎Щ湲?, '?덈뒗 怨듦컧???쒓뎅??????뚰듃?덈떎.', 'casual_chat', false, 0.5, 220, 10),
+  ('*', 'ops-plan', true, '?댁쁺 怨꾪쉷 ?섎┰', '紐⑺몴瑜??ㅽ뻾 媛?ν븳 ?④퀎濡?遺꾪빐?섍퀬 ?곗꽑?쒖쐞瑜??쒖븞?⑸땲??', '?댁쁺 紐⑺몴, ?쒗븳?ы빆, 湲곌컙, ?깃났議곌굔', '?④퀎蹂??ㅽ뻾怨꾪쉷 + ?ㅽ뙣?????+ ?곗꽑?쒖쐞', '?덈뒗 ?붿뒪肄붾뱶 ?쒕쾭 ?댁쁺 ?먮룞??怨꾪쉷媛??', 'ops-plan', false, 0.2, 900, 20),
+  ('*', 'ops-execution', true, '?댁쁺 ?ㅽ뻾???앹꽦', '怨꾪쉷???ㅼ젣 ?댁쁺?먭? ?ъ슜?????덈뒗 泥댄겕由ъ뒪?몃줈 蹂?섑빀?덈떎.', '紐⑺몴 + 怨꾪쉷??+ 由ъ냼???쒖빟', '利됱떆 ?ㅽ뻾 泥댄겕由ъ뒪??+ ?먮룞???ъ씤??+ 愿李?吏??, '?덈뒗 ?쒕쾭 ?댁쁺 ?ㅽ뻾 ?대떦 ?먯씠?꾪듃??', 'ops-execution', false, 0.25, 1000, 30),
+  ('*', 'ops-critique', true, '?댁쁺 由ъ뒪??寃??, '?ㅽ뻾?덉쓽 由ъ뒪?ъ? 蹂댁셿梨낆쓣 寃?좏빀?덈떎.', '紐⑺몴 + ?ㅽ뻾??, '由ъ뒪??紐⑸줉 + ?꾪솕??+ 利됱떆 ?곸슜 媛?쒕젅??, '?덈뒗 ?댁쁺 ?덉쭏/蹂댁븞 寃???먯씠?꾪듃??', 'ops-critique', false, 0.1, 800, 40),
+  ('*', 'guild-onboarding-blueprint', true, '湲몃뱶 ?⑤낫???ㅺ퀎', '?쒕쾭 珥덈? ???⑤낫???덉감? ?숈쓽 湲곕컲 ?숈뒿 ?뚮줈?곕? ?ㅺ퀎?⑸땲??', '?쒕쾭 ?깃꺽, 沅뚰븳 ?뺤콉, ?섏쭛 踰붿쐞', '?⑤낫???곹깭癒몄떊 + ?숈쓽 UX + 珥덇린 ?곗씠???섏쭛 ?꾨왂', '?덈뒗 ?붿뒪肄붾뱶 湲몃뱶 ?⑤낫???꾪궎?랁듃??', 'guild-onboarding-blueprint', false, 0.2, 1200, 50),
+  ('*', 'incident-review', true, '?μ븷/?ㅻ떟 ?뚭퀬', '?μ븷???ㅻ떟 ?щ?瑜??뚭퀬?섍퀬 ?щ컻 諛⑹? 洹쒖튃???꾩텧?⑸땲??', '?ш굔 ?붿빟, ?곹뼢, ?꾩옱 ???, '?먯씤 媛??+ 寃利??덉감 + ?щ컻 諛⑹? 泥댄겕由ъ뒪??, '?덈뒗 ?댁쁺 ?뚭퀬 ?먯씠?꾪듃??', 'incident-review', true, 0.15, 900, 60),
+  ('*', 'webhook', true, '?뱁썒 ?ㅺ퀎/?댁쁺', '?뱁썒 ?대깽??怨꾩빟, 寃利? ?ъ떆?? ?댁쁺 媛?쒕젅?쇨퉴吏 ?ы븿???ㅽ뻾?덉쓣 ?앹꽦?⑸땲??', '?대깽??醫낅쪟, 怨듦툒?? ?몄쬆 諛⑹떇, 泥섎━ 紐⑺몴, ?ㅽ뙣 ?뺤콉', '?붾뱶?ъ씤??怨꾩빟 + 寃利?蹂댁븞 + ?ъ떆??硫깅벑??+ ?댁쁺 泥댄겕由ъ뒪??, '?덈뒗 ?뱁썒 ?듯빀 ?꾪궎?랁듃??', 'webhook', false, 0.2, 1200, 70)
 on conflict (guild_id, skill_id) do nothing;
 
 create table if not exists public.agent_workflow_profiles (
@@ -1924,9 +1924,9 @@ execute function public.set_updated_at();
 
 insert into public.agent_workflow_profiles (guild_id, priority, enabled, steps)
 values
-  ('*', 'fast', true, '[{"role":"planner","title":"목표 실행 계획 수립","skipWhenFast":true,"skipWhenRequestedSkill":false},{"role":"researcher","title":"실행안/근거 초안 작성","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"리스크 검토 및 보완","skipWhenFast":true,"skipWhenRequestedSkill":true}]'::jsonb),
-  ('*', 'balanced', true, '[{"role":"planner","title":"목표 실행 계획 수립","skipWhenFast":false,"skipWhenRequestedSkill":false},{"role":"researcher","title":"실행안/근거 초안 작성","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"리스크 검토 및 보완","skipWhenFast":false,"skipWhenRequestedSkill":true}]'::jsonb),
-  ('*', 'precise', true, '[{"role":"planner","title":"목표 실행 계획 수립","skipWhenFast":false,"skipWhenRequestedSkill":false},{"role":"researcher","title":"실행안/근거 초안 작성","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"리스크 검토 및 보완","skipWhenFast":false,"skipWhenRequestedSkill":true}]'::jsonb)
+  ('*', 'fast', true, '[{"role":"planner","title":"紐⑺몴 ?ㅽ뻾 怨꾪쉷 ?섎┰","skipWhenFast":true,"skipWhenRequestedSkill":false},{"role":"researcher","title":"?ㅽ뻾??洹쇨굅 珥덉븞 ?묒꽦","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"由ъ뒪??寃??諛?蹂댁셿","skipWhenFast":true,"skipWhenRequestedSkill":true}]'::jsonb),
+  ('*', 'balanced', true, '[{"role":"planner","title":"紐⑺몴 ?ㅽ뻾 怨꾪쉷 ?섎┰","skipWhenFast":false,"skipWhenRequestedSkill":false},{"role":"researcher","title":"?ㅽ뻾??洹쇨굅 珥덉븞 ?묒꽦","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"由ъ뒪??寃??諛?蹂댁셿","skipWhenFast":false,"skipWhenRequestedSkill":true}]'::jsonb),
+  ('*', 'precise', true, '[{"role":"planner","title":"紐⑺몴 ?ㅽ뻾 怨꾪쉷 ?섎┰","skipWhenFast":false,"skipWhenRequestedSkill":false},{"role":"researcher","title":"?ㅽ뻾??洹쇨굅 珥덉븞 ?묒꽦","skipWhenFast":false,"skipWhenRequestedSkill":true},{"role":"critic","title":"由ъ뒪??寃??諛?蹂댁셿","skipWhenFast":false,"skipWhenRequestedSkill":true}]'::jsonb)
 on conflict (guild_id, priority) do nothing;
 
 create table if not exists public.agent_privacy_policies (
@@ -1965,15 +1965,15 @@ values (
   60,
   80,
   '[
-    {"pattern":"(이메일|전화번호|연락처|주소|주민등록|신분증|여권|계좌|카드번호|토큰|비밀키|api key)","score":28,"reason":"personal_or_secret_identifier"},
-    {"pattern":"(실명|본명|생년월일|birthday|dob|학번|사번)","score":20,"reason":"identity_attribute"},
-    {"pattern":"(환자|의료|진단|건강기록|병력|상담기록)","score":24,"reason":"health_sensitive_domain"},
-    {"pattern":"(청소년|미성년|학생 개인정보|아동)","score":24,"reason":"minor_sensitive_context"}
+    {"pattern":"(?대찓???꾪솕踰덊샇|?곕씫泥?二쇱냼|二쇰??깅줉|?좊텇利??ш텒|怨꾩쥖|移대뱶踰덊샇|?좏겙|鍮꾨???api key)","score":28,"reason":"personal_or_secret_identifier"},
+    {"pattern":"(?ㅻ챸|蹂몃챸|?앸뀈?붿씪|birthday|dob|?숇쾲|?щ쾲)","score":20,"reason":"identity_attribute"},
+    {"pattern":"(?섏옄|?섎즺|吏꾨떒|嫄닿컯湲곕줉|蹂묐젰|?곷떞湲곕줉)","score":24,"reason":"health_sensitive_domain"},
+    {"pattern":"(泥?냼??誘몄꽦???숈깮 媛쒖씤?뺣낫|?꾨룞)","score":24,"reason":"minor_sensitive_context"}
   ]'::jsonb,
   '[
-    {"pattern":"(원본.*(내보내|공유|전송)|전체.*덤프|raw.*log|대화 원문 전부)","score":55,"reason":"bulk_sensitive_export"},
-    {"pattern":"(토큰.*보여|비밀키.*출력|패스워드.*공개|credentials?.*dump)","score":60,"reason":"secret_exposure_attempt"},
-    {"pattern":"(개인정보.*수집.*자동|동의 없이|무단 수집)","score":50,"reason":"non_consensual_collection"}
+    {"pattern":"(?먮낯.*(?대낫??怨듭쑀|?꾩넚)|?꾩껜.*?ㅽ봽|raw.*log|????먮Ц ?꾨?)","score":55,"reason":"bulk_sensitive_export"},
+    {"pattern":"(?좏겙.*蹂댁뿬|鍮꾨???*異쒕젰|?⑥뒪?뚮뱶.*怨듦컻|credentials?.*dump)","score":60,"reason":"secret_exposure_attempt"},
+    {"pattern":"(媛쒖씤?뺣낫.*?섏쭛.*?먮룞|?숈쓽 ?놁씠|臾대떒 ?섏쭛)","score":50,"reason":"non_consensual_collection"}
   ]'::jsonb
 )
 on conflict (guild_id) do nothing;
@@ -3235,6 +3235,44 @@ begin
 end
 $$;
 
+-- ==========================================================================
+-- 19.3 Ventyd Event Store (event sourcing for sprint pipelines)
+-- ==========================================================================
+-- Dual-write layer: legacy snapshot (sprint_pipelines) + event log (ventyd_events).
+-- Migration path: Phase A dual-write → Phase B read from events → Phase C event-only.
+
+create table if not exists public.ventyd_events (
+  event_id text primary key,
+  event_name text not null,
+  entity_name text not null,
+  entity_id text not null,
+  body jsonb not null default '{}'::jsonb,
+  event_created_at timestamptz not null default now(),
+  version integer not null default 1,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_ventyd_events_entity
+  on public.ventyd_events (entity_name, entity_id, event_created_at asc);
+
+create index if not exists idx_ventyd_events_name
+  on public.ventyd_events (event_name, event_created_at desc);
+
+alter table public.ventyd_events enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='ventyd_events' and policyname='ventyd_events_service_role'
+  ) then
+    create policy ventyd_events_service_role on public.ventyd_events
+      for all
+      using (auth.role() = 'service_role')
+      with check (auth.role() = 'service_role');
+  end if;
+end
+$$;
+
 -- ==========================================
 -- Intent Intelligence Layer (ADR-006)
 -- ==========================================
@@ -3353,3 +3391,155 @@ alter table public.memory_jobs drop constraint if exists memory_jobs_job_type_ch
 alter table public.memory_jobs
   add constraint memory_jobs_job_type_check
   check (job_type in ('short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot', 'consolidation'));
+
+-- 008: User CRM Foundation
+-- Global user profiles + per-guild memberships + activity counters
+-- Idempotent: safe to re-run
+
+-- ============================================
+-- 23. User CRM
+-- ============================================
+
+-- 23.1 Global user profile (cross-guild identity)
+-- Discord-provided fields (username, avatar, etc.) are NOT stored here.
+create table if not exists public.user_profiles (
+  user_id text primary key,
+  badges text[] not null default '{}',
+  tags text[] not null default '{}',
+  metadata jsonb not null default '{}',
+  first_seen_at timestamptz not null default now(),
+  last_active_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_profiles_last_active
+  on public.user_profiles (last_active_at desc);
+
+create index if not exists idx_user_profiles_tags
+  on public.user_profiles using gin (tags);
+
+-- 23.2 Per-guild membership and activity counters
+-- Discord-provided fields (nickname, joined_at, roles) are NOT stored here.
+create table if not exists public.guild_memberships (
+  guild_id text not null,
+  user_id text not null,
+  message_count bigint not null default 0,
+  command_count bigint not null default 0,
+  reaction_given_count bigint not null default 0,
+  reaction_received_count bigint not null default 0,
+  session_count bigint not null default 0,
+  first_seen_at timestamptz not null default now(),
+  last_active_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, user_id)
+);
+
+create index if not exists idx_guild_memberships_user
+  on public.guild_memberships (user_id, last_active_at desc);
+
+create index if not exists idx_guild_memberships_guild_active
+  on public.guild_memberships (guild_id, last_active_at desc);
+
+create index if not exists idx_guild_memberships_guild_messages
+  on public.guild_memberships (guild_id, message_count desc);
+
+-- 23.3 Atomic activity increment RPC
+-- Upserts user_profiles + guild_memberships in one call,
+-- increments the specified counter column by delta.
+create or replace function public.track_user_activity(
+  p_user_id text,
+  p_guild_id text,
+  p_counter text default 'message_count',
+  p_delta bigint default 1
+)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  -- Upsert global profile
+  -- Upsert global profile (touch timestamps only)
+  insert into public.user_profiles (user_id, last_active_at, updated_at)
+  values (p_user_id, now(), now())
+  on conflict (user_id) do update set
+    last_active_at = now(),
+    updated_at = now();
+
+  -- Upsert guild membership and increment the specified counter
+  if p_counter = 'message_count' then
+    insert into public.guild_memberships (guild_id, user_id, message_count, last_active_at, updated_at)
+    values (p_guild_id, p_user_id, p_delta, now(), now())
+    on conflict (guild_id, user_id) do update set
+      message_count = public.guild_memberships.message_count + p_delta,
+      last_active_at = now(),
+      updated_at = now();
+  elsif p_counter = 'command_count' then
+    insert into public.guild_memberships (guild_id, user_id, command_count, last_active_at, updated_at)
+    values (p_guild_id, p_user_id, p_delta, now(), now())
+    on conflict (guild_id, user_id) do update set
+      command_count = public.guild_memberships.command_count + p_delta,
+      last_active_at = now(),
+      updated_at = now();
+  elsif p_counter = 'reaction_given_count' then
+    insert into public.guild_memberships (guild_id, user_id, reaction_given_count, last_active_at, updated_at)
+    values (p_guild_id, p_user_id, p_delta, now(), now())
+    on conflict (guild_id, user_id) do update set
+      reaction_given_count = public.guild_memberships.reaction_given_count + p_delta,
+      last_active_at = now(),
+      updated_at = now();
+  elsif p_counter = 'reaction_received_count' then
+    insert into public.guild_memberships (guild_id, user_id, reaction_received_count, last_active_at, updated_at)
+    values (p_guild_id, p_user_id, p_delta, now(), now())
+    on conflict (guild_id, user_id) do update set
+      reaction_received_count = public.guild_memberships.reaction_received_count + p_delta,
+      last_active_at = now(),
+      updated_at = now();
+  elsif p_counter = 'session_count' then
+    insert into public.guild_memberships (guild_id, user_id, session_count, last_active_at, updated_at)
+    values (p_guild_id, p_user_id, p_delta, now(), now())
+    on conflict (guild_id, user_id) do update set
+      session_count = public.guild_memberships.session_count + p_delta,
+      last_active_at = now(),
+      updated_at = now();
+  else
+    -- Unknown counter: just touch timestamps (ensure user exists)
+    insert into public.guild_memberships (guild_id, user_id, last_active_at, updated_at)
+    values (p_guild_id, p_user_id, now(), now())
+    on conflict (guild_id, user_id) do update set
+      last_active_at = now(),
+      updated_at = now();
+  end if;
+end;
+$$;
+
+-- 23.4 RLS
+alter table public.user_profiles enable row level security;
+alter table public.guild_memberships enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='user_profiles' and policyname='user_profiles_service_role'
+  ) then
+    create policy user_profiles_service_role on public.user_profiles
+      for all
+      using (auth.role() = 'service_role')
+      with check (auth.role() = 'service_role');
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='guild_memberships' and policyname='guild_memberships_service_role'
+  ) then
+    create policy guild_memberships_service_role on public.guild_memberships
+      for all
+      using (auth.role() = 'service_role')
+      with check (auth.role() = 'service_role');
+  end if;
+end
+$$;

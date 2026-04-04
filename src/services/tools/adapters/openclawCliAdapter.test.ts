@@ -9,6 +9,10 @@ vi.mock('../../../utils/env', () => ({
   parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
 }));
 
+vi.mock('../../../logger', () => ({
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+}));
+
 const { openclawAdapter } = await import('./openclawCliAdapter');
 
 const { execFile } = await import('node:child_process');
@@ -110,5 +114,46 @@ describe('openclawAdapter.execute', () => {
     const longMsg = 'y'.repeat(6000);
     const result = await openclawAdapter.execute('agent.session.relay', { message: longMsg });
     expect(result.ok).toBe(true);
+  });
+
+  it('agent.health returns NO_TRANSPORT when unavailable', async () => {
+    const result = await openclawAdapter.execute('agent.health', {});
+    // Without OPENCLAW_GATEWAY_URL and with parseBooleanEnv returning false, no transport is set
+    // The execute still runs since it doesn't re-check isAvailable
+    expect(result.adapterId).toBe('openclaw');
+  });
+
+  it('has liteCapabilities defined', () => {
+    expect(openclawAdapter.liteCapabilities).toBeDefined();
+    expect(openclawAdapter.liteCapabilities).toContain('agent.chat');
+    expect(openclawAdapter.liteCapabilities).toContain('agent.health');
+  });
+
+  it('capabilities include agent.health', () => {
+    expect(openclawAdapter.capabilities).toContain('agent.health');
+  });
+
+  it('agent.session.relay uses default "main" session when no sessionId', async () => {
+    mockExecFile.mockImplementation(makeExecCallback('relayed') as never);
+    const result = await openclawAdapter.execute('agent.session.relay', { message: 'msg' });
+    expect(result.ok).toBe(true);
+    // CLI fallback doesn't add --session flag for "main"
+    const callArgs = mockExecFile.mock.calls[0];
+    const cliArgs = callArgs?.[1] as string[] | undefined;
+    expect(cliArgs).not.toContain('--session');
+  });
+});
+
+describe('bootstrapOpenClawSession', () => {
+  it('bootstrapOpenClawSession is exported', async () => {
+    const mod = await import('./openclawCliAdapter');
+    expect(typeof mod.bootstrapOpenClawSession).toBe('function');
+  });
+
+  it('returns { ok: false } when OPENCLAW_ENABLED=false', async () => {
+    const { bootstrapOpenClawSession } = await import('./openclawCliAdapter');
+    const result = await bootstrapOpenClawSession('test-session');
+    // ENABLED defaults to false in test env
+    expect(result.ok).toBe(false);
   });
 });

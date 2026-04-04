@@ -42,7 +42,7 @@ vi.mock('../skills/actionGovernanceStore', () => ({
   listActionApprovalRequests: mockListActionApprovalRequests,
 }));
 
-vi.mock('../opencodeOpsService', () => ({
+vi.mock('../opencode/opencodeOpsService', () => ({
   getOpencodeExecutionSummary: mockGetOpencodeExecutionSummary,
 }));
 

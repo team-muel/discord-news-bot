@@ -49,7 +49,9 @@ Use this document when a role name, runtime label, external OSS name, or model f
 | Local CLI tool slice | `operate` (legacy: `openjarvis`) | `tools.run.cli`, `src/services/tools/*` | `GET /api/bot/agent/tools/status`, `GET /api/bot/agent/actions/catalog` | no | explicit env registration required | implemented as a narrow single-tool slice |
 | Ollama provider support | LLM provider layer | `src/services/llmClient.ts` provider config | provider/env validation and runtime behavior | no | Ollama runtime plus env config required | implemented when configured |
 | Generic local OSS CLI discovery | future tool layer | not present; pluggable framework target (M-15) | none | no | would require new discovery and registry layer | not implemented; M-15 targets: dynamic ExternalAdapterId, glob-scan auto-registration, base adapter abstraction |
-| Generic upstream framework embedding for OpenShell, NemoClaw, OpenClaw, OpenJarvis | external runtime integration | adapters implemented, adapters probed 7/7 | see `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md` | no | install + env config + adapter implementation required | Phase 1 complete; Phase 2-4 partial; see EXTERNAL_TOOL_INTEGRATION_PLAN.md for per-phase status |
+| Generic upstream framework embedding for OpenShell, NemoClaw, OpenClaw, OpenJarvis, DeepWiki, n8n | external runtime integration | 6 adapters implemented + probed; 33 capabilities mapped; composite execution (primary + secondary) active | see `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md`, `docs/contracts/SPRINT_DATA_FLOW.md` | no | install + env config + adapter enable flags required | Phase 1 complete; external adapter capability expansion (고도화) complete — 28 enrichment actions, 5 secondary adapter mappings, ext.* MCP bridge, OpenClaw session bootstrap |
+| ext.* MCP bridge | sprint pipeline / tool layer | `src/mcp/unifiedToolAdapter.ts` ext.* routing | `ext.<adapterId>.<capability>` tool calls via MCP | no | at least one external adapter enabled | implemented — routes external adapter capabilities as MCP tools with `ext.` namespace |
+| OpenClaw Gateway session bootstrap | sprint pipeline | `src/services/tools/adapters/openclawCliAdapter.ts` bootstrapOpenClawSession | OpenClaw session endpoint `/api/sessions/{id}/message` | no | `OPENCLAW_GATEWAY_URL` + `OPENCLAW_GATEWAY_TOKEN` required | implemented — idempotent per sessionId, registers ext.* tools as session skills before implement phase |
 | NVIDIA Nemotron inference via LiteLLM | LLM provider layer | litellm.config.yaml `muel-nemotron` entry, LiteLLM proxy on :4000 | LiteLLM proxy model routing + `/health/liveliness` probe | no | NVIDIA API key required | implemented and verified |
 
 ## Operator Verification Order
@@ -73,6 +75,11 @@ If a role or tool name appears only in `.github` customization files or planning
 - role worker and unattended runtime status API: `src/routes/bot-agent/runtimeRoutes.ts`
 - local CLI tool status API: `src/routes/bot-agent/toolsRoutes.ts`
 - super-agent facade API: `src/routes/bot-agent/coreRoutes.ts`
+- ext.* MCP bridge: `src/mcp/unifiedToolAdapter.ts`
+- external adapter composite execution: `src/services/sprint/sprintWorkerRouter.ts`
+- phase enrichment map: `src/services/sprint/sprintPreamble.ts`
+- OpenClaw session bootstrap: `src/services/tools/adapters/openclawCliAdapter.ts`
+- shared circuit breaker: `src/utils/circuitBreaker.ts`
 
 ## Relationship To Other Docs
 

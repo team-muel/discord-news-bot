@@ -21,6 +21,166 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-04 - [UNCOMMITTED] Observer Layer: Autonomous Environment Scanning (Phase F)
+
+- Why: Agent 자율 진화를 위해 환경(에러 패턴, 메모리 갭, LLM 성능 드리프트, 코드 건강도, 수렴 추세, Discord 활동량)을 주기적으로 스캔하고 위험 신호를 자동 감지하는 계층이 필요했다.
+- Scope: 11 files — `src/services/observer/` 전체 디렉토리 (types, orchestrator, store, 7 channels)
+- Impacted Routes: N/A (internal scanning layer)
+- Impacted Services: `src/services/observer/observerOrchestrator.ts` (주기적 스캔 코디네이터 + 신호 발신), `observationStore.ts` (Supabase 영속화 + in-memory fallback), `errorPatternChannel.ts` (런타임 에러 클러스터링), `memoryGapChannel.ts` (오래된/저신뢰 메모리 탐지), `perfDriftChannel.ts` (LLM latency/cost 회귀), `codeHealthChannel.ts` (TypeScript 타입체크 에러), `convergenceDigestChannel.ts` (수렴 리포트 래핑), `discordPulseChannel.ts` (길드 활동량 모니터링)
+- Impacted Tables/RPC: `scripts/migrations/008_observer_layer.sql` (pending migration)
+- Risk/Regression Notes: 미커밋 상태. 스캐닝은 fire-and-forget이며 핵심 응답 경로를 블로킹하지 않음. 각 channel은 독립적으로 비활성화 가능.
+- Validation: 미커밋 — 컴파일은 기존 빌드에 포함되지 않음.
+
+## 2026-04-04 - [UNCOMMITTED] Platform Signal Bus: In-Process Event Hub
+
+- Why: "Supabase에 쓰고 누가 읽기를 기대하는" 패턴을 즉시 인프로세스 신호 전파로 대체하여 eval 루프, go/no-go, convergence, memory quality, workflow 이벤트를 sprint trigger, runtime alert, traffic routing에 즉시 연결한다.
+- Scope: 3 files — `src/services/runtime/signalBus.ts`, `signalBusWiring.ts`, `signalBus.test.ts`
+- Impacted Routes: N/A (runtime internal event bus)
+- Impacted Services: `signalBus.ts` (17개 시그널 타입, typed payload, async fire-and-forget, cooldown/dedup, diagnostics snapshot), `signalBusWiring.ts` (producer→consumer 자동 배선)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 미커밋 상태. 리스너는 비동기이며 producer를 블로킹하지 않음. `SIGNAL_BUS_ENABLED` env로 통제.
+- Validation: 미커밋 — 로컬 테스트 존재.
+
+## 2026-04-04 - [UNCOMMITTED] Bot Auto-Recovery Service
+
+- Why: Discord gateway 연결 끊김이나 예상치 못한 크래시 이후 수동 개입 없이 봇이 자동 복구되어야 하는 운영 요구사항.
+- Scope: 2 files — `src/services/runtime/botAutoRecoveryService.ts`, `botAutoRecoveryService.test.ts`
+- Impacted Routes: N/A (runtime lifecycle)
+- Impacted Services: `botAutoRecoveryService.ts` (자동 복구 로직), `runtimeBootstrap.ts`에서 소비
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 미커밋 상태. 복구 실패 시 기존 프로세스 재시작 경로(pm2/Render)로 폴백.
+- Validation: 미커밋 — 로컬 테스트 존재.
+
+## 2026-04-04 - [UNCOMMITTED] Workflow Persistence + Traffic Routing Service
+
+- Why: A/B 트래픽 라우팅 결정 및 워크플로 이벤트를 영속화하여, sprint/session 실행 경로의 관찰 가능성과 회귀 분석을 지원한다.
+- Scope: 4 files — `src/services/workflow/trafficRoutingService.ts`, `trafficRoutingService.test.ts`, `workflowPersistenceService.ts`, `workflowPersistenceService.test.ts`
+- Impacted Routes: N/A (consumed by multiAgentService, sprintOrchestrator)
+- Impacted Services: `trafficRoutingService.ts` (트래픽 라우팅 결정 + 영속화), `workflowPersistenceService.ts` (워크플로 이벤트 기록)
+- Impacted Tables/RPC: `scripts/migrations/007_workflow_traffic_routing.sql` (pending migration — `workflow_sessions`, `workflow_steps`, `workflow_events`)
+- Risk/Regression Notes: 미커밋 상태. `TRAFFIC_ROUTING_ENABLED` env 통제. 미설정 시 기존 경로에 영향 없음.
+- Validation: 미커밋 — 로컬 테스트 존재.
+
+## 2026-04-04 - [UNCOMMITTED] Security Pipeline Orchestrator
+
+- Why: OWASP Top 10 기반 보안 스캔을 코드 레벨에서 자동화하기 위한 파이프라인.
+- Scope: 1 file — `src/services/security/securityPipelineOrchestrator.ts`
+- Impacted Routes: N/A (consumed by `scripts/generate-security-candidates.ts`)
+- Impacted Services: `securityPipelineOrchestrator.ts` (보안 후보 탐지 + STRIDE 위협 모델 자동화)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 미커밋 상태. 스캔 전용, 런타임 동작 변경 없음.
+- Validation: 미커밋.
+
+## 2026-04-04 - [UNCOMMITTED] Sprint Event Sourcing + Metrics Collector + Worker Router
+
+- Why: 스프린트 파이프라인의 관찰 가능성 강화를 위해 이벤트 소싱 기반 상태 추적, 위상 메트릭 수집, 외부 어댑터 라우터를 분리한다.
+- Scope: 5+ files — `src/services/sprint/eventSourcing/` (bridge), `sprintMetricsCollector.ts`, `sprintWorkerRouter.ts`, `sprintDiffSummarizer.ts`
+- Impacted Routes: N/A (sprint internal)
+- Impacted Services: `eventSourcing/bridge.ts` (pipeline/phase/file/cancel/block 이벤트 발행), `sprintMetricsCollector.ts` (phase 타이밍, loop-back 카운트), `sprintWorkerRouter.ts` (PHASE_WORKER_KIND, PHASE_EXTERNAL_ADAPTER, circuit breaker, secondary adapter 매핑), `sprintDiffSummarizer.ts` (diff → 구조적 변경 요약 생성)
+- Impacted Tables/RPC: `scripts/migrations/011_ventyd_event_sourcing.sql` (pending)
+- Risk/Regression Notes: 미커밋 상태. sprintOrchestrator에서 이미 import 중이나 git에 미추적.
+- Validation: 미커밋 — sprintDiffSummarizer.test.ts 존재.
+
+## 2026-04-04 - [UNCOMMITTED] MCP Unified Server + Obsidian Tool Adapter
+
+- Why: 여러 MCP 서버(기본, 인덱싱, Obsidian)를 단일 진입점으로 통합하고, Obsidian 볼트 조작을 MCP 도구로 노출한다.
+- Scope: 5 files — `src/mcp/unifiedServer.ts`, `src/mcp/unifiedToolAdapter.ts`, `unifiedToolAdapter.test.ts`, `src/mcp/obsidianToolAdapter.ts`, `obsidianToolAdapter.test.ts`, `scripts/unified-mcp-stdio.ts`
+- Impacted Routes: N/A (MCP stdio transport)
+- Impacted Services: `unifiedServer.ts` (MCP 라우터 통합), `unifiedToolAdapter.ts` (ext.* MCP bridge 포함), `obsidianToolAdapter.ts` (vault search/read/write/backlinks 도구)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 미커밋 상태. MCP stdio 서버는 IDE 연결 전용이며 런타임에 영향 없음.
+- Validation: 미커밋 — 테스트 파일 존재.
+
+## 2026-04-04 - [UNCOMMITTED] Agent Collab Decomposition + Guild Analytics + n8n Delegation
+
+- Why: `agentCollab.ts`가 600+ 줄로 비대해져 역할별/기능별 분리 필요. 길드 분석과 n8n 위임도 독립 모듈로 추출.
+- Scope: 10+ files — `src/services/skills/actions/agentCollabHelpers.ts`, `agentCollabJarvis.ts`, `agentCollabOrchestrator.ts`, `agentCollabRoles.ts`, `agentCollabSprint.ts`, `guildAnalytics.ts`, `n8n.ts`, `src/services/automation/n8nDelegationService.ts` + 테스트
+- Impacted Routes: `src/routes/bot-agent/crmRoutes.ts` (new)
+- Impacted Services: 기존 `agentCollab.ts`의 기능을 역할 기반 모듈로 분리
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 미커밋 상태. 기존 agentCollab export는 유지되며 내부 분해만 진행.
+- Validation: 미커밋 — guildAnalytics.test.ts, n8n.test.ts, n8n.delegation.test.ts 존재.
+
+## 2026-04-04 - [UNCOMMITTED] Shared Utilities: Circuit Breaker, Discord Channel Meta, Vector Math
+
+- Why: 여러 서비스에서 반복되던 circuit breaker 패턴, Discord 채널 메타데이터 추출, 벡터 연산을 공유 유틸리티로 추출한다.
+- Scope: 6 files — `src/utils/circuitBreaker.ts`, `circuitBreaker.test.ts`, `discordChannelMeta.ts`, `discordChannelMeta.test.ts`, `vectorMath.ts`, `errorMessage.ts`
+- Impacted Routes: N/A
+- Impacted Services: `circuitBreaker.ts` (actionRunner + sprintWorkerRouter의 인라인 CB 대체), `discordChannelMeta.ts` (채널/스레드 메타 표준화), `vectorMath.ts` (코사인 유사도 등)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 미커밋 상태. sprintOrchestrator, multiAgentService 등에서 이미 import 중.
+- Validation: 미커밋 — 각 테스트 파일 존재.
+
+## 2026-04-04 - Obsidian Native CLI Adapter + Graph-First Retrieval + Advanced Integrations
+
+- Why: Obsidian CLI 1.12.7+ native 어댑터를 도입하여 검색/backlinks/read/write/graph_metadata를 CLI 네이티브로 지원하고, graph connectivity 기반 검색 점수 부스트, 레트로 결과 자동 볼트 기록, 2-hop 그래프 탐색, 반응형 학습 루프, 지식 갭 탐지, daily note 자동화, Discord↔Obsidian 태스크 브릿지를 구현한다.
+- Scope: 10+ files — `src/services/obsidian/adapters/nativeCliAdapter.ts` (new, 350 lines), `obsidianRagService.ts` (graph-first boost, writeRetroToVault, 2-hop traversal, reactive learning, gap detection, daily note, task bridge), `router.ts`, `scripts/audit-obsidian-graph.ts`, `src/discord/commands/tasks.ts` (new), `src/discord/commands/docs.ts`, `src/discord/messages.ts`
+- Impacted Routes: N/A (Discord commands + internal services)
+- Impacted Services: `nativeCliAdapter.ts` (CLI adapter), `obsidianRagService.ts` (5개 advanced feature 추가), `router.ts` (native CLI 라우팅)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: native CLI 미설치 시 기존 어댑터 체인으로 자동 폴백. 반응형 학습 루프는 fire-and-forget. 지식 갭 리포트는 threshold 도달 시만 기록.
+- Validation: `npx tsc --noEmit` (0 errors), `npx vitest run` (670 tests passed), `nativeCliAdapter.test.ts` (21 new tests).
+
+## 2026-04-04 - M-18 Platform Lightweighting Phase B
+
+- Why: pg_cron 이관 확대(login cleanup, obsidian sync, SLO check)와 중복 코드 통합(searchMemoryHybrid 3개 호출자 → 1개 공유 헬퍼)으로 런타임 경량화를 진행한다.
+- Scope: 11 files — pgCronBootstrapService, agentMemoryService, agentMemoryStore, agentSloService, memoryEvolutionService, obsidianLoreSyncService, platformLightweightingService, runtimeSchedulerPolicyService, render.yaml
+- Impacted Routes: N/A
+- Impacted Services: `pgCronBootstrapService.ts` (login/obsidian/SLO cron 추가), `agentMemoryStore.ts` (searchMemoryHybrid 공유 헬퍼), `agentMemoryService.ts` (중복 검색 로직 제거), `memoryEvolutionService.ts` (중복 검색 로직 제거)
+- Impacted Tables/RPC: pg_cron 스케줄 3개 추가
+- Risk/Regression Notes: owner toggle(`OBSIDIAN_SYNC_LOOP_OWNER`, `AGENT_SLO_ALERT_LOOP_OWNER`, `DISCORD_LOGIN_SESSION_CLEANUP_OWNER`)로 app/db 위임 전환 가능.
+- Validation: `npx tsc --noEmit` (0 errors), `npx vitest run` (97 files, 635 tests passed).
+
+## 2026-04-03 - M-11 Intent Intelligence Layer (Exemplar Store, Signal Enricher, Outcome Attributor)
+
+- Why: 인텐트 분류 정확도를 대화 턴, 소셜 시그널, 시간 특성으로 강화하고, 세션 종료 시 outcome을 intent에 귀속시켜 분류 정확도 피드백 루프를 구축한다.
+- Scope: 10 files — `src/services/langgraph/nodes/intentExemplarStore.ts` (new), `intentSignalEnricher.ts` (new), `intentOutcomeAttributor.ts` (new), `coreNodes.ts` (enriched signal intent classification), `agentRuntimeTypes.ts` (AgentIntentSignal type), `multiAgentService.ts` (intent attribution on session close), `conversationTurnService.ts` (recent turn query), + 3 test files
+- Impacted Routes: N/A (internal classification pipeline)
+- Impacted Services: `intentExemplarStore.ts` (Supabase-backed exemplar CRUD + bootstrap), `intentSignalEnricher.ts` (대화턴+소셜시그널+시간 feature 결합), `intentOutcomeAttributor.ts` (세션 outcome → intent 정확도 피드백), `coreNodes.ts` (enriched signals + exemplar matching으로 분류 개선)
+- Impacted Tables/RPC: `intent_exemplars` (new table via schema)
+- Risk/Regression Notes: Exemplar store 미구축 시 기존 규칙 기반 분류로 폴백. Attribution은 세션 종료 후 비동기 best-effort.
+- Validation: `npx tsc --noEmit` (0 errors), 3개 신규 테스트 파일.
+
+## 2026-04-03 - M-12/M-13 External Tool Adapters: OpenShell Sandbox + OpenJarvis Bench + OpenClaw Relay
+
+- Why: 외부 도구 어댑터를 stub에서 실사용 가능한 수준으로 확대. OpenShell sandbox 정책 동기화, OpenJarvis bench JSON 파서, OpenClaw session relay를 구현한다.
+- Scope: 10 files — `openshellCliAdapter.ts` (sandbox create/exec/policy), `openjarvisAdapter.ts` (bench --json parser, optimize trigger), `openclawCliAdapter.ts` (session relay, channel routing), `actionRunner.ts` (sandbox delegation path), `opencode.ts` (sandbox-first execution + fallback), + 3 adapter test files, `externalAdapterTypes.ts`
+- Impacted Routes: N/A (tool execution layer)
+- Impacted Services: `openshellCliAdapter.ts`, `openjarvisAdapter.ts`, `openclawCliAdapter.ts`, `actionRunner.ts` (implement.execute → sandbox delegation), `opencode.ts` (sandbox-first)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 각 어댑터는 CLI 미설치 시 skip/fallback. Sandbox delegation은 `OPENSHELL_ENABLED` 미설정 시 기존 경로 유지.
+- Validation: `npx tsc --noEmit` (0 errors), 3개 신규 어댑터 테스트.
+
+## 2026-04-03 - M-11 Self-Improvement Loop + Sprint Learning Enhancements
+
+- Why: 주간 auto-judge 결과와 sprint retro에서 자동으로 개선 패턴을 추출하고, 검증된 패턴을 다음 sprint에 주입하는 자기 개선 루프를 구축한다.
+- Scope: 8 files — `src/services/sprint/selfImprovementLoop.ts` (new, 613 lines), `selfImprovementLoop.test.ts` (new), `sprintOrchestrator.ts` (retro 단계 통합), `sprintTriggers.ts` (auto-improve trigger), `sprintPreamble.ts` (improvement context 주입), `sprintLearningJournal.ts`, `scripts/auto-judge-from-weekly.mjs`, `scripts/generate-self-improvement-weekly.mjs`
+- Impacted Routes: N/A (sprint internal + ops automation)
+- Impacted Services: `selfImprovementLoop.ts` (패턴 영속화, 회귀 검증, 개선 적용), `sprintOrchestrator.ts` (retro → self-improvement 연결)
+- Impacted Tables/RPC: Supabase에 개선 패턴 영속화 (기존 sprint_pipelines 확장)
+- Risk/Regression Notes: Self-improvement은 retro 단계 이후에만 실행. 패턴 적용은 검증 통과 후에만 활성화.
+- Validation: `npx tsc --noEmit` (0 errors), `selfImprovementLoop.test.ts` (200 lines).
+
+## 2026-04-03 - M-13 Discord Runtime + OpenClaw Channel Bridge
+
+- Why: OpenClaw gateway를 Discord 런타임에 통합하고, 채널 수준 라우팅 정책을 추가하여 멀티 채널 에이전트 실행을 지원한다.
+- Scope: 13 files — `src/bot.ts` (OpenClaw gateway hook), `runtimeRoutes.ts` (channel routing/policy sync/self-improvement admin), `runtimePolicy.ts` (channel-level routing), `discord/auth.ts`, `discord/session.ts` (OpenClaw session relay), `passiveMemoryCapture.ts` (enhanced signal capture), `config.ts` (OpenClaw config entries)
+- Impacted Routes: `src/routes/bot-agent/runtimeRoutes.ts` (channel routing, policy sync, self-improvement endpoints)
+- Impacted Services: `bot.ts`, `runtimePolicy.ts`, `runtimeRoutes.ts`, `passiveMemoryCapture.ts`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: OpenClaw gateway가 미설정 시 기존 단일 채널 동작 유지. 채널 라우팅 정책은 opt-in.
+- Validation: docs regenerated (DEPENDENCY_GRAPH, ROUTES_INVENTORY, SCHEMA_SERVICE_MAP).
+
+## 2026-04-04 - Sprint Pipeline External OSS Capability Expansion (고도화)
+
+- Why: 외부 OSS 6개(OpenClaw, OpenJarvis, NemoClaw, OpenShell, DeepWiki, n8n) 33개 capability 중 18%만 사용 중이었다. 복합 실행(secondary adapter), enrichment 확대, OpenClaw session bootstrap, ext.* MCP bridge를 도입해 capability 활용률을 70%+로 확대한다.
+- Scope: 8 files — sprintPreamble.ts, sprintWorkerRouter.ts, sprintOrchestrator.ts, openclawCliAdapter.ts, unifiedToolAdapter.ts, circuitBreaker.ts (new shared util), + 3 test files
+- Impacted Routes: N/A (sprint internal pipeline only)
+- Impacted Services: `src/services/sprint/sprintPreamble.ts` (PHASE_ENRICHMENT_MAP ~12→28 enrichment actions), `src/services/sprint/sprintWorkerRouter.ts` (PhaseAdapterMapping type with `secondary` field, buildSecondaryAdapterArgs), `src/services/sprint/sprintOrchestrator.ts` (secondary adapter composite execution, OpenClaw bootstrap), `src/services/tools/adapters/openclawCliAdapter.ts` (bootstrapOpenClawSession), `src/mcp/unifiedToolAdapter.ts` (ext.* MCP bridge), `src/utils/circuitBreaker.ts` (new shared CB replacing inline duplicates in actionRunner + sprintWorkerRouter)
+- Impacted Tables/RPC: N/A (no schema changes)
+- Risk/Regression Notes: Secondary adapter 실패는 primary 결과에 영향 없음 (append-only). OpenClaw bootstrap은 sessionId 기준 idempotent. ext.* bridge는 기존 MCP 라우팅에 `ext.` prefix로 네임스페이스 격리. OPENSHELL_ENABLED/N8N_ENABLED 미설정 시 해당 secondary/enrichment 자동 skip.
+- Validation: `npx tsc --noEmit` (0 errors), `npx vitest run` (130 files, 1152 tests passed)
+
 ## 2026-04-06 - M-17 Infrastructure Optimization + Services Subdirectory Restructure Phase 2
 
 - Why: (1) setInterval 기반 스케줄러를 Supabase pg_cron으로 이관해 단일 진실 원천 통합. (2) Obsidian wikilink 그래프를 Supabase에 동기화해 graph-first retrieval 강화. (3) ollama/litellm-admin/mcp-indexing 어댑터 추가로 외부 도구 커버리지 확대. (4) Planner 반복 목표에 TTL pattern cache 적용. (5) services/ 디렉토리 6개 도메인 서브디렉토리 분리 (eval/, infra/, memory/, news/, obsidian/, trading/).
@@ -50,6 +210,16 @@ Copy this block for each change:
 - Impacted Tables/RPC: `public.entity_self_notes` (new), `public.memory_jobs`, `public.agent_tot_policies`, `public.retrieval_ranker_active_profiles`, `public.reward_signal_snapshots`.
 - Risk/Regression Notes: session 종료 후 memory precipitation과 reward-based adjustment는 best-effort 비동기 경로로 연결되어 기존 핵심 응답 경로를 블로킹하지 않는다. `entity_self_notes` 미적용 환경에서는 self-note 주입만 비활성화되고 기존 memory hint 경로는 유지된다.
 - Validation: `npx tsc --noEmit`, `npx vitest run`, `npm run docs:build`, `npm run docs:check`.
+
+## 2026-03-27 - Reward Signal Normalization + A/B Eval Auto-Promote + Shadow Graph Runner + Embedding Context Selection
+
+- Why: 자율 진화 아키텍처의 4개 구조적 기반을 동시에 도입한다. (1) Discord reactions, session outcomes, citation rates, LLM latency를 단일 보상 스칼라로 정규화. (2) baseline vs candidate config A/B 평가 + 자동 승격 파이프라인. (3) LangGraph 세션의 대안 노드 핸들러를 shadow 실행하여 divergence를 감지. (4) 메모리 힌트 하이브리드 검색(vector+lexical)으로 전환.
+- Scope: 6 new files — `rewardSignalService.ts`, `rewardSignalService.test.ts`, `evalAutoPromoteService.ts`, `evalAutoPromoteService.test.ts`, `langgraph/shadowGraphRunner.ts`, `shadowGraphRunner.test.ts`, + `agentMemoryService.ts` 변경. Migration: `005_reward_signal_and_eval.sql`
+- Impacted Routes: N/A (service layer only)
+- Impacted Services: `rewardSignalService.ts` (가중치 기반 보상 블렌딩, 스냅샷 영속화, 추세 분석), `evalAutoPromoteService.ts` (eval run 생성, 보상 샘플 수집, LLM judge, 자동 승격), `shadowGraphRunner.ts` (병렬 shadow 실행, divergence 감지/로깅), `agentMemoryService.ts` (hybrid search 전환)
+- Impacted Tables/RPC: `reward_signal_snapshots` (new), `eval_runs` (new), `shadow_graph_divergence_logs` (new), `search_memory_items_hybrid` RPC 활용
+- Risk/Regression Notes: Shadow runner는 `SHADOW_GRAPH_RUNNER_ENABLED=false` 기본값으로 log-only(트래픽 영향 없음). Eval auto-promote는 threshold 미달 시 기존 config 유지. Hybrid search는 embedding 미존재 시 classic ilike 폴백.
+- Validation: `npx tsc --noEmit`, `npx vitest run`.
 
 ## 2026-03-23 - Discord Login Rate-Limit Startup Log Downgrade
 
@@ -150,6 +320,16 @@ Copy this block for each change:
 - Impacted Tables/RPC: N/A.
 - Risk/Regression Notes: no runtime behavior change; the new schemas are intended to stabilize prompt outputs and future supervisor alignment without replacing existing `multiAgentService` or `ActionHandoff` contracts.
 - Validation: customization file validation via editor diagnostics, schema/doc consistency review against `src/services/multiAgentService.ts`, `src/services/skills/actions/types.ts`, `src/services/workerExecution.ts`, and `src/services/skills/actionExecutionLogService.ts`.
+
+## 2026-03-21 - MCP Indexing Server + Code Index Service
+
+- Why: IDE에서 코드베이스 구조(심볼, 참조, 스코프)를 MCP 프로토콜로 노출하여, 에이전트가 코드 탐색과 분석을 정밀하게 수행할 수 있게 한다.
+- Scope: 5 new files — `src/mcp/indexingServer.ts` (MCP stdio 서버, 106 lines), `src/mcp/indexingToolAdapter.ts` (도구 어댑터, 226 lines), `indexingToolAdapter.test.ts`, `src/services/codeIndexService.ts` (코드 인덱스 서비스, 1071 lines), `scripts/indexing-mcp-stdio.ts`
+- Impacted Routes: N/A (MCP stdio transport, IDE 전용)
+- Impacted Services: `codeIndexService.ts` (심볼 정의/참조 탐색, 파일 아웃라인, 스코프 읽기, 컨텍스트 번들), `indexingServer.ts` (MCP 프로토콜 라우팅), `indexingToolAdapter.ts` (도구 인터페이스 정규화)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: MCP stdio 서버는 IDE 연결 전용이며 런타임 프로세스에 영향 없음. 별도 프로세스로 실행.
+- Validation: `indexingToolAdapter.test.ts` (228 lines).
 
 ## 2026-03-20 - Static Worker Endpoint Baseline and Cutover Runbooks
 
@@ -491,6 +671,16 @@ Copy this block for each change:
 - Risk/Regression Notes: Status payload freshness now follows short TTL caching; extreme low-latency dashboards may observe up to cache TTL delay.
 - Validation: `npm run lint`.
 
+## 2026-03-18 - GoT/LangGraph 실행 엔진 + Task Routing + SLO 모니터링 + Community Graph
+
+- Why: (1) Graph-of-Thought 추론 전략을 LangGraph-style 상태 그래프 노드로 구조화. (2) 태스크를 기술/연산/창작/검색 경로로 자동 라우팅. (3) 에이전트 SLO(응답 시간, 품질) 실시간 추적. (4) Discord 상호작용 기반 커뮤니티 소셜 그래프 구축. (5) OpenCode GitHub 큐 + publish worker 추가.
+- Scope: 30+ new files — `src/services/agent/agentGot{PolicyService,CutoverService,Store,AnalyticsService}.ts`, `agentSloService.ts`, `agentTelemetryQueue.ts`, `agentQualityReviewService.ts`, `src/services/opencode/{opcodeGitHubQueueService,opcodeOpsService,opencodePublishWorker}.ts`, `taskRoutingService.ts`, `taskRoutingAnalyticsService.ts`, `taskRoutingMetricsService.ts`, `toolLearningService.ts`, `communityGraphService.ts`, `conversationTurnService.ts`, `llmExperimentAnalyticsService.ts`, `semanticAnswerCacheService.ts`, `efficiencyOptimizationService.ts`, `platformLightweightingService.ts`, `runtimeSchedulerPolicyService.ts`, `supabaseExtensionOpsService.ts`, `userPersonaService.ts`, `langgraph/nodes/{coreNodes,runtimeNodes,composeNodes}.ts` + tests
+- Impacted Routes: `/api/bot/agent/*` (GoT/SLO/telemetry endpoints), `/api/bot/status` (확장)
+- Impacted Services: `multiAgentService.ts` (GoT policy gating, cutover logic), `agentMemoryService.ts` (hybrid search), `obsidianRagService.ts` (graph-first 통합), `llmClient.ts` (실험 분석 연동)
+- Impacted Tables/RPC: `agent_got_shadow_runs`, `agent_slo_metrics`, `agent_telemetry_queue`, `task_routing_decisions`, `community_interactions` (schema additions)
+- Risk/Regression Notes: GoT는 `AGENT_GOT_ENABLED=false` 기본값. Task routing은 기존 단일경로 폴백 유지. SLO alert는 임계값 미도달 시 비활성.
+- Validation: `npx tsc --noEmit`, `npx vitest run`.
+
 ## 2026-03-17 - Unified Roadmap and Ops Document Integration (Social Ops Baseline)
 
 - Why: Resolve roadmap/runbook/backlog fragmentation and align documentation to current implementation progress (social graph + autonomous loop + reasoning gates).
@@ -580,3 +770,23 @@ Copy this block for each change:
 - Impacted Tables/RPC: N/A
 - Risk/Regression Notes: Entrypoint detection is heuristic/path-based and may over-include scripts until rule tuning is refined.
 - Validation: `npm run lint`; `npm run obsidian:code-map -- --repo <repo> --vault <vault>`.
+
+## 2026-03-14 - Obsidian Headless RAG System Phase 1 + Worker Generation Pipeline
+
+- Why: (1) 전통적 벡터 DB 한계를 넘어 Obsidian 그래프 구조를 활용한 컨텍스트 보존 RAG 시스템을 구축한다. (2) 에이전트가 누락된 능력을 자체 생성할 수 있는 동적 워커 생성 파이프라인을 도입한다.
+- Scope: 10+ new files — `src/services/obsidianHeadlessService.ts` (CLI 기반 vault 검색/읽기, 폴백 직접 파일 I/O, 메타데이터 추출), `obsidianCacheService.ts` (Supabase 백드 캐싱/TTL/히트 추적), `obsidianRagService.ts` (인텐트 기반 문서 라우팅), `obsidianRagService.test.ts`, `src/services/workerGeneration/workerGenerationPipeline.ts` (worker 코드 생성 파이프라인), `dynamicWorkerRegistry.ts` (생성된 worker 등록/캐시), `workerApprovalStore.ts` (승인 게이트), `workerSandbox.ts` (샌드박스 검증)
+- Impacted Routes: `/api/bot/agent/*` (docs command RAG 연동)
+- Impacted Services: `obsidianHeadlessService.ts` (CLI vault 접근), `obsidianCacheService.ts` (캐시 관리), `obsidianRagService.ts` (인텐트→문서 라우팅), `workerGenerationPipeline.ts` (LLM 코드 생성 → 승인 → 등록), `dynamicWorkerRegistry.ts` (부팅 시 승인된 worker 복원), `workerApprovalStore.ts` (file + Supabase 듀얼 모드), `workerSandbox.ts` (격리 실행 검증)
+- Impacted Tables/RPC: `guild_lore_docs` (cache read/write), `worker_approvals` (new table)
+- Risk/Regression Notes: Obsidian CLI 미설치 시 직접 파일 I/O 폴백. Worker generation은 승인 게이트 통과 필수. 샌드박스 검증 실패 시 등록 차단.
+- Validation: `npx tsc --noEmit`, `npx vitest run` (76 tests).
+
+## 2026-03-14 - Ops Observability: Dynamic Worker Hardening + Policy UX + News Dedup
+
+- Why: (1) actionRunner에 fail-closed 거버넌스와 트렌드/Top-N 장애 코드 진단을 추가. (2) workerApprovalStore에 파일/Supabase 듀얼 모드 + 진단 스냅샷. (3) 뉴스 캡처 시맨틱 중복 제거. (4) 봇-에이전트 세션의 정책 차단 진단과 worker 제안 UX 개선.
+- Scope: 15+ files — `actionRunner.ts` (fail-closed, diagnostics, trend), `workerApprovalStore.ts` (dual mode), `dynamicWorkerRegistry.ts` (boot restore, cache-busting), `workerProposalMetrics.ts` (funnel metrics), `newsCaptureDedupService.ts` (new), `userLearningPrefsService.ts` (new), `webSearch.ts` (new), `newsVerify.ts` (new), `discord/messages.ts` (catalog)
+- Impacted Routes: `/api/bot/status` (worker proposal metrics + action diagnostics 포함)
+- Impacted Services: `actionRunner.ts`, `workerApprovalStore.ts`, `dynamicWorkerRegistry.ts`, `workerProposalMetrics.ts`, `newsCaptureDedupService.ts`, `userLearningPrefsService.ts`
+- Impacted Tables/RPC: `worker_approvals` (RLS, index, trigger), `MIGRATION_DEDUPE_LEARNING.sql` (뉴스 핑거프린트 스키마)
+- Risk/Regression Notes: 거버넌스 기본값이 fail-closed로 변경. `ACTION_GOVERNANCE_DEFAULT_MODE` env로 통제 가능.
+- Validation: `npx tsc --noEmit`, `npx vitest run` (76 tests, 9 modules).

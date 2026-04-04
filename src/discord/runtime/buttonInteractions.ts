@@ -214,7 +214,7 @@ export const handleButtonInteraction = async (params: {
         if (targetChId) {
           const adminCh = await client.channels.fetch(targetChId);
           if (adminCh && 'send' in adminCh) {
-            const sent = await (adminCh as any).send({ content: adminContent, components: [adminRow] });
+            const sent = await (adminCh as { send: (opts: unknown) => Promise<{ id: string }> }).send({ content: adminContent, components: [adminRow] });
             adminMsgId = sent.id as string;
             adminChId = targetChId;
           }
@@ -417,7 +417,7 @@ export const handleButtonInteraction = async (params: {
   let newSession: { id: string };
   try {
     newSession = await startVibeSession(interaction.guildId, interaction.user.id, newGoal);
-    (newSession as any).__parentSessionId = parentSessionId;
+    (newSession as Record<string, unknown>).__parentSessionId = parentSessionId;
   } catch (error) {
     await thread.send(DISCORD_MESSAGES.bot.codeStartFailed(toErrorMessage(error)));
     return true;

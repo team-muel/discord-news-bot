@@ -32,6 +32,13 @@ const errorAccumulator: ErrorAccumulator = {
 const ERROR_WINDOW_MS = 10 * 60_000; // 10 minutes
 const ERROR_COOLDOWN_MS = 30 * 60_000; // 30 minutes between auto-triggered sprints
 
+/** Expose recent error window for Observer error-pattern channel. */
+export const getRecentErrors = (): ReadonlyArray<{ message: string; at: string; code?: string }> => {
+  // Prune stale entries before returning
+  const cutoff = new Date(Date.now() - ERROR_WINDOW_MS).toISOString();
+  return errorAccumulator.recentErrors.filter((e) => e.at > cutoff);
+};
+
 export const recordRuntimeError = (error: { message: string; code?: string }): void => {
   if (!SPRINT_ENABLED) return;
 

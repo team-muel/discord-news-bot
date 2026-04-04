@@ -45,6 +45,18 @@ Composable skill registry, execution engine, and action implementations.
 - `skills/actionRunner.ts` — Action governance wrapper
 - `skills/actions/` — Individual action implementations (web, rag, news, code, etc.)
 
+### Observer Layer (`observer/`)
+Autonomous environment scanning for the agent evolution pipeline (Phase F).
+- `observer/observerTypes.ts` — Observation, Channel, Severity, Stats types
+- `observer/observerOrchestrator.ts` — Periodic scan coordinator + signal emission
+- `observer/observationStore.ts` — Supabase persistence with in-memory fallback
+- `observer/errorPatternChannel.ts` — Runtime error clustering from sprintTriggers
+- `observer/memoryGapChannel.ts` — Stale/low-confidence memory detection
+- `observer/perfDriftChannel.ts` — LLM latency/cost regression from weekly reports
+- `observer/codeHealthChannel.ts` — TypeScript type-check error tracking
+- `observer/convergenceDigestChannel.ts` — Wraps existing convergence reports
+- `observer/discordPulseChannel.ts` — Guild activity volume monitoring
+
 ### Sprint Pipeline (`sprint/`)
 Autonomous plan→implement→review→qa→ship cycle.
 - `sprint/sprintOrchestrator.ts` — Phase state machine
@@ -57,12 +69,7 @@ Autonomous plan→implement→review→qa→ship cycle.
 - `sprint/llmJudge.ts` — LLM-as-judge evaluation
 
 ### Trading (`trading/`)
-Cryptocurrency trading engine and Binance integration.
-- `trading/tradingEngine.ts` — Core trading loop (CVD strategy)
-- `trading/tradingStrategyService.ts` — Strategy calculation
-- `trading/aiTradingClient.ts` — Remote trading API client
-- `trading/localAiTradingClient.ts` — Local Binance execution
-- `trading/tradesStore.ts` — Trade persistence
+Stock analysis and investment research.
 - `trading/stockService.ts` — Stock quote and chart data
 - `trading/investmentAnalysisService.ts` — LLM investment analysis
 
@@ -140,3 +147,30 @@ Database, auth, observability, and cross-cutting concerns.
 - `authService.ts` — OAuth flow
 - `observability/` — Telemetry and monitoring
 - `runtime-alerts/` — Alert rules and routing
+
+### OpenCode (`opencode/`)
+GitHub queue, ops execution, and publish worker for code generation pipeline.
+- `opencode/codeIndexService.ts` — Code index and symbol search
+- `opencode/opencodeGitHubQueueService.ts` — Change request and publish queue CRUD
+- `opencode/opencodeOpsService.ts` — Execution summary and ops
+- `opencode/opencodePublishWorker.ts` — Publish job worker loop
+
+### Runtime Lifecycle (`runtime/`)
+Bootstrap, scheduling, alerting, signal bus, and platform optimization.
+- `runtime/runtimeBootstrap.ts` — Server/Discord-ready lifecycle coordination
+- `runtime/runtimeProvider.ts` — Runtime dependency injection provider
+- `runtime/runtimeSchedulerPolicyService.ts` — Scheduler policy snapshot
+- `runtime/runtimeAlertService.ts` — Periodic alert scan loop
+- `runtime/signalBus.ts` — In-process typed event hub
+- `runtime/signalBusWiring.ts` — Signal bus consumer wiring
+- `runtime/botAutoRecoveryService.ts` — Bot offline auto-recovery
+- `runtime/efficiencyOptimizationService.ts` — Efficiency mode and quick wins
+- `runtime/platformLightweightingService.ts` — Platform lightweighting report
+
+### Discord Support (`discord-support/`)
+Discord-specific data services (telemetry, rewards, topology, login sessions, CRM).
+- `discord-support/discordChannelTelemetryService.ts` — Channel message signal recording
+- `discord-support/discordReactionRewardService.ts` — Reaction reward signal recording
+- `discord-support/discordTopologySyncService.ts` — Guild topology sync to Obsidian
+- `discord-support/discordLoginSessionStore.ts` — Login session persistence
+- `discord-support/userCrmService.ts` — User CRM: global profiles, guild memberships, activity tracking (write-behind buffer)

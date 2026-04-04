@@ -15,6 +15,9 @@ export type SkillPromptDefinition = {
   nextSkills: Array<{ condition: string; next: string }>;
   runtimeAction: string;
   rawContent: string;
+  hitlAct: string[];
+  hitlAsk: string[];
+  referenceFiles: string[];
 };
 
 const SKILLS_DIR = path.resolve(__dirname, '../../../.github/skills');
@@ -90,6 +93,30 @@ const extractNextSkills = (body: string): Array<{ condition: string; next: strin
     .filter((item): item is { condition: string; next: string } => item !== null);
 };
 
+const extractHitlItems = (body: string, subHeading: string): string[] => {
+  const section = extractSection(body, 'HITL Decision');
+  if (!section) return [];
+  const subMatch = section.match(new RegExp(`###\\s+${subHeading}[^\\n]*\\n([\\s\\S]*?)(?=###|$)`, 'i'));
+  if (!subMatch) return [];
+  return subMatch[1]
+    .split('\n')
+    .filter((line) => line.trim().startsWith('-'))
+    .map((line) => line.replace(/^-\s+/, '').trim())
+    .filter(Boolean);
+};
+
+const discoverReferenceFiles = (skillName: string): string[] => {
+  const refsDir = path.join(SKILLS_DIR, skillName, 'references');
+  try {
+    return fs.readdirSync(refsDir)
+      .filter((f) => f.endsWith('.md'))
+      .sort();
+  } catch (err) {
+    logger.debug('[SKILL-PROMPT] discoverReferenceFiles failed for skill=%s: %s', skillName, err instanceof Error ? err.message : String(err));
+    return [];
+  }
+};
+
 const SAFE_SKILL_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
 export const loadSkillPrompt = (skillName: string): SkillPromptDefinition | null => {
@@ -122,6 +149,9 @@ export const loadSkillPrompt = (skillName: string): SkillPromptDefinition | null
     nextSkills: extractNextSkills(body),
     runtimeAction: PHASE_ACTION_MAP[skillName] || '',
     rawContent: raw,
+    hitlAct: extractHitlItems(body, 'Act'),
+    hitlAsk: extractHitlItems(body, 'Ask'),
+    referenceFiles: discoverReferenceFiles(skillName),
   };
 
   cache.set(skillName, def, CACHE_TTL_MS);
@@ -143,6 +173,19 @@ export const buildPhaseSystemPrompt = (skillName: string): string | null => {
     '## Expected Output',
     def.outputContract,
   ];
+
+  if (def.hitlAct.length > 0 || def.hitlAsk.length > 0) {
+    lines.push('', '## HITL Decision');
+    if (def.hitlAct.length > 0) {
+      lines.push('', 'Proceed without asking:');
+      lines.push(...def.hitlAct.map((item) => `- ${item}`));
+    }
+    if (def.hitlAsk.length > 0) {
+      lines.push('', 'MUST confirm before proceeding:');
+      lines.push(...def.hitlAsk.map((item) => `- ${item}`));
+    }
+  }
+
   return lines.join('\n');
 };
 
@@ -152,7 +195,8 @@ export const listAvailableSkills = (): string[] => {
       const skillPath = path.join(SKILLS_DIR, name, 'SKILL.md');
       return fs.existsSync(skillPath);
     });
-  } catch {
+  } catch (err) {
+    logger.debug('[SKILL-PROMPT] listAvailableSkills failed: %s', err instanceof Error ? err.message : String(err));
     return [];
   }
 };
@@ -163,6 +207,22 @@ export const getPhaseActionName = (skillName: string): string => {
 
 export const getPhaseLeadAgent = (skillName: string): string => {
   return PHASE_LEAD_AGENT_MAP[skillName] || 'Implement';
+};
+
+/**
+ * Load a specific reference file for a skill on demand.
+ * Returns null if the file does not exist.
+ */
+export const loadSkillReference = (skillName: string, refFileName: string): string | null => {
+  if (!SAFE_SKILL_NAME_RE.test(skillName)) return null;
+  if (!/^[a-z0-9][a-z0-9._-]*\.md$/i.test(refFileName)) return null;
+  const refPath = path.join(SKILLS_DIR, skillName, 'references', refFileName);
+  try {
+    return fs.readFileSync(refPath, 'utf-8');
+  } catch (err) {
+    logger.debug('[SKILL-PROMPT] readReferenceFile failed for %s/%s: %s', skillName, refFileName, err instanceof Error ? err.message : String(err));
+    return null;
+  }
 };
 
 /**

@@ -2,6 +2,7 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { callMcpTool, parseMcpTextBlocks } from '../mcpWorkerClient';
 import { fetchWithTimeout } from '../../utils/network';
 import { scrapeLatestCommunityPostByUrl } from './youtubeCommunityScraper';
+import { delegateYoutubeCommunityScrape, delegateYoutubeFeedFetch, shouldDelegate } from '../automation/n8nDelegationService';
 
 export type YouTubeMonitorMode = 'videos' | 'posts';
 
@@ -142,6 +143,45 @@ const fetchYouTubeLatestLocally = async (params: {
   mode: YouTubeMonitorMode;
   aggressiveProbe?: boolean;
 }): Promise<YouTubeMonitorLatestResult | null> => {
+  // n8n delegation: try delegating feed/scrape to n8n
+  if (params.mode === 'posts' && shouldDelegate('youtube-community-scrape')) {
+    const n8n = await delegateYoutubeCommunityScrape(params.sourceUrl);
+    if (n8n.delegated && n8n.ok && n8n.data) {
+      const channelId = parseChannelId(params.sourceUrl) || null;
+      return {
+        found: true,
+        channelId,
+        entry: {
+          id: String(n8n.data.id || ''),
+          title: String(n8n.data.title || ''),
+          content: String(n8n.data.content || ''),
+          link: String(n8n.data.link || ''),
+          published: String(n8n.data.published || ''),
+          author: String(n8n.data.author || ''),
+        },
+      };
+    }
+  }
+
+  if (params.mode === 'videos' && shouldDelegate('youtube-feed-fetch')) {
+    const n8n = await delegateYoutubeFeedFetch(params.sourceUrl);
+    if (n8n.delegated && n8n.ok && n8n.data?.entries?.length) {
+      const entry = n8n.data.entries[0];
+      const channelId = parseChannelId(params.sourceUrl) || null;
+      return {
+        found: true,
+        channelId,
+        entry: {
+          id: String(entry.id || ''),
+          title: String(entry.title || ''),
+          link: String(entry.link || ''),
+          published: String(entry.published || ''),
+          author: String(entry.author || ''),
+        },
+      };
+    }
+  }
+
   const channelId = parseChannelId(params.sourceUrl) || await resolveChannelIdFromHandleUrl(params.sourceUrl);
   if (!channelId) {
     return { found: false, channelId: null };

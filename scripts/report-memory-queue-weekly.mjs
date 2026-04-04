@@ -70,7 +70,13 @@ const queryMemoryJobs = async () => {
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(`memory_jobs query failed: ${error.message}`);
+  if (error) {
+    if (isMissingRelationError(error, 'memory_jobs')) {
+      console.log('[MEMORY-QUEUE-WEEKLY] memory_jobs table not found — returning empty dataset (apply migration first)');
+      return [];
+    }
+    throw new Error(`memory_jobs query failed: ${error.message}`);
+  }
   return Array.isArray(data) ? data : [];
 };
 
@@ -87,7 +93,13 @@ const queryDeadletters = async () => {
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(`memory_job_deadletters query failed: ${error.message}`);
+  if (error) {
+    if (isMissingRelationError(error, 'memory_job_deadletters')) {
+      console.log('[MEMORY-QUEUE-WEEKLY] memory_job_deadletters table not found — returning empty dataset (apply migration first)');
+      return [];
+    }
+    throw new Error(`memory_job_deadletters query failed: ${error.message}`);
+  }
   return Array.isArray(data) ? data : [];
 };
 

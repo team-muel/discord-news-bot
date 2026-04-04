@@ -19,7 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import logger from '../../logger';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { atomicWriteFile } from '../../utils/atomicWrite';
-import { checkFileScope } from './scopeGuard';
+import { checkFileScope, checkNewFileCreation } from './scopeGuard';
 import { SPRINT_CHANGED_FILE_CAP, SPRINT_DRY_RUN } from '../../config';
 
 const resolveProjectRoot = (): string => {
@@ -297,7 +297,9 @@ export const generateAndApplyCodeChanges = async (params: {
 
   for (const file of parsedFiles) {
     const original = await readProjectFile(file.path);
-    if (original === null) {
+    const fileAlreadyExists = original !== null;
+
+    if (!fileAlreadyExists) {
       errors.push(`Cannot read original: ${file.path}`);
       continue;
     }
@@ -305,6 +307,13 @@ export const generateAndApplyCodeChanges = async (params: {
     // Skip if content is identical
     if (original.trimEnd() === file.content.trimEnd()) {
       logger.debug('[SPRINT-CODE-WRITER] skipping unchanged file: %s', file.path);
+      continue;
+    }
+
+    // New-file creation guard (prevents agent anti-pattern of 10+ new files per sprint)
+    const newFileCheck = checkNewFileCreation(params.sprintId, file.path, fileAlreadyExists);
+    if (!newFileCheck.allowed) {
+      errors.push(`New-file cap: ${file.path} — ${newFileCheck.reason}`);
       continue;
     }
 

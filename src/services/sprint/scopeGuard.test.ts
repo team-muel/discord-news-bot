@@ -3,6 +3,8 @@ import {
   checkFileScope,
   checkFilesScope,
   checkCommandSafety,
+  checkNewFileCreation,
+  getNewFileCount,
   getScopeGuardSnapshot,
 } from './scopeGuard';
 
@@ -90,6 +92,42 @@ describe('scopeGuard', () => {
       expect(Array.isArray(snap.protectedFiles)).toBe(true);
       expect(typeof snap.blockedAttempts).toBe('number');
       expect(Array.isArray(snap.recentBlocked)).toBe(true);
+      expect(typeof snap.newFileCap).toBe('number');
+    });
+  });
+
+  describe('checkNewFileCreation', () => {
+    const testSprintId = 'new-file-cap-test-' + Date.now();
+
+    it('기존 파일 수정은 항상 허용한다', () => {
+      const result = checkNewFileCreation(testSprintId, 'src/existing.ts', true);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('새 파일 생성은 캡 내에서 허용한다', () => {
+      const sid = 'cap-test-allow-' + Date.now();
+      const r1 = checkNewFileCreation(sid, 'src/new1.ts', false);
+      expect(r1.allowed).toBe(true);
+      expect(getNewFileCount(sid)).toBe(1);
+    });
+
+    it('같은 파일 재시도는 중복 카운트하지 않는다', () => {
+      const sid = 'cap-test-dedup-' + Date.now();
+      checkNewFileCreation(sid, 'src/dedup.ts', false);
+      checkNewFileCreation(sid, 'src/dedup.ts', false);
+      expect(getNewFileCount(sid)).toBe(1);
+    });
+
+    it('캡 초과 시 새 파일 생성을 차단한다', () => {
+      const sid = 'cap-test-block-' + Date.now();
+      // SPRINT_NEW_FILE_CAP defaults to 3
+      checkNewFileCreation(sid, 'src/a.ts', false);
+      checkNewFileCreation(sid, 'src/b.ts', false);
+      checkNewFileCreation(sid, 'src/c.ts', false);
+      const blocked = checkNewFileCreation(sid, 'src/d.ts', false);
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.reason).toContain('New-file cap');
+      expect(getNewFileCount(sid)).toBe(3);
     });
   });
 });

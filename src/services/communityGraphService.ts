@@ -127,8 +127,9 @@ const upsertCommunityActorProfile = async (params: {
     throw new Error(currentError.message || 'COMMUNITY_ACTOR_PROFILE_SELECT_FAILED');
   }
 
-  const currentFirst = String((current as any)?.first_seen_at || '').trim();
-  const currentLast = String((current as any)?.last_seen_at || '').trim();
+  const cur = current as Record<string, unknown> | null;
+  const currentFirst = String(cur?.first_seen_at || '').trim();
+  const currentLast = String(cur?.last_seen_at || '').trim();
   const mergedFirst = currentFirst ? pickEarlierIso(currentFirst, params.eventTs) : params.eventTs;
   const mergedLast = currentLast ? pickLaterIso(currentLast, params.eventTs) : params.eventTs;
 
@@ -157,8 +158,14 @@ export const recordCommunityInteractionEvent = async (params: {
   eventTs?: string;
   weight?: number;
   metadata?: Record<string, unknown>;
+  isPrivateThread?: boolean;
 }): Promise<void> => {
   if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  // Skip private thread interactions from social graph unless explicitly allowed
+  if (params.isPrivateThread) {
     return;
   }
 
@@ -258,8 +265,10 @@ export const recordCommunityInteractionEvent = async (params: {
     throw new Error(upsertError.message || 'COMMUNITY_EDGE_UPSERT_FAILED');
   }
 
-  await upsertCommunityActorProfile({ guildId, userId: actorUserId, eventTs });
-  await upsertCommunityActorProfile({ guildId, userId: targetUserId, eventTs });
+  await Promise.all([
+    upsertCommunityActorProfile({ guildId, userId: actorUserId, eventTs }),
+    upsertCommunityActorProfile({ guildId, userId: targetUserId, eventTs }),
+  ]);
 };
 
 export const buildSocialContextHints = async (params: {

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import logger from '../../logger';
 import { assessMemoryPoisonRisk, buildPoisonTags } from '../memory/memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { hasMemoryConsent } from './agentConsentService';
@@ -206,6 +207,62 @@ export const searchMemoryHybrid = async (
   }
 
   return runClassic();
+};
+
+// ──── Tiered Search (H-MEM inspired) ─────────────────────────────────────────
+
+/**
+ * Search memories using tier-based routing: concept → summary → raw.
+ * Higher tiers are searched first; lower tiers only fill remaining slots.
+ * This reduces search cost and naturally promotes consolidated knowledge.
+ */
+const TIERED_SEARCH_ORDER: readonly string[] = ['concept', 'summary', 'raw'] as const;
+
+export type TieredSearchParams = Omit<HybridSearchParams, 'extraSelect'> & {
+  extraSelect?: string;
+  /** Skip tier routing and search all tiers at once (default: false) */
+  flatSearch?: boolean;
+};
+
+export const searchMemoryTiered = async (
+  params: TieredSearchParams,
+): Promise<Array<Record<string, unknown>>> => {
+  if (params.flatSearch) {
+    return searchMemoryHybrid(params);
+  }
+
+  const collected: Array<Record<string, unknown>> = [];
+  const seenIds = new Set<string>();
+  let remaining = params.limit;
+
+  for (const tier of TIERED_SEARCH_ORDER) {
+    if (remaining <= 0) break;
+
+    try {
+      const tierResults = await searchMemoryHybrid({
+        ...params,
+        limit: remaining + 2, // slight overfetch to account for dedup
+        extraSelect: params.extraSelect
+          ? `tier, ${params.extraSelect}`
+          : 'tier',
+      });
+
+      for (const row of tierResults) {
+        if (remaining <= 0) break;
+        const rowTier = String(row.tier || 'raw');
+        if (rowTier !== tier) continue; // only accept results from current tier
+        const id = String(row.id || '');
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+        collected.push(row);
+        remaining--;
+      }
+    } catch (err) {
+      logger.debug('[MEMORY-TIERED] tier=%s search failed, continuing: %s', tier, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return collected;
 };
 
 export async function searchGuildMemory(params: SearchParams) {

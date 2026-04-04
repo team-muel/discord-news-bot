@@ -30,18 +30,23 @@ import {
 } from './obsidianCacheService';
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
+import { doc } from './obsidianDocBuilder';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
 const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, Number(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS || 120_000));
 const graphMetaCache = new TtlCache<Record<string, any>>(4);
 const GRAPH_META_CACHE_KEY = 'graph_metadata';
 
-/** Category routing rules */
-const INTENT_ROUTES = {
+/** Category routing rules — static base, enriched dynamically from vault tags */
+const INTENT_ROUTES: Record<string, {
+  tags: string[];
+  folders: string[];
+  keywords: RegExp;
+}> = {
   trading: {
     tags: ['trading', 'api', 'strategy', 'market'],
     folders: ['docs/planning/', 'docs/adr/'],
-    keywords: /trading|stock|price|chart|strategy|variance|cvd|binance|leverage/i,
+    keywords: /trading|stock|price|chart|strategy|variance|leverage/i,
   },
   architecture: {
     tags: ['architecture', 'design', 'pattern', 'adr'],
@@ -65,7 +70,84 @@ const INTENT_ROUTES = {
   },
 };
 
-export type IntentCategory = keyof typeof INTENT_ROUTES;
+// ── Dynamic intent enrichment from vault tag distribution ──────
+
+const DYNAMIC_INTENT_ENABLED = String(process.env.OBSIDIAN_DYNAMIC_INTENT_ROUTING ?? 'true').trim() === 'true';
+const DYNAMIC_INTENT_MIN_TAG_COUNT = Math.max(2, Number(process.env.OBSIDIAN_DYNAMIC_INTENT_MIN_TAG_COUNT || 3));
+
+let _dynamicIntentEnriched = false;
+
+/**
+ * Enrich static intent routes with actual vault tag distribution.
+ * Tags that appear frequently in the vault but aren't in any static route
+ * get mapped to the closest matching intent via folder proximity.
+ */
+function enrichIntentRoutesFromGraph(graphMetadata: Record<string, Record<string, unknown>>): void {
+  if (_dynamicIntentEnriched || !DYNAMIC_INTENT_ENABLED) return;
+  if (!graphMetadata || Object.keys(graphMetadata).length === 0) return;
+
+  // Count tag frequency across all vault documents
+  const tagFrequency = new Map<string, number>();
+  const tagFolders = new Map<string, Set<string>>();
+  const allKnownTags = new Set<string>();
+
+  for (const route of Object.values(INTENT_ROUTES)) {
+    for (const tag of route.tags) {
+      allKnownTags.add(tag.toLowerCase());
+    }
+  }
+
+  for (const [filePath, meta] of Object.entries(graphMetadata)) {
+    const tags = Array.isArray(meta?.tags) ? (meta.tags as unknown[]) : [];
+    const folder = filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/') + 1) : '';
+    for (const tag of tags) {
+      const normalizedTag = String(tag).toLowerCase().trim();
+      if (!normalizedTag || allKnownTags.has(normalizedTag)) continue;
+      tagFrequency.set(normalizedTag, (tagFrequency.get(normalizedTag) || 0) + 1);
+      const folderSet = tagFolders.get(normalizedTag) || new Set();
+      if (folder) folderSet.add(folder);
+      tagFolders.set(normalizedTag, folderSet);
+    }
+  }
+
+  // Map frequent unmatched tags to the best intent based on folder overlap
+  for (const [tag, count] of tagFrequency) {
+    if (count < DYNAMIC_INTENT_MIN_TAG_COUNT) continue;
+
+    const folders = tagFolders.get(tag) || new Set();
+    let bestIntent = '';
+    let bestOverlap = 0;
+
+    for (const [intentName, route] of Object.entries(INTENT_ROUTES)) {
+      let overlap = 0;
+      for (const folder of folders) {
+        if (route.folders.some((rf) => folder.startsWith(rf) || rf.startsWith(folder))) {
+          overlap++;
+        }
+      }
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestIntent = intentName;
+      }
+    }
+
+    // If no folder overlap, assign to development as catch-all
+    const targetIntent = bestIntent || 'development';
+    if (INTENT_ROUTES[targetIntent]) {
+      INTENT_ROUTES[targetIntent].tags.push(tag);
+      logger.debug('[OBSIDIAN-RAG] Dynamic intent: tag=%s → %s (count=%d)', tag, targetIntent, count);
+    }
+  }
+
+  _dynamicIntentEnriched = true;
+}
+
+/** Exposed for tests */
+export function resetDynamicIntentState(): void {
+  _dynamicIntentEnriched = false;
+}
+
+export type IntentCategory = 'trading' | 'architecture' | 'operations' | 'development' | 'memory';
 
 export interface RAGQueryResult {
   answer?: string;
@@ -188,6 +270,9 @@ export async function queryObsidianRAG(
       graphMetadata = await getObsidianGraphMetadataWithAdapter({ vaultPath: vaultPath || '' });
       graphMetaCache.set(GRAPH_META_CACHE_KEY, graphMetadata, GRAPH_META_CACHE_TTL_MS);
     }
+
+    // Dynamic intent enrichment: learn new tags from vault structure
+    enrichIntentRoutesFromGraph(graphMetadata);
 
     // 5. Assemble context
     const contextText = assembleContext(documents, graphMetadata, contextMode);
@@ -314,7 +399,9 @@ async function findRelatedDocuments(
         const linkCount = Array.isArray(meta.links) ? meta.links.length : 0;
         // Logarithmic boost: highly-connected docs get priority (max ~0.3 boost)
         const connectivityBoost = Math.min(0.3, Math.log2(1 + backlinkCount + linkCount) * 0.05);
-        scoredResults.set(filePath, baseScore + connectivityBoost);
+        // Orphan/deadend penalty: no backlinks AND no links = likely orphan
+        const orphanPenalty = (backlinkCount === 0 && linkCount === 0) ? -0.15 : 0;
+        scoredResults.set(filePath, baseScore + connectivityBoost + orphanPenalty);
       }
     }
 
@@ -472,36 +559,60 @@ export async function writeRetroToVault(params: {
   summary: string;
   lessonsLearned: { keep: string[]; stop: string[]; start: string[] };
   metrics?: Record<string, number | string>;
+  /** Vault-relative path to the plan document that spawned this sprint. */
+  planPath?: string;
+  /** Vault-relative path to the previous retro for the follows chain. */
+  prevRetroPath?: string;
 }): Promise<{ path: string } | null> {
   const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const fileName = `${dateStr}_retro_${params.sprintId}.md`;
 
-  const content = [
-    `# Sprint Retro: ${params.sprintId}`,
-    '',
-    `> Generated: ${new Date().toISOString()}`,
-    '',
-    '## Summary',
-    params.summary,
-    '',
-    '## Keep',
-    ...params.lessonsLearned.keep.map((item) => `- ${item}`),
-    '',
-    '## Stop',
-    ...params.lessonsLearned.stop.map((item) => `- ${item}`),
-    '',
-    '## Start',
-    ...params.lessonsLearned.start.map((item) => `- ${item}`),
-    '',
-    params.metrics ? '## Metrics' : '',
-    params.metrics
-      ? Object.entries(params.metrics).map(([k, v]) => `- **${k}**: ${v}`).join('\n')
-      : '',
-  ].filter((line) => line !== undefined).join('\n');
+  const builder = doc()
+    .title(`Sprint Retro: ${params.sprintId}`)
+    .tag('retro', `sprint-${params.sprintId}`, 'lessons-learned')
+    .property('schema', 'retro/v1')
+    .property('sprint_id', params.sprintId)
+    .property('created_at', new Date().toISOString());
 
-  const tags = ['retro', `sprint-${params.sprintId}`, 'lessons-learned'];
+  // Automatic backlinks
+  if (params.planPath) builder.spawnedBy(params.planPath);
+  if (params.prevRetroPath) builder.follows(params.prevRetroPath);
+
+  builder
+    .section('What Shipped')
+    .line(`**Date**: ${dateStr}`)
+    .line(`**Sprint ID**: ${params.sprintId}`)
+    .line('')
+    .line(params.summary);
+
+  if (params.metrics && Object.keys(params.metrics).length > 0) {
+    builder.section('Metrics').table(
+      ['Metric', 'Value'],
+      Object.entries(params.metrics).map(([k, v]) => [k, String(v)]),
+    );
+  }
+
+  builder.section('What Went Well (Keep)').bullets(
+    params.lessonsLearned.keep.length > 0
+      ? params.lessonsLearned.keep
+      : ['(no successes to note)'],
+  );
+
+  builder.section("What Didn't Go Well (Stop)").bullets(
+    params.lessonsLearned.stop.length > 0
+      ? params.lessonsLearned.stop
+      : ['(no failures)'],
+  );
+
+  builder.section('What to Try (Start)').bullets(
+    params.lessonsLearned.start.length > 0
+      ? params.lessonsLearned.start
+      : ['Review phase success rate trend across sprints'],
+  );
+
+  const { markdown: content, tags, properties } = builder.build();
 
   try {
     const result = await writeObsidianNoteWithAdapter({
@@ -510,11 +621,7 @@ export async function writeRetroToVault(params: {
       fileName: `retros/${fileName}`,
       content,
       tags,
-      properties: {
-        schema: 'retro/v1',
-        sprint_id: params.sprintId,
-        created_at: new Date().toISOString(),
-      },
+      properties,
     });
 
     if (result) {
@@ -553,24 +660,31 @@ async function writeQueryInsight(params: {
   const timeTag = new Date().toISOString().slice(11, 16).replace(':', '');
   const fileName = `insights/${dateStr}_query_${timeTag}.md`;
 
-  const topSources = params.sourceFiles.slice(0, 5).map((f) => `- [[${f}]]`).join('\n');
+  const builder = doc()
+    .title('Query Insight')
+    .tag('query-insight', params.intent, 'reactive-learning')
+    .property('schema', 'query-insight/v1')
+    .property('intent', params.intent)
+    .property('doc_count', params.documentCount)
+    .property('latency_ms', params.executionTimeMs)
+    .section('Details')
+    .line(`> ${new Date().toISOString()}`)
+    .line('')
+    .line(`**Question:** ${params.question.slice(0, 200)}`)
+    .line(`**Intent:** ${params.intent}`)
+    .line(`**Documents found:** ${params.documentCount}`)
+    .line(`**Execution:** ${params.executionTimeMs}ms`);
 
-  const content = [
-    `# Query Insight`,
-    '',
-    `> ${new Date().toISOString()}`,
-    '',
-    `**Question:** ${params.question.slice(0, 200)}`,
-    `**Intent:** ${params.intent}`,
-    `**Documents found:** ${params.documentCount}`,
-    `**Execution:** ${params.executionTimeMs}ms`,
-    '',
-    '## Top Sources',
-    topSources,
-    '',
-    '## Context',
-    `This note was auto-generated by the RAG reactive learning loop to map frequently asked topics back to vault structure.`,
-  ].join('\n');
+  builder.section('Top Sources');
+  for (const f of params.sourceFiles.slice(0, 5)) {
+    builder.line(`- [[${f}]]`);
+    builder.references(f);
+  }
+
+  builder.section('Context')
+    .line('This note was auto-generated by the RAG reactive learning loop to map frequently asked topics back to vault structure.');
+
+  const { markdown: content, tags, properties } = builder.build();
 
   try {
     await writeObsidianNoteWithAdapter({
@@ -578,13 +692,8 @@ async function writeQueryInsight(params: {
       vaultPath,
       fileName,
       content,
-      tags: ['query-insight', params.intent, 'reactive-learning'],
-      properties: {
-        schema: 'query-insight/v1',
-        intent: params.intent,
-        doc_count: params.documentCount,
-        latency_ms: params.executionTimeMs,
-      },
+      tags,
+      properties,
     });
     logger.debug('[OBSIDIAN-RAG] Query insight written: %s', fileName);
   } catch (error) {
@@ -639,42 +748,41 @@ export async function flushKnowledgeGaps(): Promise<{ path: string } | null> {
     byIntent.set(gap.intent, existing);
   }
 
-  const sections: string[] = [
-    `# Knowledge Gaps Report`,
-    '',
-    `> Generated: ${new Date().toISOString()}`,
-    `> Total unanswered queries: ${_knowledgeGaps.length}`,
-    '',
-  ];
+  const builder = doc()
+    .title('Knowledge Gaps Report')
+    .tag('knowledge-gap', 'needs-content', 'auto-generated')
+    .property('schema', 'knowledge-gap/v1')
+    .property('gap_count', _knowledgeGaps.length)
+    .property('created_at', new Date().toISOString())
+    .section('Summary')
+    .line(`> Generated: ${new Date().toISOString()}`)
+    .line(`> Total unanswered queries: ${_knowledgeGaps.length}`);
 
   for (const [intent, gaps] of byIntent) {
-    sections.push(`## ${intent} (${gaps.length})`);
+    builder.section(`${intent} (${gaps.length})`);
     for (const gap of gaps) {
       const ts = new Date(gap.timestamp).toISOString().slice(11, 19);
-      sections.push(`- [${ts}] ${gap.question}`);
+      builder.bullet(`[${ts}] ${gap.question}`);
     }
-    sections.push('');
   }
 
-  sections.push('## Recommended Actions');
-  sections.push('- Review unanswered questions and create or update relevant vault notes');
-  sections.push('- Consider adding tags or backlinks to improve discoverability');
+  builder.section('Recommended Actions')
+    .bullet('Review unanswered questions and create or update relevant vault notes')
+    .bullet('Consider adding tags or backlinks to improve discoverability');
 
   const count = _knowledgeGaps.length;
   _knowledgeGaps.length = 0; // Clear buffer after flush
+
+  const { markdown: content, tags, properties } = builder.build();
 
   try {
     const result = await writeObsidianNoteWithAdapter({
       guildId: '',
       vaultPath,
       fileName,
-      content: sections.join('\n'),
-      tags: ['knowledge-gap', 'needs-content', 'auto-generated'],
-      properties: {
-        schema: 'knowledge-gap/v1',
-        gap_count: count,
-        created_at: new Date().toISOString(),
-      },
+      content,
+      tags,
+      properties,
     });
 
     if (result) {
@@ -695,6 +803,83 @@ export function getKnowledgeGapCount(): number {
 }
 
 // ── Daily Note Auto-Append ─────────────────────────────────────
+
+// ── Lightweight graph-first lore hints (for agent memory pipeline) ──
+
+export type LoreHint = {
+  text: string;
+  filePath: string;
+  score: number;
+  backlinks: number;
+};
+
+/**
+ * Lightweight graph-first document hints for the agent memory pipeline.
+ * Uses intent routing + connectivity boost + 2-hop traversal — same as
+ * queryObsidianRAG but skips full document loading and context assembly.
+ * Returns scored snippet hints suitable for direct merge into memory hints.
+ */
+export async function queryObsidianLoreHints(
+  goal: string,
+  options?: { maxDocs?: number; guildId?: string },
+): Promise<LoreHint[]> {
+  const maxDocs = Math.max(1, Math.min(8, options?.maxDocs ?? 4));
+
+  try {
+    const intent = inferIntent(goal);
+    const routes = INTENT_ROUTES[intent];
+    const documentPaths = await findRelatedDocuments(goal, routes, maxDocs, options?.guildId);
+
+    if (documentPaths.length === 0) return [];
+
+    // Load lightweight graph metadata (TTL-cached)
+    const vaultPath = getObsidianVaultRoot();
+    let graphMetadata = graphMetaCache.get(GRAPH_META_CACHE_KEY);
+    if (!graphMetadata) {
+      graphMetadata = await getObsidianGraphMetadataWithAdapter({ vaultPath: vaultPath || '' });
+      graphMetaCache.set(GRAPH_META_CACHE_KEY, graphMetadata, GRAPH_META_CACHE_TTL_MS);
+    }
+
+    // Load documents through cache (metadata_first style — only snippets)
+    const documents = await loadDocumentsWithCache(documentPaths, async (filePath) => {
+      return vaultPath
+        ? await readObsidianFileWithAdapter({ vaultPath, filePath })
+        : null;
+    });
+
+    const hints: LoreHint[] = [];
+    for (const [filePath, doc] of documents) {
+      const meta = graphMetadata[filePath];
+      const backlinkCount = Array.isArray(meta?.backlinks) ? meta.backlinks.length : 0;
+      const linkCount = Array.isArray(meta?.links) ? meta.links.length : 0;
+      const connectivityScore = Math.min(0.3, Math.log2(1 + backlinkCount + linkCount) * 0.05);
+
+      const title = meta?.title || filePath.split('/').pop()?.replace(/\.md$/, '') || filePath;
+      const snippet = String(doc.content || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+      const tags = Array.isArray(meta?.tags) ? meta.tags.slice(0, 5).join(', ') : '';
+
+      const textParts = [
+        `[obsidian:${filePath}]`,
+        tags ? `(${tags})` : null,
+        `${title}: ${snippet}`,
+      ].filter(Boolean).join(' ');
+
+      hints.push({
+        text: textParts,
+        filePath,
+        score: connectivityScore,
+        backlinks: backlinkCount,
+      });
+    }
+
+    return hints
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxDocs);
+  } catch (err) {
+    logger.debug('[OBSIDIAN-RAG] Lore hints failed: %s', err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
 
 export async function appendToDailyNote(content: string): Promise<boolean> {
   try {

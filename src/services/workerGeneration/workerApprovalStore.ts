@@ -412,9 +412,11 @@ export const createApproval = async (
   };
   store.set(id, entry);
   const removedIds = enforceStoreLimit();
-  await upsertApprovalToSupabase(entry);
-  await deleteApprovalsFromSupabase(removedIds);
-  await queueSave();
+  await Promise.all([
+    upsertApprovalToSupabase(entry),
+    deleteApprovalsFromSupabase(removedIds),
+    queueSave(),
+  ]);
 
   return { ...entry };
 };
@@ -442,8 +444,10 @@ export const updateApprovalStatus = async (
     entry.approvedBy = extra?.approvedBy || 'unknown';
     entry.releaseEvidenceId = `opendev-release:${id}`;
   }
-  await upsertApprovalToSupabase(entry);
-  await queueSave();
+  await Promise.all([
+    upsertApprovalToSupabase(entry),
+    queueSave(),
+  ]);
   return true;
 };
 
@@ -456,8 +460,10 @@ export const updateApprovalCode = async (id: string, code: string, sandboxDir: s
   entry.sandboxFilePath = sandboxFilePath;
   entry.status = 'pending';
   entry.updatedAt = now();
-  await upsertApprovalToSupabase(entry);
-  await queueSave();
+  await Promise.all([
+    upsertApprovalToSupabase(entry),
+    queueSave(),
+  ]);
   return true;
 };
 

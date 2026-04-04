@@ -99,7 +99,8 @@ export const createEvalRun = async (params: {
       sampleCount: 0,
       promotedAt: null,
     };
-  } catch {
+  } catch (err) {
+    logger.debug('[EVAL-AB] register failed: %s', err instanceof Error ? err.message : String(err));
     return null;
   }
 };
@@ -119,13 +120,15 @@ export const getPendingEvalRuns = async (guildId: string): Promise<EvalAbRun[]> 
 
     if (error || !data) return [];
 
-    return (data as any[]).map(rowToEvalRun);
-  } catch {
+    return (data as Record<string, unknown>[]).map(rowToEvalRun);
+  } catch (err) {
+    logger.debug('[EVAL-AB] pending runs fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
     return [];
   }
 };
 
-const rowToEvalRun = (row: any): EvalAbRun => ({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase row shape is dynamic
+const rowToEvalRun = (row: Record<string, any>): EvalAbRun => ({
   id: row.id,
   guildId: String(row.guild_id),
   evalName: String(row.eval_name),
@@ -197,7 +200,8 @@ const collectEvalSampleWithSnapshot = async (
     }).eq('id', evalRun.id);
 
     return { baselineReward: avgBaseline, candidateReward: avgCandidate };
-  } catch {
+  } catch (err) {
+    logger.debug('[EVAL-AB] reward computation failed: %s', err instanceof Error ? err.message : String(err));
     return null;
   }
 };
@@ -322,8 +326,8 @@ export const runEvalPipeline = async (guildId: string): Promise<{
       }
 
       await client.from('eval_ab_runs').update(updates).eq('id', run.id);
-    } catch {
-      // Best-effort verdict persistence
+    } catch (err) {
+      logger.debug('[EVAL-AB] verdict persist failed run=%s: %s', run.id, err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -349,8 +353,9 @@ export const getRecentEvalRuns = async (
       .limit(Math.min(limit, 100));
 
     if (error || !data) return [];
-    return (data as any[]).map(rowToEvalRun);
-  } catch {
+    return (data as Record<string, unknown>[]).map(rowToEvalRun);
+  } catch (err) {
+    logger.debug('[EVAL-AB] recent results fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
     return [];
   }
 };

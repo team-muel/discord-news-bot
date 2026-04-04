@@ -92,7 +92,7 @@ const handleSubscribeYouTubeCommand = async (
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '영상/게시글 구독은 유튜브채널을 입력해주세요.', EMBED_WARN), ephemeral: true });
     return;
   }
-  if (!targetChannel || !isValidSubscribeChannelType((targetChannel as any).type)) {
+  if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 구독 대상으로 지정할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
@@ -102,7 +102,7 @@ const handleSubscribeYouTubeCommand = async (
     const result = await createYouTubeSubscription({
       userId: interaction.user.id,
       guildId: interaction.guildId,
-      discordChannelId: (targetChannel as any).id,
+      discordChannelId: targetChannel.id,
       channelInput,
       kind,
     });
@@ -110,7 +110,7 @@ const handleSubscribeYouTubeCommand = async (
     await interaction.editReply(
       buildSimpleEmbed(
         DISCORD_MESSAGES.subscribe.titleSubscribeResult,
-        `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})${accessNotice}`,
+        `${state}: [${kind}] youtube=${result.channelId} -> discord=<#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})${accessNotice}`,
         EMBED_SUCCESS,
       ),
     );
@@ -137,7 +137,7 @@ const handleSubscribeNewsCommand = async (
   }
   const selectedChannel = interaction.options.getChannel('디스코드채널', false);
   const targetChannel = selectedChannel || interaction.channel;
-  if (!targetChannel || !isValidSubscribeChannelType((targetChannel as any).type)) {
+  if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 등록할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
   }
@@ -147,13 +147,13 @@ const handleSubscribeNewsCommand = async (
     const result = await createNewsChannelSubscription({
       userId: interaction.user.id,
       guildId: interaction.guildId,
-      discordChannelId: (targetChannel as any).id,
+      discordChannelId: targetChannel.id,
     });
     const state = result.created ? '등록 완료' : '이미 등록됨';
     await interaction.editReply(
       buildSimpleEmbed(
         DISCORD_MESSAGES.subscribe.titleNewsSubscribe,
-        `${state}: news -> <#${(targetChannel as any).id}> (${getChannelTypeLabel((targetChannel as any).type)})${accessNotice}`,
+        `${state}: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})${accessNotice}`,
         EMBED_SUCCESS,
       ),
     );
@@ -327,30 +327,12 @@ export const handleGroupedSubscribeCommand = async (
   ).trim();
   const hasTargetChannel = Boolean(interaction.options.getChannel('디스코드채널'));
 
-  let legacySub: string | null = null;
-  try { legacySub = interaction.options.getSubcommand(false); } catch { legacySub = null; }
-
   const action =
     explicitAction ||
-    (legacySub === '목록'
-      ? 'list'
-      : legacySub === '해제'
-        ? 'remove'
-        : legacySub && legacySub !== '구독'
-          ? 'add'
-          : hasTargetChannel || channelInput
-            ? 'add'
-            : 'list');
+    (hasTargetChannel || channelInput ? 'add' : 'list');
 
   const kind =
     explicitKind ||
-    (legacySub === '영상'
-      ? 'videos'
-      : legacySub === '게시글'
-        ? 'posts'
-        : legacySub === '뉴스'
-          ? 'news'
-          : '') ||
     (channelInput ? 'videos' : hasTargetChannel ? 'news' : '');
 
   if (action === 'list') { await handleSubscriptionListCommand(interaction); return; }

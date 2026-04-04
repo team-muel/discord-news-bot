@@ -5,6 +5,7 @@ import {
   listAvailableSkills,
   getPhaseActionName,
   getPhaseLeadAgent,
+  loadSkillReference,
   FAST_PATH_PHASE_INFO,
 } from './skillPromptLoader';
 
@@ -91,9 +92,43 @@ describe('skillPromptLoader', () => {
       }
     });
 
+    it('HITL Act/Ask 규칙을 파싱한다', () => {
+      const def = loadSkillPrompt('implement');
+      expect(def).not.toBeNull();
+      if (def) {
+        expect(def.hitlAct.length).toBeGreaterThan(0);
+        expect(def.hitlAsk.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('references 파일 목록을 발견한다', () => {
+      const def = loadSkillPrompt('implement');
+      expect(def).not.toBeNull();
+      if (def) {
+        expect(def.referenceFiles.length).toBeGreaterThan(0);
+        expect(def.referenceFiles).toContain('backward-compat-checklist.md');
+      }
+    });
+
     it('존재하지 않는 스킬은 null을 반환한다', () => {
       const def = loadSkillPrompt('nonexistent-skill');
       expect(def).toBeNull();
+    });
+  });
+
+  describe('loadSkillReference', () => {
+    it('implement의 reference 파일을 로드한다', () => {
+      const content = loadSkillReference('implement', 'backward-compat-checklist.md');
+      expect(content).not.toBeNull();
+      expect(content).toContain('Backward Compatibility');
+    });
+
+    it('존재하지 않는 reference 파일은 null을 반환한다', () => {
+      expect(loadSkillReference('implement', 'nonexistent.md')).toBeNull();
+    });
+
+    it('잘못된 파일명은 거부한다', () => {
+      expect(loadSkillReference('implement', '../../../etc/passwd')).toBeNull();
     });
   });
 
@@ -104,6 +139,16 @@ describe('skillPromptLoader', () => {
       if (prompt) {
         expect(typeof prompt).toBe('string');
         expect(prompt.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('HITL 규칙이 프롬프트에 포함된다', () => {
+      const prompt = buildPhaseSystemPrompt('implement');
+      expect(prompt).not.toBeNull();
+      if (prompt) {
+        expect(prompt).toContain('HITL Decision');
+        expect(prompt).toContain('Proceed without asking');
+        expect(prompt).toContain('MUST confirm before proceeding');
       }
     });
 

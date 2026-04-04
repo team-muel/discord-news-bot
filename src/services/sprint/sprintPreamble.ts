@@ -18,12 +18,12 @@ import type { ActionExecutionResult } from '../skills/actions/types';
 
 const PHASE_TOOL_CATEGORIES: Record<string, ActionCategory[]> = {
   plan:      ['agent', 'data'],
-  implement: ['code', 'tool', 'data'],
+  implement: ['code', 'tool', 'data', 'automation'],
   review:    ['data', 'content', 'code'],
   qa:        ['code', 'tool'],
   'security-audit': ['code', 'tool'],
-  'ops-validate':   ['ops', 'data', 'tool'],
-  ship:      ['ops', 'code'],
+  'ops-validate':   ['ops', 'data', 'tool', 'automation'],
+  ship:      ['ops', 'code', 'automation'],
   retro:     ['data', 'agent'],
 };
 
@@ -189,11 +189,18 @@ export const getActiveSessionCount = (): number => {
 // ──── Preamble builder ────────────────────────────────────────────────────────
 
 const SEARCH_BEFORE_BUILDING = [
-  '## Search Before Building',
-  'Before building anything involving unfamiliar patterns or infrastructure:',
-  '1. Layer 1 (Tried & True): Check if the runtime/framework already has a built-in.',
-  '2. Layer 2 (New & Popular): Search recent best practices — but scrutinize trends critically.',
-  '3. Layer 3 (First Principles): Reason from the specific problem. If conventional wisdom is wrong, name the insight.',
+  '## Search Before Building — Reuse First',
+  'Before creating ANY new file, function, or service:',
+  '1. **Reuse Gate**: Search existing codebase for a service that already does 70%+ of what you need. Extend it.',
+  '2. Layer 1 (Tried & True): Check if the runtime/framework already has a built-in.',
+  '3. Layer 2 (New & Popular): Search recent best practices — but scrutinize trends critically.',
+  '4. Layer 3 (First Principles): Reason from the specific problem. If conventional wisdom is wrong, name the insight.',
+  '',
+  '### New File Creation Rules',
+  '- New files per sprint are HARD-CAPPED (default: 3). The scope guard enforces this.',
+  '- Before creating a new file, you MUST cite 3 existing files you searched and explain why none suffices.',
+  '- Test files (.test.ts) for modified code do NOT count toward the cap.',
+  '- If you hit the cap, STOP and extend an existing file instead.',
   '',
   'The cost of checking is near-zero. The cost of not checking is reinventing something worse.',
 ].join('\n');
@@ -325,4 +332,245 @@ export const loadJournalPreambleSection = async (): Promise<string> => {
   } catch {
     return '';
   }
+};
+
+// ──── Phase Context Enrichment (Layer 2: cross-adapter context) ───────────────
+
+/**
+ * Phase→adapter mapping for context enrichment.
+ * Each phase lists adapters + actions to invoke for additional context before execution.
+ */
+type PhaseEnrichmentAction = {
+  adapterId: string;
+  action: string;
+  args: (objective: string, changedFiles: string[]) => Record<string, unknown>;
+  label: string;
+};
+
+const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
+  plan: [
+    {
+      adapterId: 'deepwiki',
+      action: 'wiki.read',
+      args: (obj) => ({ repo: 'team-muel/discord-news-bot' }),
+      label: 'Self-repo architecture overview',
+    },
+    {
+      adapterId: 'deepwiki',
+      action: 'wiki.ask',
+      args: (obj) => ({ repo: 'team-muel/discord-news-bot', question: `Architecture patterns relevant to: ${obj.slice(0, 200)}` }),
+      label: 'Self-wiki reference',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.research',
+      args: (obj) => ({ query: `Best practices and patterns for: ${obj.slice(0, 300)}`, sources: ['github', 'docs'] }),
+      label: 'Deep research (OpenJarvis)',
+    },
+    {
+      adapterId: 'mcp-indexing',
+      action: 'index.context',
+      args: (obj) => ({ goal: obj.slice(0, 200) }),
+      label: 'Code index context',
+    },
+  ],
+  implement: [
+    {
+      adapterId: 'mcp-indexing',
+      action: 'index.context',
+      args: (obj) => ({ goal: obj.slice(0, 200) }),
+      label: 'Code index context',
+    },
+    {
+      adapterId: 'openclaw',
+      action: 'agent.health',
+      args: () => ({}),
+      label: 'OpenClaw Gateway status',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.memory.search',
+      args: (obj) => ({ query: obj.slice(0, 300), limit: 3 }),
+      label: 'Memory knowledge search',
+    },
+    {
+      adapterId: 'openshell',
+      action: 'sandbox.list',
+      args: () => ({}),
+      label: 'Available sandboxes',
+    },
+  ],
+  review: [
+    {
+      adapterId: 'litellm-admin',
+      action: 'proxy.health',
+      args: () => ({}),
+      label: 'LLM proxy health',
+    },
+    {
+      adapterId: 'deepwiki',
+      action: 'wiki.ask',
+      args: (obj) => ({ repo: 'team-muel/discord-news-bot', question: `Common review issues for: ${obj.slice(0, 150)}` }),
+      label: 'Wiki review patterns',
+    },
+  ],
+  qa: [
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.ask',
+      args: (obj, files) => ({ question: `Test coverage gaps for: ${obj.slice(0, 150)}. Files: ${files.slice(0, 5).join(', ')}` }),
+      label: 'Test gap analysis',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.eval',
+      args: (obj) => ({ dataset: 'ipw_mixed', limit: 5 }),
+      label: 'Eval benchmark baseline',
+    },
+    {
+      adapterId: 'openshell',
+      action: 'sandbox.list',
+      args: () => ({}),
+      label: 'Available sandboxes for testing',
+    },
+  ],
+  'security-audit': [
+    {
+      adapterId: 'litellm-admin',
+      action: 'proxy.health',
+      args: () => ({}),
+      label: 'LLM proxy health',
+    },
+    {
+      adapterId: 'openclaw',
+      action: 'agent.health',
+      args: () => ({}),
+      label: 'OpenClaw Gateway status',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.memory.search',
+      args: (obj) => ({ query: `security vulnerabilities related to: ${obj.slice(0, 200)}`, limit: 5 }),
+      label: 'Security knowledge search',
+    },
+  ],
+  'ops-validate': [
+    {
+      adapterId: 'litellm-admin',
+      action: 'proxy.models',
+      args: () => ({}),
+      label: 'Available models',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.telemetry',
+      args: () => ({ window: '1h' }),
+      label: 'Recent telemetry metrics',
+    },
+    {
+      adapterId: 'n8n',
+      action: 'workflow.status',
+      args: () => ({}),
+      label: 'n8n workflow health',
+    },
+  ],
+  ship: [
+    {
+      adapterId: 'openclaw',
+      action: 'agent.health',
+      args: () => ({}),
+      label: 'OpenClaw Gateway status',
+    },
+    {
+      adapterId: 'litellm-admin',
+      action: 'proxy.health',
+      args: () => ({}),
+      label: 'LLM proxy health',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.bench',
+      args: () => ({}),
+      label: 'Pre-ship benchmark',
+    },
+  ],
+  retro: [
+    {
+      adapterId: 'deepwiki',
+      action: 'wiki.ask',
+      args: (obj) => ({ repo: 'team-muel/discord-news-bot', question: `Retrospective analysis: what patterns exist for: ${obj.slice(0, 150)}` }),
+      label: 'Self-wiki retro reference',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.skill.discover',
+      args: () => ({ limit: 5 }),
+      label: 'Missing skill candidates',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.digest',
+      args: (obj) => ({ topic: `Sprint retrospective: ${obj.slice(0, 100)}` }),
+      label: 'Auto-generated sprint digest',
+    },
+    {
+      adapterId: 'openjarvis',
+      action: 'jarvis.telemetry',
+      args: () => ({ window: '24h' }),
+      label: 'Sprint telemetry (24h)',
+    },
+  ],
+};
+
+/**
+ * Enrich a sprint phase with cross-adapter context.
+ * Returns additional preamble sections or empty string if nothing available.
+ * Never throws — all adapter calls are best-effort with tight timeouts.
+ */
+export const enrichPhaseContext = async (
+  phase: string,
+  objective: string,
+  changedFiles: string[],
+): Promise<string> => {
+  const enrichmentActions = PHASE_ENRICHMENT_MAP[phase];
+  if (!enrichmentActions || enrichmentActions.length === 0) return '';
+
+  const sections: string[] = [];
+
+  // Run enrichment calls in parallel with a tight timeout
+  const results = await Promise.allSettled(
+    enrichmentActions.map(async (ea) => {
+      const { executeExternalAction } = await import('../tools/externalAdapterRegistry');
+      const result = await executeExternalAction(ea.adapterId, ea.action, ea.args(objective, changedFiles));
+      return { label: ea.label, adapterId: ea.adapterId, result };
+    }),
+  );
+
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;
+    const { label, result } = r.value;
+    if (!result.ok || result.output.length === 0) continue;
+
+    // GAP-014: Log when enrichment output is truncated
+    const totalLines = result.output.length;
+    const totalChars = result.output.join('\n').length;
+    const content = result.output.slice(0, 3).join('\n').slice(0, 1500);
+    if (totalLines > 3 || totalChars > 1500) {
+      const { default: log } = await import('../../logger');
+      log.debug('[ENRICHMENT] %s output truncated: kept 3/%d lines, %d/%d chars', label, totalLines, content.length, totalChars);
+    }
+    if (content.trim()) {
+      sections.push(`### ${label}\n${content}`);
+    }
+  }
+
+  if (sections.length === 0) return '';
+
+  return [
+    '## External Context (auto-enriched)',
+    'The following context was gathered from platform adapters:',
+    '',
+    ...sections,
+    '',
+  ].join('\n');
 };

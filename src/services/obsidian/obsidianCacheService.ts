@@ -23,30 +23,55 @@ const flushHitCounts = async (): Promise<void> => {
   const batch = new Map(pendingHitCounts);
   pendingHitCounts.clear();
   const db = getSupabaseClient();
-  for (const [filePath, increment] of batch) {
-    try {
-      // Read current hit_count then add increment (not atomic, but avoids blind overwrite)
-      const { data: row } = await db
-        .from('obsidian_cache')
-        .select('hit_count')
-        .eq('file_path', filePath)
-        .limit(1)
-        .single();
-      const currentCount = Number.isFinite(Number(row?.hit_count)) ? Number(row?.hit_count) : 0;
-      await db
-        .from('obsidian_cache')
-        .update({
-          hit_count: currentCount + increment,
-          last_accessed_at: new Date().toISOString(),
-        })
-        .eq('file_path', filePath);
-    } catch {
-      // Best-effort: drop failed increments
-    }
+  const now = new Date().toISOString();
+
+  // Parallel atomic increments — each UPDATE is independent.
+  // Uses RPC to atomically increment hit_count without a separate SELECT.
+  const tasks = [...batch.entries()].map(([filePath, increment]) => {
+    const rpcCall = async () => {
+      const { error } = await db.rpc('increment_obsidian_cache_hit', {
+        p_file_path: filePath,
+        p_increment: increment,
+        p_accessed_at: now,
+      });
+      if (error) {
+        // Fallback: plain update (non-atomic but still avoids N+1 SELECT)
+        await db
+          .from('obsidian_cache')
+          .update({ last_accessed_at: now })
+          .eq('file_path', filePath)
+          .then(() => undefined);
+      }
+    };
+    return rpcCall().catch(() => { /* best-effort */ });
+  });
+  // Limit concurrency to prevent connection pool exhaustion
+  for (let i = 0; i < tasks.length; i += MAX_PARALLEL_LOADS) {
+    await Promise.allSettled(tasks.slice(i, i + MAX_PARALLEL_LOADS));
   }
 };
 
-setInterval(() => { void flushHitCounts(); }, HIT_FLUSH_INTERVAL_MS).unref();
+// Lazy flush: timer is only active when there are pending hits to flush.
+// Starts on first cache hit, auto-stops when buffer is empty.
+let flushTimer: ReturnType<typeof setInterval> | null = null;
+
+const ensureFlushTimer = (): void => {
+  if (flushTimer) return;
+  flushTimer = setInterval(() => {
+    if (pendingHitCounts.size === 0) {
+      // No pending data — stop timer until next cache hit
+      if (flushTimer) {
+        clearInterval(flushTimer);
+        flushTimer = null;
+      }
+      return;
+    }
+    void flushHitCounts();
+  }, HIT_FLUSH_INTERVAL_MS);
+  if (flushTimer && typeof flushTimer === 'object' && 'unref' in flushTimer) {
+    (flushTimer as NodeJS.Timeout).unref();
+  }
+};
 
 export interface CachedDocument {
   filePath: string;
@@ -113,6 +138,7 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
     // Guard against unbounded map growth from many unique file paths
     if (pendingHitCounts.size < MAX_PENDING_HIT_ENTRIES) {
       pendingHitCounts.set(filePath, (pendingHitCounts.get(filePath) ?? 0) + 1);
+      ensureFlushTimer();
     }
 
     logger.debug('[OBSIDIAN-CACHE] HIT %s', filePath);

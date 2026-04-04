@@ -1,5 +1,4 @@
 import { getAutomationRuntimeSnapshot } from '../automationBot';
-import { getTradingEngineRuntimeSnapshot } from '../trading/tradingEngine';
 import {
   RUNTIME_ALERT_AUTOMATION_PARTIAL_FAIL_MIN_COUNT,
   RUNTIME_ALERT_AUTOMATION_PARTIAL_FAIL_MIN_RATIO,
@@ -51,26 +50,5 @@ export const checkAutomationAlerts = async (emitAlert: EmitAlert) => {
     ].join(' | ');
 
     await emitAlert({ key, title, message, tags: { subsystem: 'automation', job: jobName } });
-  }
-};
-
-export const checkTradingAlerts = async (emitAlert: EmitAlert) => {
-  const runtime = getTradingEngineRuntimeSnapshot();
-  if (!runtime.started) {
-    return;
-  }
-
-  if (runtime.paused && runtime.pausedReason && runtime.pausedReason.startsWith('memory_guard')) {
-    const key = `trading:memory_guard:${runtime.pausedReason}`;
-    const title = 'Trading engine paused by memory guard';
-    const message = `${runtime.pausedReason} | symbols=${runtime.symbols.join(',')}`;
-    await emitAlert({ key, title, message, tags: { subsystem: 'trading', reason: 'memory_guard' } });
-  }
-
-  if (runtime.lastLoopError) {
-    const key = `trading:loop_error:${runtime.lastLoopError}`;
-    const title = 'Trading engine loop error';
-    const message = `lastLoopError=${runtime.lastLoopError} | lastLoopAt=${runtime.lastLoopAt || 'n/a'}`;
-    await emitAlert({ key, title, message, tags: { subsystem: 'trading', reason: 'loop_error' } });
   }
 };

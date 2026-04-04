@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/node';
 import logger from '../../logger';
+import { delegateAlertDispatch, shouldDelegate } from '../automation/n8nDelegationService';
 import { RUNTIME_ALERT_COOLDOWN_MS, RUNTIME_ALERT_WEBHOOK_URL } from './config';
 import type { EmitAlert } from './types';
 
@@ -21,6 +22,15 @@ const shouldSendAlert = (key: string): boolean => {
 };
 
 const sendWebhookAlert = async (title: string, message: string, tags?: Record<string, string>) => {
+  // n8n delegation: try dispatching alert via n8n
+  if (shouldDelegate('alert-dispatch')) {
+    const n8n = await delegateAlertDispatch(title, message, tags || {});
+    if (n8n.delegated && n8n.ok) {
+      return; // n8n handled the alert dispatch
+    }
+    // fall through to inline webhook
+  }
+
   if (!RUNTIME_ALERT_WEBHOOK_URL) {
     return;
   }

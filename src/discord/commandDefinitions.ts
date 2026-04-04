@@ -362,6 +362,28 @@ const ALL_COMMANDS = [
     .addSubcommand((sub) =>
       sub.setName('동기화').setDescription('슬래시 커맨드 강제 동기화'),
     ),
+  new SlashCommandBuilder()
+    .setName('내정보')
+    .setDescription('내 프로필과 활동 통계를 확인합니다')
+    .setDMPermission(false),
+  new SlashCommandBuilder()
+    .setName('유저정보')
+    .setDescription('관리자: 특정 유저의 CRM 프로필과 활동 정보를 조회합니다')
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption((o) =>
+      o.setName('유저').setDescription('조회할 대상 유저').setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName('공개범위').setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
+        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName('지표리뷰')
+    .setDescription('관리자: Metric Review — KR별 지표 현황, 리스크, 활성 Intent 요약')
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ];
 
 export const commandDefinitions = ALL_COMMANDS

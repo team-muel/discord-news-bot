@@ -183,8 +183,8 @@ export const parseSubgoalsFromLlm = (raw: string): string[] => {
       if (normalized.length > 0) {
         return normalized;
       }
-    } catch {
-      // Fallback parsing below.
+    } catch (err) {
+      logger.debug('[REASONING] subgoal JSON parse fallback: %s', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -245,8 +245,8 @@ export const evaluateSelfGuidedBeam = async (params: {
         probabilitySource: providerProb !== null ? 'provider_logprob' : 'self_eval',
       };
     }
-  } catch {
-    // Fallback to deterministic estimate below.
+  } catch (err) {
+    logger.debug('[REASONING] ORM eval fallback: %s', err instanceof Error ? err.message : String(err));
   }
 
   const fallbackCorrectness = clamp01(params.ormScore / 100, 0.55);
@@ -603,8 +603,8 @@ export const runToTShadowExploration = async (params: {
           });
         }
       }
-    } catch {
-      // Shadow mode is best-effort and must not break primary path.
+    } catch (err) {
+      logger.debug('[REASONING] shadow mutation failed: %s', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -644,8 +644,8 @@ export const runToTShadowExploration = async (params: {
           replayIndex: replayIndex + 1,
         },
       });
-    } catch {
-      // Replay branch is also best-effort.
+    } catch (err) {
+      logger.debug('[REASONING] replay branch failed: %s', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -798,8 +798,8 @@ export const decomposeGoalLeastToMost = async (params: {
     if (subgoals.length >= 2) {
       return subgoals;
     }
-  } catch {
-    // Fail closed to baseline path.
+  } catch (err) {
+    logger.debug('[REASONING] least-to-most decomposition failed: %s', err instanceof Error ? err.message : String(err));
   }
 
   return [];

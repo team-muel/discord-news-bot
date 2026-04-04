@@ -9,7 +9,7 @@ import {
   getDiscordLoginSessionExpiryMs,
   purgeExpiredDiscordLoginSessions,
   upsertDiscordLoginSession,
-} from '../services/discordLoginSessionStore';
+} from '../services/discord-support/discordLoginSessionStore';
 import { AUTH_MAX_GUILDS_IN_CACHE, AUTH_MAX_USERS_PER_GUILD } from './runtimePolicy';
 import { getErrorMessage } from './ui';
 import logger from '../logger';

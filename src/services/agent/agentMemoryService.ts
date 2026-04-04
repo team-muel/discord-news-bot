@@ -5,18 +5,25 @@ import { TtlCache } from '../../utils/ttlCache';
 import { assessMemoryPoisonRisk } from '../memory/memoryPoisonGuard';
 import { buildSocialContextHints } from '../communityGraphService';
 import { readObsidianLoreWithAdapter } from '../obsidian/router';
+import { queryObsidianLoreHints } from '../obsidian/obsidianRagService';
+import type { LoreHint } from '../obsidian/obsidianRagService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { searchMemoryHybrid } from './agentMemoryStore';
+import { searchMemoryHybrid, searchMemoryTiered } from './agentMemoryStore';
 import { loadSelfNotes } from '../entityNervousSystem';
 import { batchCountMemoryLinks } from '../memory/memoryEvolutionService';
+import { getUserEmbedding, isUserEmbeddingEnabled } from '../memory/userEmbeddingService';
+import { cosineSimilarity } from '../../utils/vectorMath';
 
 const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));
 const memoryHintCache = new TtlCache<string[]>(200);
+const userEmbeddingCache = new TtlCache<number[] | null>(50);
+const USER_EMBEDDING_CACHE_TTL_MS = 5 * 60_000; // 5min — user embeddings refresh every 24h
 
 const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();
 const OBSIDIAN_INPUT_MAX_LENGTH = Math.max(40, Math.min(1200, parseIntegerEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320)));
 const MEMORY_HINT_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_HINT_MIN_CONFIDENCE || 0.35)));
 const MEMORY_HINT_RECENCY_HALF_LIFE_DAYS = Math.max(3, Number(process.env.MEMORY_HINT_RECENCY_HALF_LIFE_DAYS || 30));
+const MEMORY_TIERED_SEARCH_ENABLED = (process.env.MEMORY_TIERED_SEARCH_ENABLED || 'true').trim().toLowerCase() === 'true';
 
 type MemoryHintCandidate = {
   text: string;
@@ -119,6 +126,17 @@ const readObsidianLore = async (params: { guildId: string; goal: string }): Prom
   }
 
   try {
+    // Graph-first path: use intent routing + connectivity boost + 2-hop traversal
+    const hints = await queryObsidianLoreHints(safeGoal, {
+      maxDocs: 4,
+      guildId: safeGuildId,
+    });
+
+    if (hints.length > 0) {
+      return hints.map((h) => h.text);
+    }
+
+    // Fallback: direct adapter read (no graph features)
     return await readObsidianLoreWithAdapter({
       guildId: safeGuildId,
       goal: safeGoal,
@@ -167,12 +185,13 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<M
     const terms = safeGoalTerms(goal);
     const queryText = terms.join(' ');
 
-    const items = await searchMemoryHybrid({
+    const items = await searchMemoryTiered({
       guildId,
       query: queryText,
       type: null,
       limit: 12,
-      extraSelect: 'owner_user_id, priority, tier',
+      extraSelect: 'owner_user_id, priority',
+      flatSearch: !MEMORY_TIERED_SEARCH_ENABLED,
     });
 
     if (items.length === 0) {
@@ -283,6 +302,55 @@ export const buildAgentMemoryHints = async (params: {
     if (id) item.linkCount = linkCounts.get(id) || 0;
   }
 
+  // ── User embedding for personalized affinity scoring (Daangn-inspired) ────
+  // Load the requester's user embedding (guild-constrained, RCBS-analog).
+  // Cached for 5min to avoid re-fetching on every hint build.
+  let userEmbeddingVec: number[] | null = null;
+  if (params.requesterUserId && isUserEmbeddingEnabled()) {
+    const embCacheKey = `${safeGuildId}:${params.requesterUserId}`;
+    const cached = userEmbeddingCache.get(embCacheKey);
+    if (cached !== null) {
+      userEmbeddingVec = cached;
+    } else {
+      const userEmb = await getUserEmbedding(params.requesterUserId, safeGuildId).catch(() => null);
+      userEmbeddingVec = userEmb?.embedding ?? null;
+      userEmbeddingCache.set(embCacheKey, userEmbeddingVec, USER_EMBEDDING_CACHE_TTL_MS);
+    }
+  }
+
+  // Batch-fetch memory item embeddings for user affinity scoring
+  // Only when user embedding is loaded — skips the entire query otherwise
+  const memoryEmbeddingsById = new Map<string, number[]>();
+  if (userEmbeddingVec && memoryIds.length > 0) {
+    try {
+      const client = getSupabaseClient();
+      const { data: embRows } = await client
+        .from('memory_items')
+        .select('id, embedding')
+        .in('id', memoryIds)
+        .not('embedding', 'is', null)
+        .limit(memoryIds.length);
+
+      for (const row of (embRows || []) as Array<{ id?: string; embedding?: string | number[] }>) {
+        const id = String(row.id || '');
+        if (!id) continue;
+        const rawEmb = row.embedding;
+        let vec: number[];
+        if (Array.isArray(rawEmb)) {
+          vec = (rawEmb as number[]).map(Number).filter(Number.isFinite);
+        } else if (typeof rawEmb === 'string') {
+          const cleaned = String(rawEmb).replace(/^\[|\]$/g, '');
+          vec = cleaned.split(',').map(Number).filter(Number.isFinite);
+        } else {
+          continue;
+        }
+        if (vec.length > 0) memoryEmbeddingsById.set(id, vec);
+      }
+    } catch {
+      // non-critical — scoring falls back to non-affinity weights
+    }
+  }
+
   // ADR-006: Tier weight — higher tiers get priority
   const tierWeight = (tier: string): number => {
     switch (tier) {
@@ -299,34 +367,82 @@ export const buildAgentMemoryHints = async (params: {
     return Math.min(0.06, Math.log2(count + 1) * 0.02);
   };
 
+  // ── Unified cross-source scoring ──────────────────────────────────────────
+  // Score Obsidian hints and Supabase lore into the same ranking pipeline
+  // to enable cross-source dedup and quality-based ordering.
+
+  type ScoredHint = { text: string; rank: number; source: 'memory' | 'obsidian' | 'lore' };
+  const allScoredHints: ScoredHint[] = [];
+
+  // Score memory items (ADR-006 scoring + user affinity from Daangn-inspired embeddings)
   const socialByUser = parseSocialUserScores(socialHints);
-  const rankedMemoryHints = memoryHints
-    .map((item) => {
-      const socialScore = item.ownerUserId ? (socialByUser.get(item.ownerUserId) || 0) : 0;
-      const recencyScore = parseIsoRecencyScore(item.updatedAt);
-      const pinnedBoost = item.pinned ? 0.08 : 0;
-      const tierBoost = tierWeight(item.tier);
-      const graphBoost = linkBonus(item.linkCount);
-      const rank = clamp01(
-        (item.confidence * 0.40) +
-        (recencyScore * 0.30) +
-        (socialScore * 0.15) +
-        pinnedBoost +
-        tierBoost +
-        graphBoost,
-      );
-      return {
-        ...item,
-        rank,
-        socialScore,
-        recencyScore,
-      };
-    })
-    .sort((a, b) => b.rank - a.rank)
-    .map((item) => `${item.text} [rank=${item.rank.toFixed(2)} rel=${item.socialScore.toFixed(2)} recency=${item.recencyScore.toFixed(2)}]`);
+  for (const item of memoryHints) {
+    const socialScore = item.ownerUserId ? (socialByUser.get(item.ownerUserId) || 0) : 0;
+    const recencyScore = parseIsoRecencyScore(item.updatedAt);
+    const pinnedBoost = item.pinned ? 0.08 : 0;
+    const tierBoost = tierWeight(item.tier);
+    const graphBoost = linkBonus(item.linkCount);
+
+    // User affinity: cosine similarity between user embedding and memory embedding
+    // Weights redistributed: confidence 0.35, recency 0.25, social 0.15, userAffinity 0.10
+    const memIdMatch = item.text.match(/\[memory:(\S+?)[\s\]]/);
+    const memId = memIdMatch?.[1] || '';
+    const memEmbedding = memId ? memoryEmbeddingsById.get(memId) : undefined;
+    const userAffinityScore = (userEmbeddingVec && memEmbedding)
+      ? clamp01(cosineSimilarity(userEmbeddingVec, memEmbedding))
+      : 0;
+    const hasUserAffinity = userAffinityScore > 0;
+
+    const rank = clamp01(
+      (item.confidence * (hasUserAffinity ? 0.35 : 0.40)) +
+      (recencyScore * (hasUserAffinity ? 0.25 : 0.30)) +
+      (socialScore * 0.15) +
+      (userAffinityScore * 0.10) +
+      pinnedBoost +
+      tierBoost +
+      graphBoost,
+    );
+    const label = `${item.text} [rank=${rank.toFixed(2)} rel=${socialScore.toFixed(2)} recency=${recencyScore.toFixed(2)}${hasUserAffinity ? ` affinity=${userAffinityScore.toFixed(2)}` : ''}]`;
+    allScoredHints.push({ text: label, rank, source: 'memory' });
+  }
+
+  // Score Obsidian hints (graph connectivity → rank)
+  for (const hint of obsidianHints) {
+    const text = String(hint || '').trim();
+    if (!text) continue;
+    // Obsidian hints from graph-first path carry [obsidian:path] prefix
+    // Base score 0.55 (between high-confidence memory and low-confidence memory)
+    // + connectivity bonus extracted from the hint metadata
+    const backlinkMatch = text.match(/←(\d+)/);
+    const backlinkCount = backlinkMatch ? Number(backlinkMatch[1]) : 0;
+    const connectivityBoost = Math.min(0.12, Math.log2(1 + backlinkCount) * 0.04);
+    const rank = clamp01(0.55 + connectivityBoost);
+    allScoredHints.push({ text: `${text} [rank=${rank.toFixed(2)}]`, rank, source: 'obsidian' });
+  }
+
+  // Score Supabase lore hints (static medium score — curated content)
+  for (const hint of supabaseLoreHints) {
+    const text = String(hint || '').trim();
+    if (!text) continue;
+    const rank = 0.50; // curated lore gets stable mid-tier priority
+    allScoredHints.push({ text: `[lore] ${text} [rank=${rank.toFixed(2)}]`, rank, source: 'lore' });
+  }
+
+  // Dedup: if same text snippet appears in both obsidian and lore, keep higher-ranked one
+  const dedupTexts = new Set<string>();
+  const dedupedHints: ScoredHint[] = [];
+  for (const hint of allScoredHints.sort((a, b) => b.rank - a.rank)) {
+    // Dedup key: first 80 chars of the hint text (after stripping source prefixes)
+    const dedupKey = hint.text.replace(/^\[(memory|obsidian|lore):[^\]]*\]\s*/i, '').slice(0, 80).toLowerCase();
+    if (dedupTexts.has(dedupKey)) continue;
+    dedupTexts.add(dedupKey);
+    dedupedHints.push(hint);
+  }
+
+  const rankedHintTexts = dedupedHints.map((h) => h.text);
 
   const goalHint = `현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`;
-  const merged = [goalHint, ...selfNotes, ...socialHints, ...rankedMemoryHints, ...supabaseLoreHints, ...obsidianHints].filter(Boolean);
+  const merged = [goalHint, ...selfNotes, ...socialHints, ...rankedHintTexts].filter(Boolean);
   memoryHintCache.set(cacheKey, merged, MEMORY_HINT_CACHE_TTL_MS);
   return merged.slice(0, maxItems);
 };

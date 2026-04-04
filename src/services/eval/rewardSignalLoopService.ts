@@ -53,6 +53,24 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
           const snapshot = await computeRewardSnapshot(guildId);
           if (snapshot) {
             await persistRewardSnapshot(snapshot);
+
+            // Signal bus: emit reward trend for downstream consumers
+            try {
+              const { computeRewardTrend } = await import('./rewardSignalService');
+              const trend = await computeRewardTrend(guildId);
+              if (trend && trend.trend !== 'stable') {
+                const { emitSignal } = await import('../runtime/signalBus');
+                emitSignal(
+                  trend.trend === 'degrading' ? 'reward.degrading' : 'reward.improving',
+                  'rewardSignalLoop',
+                  guildId,
+                  { trend: trend.trend, delta: trend.delta },
+                );
+              }
+            } catch {
+              // Best-effort signal emission
+            }
+
             return true;
           }
           return false;

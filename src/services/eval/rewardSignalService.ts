@@ -81,7 +81,8 @@ const fetchReactionSignals = async (
       else if (NEGATIVE_EMOJI.has(emoji)) down += delta;
     }
     return { up: Math.max(0, up), down: Math.max(0, down) };
-  } catch {
+  } catch (err) {
+    logger.debug('[REWARD-SIGNAL] emoji-score compute failed: %s', err instanceof Error ? err.message : String(err));
     return { up: 0, down: 0 };
   }
 };
@@ -106,7 +107,8 @@ const fetchSessionOutcomes = async (
     const total = data.length;
     const succeeded = data.filter((r: any) => r.status === 'completed').length;
     return { total, succeeded };
-  } catch {
+  } catch (err) {
+    logger.debug('[REWARD-SIGNAL] session-outcomes fetch failed: %s', err instanceof Error ? err.message : String(err));
     return { total: 0, succeeded: 0 };
   }
 };
@@ -136,7 +138,8 @@ const fetchRetrievalQuality = async (
 
     const avg = scores.reduce((sum, v) => sum + v, 0) / scores.length;
     return { count: data.length, avgScore: avg };
-  } catch {
+  } catch (err) {
+    logger.debug('[REWARD-SIGNAL] retrieval-quality metric failed: %s', err instanceof Error ? err.message : String(err));
     return { count: 0, avgScore: null };
   }
 };
@@ -170,7 +173,8 @@ const fetchLatencyMetrics = async (
     const p95Index = Math.min(latencies.length - 1, Math.ceil(latencies.length * 0.95) - 1);
     const p95Ms = latencies[p95Index];
     return { avgMs, p95Ms };
-  } catch {
+  } catch (err) {
+    logger.debug('[REWARD-SIGNAL] latency-metrics fetch failed: %s', err instanceof Error ? err.message : String(err));
     return { avgMs: null, p95Ms: null };
   }
 };
@@ -282,7 +286,8 @@ export const persistRewardSnapshot = async (snapshot: RewardSnapshot): Promise<b
     void import('../entityNervousSystem').then((m) => m.adjustBehaviorFromReward(snapshot.guildId)).catch(() => { /* best-effort */ });
 
     return true;
-  } catch {
+  } catch (err) {
+    logger.warn('[REWARD-SIGNAL] reward-persist failed guild=%s: %s', snapshot.guildId, err instanceof Error ? err.message : String(err));
     return false;
   }
 };
@@ -307,7 +312,7 @@ export const getRecentRewardSnapshots = async (
 
     if (error || !data) return [];
 
-    return (data as any[]).map((row) => ({
+    return (data as Record<string, unknown>[]).map((row) => ({
       guildId: String(row.guild_id),
       windowStart: String(row.window_start),
       windowEnd: String(row.window_end),
@@ -327,7 +332,8 @@ export const getRecentRewardSnapshots = async (
         p95LatencyMs: row.p95_latency_ms != null ? Number(row.p95_latency_ms) : null,
       },
     }));
-  } catch {
+  } catch (err) {
+    logger.debug('[REWARD-SIGNAL] reward-snapshots fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
     return [];
   }
 };

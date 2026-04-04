@@ -19,52 +19,27 @@ Keep the platform stable while shipping fast improvements for Discord operations
 - Keep docs in sync when changing behavior that impacts operators.
 - Keep workflows and scripts idempotent for unattended runs.
 
-## Internal Naming Boundary
+## Tech Stack
 
-- Internal role names (Implement, Architect, Review, Operate) are repository-local collaboration labels describing function.
-- They do not imply that similarly named external OSS frameworks are installed or directly executed.
-- External OSS tool names (NVIDIA NemoClaw, Stanford OpenJarvis, NVIDIA OpenShell, OpenClaw) are separate and used only via external adapters.
-- Canonical naming: `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/ROLE_RENAME_MAP.md`.
+- TypeScript + Node.js (ESM — `"type": "module"`)
+- Discord.js for bot interaction
+- Supabase for database
+- Vitest for testing
+- Render for deployment
 
-## Sprint Skills (gstack-inspired)
+## Sprint Skills
 
-Available skills in sprint order:
-`/plan`, `/implement`, `/review`, `/qa`, `/security-audit`, `/ops-validate`, `/ship`, `/retro`
+Available in sprint order: `/plan`, `/implement`, `/review`, `/qa`, `/security-audit`, `/ops-validate`, `/ship`, `/retro`
 
-Each skill has a SKILL.md in `.github/skills/{name}/` defining:
-
+Each skill has a SKILL.md in `.github/skills/{name}/` with:
 - When to use, process steps, input/output contract
-- Runtime action mapping for production execution
-- Next skill transitions
+- HITL decision guide (when to ask vs. act)
+- `references/` folder for domain detail (loaded on demand, not upfront)
+- Runtime action mapping and next skill transitions
 
-Sprint flow: `plan → implement → review → qa → ops-validate → ship → retro`
-
-Phase → Lead Agent:
-
-- `/plan` → Architect
-- `/implement` → Implement
-- `/review` → Review
-- `/qa` → Implement (QA execution)
-- `/security-audit` → Review (security)
-- `/ops-validate` → Operate (operations)
-- `/ship` → Operate (release)
-- `/retro` → Architect (reflection)
-
-## Autonomous Execution
-
-The production runtime can autonomously:
-
-- Detect runtime errors and trigger bugfix sprints
-- Classify CS tickets and trigger feature/fix sprints
-- Run scheduled security audits and code improvement sprints
-- Create branches, commit changes, and open PRs via GitHub API
-
-Autonomy is governed by guild-level policy (`SPRINT_AUTONOMY_LEVEL`):
-
-- `full-auto`: all phases auto (use cautiously)
-- `approve-ship`: ship requires approval (recommended default)
-- `approve-impl`: implement + ship require approval
-- `manual`: all phases require approval
+Detailed routing: see `instructions/multi-agent-routing.instructions.md`
+Autonomy policy: see `instructions/autonomy-policy.instructions.md`
+Naming boundary: see `instructions/naming-boundary.instructions.md`
 
 ## Release Gate Checklist
 
@@ -81,3 +56,18 @@ Autonomy is governed by guild-level policy (`SPRINT_AUTONOMY_LEVEL`):
 - Sprint pipeline uses existing `actionRunner` with governance gates, FinOps budgets, and circuit breakers.
 - Sanitize user-facing Discord outputs, including wrapped deliverable sections.
 - Keep Obsidian CLI and headless roles explicit in docs and release gates.
+
+## Domain Boundary Contracts
+
+Cross-domain data flow rules live in `docs/contracts/`. Read the relevant contract before implementing features that cross domain boundaries:
+
+- `DISCORD_TO_MEMORY.md` — channel metadata resolution, tag format, thread context
+- `MEMORY_TO_OBSIDIAN.md` — sanitization gate, frontmatter, adapter routing
+- `OBSIDIAN_READ_LOOP.md` — graph-first retrieval strategy
+- `DISCORD_SOCIAL_GRAPH.md` — community graph, private thread exclusion
+- `SPRINT_DATA_FLOW.md` — phase transitions, action scoping, retro writes
+
+Domain-scoped instruction files auto-load when editing relevant directories:
+- `instructions/discord-data.instructions.md` → `src/discord/**`, `src/services/discord-support/**`
+- `instructions/obsidian-write.instructions.md` → `src/services/obsidian/**`
+- `instructions/memory-domain.instructions.md` → `src/services/memory/**`

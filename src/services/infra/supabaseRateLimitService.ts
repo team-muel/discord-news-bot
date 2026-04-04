@@ -36,8 +36,9 @@ export const consumeSupabaseRateLimit = async (params: {
     }
 
     const row = Array.isArray(data) ? data[0] : data;
-    const allowed = Boolean((row as any)?.allowed);
-    const retryAfterSec = Math.max(1, Number((row as any)?.retry_after_sec || 1));
+    const r = row as Record<string, unknown> | null;
+    const allowed = Boolean(r?.allowed);
+    const retryAfterSec = Math.max(1, Number(r?.retry_after_sec || 1));
 
     return {
       ok: true,

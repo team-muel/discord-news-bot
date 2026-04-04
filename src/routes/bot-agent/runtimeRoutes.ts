@@ -6,12 +6,12 @@ import {
   getSupabaseExtensionOpsSnapshot,
   listSupabaseCronJobs,
 } from '../../services/infra/supabaseExtensionOpsService';
-import { getPlatformLightweightingReport } from '../../services/platformLightweightingService';
+import { getPlatformLightweightingReport } from '../../services/runtime/platformLightweightingService';
 import { getAgentRoleWorkersHealthSnapshot, listAgentRoleWorkerSpecs, probeHttpWorkerHealth } from '../../services/agent/agentRoleWorkerService';
-import { getRuntimeSchedulerPolicySnapshot } from '../../services/runtimeSchedulerPolicyService';
-import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../../services/efficiencyOptimizationService';
+import { getRuntimeSchedulerPolicySnapshot } from '../../services/runtime/runtimeSchedulerPolicyService';
+import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../../services/runtime/efficiencyOptimizationService';
 import { getAgentTelemetryQueueSnapshot } from '../../services/agent/agentTelemetryQueue';
-import { summarizeOpencodeQueueReadiness } from '../../services/opencodeGitHubQueueService';
+import { summarizeOpencodeQueueReadiness } from '../../services/opencode/opencodeGitHubQueueService';
 import { getMemoryJobRunnerStats } from '../../services/memory/memoryJobRunner';
 import { getObsidianLoreSyncLoopStats } from '../../services/obsidian/obsidianLoreSyncService';
 import { getRetrievalEvalLoopStats } from '../../services/eval/retrievalEvalLoopService';

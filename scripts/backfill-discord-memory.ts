@@ -11,6 +11,7 @@ import {
 import { createMemoryItem } from '../src/services/agent/agentMemoryStore';
 import { recordCommunityInteractionEvent } from '../src/services/communityGraphService';
 import { getSupabaseClient, isSupabaseConfigured } from '../src/services/supabaseClient';
+import { isThreadChannel } from '../src/utils/discordChannelMeta';
 
 type CliOptions = {
   guildId: string;
@@ -128,8 +129,13 @@ const isTargetChannelType = (type: ChannelType): boolean => {
   return [
     ChannelType.GuildText,
     ChannelType.GuildAnnouncement,
+    ChannelType.GuildForum,
+    ChannelType.PublicThread,
+    ChannelType.AnnouncementThread,
   ].includes(type);
 };
+
+const isPrivateThreadType = (type: ChannelType): boolean => type === ChannelType.PrivateThread;
 
 type BackfillChannel = Pick<TextChannel, 'id' | 'messages'>;
 type BackfillSocialEventType = 'reply' | 'mention';
@@ -384,14 +390,24 @@ const ingestChannelMessages = async (
     }
 
     const content = String(message.content || '').trim();
+    const msgChannel = message.channel;
+    const msgIsThread = isThreadChannel(msgChannel.type);
+    const msgParentId = (msgChannel as any).parentId || null;
+    const channelTags = msgIsThread
+      ? [`thread:${message.channelId}`, ...(msgParentId ? [`channel:${msgParentId}`] : [])]
+      : [`channel:${message.channelId}`];
+    const sourceRef = msgIsThread && msgParentId
+      ? `discord://guild/${guildId}/channel/${msgParentId}/thread/${message.channelId}/message/${message.id}`
+      : `discord://guild/${guildId}/channel/${message.channelId}/message/${message.id}`;
+
     try {
       await createMemoryItem({
         guildId,
-        channelId: message.channelId,
+        channelId: msgIsThread && msgParentId ? msgParentId : message.channelId,
         type: 'episode',
         title: `discord:${message.author.id}:${new Date(message.createdTimestamp).toISOString().slice(0, 10)}`,
         content: content.slice(0, 2000),
-        tags: ['discord-chat', 'backfill', `user:${message.author.id}`, `channel:${message.channelId}`],
+        tags: ['discord-chat', 'backfill', `user:${message.author.id}`, ...channelTags],
         confidence: 0.5,
         actorId: 'system',
         ownerUserId: message.author.id,
@@ -399,7 +415,7 @@ const ingestChannelMessages = async (
           sourceKind: 'discord_message',
           sourceMessageId: message.id,
           sourceAuthorId: message.author.id,
-          sourceRef: `discord://guild/${guildId}/channel/${message.channelId}/message/${message.id}`,
+          sourceRef,
           excerpt: content.slice(0, 300),
         },
       });
@@ -465,7 +481,7 @@ const main = async (): Promise<void> => {
       .filter((channel): channel is Exclude<typeof channel, null> => channel !== null);
 
     const targetChannels = nonNullChannels
-      .filter((channel) => isTargetChannelType(channel.type) && 'messages' in channel)
+      .filter((channel) => isTargetChannelType(channel.type) && !isPrivateThreadType(channel.type) && 'messages' in channel)
       .map((channel) => channel as unknown as BackfillChannel)
       .filter((channel) => options.channelIds.length === 0 || options.channelIds.includes(channel.id));
 

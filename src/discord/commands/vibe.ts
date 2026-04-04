@@ -170,10 +170,12 @@ const inferAiModeFromLabel = (value: string): 'ai_chat' | 'ai_utility' | 'off' |
 };
 
 const inferChannelModeFromName = (message: Message): 'ai_chat' | 'ai_utility' | 'off' | null => {
-  const channelAny = message.channel as any;
-  const channelName = String(channelAny?.name || '');
-  const parentName = String(channelAny?.parent?.name || '');
-  const categoryName = String(channelAny?.parent?.parent?.name || '');
+  const ch = message.channel as unknown as Record<string, unknown>;
+  const channelName = String(ch?.name || '');
+  const parent = ch?.parent as Record<string, unknown> | null;
+  const parentName = String(parent?.name || '');
+  const grandparent = parent?.parent as Record<string, unknown> | null;
+  const categoryName = String(grandparent?.name || '');
   for (const probe of [categoryName, parentName, channelName]) {
     const mode = inferAiModeFromLabel(probe);
     if (mode) return mode;

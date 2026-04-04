@@ -7,7 +7,7 @@ import {
   readIndexedScope,
   resolveIndexedSymbolDefinition,
   searchIndexedSymbols,
-} from '../services/codeIndexService';
+} from '../services/opencode/codeIndexService';
 
 const toTextResult = (text: string, isError = false): McpToolCallResult => ({
   content: [{ type: 'text', text }],

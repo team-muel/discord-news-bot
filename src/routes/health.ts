@@ -3,6 +3,8 @@ import type { HealthResponse } from '../contracts/bot';
 import { getBotRuntimeSnapshot } from '../bot';
 import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
+import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
+import { getDelegationStatus } from '../services/automation/n8nDelegationService';
 
 export type RuntimeReadinessState = {
   botEnabled: boolean;
@@ -85,7 +87,7 @@ export function createHealthRouter(): Router {
     };
   };
 
-  router.get('/health', (_req, res) => {
+  router.get('/health', async (_req, res) => {
     const bot = buildBotSnapshot();
     const automation = getAutomationRuntimeSnapshot();
 
@@ -99,12 +101,41 @@ export function createHealthRouter(): Router {
     const status = allEnabledHealthy ? 'ok' : 'degraded';
     const botStatusGrade = !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline';
 
+    // n8n status: adapter availability + delegation config
+    let n8nStatus: {
+      adapterAvailable: boolean;
+      delegationEnabled: boolean;
+      delegationFirst: boolean;
+      cacheAvailable: boolean | null;
+      configuredTasks: number;
+      totalTasks: number;
+    } | undefined;
+
+    try {
+      const adapters = await getExternalAdapterStatus();
+      const n8nAdapter = adapters.find((a: { id: string }) => a.id === 'n8n');
+      const delegation = getDelegationStatus();
+      const taskEntries = Object.values(delegation.tasks);
+
+      n8nStatus = {
+        adapterAvailable: n8nAdapter?.available ?? false,
+        delegationEnabled: delegation.enabled,
+        delegationFirst: delegation.delegationFirst,
+        cacheAvailable: delegation.n8nCacheAvailable,
+        configuredTasks: taskEntries.filter((t) => t.configured).length,
+        totalTasks: taskEntries.length,
+      };
+    } catch {
+      // Non-critical: don't fail health endpoint if n8n probe errors
+    }
+
     const payload: HealthResponse = {
       status,
       botStatusGrade,
       uptimeSec: Math.floor(process.uptime()),
       bot,
       automation,
+      ...(n8nStatus ? { n8n: n8nStatus } : {}),
     };
 
     return res.status(200).json(payload);

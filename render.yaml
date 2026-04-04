@@ -135,11 +135,24 @@ services:
         value: "true"
       - key: SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED
         value: "true"
-      # Cross-model voice for sprint review phases
+      # External OSS adapters (lite mode — no CLI required, LiteLLM proxy fallback)
+      - key: OPENJARVIS_ENABLED
+        value: "true"
+      - key: NEMOCLAW_ENABLED
+        value: "true"
+      - key: OPENCLAW_ENABLED
+        value: "true"
+      - key: OPENCLAW_GATEWAY_URL
+        value: http://34.56.232.61:18789
+      - key: OPENCLAW_GATEWAY_TOKEN
+        sync: false
+      # Cross-model voice for sprint review phases (NemoClaw second opinion)
       - key: SPRINT_CROSS_MODEL_ENABLED
         value: "true"
       - key: SPRINT_CROSS_MODEL_PROVIDER
         value: muel-nemotron
+      - key: SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED
+        value: "true"
       # LangGraph executor shadow (graph fidelity validation)
       - key: LANGGRAPH_EXECUTOR_SHADOW_ENABLED
         value: "true"
@@ -158,6 +171,16 @@ services:
       - key: LITELLM_ADMIN_ADAPTER_ENABLED
         value: "true"
       - key: MCP_INDEXING_ADAPTER_ENABLED
+        value: "true"
+      - key: DEEPWIKI_ADAPTER_ENABLED
+        value: "true"
+      - key: OPENSHELL_ENABLED
+        value: "true"
+      - key: N8N_ENABLED
+        value: "true"
+      - key: SIGNAL_BUS_ENABLED
+        value: "true"
+      - key: SIGNAL_BUS_WIRING_ENABLED
         value: "true"
       - key: PG_CRON_BOOTSTRAP_ENABLED
         value: "true"

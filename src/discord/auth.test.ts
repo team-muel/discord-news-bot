@@ -33,7 +33,7 @@ const loadDiscordAuth = async (params?: {
   vi.doMock('../services/adminAllowlistService', () => ({
     isUserAdmin: mocks.isUserAdmin,
   }));
-  vi.doMock('../services/discordLoginSessionStore', () => ({
+  vi.doMock('../services/discord-support/discordLoginSessionStore', () => ({
     getDiscordLoginSessionExpiryMs: mocks.getDiscordLoginSessionExpiryMs,
     purgeExpiredDiscordLoginSessions: mocks.purgeExpiredDiscordLoginSessions,
     upsertDiscordLoginSession: mocks.upsertDiscordLoginSession,

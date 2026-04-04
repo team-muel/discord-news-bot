@@ -1,7 +1,9 @@
 ---
 description: "Sprint Phase: QA — test the running application, find bugs, fix them with atomic commits, re-verify. Auto-generates regression tests."
-applyTo: "**"
+applyTo: "src/**"
 ---
+
+<!-- Token Budget: ~400 base, ~800 with references -->
 
 # /qa
 
@@ -58,6 +60,28 @@ applyTo: "**"
 | All tests pass     | `/ops-validate`             |
 | Bugs found & fixed | `/review` (re-review fixes) |
 | Unfixable issues   | `/plan` (re-scope)          |
+
+## HITL Decision
+
+### Act (proceed without asking)
+
+- Running existing test suites
+- Writing new regression tests for found bugs
+- Fixing bugs with clear reproduction path
+- Re-running tests after fixes
+
+### Ask (confirm before proceeding)
+
+- Modifying test infrastructure or configuration
+- Skipping or disabling flaky tests
+- Bugs that require architectural changes to fix
+- Test failures that may be environment-specific
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/test-execution-guide.md` — commands, templates, and common QA surfaces
 
 ## Runtime Counterpart
 

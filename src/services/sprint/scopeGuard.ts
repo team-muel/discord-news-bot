@@ -13,6 +13,7 @@ import {
   SPRINT_SCOPE_GUARD_ENABLED,
   SPRINT_SCOPE_GUARD_ALLOWED_DIRS,
   SPRINT_SCOPE_GUARD_PROTECTED_FILES,
+  SPRINT_NEW_FILE_CAP,
 } from '../../config';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ export type ScopeGuardSnapshot = {
   protectedFiles: string[];
   blockedAttempts: number;
   recentBlocked: Array<{ file: string; reason: string; at: string }>;
+  newFileCap: number;
+  newFilesCreated: Map<string, string[]>;
 };
 
 // ──── State ───────────────────────────────────────────────────────────────────
@@ -51,6 +54,13 @@ const DESTRUCTIVE_PATTERNS = [
 
 let blockedAttempts = 0;
 const recentBlocked: Array<{ file: string; reason: string; at: string }> = [];
+
+// ──── New-file creation tracking (per sprint) ─────────────────────────────────
+// Tracks how many brand-new files each sprint has created.
+// Prevents the common agent anti-pattern of creating 10+ new files instead of
+// extending existing ones.
+
+const newFilesPerSprint = new Map<string, string[]>();
 const MAX_RECENT = 20;
 
 const recordBlocked = (file: string, reason: string): void => {
@@ -132,6 +142,52 @@ export const checkCommandSafety = (command: string): ScopeCheckResult => {
   return { allowed: true };
 };
 
+// ──── New-file creation gate ──────────────────────────────────────────────────
+
+/**
+ * Check if creating a new file is allowed within the sprint's new-file budget.
+ * Returns allowed:true if the file already exists (modification, not creation)
+ * or if the sprint hasn't hit its cap yet.
+ *
+ * Why: agents frequently create 10+ new files per sprint instead of extending
+ * existing services. This gate forces reuse-first behavior.
+ */
+export const checkNewFileCreation = (
+  sprintId: string,
+  filePath: string,
+  fileAlreadyExists: boolean,
+): ScopeCheckResult => {
+  if (!SPRINT_SCOPE_GUARD_ENABLED) return { allowed: true };
+  if (fileAlreadyExists) return { allowed: true }; // modification, not creation
+
+  const cap = SPRINT_NEW_FILE_CAP;
+  const created = newFilesPerSprint.get(sprintId) ?? [];
+
+  // Already tracked this file
+  if (created.includes(filePath)) return { allowed: true };
+
+  if (created.length >= cap) {
+    const reason = `New-file cap reached (${created.length}/${cap}). Extend an existing file instead of creating "${filePath}". Override with SPRINT_NEW_FILE_CAP env var.`;
+    recordBlocked(filePath, reason);
+    return { allowed: false, reason };
+  }
+
+  // Track this new file
+  created.push(filePath);
+  newFilesPerSprint.set(sprintId, created);
+  logger.info('[SCOPE-GUARD] new file %d/%d: %s (sprint=%s)', created.length, cap, filePath, sprintId);
+  return { allowed: true };
+};
+
+/** Get how many new files a sprint has created so far. */
+export const getNewFileCount = (sprintId: string): number =>
+  (newFilesPerSprint.get(sprintId) ?? []).length;
+
+/** Clear new-file tracking for a completed sprint. */
+export const clearNewFileTracking = (sprintId: string): void => {
+  newFilesPerSprint.delete(sprintId);
+};
+
 // ──── Snapshot ─────────────────────────────────────────────────────────────────
 
 export const getScopeGuardSnapshot = (): ScopeGuardSnapshot => ({
@@ -140,4 +196,6 @@ export const getScopeGuardSnapshot = (): ScopeGuardSnapshot => ({
   protectedFiles: Array.from(PROTECTED_FILES),
   blockedAttempts,
   recentBlocked: recentBlocked.slice(-10),
+  newFileCap: SPRINT_NEW_FILE_CAP,
+  newFilesCreated: newFilesPerSprint,
 });

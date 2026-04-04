@@ -78,11 +78,12 @@ const parseSearchResults = (output: string): ObsidianSearchResult[] => {
     if (Array.isArray(parsed)) {
       return parsed
         .map((row) => {
-          const filePath = String((row as any)?.path || (row as any)?.filePath || '').trim();
+          const r = row as Record<string, unknown>;
+          const filePath = String(r.path || r.filePath || '').trim();
           if (!filePath) return null;
-          const scoreRaw = Number((row as any)?.score ?? (row as any)?.rank ?? 0.5);
+          const scoreRaw = Number(r.score ?? r.rank ?? 0.5);
           const score = Number.isFinite(scoreRaw) ? scoreRaw : 0.5;
-          const title = String((row as any)?.title || path.basename(filePath, path.extname(filePath)) || 'Untitled').trim();
+          const title = String(r.title || path.basename(filePath, path.extname(filePath)) || 'Untitled').trim();
           return { filePath, title, score };
         })
         .filter((row): row is ObsidianSearchResult => Boolean(row));
@@ -129,17 +130,18 @@ const parseGraphMetadata = (output: string): Record<string, ObsidianNode> => {
 
     const metadata: Record<string, ObsidianNode> = {};
     for (const item of data) {
-      const filePath = String((item as any)?.path || (item as any)?.filePath || '').trim();
+      const r = item as Record<string, unknown>;
+      const filePath = String(r.path || r.filePath || '').trim();
       if (!filePath) {
         continue;
       }
       metadata[filePath] = {
         filePath,
-        title: String((item as any)?.title || path.basename(filePath, path.extname(filePath)) || '').trim() || undefined,
-        tags: Array.isArray((item as any)?.tags) ? (item as any).tags.map((v: unknown) => String(v || '').trim()).filter(Boolean) : [],
-        backlinks: Array.isArray((item as any)?.backlinks) ? (item as any).backlinks.map((v: unknown) => String(v || '').trim()).filter(Boolean) : [],
-        links: Array.isArray((item as any)?.links) ? (item as any).links.map((v: unknown) => String(v || '').trim()).filter(Boolean) : [],
-        category: (item as any)?.category ? String((item as any).category) : undefined,
+        title: String(r.title || path.basename(filePath, path.extname(filePath)) || '').trim() || undefined,
+        tags: Array.isArray(r.tags) ? (r.tags as unknown[]).map((v: unknown) => String(v || '').trim()).filter(Boolean) : [],
+        backlinks: Array.isArray(r.backlinks) ? (r.backlinks as unknown[]).map((v: unknown) => String(v || '').trim()).filter(Boolean) : [],
+        links: Array.isArray(r.links) ? (r.links as unknown[]).map((v: unknown) => String(v || '').trim()).filter(Boolean) : [],
+        category: r.category ? String(r.category) : undefined,
       };
     }
 

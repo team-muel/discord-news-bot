@@ -8,6 +8,7 @@ import {
   getSprintMetrics,
 } from '../../services/sprint/sprintOrchestrator';
 import { triggerManualSprint } from '../../services/sprint/sprintTriggers';
+import { rehydrateFromEvents, getEventSourcedEntity, getEventTimeline } from '../../services/sprint/eventSourcing/bridge';
 import { toBoundedInt, toStringParam, isOneOf } from '../../utils/validation';
 import type { BotAgentRouteDeps } from './types';
 import type { AutonomyLevel } from '../../services/sprint/sprintOrchestrator';
@@ -39,6 +40,45 @@ export function registerSprintRoutes(deps: BotAgentRouteDeps): void {
       return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Sprint pipeline not found' });
     }
     return res.json({ ok: true, pipeline });
+  });
+
+  // ── Event sourcing diagnostic endpoints ─────────────────────────────────
+
+  router.get('/agent/sprint/pipelines/:id/events', requireAdmin, async (req, res) => {
+    const sprintId = req.params.id;
+
+    // Try in-memory entity first, fall back to rehydration from event store
+    let entity = getEventSourcedEntity(sprintId);
+    if (!entity) {
+      entity = await rehydrateFromEvents(sprintId) ?? undefined;
+    }
+    if (!entity) {
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'No event-sourced data found for this pipeline' });
+    }
+
+    // Fetch raw events from the adapter for the timeline view
+    let rawEvents: unknown[] = [];
+    try {
+      rawEvents = await getEventTimeline(sprintId);
+    } catch {
+      // non-fatal: still return the state
+    }
+
+    return res.json({
+      ok: true,
+      state: {
+        currentPhase: entity.state.currentPhase,
+        isTerminal: entity.isTerminal,
+        totalPhasesExecuted: entity.state.totalPhasesExecuted,
+        implReviewLoopCount: entity.state.implementReviewLoopCount,
+        changedFiles: entity.state.changedFiles,
+        phaseResults: entity.state.phaseResults,
+        error: entity.state.error,
+      },
+      version: entity.version,
+      eventCount: rawEvents.length,
+      events: rawEvents,
+    });
   });
 
   // ── Write endpoints ─────────────────────────────────────────────────────

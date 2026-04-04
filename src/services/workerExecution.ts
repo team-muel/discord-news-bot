@@ -1,4 +1,6 @@
 import {
+  AGENT_ROLES,
+  LEGACY_AGENT_ROLES,
   inferAgentRoleByActionName,
   normalizeAgentRole,
   type ActionExecutionInput,
@@ -31,7 +33,7 @@ const normalizeStringList = (value: unknown): string[] => {
 
 const isAgentRole = (value: unknown): value is NonNullable<ActionExecutionResult['agentRole']> => {
   const role = String(value || '').trim().toLowerCase();
-  return normalizeAgentRole(role, '__invalid__' as any) !== ('__invalid__' as any);
+  return (AGENT_ROLES as readonly string[]).includes(role) || (LEGACY_AGENT_ROLES as readonly string[]).includes(role);
 };
 
 const normalizeHandoff = (value: unknown): ActionExecutionResult['handoff'] => {

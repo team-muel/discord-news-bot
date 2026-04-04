@@ -21,7 +21,26 @@
 
 ## Active Now (WIP <= 3)
 
-(empty — next milestone pending triage)
+1. [M-19] User CRM 심화 + Social Graph 고도화
+   - 코호트 세그먼트 자동 태깅 (power_user/casual/dormant)
+   - communityGraphService 클러스터 탐지 (connected component → community_clusters)
+   - 에스컬레이션 패턴 탐지 (escalation_signals)
+   - CRM snapshot에 social graph 요약 포함
+
+2. [M-20] LLM 레이턴시 SLO 자동 Fallback
+   - p95 > LATENCY_P95_THRESHOLD_MS 시 자동 provider 다운그레이드
+   - p95 레이턴시를 go/no-go gate 판정 입력에 포함
+   - 세션 품질 집계: 기존 quality_score 기반 SQL view (코드 최소화)
+
+3. [M-21] 서비스 모듈 유지보수성 개선
+   - 잔여 root-level 서비스 파일 → 하위 디렉토리 이동
+   - 순환 의존성 탐지 + 해소
+   - 서비스 간 계약 interface 파일 분리 (types/)
+
+## Queued Now (Approved, Not In Active WIP)
+
+1. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-21 완료 후 승격
+2. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
 
 ## Closed on 2026-04-06
 
@@ -122,9 +141,7 @@
 - 새 요청이 들어와도 기존 Active Now를 닫기 전에는 WIP를 늘리지 않는다.
 - Queued 항목은 `A-001`~`A-003` backlog owner가 붙어 있지 않으면 Active Now로 승격하지 않는다.
 
-## Queued Now (Approved, Not In Active WIP, Owner-Bound)
-
-(없음)
+## Closed Queued Now (Phase A-D, Owner-Bound)
 
 ### Closed Queued Items (Phase A-D)
 

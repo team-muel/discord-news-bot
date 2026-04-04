@@ -61,7 +61,8 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
       const batch = guildIds.slice(i, i + EVAL_LOOP_CONCURRENCY);
       const results = await Promise.allSettled(
         batch.map(async (guildId) => {
-          return runEvalPipeline(guildId);
+          const pipelineResult = await runEvalPipeline(guildId);
+          return { ...pipelineResult, guildId };
         }),
       );
 
@@ -72,6 +73,19 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
           stats.totalPromoted += result.value.promoted.length;
           stats.totalRejected += result.value.rejected.length;
           stats.completedGuilds += 1;
+
+          // Signal bus: emit promotion outcomes
+          try {
+            const { emitSignal } = await import('../runtime/signalBus');
+            for (const name of result.value.rejected) {
+              emitSignal('eval.promotion.failed', 'evalAutoPromoteLoop', result.value.guildId, { evalName: name, verdict: 'reject' });
+            }
+            for (const name of result.value.promoted) {
+              emitSignal('eval.promotion.succeeded', 'evalAutoPromoteLoop', result.value.guildId, { evalName: name, verdict: 'promote' });
+            }
+          } catch {
+            // Best-effort
+          }
         } else {
           stats.failedGuilds += 1;
           logger.warn(

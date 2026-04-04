@@ -9,6 +9,10 @@ const { buildAgentRuntimeReadinessReportMock } = vi.hoisted(() => ({
   buildAgentRuntimeReadinessReportMock: vi.fn(),
 }));
 
+const { executeExternalActionMock } = vi.hoisted(() => ({
+  executeExternalActionMock: vi.fn(),
+}));
+
 vi.mock('../../superAgentService', () => ({
   recommendSuperAgent: recommendSuperAgentMock,
   startSuperAgentSessionFromTask: startSuperAgentSessionFromTaskMock,
@@ -16,6 +20,10 @@ vi.mock('../../superAgentService', () => ({
 
 vi.mock('../../agent/agentRuntimeReadinessService', () => ({
   buildAgentRuntimeReadinessReport: buildAgentRuntimeReadinessReportMock,
+}));
+
+vi.mock('../../tools/externalAdapterRegistry', () => ({
+  executeExternalAction: executeExternalActionMock,
 }));
 
 vi.mock('../../llmClient', () => ({
@@ -29,6 +37,14 @@ import {
   nemoclawReviewAction,
   opendevPlanAction,
   openjarvisOpsAction,
+  jarvisResearchAction,
+  jarvisDigestAction,
+  jarvisMemoryIndexAction,
+  jarvisMemorySearchAction,
+  jarvisEvalAction,
+  jarvisTelemetryAction,
+  jarvisSchedulerRunAction,
+  jarvisSkillDiscoverAction,
   qaTestAction,
   csoAuditAction,
   releaseShipAction,
@@ -74,6 +90,9 @@ const recommendationFixture = {
 describe('agentCollab actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    executeExternalActionMock.mockResolvedValue({
+      ok: false, output: [], durationMs: 0, error: 'not configured',
+    });
     recommendSuperAgentMock.mockReturnValue(recommendationFixture);
     startSuperAgentSessionFromTaskMock.mockResolvedValue({
       recommendation: recommendationFixture,
@@ -200,12 +219,15 @@ describe('sprint phase actions', () => {
       expect(result.agentRole).toBe('review');
     });
 
-    it('returns ok with fallback text when LLM unavailable', async () => {
+    it('returns ok with audit result when executed', async () => {
       const result = await csoAuditAction.execute({ goal: 'audit auth module', guildId: 'g1' });
       expect(result.ok).toBe(true);
       expect(result.agentRole).toBe('review');
-      expect(result.artifacts[0]).toContain('Security Audit');
-      expect(result.artifacts[0]).toContain('manual audit required');
+      expect(result.artifacts.length).toBeGreaterThan(0);
+      // Pipeline mode outputs "Security Pipeline Report", LLM-only mode outputs "Security Audit"
+      const hasReport = result.artifacts[0].includes('Security Pipeline Report')
+        || result.artifacts[0].includes('Security Audit');
+      expect(hasReport).toBe(true);
     });
 
     it('is registered in the action registry', () => {
@@ -248,17 +270,186 @@ describe('sprint phase actions', () => {
       expect(result.agentRole).toBe('architect');
     });
 
-    it('returns ok with fallback text when LLM unavailable', async () => {
+    it('returns ok with quantitative fallback when LLM unavailable', async () => {
       const result = await retroSummarizeAction.execute({ goal: 'sprint-42 retro', guildId: 'g1' });
       expect(result.ok).toBe(true);
       expect(result.agentRole).toBe('architect');
-      expect(result.artifacts[0]).toContain('Sprint Retro');
-      expect(result.artifacts[0]).toContain('manual retro required');
+      expect(result.artifacts[0]).toContain('Sprint Retro (Quantitative)');
+      expect(result.artifacts[0]).toContain('Keep');
+      expect(result.artifacts[0]).toContain('Stop');
+    });
+
+    it('quantitative fallback includes phase data from args', async () => {
+      const result = await retroSummarizeAction.execute({
+        goal: 'sprint-99',
+        guildId: 'g1',
+        args: {
+          sprintId: 'sprint-99',
+          objective: 'Fix auth bug',
+          changedFiles: ['src/auth.ts'],
+          previousPhaseResults: [
+            { phase: 'plan', status: 'success', output: 'planned' },
+            { phase: 'implement', status: 'success', output: 'coded' },
+            { phase: 'review', status: 'failed', output: 'type error found' },
+          ],
+        },
+      });
+      expect(result.ok).toBe(true);
+      expect(result.artifacts[0]).toContain('succeeded: 2');
+      expect(result.artifacts[0]).toContain('failed: 1');
+      expect(result.artifacts[0]).toContain('src/auth.ts');
+      expect(result.artifacts[0]).toContain('review');
     });
 
     it('is registered in the action registry', () => {
       expect(getAction('retro.summarize')).not.toBeNull();
       expect(getAction('summary.retro')).not.toBeNull();
+    });
+  });
+
+  describe('sop.update', () => {
+    it('is registered in the action registry', () => {
+      expect(getAction('sop.update')).not.toBeNull();
+      expect(getAction('knowledge.update')).not.toBeNull();
+    });
+
+    it('returns NO_LESSONS on empty input', async () => {
+      const action = getAction('sop.update')!;
+      const result = await action.execute({ goal: 'test', args: { lessons: [] }, guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('NO_LESSONS');
+    });
+  });
+});
+
+// ──── OpenJarvis Extended Actions ─────────────────────────────────────────────
+
+describe('jarvis extended actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    executeExternalActionMock.mockResolvedValue({
+      ok: true, output: ['result line 1'], durationMs: 42, error: null,
+    });
+  });
+
+  describe('jarvis.research', () => {
+    it('returns QUERY_EMPTY on empty goal', async () => {
+      const result = await jarvisResearchAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('QUERY_EMPTY');
+    });
+
+    it('delegates to adapter and returns result', async () => {
+      const result = await jarvisResearchAction.execute({ goal: 'AI safety trends', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(result.name).toBe('jarvis.research');
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.research', expect.objectContaining({ query: 'AI safety trends' }));
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.research')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.digest', () => {
+    it('delegates to adapter with default topic', async () => {
+      const result = await jarvisDigestAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.digest', expect.objectContaining({ topic: 'daily briefing' }));
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.digest')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.memory.index', () => {
+    it('returns PATH_EMPTY on empty path', async () => {
+      const result = await jarvisMemoryIndexAction.execute({ goal: '', args: {}, guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('PATH_EMPTY');
+    });
+
+    it('delegates to adapter with path', async () => {
+      const result = await jarvisMemoryIndexAction.execute({ goal: '', args: { path: '/docs' }, guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.memory.index', { path: '/docs' });
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.memory.index')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.memory.search', () => {
+    it('returns QUERY_EMPTY on empty goal', async () => {
+      const result = await jarvisMemorySearchAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('QUERY_EMPTY');
+    });
+
+    it('delegates to adapter and returns result', async () => {
+      const result = await jarvisMemorySearchAction.execute({ goal: 'deployment rollback', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.memory.search', expect.objectContaining({ query: 'deployment rollback' }));
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.memory.search')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.eval', () => {
+    it('delegates to adapter with default dataset', async () => {
+      const result = await jarvisEvalAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.eval', expect.objectContaining({ dataset: 'ipw_mixed' }));
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.eval')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.telemetry', () => {
+    it('delegates to adapter with default window', async () => {
+      const result = await jarvisTelemetryAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.telemetry', { window: '1h' });
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.telemetry')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.scheduler.run', () => {
+    it('returns TASK_EMPTY on empty task', async () => {
+      const result = await jarvisSchedulerRunAction.execute({ goal: '', args: {}, guildId: 'g1' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('TASK_EMPTY');
+    });
+
+    it('delegates to adapter with task name', async () => {
+      const result = await jarvisSchedulerRunAction.execute({ goal: '', args: { task: 'daily-digest' }, guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.scheduler.run', { task: 'daily-digest' });
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.scheduler.run')).not.toBeNull();
+    });
+  });
+
+  describe('jarvis.skill.discover', () => {
+    it('delegates to adapter', async () => {
+      const result = await jarvisSkillDiscoverAction.execute({ goal: '', guildId: 'g1' });
+      expect(result.ok).toBe(true);
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.skill.discover', {});
+    });
+
+    it('is registered in the action registry', () => {
+      expect(getAction('jarvis.skill.discover')).not.toBeNull();
     });
   });
 });

@@ -1,9 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('node:child_process', () => {
+  const fakeCb = (_cmd: unknown, _opts: unknown, cb?: Function) => {
+    const callback = cb ?? _opts;
+    if (typeof callback === 'function') callback(null, { stdout: 'v1.0.0\n', stderr: '' });
+    return { stdout: 'v1.0.0\n', stderr: '' };
+  };
+  return {
+    exec: vi.fn(fakeCb),
+    execFile: vi.fn(fakeCb),
+  };
+});
+
+const fetchMock = vi.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({ models: [], status: 'ok' }),
+  text: async () => 'ok',
+});
+vi.stubGlobal('fetch', fetchMock);
+
 // Probe functions are side-effect-heavy (exec, fetch); test the structure and types
 describe('externalToolProbe', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.clearAllMocks();
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [], status: 'ok' }),
+      text: async () => 'ok',
+    });
   });
 
   it('probeAllExternalTools returns well-typed result', async () => {
@@ -29,7 +54,7 @@ describe('externalToolProbe', () => {
     expect(result.summary.total).toBe(7);
     expect(typeof result.summary.available).toBe('number');
     expect(typeof result.summary.apiReachable).toBe('number');
-  }, 20_000);
+  });
 
   it('getExternalToolById returns a single tool status', async () => {
     const { getExternalToolById } = await import('./externalToolProbe');
@@ -57,16 +82,19 @@ describe('externalAdapterTypes', () => {
 });
 
 describe('externalAdapterRegistry', () => {
-  it('listExternalAdapters returns all 4 adapters', async () => {
+  it('listExternalAdapters returns all 7 adapters', async () => {
     const { listExternalAdapters } = await import('./externalAdapterRegistry');
     const adapters = listExternalAdapters();
-    expect(adapters.length).toBe(4);
+    expect(adapters.length).toBe(7);
 
     const ids = adapters.map((a) => a.id);
     expect(ids).toContain('openshell');
     expect(ids).toContain('nemoclaw');
     expect(ids).toContain('openclaw');
     expect(ids).toContain('openjarvis');
+    expect(ids).toContain('n8n');
+    expect(ids).toContain('deepwiki');
+    expect(ids).toContain('obsidian');
   });
 
   it('getExternalAdapter returns undefined for unknown ID', async () => {
@@ -93,7 +121,7 @@ describe('externalAdapterRegistry', () => {
   it('getExternalAdapterStatus returns availability for all adapters', async () => {
     const { getExternalAdapterStatus } = await import('./externalAdapterRegistry');
     const statuses = await getExternalAdapterStatus();
-    expect(statuses.length).toBe(4);
+    expect(statuses.length).toBe(7);
     for (const s of statuses) {
       expect(s).toHaveProperty('id');
       expect(s).toHaveProperty('available');
@@ -127,13 +155,16 @@ describe('externalAdapterTypes — M-15 schema validation', () => {
     expect(validateAdapterId('MyAdapter')).toBe('myadapter');
   });
 
-  it('KNOWN_ADAPTER_IDS contains the 4 built-ins', async () => {
+  it('KNOWN_ADAPTER_IDS contains the 7 built-ins', async () => {
     const { KNOWN_ADAPTER_IDS } = await import('./externalAdapterTypes');
     expect(KNOWN_ADAPTER_IDS.has('openshell')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('nemoclaw')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('openclaw')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('openjarvis')).toBe(true);
-    expect(KNOWN_ADAPTER_IDS.size).toBe(4);
+    expect(KNOWN_ADAPTER_IDS.has('n8n')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.has('deepwiki')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.has('obsidian')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.size).toBe(7);
   });
 });
 

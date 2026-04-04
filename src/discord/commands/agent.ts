@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInteraction } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInteraction, type Client } from 'discord.js';
 import type { AgentSession } from '../../services/multiAgentService';
 import {
   cancelAgentSession,
@@ -188,7 +188,7 @@ export const createAgentHandlers = (deps: AgentDeps) => {
         }
         return;
       }
-      const result = triggerDailyLearningRun(deps.client as any, interaction.guildId);
+      const result = triggerDailyLearningRun(deps.client as Client, interaction.guildId);
       await interaction.editReply(buildSimpleEmbed(result.ok ? DISCORD_MESSAGES.agent.titleLearningRunResult : DISCORD_MESSAGES.agent.titleLearningRunFailed, result.message, result.ok ? EMBED_SUCCESS : EMBED_ERROR));
       return;
     }

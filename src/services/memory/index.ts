@@ -20,3 +20,10 @@ export { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 export type { PoisonAssessment } from './memoryPoisonGuard';
 
 export { getMemoryQualityMetrics } from './memoryQualityMetricsService';
+
+export {
+  computeUserEmbedding, storeUserEmbedding, getUserEmbedding,
+  refreshUserEmbeddings, startUserEmbeddingLoop, stopUserEmbeddingLoop,
+  cosineSimilarity, isUserEmbeddingEnabled,
+} from './userEmbeddingService';
+export type { UserEmbedding, UserEmbeddingRefreshResult } from './userEmbeddingService';

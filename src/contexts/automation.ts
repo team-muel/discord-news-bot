@@ -25,4 +25,4 @@ export {
   triggerYouTubeSubscriptionsMonitor,
 } from '../services/news/youtubeSubscriptionsMonitor';
 
-export { startRuntimeAlerts, stopRuntimeAlerts } from '../services/runtimeAlertService';
+export { startRuntimeAlerts, stopRuntimeAlerts } from '../services/runtime/runtimeAlertService';

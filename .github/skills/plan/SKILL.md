@@ -3,6 +3,8 @@ description: "Sprint Phase: Plan — define target state, constraints, architect
 applyTo: "**"
 ---
 
+<!-- Token Budget: ~400 base, ~1,000 with references -->
+
 # /plan
 
 > Think first. Define the target before touching code.
@@ -60,6 +62,28 @@ applyTo: "**"
 - Action: `architect.plan` (legacy: `opendev.plan`)
 - Discord intent: `architecture|adr|boundary|plan|설계|아키텍처`
 - Worker env: `MCP_ARCHITECT_WORKER_URL` (legacy: `MCP_OPENDEV_WORKER_URL`)
+
+## HITL Decision
+
+### Act (proceed without asking)
+
+- Reading codebase to map current state
+- Generating plan document structure
+- Identifying risks and dependencies
+
+### Ask (confirm before proceeding)
+
+- Choosing between competing architectures
+- Setting phase boundaries that affect team workflow
+- Declaring non-goals that might conflict with stakeholder expectations
+- Milestone sequencing when multiple valid orders exist
+
+## References
+
+Loaded on demand — not part of initial SKILL.md context:
+
+- `references/milestone-design-patterns.md` — milestone sizing, templates, and anti-patterns
+- `references/adr-conventions.md` — ADR format and Obsidian linking
 
 ## Obsidian Integration
 

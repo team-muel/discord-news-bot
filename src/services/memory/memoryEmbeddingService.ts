@@ -12,7 +12,7 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
-const EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, false);
+const EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, true);
 const EMBEDDING_MODEL = String(process.env.MEMORY_EMBEDDING_MODEL || 'text-embedding-3-small').trim();
 const EMBEDDING_DIMENSIONS = Math.max(256, parseIntegerEnv(process.env.MEMORY_EMBEDDING_DIMENSIONS, 1536));
 const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000').trim().replace(/\/+$/, '');

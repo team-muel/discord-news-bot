@@ -20,8 +20,8 @@ export { startObsidianLoreSyncLoop, stopObsidianLoreSyncLoop, getObsidianLoreSyn
 export { getLatestObsidianGraphAuditSnapshot } from './obsidianQualityService';
 export type { ObsidianGraphAuditSnapshot } from './obsidianQualityService';
 
-export { initObsidianRAG, queryObsidianRAG, inferIntent, flushKnowledgeGaps, getKnowledgeGapCount, appendToDailyNote, readDailyNote, writeRetroToVault } from './obsidianRagService';
-export type { RAGQueryResult } from './obsidianRagService';
+export { initObsidianRAG, queryObsidianRAG, queryObsidianLoreHints, inferIntent, resetDynamicIntentState, flushKnowledgeGaps, getKnowledgeGapCount, appendToDailyNote, readDailyNote, writeRetroToVault } from './obsidianRagService';
+export type { RAGQueryResult, LoreHint } from './obsidianRagService';
 
 export { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 export type { ObsidianSanitizeResult } from './obsidianSanitizationWorker';

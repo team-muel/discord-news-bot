@@ -461,6 +461,38 @@ const extractWikiLinks = (content: string): string[] => {
 };
 
 /**
+ * Extract typed relations from structured link sections.
+ * Parses lines like: `- spawned-by: [[plan/2026-01-01_plan_xyz]]`
+ */
+const extractTypedRelations = (content: string): Array<{ target: string; relationType: string }> => {
+  const VALID_TYPES = new Set([
+    'spawned-by', 'follows', 'references', 'related', 'supersedes', 'caused', 'fixed-in',
+  ]);
+  const results: Array<{ target: string; relationType: string }> = [];
+  const regex = /^-\s+([\w-]+):\s+\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gm;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const relType = match[1].trim().toLowerCase();
+    const target = match[2].trim();
+    if (VALID_TYPES.has(relType) && target && !target.startsWith('http')) {
+      results.push({ target, relationType: relType });
+    }
+  }
+  return results;
+};
+
+const RELATION_STRENGTH: Record<string, number> = {
+  'spawned-by': 0.9,
+  'follows':    0.85,
+  'references': 0.7,
+  'related':    0.6,
+  'supersedes': 0.95,
+  'caused':     0.9,
+  'fixed-in':   0.85,
+  'derived-from': 0.9,
+};
+
+/**
  * Upsert graph relationships between lore docs based on Obsidian wikilinks.
  * Links are inserted as 'related' type into memory_item_links.
  * Both source and target must exist as memory_items (via lore ID convention).
@@ -474,6 +506,7 @@ const upsertGraphLinks = async (
   if (wikiLinks.length === 0) return 0;
 
   const sourceId = lorMemoryItemId(doc.guildId, doc.source);
+  const typedRelations = extractTypedRelations(doc.content);
   let upserted = 0;
 
   // Build a lookup of relative path (without .md) → LoreDoc for same guild
@@ -497,6 +530,13 @@ const upsertGraphLinks = async (
     const targetId = lorMemoryItemId(targetDoc.guildId, targetDoc.source);
     if (sourceId === targetId) continue;
 
+    // Check if this link has a typed relation from the ## Links section
+    const typedMatch = typedRelations.find(
+      (tr) => tr.target.toLowerCase().replace(/\.md$/i, '') === normalized,
+    );
+    const relationType = typedMatch?.relationType || 'related';
+    const strength = RELATION_STRENGTH[relationType] ?? 0.6;
+
     const { error } = await supabase
       .from('memory_item_links')
       .upsert(
@@ -504,8 +544,8 @@ const upsertGraphLinks = async (
           source_id: sourceId,
           target_id: targetId,
           guild_id: doc.guildId,
-          relation_type: 'related',
-          strength: 0.600,
+          relation_type: relationType,
+          strength,
           created_by: 'sync-obsidian-lore',
         },
         { onConflict: 'source_id,target_id,relation_type' },

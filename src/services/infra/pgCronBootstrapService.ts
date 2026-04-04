@@ -28,12 +28,15 @@ import logger from '../../logger';
 import { parseBooleanEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
-const ENABLED = parseBooleanEnv(process.env.PG_CRON_BOOTSTRAP_ENABLED, false);
+const ENABLED = parseBooleanEnv(process.env.PG_CRON_BOOTSTRAP_ENABLED, true);
 const CONSOLIDATION_SCHEDULE = String(process.env.PG_CRON_CONSOLIDATION_SCHEDULE || '0 */6 * * *').trim();
 const DEADLETTER_SCHEDULE = String(process.env.PG_CRON_DEADLETTER_SCHEDULE || '*/30 * * * *').trim();
 const SLO_CHECK_SCHEDULE = String(process.env.PG_CRON_SLO_CHECK_SCHEDULE || '*/15 * * * *').trim();
 const LOGIN_CLEANUP_SCHEDULE = String(process.env.PG_CRON_LOGIN_CLEANUP_SCHEDULE || '0 */1 * * *').trim();
 const OBSIDIAN_SYNC_SCHEDULE = String(process.env.PG_CRON_OBSIDIAN_SYNC_SCHEDULE || '0 */2 * * *').trim();
+const RETRIEVAL_EVAL_SCHEDULE = String(process.env.PG_CRON_RETRIEVAL_EVAL_SCHEDULE || '0 */24 * * *').trim();
+const REWARD_SIGNAL_SCHEDULE = String(process.env.PG_CRON_REWARD_SIGNAL_SCHEDULE || '0 */6 * * *').trim();
+const EVAL_AUTO_PROMOTE_SCHEDULE = String(process.env.PG_CRON_EVAL_AUTO_PROMOTE_SCHEDULE || '30 */6 * * *').trim();
 
 /** Validate cron expression (basic 5-field check). */
 const isValidCron = (expr: string): boolean => /^[\d*/,-]+(\s+[\d*/,-]+){4}$/.test(expr.trim());
@@ -91,6 +94,36 @@ const CRON_JOBS: CronJobSpec[] = [
       body := '{}'::jsonb
     )`,
     description: 'Trigger Obsidian vault→Supabase lore sync via HTTP',
+  },
+  {
+    jobName: 'muel_retrieval_eval',
+    schedule: RETRIEVAL_EVAL_SCHEDULE,
+    command: `SELECT net.http_post(
+      url := current_setting('app.service_url') || '/api/internal/eval/retrieval',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+      body := '{}'::jsonb
+    )`,
+    description: 'Run retrieval eval loop for all active guilds',
+  },
+  {
+    jobName: 'muel_reward_signal',
+    schedule: REWARD_SIGNAL_SCHEDULE,
+    command: `SELECT net.http_post(
+      url := current_setting('app.service_url') || '/api/internal/eval/reward-signal',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+      body := '{}'::jsonb
+    )`,
+    description: 'Compute and persist reward signal snapshots for all active guilds',
+  },
+  {
+    jobName: 'muel_eval_auto_promote',
+    schedule: EVAL_AUTO_PROMOTE_SCHEDULE,
+    command: `SELECT net.http_post(
+      url := current_setting('app.service_url') || '/api/internal/eval/auto-promote',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+      body := '{}'::jsonb
+    )`,
+    description: 'Run A/B eval auto-promote pipeline for all active guilds',
   },
 ];
 
@@ -201,3 +234,26 @@ $$;
 `;
 
 export const getPgCronJobSpecs = (): CronJobSpec[] => CRON_JOBS.map((j) => ({ ...j }));
+
+/**
+ * Node.js loop identifiers that each pg_cron job replaces.
+ * When PG_CRON_REPLACES_APP_LOOPS=true, runtimeBootstrap skips these loops.
+ */
+export const PG_CRON_LOOP_REPLACEMENTS: Record<string, string> = {
+  muel_memory_consolidation: 'consolidationLoop',
+  muel_slo_check: 'agentSloAlertLoop',
+  muel_login_session_cleanup: 'loginSessionCleanupLoop',
+  muel_obsidian_lore_sync: 'obsidianLoreSyncLoop',
+  muel_retrieval_eval: 'retrievalEvalLoop',
+  muel_reward_signal: 'rewardSignalLoop',
+  muel_eval_auto_promote: 'evalAutoPromoteLoop',
+};
+
+/**
+ * Returns the set of Node.js loop names that pg_cron is configured to replace.
+ * runtimeBootstrap uses this to conditionally skip setInterval loops.
+ */
+export const getPgCronReplacedLoops = (): Set<string> => {
+  if (!ENABLED) return new Set();
+  return new Set(Object.values(PG_CRON_LOOP_REPLACEMENTS));
+};

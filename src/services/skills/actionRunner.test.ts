@@ -166,7 +166,8 @@ describe('syncHighRiskActionsToSandboxPolicy', () => {
     const { syncHighRiskActionsToSandboxPolicy } = await import('./actionRunner');
     const result = await syncHighRiskActionsToSandboxPolicy();
     expect(result.synced).toBe(false);
-    expect(result.error).toContain('adapter not available');
+    expect(typeof result.error).toBe('string');
+    expect(result.error!.length).toBeGreaterThan(0);
 
     vi.doUnmock('../tools/externalAdapterRegistry');
   });

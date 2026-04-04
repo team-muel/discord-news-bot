@@ -2,10 +2,11 @@ import type { Message } from 'discord.js';
 import logger from '../../logger';
 import { createMemoryItem } from '../../services/agent/agentMemoryStore';
 import { recordCommunityInteractionEvent } from '../../services/communityGraphService';
-import { recordDiscordChannelMessageSignal } from '../../services/discordChannelTelemetryService';
+import { recordDiscordChannelMessageSignal } from '../../services/discord-support/discordChannelTelemetryService';
 import { getGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 import { isUserLearningEnabled } from '../../services/userLearningPrefsService';
 import { TtlCache } from '../../utils/ttlCache';
+import { resolveChannelMeta, buildChannelTags, buildSourceRef } from '../../utils/discordChannelMeta';
 import {
   PASSIVE_MEMORY_LEARNING_POLICY_TTL_MS,
   PASSIVE_MEMORY_CO_PRESENCE_WINDOW_MS,
@@ -13,11 +14,16 @@ import {
   PASSIVE_MEMORY_CONTENT_LIMIT,
   PASSIVE_MEMORY_EXCERPT_LIMIT,
 } from '../runtimePolicy';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const LEARNING_POLICY_ACTION = 'memory_learning';
 const learningPolicyCache = new TtlCache<boolean>(200);
 
-const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
+/**
+ * Fast guild-level learning check with TTL cache.
+ * Exported so callers can skip expensive processing when learning is disabled.
+ */
+export const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
   const cached = learningPolicyCache.get(guildId);
   if (cached !== null) {
     return cached;
@@ -28,19 +34,7 @@ const isGuildLearningEnabled = async (guildId: string): Promise<boolean> => {
   return policy.enabled;
 };
 
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-};
+
 
 const collectCoPresenceSignals = async (
   message: Message,
@@ -92,11 +86,15 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
     return;
   }
 
+  const channelMeta = resolveChannelMeta(message.channel);
+
   recordDiscordChannelMessageSignal({
     guildId: message.guildId,
     channelId: message.channelId,
-    channelName: (message.channel as any)?.name || 'unknown',
+    channelName: channelMeta.channelName || 'unknown',
     authorId: message.author.id,
+    isThread: channelMeta.isThread,
+    parentChannelId: channelMeta.parentChannelId,
   });
 
   const guildEnabled = await isGuildLearningEnabled(message.guildId);
@@ -156,8 +154,11 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
       eventType: signal.eventType,
       eventTs: message.createdAt.toISOString(),
       weight: signal.weight,
+      isPrivateThread: channelMeta.isPrivateThread,
       metadata: {
         source: 'passive_memory_capture',
+        isThread: channelMeta.isThread,
+        parentChannelId: channelMeta.parentChannelId,
       },
     }).catch((error) => {
       logger.debug('[COMMUNITY-GRAPH] passive interaction capture skipped: %s', getErrorMessage(error));
@@ -166,11 +167,11 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
 
   await createMemoryItem({
     guildId: message.guildId,
-    channelId: message.channelId,
+    channelId: channelMeta.isThread && channelMeta.parentChannelId ? channelMeta.parentChannelId : message.channelId,
     type: 'episode',
     title: `discord:${message.author.id}:${new Date().toISOString().slice(0, 10)}`,
     content: content.slice(0, PASSIVE_MEMORY_CONTENT_LIMIT),
-    tags: ['discord-chat', 'auto-captured', `user:${message.author.id}`, `channel:${message.channelId}`],
+    tags: ['discord-chat', 'auto-captured', `user:${message.author.id}`, ...buildChannelTags(channelMeta)],
     confidence: 0.55,
     actorId: 'system',
     ownerUserId: message.author.id,
@@ -178,7 +179,7 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
       sourceKind: 'discord_message',
       sourceMessageId: message.id,
       sourceAuthorId: message.author.id,
-      sourceRef: `discord://guild/${message.guildId}/channel/${message.channelId}/message/${message.id}`,
+      sourceRef: buildSourceRef(message.guildId, channelMeta, message.id),
       excerpt: content.slice(0, PASSIVE_MEMORY_EXCERPT_LIMIT),
     },
   }).catch((error) => {

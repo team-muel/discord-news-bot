@@ -15,7 +15,7 @@ export type ExternalAdapterId = string & { readonly __brand?: 'ExternalAdapterId
 export const ADAPTER_ID_PATTERN = /^[a-z][a-z0-9-]{1,49}$/;
 
 /** Built-in adapter IDs for backward compatibility. */
-export const KNOWN_ADAPTER_IDS = new Set<string>(['openshell', 'nemoclaw', 'openclaw', 'openjarvis']);
+export const KNOWN_ADAPTER_IDS = new Set<string>(['openshell', 'nemoclaw', 'openclaw', 'openjarvis', 'n8n', 'deepwiki', 'obsidian']);
 
 /** Validate and narrow a string to ExternalAdapterId. Returns null on invalid. */
 export const validateAdapterId = (id: unknown): ExternalAdapterId | null => {
@@ -43,6 +43,18 @@ export type ExternalAdapterCapability =
   | 'jarvis.optimize'
   | 'jarvis.bench'
   | 'jarvis.trace'
+  | 'jarvis.research'
+  | 'jarvis.digest'
+  | 'jarvis.memory.index'
+  | 'jarvis.memory.search'
+  | 'jarvis.eval'
+  | 'jarvis.telemetry'
+  | 'jarvis.scheduler.run'
+  | 'jarvis.skill.discover'
+  | 'workflow.execute'
+  | 'workflow.list'
+  | 'workflow.trigger'
+  | 'workflow.status'
   | (string & {});  // allow custom capabilities from dynamic adapters
 
 export type ExternalAdapterResult = {
