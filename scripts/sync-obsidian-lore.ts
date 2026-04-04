@@ -382,6 +382,13 @@ const notifyDiscordWebhook = async (stats: SyncStats): Promise<void> => {
     return;
   }
 
+  try {
+    new URL(webhookUrl);
+  } catch {
+    console.warn('[obsidian-sync] webhook notify error: OBSIDIAN_SYNC_DISCORD_WEBHOOK_URL is not a valid URL');
+    return;
+  }
+
   const content = [
     '[obsidian-sync] 완료',
     `dryRun=${stats.dryRun}`,

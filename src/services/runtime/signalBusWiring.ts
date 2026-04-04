@@ -120,6 +120,7 @@ export const wireSignalBusConsumers = (): void => {
         code: 'UNKNOWN_ERROR',
         source: `signalBus.${signal.source}`,
         message: `Signal: ${signal.name} guild=${signal.guildId}`,
+        guildId: signal.guildId,
         meta: { ...(signal.payload as Record<string, unknown> ?? {}), signalName: signal.name },
         severity: 'warn',
       });

@@ -193,8 +193,8 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
   return [];
 };
 
-export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput): Promise<{ path: string } | null> => {
-  const sanitized = sanitizeForObsidianWrite({ content: params.content });
+export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput & { trustedSource?: boolean }): Promise<{ path: string } | null> => {
+  const sanitized = sanitizeForObsidianWrite({ content: params.content, trustedSource: params.trustedSource });
   if (sanitized.blocked) {
     logger.warn('[OBSIDIAN-ADAPTER] write_note blocked by sanitizer: %s (file: %s)', sanitized.reasons.join(', '), params.fileName);
     logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: null, detail: `sanitizer_blocked:${sanitized.reasons.join(',')}` });

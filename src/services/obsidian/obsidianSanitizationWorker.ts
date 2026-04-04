@@ -16,7 +16,7 @@ const INJECTION_PATTERNS: RegExp[] = [
 ];
 
 const SPAM_PATTERNS: RegExp[] = [
-  /무료|할인|특가|쿠폰|이벤트/i,
+  /무료\s*(배송|증정|체험)|할인\s*(코드|쿠폰)|특가\s*판매|쿠폰\s*(지급|발급)/i,
   /원금\s*보장|고수익|수익\s*보장/i,
   /텔레그램|t\.me\//i,
   /dm\s*me|문의\s*주세요/i,
@@ -66,6 +66,7 @@ export const sanitizeForObsidianWrite = (params: {
   content: unknown;
   sourceRef?: unknown;
   excerpt?: unknown;
+  trustedSource?: boolean;
 }): ObsidianSanitizeResult => {
   const cleaned = {
     title: params.title == null ? null : sanitizeText(params.title, 160),
@@ -91,9 +92,11 @@ export const sanitizeForObsidianWrite = (params: {
     reasons.push('prompt_or_path_injection_pattern');
   }
 
-  const spamHits = countPatternHits(SPAM_PATTERNS, corpus);
-  if (spamHits > 0) {
-    reasons.push('spam_or_ad_pattern');
+  if (!params.trustedSource) {
+    const spamHits = countPatternHits(SPAM_PATTERNS, corpus);
+    if (spamHits > 0) {
+      reasons.push('spam_or_ad_pattern');
+    }
   }
 
   const links = countLinks(corpus);

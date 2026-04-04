@@ -99,6 +99,7 @@ export const upsertObsidianGuildDocument = async (params: {
     content,
     tags: normalizeTags(params.tags),
     properties: params.properties || {},
+    trustedSource: true,
   });
 
   if (!result?.path) {
