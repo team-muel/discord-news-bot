@@ -9,7 +9,7 @@
 | Table | Services |
 | --- | --- |
 | agent_action_approval_requests | src/services/privacyForgetService.ts |
-| agent_action_logs | src/services/agent/agentWorkerApprovalGateSnapshotService.ts<br/>src/services/finopsService.ts<br/>src/services/opencodeOpsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts<br/>src/services/sprint/selfImprovementLoop.ts<br/>src/services/taskRoutingAnalyticsService.ts<br/>src/services/taskRoutingMetricsService.ts<br/>src/services/toolLearningService.ts |
+| agent_action_logs | src/services/agent/agentWorkerApprovalGateSnapshotService.ts<br/>src/services/finopsService.ts<br/>src/services/opencode/opencodeOpsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/skills/actionExecutionLogService.ts<br/>src/services/sprint/selfImprovementLoop.ts<br/>src/services/taskRoutingAnalyticsService.ts<br/>src/services/taskRoutingMetricsService.ts<br/>src/services/toolLearningService.ts<br/>src/services/workerGeneration/backgroundProposalSweep.ts |
 | agent_action_policies | - |
 | agent_answer_quality_reviews | src/services/agent/agentGotAnalyticsService.ts<br/>src/services/agent/agentQualityReviewService.ts |
 | agent_conversation_threads | src/services/privacyForgetService.ts |
@@ -39,7 +39,7 @@
 | agent_tot_candidate_pairs | src/services/agent/agentGotAnalyticsService.ts<br/>src/services/agent/agentTotPolicyService.ts |
 | agent_tot_policies | src/services/agent/agentTotPolicyService.ts<br/>src/services/entityNervousSystem.ts |
 | agent_user_privacy_preferences | - |
-| agent_weekly_reports | src/services/sprint/selfImprovementLoop.ts |
+| agent_weekly_reports | src/services/observer/convergenceDigestChannel.ts<br/>src/services/observer/perfDriftChannel.ts<br/>src/services/sprint/selfImprovementLoop.ts |
 | agent_workflow_profiles | src/services/agent/agentWorkflowService.ts |
 | alert_slots | - |
 | api_idempotency_keys | - |
@@ -49,10 +49,11 @@
 | community_actor_profiles | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
 | community_interaction_events | src/services/communityGraphService.ts<br/>src/services/eval/rewardSignalService.ts<br/>src/services/privacyForgetService.ts |
 | community_relationship_edges | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
-| discord_login_sessions | src/services/discordLoginSessionStore.ts |
+| discord_login_sessions | src/services/discord-support/discordLoginSessionStore.ts |
 | distributed_locks | src/services/infra/distributedLockService.ts |
 | error_history | - |
 | guild_lore_docs | src/services/agent/agentMemoryService.ts |
+| guild_memberships | src/services/discord-support/userCrmService.ts |
 | intent_exemplars | src/services/langgraph/nodes/intentExemplarStore.ts |
 | logs | - |
 | macro_data | - |
@@ -61,7 +62,7 @@
 | memory_conflicts | src/services/agent/agentMemoryStore.ts<br/>src/services/memory/memoryJobRunner.ts<br/>src/services/memory/memoryQualityMetricsService.ts |
 | memory_feedback | src/services/agent/agentMemoryStore.ts<br/>src/services/memory/memoryQualityMetricsService.ts<br/>src/services/privacyForgetService.ts |
 | memory_item_links | src/services/memory/memoryConsolidationService.ts<br/>src/services/memory/memoryEvolutionService.ts |
-| memory_items | src/services/agent/agentMemoryStore.ts<br/>src/services/memory/memoryConsolidationService.ts<br/>src/services/memory/memoryEmbeddingService.ts<br/>src/services/memory/memoryEvolutionService.ts<br/>src/services/memory/memoryJobRunner.ts<br/>src/services/memory/memoryQualityMetricsService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
+| memory_items | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/memory/memoryConsolidationService.ts<br/>src/services/memory/memoryEmbeddingService.ts<br/>src/services/memory/memoryEvolutionService.ts<br/>src/services/memory/memoryJobRunner.ts<br/>src/services/memory/memoryQualityMetricsService.ts<br/>src/services/memory/userEmbeddingService.ts<br/>src/services/observer/memoryGapChannel.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
 | memory_job_deadletters | src/services/memory/memoryJobRunner.ts |
 | memory_jobs | src/services/agent/agentMemoryStore.ts<br/>src/services/finopsService.ts<br/>src/services/memory/memoryJobRunner.ts<br/>src/services/memory/memoryQualityMetricsService.ts |
 | memory_retrieval_logs | src/services/agent/agentMemoryStore.ts<br/>src/services/eval/rewardSignalService.ts<br/>src/services/finopsService.ts<br/>src/services/memory/memoryQualityMetricsService.ts |
@@ -82,8 +83,10 @@
 | trades | - |
 | trading_engine_configs | - |
 | trading_signals | - |
+| user_profiles | src/services/discord-support/userCrmService.ts |
 | user_roles | - |
 | users | src/services/infra/baseRepository.ts<br/>src/services/news/newsChannelStore.ts |
+| ventyd_events | - |
 | worker_approvals | - |
 
 ## RPC Functions
@@ -98,5 +101,7 @@
 | get_platform_extension_status | src/services/infra/supabaseExtensionOpsService.ts |
 | get_platform_hypopg_candidates | src/services/infra/supabaseExtensionOpsService.ts |
 | get_platform_pg_statements_top | src/services/infra/supabaseExtensionOpsService.ts |
+| increment_obsidian_cache_hit | src/services/obsidian/obsidianCacheService.ts |
 | search_memory_items_hybrid | src/services/agent/agentMemoryStore.ts |
+| track_user_activity | src/services/discord-support/userCrmService.ts |
 

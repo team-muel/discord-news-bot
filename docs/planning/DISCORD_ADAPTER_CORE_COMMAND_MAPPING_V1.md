@@ -44,6 +44,10 @@ Primary handler hub:
 | 주가            | handleStockPriceCommand                   | market.query             | symbol + visibility               |
 | 차트            | handleStockChartCommand                   | market.query             | symbol + visibility               |
 | 분석            | handleAnalyzeCommand                      | market.query             | query + visibility                |
+| 할일            | tasksHandlers.handleTasksListCommand/Toggle | task.command            | subcommand (목록/완료)            |
+| 내정보          | crmHandlers.handleMyInfoCommand           | user.crm.self            | self CRM profile read             |
+| 유저정보        | crmHandlers.handleUserInfoCommand         | user.crm.lookup          | target user CRM lookup            |
+| 지표리뷰        | inline in bot.ts                          | metrics.review.read      | metric snapshot generation        |
 
 ## 2) Non-Chat Interaction Mapping
 
