@@ -28,6 +28,7 @@ const lazySprintOrchestrator = () => import('../sprint/sprintOrchestrator');
 const lazyTrafficRouting = () => import('../workflow/trafficRoutingService');
 const lazyErrorLog = () => import('../structuredErrorLogService');
 const lazyIntentEngine = () => import('../intent/intentFormationEngine');
+const lazyTrustScore = () => import('../sprint/trustScoreService');
 
 /**
  * Wire all signal bus consumers. Idempotent — safe to call multiple times.
@@ -76,14 +77,33 @@ export const wireSignalBusConsumers = (): void => {
 
   onSignal('workflow.phase.looping', async (signal: Signal) => {
     try {
-      const { recordRuntimeError } = await lazySprintTriggers();
       const p = signal.payload as { sprintId?: string; loopCount?: number; fromPhase?: string; toPhase?: string };
+      const { isLoopBreakerEnabled, evaluateLoopBreaker, demoteTrustOnRollback } = await lazyTrustScore();
+
+      if (isLoopBreakerEnabled() && p.sprintId) {
+        const action = evaluateLoopBreaker(p.sprintId, p.loopCount);
+        logger.info('[LOOP-BREAKER] sprint=%s stage=%d action=%s (loopCount=%d)',
+          p.sprintId, action.stage, action.action, p.loopCount ?? 0);
+
+        if (action.shouldBlock) {
+          // Stage 3: block the sprint
+          const { cancelSprintPipeline } = await lazySprintOrchestrator();
+          cancelSprintPipeline(p.sprintId);
+          logger.info('[LOOP-BREAKER] sprint=%s blocked (phase looping exceeded threshold)', p.sprintId);
+          if (signal.guildId) {
+            demoteTrustOnRollback(signal.guildId, 'maintenance');
+          }
+        }
+      }
+
+      // Always log to sprint triggers for observability
+      const { recordRuntimeError } = await lazySprintTriggers();
       recordRuntimeError({
         message: `Sprint phase looping detected: sprint=${p.sprintId} ${p.fromPhase}→${p.toPhase} (${p.loopCount} times)`,
         code: 'SPRINT_PHASE_LOOPING',
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] workflow.phase.looping → sprintTrigger skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] workflow.phase.looping → loopBreaker skipped: %s', err instanceof Error ? err.message : String(err));
     }
   });
 

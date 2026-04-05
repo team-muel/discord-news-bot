@@ -7,6 +7,7 @@ import { initMcpSkillRouter } from '../mcpSkillRouter';
 import { syncHighRiskActionsToSandboxPolicy } from '../skills/actionRunner';
 import { autoLoadAdapters } from '../tools/adapterAutoLoader';
 import { wireSignalBusConsumers } from './signalBusWiring';
+import { startTrustDecayTimer } from '../sprint/trustScoreService';
 import { getErrorMessage } from '../../utils/errorMessage';
 import logger from '../../logger';
 
@@ -65,6 +66,13 @@ export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => b
 
   // Wire cross-cutting signal bus consumers (Layer 1 integration)
   wireSignalBusConsumers();
+
+  // Phase H: Trust decay timer — daily trust score attrition for inactive guilds
+  if (isPgCronOwned('trustDecay')) {
+    logger.info('[RUNTIME] trustDecay skipped — pg_cron owns it');
+  } else {
+    startTrustDecayTimer();
+  }
 
   // Phase F: Observer Layer — autonomous environment scanning
   if (isPgCronOwned('observerLoop')) {

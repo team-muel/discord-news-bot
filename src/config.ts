@@ -174,6 +174,9 @@ export const TRUST_BUGFIX_THRESHOLD = parseNumberEnv(process.env.TRUST_BUGFIX_TH
 export const TRUST_FEATURE_THRESHOLD = parseNumberEnv(process.env.TRUST_FEATURE_THRESHOLD, 0.85);
 export const TRUST_DEFAULT_SCORE = parseNumberEnv(process.env.TRUST_DEFAULT_SCORE, 0.35);
 export const TRUST_CACHE_TTL_MS = parseIntegerEnv(process.env.TRUST_CACHE_TTL_MS, 60 * 60_000);
+export const TRUST_DECAY_DAILY_RATE = parseNumberEnv(process.env.TRUST_DECAY_DAILY_RATE, 0.01);
+export const TRUST_DECAY_INACTIVE_DAYS = parseIntegerEnv(process.env.TRUST_DECAY_INACTIVE_DAYS, 7);
+export const TRUST_LOOP_BREAKER_ENABLED = parseBooleanEnv(process.env.TRUST_LOOP_BREAKER_ENABLED, false);
 
 // ──── Memory Consolidation Concept Tier ────
 export const MEMORY_CONSOLIDATION_CONCEPT_ENABLED = parseBooleanEnv(process.env.MEMORY_CONSOLIDATION_CONCEPT_ENABLED, false);

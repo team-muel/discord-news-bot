@@ -23,6 +23,9 @@ import {
   TRUST_FEATURE_THRESHOLD,
   TRUST_DEFAULT_SCORE,
   TRUST_CACHE_TTL_MS,
+  TRUST_DECAY_DAILY_RATE,
+  TRUST_DECAY_INACTIVE_DAYS,
+  TRUST_LOOP_BREAKER_ENABLED,
 } from '../../config';
 import { isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
@@ -318,4 +321,168 @@ async function persistTrustScore(score: TrustScore): Promise<void> {
 /** Clear cache (for testing) */
 export function __resetTrustCacheForTests(): void {
   cache.clear();
+  loopCounters.clear();
+}
+
+// ── Loop Breaker (Phase H) ──────────────────────────────────────────────────
+//
+// 3-stage recovery for sprint phase looping:
+//   Stage 1 (loopCount ≥ 3): bump temperature by +0.2 → retry
+//   Stage 2 (loopCount ≥ 5): switch strategy from current to 'least-to-most'
+//   Stage 3 (loopCount ≥ 7): mark sprint as 'blocked', stop execution
+//
+// Consumed by signalBusWiring on 'workflow.phase.looping' signal.
+
+const loopCounters = new Map<string, number>();
+
+export type LoopBreakerAction = {
+  stage: 1 | 2 | 3;
+  action: 'bump-temperature' | 'switch-strategy' | 'block-sprint';
+  temperatureDelta?: number;
+  newStrategy?: string;
+  shouldBlock: boolean;
+};
+
+/**
+ * Evaluate loop breaker action for a sprint that is looping between phases.
+ * Returns the recommended recovery action based on cumulative loop count.
+ */
+export function evaluateLoopBreaker(sprintId: string, loopCount?: number): LoopBreakerAction {
+  const prev = loopCounters.get(sprintId) ?? 0;
+  const count = loopCount ?? prev + 1;
+  loopCounters.set(sprintId, count);
+
+  if (count >= 7) {
+    return { stage: 3, action: 'block-sprint', shouldBlock: true };
+  }
+  if (count >= 5) {
+    return { stage: 2, action: 'switch-strategy', newStrategy: 'least-to-most', shouldBlock: false };
+  }
+  return { stage: 1, action: 'bump-temperature', temperatureDelta: 0.2, shouldBlock: false };
+}
+
+/**
+ * Check if loop breaker feature is enabled.
+ */
+export function isLoopBreakerEnabled(): boolean {
+  return TRUST_LOOP_BREAKER_ENABLED;
+}
+
+// ── Trust Decay (Phase H) ───────────────────────────────────────────────────
+//
+// Decays trust scores for guilds that haven't run sprints recently.
+// Logic: If no sprint in the last TRUST_DECAY_INACTIVE_DAYS, reduce score
+//        by TRUST_DECAY_DAILY_RATE per day of inactivity (min 0.1).
+// Runs as a daily timer from bootstrapServerInfra.
+
+export const TRUST_DECAY_INTERVAL_MS = 24 * 60 * 60_000; // 24 hours
+
+let decayTimerId: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Run a single trust decay cycle across all guilds with trust scores.
+ * Reads the most recent sprint per guild and decays if inactive.
+ */
+export async function runTrustDecayCycle(): Promise<{ decayed: number; skipped: number }> {
+  if (!TRUST_ENGINE_ENABLED || !isSupabaseConfigured()) {
+    return { decayed: 0, skipped: 0 };
+  }
+
+  const sb = getClient()!;
+  let decayed = 0;
+  let skipped = 0;
+
+  try {
+    // Get distinct guild×category pairs with trust scores
+    const { data: scores, error } = await sb
+      .from(T_AGENT_TRUST_SCORES)
+      .select('guild_id, category, score, computed_at')
+      .order('computed_at', { ascending: false });
+
+    if (error || !scores || scores.length === 0) {
+      return { decayed: 0, skipped: 0 };
+    }
+
+    // Deduplicate: latest per guild×category
+    const latest = new Map<string, { guild_id: string; category: string; score: number; computed_at: string }>();
+    for (const row of scores as Array<{ guild_id: string; category: string; score: number; computed_at: string }>) {
+      const key = `${row.guild_id}:${row.category}`;
+      if (!latest.has(key)) latest.set(key, row);
+    }
+
+    const cutoff = new Date(Date.now() - TRUST_DECAY_INACTIVE_DAYS * 24 * 60 * 60_000).toISOString();
+
+    for (const [, row] of latest) {
+      // Check most recent sprint for this guild
+      const { data: recentSprints } = await sb
+        .from(T_SPRINT_PIPELINES)
+        .select('created_at')
+        .eq('guild_id', row.guild_id)
+        .gt('created_at', cutoff)
+        .limit(1);
+
+      if (recentSprints && recentSprints.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      // No recent sprints → decay
+      const daysSinceComputed = Math.max(1, (Date.now() - new Date(row.computed_at).getTime()) / (24 * 60 * 60_000));
+      const decayAmount = TRUST_DECAY_DAILY_RATE * Math.min(daysSinceComputed, 30); // cap at 30 days of decay
+      const newScore = Math.max(0.1, row.score - decayAmount);
+
+      if (newScore < row.score) {
+        const qb = fromTable(T_AGENT_TRUST_SCORES);
+        if (qb) {
+          await qb.insert({
+            guild_id: row.guild_id,
+            category: row.category,
+            score: newScore,
+            factors: { decayApplied: true, decayAmount, previousScore: row.score },
+            computed_at: new Date().toISOString(),
+          });
+        }
+        // Invalidate cache
+        cache.delete(cacheKey(row.guild_id, row.category as TrustCategory));
+        decayed++;
+        logger.debug('[TRUST-DECAY] %s/%s: %.3f → %.3f (inactive %d days)',
+          row.guild_id, row.category, row.score, newScore, Math.round(daysSinceComputed));
+      } else {
+        skipped++;
+      }
+    }
+  } catch (err) {
+    logger.debug('[TRUST-DECAY] cycle error: %s', err instanceof Error ? err.message : String(err));
+  }
+
+  return { decayed, skipped };
+}
+
+/**
+ * Start the daily trust decay timer.
+ */
+export function startTrustDecayTimer(): void {
+  if (decayTimerId) return;
+  if (!TRUST_ENGINE_ENABLED) {
+    logger.debug('[TRUST-DECAY] disabled (TRUST_ENGINE_ENABLED=false)');
+    return;
+  }
+  logger.info('[TRUST-DECAY] started (interval=%dh, decayRate=%.3f/day, inactiveDays=%d)',
+    TRUST_DECAY_INTERVAL_MS / 3_600_000, TRUST_DECAY_DAILY_RATE, TRUST_DECAY_INACTIVE_DAYS);
+
+  decayTimerId = setInterval(() => {
+    void runTrustDecayCycle().catch((err: unknown) => {
+      logger.debug('[TRUST-DECAY] cycle failed: %s', err instanceof Error ? err.message : String(err));
+    });
+  }, TRUST_DECAY_INTERVAL_MS);
+}
+
+/**
+ * Stop the trust decay timer (for graceful shutdown or testing).
+ */
+export function stopTrustDecayTimer(): void {
+  if (decayTimerId) {
+    clearInterval(decayTimerId);
+    decayTimerId = null;
+  }
 }
