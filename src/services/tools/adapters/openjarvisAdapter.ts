@@ -57,6 +57,7 @@ const ENABLED = CONFIG_OPENJARVIS_ENABLED;
 const EXPLICITLY_DISABLED = CONFIG_OPENJARVIS_DISABLED;
 const SERVE_URL = CONFIG_OPENJARVIS_SERVE_URL;
 const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
+const SERVE_API_KEY = String(process.env.OPENJARVIS_API_KEY || '').trim();
 
 
 /**
@@ -92,9 +93,11 @@ const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (SERVE_API_KEY) headers.Authorization = `Bearer ${SERVE_API_KEY}`;
     const resp = await fetch(`${SERVE_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     });
