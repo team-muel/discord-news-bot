@@ -1,6 +1,7 @@
 import { listActions, getAction } from '../services/skills/actions/registry';
 import { runGoalActions } from '../services/skills/actionRunner';
 import { NODE_ENV } from '../config';
+import { generateText, isAnyLlmConfigured, resolveLlmProvider } from '../services/llmClient';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
 const MCP_GUILD_ID = 'MCP';
@@ -76,6 +77,17 @@ const MCP_TOOLS: McpToolSpec[] = [
         args: { type: 'object', description: '액션 인자' },
       },
       required: ['actionName', 'goal'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'diag.llm',
+    description: 'Diagnostic: test generateText() directly to verify LLM connectivity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'Test prompt (default: "say hi")' },
+      },
       additionalProperties: false,
     },
   },
@@ -166,6 +178,22 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
     });
 
     return toTextResult(JSON.stringify({ handled: result.handled, output: result.output, hasSuccess: result.hasSuccess }, null, 2), !result.hasSuccess);
+  }
+
+  if (request.name === 'diag.llm') {
+    const prompt = compact(args.prompt) || 'say hi';
+    const configured = isAnyLlmConfigured();
+    const provider = resolveLlmProvider();
+    if (!configured) {
+      return toTextResult(JSON.stringify({ configured: false, provider, error: 'no LLM configured' }), true);
+    }
+    try {
+      const start = Date.now();
+      const text = await generateText({ system: 'Reply briefly.', user: prompt, actionName: 'diag.llm', maxTokens: 50 });
+      return toTextResult(JSON.stringify({ configured: true, provider, latencyMs: Date.now() - start, text: text.slice(0, 200) }));
+    } catch (err) {
+      return toTextResult(JSON.stringify({ configured: true, provider, error: err instanceof Error ? err.message : String(err) }), true);
+    }
   }
 
   return toTextResult(`unknown tool: ${request.name}`, true);
