@@ -62,7 +62,7 @@ const handleRequest = async (request: JsonRpcRequest): Promise<JsonRpcResponse> 
 
   if (request.method === 'tools/list') {
     return ok(id, {
-      tools: listAllMcpTools(),
+      tools: await listAllMcpTools(),
     });
   }
 
@@ -104,8 +104,6 @@ const sanitizeLine = (line: string): string => {
 // ──── Stdio Transport ──────────────────────────────────────────────────────────
 
 export const startUnifiedMcpStdioServer = () => {
-  console.error(`[muel-unified-mcp] setting up readline on stdin...`);
-
   const rl = readline.createInterface({
     input: process.stdin,
     terminal: false,
@@ -113,12 +111,7 @@ export const startUnifiedMcpStdioServer = () => {
 
   rl.on('line', async (line) => {
     const raw = sanitizeLine(String(line || ''));
-    console.error(`[muel-unified-mcp] recv line (${raw.length} chars): ${raw.substring(0, 100)}`);
-    if (!raw) {
-      return;
-    }
-    if (raw[0] !== '{') {
-      console.error(`[muel-unified-mcp] ignoring non-JSON line (${raw.length} bytes): ${raw.substring(0, 80)}`);
+    if (!raw || raw[0] !== '{') {
       return;
     }
 
@@ -142,14 +135,6 @@ export const startUnifiedMcpStdioServer = () => {
         toResponse(fail(request.id ?? null, -32603, message));
       }
     }
-  });
-
-  rl.on('close', () => {
-    console.error('[muel-unified-mcp] stdin closed (readline close event)');
-  });
-
-  process.stdin.on('end', () => {
-    console.error('[muel-unified-mcp] stdin end event');
   });
 
   console.error('[muel-unified-mcp] stdio server ready (general + indexing tools)');
@@ -236,7 +221,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
 
     // Health check
     if (url === '/mcp/health' || url === '/health') {
-      const tools = listAllMcpTools();
+      const tools = await listAllMcpTools();
       jsonResponse(res, 200, {
         status: 'ok',
         server: 'muel-unified-mcp-server',
@@ -257,7 +242,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
 
     // Tool discovery (compatible with MCP Skill Router probing)
     if (url === '/tools/discover' || url === '/mcp/tools/discover') {
-      const tools = listAllMcpTools();
+      const tools = await listAllMcpTools();
       jsonResponse(res, 200, {
         tools: tools.map((t) => ({
           name: t.name,
@@ -271,7 +256,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
 
     // List tools
     if (url === '/mcp/tools/list' && method === 'POST') {
-      jsonResponse(res, 200, { tools: listAllMcpTools() });
+      jsonResponse(res, 200, { tools: await listAllMcpTools() });
       return;
     }
 

@@ -10,10 +10,25 @@
 import { listMcpTools, callMcpTool } from './toolAdapter';
 import { listIndexingMcpTools, callIndexingMcpTool } from './indexingToolAdapter';
 import { listObsidianMcpTools, callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from './obsidianToolAdapter';
-import { listExternalAdapters, executeExternalAction } from '../services/tools/externalAdapterRegistry';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
-const GENERAL_TOOL_NAMES = new Set(listMcpTools().map((t) => t.name));
+// Lazy-loaded — avoids importing all 7 CLI adapters at module init
+let _externalRegistry: typeof import('../services/tools/externalAdapterRegistry') | null = null;
+const getExternalRegistry = async () => {
+  if (!_externalRegistry) {
+    _externalRegistry = await import('../services/tools/externalAdapterRegistry');
+  }
+  return _externalRegistry;
+};
+
+// Cached at first access — avoids repeated listMcpTools() calls
+let _generalToolNames: Set<string> | null = null;
+const getGeneralToolNames = (): Set<string> => {
+  if (!_generalToolNames) {
+    _generalToolNames = new Set(listMcpTools().map((t) => t.name));
+  }
+  return _generalToolNames;
+};
 
 /** Prefix for external adapter tools exposed as MCP tools. */
 const EXT_PREFIX = 'ext.';
@@ -22,7 +37,11 @@ const EXT_PREFIX = 'ext.';
  * Build MCP tool specs from registered external adapters.
  * Each adapter capability becomes `ext.<adapterId>.<capability>`.
  */
-const buildExternalMcpTools = (): McpToolSpec[] => {
+let _externalToolsCache: McpToolSpec[] | null = null;
+
+const buildExternalMcpTools = async (): Promise<McpToolSpec[]> => {
+  if (_externalToolsCache) return _externalToolsCache;
+  const { listExternalAdapters } = await getExternalRegistry();
   const tools: McpToolSpec[] = [];
   for (const adapter of listExternalAdapters()) {
     const caps = adapter.liteCapabilities ?? adapter.capabilities;
@@ -40,16 +59,21 @@ const buildExternalMcpTools = (): McpToolSpec[] => {
       });
     }
   }
+  _externalToolsCache = tools;
   return tools;
 };
 
-export const listAllMcpTools = (): McpToolSpec[] => {
-  return [
+let _allToolsCache: McpToolSpec[] | null = null;
+
+export const listAllMcpTools = async (): Promise<McpToolSpec[]> => {
+  if (_allToolsCache) return _allToolsCache;
+  _allToolsCache = [
     ...listMcpTools(),
     ...listIndexingMcpTools(),
     ...listObsidianMcpTools(),
-    ...buildExternalMcpTools(),
+    ...(await buildExternalMcpTools()),
   ];
+  return _allToolsCache;
 };
 
 export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpToolCallResult> => {
@@ -68,6 +92,7 @@ export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpTo
     const adapterId = rest.slice(0, dotIdx);
     const action = rest.slice(dotIdx + 1);
     const args = (request.arguments?.args as Record<string, unknown>) ?? request.arguments ?? {};
+    const { executeExternalAction } = await getExternalRegistry();
     const result = await executeExternalAction(adapterId, action, args);
     return {
       content: [{ type: 'text', text: result.ok ? result.output.join('\n') || result.summary : `ERROR: ${result.error ?? result.summary}` }],
@@ -76,7 +101,7 @@ export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpTo
   }
 
   // Route to the correct adapter
-  if (GENERAL_TOOL_NAMES.has(name)) {
+  if (getGeneralToolNames().has(name)) {
     return callMcpTool(request);
   }
 

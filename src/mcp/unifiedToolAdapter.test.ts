@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { listAllMcpTools, callAnyMcpTool } from './unifiedToolAdapter';
 
 describe('unifiedToolAdapter', () => {
-  it('listAllMcpTools returns both general and indexing tools', () => {
-    const tools = listAllMcpTools();
+  it('listAllMcpTools returns both general and indexing tools', async () => {
+    const tools = await listAllMcpTools();
     const names = tools.map((t) => t.name);
 
     // General tools
@@ -16,8 +16,8 @@ describe('unifiedToolAdapter', () => {
     expect(names).toContain('security.candidates_list');
   });
 
-  it('returns no duplicate tool names', () => {
-    const tools = listAllMcpTools();
+  it('returns no duplicate tool names', async () => {
+    const tools = await listAllMcpTools();
     const names = tools.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
