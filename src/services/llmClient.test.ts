@@ -4,6 +4,54 @@ vi.mock('./structuredErrorLogService', () => ({
   logStructuredError: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Config values are read at module load time. Re-read from process.env on each access
+// so vi.stubEnv() works in tests.
+vi.mock('../config', async () => {
+  const actual = await vi.importActual('../config') as Record<string, unknown>;
+  const copy: Record<string, unknown> = { ...actual };
+
+  // Helper: define a getter that re-reads from process.env on each access
+  const envGetter = (key: string, fallbacks: string[] = [], defaultVal = '') => ({
+    get: () => {
+      for (const k of [key, ...fallbacks]) {
+        const v = process.env[k];
+        if (v) return v.trim();
+      }
+      return defaultVal;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  const envBool = (key: string, defaultVal: string) => ({
+    get: () => !/^(0|false|off|no)$/i.test((process.env[key] || defaultVal).trim()),
+    enumerable: true,
+    configurable: true,
+  });
+
+  Object.defineProperties(copy, {
+    OPENAI_API_KEY: envGetter('OPENAI_API_KEY'),
+    GEMINI_API_KEY: envGetter('GEMINI_API_KEY', ['GOOGLE_API_KEY']),
+    ANTHROPIC_API_KEY: envGetter('ANTHROPIC_API_KEY', ['CLAUDE_API_KEY']),
+    HF_TOKEN: envGetter('HF_TOKEN', ['HF_API_KEY', 'HUGGINGFACE_API_KEY']),
+    KIMI_API_KEY: envGetter('KIMI_API_KEY', ['MOONSHOT_API_KEY']),
+    OPENCLAW_API_KEY: envGetter('OPENCLAW_API_KEY', ['OPENCLAW_KEY']),
+    OPENCLAW_BASE_URL: { get: () => (process.env.OPENCLAW_BASE_URL || process.env.OPENCLAW_API_BASE_URL || process.env.OPENCLAW_URL || '').trim().replace(/\/+$/, ''), enumerable: true, configurable: true },
+    OLLAMA_MODEL: envGetter('OLLAMA_MODEL', ['LOCAL_LLM_MODEL']),
+    AI_PROVIDER: { get: () => (process.env.AI_PROVIDER || '').trim().toLowerCase(), enumerable: true, configurable: true },
+    OPENJARVIS_ENABLED: envBool('OPENJARVIS_ENABLED', 'false'),
+    LITELLM_ENABLED: envBool('LITELLM_ENABLED', 'false'),
+    LLM_PROVIDER_BASE_ORDER_RAW: envGetter('LLM_PROVIDER_BASE_ORDER'),
+    LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER_RAW: envGetter('LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER'),
+    LLM_PROVIDER_FALLBACK_CHAIN_RAW: envGetter('LLM_PROVIDER_FALLBACK_CHAIN'),
+    LLM_PROVIDER_POLICY_ACTIONS_RAW: envGetter('LLM_PROVIDER_POLICY_ACTIONS'),
+    LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED: envBool('LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED', 'true'),
+    OPENCLAW_GATEWAY_ENABLED: envBool('OPENCLAW_GATEWAY_ENABLED', 'true'),
+    OPENCLAW_GATEWAY_URL: envGetter('OPENCLAW_GATEWAY_URL'),
+    OPENCLAW_GATEWAY_TOKEN: envGetter('OPENCLAW_GATEWAY_TOKEN'),
+  });
+  return copy;
+});
+
 import { generateText, isAnyLlmConfigured, resolveLlmProvider } from './llmClient';
 
 // ──────────────────────────────────────────────────────────

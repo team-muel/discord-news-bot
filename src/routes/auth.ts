@@ -23,6 +23,7 @@ import { requireAuth } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import type { JwtUser } from '../types/auth';
+import { encryptToken } from '../utils/tokenEncryption';
 
 function renderAuthCallbackPage(ok: boolean): string {
   const eventType = ok ? 'OAUTH_AUTH_SUCCESS' : 'OAUTH_AUTH_ERROR';
@@ -199,8 +200,8 @@ async function loginWithDiscordCode(code: string): Promise<JwtUser> {
         id: user.id,
         username: user.username,
         avatar: user.avatar ?? null,
-        discord_access_token: accessToken,
-        discord_refresh_token: refreshToken,
+        discord_access_token: encryptToken(accessToken),
+        discord_refresh_token: refreshToken ? encryptToken(refreshToken) : null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'id' },
@@ -225,11 +226,8 @@ export function createAuthRouter(): Router {
       return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
     }
 
-    const existingCsrf = String(req.cookies?.[AUTH_CSRF_COOKIE_NAME] || '').trim();
-    const csrfToken = existingCsrf || issueCsrfToken();
-    if (!existingCsrf) {
-      setCsrfCookie(res, csrfToken);
-    }
+    const csrfToken = issueCsrfToken(req.user.id);
+    setCsrfCookie(res, csrfToken);
 
     return res.json({ user: req.user, csrfToken, csrfHeaderName: AUTH_CSRF_HEADER_NAME });
   });
@@ -243,7 +241,7 @@ export function createAuthRouter(): Router {
     const user = buildDevUserFromCode(code);
     const token = issueSessionToken(user);
     res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
-    setCsrfCookie(res, issueCsrfToken());
+    setCsrfCookie(res, issueCsrfToken(user.id));
     return res.json({ ok: true, user });
   });
 
@@ -301,7 +299,7 @@ export function createAuthRouter(): Router {
         const user = await loginWithDiscordCode(code);
         const token = issueSessionToken(user);
         res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
-        setCsrfCookie(res, issueCsrfToken());
+        setCsrfCookie(res, issueCsrfToken(user.id));
         return res.type('html').send(renderAuthCallbackPage(true));
       } catch {
         return res.status(400).type('html').send(renderAuthCallbackPage(false));
@@ -319,7 +317,7 @@ export function createAuthRouter(): Router {
     const user = buildDevUserFromCode(code);
     const token = issueSessionToken(user);
     res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
-    setCsrfCookie(res, issueCsrfToken());
+    setCsrfCookie(res, issueCsrfToken(user.id));
     return res.type('html').send(renderAuthCallbackPage(true));
   });
 

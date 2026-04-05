@@ -7,9 +7,12 @@
  * Tables: user_profiles, guild_memberships
  * RPC:    track_user_activity
  */
-import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_USER_PROFILES, T_GUILD_MEMBERSHIPS } from '../infra/tableRegistry';
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
+import { logCatchError } from '../../utils/errorMessage';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,7 +98,7 @@ const flushActivityBuffer = async (): Promise<void> => {
   const batch = [...pendingBuffer.values()];
   pendingBuffer.clear();
 
-  const client = getSupabaseClient();
+  const client = getClient();
   const results = await Promise.allSettled(
     batch.map((entry) =>
       client.rpc('track_user_activity', {
@@ -159,7 +162,7 @@ export const trackUserActivity = (params: TrackActivityParams): void => {
   }
 
   if (pendingBuffer.size >= MAX_BUFFER_SIZE) {
-    void flushActivityBuffer().catch(() => {});
+    void flushActivityBuffer().catch(logCatchError(logger, '[CRM] flushActivityBuffer'));
   }
 
   ensureFlushTimer();
@@ -207,10 +210,11 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const cached = profileCache.get(userId);
   if (cached !== null) return cached;
 
+  const qb = fromTable(T_USER_PROFILES);
+  if (!qb) return null;
+
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('user_profiles')
+    const { data, error } = await qb
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
@@ -241,10 +245,11 @@ export const getGuildMembership = async (
   const cached = membershipCache.get(cacheKey);
   if (cached !== null) return cached;
 
+  const qb = fromTable(T_GUILD_MEMBERSHIPS);
+  if (!qb) return null;
+
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('guild_memberships')
+    const { data, error } = await qb
       .select('*')
       .eq('guild_id', guildId)
       .eq('user_id', userId)
@@ -270,12 +275,13 @@ export const listUserGuildMemberships = async (
   userId: string,
   limit = 20,
 ): Promise<GuildMembership[]> => {
-  if (!isDiscordId(userId) || !isSupabaseConfigured()) return [];
+  if (!isDiscordId(userId)) return [];
+
+  const qb = fromTable(T_GUILD_MEMBERSHIPS);
+  if (!qb) return [];
 
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('guild_memberships')
+    const { data, error } = await qb
       .select('*')
       .eq('user_id', userId)
       .order('last_active_at', { ascending: false })
@@ -314,7 +320,7 @@ export const getGuildLeaderboard = async (
   counter: ActivityCounter = 'message_count',
   limit = 10,
 ): Promise<GuildMembership[]> => {
-  if (!isDiscordId(guildId) || !isSupabaseConfigured()) return [];
+  if (!isDiscordId(guildId)) return [];
 
   const columnMap: Record<ActivityCounter, string> = {
     message_count: 'message_count',
@@ -325,10 +331,11 @@ export const getGuildLeaderboard = async (
   };
   const column = columnMap[counter] ?? 'message_count';
 
+  const qb = fromTable(T_GUILD_MEMBERSHIPS);
+  if (!qb) return [];
+
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('guild_memberships')
+    const { data, error } = await qb
       .select('*')
       .eq('guild_id', guildId)
       .order(column, { ascending: false })
@@ -352,10 +359,12 @@ export const updateUserProfileMeta = async (
     metadata?: Record<string, unknown>;
   },
 ): Promise<boolean> => {
-  if (!isDiscordId(userId) || !isSupabaseConfigured()) return false;
+  if (!isDiscordId(userId)) return false;
+
+  const qb = fromTable(T_USER_PROFILES);
+  if (!qb) return false;
 
   try {
-    const client = getSupabaseClient();
     const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
     if (updates.badges) payload.badges = updates.badges.map(String).slice(0, 50);
@@ -364,8 +373,7 @@ export const updateUserProfileMeta = async (
       payload.metadata = updates.metadata;
     }
 
-    const { error } = await client
-      .from('user_profiles')
+    const { error } = await qb
       .update(payload)
       .eq('user_id', userId);
 

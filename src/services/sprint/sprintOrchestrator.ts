@@ -65,6 +65,10 @@ import {
   shadowPipelineCancelled,
   shadowPipelineBlocked,
 } from './eventSourcing/bridge';
+import { logCatchError, debugCatchError } from '../../utils/errorMessage';
+
+const catchPersist = logCatchError(logger, '[SPRINT] persistPipeline');
+const catchShadow = debugCatchError(logger, '[VENTYD] shadow');
 
 // Re-export for backward compatibility
 export { getPhaseExternalAdapterMap, getWorkerHealthCacheSnapshot, getAdapterCircuitBreakerSnapshot } from './sprintWorkerRouter';
@@ -295,10 +299,10 @@ export const createSprintPipeline = (params: {
   logger.info('[SPRINT] created pipeline=%s trigger=%s objective=%.80s', sprintId, params.triggerType, params.objective);
 
   // Best-effort persist to Supabase
-  persistPipeline(pipeline).catch(() => {});
+  persistPipeline(pipeline).catch(catchPersist);
 
   // Dual-write: shadow as Ventyd event (best-effort)
-  shadowPipelineCreated(pipeline).catch(() => {});
+  shadowPipelineCreated(pipeline).catch(catchShadow);
 
   // Fire SprintStart lifecycle hook (best-effort, non-blocking)
   executeHooks({
@@ -331,8 +335,8 @@ export const markPipelineBlocked = (sprintId: string, reason: string): void => {
   pipeline.currentPhase = 'blocked';
   pipeline.error = reason;
   pipeline.updatedAt = new Date().toISOString();
-  persistPipeline(pipeline).catch(() => {});
-  shadowPipelineBlocked(sprintId, reason).catch(() => {});
+  persistPipeline(pipeline).catch(catchPersist);
+  shadowPipelineBlocked(sprintId, reason).catch(catchShadow);
 };
 
 // ──── Phase execution ─────────────────────────────────────────────────────────
@@ -1171,9 +1175,9 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     startedAt: phaseResult.startedAt,
     completedAt: phaseResult.completedAt,
     iterationCount: phaseResult.iterationCount,
-  }).catch(() => {});
+  }).catch(catchShadow);
   if (newFiles.length > 0) {
-    shadowFilesChanged(sprintId, newFiles).catch(() => {});
+    shadowFilesChanged(sprintId, newFiles).catch(catchShadow);
   }
 
   // Handle awaiting-approval
@@ -1193,7 +1197,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       logger.warn('[SPRINT] approval request creation failed: %s', approvalError instanceof Error ? approvalError.message : String(approvalError));
     }
     pipeline.updatedAt = new Date().toISOString();
-    persistPipeline(pipeline).catch(() => {});
+    persistPipeline(pipeline).catch(catchPersist);
     return { ok: true, pipeline, phaseResult, message: `Phase ${currentPhase} awaiting approval` };
   }
 
@@ -1227,7 +1231,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       totalPhasesExecuted: pipeline.totalPhasesExecuted,
       changedFilesCount: pipeline.changedFiles.length,
     },
-  }).catch(() => {});
+  }).catch(debugCatchError(logger, '[SPRINT] recordWorkflowEvent'));
 
   if (nextPhase === 'complete') {
     pipeline.completedAt = new Date().toISOString();
@@ -1288,7 +1292,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     }
   }
 
-  persistPipeline(pipeline).catch(() => {});
+  persistPipeline(pipeline).catch(catchPersist);
 
   return {
     ok: nextPhase !== 'blocked',
@@ -1369,7 +1373,7 @@ export const approveSprintPhase = async (sprintId: string, approvedBy: string): 
     pipeline.autonomyLevel = originalAutonomy;
 
     if (!result.ok) {
-      persistPipeline(pipeline).catch(() => {});
+      persistPipeline(pipeline).catch(catchPersist);
       return { ok: true, message: `Phase ${approvedPhase} approved and executed, but failed: ${result.message}` };
     }
 
@@ -1383,7 +1387,7 @@ export const approveSprintPhase = async (sprintId: string, approvedBy: string): 
     pipeline.autonomyLevel = originalAutonomy;
     const msg = err instanceof Error ? err.message : String(err);
     logger.error('[SPRINT] phase re-execution after approval failed: %s', msg);
-    persistPipeline(pipeline).catch(() => {});
+    persistPipeline(pipeline).catch(catchPersist);
     return { ok: false, message: `Phase execution failed after approval: ${msg}` };
   }
 };
@@ -1396,8 +1400,8 @@ export const cancelSprintPipeline = (sprintId: string): { ok: boolean; message: 
   pipeline.updatedAt = new Date().toISOString();
   pipeline.completedAt = new Date().toISOString();
 
-  persistPipeline(pipeline).catch(() => {});
-  shadowPipelineCancelled(sprintId).catch(() => {});
+  persistPipeline(pipeline).catch(catchPersist);
+  shadowPipelineCancelled(sprintId).catch(catchShadow);
   logger.info('[SPRINT] pipeline=%s cancelled', sprintId);
   return { ok: true, message: 'Pipeline cancelled' };
 };

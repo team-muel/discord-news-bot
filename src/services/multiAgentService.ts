@@ -1,4 +1,12 @@
 import crypto from 'crypto';
+import {
+  AGENT_MAX_SESSION_HISTORY,
+  AGENT_MEMORY_HINT_TIMEOUT_MS,
+  AGENT_QUEUE_POLL_MS,
+  AGENT_MAX_QUEUE_SIZE,
+  AGENT_SESSION_MAX_ATTEMPTS,
+  AGENT_DEADLETTER_MAX,
+} from '../config';
 import logger from '../logger';
 import { buildAgentMemoryHints } from './agent/agentMemoryService';
 import { TtlCache } from '../utils/ttlCache';
@@ -7,9 +15,6 @@ import { persistAgentSession } from './agent/agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn, fetchRecentTurnsForUser } from './conversationTurnService';
 import { isAnyLlmConfigured } from './llmClient';
 import { ensureSessionBudget, getErrorMessage, withTimeout } from './langgraph/runtimeSupport/runtimeBudget';
-import {
-  formatCitationFirstResult,
-} from './langgraph/runtimeSupport/runtimeFormatting';
 import {
   assessRuleBasedOrm,
   clamp01,
@@ -28,9 +33,9 @@ import { executeSkill } from './skills/engine';
 import { isSkillId, listSkills } from './skills/registry';
 import type { SkillId } from './skills/types';
 import { getWorkflowStepTemplates, primeWorkflowProfileCache } from './agent/agentWorkflowService';
-import { appendTrace, type LangGraphNodeId, type LangGraphState } from './langgraph/stateContract';
-import { executeLangGraph } from './langgraph/executor';
-import { runCompilePromptNode, runPolicyGateNode, runRouteIntentNode, runClassifyIntentNode } from './langgraph/nodes/coreNodes';
+import type { LangGraphNodeId } from './langgraph/stateContract';
+import { LANGGRAPH_NODE_IDS, runLangGraphExecutorShadowReplay } from './sessionShadowExecution';
+import { runCompilePromptNode, runPolicyGateNode, runClassifyIntentNode } from './langgraph/nodes/coreNodes';
 import {
   runHydrateMemoryNode,
   runNonTaskIntentNode,
@@ -135,15 +140,7 @@ export type {
   BeamEvaluation,
 } from './multiAgentTypes';
 
-const MAX_SESSION_HISTORY = Math.max(50, Number(process.env.AGENT_MAX_SESSION_HISTORY || 300));
-const AGENT_MEMORY_HINT_TIMEOUT_MS = Math.max(500, Number(process.env.AGENT_MEMORY_HINT_TIMEOUT_MS || 5_000));
-const AGENT_QUEUE_POLL_MS = Math.max(100, Number(process.env.AGENT_QUEUE_POLL_MS || 250));
-const AGENT_MAX_QUEUE_SIZE = Math.max(10, Number(process.env.AGENT_MAX_QUEUE_SIZE || 300));
-const AGENT_SESSION_MAX_ATTEMPTS = Math.max(1, Number(process.env.AGENT_SESSION_MAX_ATTEMPTS || 1));
-const AGENT_DEADLETTER_MAX = Math.max(10, Number(process.env.AGENT_DEADLETTER_MAX || 300));
-const LANGGRAPH_EXECUTOR_SHADOW_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LANGGRAPH_EXECUTOR_SHADOW_ENABLED || 'false').trim());
-const LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE = Math.max(0, Math.min(1, Number(process.env.LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE || 0.2) || 0.2));
-const LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS = Math.max(5, Math.min(200, Number(process.env.LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS || 60) || 60));
+const MAX_SESSION_HISTORY = AGENT_MAX_SESSION_HISTORY;
 const sessions = new Map<string, AgentSession>();
 const queueRuntime = new MultiAgentRuntimeQueue<AgentSession>();
 
@@ -229,117 +226,6 @@ const buildInitialSteps = (
 };
 
 const getSession = (sessionId: string): AgentSession => sessions.get(sessionId) as AgentSession;
-const LANGGRAPH_NODE_IDS: LangGraphNodeId[] = [
-  'ingest',
-  'compile_prompt',
-  'route_intent',
-  'select_execution_strategy',
-  'hydrate_memory',
-  'plan_actions',
-  'execute_actions',
-  'critic_review',
-  'policy_gate',
-  'compose_response',
-  'persist_and_emit',
-];
-
-const isLangGraphNodeId = (value: string): value is LangGraphNodeId => {
-  return (LANGGRAPH_NODE_IDS as string[]).includes(value);
-};
-
-const shouldRunLangGraphExecutorShadow = (sessionId: string): boolean => {
-  if (!LANGGRAPH_EXECUTOR_SHADOW_ENABLED) {
-    return false;
-  }
-  if (LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE >= 1) {
-    return true;
-  }
-  if (LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE <= 0) {
-    return false;
-  }
-
-  const digest = crypto.createHash('sha1').update(sessionId).digest('hex').slice(0, 8);
-  const bucket = Number.parseInt(digest, 16) / 0xffffffff;
-  return bucket < LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE;
-};
-
-const runLangGraphExecutorShadowReplay = async (session: AgentSession, terminalStatus: AgentSessionStatus): Promise<void> => {
-  if (!shouldRunLangGraphExecutorShadow(session.id)) {
-    return;
-  }
-
-  const shadowGraph = session.shadowGraph;
-  if (!shadowGraph || shadowGraph.trace.length === 0) {
-    return;
-  }
-
-  const traceNodes = shadowGraph.trace
-    .map((entry) => String(entry.node || '').trim())
-    .filter(isLangGraphNodeId);
-  if (traceNodes.length === 0) {
-    return;
-  }
-
-  const replayNodes = traceNodes.slice(0, LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS);
-  const handlers = LANGGRAPH_NODE_IDS.reduce((acc, node) => {
-    acc[node] = async ({ state }) => appendTrace(state, node, 'executor_shadow_replay');
-    return acc;
-  }, {} as Record<LangGraphNodeId, (params: { state: LangGraphState; context: {} }) => Promise<LangGraphState>>);
-
-  const initialState: LangGraphState = {
-    ...shadowGraph,
-    trace: [],
-  };
-
-  let cursor = 0;
-  const startedAt = Date.now();
-  try {
-    const replayResult = await executeLangGraph({
-      initialNode: replayNodes[0],
-      initialState,
-      handlers,
-      resolveNext: () => {
-        cursor += 1;
-        return replayNodes[cursor] || null;
-      },
-      options: {
-        context: {},
-        maxSteps: replayNodes.length,
-      },
-    });
-
-    const visited = replayResult.visitedNodes;
-    const firstMismatch = visited.findIndex((node, index) => node !== replayNodes[index]);
-    const matched = firstMismatch < 0 && visited.length === replayNodes.length;
-    const elapsedMs = Date.now() - startedAt;
-
-    if (matched) {
-      logger.info(
-        '[AGENT] langgraph executor shadow match session=%s status=%s nodes=%d elapsedMs=%d traceTruncated=%s',
-        session.id,
-        terminalStatus,
-        visited.length,
-        elapsedMs,
-        traceNodes.length > replayNodes.length,
-      );
-      return;
-    }
-
-    logger.warn(
-      '[AGENT] langgraph executor shadow mismatch session=%s status=%s mismatchAt=%d expected=%s actual=%s expectedNodes=%d visitedNodes=%d elapsedMs=%d',
-      session.id,
-      terminalStatus,
-      firstMismatch,
-      firstMismatch >= 0 ? replayNodes[firstMismatch] : 'n/a',
-      firstMismatch >= 0 ? visited[firstMismatch] : 'n/a',
-      replayNodes.length,
-      visited.length,
-      elapsedMs,
-    );
-  } catch (error) {
-    logger.warn('[AGENT] langgraph executor shadow replay failed session=%s error=%s', session.id, getErrorMessage(error));
-  }
-};
 
 const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, patch?: Partial<AgentSession>) => {
   const nodeResult = runPersistAndEmitNode({
@@ -994,115 +880,8 @@ export const listAgentDeadletters = (params?: { guildId?: string; limit?: number
   return queueRuntime.listDeadletters(params);
 };
 
-const toElapsedMs = (session: AgentSession): number | null => {
-  if (!session.startedAt) {
-    return null;
-  }
-
-  const startedMs = Date.parse(session.startedAt);
-  if (!Number.isFinite(startedMs)) {
-    return null;
-  }
-
-  const endBase = session.endedAt || session.updatedAt || nowIso();
-  const endedMs = Date.parse(endBase);
-  if (!Number.isFinite(endedMs)) {
-    return null;
-  }
-
-  return Math.max(0, endedMs - startedMs);
-};
-
-const toTraceTailLimit = (raw?: number): number => {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) {
-    return 5;
-  }
-  return Math.max(0, Math.min(20, Math.trunc(value)));
-};
-
-const buildShadowSummary = (
-  shadowGraph: LangGraphState | null,
-  session: AgentSession,
-  traceTailLimit: number,
-): AgentSessionShadowSummary | null => {
-  if (!shadowGraph) {
-    return null;
-  }
-
-  const uniqueNodeCount = new Set(shadowGraph.trace.map((entry) => entry.node)).size;
-  const traceTail = traceTailLimit > 0
-    ? shadowGraph.trace
-      .slice(-traceTailLimit)
-      .map((entry) => ({ node: entry.node, at: entry.at, note: entry.note }))
-    : [];
-
-  const lastNode = shadowGraph.trace.length > 0
-    ? shadowGraph.trace[shadowGraph.trace.length - 1].node
-    : null;
-
-  return {
-    traceLength: shadowGraph.trace.length,
-    lastNode,
-    intent: shadowGraph.intent,
-    hasError: Boolean(shadowGraph.errorCode),
-    elapsedMs: toElapsedMs(session),
-    uniqueNodeCount,
-    traceTail,
-  };
-};
-
-const buildProgressSummary = (session: AgentSession): AgentSessionProgressSummary => {
-  const totalSteps = session.steps.length;
-  const completedSteps = session.steps.filter((step) => step.status === 'completed').length;
-  const failedSteps = session.steps.filter((step) => step.status === 'failed').length;
-  const cancelledSteps = session.steps.filter((step) => step.status === 'cancelled').length;
-  const runningSteps = session.steps.filter((step) => step.status === 'running').length;
-  const pendingSteps = session.steps.filter((step) => step.status === 'pending').length;
-  const doneSteps = completedSteps + failedSteps + cancelledSteps;
-  const progressPercent = totalSteps > 0
-    ? Math.round((doneSteps / totalSteps) * 100)
-    : 100;
-
-  return {
-    totalSteps,
-    doneSteps,
-    completedSteps,
-    failedSteps,
-    cancelledSteps,
-    runningSteps,
-    pendingSteps,
-    progressPercent,
-  };
-};
-
-const buildPrivacySummary = (session: AgentSession) => {
-  return {
-    deliberationMode: session.deliberationMode || 'direct',
-    riskScore: Number.isFinite(session.riskScore) ? Number(session.riskScore) : 0,
-    decision: session.policyGate?.decision || 'allow',
-    reasons: [...(session.policyGate?.reasons || [])],
-  };
-};
-
-export const serializeAgentSessionForApi = (
-  session: AgentSession,
-  options?: { includeShadowGraph?: boolean; traceTailLimit?: number },
-): AgentSessionApiView => {
-  const includeShadowGraph = options?.includeShadowGraph === true;
-  const traceTailLimit = toTraceTailLimit(options?.traceTailLimit);
-  const cloned = cloneSession(session);
-  const shadowGraph = cloned.shadowGraph;
-
-  return {
-    ...cloned,
-    shadowGraphSummary: buildShadowSummary(shadowGraph, cloned, traceTailLimit),
-    progressSummary: buildProgressSummary(cloned),
-    privacySummary: buildPrivacySummary(cloned),
-    ...(includeShadowGraph ? { shadowGraph } : {}),
-    ...(includeShadowGraph ? {} : { shadowGraph: undefined }),
-  };
-};
+// Session API serialization — extracted to sessionApiSerializer.ts
+export { serializeAgentSessionForApi } from './sessionApiSerializer';
 
 export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
   const all = [...sessions.values()];

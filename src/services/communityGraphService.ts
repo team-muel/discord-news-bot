@@ -1,9 +1,8 @@
+import { SOCIAL_RECENCY_HALF_LIFE_DAYS } from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { hasSocialGraphConsent } from './agent/agentConsentService';
 
 export type CommunityInteractionEventType = 'reply' | 'mention' | 'reaction' | 'co_presence';
-
-const SOCIAL_RECENCY_HALF_LIFE_DAYS = Math.max(3, Number(process.env.SOCIAL_RECENCY_HALF_LIFE_DAYS || 21));
 
 const toDiscordId = (value: unknown): string => {
   const text = String(value || '').trim();

@@ -32,6 +32,14 @@ import { syncHighRiskActionsToSandboxPolicy } from '../../services/skills/action
 import { getSupabaseClient, isSupabaseConfigured } from '../../services/supabaseClient';
 
 import { BotAgentRouteDeps } from './types';
+import {
+  OPENJARVIS_REQUIRE_OPENCODE_WORKER,
+  MCP_OPENCODE_WORKER_URL,
+  UNATTENDED_WORKER_HEALTH_TIMEOUT_MS,
+  OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED,
+  OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN,
+  LLM_EXPERIMENT_NAME,
+} from '../../config';
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -48,9 +56,9 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
 };
 
 const probeOpencodeWorkerHealth = async () => {
-  const required = parseBool(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
-  const workerUrl = String(process.env.MCP_OPENCODE_WORKER_URL || '').trim();
-  const timeoutMs = Math.max(1000, Math.min(30_000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000)));
+  const required = OPENJARVIS_REQUIRE_OPENCODE_WORKER;
+  const workerUrl = MCP_OPENCODE_WORKER_URL;
+  const timeoutMs = UNATTENDED_WORKER_HEALTH_TIMEOUT_MS;
   if (!required && !workerUrl) {
     return {
       required: false,
@@ -171,8 +179,8 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         notes: {
           guildScoped: Boolean(guildId),
           publishLock: {
-            enabled: String(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED || 'true').trim(),
-            failOpen: String(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN || 'false').trim(),
+            enabled: String(OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED),
+            failOpen: String(OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN),
           },
         },
       });
@@ -466,7 +474,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
   });
 
   router.get('/agent/llm/experiments/summary', requireAdmin, async (req, res) => {
-    const experimentName = toStringParam(req.query?.experimentName || req.query?.name || process.env.LLM_EXPERIMENT_NAME || 'hf_ab_v1');
+    const experimentName = toStringParam(req.query?.experimentName || req.query?.name || LLM_EXPERIMENT_NAME || 'hf_ab_v1');
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 180 });
     if (!experimentName) {

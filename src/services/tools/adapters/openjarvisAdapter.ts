@@ -1,8 +1,15 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseBooleanEnv } from '../../../utils/env';
+import {
+  OPENJARVIS_ENABLED as CONFIG_OPENJARVIS_ENABLED,
+  OPENJARVIS_DISABLED as CONFIG_OPENJARVIS_DISABLED,
+  OPENJARVIS_SERVE_URL as CONFIG_OPENJARVIS_SERVE_URL,
+  OPENJARVIS_MODEL as CONFIG_OPENJARVIS_MODEL,
+} from '../../../config';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
+import { generateText, isAnyLlmConfigured } from '../../llmClient';
 
 export type BenchResult = {
   benchScore: number | null;
@@ -46,12 +53,11 @@ export const parseBenchResult = (output: string[]): BenchResult => {
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 30_000;
-const ENABLED = parseBooleanEnv(process.env.OPENJARVIS_ENABLED, false);
-const SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
-const MODEL = String(process.env.OPENJARVIS_MODEL || 'qwen2.5:7b-instruct').trim();
-const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
-const LITELLM_MASTER_KEY = String(process.env.LITELLM_MASTER_KEY || process.env.OPENCLAW_API_KEY || '').trim();
-const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim();
+const ENABLED = CONFIG_OPENJARVIS_ENABLED;
+const EXPLICITLY_DISABLED = CONFIG_OPENJARVIS_DISABLED;
+const SERVE_URL = CONFIG_OPENJARVIS_SERVE_URL;
+const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
+
 
 /**
  * Lite mode: when jarvis CLI is not installed but LiteLLM proxy is available,
@@ -111,15 +117,15 @@ export const openjarvisAdapter: ExternalToolAdapter = {
   liteCapabilities: ['jarvis.ask'],
 
   isAvailable: async () => {
-    if (!ENABLED) return false;
+    if (EXPLICITLY_DISABLED || !ENABLED) return false;
     try {
       await runCli(['--version']);
       cliAvailable = true;
       return true;
     } catch {
       cliAvailable = false;
-      // Lite mode: LiteLLM proxy available → jarvis.ask only
-      return LITELLM_BASE_URL.length > 0;
+      // Lite mode: any LLM configured → jarvis.ask only
+      return isAnyLlmConfigured();
     }
   },
 
@@ -165,28 +171,20 @@ export const openjarvisAdapter: ExternalToolAdapter = {
             }
           }
 
-          // LiteLLM proxy fallback (lite mode or CLI failure)
-          if (LITELLM_BASE_URL) {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (LITELLM_MASTER_KEY) {
-              headers['Authorization'] = `Bearer ${LITELLM_MASTER_KEY}`;
-            }
-            const llmResp = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                model: LITELLM_MODEL,
-                messages: [{ role: 'user', content: question }],
-              }),
-              signal: AbortSignal.timeout(TIMEOUT_MS),
-            }).catch(() => null);
-            if (llmResp?.ok) {
-              const data = (await llmResp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-              const content = data.choices?.[0]?.message?.content || '';
+          // Central LLM fallback (lite mode or CLI failure)
+          if (isAnyLlmConfigured()) {
+            try {
+              const content = await generateText({
+                system: 'You are a helpful AI assistant.',
+                user: question,
+                actionName: 'jarvis.ask',
+              });
               if (content) {
                 const mode = cliAvailable === false ? ' (lite mode)' : '';
-                return makeResult(true, `Response via LiteLLM proxy${mode}`, content.split('\n').slice(0, 20));
+                return makeResult(true, `Response via LLM${mode}`, content.split('\n').slice(0, 20));
               }
+            } catch {
+              // LLM call failed — fall through to unavailable
             }
           }
 

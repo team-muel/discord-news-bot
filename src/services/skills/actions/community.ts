@@ -45,6 +45,7 @@ const extractCommunityQuery = (goal: string, args?: Record<string, unknown>): st
 export const communitySearchAction: ActionDefinition = {
   name: 'community.search',
   description: '커뮤니티 게시글 검색을 MCP 워커에 위임합니다(본체 직접 크롤링 금지).',
+  category: 'content',
   execute: async ({ goal, args }) => {
     const query = extractCommunityQuery(goal, args);
     if (!query) {

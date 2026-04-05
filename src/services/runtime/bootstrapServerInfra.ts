@@ -1,0 +1,73 @@
+import { rehydrateActivePipelines, listSprintPipelines } from '../sprint/sprintOrchestrator';
+import { rehydrateEventSourcingEntities } from '../sprint/eventSourcing/bridge';
+import { startSprintScheduledTriggers } from '../sprint/sprintTriggers';
+import { checkGitConfigHealth } from '../sprint/autonomousGit';
+import { initMcpSkillRouter } from '../mcpSkillRouter';
+import { syncHighRiskActionsToSandboxPolicy } from '../skills/actionRunner';
+import { autoLoadAdapters } from '../tools/adapterAutoLoader';
+import { wireSignalBusConsumers } from './signalBusWiring';
+import { getErrorMessage } from '../../utils/errorMessage';
+import logger from '../../logger';
+
+const SANDBOX_POLICY_RESYNC_MS = 6 * 60 * 60_000;
+
+/**
+ * Bootstrap server-only infrastructure: sprint pipelines, MCP router,
+ * sandbox policy, dynamic adapters, signal bus, and observer loop.
+ */
+export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => boolean): void => {
+  // Restore in-progress sprint pipelines from Supabase
+  void rehydrateActivePipelines()
+    .then(() => {
+      // After legacy rehydration, populate Ventyd entityMap so shadow calls work
+      const activeIds = listSprintPipelines(undefined, 50).map((p) => p.sprintId);
+      if (activeIds.length > 0) {
+        return rehydrateEventSourcingEntities(activeIds);
+      }
+    })
+    .catch((error) => {
+      logger.debug('[SPRINT] rehydration skipped: %s', getErrorMessage(error));
+    });
+
+  // Start scheduled sprint triggers (security audit, improvement)
+  startSprintScheduledTriggers();
+
+  // Initialize MCP skill router with health-aware worker discovery
+  void initMcpSkillRouter().catch((error) => {
+    logger.debug('[MCP-ROUTER] init skipped: %s', getErrorMessage(error));
+  });
+
+  // Validate sprint git config at startup
+  checkGitConfigHealth();
+
+  // D-06: Sync high-risk actions to OpenShell sandbox policy at startup
+  void syncHighRiskActionsToSandboxPolicy().catch((error) => {
+    logger.debug('[SANDBOX-POLICY] startup sync skipped: %s', getErrorMessage(error));
+  });
+
+  // D-06: Periodic re-sync every 6 hours to catch env changes without restart
+  setInterval(() => {
+    void syncHighRiskActionsToSandboxPolicy().catch((error) => {
+      logger.debug('[SANDBOX-POLICY] periodic sync skipped: %s', getErrorMessage(error));
+    });
+  }, SANDBOX_POLICY_RESYNC_MS);
+
+  // M-15 / F-02: Auto-load dynamic adapters from adapters/ directory
+  void autoLoadAdapters().catch((error) => {
+    logger.debug('[ADAPTER-LOADER] startup auto-load skipped: %s', getErrorMessage(error));
+  });
+
+  // Wire cross-cutting signal bus consumers (Layer 1 integration)
+  wireSignalBusConsumers();
+
+  // Phase F: Observer Layer — autonomous environment scanning
+  if (isPgCronOwned('observerLoop')) {
+    logger.info('[RUNTIME] observerLoop skipped — pg_cron owns it');
+  } else {
+    void import('../observer/observerOrchestrator').then(({ startObserverLoop }) => {
+      startObserverLoop();
+    }).catch((error) => {
+      logger.debug('[OBSERVER] startup skipped: %s', getErrorMessage(error));
+    });
+  }
+};

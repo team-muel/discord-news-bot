@@ -29,7 +29,7 @@ services:
       - key: AUTOMATION_NEWS_ENABLED
         value: "false"
       - key: AI_PROVIDER
-        value: openclaw
+        value: litellm
       - key: OPENCLAW_MODEL
         value: muel-balanced
       - key: OPENJARVIS_REQUIRE_OPENCODE_WORKER
@@ -146,6 +146,8 @@ services:
         value: http://34.56.232.61:18789
       - key: OPENCLAW_GATEWAY_TOKEN
         sync: false
+      - key: OPENCLAW_LACUNA_SKILL_CREATE_ENABLED
+        value: "false"
       # Cross-model voice for sprint review phases (NemoClaw second opinion)
       - key: SPRINT_CROSS_MODEL_ENABLED
         value: "true"

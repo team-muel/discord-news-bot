@@ -1,5 +1,24 @@
 # Services Directory Structure
 
+## Import Patterns
+
+Every subdirectory has a **barrel `index.ts`** for clean imports:
+
+```ts
+// Option 1 — Named import from domain barrel
+import { validateAgentSessionRequest, AgentPolicySnapshot } from '../services/agent';
+
+// Option 2 — Namespace import via master barrel
+import { agent, runtime, memory } from '../services';
+agent.validateAgentSessionRequest(...)
+
+// Option 3 — Direct file import (existing code, still works)
+import { startAgentSession } from '../services/multiAgentService';
+```
+
+Root-level files (e.g. `multiAgentService.ts`) are imported directly.
+See `index.ts` for the full domain map of root-level files.
+
 ## Domain Groupings
 
 The `src/services/` directory organizes 100+ service files into domain subdirectories.

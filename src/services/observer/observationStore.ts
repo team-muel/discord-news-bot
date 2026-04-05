@@ -7,6 +7,8 @@
 
 import logger from '../../logger';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_OBSERVATIONS } from '../infra/tableRegistry';
 import type { Observation, ObservationSeverity, ObservationChannelKind } from './observerTypes';
 
 // In-memory fallback buffer (capped)
@@ -16,7 +18,8 @@ const fallbackBuffer: Observation[] = [];
 export const persistObservations = async (observations: Observation[]): Promise<number> => {
   if (observations.length === 0) return 0;
 
-  if (!isSupabaseConfigured()) {
+  const qb = fromTable(T_OBSERVATIONS);
+  if (!qb) {
     for (const obs of observations) {
       fallbackBuffer.push(obs);
       if (fallbackBuffer.length > FALLBACK_MAX) fallbackBuffer.shift();
@@ -25,7 +28,6 @@ export const persistObservations = async (observations: Observation[]): Promise<
   }
 
   try {
-    const sb = getSupabaseClient();
     const rows = observations.map((obs) => ({
       guild_id: obs.guildId,
       channel: obs.channel,
@@ -35,7 +37,7 @@ export const persistObservations = async (observations: Observation[]): Promise<
       detected_at: obs.detectedAt,
     }));
 
-    const { error } = await sb.from('observations').insert(rows);
+    const { error } = await qb.insert(rows);
     if (error) {
       logger.debug('[OBSERVER-STORE] persist failed: %s', error.message);
       // Fallback to memory
@@ -76,9 +78,9 @@ export const getRecentObservations = async (opts: {
   }
 
   try {
-    const sb = getSupabaseClient();
+    const sb = getClient()!;
     let query = sb
-      .from('observations')
+      .from(T_OBSERVATIONS)
       .select('*')
       .order('detected_at', { ascending: false })
       .limit(limit);
@@ -111,11 +113,11 @@ export const markObservationsConsumed = async (ids: string[], sprintId?: string)
   if (ids.length === 0 || !isSupabaseConfigured()) return;
 
   try {
-    const sb = getSupabaseClient();
+    const sb = getClient()!;
     const update: Record<string, unknown> = { consumed_at: new Date().toISOString() };
     if (sprintId) update.sprint_id = sprintId;
 
-    await sb.from('observations').update(update).in('id', ids);
+    await sb.from(T_OBSERVATIONS).update(update).in('id', ids);
   } catch (err) {
     logger.debug('[OBSERVER-STORE] mark consumed failed: %s', err instanceof Error ? err.message : String(err));
   }

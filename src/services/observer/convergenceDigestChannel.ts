@@ -14,6 +14,8 @@ import type {
 } from './observerTypes';
 import { OBSERVER_CONVERGENCE_DIGEST_ENABLED } from '../../config';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import { fromTable } from '../infra/baseRepository';
+import { T_AGENT_WEEKLY_REPORTS } from '../infra/tableRegistry';
 
 const channel: ObservationChannel = {
   kind: 'convergence-digest',
@@ -23,16 +25,15 @@ const channel: ObservationChannel = {
     const start = Date.now();
     const observations: Observation[] = [];
 
-    if (!isSupabaseConfigured()) {
+    const qb = fromTable(T_AGENT_WEEKLY_REPORTS);
+    if (!qb) {
       return { observations, channelKind: 'convergence-digest', scanDurationMs: Date.now() - start };
     }
 
     try {
-      const sb = getSupabaseClient();
 
       // Read latest convergence report (already computed by selfImprovementLoop)
-      const { data } = await sb
-        .from('agent_weekly_reports')
+      const { data } = await qb
         .select('payload, created_at')
         .eq('report_kind', 'convergence_report')
         .order('created_at', { ascending: false })

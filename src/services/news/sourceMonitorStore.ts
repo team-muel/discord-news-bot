@@ -1,14 +1,15 @@
 import logger from '../../logger';
-import { getSupabaseClient } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_SOURCES } from '../infra/tableRegistry';
 
 export const updateSourceState = async (params: {
   id: number;
   patch: Record<string, string | null>;
   logPrefix: string;
 }) => {
-  const db = getSupabaseClient();
+  const db = getClient();
   const { error } = await db
-    .from('sources')
+    .from(T_SOURCES)
     .update({ ...params.patch, last_check_at: new Date().toISOString() })
     .eq('id', params.id);
 
@@ -23,13 +24,13 @@ export const claimSourceLock = async (params: {
   lockLeaseMs: number;
   logPrefix: string;
 }): Promise<boolean> => {
-  const db = getSupabaseClient();
+  const db = getClient();
   const nowIso = new Date().toISOString();
   const leaseUntilIso = new Date(Date.now() + params.lockLeaseMs).toISOString();
 
   const tryClaimLockTokenNull = async () => {
     return db
-      .from('sources')
+      .from(T_SOURCES)
       .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
       .eq('id', params.id)
       .eq('is_active', true)
@@ -40,7 +41,7 @@ export const claimSourceLock = async (params: {
 
   const tryClaimOwnLockToken = async () => {
     return db
-      .from('sources')
+      .from(T_SOURCES)
       .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
       .eq('id', params.id)
       .eq('is_active', true)
@@ -51,7 +52,7 @@ export const claimSourceLock = async (params: {
 
   const tryClaimExpiredLock = async () => {
     return db
-      .from('sources')
+      .from(T_SOURCES)
       .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
       .eq('id', params.id)
       .eq('is_active', true)
@@ -62,7 +63,7 @@ export const claimSourceLock = async (params: {
 
   const tryClaimNullExpiresAt = async () => {
     return db
-      .from('sources')
+      .from(T_SOURCES)
       .update({ lock_token: params.instanceId, lock_expires_at: leaseUntilIso })
       .eq('id', params.id)
       .eq('is_active', true)
@@ -93,9 +94,9 @@ export const releaseSourceLock = async (params: {
   instanceId: string;
   logPrefix: string;
 }) => {
-  const db = getSupabaseClient();
+  const db = getClient();
   const { error } = await db
-    .from('sources')
+    .from(T_SOURCES)
     .update({ lock_token: null, lock_expires_at: null })
     .eq('id', params.id)
     .eq('lock_token', params.instanceId);

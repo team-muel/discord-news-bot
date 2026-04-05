@@ -7,6 +7,7 @@ const { mockFrom } = vi.hoisted(() => ({
 
 vi.mock('../supabaseClient', () => ({
   getSupabaseClient: vi.fn(() => ({ from: mockFrom })),
+  isSupabaseConfigured: vi.fn(() => true),
 }));
 
 vi.mock('../../logger', () => ({

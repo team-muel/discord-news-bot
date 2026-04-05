@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+import { MCP_WORKER_AUTH_TOKEN, NODE_ENV } from '../config';
 /**
  * Unified MCP Server
  *
@@ -149,7 +150,7 @@ const jsonResponse = (res: HttpServerResponse, status: number, payload: unknown)
 };
 
 const validateAuthToken = (req: HttpIncomingMessage, expectedToken: string): boolean => {
-  if (!expectedToken) return true; // no auth configured
+  if (!expectedToken) return false; // no token configured = deny all
   const fromHeader = String(req.headers['x-opencode-worker-token'] || '').trim();
   if (fromHeader) {
     const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto');
@@ -178,7 +179,11 @@ const extractGuildContext = (req: HttpIncomingMessage): { guildId?: string; requ
 };
 
 export const createMcpHttpHandler = (options?: { authToken?: string }) => {
-  const authToken = String(options?.authToken || process.env.MCP_WORKER_AUTH_TOKEN || '').trim();
+  const authToken = String(options?.authToken || MCP_WORKER_AUTH_TOKEN || '').trim();
+
+  if (!authToken && NODE_ENV === 'production') {
+    console.error('[muel-unified-mcp] WARNING: MCP_WORKER_AUTH_TOKEN not set — all HTTP tool calls will be rejected');
+  }
 
   return async (req: HttpIncomingMessage, res: HttpServerResponse): Promise<void> => {
     const url = req.url || '';
@@ -208,8 +213,8 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
       return;
     }
 
-    // Auth check for tool endpoints
-    if (authToken && !validateAuthToken(req, authToken)) {
+    // Auth check for all tool endpoints (health check is public)
+    if (!validateAuthToken(req, authToken)) {
       jsonResponse(res, 401, { error: 'unauthorized' });
       return;
     }
@@ -315,8 +320,8 @@ export const startMcpHttpServer = (port: number, options?: { authToken?: string 
   const http = require('node:http') as typeof import('node:http');
   const handler = createMcpHttpHandler(options);
   const server = http.createServer(handler);
-  server.listen(port, () => {
-    console.error(`[muel-unified-mcp] HTTP server ready on port ${port}`);
+  server.listen(port, '127.0.0.1', () => {
+    console.error(`[muel-unified-mcp] HTTP server ready on 127.0.0.1:${port}`);
   });
   return server;
 };

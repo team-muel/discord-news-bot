@@ -19,6 +19,8 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { cosineSimilarity } from '../../utils/vectorMath';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS, T_USER_EMBEDDINGS } from '../infra/tableRegistry';
 import { isEmbeddingEnabled } from './memoryEmbeddingService';
 
 // Re-export for backward compat (barrel consumers import from here)
@@ -104,11 +106,11 @@ export const computeUserEmbedding = async (
 ): Promise<{ embedding: number[]; itemCount: number } | null> => {
   if (!isUserEmbeddingEnabled()) return null;
 
-  const client = getSupabaseClient();
+  const client = getClient()!;
 
   // Fetch embeddings of active memory items owned by this user in this guild
   const { data, error } = await client
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('embedding')
     .eq('guild_id', guildId)
     .eq('owner_user_id', userId)
@@ -169,14 +171,14 @@ export const storeUserEmbedding = async (
   embedding: number[],
   itemCount: number,
 ): Promise<boolean> => {
-  if (!isSupabaseConfigured()) return false;
+  const db = getClient();
+  if (!db) return false;
 
   try {
-    const client = getSupabaseClient();
     const vectorStr = `[${embedding.join(',')}]`;
 
-    const { error } = await client
-      .from('user_embeddings')
+    const { error } = await db
+      .from(T_USER_EMBEDDINGS)
       .upsert(
         {
           user_id: userId,
@@ -206,12 +208,12 @@ export const getUserEmbedding = async (
   userId: string,
   guildId: string,
 ): Promise<UserEmbedding | null> => {
-  if (!isSupabaseConfigured()) return null;
+  const db = getClient();
+  if (!db) return null;
 
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('user_embeddings')
+    const { data, error } = await db
+      .from(T_USER_EMBEDDINGS)
       .select('user_id, guild_id, embedding, computed_at, item_count')
       .eq('user_id', userId)
       .eq('guild_id', guildId)
@@ -264,11 +266,11 @@ export const refreshUserEmbeddings = async (
   const result: UserEmbeddingRefreshResult = { usersProcessed: 0, usersUpdated: 0, usersSkipped: 0, errors: 0 };
 
   try {
-    const client = getSupabaseClient();
+    const client = getClient()!;
 
     // Find distinct users who own active memories with embeddings
     let query = client
-      .from('memory_items')
+      .from(T_MEMORY_ITEMS)
       .select('owner_user_id, guild_id')
       .eq('status', 'active')
       .not('embedding', 'is', null)
@@ -339,28 +341,21 @@ export const refreshUserEmbeddings = async (
 
 // ──── Background Loop ─────────────────────────────────────────────────────────
 
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
+import { BackgroundLoop } from '../../utils/backgroundLoop';
+
+const loop = new BackgroundLoop(
+  async () => {
+    const r = await refreshUserEmbeddings();
+    return `processed=${r.usersProcessed} updated=${r.usersUpdated} skipped=${r.usersSkipped} errors=${r.errors}`;
+  },
+  { name: '[USER-EMBEDDING]', intervalMs: USER_EMBEDDING_REFRESH_INTERVAL_MS, errorLevel: 'debug' },
+);
 
 export const startUserEmbeddingLoop = (): void => {
   if (!USER_EMBEDDING_ENABLED) return;
-  if (refreshTimer) return;
-
-  refreshTimer = setInterval(() => {
-    void refreshUserEmbeddings().catch((err) =>
-      logger.debug('[USER-EMBEDDING] loop error: %s', err instanceof Error ? err.message : String(err)),
-    );
-  }, USER_EMBEDDING_REFRESH_INTERVAL_MS);
-
-  if (refreshTimer && typeof refreshTimer === 'object' && 'unref' in refreshTimer) {
-    (refreshTimer as NodeJS.Timeout).unref();
-  }
-
-  logger.info('[USER-EMBEDDING] background refresh loop started (interval=%dms)', USER_EMBEDDING_REFRESH_INTERVAL_MS);
+  loop.start();
 };
 
 export const stopUserEmbeddingLoop = (): void => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
+  loop.stop();
 };

@@ -7,13 +7,14 @@ export type TaskRouteDecision = {
   overrideUsed?: boolean;
 };
 
+import { TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS, TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE } from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const KNOWLEDGE_PATTERN = /(무엇|정의|설명|원인|비교|차이|왜|근거|문서|스키마|정책|알려줘|요약|정리|what|why|explain|summary|schema|policy|docs?)/i;
 const EXECUTION_PATTERN = /(구현|만들|작성|수정|적용|배포|설정|연동|실행|자동화|고쳐|리팩터|코드|build|implement|create|fix|patch|deploy|configure|integrat|automate)/i;
 const CASUAL_PATTERN = /(안녕|고마워|감사|힘들|우울|심심|잡담|hello|hi|thanks|thank you)/i;
-const LEARNING_RULE_CACHE_TTL_MS = Math.max(5_000, Number(process.env.TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS || 60_000));
-const LEARNING_RULE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE || 0.65)));
+const LEARNING_RULE_CACHE_TTL_MS = TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS;
+const LEARNING_RULE_MIN_CONFIDENCE = TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE;
 
 type LearningRoutingRule = {
   guildId: string;

@@ -17,6 +17,8 @@ import type {
 } from './observerTypes';
 import { OBSERVER_PERF_DRIFT_ENABLED, OBSERVER_PERF_DRIFT_THRESHOLD_PCT } from '../../config';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import { fromTable } from '../infra/baseRepository';
+import { T_AGENT_WEEKLY_REPORTS } from '../infra/tableRegistry';
 
 const channel: ObservationChannel = {
   kind: 'perf-drift',
@@ -26,16 +28,15 @@ const channel: ObservationChannel = {
     const start = Date.now();
     const observations: Observation[] = [];
 
-    if (!isSupabaseConfigured()) {
+    const qb = fromTable(T_AGENT_WEEKLY_REPORTS);
+    if (!qb) {
       return { observations, channelKind: 'perf-drift', scanDurationMs: Date.now() - start };
     }
 
     try {
-      const sb = getSupabaseClient();
 
       // Fetch last 2 weekly LLM latency reports to compare
-      const { data: reports } = await sb
-        .from('agent_weekly_reports')
+      const { data: reports } = await qb
         .select('payload, created_at')
         .eq('report_kind', 'llm_latency_weekly')
         .order('created_at', { ascending: false })

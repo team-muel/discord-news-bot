@@ -1,9 +1,11 @@
-import { ChannelType, type Client } from 'discord.js';
 import logger from '../../logger';
 import { runWithConcurrency } from '../../utils/async';
 import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { fromTable } from '../infra/baseRepository';
+import { T_SOURCES } from '../infra/tableRegistry';
 import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
+import type { ChannelSink } from '../automation/types';
 
 type SubscriptionRow = {
   id: number;
@@ -98,21 +100,18 @@ const buildCommunityStarterTitle = (latest: FeedEntry, isFirstNotification: bool
   return COMMUNITY_NEW_POST_TITLE_TEMPLATE.replace('{author}', latest.author);
 };
 
-const sendCommunityPostWithThread = async (channel: any, latest: FeedEntry, isFirstNotification: boolean) => {
-  const starter = await channel.send({
-    content: buildCommunityStarterTitle(latest, isFirstNotification),
-  });
-
+const sendCommunityPostWithThread = async (sink: ChannelSink, channelId: string, latest: FeedEntry, isFirstNotification: boolean) => {
+  const content = buildCommunityStarterTitle(latest, isFirstNotification);
   const threadName = (latest.title || latest.author).slice(0, 90);
-  const canCreateThread = channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement;
 
-  if (canCreateThread && starter && typeof starter.startThread === 'function') {
-    await starter.startThread({
+  await sink.sendToChannel(channelId, {
+    content,
+    thread: {
       name: threadName,
       autoArchiveDuration: COMMUNITY_AUTO_ARCHIVE_MIN,
       reason: COMMUNITY_THREAD_REASON,
-    });
-  }
+    },
+  });
 };
 
 const fetchLatestWithOptions = async (
@@ -150,7 +149,7 @@ const releaseRowLock = async (id: number) => {
   await releaseSourceLock({ id, instanceId: INSTANCE_ID, logPrefix: '[YT-MONITOR]' });
 };
 
-const processRow = async (client: Client, row: SubscriptionRow, options?: TickOptions): Promise<ProcessRowOutcome> => {
+const processRow = async (sink: ChannelSink, row: SubscriptionRow, options?: TickOptions): Promise<ProcessRowOutcome> => {
   if (!row.is_active) {
     return 'skipped_no_latest';
   }
@@ -167,12 +166,6 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
     return 'error';
   }
 
-  const channel = await client.channels.fetch(row.channel_id);
-  if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-    await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Target channel not found or not sendable channel' });
-    return 'error';
-  }
-
   const latest = await fetchLatestWithOptions(row, mode, options);
   if (!latest) {
     await updateRowState(row.id, { last_check_status: 'success', last_check_error: null });
@@ -186,13 +179,18 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
   }
 
   if (mode === 'videos') {
-    await channel.send({
+    const sent = await sink.sendToChannel(row.channel_id, {
       content: [
         `📌 ${latest.author} 신규 영상 업로드!`,
         latest.title,
         latest.link,
       ].join('\n'),
     });
+
+    if (!sent) {
+      await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Target channel not found or not sendable channel' });
+      return 'error';
+    }
 
     await updateRowState(row.id, {
       last_check_status: 'success',
@@ -203,7 +201,7 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
   }
 
   const isFirstNotification = !previous;
-  await sendCommunityPostWithThread(channel, latest, isFirstNotification);
+  await sendCommunityPostWithThread(sink, row.channel_id, latest, isFirstNotification);
 
   await updateRowState(row.id, {
     last_check_status: 'success',
@@ -216,14 +214,13 @@ const processRow = async (client: Client, row: SubscriptionRow, options?: TickOp
   }
 };
 
-const runTick = async (client: Client, guildId?: string, options?: TickOptions): Promise<YouTubeTickStats> => {
-  if (!isSupabaseConfigured()) {
+const runTick = async (sink: ChannelSink, guildId?: string, options?: TickOptions): Promise<YouTubeTickStats> => {
+  const qb = fromTable(T_SOURCES);
+  if (!qb) {
     return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoLatest: 0 };
   }
 
-  const db = getSupabaseClient();
-  let query = db
-    .from('sources')
+  let query = qb
     .select('id,guild_id,url,name,channel_id,is_active,last_post_id,last_post_signature')
     .eq('is_active', true);
 
@@ -251,7 +248,7 @@ const runTick = async (client: Client, guildId?: string, options?: TickOptions):
   await runWithConcurrency(rows, async (row) => {
     stats.processed += 1;
     try {
-      const outcome = await processRow(client, row, options);
+      const outcome = await processRow(sink, row, options);
       if (outcome === 'sent') {
         stats.sent += 1;
       } else if (outcome === 'skipped_locked') {
@@ -274,7 +271,7 @@ const runTick = async (client: Client, guildId?: string, options?: TickOptions):
   return stats;
 };
 
-const executeTick = async (client: Client, guildId?: string, options?: TickOptions) => {
+const executeTick = async (sink: ChannelSink, guildId?: string, options?: TickOptions) => {
   if (running) {
     return { ok: false, message: 'Monitor tick already running' as const };
   }
@@ -285,7 +282,7 @@ const executeTick = async (client: Client, guildId?: string, options?: TickOptio
   const startMs = Date.now();
 
   try {
-    const tick = await runTick(client, guildId, options);
+    const tick = await runTick(sink, guildId, options);
     lastTickProcessedSources = tick.processed;
     lastTickFailedSources = tick.failed;
     successCount += 1;
@@ -329,28 +326,28 @@ const executeTick = async (client: Client, guildId?: string, options?: TickOptio
   }
 };
 
-export const startYouTubeSubscriptionsMonitor = (client: Client) => {
+export const startYouTubeSubscriptionsMonitor = (sink: ChannelSink) => {
   if (started) {
     return;
   }
 
   started = true;
 
-  void executeTick(client);
+  void executeTick(sink);
   timer = setInterval(() => {
-    void executeTick(client);
+    void executeTick(sink);
   }, MONITOR_INTERVAL_MS);
   timer.unref();
 
   logger.info('[YT-MONITOR] started (intervalMs=%d, concurrency=%d, instance=%s)', MONITOR_INTERVAL_MS, MONITOR_CONCURRENCY, INSTANCE_ID);
 };
 
-export const triggerYouTubeSubscriptionsMonitor = async (client: Client, guildId?: string) => {
+export const triggerYouTubeSubscriptionsMonitor = async (sink: ChannelSink, guildId?: string) => {
   if (!started) {
     return { ok: false, message: 'Monitor is not started' };
   }
 
-  return executeTick(client, guildId, { aggressiveProbe: true });
+  return executeTick(sink, guildId, { aggressiveProbe: true });
 };
 
 export const getYouTubeSubscriptionsMonitorSnapshot = () => ({

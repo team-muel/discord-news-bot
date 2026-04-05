@@ -35,7 +35,12 @@ vi.mock('./supabaseErrors', () => ({
 }));
 
 // ---------- import under test ----------
-const { getMigrationStatus, recordMigrationApplied, KNOWN_MIGRATIONS } = await import('./migrationRegistry');
+const {
+  getMigrationStatus,
+  recordMigrationApplied,
+  validateMigrationsAtStartup,
+  KNOWN_MIGRATIONS,
+} = await import('./migrationRegistry');
 
 describe('migrationRegistry', () => {
   beforeEach(() => {
@@ -53,7 +58,8 @@ describe('migrationRegistry', () => {
       expect(KNOWN_MIGRATIONS).toContain('MIGRATION_SCHEMA_TRACKING');
       expect(KNOWN_MIGRATIONS).toContain('MIGRATION_THREAD_CONTEXT_COLUMNS');
       expect(KNOWN_MIGRATIONS).toContain('OBSIDIAN_HEADLESS_MIGRATION');
-      expect(KNOWN_MIGRATIONS.length).toBeGreaterThanOrEqual(3);
+      expect(KNOWN_MIGRATIONS).toContain('MIGRATION_DISTRIBUTED_LOCK_RPC');
+      expect(KNOWN_MIGRATIONS.length).toBeGreaterThanOrEqual(6);
     });
   });
 
@@ -127,6 +133,72 @@ describe('migrationRegistry', () => {
       expect(upsertArg.name).toBe('MIGRATION_THREAD_CONTEXT_COLUMNS');
       expect(upsertArg.checksum).toBe('abc123');
       expect(upsertArg.applied_by).toBe('cli');
+    });
+  });
+
+  describe('validateMigrationsAtStartup', () => {
+    it('returns ok:true when Supabase not configured', async () => {
+      mockIsConfigured.mockReturnValue(false);
+      const result = await validateMigrationsAtStartup();
+      expect(result.ok).toBe(true);
+      expect(result.pendingCount).toBe(0);
+    });
+
+    it('returns pending names when migrations are missing', async () => {
+      const chain: Record<string, unknown> = {};
+      const self = () => chain;
+      chain.select = vi.fn().mockImplementation(self);
+      chain.in = vi.fn().mockReturnValue({
+        data: [
+          { name: 'MIGRATION_SCHEMA_TRACKING', applied_at: '2026-04-01T00:00:00Z', applied_by: 'manual' },
+        ],
+        error: null,
+      });
+      mockFrom.mockReturnValue(chain);
+
+      const result = await validateMigrationsAtStartup();
+      expect(result.ok).toBe(false);
+      expect(result.trackingTableExists).toBe(true);
+      expect(result.pendingCount).toBe(KNOWN_MIGRATIONS.length - 1);
+      expect(result.pendingNames).toContain('MIGRATION_THREAD_CONTEXT_COLUMNS');
+      expect(result.pendingNames).not.toContain('MIGRATION_SCHEMA_TRACKING');
+    });
+
+    it('returns ok:true when all migrations applied', async () => {
+      const chain: Record<string, unknown> = {};
+      const self = () => chain;
+      chain.select = vi.fn().mockImplementation(self);
+      chain.in = vi.fn().mockReturnValue({
+        data: KNOWN_MIGRATIONS.map((name) => ({
+          name,
+          applied_at: '2026-04-01T00:00:00Z',
+          applied_by: 'manual',
+        })),
+        error: null,
+      });
+      mockFrom.mockReturnValue(chain);
+
+      const result = await validateMigrationsAtStartup();
+      expect(result.ok).toBe(true);
+      expect(result.pendingCount).toBe(0);
+      expect(result.pendingNames).toEqual([]);
+      expect(result.appliedCount).toBe(KNOWN_MIGRATIONS.length);
+    });
+
+    it('does not throw on query failure', async () => {
+      const chain: Record<string, unknown> = {};
+      const self = () => chain;
+      chain.select = vi.fn().mockImplementation(self);
+      chain.in = vi.fn().mockReturnValue({
+        data: null,
+        error: { message: 'connection refused' },
+      });
+      mockFrom.mockReturnValue(chain);
+
+      const result = await validateMigrationsAtStartup();
+      // Should gracefully return noop result, not throw
+      expect(result.ok).toBe(true);
+      expect(result.pendingCount).toBe(0);
     });
   });
 });

@@ -126,6 +126,7 @@ export const webSearchAction: ActionDefinition = {
   name: 'web.search',
   description:
     'URL 없이 자연어 질의어로 웹 검색 → 결과 URL·요약 반환. 허용 도메인 필터 적용.',
+  category: 'data',
   execute: async ({ goal, args }) => {
     const query = extractQuery({
       goal,

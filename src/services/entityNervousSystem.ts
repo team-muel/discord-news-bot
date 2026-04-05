@@ -7,25 +7,33 @@
  * Circuit 3: Self-Reflection → Self-Modification (retro insights update session-level self-notes)
  */
 
+import {
+  ENTITY_NERVOUS_SYSTEM_ENABLED,
+  ENTITY_MEMORY_PRECIPITATION_ENABLED,
+  ENTITY_MEMORY_PRECIPITATION_MIN_STEPS,
+  ENTITY_REWARD_BEHAVIOR_ENABLED,
+  ENTITY_SELF_NOTES_ENABLED,
+  ENTITY_SELF_NOTES_MAX_LENGTH,
+  ENTITY_SELF_NOTES_MAX_ITEMS,
+} from '../config';
 import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
 import { isSupabaseConfigured, getSupabaseClient } from './supabaseClient';
 
 // ──── Configuration ──────────────────────────────────────────────────────────
 
-const NERVOUS_SYSTEM_ENABLED = parseBooleanEnv(process.env.ENTITY_NERVOUS_SYSTEM_ENABLED, true);
+const NERVOUS_SYSTEM_ENABLED = ENTITY_NERVOUS_SYSTEM_ENABLED;
 
 // Circuit 1: session → memory precipitation
-const MEMORY_PRECIPITATION_ENABLED = parseBooleanEnv(process.env.ENTITY_MEMORY_PRECIPITATION_ENABLED, true);
-const MEMORY_PRECIPITATION_MIN_STEPS = Math.max(1, parseIntegerEnv(process.env.ENTITY_MEMORY_PRECIPITATION_MIN_STEPS, 2));
+const MEMORY_PRECIPITATION_ENABLED = ENTITY_MEMORY_PRECIPITATION_ENABLED;
+const MEMORY_PRECIPITATION_MIN_STEPS = ENTITY_MEMORY_PRECIPITATION_MIN_STEPS;
 
 // Circuit 2: reward → behavior
-const REWARD_BEHAVIOR_ENABLED = parseBooleanEnv(process.env.ENTITY_REWARD_BEHAVIOR_ENABLED, true);
+const REWARD_BEHAVIOR_ENABLED = ENTITY_REWARD_BEHAVIOR_ENABLED;
 
 // Circuit 3: retro → self-notes
-const SELF_NOTES_ENABLED = parseBooleanEnv(process.env.ENTITY_SELF_NOTES_ENABLED, true);
-const SELF_NOTES_MAX_LENGTH = Math.max(200, parseIntegerEnv(process.env.ENTITY_SELF_NOTES_MAX_LENGTH, 2000));
-const SELF_NOTES_MAX_ITEMS = Math.max(3, parseIntegerEnv(process.env.ENTITY_SELF_NOTES_MAX_ITEMS, 10));
+const SELF_NOTES_ENABLED = ENTITY_SELF_NOTES_ENABLED;
+const SELF_NOTES_MAX_LENGTH = ENTITY_SELF_NOTES_MAX_LENGTH;
+const SELF_NOTES_MAX_ITEMS = ENTITY_SELF_NOTES_MAX_ITEMS;
 
 // ──── Types ──────────────────────────────────────────────────────────────────
 

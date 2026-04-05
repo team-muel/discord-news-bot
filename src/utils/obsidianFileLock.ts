@@ -1,3 +1,4 @@
+import { OBSIDIAN_FILE_LOCK_TIMEOUT_MS, OBSIDIAN_FILE_LOCK_STALE_MS, OBSIDIAN_FILE_LOCK_RETRY_MS } from '../config';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,9 +10,9 @@ const toPositiveInt = (value: unknown, fallback: number): number => {
   return Number.isFinite(num) && num > 0 ? Math.trunc(num) : fallback;
 };
 
-const DEFAULT_LOCK_TIMEOUT_MS = toPositiveInt(process.env.OBSIDIAN_FILE_LOCK_TIMEOUT_MS, 8_000);
-const DEFAULT_LOCK_STALE_MS = toPositiveInt(process.env.OBSIDIAN_FILE_LOCK_STALE_MS, 60_000);
-const DEFAULT_LOCK_RETRY_MS = toPositiveInt(process.env.OBSIDIAN_FILE_LOCK_RETRY_MS, 120);
+const DEFAULT_LOCK_TIMEOUT_MS = OBSIDIAN_FILE_LOCK_TIMEOUT_MS;
+const DEFAULT_LOCK_STALE_MS = OBSIDIAN_FILE_LOCK_STALE_MS;
+const DEFAULT_LOCK_RETRY_MS = OBSIDIAN_FILE_LOCK_RETRY_MS;
 
 const buildLockFilePath = (vaultRoot: string, key: string): string => {
   const safeRoot = path.resolve(vaultRoot);

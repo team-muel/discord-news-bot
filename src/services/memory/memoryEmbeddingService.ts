@@ -11,6 +11,8 @@
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS } from '../infra/tableRegistry';
 
 const EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, true);
 const EMBEDDING_MODEL = String(process.env.MEMORY_EMBEDDING_MODEL || 'text-embedding-3-small').trim();
@@ -86,15 +88,14 @@ export const generateQueryEmbedding = async (query: string): Promise<number[] | 
  * Store an embedding for a specific memory_item.
  */
 export const storeMemoryEmbedding = async (memoryItemId: string, embedding: number[]): Promise<boolean> => {
-  if (!isSupabaseConfigured()) return false;
+  const qb = fromTable(T_MEMORY_ITEMS);
+  if (!qb) return false;
 
   try {
-    const db = getSupabaseClient();
     // pgvector expects a string representation: [0.1,0.2,...]
     const vectorStr = `[${embedding.join(',')}]`;
 
-    const { error } = await db
-      .from('memory_items')
+    const { error } = await qb
       .update({ embedding: vectorStr })
       .eq('id', memoryItemId);
 
@@ -120,11 +121,11 @@ export const backfillMemoryEmbeddings = async (params?: {
   const stats = { processed: 0, succeeded: 0, failed: 0 };
   if (!isEmbeddingEnabled()) return stats;
 
-  const db = getSupabaseClient();
+  const db = getClient()!;
   const limit = Math.max(1, Math.min(500, params?.limit ?? 100));
 
   let query = db
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('id, title, content, summary')
     .eq('status', 'active')
     .is('embedding', null)

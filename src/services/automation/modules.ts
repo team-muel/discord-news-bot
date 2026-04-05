@@ -1,4 +1,3 @@
-import type { Client } from 'discord.js';
 import {
   getNewsSentimentMonitorSnapshot,
   isNewsSentimentMonitorEnabled,
@@ -12,7 +11,7 @@ import {
   stopYouTubeSubscriptionsMonitor,
   triggerYouTubeSubscriptionsMonitor,
 } from '../news/youtubeSubscriptionsMonitor';
-import type { AutomationJobName } from './types';
+import type { AutomationJobName, ChannelSink } from './types';
 
 export type AutomationModuleSnapshot = {
   running: boolean;
@@ -34,9 +33,9 @@ export type AutomationModuleRunResult = {
 export type AutomationModule = {
   name: AutomationJobName;
   isEnabled: () => boolean;
-  start: (client: Client) => void;
+  start: (sink: ChannelSink) => void;
   stop: () => void;
-  trigger: (client: Client, guildId?: string) => Promise<AutomationModuleRunResult>;
+  trigger: (sink: ChannelSink, guildId?: string) => Promise<AutomationModuleRunResult>;
   getSnapshot: () => AutomationModuleSnapshot;
 };
 
@@ -44,13 +43,13 @@ const modules: Record<AutomationJobName, AutomationModule> = {
   'youtube-monitor': {
     name: 'youtube-monitor',
     isEnabled: () => true,
-    start: (client: Client) => {
-      startYouTubeSubscriptionsMonitor(client);
+    start: (sink: ChannelSink) => {
+      startYouTubeSubscriptionsMonitor(sink);
     },
     stop: () => {
       stopYouTubeSubscriptionsMonitor();
     },
-    trigger: (client: Client, guildId?: string) => triggerYouTubeSubscriptionsMonitor(client, guildId),
+    trigger: (sink: ChannelSink, guildId?: string) => triggerYouTubeSubscriptionsMonitor(sink, guildId),
     getSnapshot: () => {
       const snapshot = getYouTubeSubscriptionsMonitorSnapshot();
       return {
@@ -69,13 +68,13 @@ const modules: Record<AutomationJobName, AutomationModule> = {
   'news-monitor': {
     name: 'news-monitor',
     isEnabled: () => isNewsSentimentMonitorEnabled(),
-    start: (client: Client) => {
-      startNewsSentimentMonitor(client);
+    start: (sink: ChannelSink) => {
+      startNewsSentimentMonitor(sink);
     },
     stop: () => {
       stopNewsSentimentMonitor();
     },
-    trigger: (client: Client, guildId?: string) => triggerNewsSentimentMonitor(client, guildId),
+    trigger: (sink: ChannelSink, guildId?: string) => triggerNewsSentimentMonitor(sink, guildId),
     getSnapshot: () => {
       const snapshot = getNewsSentimentMonitorSnapshot();
       return {

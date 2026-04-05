@@ -1,4 +1,6 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_SOURCES } from '../infra/tableRegistry';
 
 export type YouTubeSubscriptionKind = 'videos' | 'posts';
 
@@ -178,16 +180,16 @@ export const createYouTubeSubscription = async (params: {
   channelInput: string;
   kind: YouTubeSubscriptionKind;
 }) => {
-  if (!isSupabaseConfigured()) {
+  const db = getClient();
+  if (!db) {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
   const channelId = await parseYouTubeChannelIdOrThrow(params.channelInput);
   const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId);
-  const client = getSupabaseClient();
 
-  const { data: existingByScope, error: existingByScopeError } = await client
-    .from('sources')
+  const { data: existingByScope, error: existingByScopeError } = await db
+    .from(T_SOURCES)
     .select('id, user_id, guild_id, channel_id, url, name, last_post_id, last_post_signature, created_at')
     .eq('url', url)
     .eq('guild_id', params.guildId)
@@ -202,8 +204,8 @@ export const createYouTubeSubscription = async (params: {
     return { created: false, row: existingByScope[0] as YouTubeSubscription, channelId, url };
   }
 
-  const { data: inserted, error: insertError } = await client
-    .from('sources')
+  const { data: inserted, error: insertError } = await db
+    .from(T_SOURCES)
     .insert([
       {
         user_id: params.userId,
@@ -228,13 +230,12 @@ export const createYouTubeSubscription = async (params: {
 };
 
 export const listYouTubeSubscriptions = async (params: { guildId: string; userId?: string }) => {
-  if (!isSupabaseConfigured()) {
+  const qb = fromTable(T_SOURCES);
+  if (!qb) {
     return [] as YouTubeSubscription[];
   }
 
-  const client = getSupabaseClient();
-  let query = client
-    .from('sources')
+  let query = qb
     .select('id, user_id, guild_id, channel_id, url, name, last_post_id, last_post_signature, created_at')
     .eq('guild_id', params.guildId)
     .ilike('url', '%youtube.com/channel/%#%')
@@ -258,16 +259,16 @@ export const deleteYouTubeSubscription = async (params: {
   channelInput: string;
   kind: YouTubeSubscriptionKind;
 }) => {
-  if (!isSupabaseConfigured()) {
+  const db = getClient();
+  if (!db) {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
   const channelId = await parseYouTubeChannelIdOrThrow(params.channelInput);
   const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId);
-  const client = getSupabaseClient();
 
-  const { data: rows, error: selectError } = await client
-    .from('sources')
+  const { data: rows, error: selectError } = await db
+    .from(T_SOURCES)
     .select('id')
     .eq('guild_id', params.guildId)
     .eq('channel_id', params.discordChannelId)
@@ -283,7 +284,7 @@ export const deleteYouTubeSubscription = async (params: {
   }
 
   const targetId = rows[0].id;
-  const { error: deleteError } = await client.from('sources').delete().eq('id', targetId);
+  const { error: deleteError } = await db.from(T_SOURCES).delete().eq('id', targetId);
   if (deleteError) {
     throw deleteError;
   }

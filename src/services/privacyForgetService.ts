@@ -1,3 +1,4 @@
+import { FORGET_OBSIDIAN_ENABLED, OBSIDIAN_SYNC_GUILD_MAP_JSON, OBSIDIAN_SYNC_GUILD_MAP_FILE } from '../config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../logger';
@@ -35,7 +36,6 @@ type ForgetResult = {
   };
 };
 
-const FORGET_OBSIDIAN_ENABLED = String(process.env.FORGET_OBSIDIAN_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const OBSIDIAN_VAULT_ROOT = getObsidianVaultRoot();
 const FORGET_GUILD_TABLES = [
   'memory_feedback',
@@ -167,8 +167,8 @@ const loadGuildFolderCandidates = async (guildId: string): Promise<string[]> => 
   }
 
   const byMap = new Set<string>([safeGuildId]);
-  const mapJson = String(process.env.OBSIDIAN_SYNC_GUILD_MAP_JSON || '').trim();
-  const mapFile = String(process.env.OBSIDIAN_SYNC_GUILD_MAP_FILE || '').trim();
+  const mapJson = OBSIDIAN_SYNC_GUILD_MAP_JSON;
+  const mapFile = OBSIDIAN_SYNC_GUILD_MAP_FILE;
 
   const applyMap = (raw: unknown) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {

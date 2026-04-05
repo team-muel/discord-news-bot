@@ -6,9 +6,13 @@ vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
 }));
 
-vi.mock('../../../utils/env', () => ({
-  parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
-}));
+vi.mock('../../../utils/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/env')>();
+  return {
+    ...actual,
+    parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
+  };
+});
 
 // Dynamically import to pick up mocks
 const { openshellAdapter } = await import('./openshellCliAdapter');

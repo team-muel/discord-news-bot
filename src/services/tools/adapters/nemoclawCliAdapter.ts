@@ -1,20 +1,22 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
+import { generateText, isAnyLlmConfigured } from '../../llmClient';
+import { sendGatewayChat } from '../../openclaw/gatewayHealth';
+import {
+  NEMOCLAW_ENABLED as ENABLED,
+  NEMOCLAW_DISABLED as EXPLICITLY_DISABLED,
+  NEMOCLAW_SANDBOX_NAME as SANDBOX_NAME,
+  NEMOCLAW_INFERENCE_MODEL as SANDBOX_INFERENCE_MODEL,
+  NEMOCLAW_SANDBOX_OLLAMA_URL as SANDBOX_OLLAMA_URL,
+  WSL_DISTRO,
+} from '../../../config';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
 const REVIEW_TIMEOUT_MS = 60_000;
 const IS_WINDOWS = process.platform === 'win32';
-const ENABLED = parseBooleanEnv(process.env.NEMOCLAW_ENABLED, false);
-const SANDBOX_NAME = String(process.env.NEMOCLAW_SANDBOX_NAME || 'muel-assistant').replace(/[^a-zA-Z0-9._-]/g, '').trim();
-const SANDBOX_INFERENCE_MODEL = String(process.env.NEMOCLAW_INFERENCE_MODEL || 'qwen2.5:7b-instruct').trim();
-const SANDBOX_OLLAMA_URL = String(process.env.NEMOCLAW_SANDBOX_OLLAMA_URL || 'http://localhost:11434').trim();
-const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
-const LITELLM_MASTER_KEY = String(process.env.LITELLM_MASTER_KEY || process.env.OPENCLAW_API_KEY || '').trim();
-const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim();
 
 /**
  * Lite mode: when the nemoclaw CLI is not installed (e.g. GCP e2-micro without Docker),
@@ -22,8 +24,6 @@ const LITELLM_MODEL = String(process.env.LITELLM_MODEL || 'muel-balanced').trim(
  * Full sandbox/onboard/connect features remain unavailable.
  */
 let cliAvailable: boolean | null = null;
-
-const WSL_DISTRO = String(process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
 
 const sanitizeArg = (value: string, maxLen = 300): string =>
   String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[;&|`$(){}]/g, '').trim().slice(0, maxLen);
@@ -61,15 +61,15 @@ export const nemoclawAdapter: ExternalToolAdapter = {
   liteCapabilities: ['code.review'],
 
   isAvailable: async () => {
-    if (!ENABLED) return false;
+    if (EXPLICITLY_DISABLED || !ENABLED) return false;
     try {
       await runCli(['--version']);
       cliAvailable = true;
       return true;
     } catch {
       cliAvailable = false;
-      // Lite mode: LiteLLM proxy available → code.review only
-      return LITELLM_BASE_URL.length > 0;
+      // Lite mode: any LLM configured → code.review only
+      return isAnyLlmConfigured();
     }
   },
 
@@ -127,59 +127,42 @@ export const nemoclawAdapter: ExternalToolAdapter = {
             }
           } catch (sandboxErr) {
             logger.debug('[NEMOCLAW] sandbox inference unavailable: %s', sandboxErr instanceof Error ? sandboxErr.message : String(sandboxErr));
-            // Sandbox inference unavailable — fall through to host LLM
+            // Sandbox inference unavailable — fall through to OpenClaw Gateway / host LLM
           }
 
-          // Fallback: use host-side LLM via OpenAI-compatible endpoint (litellm / jarvis serve / ollama)
-          const hostEndpoints: Array<{ url: string; model: string; authHeader?: string }> = [];
-          // Prefer LiteLLM proxy first (most reliable on GCP)
-          if (LITELLM_BASE_URL) {
-            hostEndpoints.push({
-              url: LITELLM_BASE_URL,
-              model: LITELLM_MODEL,
-              authHeader: LITELLM_MASTER_KEY ? `Bearer ${LITELLM_MASTER_KEY}` : undefined,
+          // Fallback 2: OpenClaw Gateway (session-aware, lower latency than full llmClient pipeline)
+          try {
+            const gwResult = await sendGatewayChat({
+              user: prompt.slice(0, 6000),
+              system: 'You are a thorough code reviewer. Identify bugs, security issues, and test gaps.',
+              actionName: 'code.review',
+              temperature: 0.2,
+              maxTokens: 1500,
             });
+            if (gwResult && gwResult.length > 10) {
+              const mode = cliAvailable === false ? ' (lite mode)' : '';
+              return makeResult(true, `Code review via OpenClaw Gateway${mode}`, gwResult.split('\n').slice(0, 40));
+            }
+          } catch (gwErr) {
+            logger.debug('[NEMOCLAW] OpenClaw Gateway fallback skipped: %s', gwErr instanceof Error ? gwErr.message : String(gwErr));
           }
-          // Then local endpoints
-          const jarvisUrl = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
-          const ollamaUrl = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim();
-          hostEndpoints.push({ url: jarvisUrl, model: SANDBOX_INFERENCE_MODEL });
-          hostEndpoints.push({ url: ollamaUrl, model: SANDBOX_INFERENCE_MODEL });
 
-          for (const endpoint of hostEndpoints) {
+          // Fallback 3: use llmClient pipeline (routing, retry, telemetry all handled centrally)
+          if (isAnyLlmConfigured()) {
             try {
-              const controller = new AbortController();
-              const timer = setTimeout(() => controller.abort(), REVIEW_TIMEOUT_MS);
-              const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-              if (endpoint.authHeader) {
-                headers['Authorization'] = endpoint.authHeader;
-              }
-              const resp = await fetch(`${endpoint.url.replace(/\/+$/, '')}/v1/chat/completions`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                  model: endpoint.model,
-                  messages: [
-                    { role: 'system', content: 'You are a thorough code reviewer. Identify bugs, security issues, and test gaps.' },
-                    { role: 'user', content: prompt.slice(0, 6000) },
-                  ],
-                  temperature: 0.2,
-                  max_tokens: 1500,
-                }),
-                signal: controller.signal,
+              const content = await generateText({
+                system: 'You are a thorough code reviewer. Identify bugs, security issues, and test gaps.',
+                user: prompt.slice(0, 6000),
+                temperature: 0.2,
+                maxTokens: 1500,
+                actionName: 'code.review',
               });
-              clearTimeout(timer);
-              if (resp.ok) {
-                const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-                const content = data.choices?.[0]?.message?.content || '';
-                if (content.length > 10) {
-                  const mode = cliAvailable === false ? ' (lite mode)' : '';
-                  return makeResult(true, `Code review via host LLM (${endpoint.url})${mode}`, content.split('\n').slice(0, 40));
-                }
+              if (content.length > 10) {
+                const mode = cliAvailable === false ? ' (lite mode)' : '';
+                return makeResult(true, `Code review via llmClient${mode}`, content.split('\n').slice(0, 40));
               }
-            } catch (hostErr) {
-              logger.debug('[NEMOCLAW] host endpoint %s failed: %s', endpoint.url, hostErr instanceof Error ? hostErr.message : String(hostErr));
-              // Try next host URL
+            } catch (llmErr) {
+              logger.debug('[NEMOCLAW] llmClient fallback failed: %s', llmErr instanceof Error ? llmErr.message : String(llmErr));
             }
           }
 

@@ -5,9 +5,13 @@ vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
 }));
 
-vi.mock('../../../utils/env', () => ({
-  parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
-}));
+vi.mock('../../../utils/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/env')>();
+  return {
+    ...actual,
+    parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
+  };
+});
 
 vi.mock('../../../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -150,10 +154,10 @@ describe('bootstrapOpenClawSession', () => {
     expect(typeof mod.bootstrapOpenClawSession).toBe('function');
   });
 
-  it('returns { ok: false } when OPENCLAW_ENABLED=false', async () => {
+  it('returns { ok: false } when gateway is unreachable', async () => {
     const { bootstrapOpenClawSession } = await import('./openclawCliAdapter');
     const result = await bootstrapOpenClawSession('test-session');
-    // ENABLED defaults to false in test env
+    // No gateway or CLI available in test env
     expect(result.ok).toBe(false);
   });
 });

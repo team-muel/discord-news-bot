@@ -84,8 +84,8 @@ describe('sprintPreamble', () => {
       expect(reason).toContain('restricted');
     });
 
-    it('미분류 카테고리는 허용한다', () => {
-      expect(isActionBlockedInPhase('plan', undefined)).toBeNull();
+    it('implement 단계에서 agent 카테고리를 허용한다', () => {
+      expect(isActionBlockedInPhase('implement', 'agent')).toBeNull();
     });
   });
 

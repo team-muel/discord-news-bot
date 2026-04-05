@@ -2,16 +2,16 @@ import logger from '../../logger';
 import { parseIntegerEnv } from '../../utils/env';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { TtlCache } from '../../utils/ttlCache';
-import { assessMemoryPoisonRisk } from '../memory/memoryPoisonGuard';
+// Cross-domain imports via barrel exports (domain boundary contracts)
+import { assessMemoryPoisonRisk, batchCountMemoryLinks, getUserEmbedding, isUserEmbeddingEnabled } from '../memory';
+import { queryObsidianLoreHints, readObsidianLoreWithAdapter } from '../obsidian';
+import type { LoreHint } from '../obsidian';
+// Root-level service imports (no barrel available)
 import { buildSocialContextHints } from '../communityGraphService';
-import { readObsidianLoreWithAdapter } from '../obsidian/router';
-import { queryObsidianLoreHints } from '../obsidian/obsidianRagService';
-import type { LoreHint } from '../obsidian/obsidianRagService';
-import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { searchMemoryHybrid, searchMemoryTiered } from './agentMemoryStore';
 import { loadSelfNotes } from '../entityNervousSystem';
-import { batchCountMemoryLinks } from '../memory/memoryEvolutionService';
-import { getUserEmbedding, isUserEmbeddingEnabled } from '../memory/userEmbeddingService';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+// Within-domain imports
+import { searchMemoryHybrid, searchMemoryTiered } from './agentMemoryStore';
 import { cosineSimilarity } from '../../utils/vectorMath';
 
 const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));

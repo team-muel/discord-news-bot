@@ -20,6 +20,14 @@ const WIRING_ENABLED = parseBooleanEnv(process.env.SIGNAL_BUS_WIRING_ENABLED, tr
 
 let wired = false;
 
+// Lazy-cached module loaders — avoid repeated `await import()` across handlers.
+const lazySprintTriggers = () => import('../sprint/sprintTriggers');
+const lazyEntityNervous = () => import('../entityNervousSystem');
+const lazySelfImprovement = () => import('../sprint/selfImprovementLoop');
+const lazySprintOrchestrator = () => import('../sprint/sprintOrchestrator');
+const lazyTrafficRouting = () => import('../workflow/trafficRoutingService');
+const lazyErrorLog = () => import('../structuredErrorLogService');
+
 /**
  * Wire all signal bus consumers. Idempotent — safe to call multiple times.
  */
@@ -30,7 +38,7 @@ export const wireSignalBusConsumers = (): void => {
   // ── Consumer 1: Degrading signals → sprint triggers ─────────────────────
   onSignal('reward.degrading', async (signal: Signal) => {
     try {
-      const { recordRuntimeError } = await import('../sprint/sprintTriggers');
+      const { recordRuntimeError } = await lazySprintTriggers();
       recordRuntimeError({
         message: `Reward signal degrading for guild=${signal.guildId} (delta=${(signal.payload as { delta?: number }).delta ?? 'unknown'})`,
         code: 'REWARD_DEGRADING',
@@ -42,7 +50,7 @@ export const wireSignalBusConsumers = (): void => {
 
   onSignal('convergence.degrading', async (signal: Signal) => {
     try {
-      const { recordRuntimeError } = await import('../sprint/sprintTriggers');
+      const { recordRuntimeError } = await lazySprintTriggers();
       recordRuntimeError({
         message: `System convergence degrading: ${JSON.stringify(signal.payload).slice(0, 200)}`,
         code: 'CONVERGENCE_DEGRADING',
@@ -54,7 +62,7 @@ export const wireSignalBusConsumers = (): void => {
 
   onSignal('memory.quality.below', async (signal: Signal) => {
     try {
-      const { recordRuntimeError } = await import('../sprint/sprintTriggers');
+      const { recordRuntimeError } = await lazySprintTriggers();
       const p = signal.payload as { metricId?: string; actual?: number; threshold?: number };
       recordRuntimeError({
         message: `Memory quality below threshold: ${p.metricId} actual=${p.actual} threshold=${p.threshold}`,
@@ -67,7 +75,7 @@ export const wireSignalBusConsumers = (): void => {
 
   onSignal('workflow.phase.looping', async (signal: Signal) => {
     try {
-      const { recordRuntimeError } = await import('../sprint/sprintTriggers');
+      const { recordRuntimeError } = await lazySprintTriggers();
       const p = signal.payload as { sprintId?: string; loopCount?: number; fromPhase?: string; toPhase?: string };
       recordRuntimeError({
         message: `Sprint phase looping detected: sprint=${p.sprintId} ${p.fromPhase}→${p.toPhase} (${p.loopCount} times)`,
@@ -81,7 +89,7 @@ export const wireSignalBusConsumers = (): void => {
   // ── Consumer 2: Go/No-Go → traffic routing ──────────────────────────────
   onSignal('gonogo.no-go', async (signal: Signal) => {
     try {
-      const { persistTrafficRoutingDecision } = await import('../workflow/trafficRoutingService');
+      const { persistTrafficRoutingDecision } = await lazyTrafficRouting();
       await persistTrafficRoutingDecision({
         sessionId: `signal-gonogo-${Date.now()}`,
         guildId: signal.guildId,
@@ -115,7 +123,7 @@ export const wireSignalBusConsumers = (): void => {
   onSignal('*', async (signal: Signal) => {
     if (!alertableSignals.has(signal.name)) return;
     try {
-      const { logStructuredError } = await import('../structuredErrorLogService');
+      const { logStructuredError } = await lazyErrorLog();
       await logStructuredError({
         code: 'UNKNOWN_ERROR',
         source: `signalBus.${signal.source}`,
@@ -132,7 +140,7 @@ export const wireSignalBusConsumers = (): void => {
   // ── Consumer 4: Eval promotion → self-improvement awareness ─────────────
   onSignal('eval.promotion.failed', async (signal: Signal) => {
     try {
-      const { persistSelfNote } = await import('../entityNervousSystem');
+      const { persistSelfNote } = await lazyEntityNervous();
       const p = signal.payload as { evalName?: string; verdict?: string };
       await persistSelfNote({
         guildId: signal.guildId,
@@ -147,7 +155,7 @@ export const wireSignalBusConsumers = (): void => {
 
   onSignal('eval.promotion.succeeded', async (signal: Signal) => {
     try {
-      const { persistSelfNote } = await import('../entityNervousSystem');
+      const { persistSelfNote } = await lazyEntityNervous();
       const p = signal.payload as { evalName?: string; verdict?: string };
       await persistSelfNote({
         guildId: signal.guildId,
@@ -163,7 +171,7 @@ export const wireSignalBusConsumers = (): void => {
   // ── Consumer 6: Reward improving → positive feedback to self-notes ──────
   onSignal('reward.improving', async (signal: Signal) => {
     try {
-      const { persistSelfNote } = await import('../entityNervousSystem');
+      const { persistSelfNote } = await lazyEntityNervous();
       const p = signal.payload as { delta?: number; snapshotScore?: number };
       await persistSelfNote({
         guildId: signal.guildId,
@@ -179,7 +187,7 @@ export const wireSignalBusConsumers = (): void => {
   // ── Consumer 5: Weekly report ready → self-improvement check ────────────
   onSignal('weekly.report.ready', async (signal: Signal) => {
     try {
-      const { runSelfImprovementChecks } = await import('../sprint/selfImprovementLoop');
+      const { runSelfImprovementChecks } = await lazySelfImprovement();
       await runSelfImprovementChecks();
     } catch (err) {
       logger.debug('[SIGNAL-WIRING] weekly.report.ready → selfImprovement skipped: %s', err instanceof Error ? err.message : String(err));
@@ -191,7 +199,7 @@ export const wireSignalBusConsumers = (): void => {
     try {
       const payload = signal.payload as { description?: string; source?: string } | undefined;
       const objective = payload?.description ?? 'Critical observation auto-sprint';
-      const { createSprintPipeline, runFullSprintPipeline } = await import('../sprint/sprintOrchestrator');
+      const { createSprintPipeline, runFullSprintPipeline } = await lazySprintOrchestrator();
       const pipeline = createSprintPipeline({
         triggerId: `obs-${Date.now()}`,
         triggerType: 'observation',

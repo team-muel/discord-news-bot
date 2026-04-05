@@ -194,4 +194,11 @@ export type HealthResponse = {
     configuredTasks: number;
     totalTasks: number;
   };
+  migrations?: {
+    ok: boolean;
+    trackingTableExists: boolean;
+    appliedCount: number;
+    pendingCount: number;
+    pendingNames: string[];
+  } | null;
 };

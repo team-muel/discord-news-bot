@@ -11,33 +11,26 @@ import {
   upsertDiscordLoginSession,
 } from '../services/discord-support/discordLoginSessionStore';
 import { AUTH_MAX_GUILDS_IN_CACHE, AUTH_MAX_USERS_PER_GUILD } from './runtimePolicy';
+import {
+  DISCORD_LOGIN_SESSION_TTL_MS,
+  DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS,
+  DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS,
+  DISCORD_LOGIN_SESSION_CLEANUP_OWNER,
+  DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND,
+} from '../config';
 import { getErrorMessage } from './ui';
 import logger from '../logger';
 
-// ─── Config (read once at startup) ──────────────────────────────────────────
-export const LOGIN_SESSION_TTL_MS = Math.max(
-  5 * 60 * 1000,
-  Number(process.env.DISCORD_LOGIN_SESSION_TTL_MS || 24 * 60 * 60 * 1000),
-);
-export const LOGIN_SESSION_REFRESH_WINDOW_MS = Math.max(
-  60 * 1000,
-  Number(process.env.DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS || 2 * 60 * 60 * 1000),
-);
-export const LOGIN_SESSION_CLEANUP_INTERVAL_MS = Math.max(
-  60 * 1000,
-  Number(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS || 30 * 60 * 1000),
-);
+// ─── Config (sourced from ../config) ──────────────────────────────────────────
+export const LOGIN_SESSION_TTL_MS = DISCORD_LOGIN_SESSION_TTL_MS;
+export const LOGIN_SESSION_REFRESH_WINDOW_MS = DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS;
+export const LOGIN_SESSION_CLEANUP_INTERVAL_MS = DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS;
 export type LoginSessionCleanupOwner = 'app' | 'db';
-export const LOGIN_SESSION_CLEANUP_OWNER: LoginSessionCleanupOwner =
-  String(process.env.DISCORD_LOGIN_SESSION_CLEANUP_OWNER || 'db').trim().toLowerCase() === 'app'
-    ? 'app'
-    : 'db';
-export const AUTO_LOGIN_ON_FIRST_COMMAND = !['0', 'false', 'no', 'off']
-  .includes(String(process.env.DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND || 'true').toLowerCase());
+export const LOGIN_SESSION_CLEANUP_OWNER: LoginSessionCleanupOwner = DISCORD_LOGIN_SESSION_CLEANUP_OWNER;
+export const AUTO_LOGIN_ON_FIRST_COMMAND = DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND;
 
 // ─── In-process cache ────────────────────────────────────────────────────────
 export const loggedInUsersByGuild = new Map<string, Map<string, number>>();
-let loginSessionCleanupTimer: NodeJS.Timeout | null = null;
 
 export const cacheLoginSession = (guildId: string, userId: string, expiresAt: number): void => {
   let guildUsers = loggedInUsersByGuild.get(guildId);
@@ -209,29 +202,28 @@ export const ensureFeatureAccess = async (
 };
 
 // ─── Cleanup loop ─────────────────────────────────────────────────────────────
+import { BackgroundLoop } from '../utils/backgroundLoop';
+
+const cleanupLoop = new BackgroundLoop(
+  async () => {
+    const deleted = await purgeExpiredDiscordLoginSessions();
+    if (deleted > 0) {
+      logger.info('[AUTH] Login session cleanup removed %d expired row(s)', deleted);
+    }
+  },
+  { name: '[AUTH]', intervalMs: LOGIN_SESSION_CLEANUP_INTERVAL_MS, runOnStart: true },
+);
+
 export const startLoginSessionCleanupLoop = (): void => {
   if (LOGIN_SESSION_CLEANUP_OWNER !== 'app') {
     logger.info('[AUTH] Login session cleanup app loop skipped (owner=%s)', LOGIN_SESSION_CLEANUP_OWNER);
     return;
   }
-  if (loginSessionCleanupTimer) return;
-  const runCleanup = async () => {
-    try {
-      const deleted = await purgeExpiredDiscordLoginSessions();
-      if (deleted > 0) {
-        logger.info('[AUTH] Login session cleanup removed %d expired row(s)', deleted);
-      }
-    } catch (error) {
-      logger.warn('[AUTH] Login session cleanup failed: %s', getErrorMessage(error));
-    }
-  };
-  void runCleanup();
-  loginSessionCleanupTimer = setInterval(() => {
-    void runCleanup();
-  }, LOGIN_SESSION_CLEANUP_INTERVAL_MS);
-  if (typeof loginSessionCleanupTimer.unref === 'function') {
-    loginSessionCleanupTimer.unref();
-  }
+  cleanupLoop.start();
+};
+
+export const stopLoginSessionCleanupLoop = (): void => {
+  cleanupLoop.stop();
 };
 
 export const getLoginSessionCleanupLoopStats = (): {
@@ -240,6 +232,5 @@ export const getLoginSessionCleanupLoopStats = (): {
   intervalMs: number;
 } => ({
   owner: LOGIN_SESSION_CLEANUP_OWNER,
-  running: Boolean(loginSessionCleanupTimer),
-  intervalMs: LOGIN_SESSION_CLEANUP_INTERVAL_MS,
+  ...cleanupLoop.getStats(),
 });

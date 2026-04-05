@@ -12,10 +12,10 @@
  *   Phase C (final):   remove legacy persistence, Entity becomes source of truth
  */
 import logger from '../../../logger';
-import type { Adapter, Plugin } from 'ventyd';
+import type { Adapter } from 'ventyd';
 import { SprintPipelineEntity, createSprintPipelineRepository } from './sprintPipelineEntity';
 import { createSupabaseAdapter } from './supabaseAdapter';
-import { auditLogPlugin } from './plugins';
+import { auditLogPlugin, type SprintPlugin } from './plugins';
 import { createRepository } from 'ventyd';
 import { isSupabaseConfigured, getSupabaseClient } from '../../supabaseClient';
 import { SPRINT_DRY_RUN, VENTYD_EVENTS_TABLE, VENTYD_ENABLED } from '../../../config';
@@ -60,8 +60,8 @@ function getAdapter(): Adapter {
   return _adapter;
 }
 
-function buildPlugins(): Plugin[] {
-  const plugins: Plugin[] = [auditLogPlugin];
+function buildPlugins(): SprintPlugin[] {
+  const plugins: SprintPlugin[] = [auditLogPlugin];
   // Additional plugins (metrics, hooks, signal bus) can be added here
   // once Phase B migration replaces legacy metric/hook calls.
   return plugins;

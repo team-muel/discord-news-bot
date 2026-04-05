@@ -1,4 +1,19 @@
-import { parseBooleanEnv } from '../utils/env';
+import {
+  FINOPS_ENABLED,
+  FINOPS_ACTION_BASE_COST_USD,
+  FINOPS_ACTION_RETRY_COST_USD,
+  FINOPS_ACTION_DURATION_MS_COST_USD,
+  FINOPS_ACTION_FAILURE_PENALTY_USD,
+  FINOPS_RETRIEVAL_QUERY_COST_USD,
+  FINOPS_MEMORY_JOB_COST_USD,
+  FINOPS_DAILY_BUDGET_USD,
+  FINOPS_MONTHLY_BUDGET_USD,
+  FINOPS_DEGRADE_THRESHOLD_PCT,
+  FINOPS_HARD_BLOCK_THRESHOLD_PCT,
+  FINOPS_DEGRADE_ALLOWED_ACTIONS_RAW,
+  FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW,
+  FINOPS_CACHE_TTL_MS,
+} from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type FinopsSummaryParams = {
@@ -35,34 +50,21 @@ type FinopsActionDecision = {
   mode: FinopsMode;
 };
 
-const FINOPS_ENABLED = parseBooleanEnv(process.env.FINOPS_ENABLED, true);
-const FINOPS_ACTION_BASE_COST_USD = Math.max(0, Number(process.env.FINOPS_ACTION_BASE_COST_USD || 0.002));
-const FINOPS_ACTION_RETRY_COST_USD = Math.max(0, Number(process.env.FINOPS_ACTION_RETRY_COST_USD || 0.0008));
-const FINOPS_ACTION_DURATION_MS_COST_USD = Math.max(0, Number(process.env.FINOPS_ACTION_DURATION_MS_COST_USD || 0.0000015));
-const FINOPS_ACTION_FAILURE_PENALTY_USD = Math.max(0, Number(process.env.FINOPS_ACTION_FAILURE_PENALTY_USD || 0.0007));
-const FINOPS_RETRIEVAL_QUERY_COST_USD = Math.max(0, Number(process.env.FINOPS_RETRIEVAL_QUERY_COST_USD || 0.0006));
-const FINOPS_MEMORY_JOB_COST_USD = Math.max(0, Number(process.env.FINOPS_MEMORY_JOB_COST_USD || 0.0012));
-
-const FINOPS_DAILY_BUDGET_USD = Math.max(0.01, Number(process.env.FINOPS_DAILY_BUDGET_USD || 5));
-const FINOPS_MONTHLY_BUDGET_USD = Math.max(0.1, Number(process.env.FINOPS_MONTHLY_BUDGET_USD || 100));
-const FINOPS_DEGRADE_THRESHOLD_PCT = Math.max(0.1, Math.min(2, Number(process.env.FINOPS_DEGRADE_THRESHOLD_PCT || 0.9)));
-const FINOPS_HARD_BLOCK_THRESHOLD_PCT = Math.max(FINOPS_DEGRADE_THRESHOLD_PCT, Math.min(3, Number(process.env.FINOPS_HARD_BLOCK_THRESHOLD_PCT || 1.0)));
-
-const csvSet = (raw: string | undefined, fallback: string[]): Set<string> => {
-  const list = String(raw || '').split(',').map((v) => v.trim()).filter(Boolean);
+const csvSet = (raw: string, fallback: string[]): Set<string> => {
+  const list = raw.split(',').map((v) => v.trim()).filter(Boolean);
   return new Set((list.length > 0 ? list : fallback).map((v) => v.trim()));
 };
 
 const FINOPS_DEGRADE_ALLOWED_ACTIONS = csvSet(
-  process.env.FINOPS_DEGRADE_ALLOWED_ACTIONS,
+  FINOPS_DEGRADE_ALLOWED_ACTIONS_RAW,
   ['rag.retrieve', 'stock.quote', 'stock.chart', 'privacy.forget.user', 'privacy.forget.guild'],
 );
 const FINOPS_HARD_BLOCK_EXEMPT_ACTIONS = csvSet(
-  process.env.FINOPS_HARD_BLOCK_EXEMPT_ACTIONS,
+  FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW,
   ['privacy.forget.user', 'privacy.forget.guild'],
 );
 
-const CACHE_TTL_MS = Math.max(10_000, Number(process.env.FINOPS_CACHE_TTL_MS || 60_000));
+const CACHE_TTL_MS = FINOPS_CACHE_TTL_MS;
 const budgetCache = new Map<string, { value: FinopsBudgetStatus; expiresAt: number }>();
 
 const toIsoFromDays = (days: number): string => {

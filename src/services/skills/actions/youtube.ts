@@ -17,6 +17,7 @@ const extractYoutubeQuery = (goal: string, args?: Record<string, unknown>): stri
 export const youtubeSearchFirstAction: ActionDefinition = {
   name: 'youtube.search.first',
   description: 'YouTube에서 질의어 기준 상위 영상 URL(최대 3개)을 추출합니다.',
+  category: 'content',
   execute: async ({ goal, args }) => {
     const query = extractYoutubeQuery(goal, args);
     const delegated = await runDelegatedAction({

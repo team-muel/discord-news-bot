@@ -1,10 +1,13 @@
-import { type Client } from 'discord.js';
+import type { ChannelSink } from '../automation/types';
 import logger from '../../logger';
 import { fetchWithTimeout } from '../../utils/network';
 import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { fromTable } from '../infra/baseRepository';
+import { T_NEWS_SENTIMENT, T_SOURCES } from '../infra/tableRegistry';
 import { fetchNewsMonitorCandidatesByWorker } from './newsMonitorWorkerClient';
 import { delegateArticleContextFetch, delegateNewsSummarize, shouldDelegate } from '../automation/n8nDelegationService';
+import { generateText, isAnyLlmConfigured } from '../llmClient';
 
 type NewsItem = {
   title: string;
@@ -59,9 +62,8 @@ const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_MONITOR_FETCH_T
 const NEWS_CANDIDATE_LIMIT = Math.max(3, Number(process.env.NEWS_MONITOR_CANDIDATE_LIMIT || 12));
 const NEWS_HISTORY_LOOKBACK_HOURS = Math.max(1, Number(process.env.NEWS_DEDUP_LOOKBACK_HOURS || 24));
 const NEWS_HISTORY_MAX_ITEMS = Math.max(10, Number(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS || 60));
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || 'gpt-4o-mini';
-const OPENAI_NEWS_SUMMARY_MODEL = process.env.OPENAI_NEWS_SUMMARY_MODEL || 'gpt-4o-mini';
+const NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || process.env.NEWS_DEDUP_MODEL || undefined;
+const NEWS_SUMMARY_MODEL = process.env.OPENAI_NEWS_SUMMARY_MODEL || process.env.NEWS_SUMMARY_MODEL || undefined;
 const NEWS_AI_DEDUP_ENABLED = (process.env.NEWS_AI_DEDUP_ENABLED || 'true').toLowerCase() !== 'false';
 const NEWS_KR_SUMMARY_ENABLED = (process.env.NEWS_KR_SUMMARY_ENABLED || 'true').toLowerCase() !== 'false';
 const SUMMARY_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS || 12_000));
@@ -240,8 +242,7 @@ const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
     // Fall through to inline on delegation failure
   }
 
-  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!NEWS_KR_SUMMARY_ENABLED || !apiKey) {
+  if (!NEWS_KR_SUMMARY_ENABLED || !isAnyLlmConfigured()) {
     return '';
   }
 
@@ -259,29 +260,15 @@ const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
   ].join('\n');
 
   try {
-    const response = await fetchWithTimeout(OPENAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENAI_NEWS_SUMMARY_MODEL,
-        temperature: 0.2,
-        max_tokens: 220,
-        messages: [
-          { role: 'system', content: 'You are a precise Korean financial news summarizer.' },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    }, Math.min(FETCH_TIMEOUT_MS, 12_000));
+    const content = await generateText({
+      system: 'You are a precise Korean financial news summarizer.',
+      user: prompt,
+      model: NEWS_SUMMARY_MODEL,
+      temperature: 0.2,
+      maxTokens: 220,
+      actionName: 'news.summarize',
+    });
 
-    if (!response.ok) {
-      return '';
-    }
-
-    const payload = (await response.json()) as Record<string, any>;
-    const content = String(payload?.choices?.[0]?.message?.content || '');
     return enforceTwoToThreeLines(content);
   } catch {
     return '';
@@ -366,8 +353,7 @@ const parseAiDuplicateDecision = (raw: string): boolean | null => {
 };
 
 const isSemanticDuplicateWithAi = async (candidate: NewsItem, recents: NewsHistoryRow[]): Promise<boolean> => {
-  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!NEWS_AI_DEDUP_ENABLED || !apiKey || recents.length === 0) {
+  if (!NEWS_AI_DEDUP_ENABLED || !isAnyLlmConfigured() || recents.length === 0) {
     return false;
   }
 
@@ -385,29 +371,15 @@ const isSemanticDuplicateWithAi = async (candidate: NewsItem, recents: NewsHisto
   ].join('\n');
 
   try {
-    const response = await fetchWithTimeout(OPENAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENAI_NEWS_DEDUP_MODEL,
-        temperature: 0,
-        max_tokens: 30,
-        messages: [
-          { role: 'system', content: 'You are a strict duplicate detector for financial news titles.' },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    }, Math.min(FETCH_TIMEOUT_MS, 12_000));
+    const content = await generateText({
+      system: 'You are a strict duplicate detector for financial news titles.',
+      user: prompt,
+      model: NEWS_DEDUP_MODEL,
+      temperature: 0,
+      maxTokens: 30,
+      actionName: 'news.dedup',
+    });
 
-    if (!response.ok) {
-      return false;
-    }
-
-    const payload = (await response.json()) as Record<string, any>;
-    const content = String(payload?.choices?.[0]?.message?.content || '');
     const decision = parseAiDuplicateDecision(content);
     return decision === true;
   } catch {
@@ -416,15 +388,12 @@ const isSemanticDuplicateWithAi = async (candidate: NewsItem, recents: NewsHisto
 };
 
 const loadRecentNewsHistory = async (guildId: string | null): Promise<NewsHistoryRow[]> => {
-  if (!isSupabaseConfigured()) {
-    return [];
-  }
+  const qb = fromTable(T_NEWS_SENTIMENT);
+  if (!qb) return [];
 
-  const db = getSupabaseClient();
   const cutoffIso = new Date(Date.now() - NEWS_HISTORY_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
-  let query = db
-    .from('news_sentiment')
+  let query = qb
     .select('guild_id,title,link,event_signature,created_at')
     .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
@@ -454,12 +423,10 @@ const loadRecentNewsHistory = async (guildId: string | null): Promise<NewsHistor
 };
 
 const storeNewsHistory = async (item: NewsItem, guildId: string | null) => {
-  if (!isSupabaseConfigured()) {
-    return;
-  }
+  const qb = fromTable(T_NEWS_SENTIMENT);
+  if (!qb) return;
 
-  const db = getSupabaseClient();
-  const { error } = await db.from('news_sentiment').insert([
+  const { error } = await qb.insert([
     {
       guild_id: guildId,
       title: item.title,
@@ -533,18 +500,13 @@ const updateRowState = async (id: number, patch: Record<string, string | null>) 
   await updateSourceState({ id, patch, logPrefix: '[NEWS-MONITOR]' });
 };
 
-const sendNews = async (client: Client, channelId: string, item: NewsItem, summary: string | null) => {
-  const channel = await client.channels.fetch(channelId);
-  if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-    throw new Error('Target news channel is not sendable');
-  }
-
+const sendNews = async (sink: ChannelSink, channelId: string, item: NewsItem, summary: string | null) => {
   const summaryBlock = enforceTwoToThreeLines(summary || '') || buildFallbackKoreanSummary(item);
   const timeTag = buildTimeTag(item.publishedAtUnix);
   const sourceLabel = item.publisherName || item.sourceName || 'Google Finance';
   const description = [summaryBlock, item.link, timeTag].filter(Boolean).join('\n\n');
 
-  await channel.send({
+  const sent = await sink.sendToChannel(channelId, {
     embeds: [
       {
         title: item.title.slice(0, 250),
@@ -554,16 +516,19 @@ const sendNews = async (client: Client, channelId: string, item: NewsItem, summa
       },
     ],
   });
+
+  if (!sent) {
+    throw new Error('Target news channel is not sendable');
+  }
 };
 
-const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats> => {
-  if (!isSupabaseConfigured()) {
+const runTick = async (sink: ChannelSink, guildId?: string): Promise<NewsTickStats> => {
+  const qb = fromTable(T_SOURCES);
+  if (!qb) {
     return { processed: 0, failed: 0, sent: 0, skippedLocked: 0, skippedDuplicate: 0, skippedNoCandidate: 0 };
   }
 
-  const db = getSupabaseClient();
-  let query = db
-    .from('sources')
+  let query = qb
     .select('id, guild_id, name, url, channel_id, last_post_signature')
     .eq('is_active', true);
 
@@ -639,7 +604,7 @@ const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats>
           continue;
         }
 
-        await sendNews(client, row.channel_id, latest, latestSummary);
+        await sendNews(sink, row.channel_id, latest, latestSummary);
         stats.sent += 1;
         sentAtLeastOnce = true;
         await updateRowState(row.id, {
@@ -665,7 +630,7 @@ const runTick = async (client: Client, guildId?: string): Promise<NewsTickStats>
   return stats;
 };
 
-const executeTick = async (client: Client, guildId?: string) => {
+const executeTick = async (sink: ChannelSink, guildId?: string) => {
   if (running) {
     return { ok: false, message: 'News monitor tick already running' as const };
   }
@@ -676,7 +641,7 @@ const executeTick = async (client: Client, guildId?: string) => {
   const startMs = Date.now();
 
   try {
-    const tick = await runTick(client, guildId);
+    const tick = await runTick(sink, guildId);
     lastTickProcessedSources = tick.processed;
     lastTickFailedSources = tick.failed;
     successCount += 1;
@@ -725,27 +690,27 @@ const executeTick = async (client: Client, guildId?: string) => {
 
 export const isNewsSentimentMonitorEnabled = () => (process.env.AUTOMATION_NEWS_ENABLED || 'false').toLowerCase() !== 'false';
 
-export const startNewsSentimentMonitor = (client: Client) => {
+export const startNewsSentimentMonitor = (sink: ChannelSink) => {
   if (started || !isNewsSentimentMonitorEnabled()) {
     return;
   }
 
   started = true;
-  void executeTick(client);
+  void executeTick(sink);
   timer = setInterval(() => {
-    void executeTick(client);
+    void executeTick(sink);
   }, INTERVAL_MS);
   timer.unref();
 
   logger.info('[NEWS-MONITOR] started (intervalMs=%d, instance=%s)', INTERVAL_MS, INSTANCE_ID);
 };
 
-export const triggerNewsSentimentMonitor = async (client: Client, guildId?: string) => {
+export const triggerNewsSentimentMonitor = async (sink: ChannelSink, guildId?: string) => {
   if (!started) {
     return { ok: false, message: 'News monitor is not started' };
   }
 
-  return executeTick(client, guildId);
+  return executeTick(sink, guildId);
 };
 
 export const getNewsSentimentMonitorSnapshot = () => ({

@@ -4,6 +4,8 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS, T_MEMORY_CONFLICTS, T_MEMORY_SOURCES, T_MEMORY_JOBS, T_MEMORY_JOB_DEADLETTERS } from '../infra/tableRegistry';
 import { evolveMemoryLinks } from './memoryEvolutionService';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
@@ -193,15 +195,15 @@ const buildTopTags = (tagFrequency: Map<string, number>, limit: number): Array<{
 
 const buildJobSummary = async (guildId: string) => {
   if (!isSupabaseConfigured()) return { totalItems: 0, activeJobs: 0, lastJobAt: null };
-  const client = getSupabaseClient();
+  const client = getClient()!;
   const { count: totalItems } = await client
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('id', { count: 'exact', head: true })
     .eq('guild_id', guildId)
     .eq('status', 'active');
 
   const { count: openConflicts } = await client
-    .from('memory_conflicts')
+    .from(T_MEMORY_CONFLICTS)
     .select('id', { count: 'exact', head: true })
     .eq('guild_id', guildId)
     .eq('status', 'open');
@@ -217,10 +219,10 @@ const processShortSummary = async (params: {
   windowStartedAt?: string;
   windowEndedAt?: string;
 }) => {
-  const client = getSupabaseClient();
+  const client = getClient()!;
 
   let query = client
-    .from('memory_sources')
+    .from(T_MEMORY_SOURCES)
     .select('source_kind, source_message_id, source_ref, source_ts')
     .eq('guild_id', params.guildId)
     .order('source_ts', { ascending: false })
@@ -263,9 +265,9 @@ const processShortSummary = async (params: {
 };
 
 const processTopicSynthesis = async (guildId: string) => {
-  const client = getSupabaseClient();
+  const client = getClient()!;
   const { data, error } = await client
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('type, tags, pinned, confidence')
     .eq('guild_id', guildId)
     .eq('status', 'active')
@@ -314,7 +316,7 @@ const processDurableExtraction = async (params: {
   guildId: string;
   input: Record<string, unknown>;
 }) => {
-  const client = getSupabaseClient();
+  const client = getClient()!;
   const input = params.input;
   const content = typeof input.content === 'string' ? input.content.trim() : '';
   const title = typeof input.title === 'string' ? input.title.trim() : null;
@@ -364,7 +366,7 @@ const processDurableExtraction = async (params: {
   }
 
   const { data: existing, error: existingError } = await client
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('id')
     .eq('guild_id', params.guildId)
     .eq('conflict_key', conflictKey)
@@ -405,7 +407,7 @@ const processDurableExtraction = async (params: {
     ],
   };
 
-  const { error: insertError } = await client.from('memory_items').insert(row);
+  const { error: insertError } = await client.from(T_MEMORY_ITEMS).insert(row);
   if (insertError) {
     throw new Error(insertError.message || 'DURABLE_EXTRACTION_INSERT_FAILED');
   }
@@ -434,10 +436,10 @@ const processDurableExtraction = async (params: {
 };
 
 const processConflictScan = async (guildId: string) => {
-  const client = getSupabaseClient();
+  const client = getClient()!;
 
   const { data: items, error: itemsError } = await client
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('id, conflict_key')
     .eq('guild_id', guildId)
     .eq('status', 'active')
@@ -474,7 +476,7 @@ const processConflictScan = async (guildId: string) => {
     const itemBId = ids[1];
 
     const { data: existing, error: existingError } = await client
-      .from('memory_conflicts')
+      .from(T_MEMORY_CONFLICTS)
       .select('id')
       .eq('guild_id', guildId)
       .eq('conflict_key', conflictKey)
@@ -489,7 +491,7 @@ const processConflictScan = async (guildId: string) => {
       continue;
     }
 
-    const { error: insertError } = await client.from('memory_conflicts').insert({
+    const { error: insertError } = await client.from(T_MEMORY_CONFLICTS).insert({
       guild_id: guildId,
       conflict_key: conflictKey,
       item_a_id: itemAId,
@@ -585,10 +587,10 @@ const processJobByType = async (job: {
 };
 
 const processQueuedJob = async (): Promise<boolean> => {
-  const client = getSupabaseClient();
+  const client = getClient()!;
 
   const { data: queuedRows, error: queuedError } = await client
-    .from('memory_jobs')
+    .from(T_MEMORY_JOBS)
     .select('id, guild_id, job_type, attempts, input, output, window_started_at, window_ended_at')
     .eq('status', 'queued')
     .lte('next_attempt_at', nowIso())
@@ -616,7 +618,7 @@ const processQueuedJob = async (): Promise<boolean> => {
 
   const nextAttempts = Math.max(0, Number(queued.attempts || 0)) + 1;
   const { data: claimedRows, error: claimError } = await client
-    .from('memory_jobs')
+    .from(T_MEMORY_JOBS)
     .update({ status: 'running', started_at: nowIso(), attempts: nextAttempts, next_attempt_at: nowIso() })
     .eq('id', queued.id)
     .eq('status', 'queued')
@@ -646,7 +648,7 @@ const processQueuedJob = async (): Promise<boolean> => {
     };
 
     const { error: completeError } = await client
-      .from('memory_jobs')
+      .from(T_MEMORY_JOBS)
       .update({
         status: 'completed',
         output,
@@ -681,7 +683,7 @@ const processQueuedJob = async (): Promise<boolean> => {
     runnerStats.lastErrorMessage = message;
 
     const { error: failError } = await client
-      .from('memory_jobs')
+      .from(T_MEMORY_JOBS)
       .update({
         status: shouldFail ? 'failed' : 'queued',
         error: message,
@@ -700,7 +702,7 @@ const processQueuedJob = async (): Promise<boolean> => {
 
     if (shouldFail) {
       const { error: deadletterError } = await client
-        .from('memory_job_deadletters')
+        .from(T_MEMORY_JOB_DEADLETTERS)
         .insert({
           job_id: claimed.id,
           guild_id: claimed.guild_id,
@@ -830,8 +832,8 @@ export const getMemoryJobQueueStats = async (guildId?: string) => {
     };
   }
 
-  const client = getSupabaseClient();
-  let query = client.from('memory_jobs').select('status, next_attempt_at, deadlettered_at, created_at').limit(1000);
+  const client = getClient()!;
+  let query = client.from(T_MEMORY_JOBS).select('status, next_attempt_at, deadlettered_at, created_at').limit(1000);
   if (guildId) {
     query = query.eq('guild_id', guildId);
   }
@@ -895,9 +897,9 @@ export const getMemoryQueueHealthSnapshot = async (guildId?: string): Promise<Me
   let deadletterIgnored = 0;
   if (isSupabaseConfigured()) {
     try {
-      const client = getSupabaseClient();
-      let pendingQuery = client.from('memory_job_deadletters').select('id', { count: 'exact', head: true }).eq('recovery_status', 'pending');
-      let ignoredQuery = client.from('memory_job_deadletters').select('id', { count: 'exact', head: true }).eq('recovery_status', 'ignored');
+      const client = getClient()!;
+      let pendingQuery = client.from(T_MEMORY_JOB_DEADLETTERS).select('id', { count: 'exact', head: true }).eq('recovery_status', 'pending');
+      let ignoredQuery = client.from(T_MEMORY_JOB_DEADLETTERS).select('id', { count: 'exact', head: true }).eq('recovery_status', 'ignored');
       if (guildId) {
         pendingQuery = pendingQuery.eq('guild_id', guildId);
         ignoredQuery = ignoredQuery.eq('guild_id', guildId);
@@ -933,9 +935,9 @@ export const listMemoryJobDeadletters = async (params: { guildId?: string; limit
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
-  const client = getSupabaseClient();
+  const client = getClient()!;
   let query = client
-    .from('memory_job_deadletters')
+    .from(T_MEMORY_JOB_DEADLETTERS)
     .select('id, job_id, guild_id, job_type, attempts, error, failed_at, created_at')
     .order('created_at', { ascending: false })
     .limit(params.limit);
@@ -967,9 +969,9 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
-  const client = getSupabaseClient();
+  const client = getClient()!;
   const { data: deadletters, error: deadletterError } = await client
-    .from('memory_job_deadletters')
+    .from(T_MEMORY_JOB_DEADLETTERS)
     .select('id, job_id, guild_id, job_type, input, recovery_status, recovery_attempts')
     .eq('id', params.deadletterId)
     .limit(1);
@@ -1007,7 +1009,7 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
   const jobId = String(deadletter.job_id || '');
   if (jobId) {
     const { error: updateError } = await client
-      .from('memory_jobs')
+      .from(T_MEMORY_JOBS)
       .update(updatePayload)
       .eq('id', jobId)
       .limit(1);
@@ -1015,7 +1017,7 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
     if (updateError) {
       const nextRecoveryAttempts = recoveryAttempts + 1;
       await client
-        .from('memory_job_deadletters')
+        .from(T_MEMORY_JOB_DEADLETTERS)
         .update({
           recovery_attempts: nextRecoveryAttempts,
           recovery_status: nextRecoveryAttempts >= MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS ? 'ignored' : 'pending',
@@ -1027,7 +1029,7 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
     }
 
     await client
-      .from('memory_job_deadletters')
+      .from(T_MEMORY_JOB_DEADLETTERS)
       .update({
         recovery_attempts: recoveryAttempts + 1,
         recovery_status: 'requeued',
@@ -1046,7 +1048,7 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
 
   const newJobId = `mjob_${crypto.randomUUID()}`;
   const { error: insertError } = await client
-    .from('memory_jobs')
+    .from(T_MEMORY_JOBS)
     .insert({
       id: newJobId,
       guild_id: String(deadletter.guild_id || ''),
@@ -1064,7 +1066,7 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
   if (insertError) {
     const nextRecoveryAttempts = recoveryAttempts + 1;
     await client
-      .from('memory_job_deadletters')
+      .from(T_MEMORY_JOB_DEADLETTERS)
       .update({
         recovery_attempts: nextRecoveryAttempts,
         recovery_status: nextRecoveryAttempts >= MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS ? 'ignored' : 'pending',
@@ -1076,7 +1078,7 @@ export const requeueDeadletterJob = async (params: { deadletterId: number; actor
   }
 
   await client
-    .from('memory_job_deadletters')
+    .from(T_MEMORY_JOB_DEADLETTERS)
     .update({
       recovery_attempts: recoveryAttempts + 1,
       recovery_status: 'requeued',
@@ -1098,10 +1100,10 @@ export const cancelMemoryJob = async (params: { jobId: string; actorId: string }
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
-  const client = getSupabaseClient();
+  const client = getClient()!;
   const now = nowIso();
   const { data, error } = await client
-    .from('memory_jobs')
+    .from(T_MEMORY_JOBS)
     .update({
       status: 'canceled',
       completed_at: now,
@@ -1132,9 +1134,9 @@ export const cancelMemoryJob = async (params: { jobId: string; actorId: string }
 };
 
 const processDeadletterRecoveryBatch = async () => {
-  const client = getSupabaseClient();
+  const client = getClient()!;
   const { data, error } = await client
-    .from('memory_job_deadletters')
+    .from(T_MEMORY_JOB_DEADLETTERS)
     .select('id')
     .eq('recovery_status', 'pending')
     .lt('recovery_attempts', MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS)

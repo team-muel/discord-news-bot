@@ -8,6 +8,7 @@
 import type { Client } from 'discord.js';
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runEvalPipeline } from './evalAutoPromoteService';
 
 const EVAL_LOOP_ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_ENABLED, true);
@@ -16,7 +17,6 @@ const EVAL_LOOP_RUN_ON_START = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_LOO
 const EVAL_LOOP_MAX_GUILDS = Math.max(1, parseIntegerEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_MAX_GUILDS, 30));
 const EVAL_LOOP_CONCURRENCY = Math.max(1, parseIntegerEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_CONCURRENCY, 4));
 
-let timer: NodeJS.Timeout | null = null;
 let running = false;
 let lastRunAt: string | null = null;
 let lastSummary: string | null = null;
@@ -104,34 +104,29 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
   return stats;
 };
 
+let loop: BackgroundLoop | null = null;
+
 export const startEvalAutoPromoteLoop = (client: Client): void => {
-  if (!EVAL_LOOP_ENABLED || timer) {
-    return;
-  }
+  if (!EVAL_LOOP_ENABLED || loop) return;
 
-  const intervalMs = EVAL_LOOP_INTERVAL_HOURS * 60 * 60 * 1000;
-  timer = setInterval(() => {
-    void runOnce(client).catch((err) => logger.error('[EVAL-PROMOTE-LOOP] unhandled error: %s', err instanceof Error ? err.message : String(err)));
-  }, intervalMs);
-  timer.unref();
-
-  if (EVAL_LOOP_RUN_ON_START) {
-    void runOnce(client).catch((err) => logger.error('[EVAL-PROMOTE-LOOP] unhandled error: %s', err instanceof Error ? err.message : String(err)));
-  }
-
-  logger.info(
-    '[EVAL-PROMOTE-LOOP] started intervalHours=%d runOnStart=%s maxGuilds=%d',
-    EVAL_LOOP_INTERVAL_HOURS,
-    String(EVAL_LOOP_RUN_ON_START),
-    EVAL_LOOP_MAX_GUILDS,
+  loop = new BackgroundLoop(
+    async () => {
+      const s = await runOnce(client);
+      return `guilds=${s.completedGuilds}/${s.attemptedGuilds} collected=${s.totalCollected} judged=${s.totalJudged} promoted=${s.totalPromoted} rejected=${s.totalRejected}`;
+    },
+    {
+      name: '[EVAL-PROMOTE-LOOP]',
+      intervalMs: EVAL_LOOP_INTERVAL_HOURS * 60 * 60 * 1000,
+      runOnStart: EVAL_LOOP_RUN_ON_START,
+      errorLevel: 'error',
+    },
   );
+  loop.start();
 };
 
 export const stopEvalAutoPromoteLoop = (): void => {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  loop?.stop();
+  loop = null;
 };
 
 export const getEvalAutoPromoteLoopStatus = (): {

@@ -11,15 +11,20 @@
  *   - wiki.search: search across indexed repositories
  *
  * Environment:
- *   DEEPWIKI_ADAPTER_ENABLED — default false
  *   DEEPWIKI_BASE_URL — default https://api.deepwiki.com
  *   DEEPWIKI_TIMEOUT_MS — default 30000 (wiki generation can be slow)
+ *   DEEPWIKI_ADAPTER_DISABLED — set true to force-disable (opt-out)
+ *   DEEPWIKI_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
 import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const ENABLED = parseBooleanEnv(process.env.DEEPWIKI_ADAPTER_ENABLED, false);
+/** Opt-out: disabled only when explicitly turned off. */
+const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.DEEPWIKI_ADAPTER_DISABLED, false);
+const LEGACY_ENABLED_RAW = process.env.DEEPWIKI_ADAPTER_ENABLED;
+const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+
 const BASE_URL = String(process.env.DEEPWIKI_BASE_URL || 'https://api.deepwiki.com').trim().replace(/\/+$/, '');
 const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.DEEPWIKI_TIMEOUT_MS, 30_000));
 
@@ -189,7 +194,23 @@ export const deepwikiAdapter: ExternalToolAdapter = {
   capabilities: ['wiki.read', 'wiki.ask', 'wiki.search'],
   liteCapabilities: ['wiki.read', 'wiki.search'],
 
-  isAvailable: async () => ENABLED,
+  isAvailable: async () => {
+    if (!isNotDisabled()) return false;
+    // Auto-detect: probe the API with a lightweight request
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5_000);
+      try {
+        const res = await fetch(`${BASE_URL}/health`, { signal: controller.signal, method: 'GET' });
+        // Accept any 2xx/3xx/404 — it means the server is reachable
+        return res.status < 500;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return false;
+    }
+  },
 
   execute: async (action: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
     const repo = String(args.repo || args.repository || '');

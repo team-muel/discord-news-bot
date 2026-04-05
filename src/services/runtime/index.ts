@@ -2,6 +2,7 @@ export {
   startServerProcessRuntime,
   startDiscordReadyRuntime,
   getRuntimeBootstrapState,
+  resetRuntimeBootstrapState,
 } from './runtimeBootstrap';
 export {
   getRuntimeSchedulerPolicySnapshot,

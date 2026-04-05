@@ -1,12 +1,13 @@
 import type { ActionDefinition, ActionExecutionResult } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { executeExternalAction, getExternalAdapter } from '../../tools/externalAdapterRegistry';
-import { parseBooleanEnv } from '../../../utils/env';
 import logger from '../../../logger';
-
-const OPENCODE_TOOL_NAME = String(process.env.MCP_OPENCODE_TOOL_NAME || 'opencode.run').trim() || 'opencode.run';
-const OPENSHELL_SANDBOX_DELEGATION = parseBooleanEnv(process.env.OPENSHELL_SANDBOX_DELEGATION, false);
-const OPENSHELL_DEFAULT_SANDBOX_ID = String(process.env.OPENSHELL_DEFAULT_SANDBOX_ID || '').trim();
+import {
+  MCP_OPENCODE_TOOL_NAME as OPENCODE_TOOL_NAME,
+  OPENSHELL_SANDBOX_DELEGATION,
+  OPENSHELL_DEFAULT_SANDBOX_ID,
+  OPENSHELL_DEFAULT_SANDBOX_IMAGE,
+} from '../../../config';
 const MAX_TASK_LENGTH = 2400;
 const MAX_SPRINT_TASK_LENGTH = 12_000;
 
@@ -55,6 +56,7 @@ const toMode = (value: unknown): 'read_only' | 'workspace_write' => {
 export const opencodeExecuteAction: ActionDefinition = {
   name: 'opencode.execute',
   description: 'Opencode MCP 워커를 통해 샌드박스 터미널 작업을 실행합니다(기본: read_only).',
+  category: 'code',
   execute: async ({ goal, args, guildId, requestedBy }) => {
     const task = String(args?.task || goal || '').trim();
     const taskLengthLimit = resolveTaskLengthLimit(task);
@@ -107,7 +109,7 @@ export const opencodeExecuteAction: ActionDefinition = {
           if (!sandboxExists) {
             logger.info('[OPENCODE] sandbox=%s not found, attempting auto-create', OPENSHELL_DEFAULT_SANDBOX_ID);
             const createResult = await executeExternalAction('openshell', 'sandbox.create', {
-              from: String(process.env.OPENSHELL_DEFAULT_SANDBOX_IMAGE || 'ollama'),
+              from: OPENSHELL_DEFAULT_SANDBOX_IMAGE,
             });
             if (!createResult.ok) {
               logger.warn('[OPENCODE] sandbox auto-create failed: %s, falling through to MCP', createResult.error);

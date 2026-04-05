@@ -36,14 +36,20 @@ general_settings:
   enforce_user_param: false
 
 litellm_settings:
-  # Gemini free-tier quota exhaustion: fallback to HF/OpenAI/Anthropic
   fallbacks:
     - {
         "muel-balanced":
-          ["muel-hf", "muel-fast", "muel-precise", "muel-nemotron"],
+          ["muel-local", "muel-hf", "muel-fast", "muel-precise", "muel-nemotron"],
+      }
+    - {
+        "muel-fast":
+          ["muel-local", "muel-balanced", "muel-hf"],
+      }
+    - {
+        "muel-precise":
+          ["muel-balanced", "muel-fast", "muel-nemotron"],
       }
 
 router_settings:
-  # quota limit 429: skip same-model retry, go straight to fallback
   retry_policy:
     RateLimitErrorRetries: 0

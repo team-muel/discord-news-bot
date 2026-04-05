@@ -30,16 +30,13 @@ applyTo: "src/**"
 - `winget` may report a CLI package as installed while the command is unavailable in PATH. Verify with `where`.
 - Windows-created files have CRLF that breaks Linux systemd EnvironmentFile parsing. Always `sed -i 's/\r$//'` or use `.gitattributes` with `*.env text eol=lf`.
 
-## Adding a New Action (8-step checklist)
+## Adding a New Action
 
-1. Define export in a new file under `src/services/skills/actions/` (implement `ActionDefinition`).
-2. Add `category` and `parameters` metadata using `ActionCategory` and `ActionParameterSpec` types.
-3. Register in `src/services/skills/actions/registry.ts` — add import and insert into `ACTION_REGISTRY`.
-4. If the action should be available during specific sprint phases, verify `PHASE_TOOL_CATEGORIES` in `src/services/sprint/sprintPreamble.ts` includes its category.
-5. If the action should be blocked in certain phases, check `PHASE_BLOCKED_CATEGORIES`.
-6. Register any lifecycle hooks in `src/services/sprint/sprintHooks.ts` if the action needs pre/post processing.
-7. Add tests in `src/services/skills/actions/<name>.test.ts`.
-8. Update `docs/ROUTES_INVENTORY.md` if the action exposes an API endpoint.
+1. Export an `ActionDefinition` from a file in `src/services/skills/actions/`. `category` is **required** — `tsc` will error if missing.
+2. Import and call `registerActions()` in `registry.ts`.
+3. Add tests in `src/services/skills/actions/<name>.test.ts`.
+
+Phase filtering (`PHASE_TOOL_CATEGORIES`) and blocking (`PHASE_BLOCKED_CATEGORIES`) work automatically from `category`. No manual wiring needed unless adding a new phase.
 
 ## Adding a New Sprint Phase
 

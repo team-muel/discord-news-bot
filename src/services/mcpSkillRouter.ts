@@ -13,16 +13,21 @@
  * this module adds an overlay that enriches routing decisions.
  */
 
+import {
+  MCP_SKILL_ROUTER_ENABLED,
+  MCP_HEALTH_SWEEP_INTERVAL_MS,
+  MCP_PROBE_TIMEOUT_MS,
+  MCP_HEALTH_TTL_MS,
+} from '../config';
 import logger from '../logger';
-import { parseIntegerEnv, parseBooleanEnv } from '../utils/env';
 import { TtlCache } from '../utils/ttlCache';
 
-// ──── Config ──────────────────────────────────────────────────────────────────
+// ──── Config ────────────────────────────────────────────────────────────────────
 
-const ROUTER_ENABLED = parseBooleanEnv(process.env.MCP_SKILL_ROUTER_ENABLED, true);
-const HEALTH_SWEEP_INTERVAL_MS = Math.max(15_000, parseIntegerEnv(process.env.MCP_HEALTH_SWEEP_INTERVAL_MS, 30_000));
-const PROBE_TIMEOUT_MS = Math.max(2_000, parseIntegerEnv(process.env.MCP_PROBE_TIMEOUT_MS, 5_000));
-const HEALTH_TTL_MS = Math.max(10_000, parseIntegerEnv(process.env.MCP_HEALTH_TTL_MS, 60_000));
+const ROUTER_ENABLED = MCP_SKILL_ROUTER_ENABLED;
+const HEALTH_SWEEP_INTERVAL_MS = MCP_HEALTH_SWEEP_INTERVAL_MS;
+const PROBE_TIMEOUT_MS = MCP_PROBE_TIMEOUT_MS;
+const HEALTH_TTL_MS = MCP_HEALTH_TTL_MS;
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -229,6 +234,7 @@ export const initMcpSkillRouter = async (): Promise<void> => {
   const registered: string[] = [];
 
   for (const spec of ENV_WORKER_MAP) {
+    // Dynamic key lookup — keys are defined in ENV_WORKER_MAP, cannot be pre-read in config.ts
     const url = spec.envKeys
       .map((k) => String(process.env[k] || '').trim())
       .find((v) => v.length > 0);

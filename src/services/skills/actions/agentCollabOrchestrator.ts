@@ -23,21 +23,11 @@ import {
   maybeGenerateRoleText,
   maybeDelegateAgentAction,
 } from './agentCollabHelpers';
-
-// Forward-declared to avoid circular import — bound lazily at first call.
-let _opendevPlanAction: ActionDefinition | null = null;
-let _nemoclawReviewAction: ActionDefinition | null = null;
-let _openjarvisOpsAction: ActionDefinition | null = null;
-
-const getRoleActions = async () => {
-  if (!_opendevPlanAction) {
-    const mod = await import('./agentCollabRoles');
-    _opendevPlanAction = mod.opendevPlanAction;
-    _nemoclawReviewAction = mod.nemoclawReviewAction;
-    _openjarvisOpsAction = mod.openjarvisOpsAction;
-  }
-  return { opendevPlanAction: _opendevPlanAction!, nemoclawReviewAction: _nemoclawReviewAction!, openjarvisOpsAction: _openjarvisOpsAction! };
-};
+import {
+  opendevPlanAction,
+  nemoclawReviewAction,
+  openjarvisOpsAction,
+} from './agentCollabRoles';
 
 const executeRoleAction = async (params: {
   role: AgentRoleName;
@@ -59,8 +49,6 @@ const executeRoleAction = async (params: {
       args: actionArgs,
     });
   }
-
-  const { opendevPlanAction, nemoclawReviewAction, openjarvisOpsAction } = await getRoleActions();
 
   if (params.role === 'architect') {
     return opendevPlanAction.execute({
@@ -137,6 +125,7 @@ const renderOrchestrationFallback = (params: {
 export const localOrchestratorRouteAction: ActionDefinition = {
   name: 'local.orchestrator.route',
   description: '로컬 오케스트레이터 기준으로 lead/consult/게이트를 실제 라우팅 결과로 반환하고, 선택적으로 세션까지 시작합니다.',
+  category: 'agent',
   execute: async ({ goal, args, guildId, requestedBy }) => {
     const query = resolveGoal(goal, args);
     if (!query) {
@@ -236,6 +225,7 @@ export const localOrchestratorRouteAction: ActionDefinition = {
 export const localOrchestratorAllAction: ActionDefinition = {
   name: 'local.orchestrator.all',
   description: '로컬 오케스트레이터가 lead 실행, consult 실행, synthesis까지 한 번에 수행합니다.',
+  category: 'agent',
   execute: async ({ goal, args, guildId, requestedBy }) => {
     const query = resolveGoal(goal, args);
     if (!query) {

@@ -1,4 +1,6 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS, T_MEMORY_CONFLICTS, T_MEMORY_FEEDBACK, T_MEMORY_JOBS, T_MEMORY_RETRIEVAL_LOGS } from '../infra/tableRegistry';
 
 type MetricsParams = {
   guildId?: string;
@@ -11,39 +13,39 @@ const toIsoFromDays = (days: number): string => {
 };
 
 export async function getMemoryQualityMetrics(params: MetricsParams) {
-  if (!isSupabaseConfigured()) {
+  const client = getClient();
+  if (!client) {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
-  const client = getSupabaseClient();
   const sinceIso = toIsoFromDays(params.days);
 
   let itemsQuery = client
-    .from('memory_items')
+    .from(T_MEMORY_ITEMS)
     .select('status, source_count, pinned, approved_at, updated_at')
     .gte('updated_at', sinceIso)
     .limit(5000);
 
   let conflictQuery = client
-    .from('memory_conflicts')
+    .from(T_MEMORY_CONFLICTS)
     .select('status, created_at')
     .gte('created_at', sinceIso)
     .limit(5000);
 
   let feedbackQuery = client
-    .from('memory_feedback')
+    .from(T_MEMORY_FEEDBACK)
     .select('memory_item_id, action, created_at')
     .gte('created_at', sinceIso)
     .limit(5000);
 
   let jobsQuery = client
-    .from('memory_jobs')
+    .from(T_MEMORY_JOBS)
     .select('status, attempts, created_at, completed_at, deadlettered_at')
     .gte('created_at', sinceIso)
     .limit(5000);
 
   let retrievalQuery = client
-    .from('memory_retrieval_logs')
+    .from(T_MEMORY_RETRIEVAL_LOGS)
     .select('query_latency_ms, requested_top_k, returned_count, avg_citations, avg_score, created_at')
     .gte('created_at', sinceIso)
     .limit(5000);
@@ -104,7 +106,7 @@ export async function getMemoryQualityMetrics(params: MetricsParams) {
   const updatedAtByMemoryId = new Map<string, string>();
   if (correctionItemIds.length > 0) {
     const { data: correctedItems, error: correctedItemsError } = await client
-      .from('memory_items')
+      .from(T_MEMORY_ITEMS)
       .select('id, updated_at')
       .in('id', correctionItemIds)
       .limit(5000);

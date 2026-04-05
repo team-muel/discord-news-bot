@@ -14,6 +14,8 @@ import type {
 } from './observerTypes';
 import { OBSERVER_DISCORD_PULSE_ENABLED } from '../../config';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_USER_ACTIVITY } from '../infra/tableRegistry';
 
 const channel: ObservationChannel = {
   kind: 'discord-pulse',
@@ -23,12 +25,12 @@ const channel: ObservationChannel = {
     const start = Date.now();
     const observations: Observation[] = [];
 
-    if (!isSupabaseConfigured()) {
+    const sb = getClient();
+    if (!sb) {
       return { observations, channelKind: 'discord-pulse', scanDurationMs: Date.now() - start };
     }
 
     try {
-      const sb = getSupabaseClient();
 
       // Read recent user CRM activity to detect engagement drops
       const oneDayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
@@ -36,14 +38,14 @@ const channel: ObservationChannel = {
 
       // Current 24h activity
       const { count: current24h } = await sb
-        .from('user_activity')
+        .from(T_USER_ACTIVITY)
         .select('id', { count: 'exact', head: true })
         .eq('guild_id', guildId)
         .gte('created_at', oneDayAgo);
 
       // Previous 24h activity for comparison
       const { count: previous24h } = await sb
-        .from('user_activity')
+        .from(T_USER_ACTIVITY)
         .select('id', { count: 'exact', head: true })
         .eq('guild_id', guildId)
         .gte('created_at', twoDaysAgo)

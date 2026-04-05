@@ -1,21 +1,16 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
+import {
+  OPENSHELL_ENABLED as ENABLED,
+  OPENSHELL_DISABLED as EXPLICITLY_DISABLED,
+  OPENSHELL_REMOTE_GATEWAY as REMOTE_GATEWAY,
+  WSL_DISTRO,
+} from '../../../config';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
 const IS_WINDOWS = process.platform === 'win32';
-const ENABLED = parseBooleanEnv(process.env.OPENSHELL_ENABLED, false);
-
-const WSL_DISTRO = String(process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
-
-/**
- * D-04: Remote gateway fallback — when local Docker/WSL sandbox creation fails,
- * route through a remote host via `openshell sandbox create --remote user@host`.
- * Set OPENSHELL_REMOTE_GATEWAY=user@host to enable.
- */
-const REMOTE_GATEWAY = String(process.env.OPENSHELL_REMOTE_GATEWAY || '').trim().replace(/[^a-zA-Z0-9@._:-]/g, '');
 
 const sanitizeArg = (value: string, maxLen = 200): string =>
   String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[;&|`$(){}]/g, '').trim().slice(0, maxLen);
@@ -37,7 +32,7 @@ export const openshellAdapter: ExternalToolAdapter = {
   capabilities: ['sandbox.create', 'sandbox.list', 'sandbox.exec', 'sandbox.destroy', 'policy.set'],
 
   isAvailable: async () => {
-    if (!ENABLED) return false;
+    if (EXPLICITLY_DISABLED || !ENABLED) return false;
     try {
       await runCli(['--version']);
       return true;

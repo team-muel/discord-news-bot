@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 const hoisted = vi.hoisted(() => ({
   parseSessionToken: vi.fn(),
   getAdminAllowlist: vi.fn(),
+  verifyCsrfToken: vi.fn(),
 }));
 
 vi.mock('../config', () => ({
@@ -13,6 +14,7 @@ vi.mock('../config', () => ({
 
 vi.mock('../services/authService', () => ({
   parseSessionToken: hoisted.parseSessionToken,
+  verifyCsrfToken: hoisted.verifyCsrfToken,
 }));
 
 vi.mock('../services/adminAllowlistService', () => ({
@@ -97,6 +99,7 @@ describe('middleware/auth', () => {
   });
 
   it('requireCsrfForStateChange는 토큰이 일치하면 통과시킨다', () => {
+    hoisted.verifyCsrfToken.mockReturnValue(true);
     const req: any = {
       method: 'DELETE',
       user: { id: 'u-1' },
@@ -108,7 +111,26 @@ describe('middleware/auth', () => {
 
     requireCsrfForStateChange(req, res, next);
 
+    expect(hoisted.verifyCsrfToken).toHaveBeenCalledWith('same-token', 'u-1');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('requireCsrfForStateChange는 HMAC이 세션에 바인딩되지 않으면 403을 반환한다', () => {
+    hoisted.verifyCsrfToken.mockReturnValue(false);
+    const req: any = {
+      method: 'POST',
+      user: { id: 'victim-user' },
+      headers: { 'x-csrf-token': 'attacker-token' },
+      cookies: { muel_csrf: 'attacker-token' },
+    };
+    const res = createRes();
+    const next = vi.fn();
+
+    requireCsrfForStateChange(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ error: 'CSRF', message: 'CSRF token not bound to session' });
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('requireAdmin은 allowlist가 비어 있으면 503을 반환한다', async () => {

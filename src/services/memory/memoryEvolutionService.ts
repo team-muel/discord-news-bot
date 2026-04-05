@@ -18,6 +18,8 @@
 import logger from '../../logger';
 import { memoryConfig } from '../../config';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS, T_MEMORY_ITEM_LINKS } from '../infra/tableRegistry';
 import { searchMemoryHybrid } from '../agent/agentMemoryStore';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 
@@ -89,6 +91,7 @@ const classifyRelationLlm = async (
       user,
       maxTokens: 16,
       temperature: 0.1,
+      actionName: 'memory.evolution.classify',
     });
     const parsed = raw.trim().toLowerCase().replace(/[^a-z_]/g, '') as LinkRelation;
     if (VALID_RELATIONS.has(parsed)) return parsed;
@@ -125,13 +128,13 @@ export const evolveMemoryLinks = async (params: {
   summary: string;
 }): Promise<EvolutionResult> => {
   if (!EVOLUTION_ENABLED) return EMPTY_RESULT;
-  if (!isSupabaseConfigured()) return EMPTY_RESULT;
+  const client = getClient();
+  if (!client) return EMPTY_RESULT;
 
   const queryText = [params.title, params.summary].filter(Boolean).join(' ').trim();
   if (!queryText || queryText.length < 4) return EMPTY_RESULT;
 
   try {
-    const client = getSupabaseClient();
     let candidates: EvolutionCandidate[] = [];
 
     // Use shared hybrid search helper (vector + lexical fallback)
@@ -173,7 +176,7 @@ export const evolveMemoryLinks = async (params: {
 
       // Insert link (unique constraint prevents duplicates)
       const { error: linkError } = await client
-        .from('memory_item_links')
+        .from(T_MEMORY_ITEM_LINKS)
         .insert({
           source_id: params.newMemoryId,
           target_id: candidate.id,
@@ -195,7 +198,7 @@ export const evolveMemoryLinks = async (params: {
         const newConfidence = clamp01(candidate.confidence + EVOLUTION_CONFIDENCE_BOOST);
         if (newConfidence > candidate.confidence) {
           const { error: boostError } = await client
-            .from('memory_items')
+            .from(T_MEMORY_ITEMS)
             .update({
               confidence: Number(newConfidence.toFixed(3)),
               updated_by: 'evolution-service',
@@ -210,7 +213,7 @@ export const evolveMemoryLinks = async (params: {
       } else if (relation === 'supersedes') {
         // Superseded memory gets confidence penalty and archived
         const { error: supersedeError } = await client
-          .from('memory_items')
+          .from(T_MEMORY_ITEMS)
           .update({
             confidence: Number(clamp01(candidate.confidence * 0.5).toFixed(3)),
             status: 'archived',
@@ -228,7 +231,7 @@ export const evolveMemoryLinks = async (params: {
         const reducedConfidence = clamp01(candidate.confidence - EVOLUTION_CONFIDENCE_BOOST * 2);
         if (reducedConfidence < candidate.confidence) {
           const { error: contradictError } = await client
-            .from('memory_items')
+            .from(T_MEMORY_ITEMS)
             .update({
               confidence: Number(reducedConfidence.toFixed(3)),
               updated_by: 'evolution-service',
@@ -262,11 +265,10 @@ export const evolveMemoryLinks = async (params: {
  * Returns 0 on any failure — never blocks the hint pipeline.
  */
 export const countMemoryLinks = async (memoryId: string): Promise<number> => {
-  if (!isSupabaseConfigured()) return 0;
+  const qb = fromTable(T_MEMORY_ITEM_LINKS);
+  if (!qb) return 0;
   try {
-    const client = getSupabaseClient();
-    const { count, error } = await client
-      .from('memory_item_links')
+    const { count, error } = await qb
       .select('id', { count: 'exact', head: true })
       .or(`source_id.eq.${memoryId},target_id.eq.${memoryId}`);
 
@@ -283,12 +285,11 @@ export const countMemoryLinks = async (memoryId: string): Promise<number> => {
  */
 export const batchCountMemoryLinks = async (memoryIds: string[], guildId: string): Promise<Map<string, number>> => {
   const result = new Map<string, number>();
-  if (!isSupabaseConfigured() || memoryIds.length === 0) return result;
+  const qb = fromTable(T_MEMORY_ITEM_LINKS);
+  if (!qb || memoryIds.length === 0) return result;
 
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('memory_item_links')
+    const { data, error } = await qb
       .select('source_id, target_id')
       .eq('guild_id', guildId)
       .or(

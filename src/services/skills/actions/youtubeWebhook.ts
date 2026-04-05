@@ -17,6 +17,7 @@ const extractYoutubeWebhookQuery = (goal: string, args?: Record<string, unknown>
 export const youtubeSearchWebhookAction: ActionDefinition = {
   name: 'youtube.search.webhook',
   description: 'YouTube 검색 상위 링크를 MCP 워커에서 조회하고 Discord Webhook으로 전송합니다.',
+  category: 'content',
   execute: async ({ goal, args }) => {
     const query = extractYoutubeWebhookQuery(goal, args);
     const delegated = await runDelegatedAction({

@@ -277,6 +277,7 @@ const runPostWriteVerification = async (params: {
 export const obsidianGuildDocUpsertAction: ActionDefinition = {
   name: 'obsidian.guild_doc.upsert',
   description: '길드 문서를 Obsidian vault에 기록하거나 갱신합니다.',
+  category: 'data',
   execute: async ({ guildId, goal, args }) => {
     if (!guildId) {
       return {

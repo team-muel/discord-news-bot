@@ -9,13 +9,18 @@
  *
  * Environment:
  *   OLLAMA_BASE_URL — default http://127.0.0.1:11434
- *   OLLAMA_ADAPTER_ENABLED — default false
+ *   OLLAMA_ADAPTER_DISABLED — set true to force-disable (opt-out)
+ *   OLLAMA_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const ENABLED = parseBooleanEnv(process.env.OLLAMA_ADAPTER_ENABLED, false);
+/** Opt-out: disabled only when explicitly turned off. */
+const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.OLLAMA_ADAPTER_DISABLED, false);
+const LEGACY_ENABLED_RAW = process.env.OLLAMA_ADAPTER_ENABLED;
+const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+
 const BASE_URL = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
 const TIMEOUT_MS = 15_000;
 
@@ -101,7 +106,7 @@ export const ollamaAdapter: ExternalToolAdapter = {
   liteCapabilities: ['model.list', 'model.info'],
 
   isAvailable: async () => {
-    if (!ENABLED) return false;
+    if (!isNotDisabled()) return false;
     try {
       const { ok } = await fetchOllama('/api/tags');
       return ok;

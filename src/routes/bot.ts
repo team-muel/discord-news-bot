@@ -10,7 +10,13 @@ import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob
 import { createRateLimiter } from '../middleware/rateLimit';
 import { createIdempotencyGuard } from '../middleware/idempotency';
 import { toStringParam } from '../utils/validation';
-import { parseIntegerEnv } from '../utils/env';
+import {
+  BOT_STATUS_CACHE_TTL_MS,
+  BOT_STATUS_RATE_WINDOW_MS,
+  BOT_STATUS_RATE_MAX,
+  BOT_ADMIN_ACTION_RATE_WINDOW_MS,
+  BOT_ADMIN_ACTION_RATE_MAX,
+} from '../config';
 import { getMultiAgentRuntimeSnapshot } from '../services/multiAgentService';
 import { getActionRunnerDiagnosticsSnapshot } from '../services/skills/actionRunner';
 import { getWorkerApprovalStoreSnapshot } from '../services/workerGeneration/workerApprovalStore';
@@ -18,11 +24,6 @@ import { getWorkerProposalMetricsSnapshot } from '../services/workerGeneration/w
 import { registerBotAgentRoutes } from './botAgentRoutes';
 
 let lastBotStatusBenchmarkAt = 0;
-const BOT_STATUS_CACHE_TTL_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_STATUS_CACHE_TTL_MS, 5_000));
-const BOT_STATUS_RATE_WINDOW_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_STATUS_RATE_WINDOW_MS, 60_000));
-const BOT_STATUS_RATE_MAX = Math.max(1, parseIntegerEnv(process.env.BOT_STATUS_RATE_MAX, 60));
-const BOT_ADMIN_ACTION_RATE_WINDOW_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_ADMIN_ACTION_RATE_WINDOW_MS, 60_000));
-const BOT_ADMIN_ACTION_RATE_MAX = Math.max(1, parseIntegerEnv(process.env.BOT_ADMIN_ACTION_RATE_MAX, 20));
 
 let botStatusCache: {
   payload: BotStatusApiResponse | null;

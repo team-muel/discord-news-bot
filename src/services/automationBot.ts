@@ -6,10 +6,9 @@ import {
 import { buildAutomationSummary, isAutomationHealthy } from './automation/health';
 import { getAutomationModule, getAutomationModules } from './automation/modules';
 import { createInitialJobStates, initJobState } from './automation/runtimeState';
-import type { AutomationJobName, AutomationRuntimeSnapshot } from './automation/types';
-import type { Client } from 'discord.js';
+import type { AutomationJobName, AutomationRuntimeSnapshot, ChannelSink } from './automation/types';
 
-export type { AutomationJobName, AutomationRuntimeSnapshot };
+export type { AutomationJobName, AutomationRuntimeSnapshot, ChannelSink };
 
 export type AutomationTriggerContext = {
   guildId?: string;
@@ -18,7 +17,7 @@ export type AutomationTriggerContext = {
 const jobStates = createInitialJobStates();
 let started = false;
 let startedAt: string | null = null;
-let activeClient: Client | null = null;
+let activeSink: ChannelSink | null = null;
 const manualTriggers: Partial<Record<AutomationJobName, (context?: AutomationTriggerContext) => Promise<{ ok: boolean; message: string }>>> = {};
 
 const syncMonitorState = () => {
@@ -75,12 +74,12 @@ export const startAutomationJobs = () => {
   syncMonitorState();
 };
 
-export const startAutomationModules = (client: Client) => {
+export const startAutomationModules = (sink: ChannelSink) => {
   if (!AUTOMATION_ENABLED || !AUTOMATION_RUNTIME_ENABLED) {
     return;
   }
 
-  activeClient = client;
+  activeSink = sink;
 
   for (const module of getAutomationModules()) {
     const state = jobStates[module.name];
@@ -88,7 +87,7 @@ export const startAutomationModules = (client: Client) => {
       continue;
     }
 
-    module.start(client);
+    module.start(sink);
   }
 };
 
@@ -99,7 +98,7 @@ export const stopAutomationModules = (): void => {
       module.stop();
     } catch { /* best-effort */ }
   }
-  activeClient = null;
+  activeSink = null;
 };
 
 export const triggerAutomationJob = async (jobName: AutomationJobName, context?: AutomationTriggerContext) => {
@@ -127,13 +126,13 @@ export const triggerAutomationJob = async (jobName: AutomationJobName, context?:
     return { ok: false, message: `${jobName} is disabled` };
   }
 
-  if (!manualTrigger && !activeClient) {
+  if (!manualTrigger && !activeSink) {
     return { ok: false, message: `${jobName} is not ready yet` };
   }
 
   const result = manualTrigger
     ? await manualTrigger(context)
-    : await module.trigger(activeClient as Client, context?.guildId);
+    : await module.trigger(activeSink!, context?.guildId);
 
   syncMonitorState();
   return result;

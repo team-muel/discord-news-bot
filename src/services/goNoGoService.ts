@@ -1,15 +1,17 @@
+import {
+  GO_NO_GO_MIN_CITATION_RATE,
+  GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE,
+  GO_NO_GO_MAX_JOB_FAILURE_RATE,
+  GO_NO_GO_MIN_RECALL_AT_5,
+  GO_NO_GO_MIN_PILOT_GUILDS,
+  GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN,
+  GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL,
+  GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE,
+} from '../config';
 import { getMemoryJobQueueStats } from './memory/memoryJobRunner';
 import { getMemoryQualityMetrics } from './memory/memoryQualityMetricsService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAgentTelemetryQueueSnapshot } from './agent/agentTelemetryQueue';
-
-const toNumberEnv = (value: string | undefined, fallback: number, min: number, max: number): number => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.max(min, Math.min(max, parsed));
-};
 
 type GoNoGoParams = {
   guildId?: string;
@@ -17,14 +19,14 @@ type GoNoGoParams = {
 };
 
 const DEFAULT_THRESHOLDS = {
-  minCitationRate: toNumberEnv(process.env.GO_NO_GO_MIN_CITATION_RATE, 0.95, 0, 1),
-  maxUnresolvedConflictRate: toNumberEnv(process.env.GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE, 0.05, 0, 1),
-  maxJobFailureRate: toNumberEnv(process.env.GO_NO_GO_MAX_JOB_FAILURE_RATE, 0.10, 0, 1),
-  minRecallAt5: toNumberEnv(process.env.GO_NO_GO_MIN_RECALL_AT_5, 0.60, 0, 1),
-  minPilotGuilds: Math.max(1, Math.trunc(toNumberEnv(process.env.GO_NO_GO_MIN_PILOT_GUILDS, 3, 1, 10_000))),
-  maxCorrectionSlaP95Minutes: toNumberEnv(process.env.GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN, 5, 0.1, 24 * 60),
-  maxTelemetryQueueDroppedTotal: Math.max(0, Math.trunc(toNumberEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0, 0, 1_000_000))),
-  maxTelemetryQueueDropRate: toNumberEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE, 0.02, 0, 1),
+  minCitationRate: GO_NO_GO_MIN_CITATION_RATE,
+  maxUnresolvedConflictRate: GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE,
+  maxJobFailureRate: GO_NO_GO_MAX_JOB_FAILURE_RATE,
+  minRecallAt5: GO_NO_GO_MIN_RECALL_AT_5,
+  minPilotGuilds: GO_NO_GO_MIN_PILOT_GUILDS,
+  maxCorrectionSlaP95Minutes: GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN,
+  maxTelemetryQueueDroppedTotal: GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL,
+  maxTelemetryQueueDropRate: GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE,
 };
 
 const toStatus = (ok: boolean): 'pass' | 'fail' => (ok ? 'pass' : 'fail');

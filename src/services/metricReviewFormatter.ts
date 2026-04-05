@@ -5,6 +5,9 @@
  *
  * Zero new data collection — everything comes from existing services.
  */
+import { computeSystemGradient, computeConvergenceReport } from './sprint/selfImprovementLoop';
+import { evaluateGuildSloReport } from './agent/agentSloService';
+import { getSprintMetrics } from './sprint/sprintMetricsCollector';
 
 // ──── KR Classification ───────────────────────────────────────────────────────
 
@@ -43,7 +46,6 @@ export const generateMetricReviewSnapshot = async (): Promise<MetricReviewSnapsh
   // 1. Gradient → KR classification
   let gradient: MetricReviewSnapshot['gradient'] = null;
   try {
-    const { computeSystemGradient } = await import('./sprint/selfImprovementLoop');
     const g = await computeSystemGradient();
     gradient = { totalScore: g.totalScore, topPriority: g.topPriority?.description ?? null, signalCount: g.signals.length };
     for (const sig of g.signals) {
@@ -56,7 +58,6 @@ export const generateMetricReviewSnapshot = async (): Promise<MetricReviewSnapsh
   // 2. Convergence → overall health
   let convergence: MetricReviewSnapshot['convergence'] = null;
   try {
-    const { computeConvergenceReport } = await import('./sprint/selfImprovementLoop');
     const c = await computeConvergenceReport();
     convergence = { verdict: c.overallVerdict, benchTrend: c.benchScoreTrend, qualityTrend: c.qualityScoreTrend, dataPoints: c.dataPoints };
     if (c.overallVerdict === 'degrading') krs['agent-quality'].health = 'off-track';
@@ -67,7 +68,6 @@ export const generateMetricReviewSnapshot = async (): Promise<MetricReviewSnapsh
   // 3. SLO → system-reliability health
   let slo: MetricReviewSnapshot['slo'] = null;
   try {
-    const { evaluateGuildSloReport } = await import('./agent/agentSloService');
     const r = await evaluateGuildSloReport({ guildId: 'default' });
     slo = { decision: r.summary.decision, pass: r.summary.pass, warn: r.summary.warn, fail: r.summary.fail };
     if (r.summary.fail > 0) krs['system-reliability'].health = 'off-track';
@@ -78,7 +78,6 @@ export const generateMetricReviewSnapshot = async (): Promise<MetricReviewSnapsh
   // 4. Sprint metrics → operational-efficiency
   let sprint: MetricReviewSnapshot['sprint'] = null;
   try {
-    const { getSprintMetrics } = await import('./sprint/sprintMetricsCollector');
     const sm = getSprintMetrics();
     const total = sm.totalPipelinesCreated;
     sprint = {

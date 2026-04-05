@@ -6,6 +6,7 @@ import {
 import { runPolicyGateNode, type PolicyGateResult } from './langgraph/nodes/coreNodes';
 import { createActionApprovalRequest, type ActionApprovalRequest } from './skills/actionGovernanceStore';
 import { isSkillId, listSkills } from './skills/registry';
+import { SUPER_AGENT_PAYLOAD_CLIP_CHARS, SUPER_AGENT_REVIEW_APPROVAL_ACTION } from '../config';
 
 export const SUPER_AGENT_MODES = ['local-collab', 'delivery', 'operations'] as const;
 export const SUPER_AGENT_LEAD_AGENTS = ['Implement', 'Architect', 'Review', 'Operate'] as const;
@@ -148,8 +149,7 @@ export type SuperAgentStartResult = {
 };
 
 const nowTaskId = () => `super-${Date.now()}`;
-const MAX_SUPERVISOR_PAYLOAD_CHARS = Math.max(400, Number(process.env.SUPER_AGENT_PAYLOAD_CLIP_CHARS || 2_000));
-const SUPER_AGENT_REVIEW_APPROVAL_ACTION = String(process.env.SUPER_AGENT_REVIEW_APPROVAL_ACTION || 'super.inference.review').trim() || 'super.inference.review';
+const MAX_SUPERVISOR_PAYLOAD_CHARS = SUPER_AGENT_PAYLOAD_CLIP_CHARS;
 
 const toTrimmedString = (value: unknown): string => {
   if (typeof value === 'string') {

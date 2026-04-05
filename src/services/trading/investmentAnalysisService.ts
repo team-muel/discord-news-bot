@@ -1,11 +1,11 @@
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { OPENAI_ANALYSIS_MODEL } from '../../config';
 
-export const isInvestmentAnalysisEnabled = (): boolean => Boolean((process.env.OPENAI_API_KEY || '').trim());
+export const isInvestmentAnalysisEnabled = (): boolean => isAnyLlmConfigured();
 
 export async function generateInvestmentAnalysis(query: string): Promise<string> {
-  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) {
-    return '(OPENAI_API_KEY 없음) 투자 분석 기능이 제한 모드로 동작합니다.';
+  if (!isAnyLlmConfigured()) {
+    return '(LLM 미설정) 투자 분석 기능이 제한 모드로 동작합니다.';
   }
 
   const safeQuery = String(query || '').slice(0, 1000);
@@ -29,36 +29,23 @@ export async function generateInvestmentAnalysis(query: string): Promise<string>
     '- 한국어로 간결하게 작성',
   ].join('\n');
 
-  const res = await fetch(OPENAI_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini',
-      temperature: Number(process.env.OPENAI_ANALYSIS_TEMPERATURE || 0.2),
-      max_tokens: Number(process.env.OPENAI_ANALYSIS_MAX_TOKENS || 1000),
-      messages: [
-        {
-          role: 'system',
-          content: [
-            'You are a professional equity research assistant.',
-            'Provide balanced, evidence-oriented analysis in Korean.',
-            'Follow user-required output format exactly and keep it concise.',
-            'Avoid hype, deterministic claims, and direct investment advice.',
-          ].join(' '),
-        },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  });
+  try {
+    const result = await generateText({
+      system: [
+        'You are a professional equity research assistant.',
+        'Provide balanced, evidence-oriented analysis in Korean.',
+        'Follow user-required output format exactly and keep it concise.',
+        'Avoid hype, deterministic claims, and direct investment advice.',
+      ].join(' '),
+      user: prompt,
+      model: OPENAI_ANALYSIS_MODEL,
+      temperature: 0.2,
+      maxTokens: 1000,
+      actionName: 'analysis.investment',
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    return `AI 응답 실패: ${text.slice(0, 300)}`;
+    return result || '분석 결과를 생성하지 못했습니다.';
+  } catch {
+    return '분석 결과를 생성하지 못했습니다.';
   }
-
-  const data = (await res.json()) as Record<string, any>;
-  return String(data?.choices?.[0]?.message?.content || '분석 결과를 생성하지 못했습니다.');
 }

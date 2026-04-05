@@ -5,10 +5,12 @@
  */
 import crypto from 'crypto';
 import { TtlCache } from '../../utils/ttlCache';
-import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { fromTable, getClient } from '../infra/baseRepository';
+import { T_NEWS_CAPTURE_FINGERPRINTS } from '../infra/tableRegistry';
+import { isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 
-const FINGERPRINT_TABLE = 'news_capture_fingerprints';
+const FINGERPRINT_TABLE = T_NEWS_CAPTURE_FINGERPRINTS;
 
 // In-memory fallback (single-process, lost on restart)
 const memoryCache = new TtlCache<true>(10_000);
@@ -46,7 +48,7 @@ export const isNewsFingerprinted = async (params: {
   }
 
   try {
-    const client = getSupabaseClient();
+    const client = getClient();
     const { data, error } = await client
       .from(FINGERPRINT_TABLE)
       .select('id')
@@ -83,7 +85,7 @@ export const recordNewsFingerprint = async (params: {
   }
 
   try {
-    const client = getSupabaseClient();
+    const client = getClient();
     const expiresAt = new Date(Date.now() + params.ttlMs).toISOString();
     await client
       .from(FINGERPRINT_TABLE)

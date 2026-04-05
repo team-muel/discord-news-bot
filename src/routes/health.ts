@@ -5,6 +5,7 @@ import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
+import { getLastMigrationValidation } from '../utils/migrationRegistry';
 
 export type RuntimeReadinessState = {
   botEnabled: boolean;
@@ -136,6 +137,7 @@ export function createHealthRouter(): Router {
       bot,
       automation,
       ...(n8nStatus ? { n8n: n8nStatus } : {}),
+      migrations: getLastMigrationValidation(),
     };
 
     return res.status(200).json(payload);

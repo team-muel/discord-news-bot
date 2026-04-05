@@ -33,7 +33,7 @@ export function createApp(): Express {
     }),
   );
   app.use(helmet({
-    contentSecurityPolicy: false, // CSP managed separately for frontend compatibility
+    contentSecurityPolicy: false, // JSON-only API — CSP is a browser rendering concern; set on frontend server
   }));
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(cookieParser());

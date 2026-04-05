@@ -23,6 +23,7 @@ import {
 export const qaTestAction: ActionDefinition = {
   name: 'qa.test',
   description: 'QA 역할로 변경된 코드의 테스트를 실행하고 버그를 탐지/수정합니다.',
+  category: 'code',
   deterministic: true,
   execute: async ({ goal, args }) => {
     const query = resolveGoal(goal, args);
@@ -65,6 +66,7 @@ export const qaTestAction: ActionDefinition = {
 export const csoAuditAction: ActionDefinition = {
   name: 'cso.audit',
   description: 'CSO 역할로 Discovery→Analysis 2단계 파이프라인 보안 감사를 수행합니다. JSONL 후보군이 있으면 자동 활용합니다.',
+  category: 'ops',
   execute: async ({ goal, args }) => {
     const query = resolveGoal(goal, args);
     if (!query) {
@@ -140,6 +142,7 @@ export const csoAuditAction: ActionDefinition = {
 export const releaseShipAction: ActionDefinition = {
   name: 'release.ship',
   description: '릴리스 엔지니어 역할로 테스트 실행, 커버리지 확인, PR 생성을 수행합니다.',
+  category: 'ops',
   deterministic: true,
   execute: async ({ goal, args }) => {
     const query = resolveGoal(goal, args);
@@ -241,6 +244,7 @@ const buildQuantitativeRetro = (query: string, args?: Record<string, unknown>): 
 export const retroSummarizeAction: ActionDefinition = {
   name: 'retro.summarize',
   description: '회고 역할로 스프린트 결과를 요약하고 개선 사항을 도출합니다.',
+  category: 'agent',
   execute: async ({ goal, args, guildId }) => {
     const query = resolveGoal(goal, args);
     if (!query) {

@@ -14,6 +14,8 @@ import type {
 } from './observerTypes';
 import { OBSERVER_MEMORY_GAP_ENABLED, OBSERVER_MEMORY_GAP_STALE_HOURS } from '../../config';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS } from '../infra/tableRegistry';
 
 const channel: ObservationChannel = {
   kind: 'memory-gap',
@@ -23,17 +25,17 @@ const channel: ObservationChannel = {
     const start = Date.now();
     const observations: Observation[] = [];
 
-    if (!isSupabaseConfigured()) {
+    const sb = getClient();
+    if (!sb) {
       return { observations, channelKind: 'memory-gap', scanDurationMs: Date.now() - start };
     }
 
     try {
-      const sb = getSupabaseClient();
 
       // 1. Stale raw-tier memories (older than threshold, never promoted)
       const staleCutoff = new Date(Date.now() - OBSERVER_MEMORY_GAP_STALE_HOURS * 3600_000).toISOString();
       const { data: staleMemories, error: staleErr } = await sb
-        .from('memory_items')
+        .from(T_MEMORY_ITEMS)
         .select('id', { count: 'exact', head: true })
         .eq('guild_id', guildId)
         .eq('tier', 'raw')
@@ -46,7 +48,7 @@ const channel: ObservationChannel = {
 
       // Use count from the query
       const { count: staleCount } = await sb
-        .from('memory_items')
+        .from(T_MEMORY_ITEMS)
         .select('id', { count: 'exact', head: true })
         .eq('guild_id', guildId)
         .eq('tier', 'raw')
@@ -71,7 +73,7 @@ const channel: ObservationChannel = {
 
       // 2. Low-confidence cluster: memories with confidence below threshold
       const { count: lowConfCount } = await sb
-        .from('memory_items')
+        .from(T_MEMORY_ITEMS)
         .select('id', { count: 'exact', head: true })
         .eq('guild_id', guildId)
         .lt('confidence', 0.2)

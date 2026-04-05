@@ -8,6 +8,10 @@ import { buildReasoningGoalForGuild } from '../services/taskRoutingService';
 import { recordTaskRoutingMetric } from '../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from './messages';
 import {
+  DISCORD_ENABLE_FEEDBACK_PROMPT,
+  DISCORD_FEEDBACK_PROMPT_LINE,
+} from '../config';
+import {
   FEEDBACK_REACTION_SEED_DOWN,
   FEEDBACK_REACTION_SEED_ENABLED,
   FEEDBACK_REACTION_SEED_UP,
@@ -18,11 +22,8 @@ import {
   SESSION_RESULT_CLIP_LIMIT_USER,
 } from './runtimePolicy';
 
-const FEEDBACK_PROMPT_ENABLED = (() => {
-  const raw = String(process.env.DISCORD_ENABLE_FEEDBACK_PROMPT || 'true').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-})();
-const FEEDBACK_PROMPT_LINE = String(process.env.DISCORD_FEEDBACK_PROMPT_LINE || '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.').trim();
+const FEEDBACK_PROMPT_ENABLED = DISCORD_ENABLE_FEEDBACK_PROMPT;
+const FEEDBACK_PROMPT_LINE = DISCORD_FEEDBACK_PROMPT_LINE;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type ProgressSink = {

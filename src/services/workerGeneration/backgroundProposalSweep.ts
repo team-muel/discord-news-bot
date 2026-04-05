@@ -9,6 +9,7 @@ import { triggerLacunaSprintIfNeeded, type LacunaCandidate } from '../sprint/sel
 import { getGuildActionPolicy, upsertGuildActionPolicy } from '../skills/actionGovernanceStore';
 import { runWithConcurrency } from '../../utils/async';
 import { getErrorMessage } from '../../discord/ui';
+import { OPENCLAW_LACUNA_SKILL_CREATE_ENABLED } from '../../config';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -27,8 +28,7 @@ const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = Math.max(60_000, Numbe
 const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = Math.max(6, Math.min(120, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH || 8)));
 const IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY || process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY || 4)));
 
-let autoWorkerProposalBackgroundTimer: NodeJS.Timeout | null = null;
-let autoWorkerProposalBackgroundRunning = false;
+import { BackgroundLoop } from '../../utils/backgroundLoop';
 
 // ---------------------------------------------------------------------------
 // Auto-Proposal Promotion Gate
@@ -220,14 +220,12 @@ const normalizeBackgroundProposalGoal = (goal: string): string =>
     .slice(0, 220);
 
 export const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
-  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED || autoWorkerProposalBackgroundRunning) {
+  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED) {
     return;
   }
   if (!isSupabaseConfigured()) {
     return;
   }
-
-  autoWorkerProposalBackgroundRunning = true;
   try {
     const client = getSupabaseClient();
     const nowMs = Date.now();
@@ -424,7 +422,7 @@ export const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
       if (result.ok) {
         generated += 1;
 
-        if (parseBooleanEnv(process.env.OPENCLAW_LACUNA_SKILL_CREATE_ENABLED, false)) {
+        if (OPENCLAW_LACUNA_SKILL_CREATE_ENABLED) {
           const rawName = [...candidate.missingActionNames][0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || '';
           const skillName = rawName.slice(0, 100);
           if (skillName) {
@@ -468,24 +466,19 @@ export const runBackgroundAutoWorkerProposalSweep = async (): Promise<void> => {
     }
   } catch (error) {
     logger.warn('[WORKER-GEN] background sweep failed: %s', getErrorMessage(error));
-  } finally {
-    autoWorkerProposalBackgroundRunning = false;
   }
 };
 
+const proposalLoop = new BackgroundLoop(
+  runBackgroundAutoWorkerProposalSweep,
+  { name: '[WORKER-GEN]', intervalMs: AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS, runOnStart: true },
+);
+
 export const startAutoWorkerProposalBackgroundLoop = (): void => {
-  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED) {
-    return;
-  }
+  if (!AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED) return;
+  proposalLoop.start();
+};
 
-  if (autoWorkerProposalBackgroundTimer) {
-    clearInterval(autoWorkerProposalBackgroundTimer);
-    autoWorkerProposalBackgroundTimer = null;
-  }
-
-  void runBackgroundAutoWorkerProposalSweep();
-  autoWorkerProposalBackgroundTimer = setInterval(() => {
-    void runBackgroundAutoWorkerProposalSweep();
-  }, AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS);
-  autoWorkerProposalBackgroundTimer.unref();
+export const stopAutoWorkerProposalBackgroundLoop = (): void => {
+  proposalLoop.stop();
 };

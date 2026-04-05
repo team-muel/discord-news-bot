@@ -1,6 +1,7 @@
 import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseBooleanEnv } from '../../utils/env';
+import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME } from '../../config';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -63,8 +64,6 @@ const probeCommand = async (
     return { ok: false, output: '' };
   }
 };
-
-const WSL_DISTRO = (process.env.WSL_DISTRO || 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
 
 const probeWslCommand = async (
   command: string,
@@ -144,7 +143,7 @@ const probeOpenShell = async (): Promise<ExternalToolStatus> => {
 const probeNemoClaw = async (): Promise<ExternalToolStatus> => {
   const cmd = await probeWslCommand('nemoclaw', ['help']);
   const hasKey = Boolean(process.env.NVIDIA_API_KEY);
-  const sandboxName = process.env.NEMOCLAW_SANDBOX_NAME || 'muel-assistant';
+  const sandboxName = NEMOCLAW_SANDBOX_NAME;
   const sandbox = cmd.ok ? await probeWslCommand('nemoclaw', ['list']) : { ok: false, output: '', fullOutput: '' };
   const hasSandbox = sandbox.ok && (sandbox.fullOutput ?? sandbox.output).includes(sandboxName);
   return {

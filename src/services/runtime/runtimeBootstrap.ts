@@ -1,30 +1,19 @@
 import type { Client } from 'discord.js';
+import { ChannelType } from 'discord.js';
 import { isAutomationEnabled, startAutomationJobs, startAutomationModules } from '../automationBot';
+import type { ChannelSink, ChannelSinkSendOptions } from '../automation/types';
 import { startMemoryJobRunner } from '../memory/memoryJobRunner';
 import { startConsolidationLoop } from '../memory/memoryConsolidationService';
 import { startUserEmbeddingLoop } from '../memory/userEmbeddingService';
-import { startObsidianLoreSyncLoop } from '../obsidian/obsidianLoreSyncService';
-import { startRetrievalEvalLoop } from '../eval/retrievalEvalLoopService';
-import { startAgentSloAlertLoop } from '../agent/agentSloService';
-import { startAgentDailyLearningLoop, startGotCutoverAutopilotLoop } from '../agent/agentOpsService';
-import { autoSyncGuildTopologiesOnReady } from '../discord-support/discordTopologySyncService';
-import { startRewardSignalLoop } from '../eval/rewardSignalLoopService';
-import { startEvalAutoPromoteLoop } from '../eval/evalAutoPromoteLoopService';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { startRuntimeAlerts } from './runtimeAlertService';
 import { startOpencodePublishWorker } from '../opencode/opencodePublishWorker';
 import { startBotAutoRecovery } from './botAutoRecoveryService';
-import { startLoginSessionCleanupLoop } from '../../discord/auth';
-import { rehydrateActivePipelines, listSprintPipelines } from '../sprint/sprintOrchestrator';
-import { rehydrateEventSourcingEntities } from '../sprint/eventSourcing/bridge';
-import { startSprintScheduledTriggers } from '../sprint/sprintTriggers';
-import { checkGitConfigHealth } from '../sprint/autonomousGit';
-import { initMcpSkillRouter } from '../mcpSkillRouter';
-import { syncHighRiskActionsToSandboxPolicy } from '../skills/actionRunner';
-import { autoLoadAdapters } from '../tools/adapterAutoLoader';
-import { wireSignalBusConsumers } from './signalBusWiring';
 import { bootstrapPgCronJobs, getPgCronReplacedLoops } from '../infra/pgCronBootstrapService';
 import { PG_CRON_REPLACES_APP_LOOPS } from '../../config';
+import { bootstrapServerInfrastructure } from './bootstrapServerInfra';
+import { bootstrapDiscordLoops } from './bootstrapDiscordLoops';
+import { runAndCacheMigrationValidation } from '../../utils/migrationRegistry';
 import logger from '../../logger';
 
 const runtimeState = {
@@ -76,70 +65,57 @@ export const startServerProcessRuntime = (): void => {
     logger.debug('[PG-CRON] bootstrap skipped: %s', getErrorMessage(error));
   });
 
+  // Check schema migration status (non-blocking, logs warnings for pending)
+  void runAndCacheMigrationValidation();
+
   startAutomationJobs();
   startSharedLoops('server-process');
   startOpencodePublishWorker();
   startRuntimeAlerts();
   startBotAutoRecovery();
 
-  // Restore in-progress sprint pipelines from Supabase
-  void rehydrateActivePipelines()
-    .then(() => {
-      // After legacy rehydration, populate Ventyd entityMap so shadow calls work
-      const activeIds = listSprintPipelines(undefined, 50).map((p) => p.sprintId);
-      if (activeIds.length > 0) {
-        return rehydrateEventSourcingEntities(activeIds);
-      }
-    })
-    .catch((error) => {
-      logger.debug('[SPRINT] rehydration skipped: %s', getErrorMessage(error));
-    });
-
-  // Start scheduled sprint triggers (security audit, improvement)
-  startSprintScheduledTriggers();
-
-  // Initialize MCP skill router with health-aware worker discovery
-  void initMcpSkillRouter().catch((error) => {
-    logger.debug('[MCP-ROUTER] init skipped: %s', getErrorMessage(error));
-  });
-
-  // Validate sprint git config at startup
-  checkGitConfigHealth();
-
-  // D-06: Sync high-risk actions to OpenShell sandbox policy at startup
-  void syncHighRiskActionsToSandboxPolicy().catch((error) => {
-    logger.debug('[SANDBOX-POLICY] startup sync skipped: %s', getErrorMessage(error));
-  });
-
-  // D-06: Periodic re-sync every 6 hours to catch env changes without restart
-  const SANDBOX_POLICY_RESYNC_MS = 6 * 60 * 60_000;
-  setInterval(() => {
-    void syncHighRiskActionsToSandboxPolicy().catch((error) => {
-      logger.debug('[SANDBOX-POLICY] periodic sync skipped: %s', getErrorMessage(error));
-    });
-  }, SANDBOX_POLICY_RESYNC_MS);
-
-  // M-15 / F-02: Auto-load dynamic adapters from adapters/ directory
-  void autoLoadAdapters().catch((error) => {
-    logger.debug('[ADAPTER-LOADER] startup auto-load skipped: %s', getErrorMessage(error));
-  });
-
-  // Wire cross-cutting signal bus consumers (Layer 1 integration)
-  wireSignalBusConsumers();
-
-  // Phase F: Observer Layer — autonomous environment scanning
-  if (isPgCronOwned('observerLoop')) {
-    logger.info('[RUNTIME] observerLoop skipped — pg_cron owns it');
-  } else {
-    void import('../observer/observerOrchestrator').then(({ startObserverLoop }) => {
-      startObserverLoop();
-    }).catch((error) => {
-      logger.debug('[OBSERVER] startup skipped: %s', getErrorMessage(error));
-    });
-  }
+  // Delegate sprint, MCP, sandbox, adapters, signal bus, observer
+  bootstrapServerInfrastructure(isPgCronOwned);
 
   runtimeState.serverStarted = true;
 };
+
+/** Wrap a discord.js Client into a platform-agnostic ChannelSink (ADR-007). */
+const createDiscordChannelSink = (client: Client): ChannelSink => ({
+  sendToChannel: async (channelId: string, options: ChannelSinkSendOptions): Promise<boolean> => {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || !channel.isTextBased() || channel.isDMBased()) return false;
+
+      const msg = await channel.send({
+        content: options.content ?? undefined,
+        embeds: options.embeds?.map((e) => ({
+          title: e.title,
+          description: e.description,
+          color: e.color,
+          footer: e.footer,
+        })),
+      });
+
+      if (options.thread && msg) {
+        const canThread =
+          channel.type === ChannelType.GuildText ||
+          channel.type === ChannelType.GuildAnnouncement;
+        if (canThread && typeof msg.startThread === 'function') {
+          await msg.startThread({
+            name: options.thread.name,
+            autoArchiveDuration: options.thread.autoArchiveDuration,
+            reason: options.thread.reason,
+          });
+        }
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  },
+});
 
 export const startDiscordReadyRuntime = (client: Client): void => {
   if (runtimeState.discordReadyStarted) {
@@ -147,53 +123,13 @@ export const startDiscordReadyRuntime = (client: Client): void => {
   }
 
   if (isAutomationEnabled()) {
-    startAutomationModules(client);
-  }
-
-  startAgentDailyLearningLoop(client);
-  startGotCutoverAutopilotLoop(client);
-
-  if (isPgCronOwned('loginSessionCleanupLoop')) {
-    logger.info('[RUNTIME] loginSessionCleanupLoop skipped — pg_cron owns it');
-  } else {
-    startLoginSessionCleanupLoop();
+    startAutomationModules(createDiscordChannelSink(client));
   }
 
   startSharedLoops('discord-ready');
 
-  if (isPgCronOwned('obsidianLoreSyncLoop')) {
-    logger.info('[RUNTIME] obsidianLoreSyncLoop skipped — pg_cron owns it');
-  } else {
-    startObsidianLoreSyncLoop();
-  }
-
-  if (isPgCronOwned('retrievalEvalLoop')) {
-    logger.info('[RUNTIME] retrievalEvalLoop skipped — pg_cron owns it');
-  } else {
-    startRetrievalEvalLoop(client);
-  }
-
-  if (isPgCronOwned('rewardSignalLoop')) {
-    logger.info('[RUNTIME] rewardSignalLoop skipped — pg_cron owns it');
-  } else {
-    startRewardSignalLoop(client);
-  }
-
-  if (isPgCronOwned('evalAutoPromoteLoop')) {
-    logger.info('[RUNTIME] evalAutoPromoteLoop skipped — pg_cron owns it');
-  } else {
-    startEvalAutoPromoteLoop(client);
-  }
-
-  if (isPgCronOwned('agentSloAlertLoop')) {
-    logger.info('[RUNTIME] agentSloAlertLoop skipped — pg_cron owns it');
-  } else {
-    startAgentSloAlertLoop();
-  }
-
-  void autoSyncGuildTopologiesOnReady(client.guilds.cache.values()).catch((error) => {
-    logger.debug('[DISCORD-TOPOLOGY] ready sweep skipped reason=%s', getErrorMessage(error));
-  });
+  // Delegate eval, agent ops, obsidian, auth, topology loops
+  bootstrapDiscordLoops(client, isPgCronOwned);
 
   runtimeState.discordReadyStarted = true;
 };
@@ -202,3 +138,12 @@ export const getRuntimeBootstrapState = () => ({
   ...runtimeState,
   pgCronReplacedLoops: [...runtimeState.pgCronReplacedLoops],
 });
+
+/** Reset all mutable state to initial values. Test-only. */
+export const resetRuntimeBootstrapState = (): void => {
+  runtimeState.serverStarted = false;
+  runtimeState.discordReadyStarted = false;
+  runtimeState.sharedLoopsStarted = false;
+  runtimeState.sharedLoopsSource = null;
+  runtimeState.pgCronReplacedLoops = new Set<string>();
+};

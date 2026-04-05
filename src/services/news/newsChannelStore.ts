@@ -1,4 +1,5 @@
-import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_USERS, T_SOURCES } from '../infra/tableRegistry';
 
 export type NewsChannelSubscription = {
   id: number;
@@ -16,9 +17,9 @@ const resolvePersistedUserId = async (userId: string): Promise<string | null> =>
     return null;
   }
 
-  const client = getSupabaseClient();
+  const client = getClient();
   const { data, error } = await client
-    .from('users')
+    .from(T_USERS)
     .select('id')
     .eq('id', normalized)
     .limit(1);
@@ -39,15 +40,12 @@ export const createNewsChannelSubscription = async (params: {
   guildId: string;
   discordChannelId: string;
 }) => {
-  if (!isSupabaseConfigured()) {
-    throw new Error('SUPABASE_NOT_CONFIGURED');
-  }
+  const client = getClient();
 
   const url = buildNewsSourceUrl(params.guildId, params.discordChannelId);
-  const client = getSupabaseClient();
 
   const { data: existing, error: existingError } = await client
-    .from('sources')
+    .from(T_SOURCES)
     .select('id, user_id, guild_id, channel_id, url, name, created_at')
     .eq('name', 'google-finance-news')
     .eq('guild_id', params.guildId)
@@ -61,7 +59,7 @@ export const createNewsChannelSubscription = async (params: {
   if (existing && existing.length > 0) {
     const row = existing[0] as NewsChannelSubscription;
     if (!row.url) {
-      const { error: updateError } = await client.from('sources').update({ url }).eq('id', row.id);
+      const { error: updateError } = await client.from(T_SOURCES).update({ url }).eq('id', row.id);
       if (updateError) {
         throw updateError;
       }
@@ -72,7 +70,7 @@ export const createNewsChannelSubscription = async (params: {
   const persistedUserId = await resolvePersistedUserId(params.userId);
 
   const { data: inserted, error: insertError } = await client
-    .from('sources')
+    .from(T_SOURCES)
     .insert([
       {
         user_id: persistedUserId,
@@ -97,13 +95,10 @@ export const createNewsChannelSubscription = async (params: {
 };
 
 export const listNewsChannelSubscriptions = async (params: { guildId: string }) => {
-  if (!isSupabaseConfigured()) {
-    return [] as NewsChannelSubscription[];
-  }
+  const qb = fromTable(T_SOURCES);
+  if (!qb) return [] as NewsChannelSubscription[];
 
-  const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('sources')
+  const { data, error } = await qb
     .select('id, user_id, guild_id, channel_id, url, name, created_at')
     .eq('name', 'google-finance-news')
     .eq('guild_id', params.guildId)
@@ -120,13 +115,9 @@ export const deleteNewsChannelSubscription = async (params: {
   guildId: string;
   discordChannelId: string;
 }) => {
-  if (!isSupabaseConfigured()) {
-    throw new Error('SUPABASE_NOT_CONFIGURED');
-  }
-
-  const client = getSupabaseClient();
+  const client = getClient();
   const { data: rows, error: selectError } = await client
-    .from('sources')
+    .from(T_SOURCES)
     .select('id')
     .eq('name', 'google-finance-news')
     .eq('guild_id', params.guildId)
@@ -141,7 +132,7 @@ export const deleteNewsChannelSubscription = async (params: {
     return { deleted: false };
   }
 
-  const { error: deleteError } = await client.from('sources').delete().eq('id', rows[0].id);
+  const { error: deleteError } = await client.from(T_SOURCES).delete().eq('id', rows[0].id);
   if (deleteError) {
     throw deleteError;
   }

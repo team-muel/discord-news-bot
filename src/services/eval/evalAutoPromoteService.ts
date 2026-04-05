@@ -11,6 +11,8 @@
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_EVAL_AB_RUNS } from '../infra/tableRegistry';
 import { generateText } from '../llmClient';
 import { createHash } from 'node:crypto';
 import {
@@ -53,14 +55,14 @@ export const createEvalRun = async (params: {
   baselineConfig: Record<string, unknown>;
   candidateConfig: Record<string, unknown>;
 }): Promise<EvalAbRun | null> => {
-  if (!ENABLED || !isSupabaseConfigured()) return null;
+  if (!ENABLED) return null;
+  const qb = fromTable(T_EVAL_AB_RUNS);
+  if (!qb) return null;
 
   try {
-    const client = getSupabaseClient();
 
     // Prevent duplicate pending eval runs with the same name for the same guild
-    const { data: existing } = await client
-      .from('eval_ab_runs')
+    const { data: existing } = await qb
       .select('id')
       .eq('guild_id', params.guildId)
       .eq('eval_name', params.evalName)
@@ -71,7 +73,8 @@ export const createEvalRun = async (params: {
       return null;
     }
 
-    const { data, error } = await client.from('eval_ab_runs').insert({
+    const db = getClient()!;
+    const { data, error } = await db.from(T_EVAL_AB_RUNS).insert({
       guild_id: params.guildId,
       eval_name: params.evalName,
       baseline_config: params.baselineConfig,
@@ -106,12 +109,11 @@ export const createEvalRun = async (params: {
 };
 
 export const getPendingEvalRuns = async (guildId: string): Promise<EvalAbRun[]> => {
-  if (!isSupabaseConfigured()) return [];
+  const qb = fromTable(T_EVAL_AB_RUNS);
+  if (!qb) return [];
 
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('eval_ab_runs')
+    const { data, error } = await qb
       .select('*')
       .eq('guild_id', guildId)
       .eq('verdict', 'pending')
@@ -150,7 +152,9 @@ const collectEvalSampleWithSnapshot = async (
   evalRun: EvalAbRun,
   snapshot: RewardSnapshot | null,
 ): Promise<{ baselineReward: number; candidateReward: number } | null> => {
-  if (!evalRun.id || !isSupabaseConfigured() || !snapshot) return null;
+  if (!evalRun.id || !snapshot) return null;
+  const db = getClient();
+  if (!db) return null;
 
   // Split sessions into baseline vs candidate arms using stable bucketing.
   // Sessions with bucket < EVAL_ROLLOUT_PERCENT land in the candidate arm,
@@ -183,7 +187,6 @@ const collectEvalSampleWithSnapshot = async (
   const candidateReward = Math.max(0, Math.min(1, snapshot.rewardScalar + candidateAdjustment));
 
   try {
-    const client = getSupabaseClient();
     const newSampleCount = evalRun.sampleCount + 1;
     // Running average update
     const prevBaseline = evalRun.baselineReward ?? 0;
@@ -191,7 +194,7 @@ const collectEvalSampleWithSnapshot = async (
     const avgBaseline = prevBaseline + (baselineReward - prevBaseline) / newSampleCount;
     const avgCandidate = prevCandidate + (candidateReward - prevCandidate) / newSampleCount;
 
-    await client.from('eval_ab_runs').update({
+    await db.from(T_EVAL_AB_RUNS).update({
       baseline_reward: avgBaseline,
       candidate_reward: avgCandidate,
       delta_reward: avgCandidate - avgBaseline,
@@ -247,6 +250,7 @@ const judgeEvalRun = async (evalRun: EvalAbRun): Promise<{
       user: judgePrompt,
       maxTokens: 200,
       temperature: 0,
+      actionName: 'eval.auto-promote.judge',
     });
 
     const lines = response.trim().split('\n');
@@ -278,7 +282,7 @@ export const runEvalPipeline = async (guildId: string): Promise<{
   rejected: string[];
 }> => {
   const result = { collected: 0, judged: 0, promoted: [] as string[], rejected: [] as string[] };
-  if (!ENABLED || !isSupabaseConfigured()) return result;
+  if (!ENABLED || !getClient()) return result;
 
   const pendingRuns = await getPendingEvalRuns(guildId);
   if (pendingRuns.length === 0) return result;
@@ -309,7 +313,7 @@ export const runEvalPipeline = async (guildId: string): Promise<{
     result.judged += 1;
 
     try {
-      const client = getSupabaseClient();
+      const db = getClient()!;
       const updates: Record<string, unknown> = {
         verdict: judgment.verdict,
         judge_reasoning: judgment.reasoning,
@@ -325,7 +329,7 @@ export const runEvalPipeline = async (guildId: string): Promise<{
         logger.info('[EVAL-AB] REJECT eval=%s guild=%s delta=%s', run.evalName, guildId, run.deltaReward?.toFixed(4));
       }
 
-      await client.from('eval_ab_runs').update(updates).eq('id', run.id);
+      await db.from(T_EVAL_AB_RUNS).update(updates).eq('id', run.id);
     } catch (err) {
       logger.debug('[EVAL-AB] verdict persist failed run=%s: %s', run.id, err instanceof Error ? err.message : String(err));
     }
@@ -341,12 +345,11 @@ export const getRecentEvalRuns = async (
   guildId: string,
   limit = 20,
 ): Promise<EvalAbRun[]> => {
-  if (!isSupabaseConfigured()) return [];
+  const qb = fromTable(T_EVAL_AB_RUNS);
+  if (!qb) return [];
 
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('eval_ab_runs')
+    const { data, error } = await qb
       .select('*')
       .eq('guild_id', guildId)
       .order('created_at', { ascending: false })

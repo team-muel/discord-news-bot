@@ -4,6 +4,27 @@
  * Contains: complexity estimation, self-consistency, ToT shadow, self-refine,
  * least-to-most decomposition, beam evaluation, and ORM finalization.
  */
+import {
+  AGENT_SESSION_TIMEOUT_MS as CFG_AGENT_SESSION_TIMEOUT_MS,
+  AGENT_STEP_TIMEOUT_MS as CFG_AGENT_STEP_TIMEOUT_MS,
+  FINAL_SELF_CONSISTENCY_ENABLED,
+  FINAL_SELF_CONSISTENCY_SAMPLES,
+  LEAST_TO_MOST_ENABLED,
+  LEAST_TO_MOST_MAX_SUBGOALS,
+  LEAST_TO_MOST_MIN_GOAL_LENGTH,
+  SELF_REFINE_LITE_ENABLED,
+  SELF_REFINE_LITE_MAX_PASSES,
+  SELF_REFINE_LITE_REQUIRE_ACTIONABLE,
+  SELF_REFINE_LITE_MIN_SCORE_GAIN,
+  ORM_RULE_PASS_THRESHOLD as CFG_ORM_RULE_PASS_THRESHOLD,
+  ORM_RULE_REVIEW_THRESHOLD as CFG_ORM_RULE_REVIEW_THRESHOLD,
+  TOT_SELF_EVAL_ENABLED,
+  TOT_SELF_EVAL_TEMPERATURE,
+  TOT_PROVIDER_LOGPROB_ENABLED,
+  AGENT_DYNAMIC_REASONING_BUDGET_ENABLED,
+  AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH,
+  AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH,
+} from '../config';
 import logger from '../logger';
 import { TtlCache } from '../utils/ttlCache';
 import { generateText, generateTextWithMeta } from './llmClient';
@@ -31,26 +52,11 @@ import type { AgentGotPolicySnapshot } from './agent/agentGotPolicyService';
 import type { AgentPriority } from './agent/agentRuntimeTypes';
 import type { AgentSession, AgentStep, BeamEvaluation } from './multiAgentTypes';
 
-// ── Config constants ────────────────────────────────────────────────────────
-export const AGENT_SESSION_TIMEOUT_MS = Math.max(20_000, Number(process.env.AGENT_SESSION_TIMEOUT_MS || 120_000));
-export const AGENT_STEP_TIMEOUT_MS = Math.max(5_000, Number(process.env.AGENT_STEP_TIMEOUT_MS || 45_000));
-const FINAL_SELF_CONSISTENCY_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.FINAL_SELF_CONSISTENCY_ENABLED || 'true').trim());
-const FINAL_SELF_CONSISTENCY_SAMPLES = Math.max(1, Math.min(5, Number(process.env.FINAL_SELF_CONSISTENCY_SAMPLES || 3) || 3));
-const LEAST_TO_MOST_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.LEAST_TO_MOST_ENABLED || 'true').trim());
-const LEAST_TO_MOST_MAX_SUBGOALS = Math.max(2, Math.min(8, Number(process.env.LEAST_TO_MOST_MAX_SUBGOALS || 4) || 4));
-const LEAST_TO_MOST_MIN_GOAL_LENGTH = Math.max(20, Number(process.env.LEAST_TO_MOST_MIN_GOAL_LENGTH || 40) || 40);
-const SELF_REFINE_LITE_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.SELF_REFINE_LITE_ENABLED || 'true').trim());
-const SELF_REFINE_LITE_MAX_PASSES = Math.max(1, Math.min(2, Number(process.env.SELF_REFINE_LITE_MAX_PASSES || 1) || 1));
-const SELF_REFINE_LITE_REQUIRE_ACTIONABLE = !/^(0|false|off|no)$/i.test(String(process.env.SELF_REFINE_LITE_REQUIRE_ACTIONABLE || 'true').trim());
-const SELF_REFINE_LITE_MIN_SCORE_GAIN = Math.max(0, Math.min(10, Number(process.env.SELF_REFINE_LITE_MIN_SCORE_GAIN || 1) || 1));
-export const ORM_RULE_PASS_THRESHOLD = Math.max(50, Math.min(95, Number(process.env.ORM_RULE_PASS_THRESHOLD || 75) || 75));
-export const ORM_RULE_REVIEW_THRESHOLD = Math.max(35, Math.min(90, Number(process.env.ORM_RULE_REVIEW_THRESHOLD || 55) || 55));
-const TOT_SELF_EVAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.TOT_SELF_EVAL_ENABLED || 'true').trim());
-const TOT_SELF_EVAL_TEMPERATURE = Math.max(0, Math.min(1, Number(process.env.TOT_SELF_EVAL_TEMPERATURE || 0.1) || 0.1));
-const TOT_PROVIDER_LOGPROB_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.TOT_PROVIDER_LOGPROB_ENABLED || 'true').trim());
-const AGENT_DYNAMIC_REASONING_BUDGET_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.AGENT_DYNAMIC_REASONING_BUDGET_ENABLED || 'true').trim());
-const AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH = Math.max(30, Number(process.env.AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH || 120) || 120);
-const AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH = Math.max(AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH + 20, Number(process.env.AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH || 320) || 320);
+// ── Config constants (sourced from ../config) ──────────────────────────────
+export const AGENT_SESSION_TIMEOUT_MS = CFG_AGENT_SESSION_TIMEOUT_MS;
+export const AGENT_STEP_TIMEOUT_MS = CFG_AGENT_STEP_TIMEOUT_MS;
+export const ORM_RULE_PASS_THRESHOLD = CFG_ORM_RULE_PASS_THRESHOLD;
+export const ORM_RULE_REVIEW_THRESHOLD = CFG_ORM_RULE_REVIEW_THRESHOLD;
 
 export const GOT_SHADOW_RECORD_TASK = 'got_shadow_record';
 export const TOT_CANDIDATE_PAIR_RECORD_TASK = 'tot_candidate_pair_record';

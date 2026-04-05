@@ -1,4 +1,9 @@
-import { parseBoundedNumberEnv, parseIntegerEnv } from '../utils/env';
+import {
+  SEMANTIC_ANSWER_CACHE_ENABLED,
+  SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY,
+  SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS,
+  SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT,
+} from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { TtlCache } from '../utils/ttlCache';
 
@@ -21,10 +26,10 @@ export type SemanticCacheHit = {
   cacheId: number;
 };
 
-const SEMANTIC_CACHE_ENABLED = String(process.env.SEMANTIC_ANSWER_CACHE_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
-const SEMANTIC_CACHE_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY, 0.82, 0, 1);
-const SEMANTIC_CACHE_LOOKBACK_DAYS = Math.max(1, parseIntegerEnv(process.env.SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS, 14));
-const SEMANTIC_CACHE_CANDIDATE_LIMIT = Math.max(10, Math.min(500, parseIntegerEnv(process.env.SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT, 120)));
+const SEMANTIC_CACHE_ENABLED = SEMANTIC_ANSWER_CACHE_ENABLED;
+const SEMANTIC_CACHE_MIN_SIMILARITY = SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY;
+const SEMANTIC_CACHE_LOOKBACK_DAYS = SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS;
+const SEMANTIC_CACHE_CANDIDATE_LIMIT = SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT;
 
 const HOT_CACHE_TTL_MS = 15_000;
 const hotCandidateCache = new TtlCache<CacheRow[]>(100);

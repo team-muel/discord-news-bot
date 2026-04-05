@@ -1,6 +1,8 @@
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { searchObsidianVaultWithAdapter } from '../obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_RETRIEVAL_EVAL_SETS, T_RETRIEVAL_EVAL_CASES, T_RETRIEVAL_EVAL_TARGETS, T_RETRIEVAL_EVAL_RUNS, T_RETRIEVAL_EVAL_RESULTS, T_RETRIEVAL_RANKER_EXPERIMENTS, T_RETRIEVAL_RANKER_ACTIVE_PROFILES } from '../infra/tableRegistry';
 
 const RETRIEVAL_EVAL_DEFAULT_TOP_K = Math.max(1, Math.min(20, Number(process.env.RETRIEVAL_EVAL_DEFAULT_TOP_K || 5)));
 const RETRIEVAL_TUNING_MIN_CASES = Math.max(10, Number(process.env.RETRIEVAL_TUNING_MIN_CASES || 30));
@@ -25,10 +27,11 @@ type EvalCaseInput = {
 };
 
 const ensureSupabase = () => {
-  if (!isSupabaseConfigured()) {
+  const db = getClient();
+  if (!db) {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
-  return getSupabaseClient();
+  return db;
 };
 
 const normalizeText = (value: unknown): string => String(value || '').trim();
@@ -148,7 +151,7 @@ export async function createRetrievalEvalSet(params: {
   }
 
   const { data, error } = await client
-    .from('retrieval_eval_sets')
+    .from(T_RETRIEVAL_EVAL_SETS)
     .insert(row)
     .select('*')
     .single();
@@ -178,7 +181,7 @@ export async function upsertRetrievalEvalCase(params: EvalCaseInput) {
   };
 
   const { data: caseRow, error: caseError } = await client
-    .from('retrieval_eval_cases')
+    .from(T_RETRIEVAL_EVAL_CASES)
     .insert(insertCase)
     .select('*')
     .single();
@@ -189,7 +192,7 @@ export async function upsertRetrievalEvalCase(params: EvalCaseInput) {
 
   const caseId = Number(caseRow.id);
   await client
-    .from('retrieval_eval_targets')
+    .from(T_RETRIEVAL_EVAL_TARGETS)
     .delete()
     .eq('case_id', caseId);
 
@@ -205,7 +208,7 @@ export async function upsertRetrievalEvalCase(params: EvalCaseInput) {
 
   if (normalizedTargets.length > 0) {
     const { error: targetError } = await client
-      .from('retrieval_eval_targets')
+      .from(T_RETRIEVAL_EVAL_TARGETS)
       .insert(normalizedTargets);
 
     if (targetError) {
@@ -219,7 +222,7 @@ export async function upsertRetrievalEvalCase(params: EvalCaseInput) {
 export async function listRetrievalEvalCases(params: { guildId: string; evalSetId?: number; limit: number }) {
   const client = ensureSupabase();
   let query = client
-    .from('retrieval_eval_cases')
+    .from(T_RETRIEVAL_EVAL_CASES)
     .select('id, eval_set_id, guild_id, query, intent, difficulty, enabled, created_at, updated_at')
     .eq('guild_id', params.guildId)
     .order('updated_at', { ascending: false })
@@ -240,7 +243,7 @@ export async function listRetrievalEvalCases(params: { guildId: string; evalSetI
   const targetMap = new Map<number, Array<{ filePath: string; gain: number }>>();
   if (caseIds.length > 0) {
     const { data: targetRows, error: targetError } = await client
-      .from('retrieval_eval_targets')
+      .from(T_RETRIEVAL_EVAL_TARGETS)
       .select('case_id, target_file_path, gain')
       .in('case_id', caseIds)
       .order('case_id', { ascending: true });
@@ -307,7 +310,7 @@ export async function runRetrievalEval(params: {
   };
 
   const { data: runRow, error: runError } = await client
-    .from('retrieval_eval_runs')
+    .from(T_RETRIEVAL_EVAL_RUNS)
     .insert(runInsert)
     .select('*')
     .single();
@@ -366,7 +369,7 @@ export async function runRetrievalEval(params: {
         };
 
         const { error: resultError } = await client
-          .from('retrieval_eval_results')
+          .from(T_RETRIEVAL_EVAL_RESULTS)
           .insert(resultRow);
 
         if (resultError) {
@@ -380,7 +383,7 @@ export async function runRetrievalEval(params: {
     const summary = await summarizeRetrievalEvalRun({ runId, guildId: params.guildId });
 
     await client
-      .from('retrieval_eval_runs')
+      .from(T_RETRIEVAL_EVAL_RUNS)
       .update({
         status: 'completed',
         ended_at: new Date().toISOString(),
@@ -400,7 +403,7 @@ export async function runRetrievalEval(params: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await client
-      .from('retrieval_eval_runs')
+      .from(T_RETRIEVAL_EVAL_RUNS)
       .update({
         status: 'failed',
         ended_at: new Date().toISOString(),
@@ -414,7 +417,7 @@ export async function runRetrievalEval(params: {
 export async function summarizeRetrievalEvalRun(params: { runId: number; guildId: string }) {
   const client = ensureSupabase();
   const { data, error } = await client
-    .from('retrieval_eval_results')
+    .from(T_RETRIEVAL_EVAL_RESULTS)
     .select('variant, recall_at_k, mrr, ndcg, hit_at_k, latency_ms')
     .eq('run_id', params.runId)
     .eq('guild_id', params.guildId)
@@ -543,7 +546,7 @@ export async function runRetrievalAutoTuning(params: {
   };
 
   const { data: experiment, error: experimentError } = await client
-    .from('retrieval_ranker_experiments')
+    .from(T_RETRIEVAL_RANKER_EXPERIMENTS)
     .insert(experimentRow)
     .select('*')
     .single();
@@ -555,7 +558,7 @@ export async function runRetrievalAutoTuning(params: {
   let applied = false;
   if (params.applyIfBetter) {
     const { error: profileError } = await client
-      .from('retrieval_ranker_active_profiles')
+      .from(T_RETRIEVAL_RANKER_ACTIVE_PROFILES)
       .upsert({
         guild_id: params.guildId,
         active_variant: best.variant,
@@ -582,7 +585,7 @@ export async function runRetrievalAutoTuning(params: {
 export async function getRetrievalEvalRun(params: { runId: number; guildId: string }) {
   const client = ensureSupabase();
   const { data: runRows, error: runError } = await client
-    .from('retrieval_eval_runs')
+    .from(T_RETRIEVAL_EVAL_RUNS)
     .select('*')
     .eq('id', params.runId)
     .eq('guild_id', params.guildId)

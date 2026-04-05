@@ -1,9 +1,13 @@
+import logger from '../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import { isMissingTableError } from './supabaseErrors';
 
 /**
  * Known migration files in docs/ that should be applied to Supabase.
  * Order matters — apply in sequence.
+ *
+ * Each entry corresponds to a `docs/<name>.sql` file.
+ * The tracking table (`schema_migrations`) records which have been applied.
  */
 export const KNOWN_MIGRATIONS = [
   'MIGRATION_SCHEMA_TRACKING',
@@ -11,6 +15,7 @@ export const KNOWN_MIGRATIONS = [
   'MIGRATION_THREAD_CONTEXT_COLUMNS',
   'MIGRATION_OBSIDIAN_CACHE_HIT_INCREMENT',
   'MIGRATION_DEDUPE_LEARNING',
+  'MIGRATION_DISTRIBUTED_LOCK_RPC',
 ] as const;
 
 export type MigrationName = (typeof KNOWN_MIGRATIONS)[number];
@@ -120,4 +125,80 @@ export const recordMigrationApplied = async (params: {
     },
     { onConflict: 'name' },
   );
+};
+
+// ---------------------------------------------------------------------------
+// Startup validation
+// ---------------------------------------------------------------------------
+
+export type MigrationValidationResult = {
+  ok: boolean;
+  trackingTableExists: boolean;
+  appliedCount: number;
+  pendingCount: number;
+  pendingNames: string[];
+};
+
+/**
+ * Check migration status at startup and log warnings for pending migrations.
+ * Never throws — degraded DB should not block server boot.
+ */
+export const validateMigrationsAtStartup = async (): Promise<MigrationValidationResult> => {
+  const noopResult: MigrationValidationResult = {
+    ok: true,
+    trackingTableExists: false,
+    appliedCount: 0,
+    pendingCount: 0,
+    pendingNames: [],
+  };
+
+  if (!isSupabaseConfigured()) {
+    logger.debug('[MIGRATIONS] Supabase not configured — skipping migration check');
+    return noopResult;
+  }
+
+  try {
+    const status = await getMigrationStatus();
+    const pendingNames = status.migrations
+      .filter((m) => !m.applied)
+      .map((m) => m.name);
+
+    const result: MigrationValidationResult = {
+      ok: pendingNames.length === 0,
+      trackingTableExists: status.trackingTableExists,
+      appliedCount: status.appliedCount,
+      pendingCount: status.pendingCount,
+      pendingNames,
+    };
+
+    if (!status.trackingTableExists) {
+      logger.warn(
+        '[MIGRATIONS] schema_migrations table not found — apply MIGRATION_SCHEMA_TRACKING.sql first. %d migration(s) untracked.',
+        KNOWN_MIGRATIONS.length,
+      );
+    } else if (pendingNames.length > 0) {
+      logger.warn(
+        '[MIGRATIONS] %d pending migration(s): %s — apply via Supabase SQL Editor (see docs/SUPABASE_MIGRATION_CHECKLIST.md)',
+        pendingNames.length,
+        pendingNames.join(', '),
+      );
+    } else {
+      logger.info('[MIGRATIONS] All %d migration(s) applied', status.appliedCount);
+    }
+
+    return result;
+  } catch (err) {
+    logger.warn('[MIGRATIONS] Failed to check migration status: %s', err instanceof Error ? err.message : String(err));
+    return noopResult;
+  }
+};
+
+// Cache the last validation result for the health endpoint
+let lastValidation: MigrationValidationResult | null = null;
+
+export const getLastMigrationValidation = (): MigrationValidationResult | null => lastValidation;
+
+export const runAndCacheMigrationValidation = async (): Promise<MigrationValidationResult> => {
+  lastValidation = await validateMigrationsAtStartup();
+  return lastValidation;
 };

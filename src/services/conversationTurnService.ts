@@ -1,12 +1,12 @@
+import { AGENT_CONVERSATION_THREAD_IDLE_MS } from '../config';
 import logger from '../logger';
-import { parseIntegerEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type ConversationTurnType = 'user' | 'assistant' | 'tool' | 'system';
 
 const THREAD_TABLE = 'agent_conversation_threads';
 const TURN_TABLE = 'agent_conversation_turns';
-const THREAD_IDLE_MS = Math.max(5 * 60_000, parseIntegerEnv(process.env.AGENT_CONVERSATION_THREAD_IDLE_MS, 6 * 60 * 60_000));
+const THREAD_IDLE_MS = AGENT_CONVERSATION_THREAD_IDLE_MS;
 
 const toText = (value: unknown, max = 2000): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 

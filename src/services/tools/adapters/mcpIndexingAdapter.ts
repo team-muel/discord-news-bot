@@ -12,14 +12,18 @@
  *   - security.candidates: list security candidates
  *
  * Environment:
- *   MCP_INDEXING_ADAPTER_ENABLED — default false
+ *   MCP_INDEXING_ADAPTER_DISABLED — set true to force-disable (opt-out)
+ *   MCP_INDEXING_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
 import { parseBooleanEnv } from '../../../utils/env';
 import { callIndexingMcpTool } from '../../../mcp/indexingToolAdapter';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const ENABLED = parseBooleanEnv(process.env.MCP_INDEXING_ADAPTER_ENABLED, false);
+/** Opt-out: disabled only when explicitly turned off. */
+const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.MCP_INDEXING_ADAPTER_DISABLED, false);
+const LEGACY_ENABLED_RAW = process.env.MCP_INDEXING_ADAPTER_ENABLED;
+const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
 const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({
   ok,
@@ -65,7 +69,7 @@ export const mcpIndexingAdapter: ExternalToolAdapter = {
   capabilities: Object.keys(ACTION_TO_TOOL),
   liteCapabilities: ['index.search', 'index.outline'],
 
-  isAvailable: async () => ENABLED,
+  isAvailable: async () => isNotDisabled(),
 
   execute: async (action: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
     return callTool(action, args);

@@ -2,6 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseBooleanEnv } from '../../utils/env';
+import {
+  LLM_PROVIDER_FALLBACK_CHAIN_RAW,
+  LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER_RAW,
+  LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED,
+  LLM_PROVIDER_POLICY_ACTIONS_RAW,
+  ACTION_POLICY_DEFAULT_ENABLED,
+  ACTION_POLICY_DEFAULT_RUN_MODE,
+  ACTION_POLICY_FAIL_OPEN_ON_ERROR,
+  ACTION_ALLOWED_ACTIONS,
+} from '../../config';
 import { getOpencodeExecutionSummary } from '../opencode/opencodeOpsService';
 import { getGuildActionPolicy, listActionApprovalRequests, listGuildActionPolicies } from '../skills/actionGovernanceStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
@@ -465,15 +475,17 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
     expiresAt: entry.expiresAt,
   }));
 
-  const actionPolicyDefaultEnabled = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
-  const actionPolicyDefaultRunModeRaw = String(process.env.ACTION_POLICY_DEFAULT_RUN_MODE || 'approval_required').trim();
-  const actionPolicyDefaultRunMode = ['auto', 'approval_required', 'disabled'].includes(actionPolicyDefaultRunModeRaw)
+  const actionPolicyDefaultEnabled = ACTION_POLICY_DEFAULT_ENABLED;
+  const actionPolicyDefaultRunModeRaw = ACTION_POLICY_DEFAULT_RUN_MODE;
+  const actionPolicyDefaultRunMode = (['auto', 'approval_required', 'disabled'] as const).includes(
+    actionPolicyDefaultRunModeRaw as any,
+  )
     ? actionPolicyDefaultRunModeRaw
     : 'approval_required';
-  const actionPolicyFailOpenOnError = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);
-  const actionAllowedActionsRaw = String(process.env.ACTION_ALLOWED_ACTIONS || '*').trim();
-  const automaticFallbackEnabled = parseBooleanEnv(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED, false);
-  const providerPolicyBindings = parseProviderPolicyBindings(String(process.env.LLM_PROVIDER_POLICY_ACTIONS || ''));
+  const actionPolicyFailOpenOnError = ACTION_POLICY_FAIL_OPEN_ON_ERROR;
+  const actionAllowedActionsRaw = ACTION_ALLOWED_ACTIONS;
+  const automaticFallbackEnabled = LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED;
+  const providerPolicyBindings = parseProviderPolicyBindings(LLM_PROVIDER_POLICY_ACTIONS_RAW);
   const filePath = workerStore.activeBackend === 'file'
     ? toMaskedRuntimePath(workerStore.filePath)
     : null;
@@ -532,8 +544,8 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
     },
     modelFallback: {
       automaticFallbackEnabled,
-      defaultProviderFallbackChain: parseProviderList(String(process.env.LLM_PROVIDER_FALLBACK_CHAIN || '')),
-      automaticFallbackOrder: parseProviderList(String(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER || '')),
+      defaultProviderFallbackChain: parseProviderList(LLM_PROVIDER_FALLBACK_CHAIN_RAW),
+      automaticFallbackOrder: parseProviderList(LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER_RAW),
       providerPolicyBindings,
     },
     safetySignals,

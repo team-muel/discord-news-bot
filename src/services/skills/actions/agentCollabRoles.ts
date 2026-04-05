@@ -26,6 +26,7 @@ import {
 export const opendevPlanAction: ActionDefinition = {
   name: 'opendev.plan',
   description: 'OpenDev 역할로 목표를 아키텍처/계획/게이트 관점의 실행안으로 정리합니다.',
+  category: 'agent',
   execute: async ({ goal, args, guildId }) => {
     const query = resolveGoal(goal, args);
     if (!query) {
@@ -119,6 +120,7 @@ export const opendevPlanAction: ActionDefinition = {
 export const nemoclawReviewAction: ActionDefinition = {
   name: 'nemoclaw.review',
   description: 'NemoClaw 역할로 목표나 코드 스니펫을 리뷰하고 리스크와 테스트 갭을 반환합니다.',
+  category: 'agent',
   execute: async ({ goal, args, guildId }) => {
     const query = resolveGoal(goal, args);
     if (!query) {
@@ -231,6 +233,7 @@ export const nemoclawReviewAction: ActionDefinition = {
 export const openjarvisOpsAction: ActionDefinition = {
   name: 'openjarvis.ops',
   description: 'OpenJarvis 역할로 운영 가드레일, readiness, rollback 관점의 실행안을 반환합니다.',
+  category: 'agent',
   execute: async ({ goal, args, guildId }) => {
     const query = resolveGoal(goal, args);
     if (!query) {

@@ -16,6 +16,7 @@ export {
   issueSessionToken,
   parseSessionToken,
   setCsrfCookie,
+  verifyCsrfToken,
 } from '../services/authService';
 
 export { getAdminAllowlist, isUserAdmin } from '../services/adminAllowlistService';

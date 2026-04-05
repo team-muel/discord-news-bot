@@ -43,9 +43,8 @@ const PHASE_BLOCKED_CATEGORIES: Record<string, ActionCategory[]> = {
  */
 export const isActionBlockedInPhase = (
   phase: string,
-  actionCategory: ActionCategory | undefined,
+  actionCategory: ActionCategory,
 ): string | null => {
-  if (!actionCategory) return null; // uncategorised actions are allowed
   const blocked = PHASE_BLOCKED_CATEGORIES[phase];
   if (!blocked) return null;
   if (blocked.includes(actionCategory)) {

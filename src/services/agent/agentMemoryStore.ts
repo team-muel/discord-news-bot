@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import logger from '../../logger';
+import { debugCatchError } from '../../utils/errorMessage';
 import { assessMemoryPoisonRisk, buildPoisonTags } from '../memory/memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { hasMemoryConsent } from './agentConsentService';
@@ -503,7 +504,7 @@ export async function createMemoryItem(params: CreateMemoryParams) {
     const embeddingText = [insertRow.title, insertRow.content].filter(Boolean).join(' ').trim();
     void generateEmbedding(embeddingText).then((emb) => {
       if (emb) return storeMemoryEmbedding(id, emb);
-    }).catch(() => {});
+    }).catch(debugCatchError(logger, '[MEMORY] embedding'));
   }
 
   return data;

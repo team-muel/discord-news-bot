@@ -22,9 +22,6 @@ export type ArchitectVerifyResult = {
   evidenceId: string;
 };
 
-/** @deprecated Use ArchitectVerifyResult */
-export type OpenDevVerifyResult = ArchitectVerifyResult;
-
 const normalizeGoal = (goal: string): string => String(goal || '').toLowerCase();
 
 const inferRiskLevel = (goal: string): WorkerRiskLevel => {
@@ -126,8 +123,3 @@ export const runArchitectReleaseGate = (params: {
     evidenceId: `opendev-release:${params.approval.id}`,
   };
 };
-
-/** @deprecated Use runArchitectVerifyExecutor */
-export const runOpenDevVerifyExecutor = runArchitectVerifyExecutor;
-/** @deprecated Use runArchitectReleaseGate */
-export const runOpenDevReleaseGate = runArchitectReleaseGate;

@@ -1,11 +1,18 @@
 import crypto from 'crypto';
-import {
-  buildNewsFingerprint,
-  isNewsFingerprinted,
-  recordNewsFingerprint,
-} from '../news/newsCaptureDedupService';
+// Cross-domain imports via barrel exports (domain boundary contracts)
+import { buildNewsFingerprint, isNewsFingerprinted, recordNewsFingerprint } from '../news';
+import { getDynamicAction } from '../workerGeneration';
+import { createMemoryItem } from '../agent';
+import { buildWorkerApprovalGateSnapshot } from '../agent';
+import { compilePromptGoal } from '../infra';
+// Root-level service imports (no barrel available)
+import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
+import { logStructuredError } from '../structuredErrorLogService';
+import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
+import { setGateProviderProfileOverride } from '../llmClient';
+import type { LlmProviderProfile } from '../llmClient';
+// Within-domain imports
 import { getAction } from './actions/registry';
-import { getDynamicAction } from '../workerGeneration/dynamicWorkerRegistry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
@@ -13,14 +20,6 @@ import { logActionExecutionEvent } from './actionExecutionLogService';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
-import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
-import { logStructuredError } from '../structuredErrorLogService';
-import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
-import { createMemoryItem } from '../agent/agentMemoryStore';
-import { compilePromptGoal } from '../infra/promptCompiler';
-import { buildWorkerApprovalGateSnapshot } from '../agent/agentWorkerApprovalGateSnapshotService';
-import { setGateProviderProfileOverride } from '../llmClient';
-import type { LlmProviderProfile } from '../llmClient';
 import logger from '../../logger';
 import {
   type FailureDiagnostics,
@@ -644,7 +643,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     // M-06/M-07: Auto-regression — apply gate-recommended provider profile
     const profileTarget = gate.providerProfileTarget;
     if (profileTarget === 'cost-optimized' || profileTarget === 'quality-optimized') {
-      setGateProviderProfileOverride(profileTarget as LlmProviderProfile);
+      setGateProviderProfileOverride(profileTarget as LlmProviderProfile, input.guildId);
     }
   }
 
@@ -1151,6 +1150,7 @@ import {
   type PipelineContext as PipelineCtx,
   type StepExecutor,
 } from './pipelineEngine';
+// Cross-domain import via barrel export (domain boundary contract)
 import {
   generateSessionId,
   createWorkflowSession,
@@ -1158,7 +1158,7 @@ import {
   insertWorkflowStep,
   updateWorkflowStep,
   recordWorkflowEvent,
-} from '../workflow/workflowPersistenceService';
+} from '../workflow';
 
 const PIPELINE_MODE_ENABLED = parseBooleanEnv(process.env.PIPELINE_MODE_ENABLED, false);
 

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ---------- mocks ----------
-vi.mock('../utils/env', () => ({
-  parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
-}));
+vi.mock('../config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../config')>();
+  return { ...actual };
+});
 
 const buildChainable = (terminal: { data?: unknown[]; count?: number; error?: unknown } = {}) => {
   const result = { data: terminal.data ?? [], error: terminal.error ?? null, count: terminal.count ?? 0 };

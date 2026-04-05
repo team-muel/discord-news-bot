@@ -24,8 +24,7 @@ const withOperateRouting = (
 
 export const toolsRunCliAction: ActionDefinition = {
   name: 'tools.run.cli',
-  description: '?섍꼍蹂?섎줈 ?깅줉???⑥씪 濡쒖뺄 CLI ?꾧뎄瑜??덉쟾???몄옄 ?쒗뵆由우쑝濡??ㅽ뻾?⑸땲??',
-  execute: async ({ goal, args, guildId, requestedBy }) => {
+  description: '?섍꼍蹂?섎줈 ?깅줉???⑥씪 濡쒖뺄 CLI ?꾧뎄瑜??덉쟾???몄옄 ?쒗뵆由우쑝濡??ㅽ뻾?⑸땲??',  category: 'tool',  execute: async ({ goal, args, guildId, requestedBy }) => {
     const trimmedGoal = String(goal || '').trim();
     const toolName = toSingleLine(args?.toolName || args?.name || '');
 

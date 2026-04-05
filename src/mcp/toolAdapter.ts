@@ -1,5 +1,6 @@
 import { listActions, getAction } from '../services/skills/actions/registry';
 import { runGoalActions } from '../services/skills/actionRunner';
+import { NODE_ENV } from '../config';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
 const MCP_GUILD_ID = 'MCP';
@@ -144,7 +145,7 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
   }
 
   if (request.name === 'action.execute.direct') {
-    if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+    if (NODE_ENV === 'production') {
       return toTextResult('action.execute.direct is disabled in production', true);
     }
     const actionName = compact(args.actionName);

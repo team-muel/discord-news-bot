@@ -86,6 +86,7 @@ export const privacyForgetGuildAction: ActionDefinition = {
 export const privacyForgetUserAction: ActionDefinition = {
   name: 'privacy.forget.user',
   description: '사용자 단위 RAG 메모리(Supabase + Obsidian)를 삭제합니다.',
+  category: 'ops',
   execute: async ({ args, guildId, requestedBy }) => {
     const requester = String(requestedBy || '').trim();
     const systemRequested = requester.startsWith('system:');

@@ -18,7 +18,11 @@ import logger from '../../../logger';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const N8N_ENABLED = parseBooleanEnv(process.env.N8N_ENABLED, false);
+/** Opt-out: disabled only when explicitly turned off. */
+const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.N8N_DISABLED, false);
+const LEGACY_ENABLED_RAW = process.env.N8N_ENABLED;
+const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+
 const N8N_BASE_URL = String(process.env.N8N_BASE_URL || 'http://localhost:5678').trim().replace(/\/+$/, '');
 const N8N_API_KEY = String(process.env.N8N_API_KEY || '').trim();
 const N8N_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.N8N_TIMEOUT_MS, 30_000));
@@ -76,7 +80,7 @@ export const n8nAdapter: ExternalToolAdapter = {
   ],
 
   isAvailable: async (): Promise<boolean> => {
-    if (!N8N_ENABLED || !N8N_BASE_URL) return false;
+    if (!isNotDisabled() || !N8N_BASE_URL) return false;
     try {
       const resp = await fetchWithTimeout(
         `${N8N_BASE_URL}/healthz`,
@@ -102,7 +106,7 @@ export const n8nAdapter: ExternalToolAdapter = {
   execute: async (action: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
     const start = Date.now();
 
-    if (!N8N_ENABLED) {
+    if (!isNotDisabled()) {
       return makeResult(false, action, 'n8n adapter is disabled', [], start, 'N8N_DISABLED');
     }
 

@@ -14,6 +14,8 @@ import logger from '../../logger';
 import { memoryConfig } from '../../config';
 import { parseBooleanEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient } from '../infra/baseRepository';
+import { T_MEMORY_ITEMS, T_MEMORY_ITEM_LINKS } from '../infra/tableRegistry';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { writeObsidianNoteWithAdapter } from '../obsidian/router';
 import { doc } from '../obsidian/obsidianDocBuilder';
@@ -105,6 +107,7 @@ const summarizeGroup = async (items: MemoryRow[], targetTier: 'summary' | 'conce
       user,
       maxTokens: 400,
       temperature: 0.3,
+      actionName: 'memory.consolidation',
     });
     return result?.trim() || null;
   } catch {
@@ -119,15 +122,15 @@ const summarizeGroup = async (items: MemoryRow[], targetTier: 'summary' | 'conce
  */
 export const runConsolidationCycle = async (guildId?: string): Promise<ConsolidationResult> => {
   if (!CONSOLIDATION_ENABLED) return EMPTY_RESULT;
-  if (!isSupabaseConfigured()) return EMPTY_RESULT;
+  const client = getClient();
+  if (!client) return EMPTY_RESULT;
 
   try {
-    const client = getSupabaseClient();
     const ageThreshold = new Date(Date.now() - CONSOLIDATION_RAW_AGE_HOURS * 60 * 60_000).toISOString();
 
     // Phase 1: raw → summary
     let query = client
-      .from('memory_items')
+      .from(T_MEMORY_ITEMS)
       .select('id, guild_id, title, summary, content, tags, confidence, tier')
       .eq('status', 'active')
       .eq('tier', 'raw')
@@ -182,7 +185,7 @@ export const runConsolidationCycle = async (guildId?: string): Promise<Consolida
         const newId = `mem_${crypto.randomUUID()}`;
 
         // Insert consolidated summary-tier memory
-        const { error: insertError } = await client.from('memory_items').insert({
+        const { error: insertError } = await client.from(T_MEMORY_ITEMS).insert({
           id: newId,
           guild_id: currentGuildId,
           type: 'semantic',
@@ -206,7 +209,7 @@ export const runConsolidationCycle = async (guildId?: string): Promise<Consolida
         // Create derived_from links from new summary to source memories
         for (const source of group) {
           try {
-            await client.from('memory_item_links').insert({
+            await client.from(T_MEMORY_ITEM_LINKS).insert({
               source_id: newId,
               target_id: source.id,
               guild_id: currentGuildId,
@@ -222,7 +225,7 @@ export const runConsolidationCycle = async (guildId?: string): Promise<Consolida
         // Archive source raw memories (not delete — preserve for audit)
         const sourceIds = group.map((item) => item.id);
         await client
-          .from('memory_items')
+          .from(T_MEMORY_ITEMS)
           .update({ status: 'archived', updated_by: 'consolidation-service' })
           .in('id', sourceIds)
           .eq('tier', 'raw');

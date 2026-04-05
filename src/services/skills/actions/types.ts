@@ -13,10 +13,6 @@ export type AgentRoleName = (typeof AGENT_ROLES)[number];
 export const LEGACY_AGENT_ROLES = ['openjarvis', 'opencode', 'nemoclaw', 'opendev'] as const;
 export type LegacyAgentRole = (typeof LEGACY_AGENT_ROLES)[number];
 
-/** @deprecated Use AGENT_ROLES instead. Alias kept during migration. */
-export const NEUTRAL_AGENT_ROLES = AGENT_ROLES;
-/** @deprecated Use AgentRoleName instead. Alias kept during migration. */
-export type NeutralAgentRole = AgentRoleName;
 /** Union of canonical + legacy names — use for input acceptance only. */
 export type AgentRole = AgentRoleName | LegacyAgentRole;
 
@@ -41,9 +37,6 @@ export const normalizeAgentRole = (value: unknown, fallback: AgentRoleName = 'op
   }
   return fallback;
 };
-
-/** @deprecated Use inferAgentRoleByActionName instead. */
-export const inferLegacyAgentRoleByActionName = inferAgentRoleByActionName;
 
 export function inferAgentRoleByActionName(actionName: string): AgentRoleName {
   const normalized = String(actionName || '').trim().toLowerCase();
@@ -109,8 +102,8 @@ export type ActionCategory =
 export type ActionDefinition = {
   name: string;
   description: string;
-  /** Action category for prompt grouping. */
-  category?: ActionCategory;
+  /** Action category for prompt grouping and phase-based tool filtering. */
+  category: ActionCategory;
   /** Parameter specs — single source of truth for prompt generation. */
   parameters?: ActionParameterSpec[];
   /** When true, this action runs without LLM — subprocess exit code drives pass/fail. */

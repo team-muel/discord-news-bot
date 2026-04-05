@@ -16,14 +16,18 @@
  *   - obsidian.adapter.status: adapter routing status
  *
  * Environment:
- *   MCP_OBSIDIAN_ADAPTER_ENABLED — default false
+ *   MCP_OBSIDIAN_ADAPTER_DISABLED — set true to force-disable (opt-out)
+ *   MCP_OBSIDIAN_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
 import { parseBooleanEnv } from '../../../utils/env';
 import { callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from '../../../mcp/obsidianToolAdapter';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const ENABLED = parseBooleanEnv(process.env.MCP_OBSIDIAN_ADAPTER_ENABLED, false);
+/** Opt-out: disabled only when explicitly turned off. */
+const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.MCP_OBSIDIAN_ADAPTER_DISABLED, false);
+const LEGACY_ENABLED_RAW = process.env.MCP_OBSIDIAN_ADAPTER_ENABLED;
+const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
 const ALL_CAPABILITIES = [...OBSIDIAN_TOOL_NAMES];
 const LITE_CAPABILITIES = ['obsidian.search', 'obsidian.rag', 'obsidian.sync.status', 'obsidian.adapter.status'];
@@ -62,7 +66,7 @@ export const obsidianExternalAdapter: ExternalToolAdapter = {
   capabilities: ALL_CAPABILITIES,
   liteCapabilities: LITE_CAPABILITIES,
 
-  isAvailable: async () => ENABLED,
+  isAvailable: async () => isNotDisabled(),
 
   execute: async (action: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
     return callTool(action, args);

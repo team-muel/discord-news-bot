@@ -7,15 +7,20 @@
  *   - proxy.usage: get usage statistics
  *
  * Environment:
- *   LITELLM_BASE_URL — proxy URL (required)
+ *   LITELLM_BASE_URL — proxy URL (required for reachability)
  *   LITELLM_MASTER_KEY — admin key (optional, for admin endpoints)
- *   LITELLM_ADMIN_ADAPTER_ENABLED — default false
+ *   LITELLM_ADMIN_ADAPTER_DISABLED — set true to force-disable (opt-out)
+ *   LITELLM_ADMIN_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 
-const ENABLED = parseBooleanEnv(process.env.LITELLM_ADMIN_ADAPTER_ENABLED, false);
+/** Opt-out: disabled only when explicitly turned off. */
+const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.LITELLM_ADMIN_ADAPTER_DISABLED, false);
+const LEGACY_ENABLED_RAW = process.env.LITELLM_ADMIN_ADAPTER_ENABLED;
+const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+
 const BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
 const MASTER_KEY = String(process.env.LITELLM_MASTER_KEY || '').trim();
 const TIMEOUT_MS = 10_000;
@@ -88,7 +93,7 @@ export const litellmAdminAdapter: ExternalToolAdapter = {
   liteCapabilities: ['proxy.health', 'proxy.models'],
 
   isAvailable: async () => {
-    if (!ENABLED || !BASE_URL) return false;
+    if (!isNotDisabled() || !BASE_URL) return false;
     try {
       const { ok } = await fetchProxy('/health/liveliness');
       return ok;

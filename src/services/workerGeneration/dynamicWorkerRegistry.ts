@@ -84,6 +84,7 @@ const activateDynamicDefinition = (def: ActionDefinition, approvalId: string) =>
   const wrapped: ActionDefinition = {
     name: def.name,
     description: String(def.description || def.name),
+    category: def.category,
     execute: wrapExecute(def.name, def.execute),
   };
 

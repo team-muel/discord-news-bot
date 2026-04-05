@@ -1,17 +1,17 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
+import {
+  OPENCLAW_ENABLED as ENABLED,
+  OPENCLAW_DISABLED as EXPLICITLY_DISABLED,
+  OPENCLAW_GATEWAY_URL as GATEWAY_URL,
+} from '../../../config';
+import { checkOpenClawGatewayHealth, getGatewayHeaders } from '../../openclaw/gatewayHealth';
 
 const execFileAsync = promisify(execFile);
 const CLI_TIMEOUT_MS = 15_000;
 const HTTP_TIMEOUT_MS = 30_000;
-const ENABLED = parseBooleanEnv(process.env.OPENCLAW_ENABLED, false);
-
-// Gateway HTTP surface (preferred — no CLI binary required)
-const GATEWAY_URL = String(process.env.OPENCLAW_GATEWAY_URL || '').trim().replace(/\/+$/, '');
-const GATEWAY_TOKEN = String(process.env.OPENCLAW_GATEWAY_TOKEN || '').trim();
 
 /**
  * Transport modes:
@@ -22,37 +22,11 @@ const GATEWAY_TOKEN = String(process.env.OPENCLAW_GATEWAY_TOKEN || '').trim();
 let transport: 'gateway' | 'cli' | null = null;
 let cliAvailable = false;
 
-// Gateway health check with caching
-let cachedGatewayHealth: { ok: boolean; at: number } | null = null;
-const GATEWAY_HEALTH_CACHE_TTL_MS = 10_000;
-
-const checkGatewayHealth = async (): Promise<boolean> => {
-  if (!GATEWAY_URL) return false;
-  if (cachedGatewayHealth && Date.now() - cachedGatewayHealth.at < GATEWAY_HEALTH_CACHE_TTL_MS) {
-    return cachedGatewayHealth.ok;
-  }
-  try {
-    const resp = await fetch(`${GATEWAY_URL}/healthz`, { signal: AbortSignal.timeout(3000) });
-    const ok = !!resp?.ok;
-    cachedGatewayHealth = { ok, at: Date.now() };
-    return ok;
-  } catch {
-    cachedGatewayHealth = { ok: false, at: Date.now() };
-    return false;
-  }
-};
-
-const gatewayHeaders = (): Record<string, string> => {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (GATEWAY_TOKEN) h['Authorization'] = `Bearer ${GATEWAY_TOKEN}`;
-  return h;
-};
-
 const gatewayPost = async (path: string, body: Record<string, unknown>): Promise<{ ok: boolean; data: unknown }> => {
   try {
     const resp = await fetch(`${GATEWAY_URL}${path}`, {
       method: 'POST',
-      headers: gatewayHeaders(),
+      headers: getGatewayHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
@@ -79,10 +53,10 @@ export const openclawAdapter: ExternalToolAdapter = {
   liteCapabilities: ['agent.chat', 'agent.health'],
 
   isAvailable: async () => {
-    if (!ENABLED) return false;
+    if (EXPLICITLY_DISABLED || !ENABLED) return false;
 
     // Prefer Gateway HTTP transport
-    const gatewayOk = await checkGatewayHealth();
+    const gatewayOk = await checkOpenClawGatewayHealth();
     if (gatewayOk) {
       transport = 'gateway';
       return true;
@@ -116,7 +90,7 @@ export const openclawAdapter: ExternalToolAdapter = {
     try {
       switch (action) {
         case 'agent.health': {
-          const gatewayOk = await checkGatewayHealth();
+          const gatewayOk = await checkOpenClawGatewayHealth();
           if (gatewayOk) return makeResult(true, 'Gateway healthy', [`url=${GATEWAY_URL}`, 'transport=gateway']);
           if (transport === 'cli') return makeResult(true, 'CLI available', ['transport=cli']);
           return makeResult(false, 'No transport available', [], 'NO_TRANSPORT');
@@ -207,38 +181,61 @@ export const openclawAdapter: ExternalToolAdapter = {
 // ── OpenClaw Tool Registration Bootstrap ──
 // Register ext.* tools as OpenClaw session skills so OpenClaw can invoke them autonomously.
 
-/** Skills already registered in this process lifetime. */
-const registeredSkills = new Set<string>();
+/** Bootstrapped session state: tool count at registration time + timestamp. */
+const bootstrappedSessions = new Map<string, { toolCount: number; at: number }>();
+
+/** Max age before a session re-checks the adapter catalog. */
+const BOOTSTRAP_STALE_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Build a sorted tool catalog key from the current adapters.
+ * Used to detect when adapter availability has changed since last bootstrap.
+ */
+const buildToolCatalog = async (): Promise<string[]> => {
+  const { listExternalAdapters } = await import('../externalAdapterRegistry');
+  const adapters = listExternalAdapters();
+  const tools: string[] = [];
+  for (const adapter of adapters) {
+    if (adapter.id === 'openclaw') continue;
+    const caps = adapter.liteCapabilities ?? adapter.capabilities;
+    for (const cap of caps) {
+      tools.push(`- ext.${adapter.id}.${cap}: ${adapter.id} ${cap} capability`);
+    }
+  }
+  return tools;
+};
 
 /**
  * Bootstrap OpenClaw with knowledge of available ext.* tools.
  * Sends a system-level message to an OpenClaw session listing available tools.
- * Idempotent per session: skips if already bootstrapped for this sessionId.
+ * Re-bootstraps when the adapter catalog changes or after BOOTSTRAP_STALE_MS.
  * Best-effort — never throws.
  */
 export const bootstrapOpenClawSession = async (sessionId: string): Promise<{ ok: boolean; toolCount: number }> => {
-  if (!ENABLED || registeredSkills.has(sessionId)) {
-    return { ok: registeredSkills.has(sessionId), toolCount: 0 };
+  if (EXPLICITLY_DISABLED || !ENABLED) {
+    return { ok: false, toolCount: 0 };
   }
 
-  const gatewayOk = await checkGatewayHealth();
+  const gatewayOk = await checkOpenClawGatewayHealth();
   if (!gatewayOk) return { ok: false, toolCount: 0 };
 
   try {
-    // Build tool catalog from external adapters
-    const { listExternalAdapters } = await import('../externalAdapterRegistry');
-    const adapters = listExternalAdapters();
-    const tools: string[] = [];
+    const tools = await buildToolCatalog();
 
-    for (const adapter of adapters) {
-      if (adapter.id === 'openclaw') continue; // Don't register self
-      const caps = adapter.liteCapabilities ?? adapter.capabilities;
-      for (const cap of caps) {
-        tools.push(`- ext.${adapter.id}.${cap}: ${adapter.id} ${cap} capability`);
+    // Check if re-bootstrap is needed
+    const prev = bootstrappedSessions.get(sessionId);
+    if (prev) {
+      const stale = (Date.now() - prev.at) > BOOTSTRAP_STALE_MS;
+      const catalogChanged = prev.toolCount !== tools.length;
+      if (!stale && !catalogChanged) {
+        return { ok: true, toolCount: prev.toolCount };
       }
     }
 
-    if (tools.length === 0) return { ok: true, toolCount: 0 };
+    if (tools.length === 0) {
+      bootstrappedSessions.set(sessionId, { toolCount: 0, at: Date.now() });
+      return { ok: true, toolCount: 0 };
+    }
 
     // Send tool catalog as a system bootstrap message
     const bootstrapMessage = [
@@ -259,7 +256,7 @@ export const bootstrapOpenClawSession = async (sessionId: string): Promise<{ ok:
     });
 
     if (ok) {
-      registeredSkills.add(sessionId);
+      bootstrappedSessions.set(sessionId, { toolCount: tools.length, at: Date.now() });
       logger.info('[OPENCLAW] session %s bootstrapped with %d ext.* tools', sessionId, tools.length);
     }
 

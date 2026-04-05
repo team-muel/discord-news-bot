@@ -49,6 +49,7 @@ const ACTION_MAP = new Map<string, ActionDefinition>();
 const createAlias = (name: string, description: string, target: ActionDefinition): ActionDefinition => ({
   name,
   description,
+  category: target.category,
   execute: async (input) => {
     const result = await target.execute(input);
     return { ...result, name };
@@ -148,7 +149,7 @@ export const getActionTermIndex = (): ReadonlyMap<string, Set<string>> => action
  */
 export function buildToolCatalogPrompt(filter?: { categories?: ActionCategory[] }): string {
   const actions = filter?.categories
-    ? ACTIONS.filter((a) => a.category && filter.categories!.includes(a.category))
+    ? ACTIONS.filter((a) => filter.categories!.includes(a.category))
     : ACTIONS;
 
   // Deduplicate aliases — keep only the first registration for each execute reference
@@ -162,7 +163,7 @@ export function buildToolCatalogPrompt(filter?: { categories?: ActionCategory[] 
   // Group by category
   const groups = new Map<string, ActionDefinition[]>();
   for (const action of unique) {
-    const cat = action.category ?? 'other';
+    const cat = action.category;
     const list = groups.get(cat) ?? [];
     list.push(action);
     groups.set(cat, list);

@@ -158,7 +158,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
           ragResult.documentContext.slice(0, DISCORD_DOCS_CONTEXT_LIMIT),
         ].join('\n');
 
-        answer = await deps.generateText({ system, user, maxTokens: DISCORD_DOCS_LLM_MAX_TOKENS });
+        answer = await deps.generateText({ system, user, maxTokens: DISCORD_DOCS_LLM_MAX_TOKENS, actionName: 'docs.qa' });
       } catch {
         // LLM 실패 시 원본 컨텍스트 일부를 그대로 표시
         answer = clipDocsFallbackContext(ragResult.documentContext) + DISCORD_MESSAGES.docs.llmFallbackSuffix;

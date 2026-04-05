@@ -29,3 +29,24 @@ export const getErrorMessage = (error: unknown): string => {
   }
   return SENSITIVE_PATTERN.test(raw) ? 'internal error' : raw;
 };
+
+/**
+ * Catch handler for fire-and-forget promises that logs instead of silently swallowing.
+ * Use: `somePromise.catch(logCatchError(logger, 'tag'))` instead of `.catch(() => {})`.
+ */
+export const logCatchError = (
+  log: { warn(msg: string, ...args: unknown[]): void },
+  tag: string,
+) => (err: unknown): void => {
+  log.warn('%s failed: %s', tag, getErrorMessage(err));
+};
+
+/**
+ * Like logCatchError but at debug level — for dual-write or low-severity side effects.
+ */
+export const debugCatchError = (
+  log: { debug(msg: string, ...args: unknown[]): void },
+  tag: string,
+) => (err: unknown): void => {
+  log.debug('%s failed: %s', tag, getErrorMessage(err));
+};

@@ -1,5 +1,5 @@
+import { ERROR_LOG_DB_ENABLED, ERROR_LOG_TABLE } from '../config';
 import logger from '../logger';
-import { parseBooleanEnv } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { isMissingTableError } from '../utils/supabaseErrors';
 
@@ -29,8 +29,7 @@ type StructuredErrorInput = {
   meta?: Record<string, unknown>;
 };
 
-const ERROR_LOG_DB_ENABLED = parseBooleanEnv(process.env.ERROR_LOG_DB_ENABLED, true);
-const ERROR_LOG_TABLE = String(process.env.ERROR_LOG_TABLE || 'system_error_events').trim();
+// Config sourced from ../config
 
 let dbDisabled = false;
 let dbDisabledAtMs = 0;

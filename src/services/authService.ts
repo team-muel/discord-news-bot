@@ -45,8 +45,20 @@ export function clearSessionCookie(res: { clearCookie: (name: string, options: R
   res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
 }
 
-export function issueCsrfToken(): string {
-  return crypto.randomBytes(24).toString('hex');
+export function issueCsrfToken(userId: string): string {
+  const nonce = crypto.randomBytes(24).toString('hex');
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${nonce}:${userId}`).digest('hex');
+  return `${nonce}.${sig}`;
+}
+
+export function verifyCsrfToken(token: string, userId: string): boolean {
+  const dotIdx = token.indexOf('.');
+  if (dotIdx === -1) return false;
+  const nonce = token.slice(0, dotIdx);
+  const sig = token.slice(dotIdx + 1);
+  if (!nonce || !sig) return false;
+  const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${nonce}:${userId}`).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
 }
 
 export function getCsrfCookieOptions() {

@@ -4,8 +4,14 @@
  * Replaces scattered hook/metric/journal calls in sprintOrchestrator
  * with composable, isolated plugin handlers that run after event commit.
  */
-import type { Plugin } from 'ventyd';
+import type { Plugin, InferEventFromSchema, InferStateFromSchema } from 'ventyd';
 import logger from '../../../logger';
+import { sprintPipelineSchema } from './sprintPipelineEntity';
+import { logCatchError } from '../../../utils/errorMessage';
+
+export type SprintPlugin = Plugin<typeof sprintPipelineSchema>;
+type SprintEvent = InferEventFromSchema<typeof sprintPipelineSchema>;
+type SprintState = InferStateFromSchema<typeof sprintPipelineSchema>;
 
 // ──── Metrics Plugin ──────────────────────────────────────────────────────────
 
@@ -17,22 +23,21 @@ export function createMetricsPlugin(opts: {
   recordPhaseMetric: (phase: string, durationMs: number, failed: boolean, deterministic?: boolean) => void;
   recordLoopBack: () => void;
   recordPipelineCreated: () => void;
-}): Plugin {
+}): SprintPlugin {
   return {
     async onCommitted({ events }) {
       for (const event of events) {
-        const e = event as any;
-        switch (e.eventName) {
+        switch (event.eventName) {
           case 'sprint_pipeline:created':
             opts.recordPipelineCreated();
             break;
 
           case 'sprint_pipeline:phase_completed': {
-            const start = new Date(e.body.startedAt).getTime();
-            const end = new Date(e.body.completedAt).getTime();
+            const start = new Date(event.body.startedAt).getTime();
+            const end = new Date(event.body.completedAt).getTime();
             const durationMs = Number.isFinite(start) && Number.isFinite(end) ? end - start : 0;
-            const failed = e.body.status === 'failed';
-            opts.recordPhaseMetric(e.body.phase, durationMs, failed);
+            const failed = event.body.status === 'failed';
+            opts.recordPhaseMetric(event.body.phase, durationMs, failed);
             break;
           }
 
@@ -58,20 +63,19 @@ export function createLifecycleHooksPlugin(opts: {
     phase?: string;
     meta?: Record<string, unknown>;
   }) => Promise<unknown>;
-}): Plugin {
+}): SprintPlugin {
   return {
     async onCommitted({ entityId, events, state }) {
       for (const event of events) {
-        const e = event as any;
-        switch (e.eventName) {
+        switch (event.eventName) {
           case 'sprint_pipeline:created':
             await opts.executeHooks({
               hookPoint: 'SprintStart',
               sprintId: entityId,
               meta: {
-                triggerType: e.body.triggerType,
-                objective: e.body.objective,
-                guildId: e.body.guildId,
+                triggerType: event.body.triggerType,
+                objective: event.body.objective,
+                guildId: event.body.guildId,
               },
             }).catch(() => {});
             break;
@@ -80,9 +84,9 @@ export function createLifecycleHooksPlugin(opts: {
             await opts.executeHooks({
               hookPoint: 'PhaseComplete',
               sprintId: entityId,
-              phase: e.body.phase,
+              phase: event.body.phase,
               meta: {
-                status: e.body.status,
+                status: event.body.status,
               },
             }).catch(() => {});
             break;
@@ -92,9 +96,9 @@ export function createLifecycleHooksPlugin(opts: {
               hookPoint: 'SprintComplete',
               sprintId: entityId,
               meta: {
-                objective: (state as any).objective,
-                changedFiles: (state as any).changedFiles,
-                totalPhasesExecuted: (state as any).totalPhasesExecuted,
+                objective: state.objective,
+                changedFiles: state.changedFiles,
+                totalPhasesExecuted: state.totalPhasesExecuted,
               },
             }).catch(() => {});
             break;
@@ -109,11 +113,10 @@ export function createLifecycleHooksPlugin(opts: {
 /**
  * Logs all sprint events for observability. Replaces logger.info() calls.
  */
-export const auditLogPlugin: Plugin = {
+export const auditLogPlugin: SprintPlugin = {
   async onCommitted({ entityId, events }) {
     for (const event of events) {
-      const e = event as any;
-      logger.info('[VENTYD] entity=%s event=%s body=%j', entityId, e.eventName, e.body);
+      logger.info('[VENTYD] entity=%s event=%s body=%j', entityId, event.eventName, event.body);
     }
   },
 };
@@ -124,43 +127,40 @@ export const auditLogPlugin: Plugin = {
  * Emits signal bus events for cross-system integration
  * (workflow.phase.looping, workflow.sprint.completed, workflow.sprint.failed).
  */
-export function createSignalBusPlugin(): Plugin {
+export function createSignalBusPlugin(): SprintPlugin {
   return {
     async onCommitted({ entityId, events, state }) {
       for (const event of events) {
-        const e = event as any;
-        const s = state as any;
-
         try {
           const { emitSignal } = await import('../../runtime/signalBus');
 
-          switch (e.eventName) {
+          switch (event.eventName) {
             case 'sprint_pipeline:looped_back':
-              if (e.body.loopCount >= 2) {
-                emitSignal('workflow.phase.looping', 'sprintOrchestrator', s.guildId, {
+              if (event.body.loopCount >= 2) {
+                emitSignal('workflow.phase.looping', 'sprintOrchestrator', state.guildId, {
                   sprintId: entityId,
-                  loopCount: e.body.loopCount,
-                  fromPhase: e.body.fromPhase,
-                  toPhase: e.body.toPhase,
+                  loopCount: event.body.loopCount,
+                  fromPhase: event.body.fromPhase,
+                  toPhase: event.body.toPhase,
                 });
               }
               break;
 
             case 'sprint_pipeline:completed':
-              emitSignal('workflow.sprint.completed', 'sprintOrchestrator', s.guildId, {
+              emitSignal('workflow.sprint.completed', 'sprintOrchestrator', state.guildId, {
                 sprintId: entityId,
-                triggerType: s.triggerType,
-                phasesExecuted: s.totalPhasesExecuted,
-                changedFiles: s.changedFiles,
+                triggerType: state.triggerType,
+                phasesExecuted: state.totalPhasesExecuted,
+                changedFiles: state.changedFiles,
               });
               break;
 
             case 'sprint_pipeline:blocked':
-              emitSignal('workflow.sprint.failed', 'sprintOrchestrator', s.guildId, {
+              emitSignal('workflow.sprint.failed', 'sprintOrchestrator', state.guildId, {
                 sprintId: entityId,
-                triggerType: s.triggerType,
-                phasesExecuted: s.totalPhasesExecuted,
-                changedFiles: s.changedFiles,
+                triggerType: state.triggerType,
+                phasesExecuted: state.totalPhasesExecuted,
+                changedFiles: state.changedFiles,
               });
               break;
           }
@@ -181,32 +181,38 @@ export function createSignalBusPlugin(): Plugin {
 export function createWorkflowEventPlugin(opts: {
   recordWorkflowEvent: (params: Record<string, unknown>) => Promise<void>;
   getPhaseLeadAgent: (phase: string) => string | undefined;
-}): Plugin {
+}): SprintPlugin {
+  const recordTransition = async (entityId: string, toPhase: string, state: SprintState) => {
+    await opts.recordWorkflowEvent({
+      sessionId: `sprint-${entityId}`,
+      eventType: 'sprint_phase_transition',
+      toState: toPhase,
+      handoffTo: opts.getPhaseLeadAgent(toPhase),
+      evidenceId: entityId,
+      payload: {
+        sprintId: entityId,
+        guildId: state.guildId,
+        objective: state.objective?.slice(0, 200),
+        totalPhasesExecuted: state.totalPhasesExecuted,
+        changedFilesCount: state.changedFiles?.length ?? 0,
+      },
+    }).catch(logCatchError(logger, '[VENTYD] recordWorkflowEvent'));
+  };
+
   return {
     async onCommitted({ entityId, events, state }) {
       for (const event of events) {
-        const e = event as any;
-        const s = state as any;
-
-        if (e.eventName === 'sprint_pipeline:phase_advanced' ||
-            e.eventName === 'sprint_pipeline:completed' ||
-            e.eventName === 'sprint_pipeline:blocked' ||
-            e.eventName === 'sprint_pipeline:looped_back') {
-          const toPhase = e.body.nextPhase ?? e.body.toPhase ?? s.currentPhase;
-          await opts.recordWorkflowEvent({
-            sessionId: `sprint-${entityId}`,
-            eventType: 'sprint_phase_transition',
-            toState: toPhase,
-            handoffTo: opts.getPhaseLeadAgent(toPhase),
-            evidenceId: entityId,
-            payload: {
-              sprintId: entityId,
-              guildId: s.guildId,
-              objective: s.objective?.slice(0, 200),
-              totalPhasesExecuted: s.totalPhasesExecuted,
-              changedFilesCount: s.changedFiles?.length ?? 0,
-            },
-          }).catch(() => {});
+        switch (event.eventName) {
+          case 'sprint_pipeline:phase_advanced':
+            await recordTransition(entityId, event.body.nextPhase, state);
+            break;
+          case 'sprint_pipeline:looped_back':
+            await recordTransition(entityId, event.body.toPhase, state);
+            break;
+          case 'sprint_pipeline:completed':
+          case 'sprint_pipeline:blocked':
+            await recordTransition(entityId, state.currentPhase, state);
+            break;
         }
       }
     },

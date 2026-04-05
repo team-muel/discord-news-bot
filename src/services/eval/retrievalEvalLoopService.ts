@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runRetrievalAutoTuning, runRetrievalEval } from './retrievalEvalService';
 
 const RETRIEVAL_AUTO_EVAL_ENABLED = parseBooleanEnv(process.env.RETRIEVAL_AUTO_EVAL_ENABLED, false);
@@ -20,10 +21,9 @@ const parseOptionalEvalSetId = (value: string | undefined): number | undefined =
 
 const RETRIEVAL_AUTO_EVAL_SET_ID = parseOptionalEvalSetId(process.env.RETRIEVAL_AUTO_EVAL_SET_ID);
 
-let timer: NodeJS.Timeout | null = null;
-let running = false;
 let lastRunAt: string | null = null;
 let lastSummary: string | null = null;
+let running = false;
 
 type EvalRunStats = {
   attemptedGuilds: number;
@@ -90,37 +90,29 @@ const runOnce = async (client: Client): Promise<EvalRunStats> => {
   return stats;
 };
 
+let loop: BackgroundLoop | null = null;
+
 export const startRetrievalEvalLoop = (client: Client) => {
-  if (!RETRIEVAL_AUTO_EVAL_ENABLED || timer) {
-    return;
-  }
+  if (!RETRIEVAL_AUTO_EVAL_ENABLED || loop) return;
 
-  const intervalMs = RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS * 60 * 60 * 1000;
-  timer = setInterval(() => {
-    void runOnce(client).catch((err) => logger.error('[RETRIEVAL-EVAL-LOOP] runOnce failed: %s', err instanceof Error ? err.message : String(err)));
-  }, intervalMs);
-  timer.unref();
-
-  if (RETRIEVAL_AUTO_EVAL_RUN_ON_START) {
-    void runOnce(client).catch((err) => logger.error('[RETRIEVAL-EVAL-LOOP] runOnce (startup) failed: %s', err instanceof Error ? err.message : String(err)));
-  }
-
-  logger.info(
-    '[RETRIEVAL-EVAL-LOOP] started intervalHours=%d runOnStart=%s evalSetId=%s applyTuning=%s maxGuilds=%d topK=%d',
-    RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS,
-    String(RETRIEVAL_AUTO_EVAL_RUN_ON_START),
-    String(RETRIEVAL_AUTO_EVAL_SET_ID || 'auto-all'),
-    String(RETRIEVAL_AUTO_EVAL_APPLY_TUNING),
-    RETRIEVAL_AUTO_EVAL_MAX_GUILDS,
-    RETRIEVAL_AUTO_EVAL_TOP_K,
+  loop = new BackgroundLoop(
+    async () => {
+      const s = await runOnce(client);
+      return `attempted=${s.attemptedGuilds} completed=${s.completedGuilds} failed=${s.failedGuilds} appliedTunings=${s.appliedTunings}`;
+    },
+    {
+      name: '[RETRIEVAL-EVAL-LOOP]',
+      intervalMs: RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS * 60 * 60 * 1000,
+      runOnStart: RETRIEVAL_AUTO_EVAL_RUN_ON_START,
+      errorLevel: 'error',
+    },
   );
+  loop.start();
 };
 
 export const stopRetrievalEvalLoop = () => {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  loop?.stop();
+  loop = null;
 };
 
 export const getRetrievalEvalLoopStats = () => ({

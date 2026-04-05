@@ -117,7 +117,7 @@ describe('discord/auth', () => {
     expect(mocks.purgeExpiredDiscordLoginSessions).not.toHaveBeenCalled();
     expect(module.getLoginSessionCleanupLoopStats()).toMatchObject({
       owner: 'db',
-      running: false,
+      started: false,
     });
   });
 
@@ -126,15 +126,14 @@ describe('discord/auth', () => {
     mocks.purgeExpiredDiscordLoginSessions.mockResolvedValue(1);
 
     module.startLoginSessionCleanupLoop();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0); // flush runOnStart tick
     expect(mocks.purgeExpiredDiscordLoginSessions).toHaveBeenCalledTimes(1);
     expect(module.getLoginSessionCleanupLoopStats()).toMatchObject({
       owner: 'app',
-      running: true,
+      started: true,
     });
 
-    vi.advanceTimersByTime(module.LOGIN_SESSION_CLEANUP_INTERVAL_MS);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(module.LOGIN_SESSION_CLEANUP_INTERVAL_MS);
     expect(mocks.purgeExpiredDiscordLoginSessions).toHaveBeenCalledTimes(2);
   });
 });

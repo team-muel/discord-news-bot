@@ -1,8 +1,7 @@
 // Barrel export — Infrastructure services
-// Usage: import { withSupabase, compilePromptGoal } from './infra';
+// Usage: import { getClient, compilePromptGoal } from './infra';
 
-export { getClient, withSupabase, normalizeDbError } from './baseRepository';
-export type { RepositoryResult } from './baseRepository';
+export { getClient, fromTable } from './baseRepository';
 
 export { acquireDistributedLease, releaseDistributedLease } from './distributedLockService';
 

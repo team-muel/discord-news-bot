@@ -94,6 +94,7 @@ export const newsVerifyAction: ActionDefinition = {
   name: 'news.verify',
   description:
     '동일 주제를 여러 뉴스 소스에서 교차 확인합니다. 핵심 클레임의 일치/불일치 여부를 분석합니다.',
+  category: 'content',
   execute: async ({ goal, args }) => {
     const query = extractQuery({
       goal,

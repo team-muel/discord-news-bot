@@ -7,6 +7,11 @@ import { ensureFeatureAccess } from '../auth';
 import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP, DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES } from '../runtimePolicy';
 import { seedFeedbackReactions } from '../session';
 import logger from '../../logger';
+import {
+  VIBE_MESSAGE_DEDUP_TTL_MS,
+  VIBE_AUTO_WORKER_PROPOSAL_ENABLED,
+  VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS,
+} from '../../config';
 
 type VibeDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
@@ -28,10 +33,10 @@ type VibeDeps = {
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
 const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
 const VIBE_MESSAGE_PREFIX_PATTERN = /^뮤엘(?:아)?(?:(?:\s*:\s*)|\s+|$)/;
-const PROCESSED_MESSAGE_TTL_MS = Math.max(30_000, Number(process.env.VIBE_MESSAGE_DEDUP_TTL_MS || 5 * 60_000));
+const PROCESSED_MESSAGE_TTL_MS = VIBE_MESSAGE_DEDUP_TTL_MS;
 const processedMessageUntilMs = new Map<string, number>();
-const AUTO_WORKER_PROPOSAL_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_ENABLED || 'false').trim());
-const AUTO_WORKER_PROPOSAL_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS || 15 * 60_000));
+const AUTO_WORKER_PROPOSAL_ENABLED = VIBE_AUTO_WORKER_PROPOSAL_ENABLED;
+const AUTO_WORKER_PROPOSAL_COOLDOWN_MS = VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS;
 const autoWorkerProposalUntilMs = new Map<string, number>();
 
 const logVibeNonCritical = (scope: string, error: unknown, getErrorMessage: (error: unknown) => string): void => {

@@ -1,7 +1,11 @@
 import crypto from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import logger from '../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../utils/env';
+import {
+  API_IDEMPOTENCY_TABLE,
+  API_IDEMPOTENCY_TTL_SEC,
+  API_IDEMPOTENCY_REQUIRE_HEADER,
+} from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 
 type IdempotencyState = 'in_progress' | 'completed';
@@ -17,9 +21,9 @@ type IdempotencyRecord = {
   expiresAt: number;
 };
 
-const TABLE = String(process.env.API_IDEMPOTENCY_TABLE || 'api_idempotency_keys').trim();
-const DEFAULT_TTL_SEC = Math.max(60, parseIntegerEnv(process.env.API_IDEMPOTENCY_TTL_SEC, 86_400));
-const REQUIRE_HEADER_DEFAULT = parseBooleanEnv(process.env.API_IDEMPOTENCY_REQUIRE_HEADER, false);
+const TABLE = API_IDEMPOTENCY_TABLE;
+const DEFAULT_TTL_SEC = API_IDEMPOTENCY_TTL_SEC;
+const REQUIRE_HEADER_DEFAULT = API_IDEMPOTENCY_REQUIRE_HEADER;
 
 const MEMORY_STORE_MAX = 5_000;
 const memoryStore = new Map<string, IdempotencyRecord>();

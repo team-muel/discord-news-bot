@@ -8,6 +8,7 @@
 import type { Client } from 'discord.js';
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { computeRewardSnapshot, persistRewardSnapshot } from './rewardSignalService';
 
 const REWARD_LOOP_ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_LOOP_ENABLED, true);
@@ -16,7 +17,6 @@ const REWARD_LOOP_RUN_ON_START = parseBooleanEnv(process.env.REWARD_SIGNAL_LOOP_
 const REWARD_LOOP_MAX_GUILDS = Math.max(1, parseIntegerEnv(process.env.REWARD_SIGNAL_LOOP_MAX_GUILDS, 30));
 const REWARD_LOOP_CONCURRENCY = Math.max(1, parseIntegerEnv(process.env.REWARD_SIGNAL_LOOP_CONCURRENCY, 4));
 
-let timer: NodeJS.Timeout | null = null;
 let running = false;
 let lastRunAt: string | null = null;
 let lastSummary: string | null = null;
@@ -99,34 +99,29 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
   return stats;
 };
 
+let loop: BackgroundLoop | null = null;
+
 export const startRewardSignalLoop = (client: Client): void => {
-  if (!REWARD_LOOP_ENABLED || timer) {
-    return;
-  }
+  if (!REWARD_LOOP_ENABLED || loop) return;
 
-  const intervalMs = REWARD_LOOP_INTERVAL_HOURS * 60 * 60 * 1000;
-  timer = setInterval(() => {
-    void runOnce(client).catch((err) => logger.error('[REWARD-SIGNAL-LOOP] unhandled error: %s', err instanceof Error ? err.message : String(err)));
-  }, intervalMs);
-  timer.unref();
-
-  if (REWARD_LOOP_RUN_ON_START) {
-    void runOnce(client).catch((err) => logger.error('[REWARD-SIGNAL-LOOP] unhandled error: %s', err instanceof Error ? err.message : String(err)));
-  }
-
-  logger.info(
-    '[REWARD-SIGNAL-LOOP] started intervalHours=%d runOnStart=%s maxGuilds=%d',
-    REWARD_LOOP_INTERVAL_HOURS,
-    String(REWARD_LOOP_RUN_ON_START),
-    REWARD_LOOP_MAX_GUILDS,
+  loop = new BackgroundLoop(
+    async () => {
+      const s = await runOnce(client);
+      return `attempted=${s.attemptedGuilds} completed=${s.completedGuilds} failed=${s.failedGuilds}`;
+    },
+    {
+      name: '[REWARD-SIGNAL-LOOP]',
+      intervalMs: REWARD_LOOP_INTERVAL_HOURS * 60 * 60 * 1000,
+      runOnStart: REWARD_LOOP_RUN_ON_START,
+      errorLevel: 'error',
+    },
   );
+  loop.start();
 };
 
 export const stopRewardSignalLoop = (): void => {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  loop?.stop();
+  loop = null;
 };
 
 export const getRewardSignalLoopStatus = (): {

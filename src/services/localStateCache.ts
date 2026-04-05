@@ -10,6 +10,7 @@
  * All reads/writes are best-effort — cache miss falls through to Supabase.
  */
 
+import { LOCAL_CACHE_DIR as LOCAL_CACHE_DIR_CFG, LOCAL_CACHE_MAX_ENTRIES } from '../config';
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 import { atomicWriteFileSync } from '../utils/atomicWrite';
 import path from 'node:path';
@@ -19,8 +20,8 @@ import logger from '../logger';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_CACHE_DIR = path.resolve(__dirname, '../../.local-cache');
-const CACHE_DIR = process.env.LOCAL_CACHE_DIR || DEFAULT_CACHE_DIR;
-const MAX_ENTRIES = Math.max(10, Number(process.env.LOCAL_CACHE_MAX_ENTRIES) || 200);
+const CACHE_DIR = LOCAL_CACHE_DIR_CFG || DEFAULT_CACHE_DIR;
+const MAX_ENTRIES = LOCAL_CACHE_MAX_ENTRIES;
 const MAX_ENTRY_BYTES = 512 * 1024; // 512 KB per entry
 
 function ensureCacheDir(): void {

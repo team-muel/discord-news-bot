@@ -5,6 +5,24 @@ import { BOT_START_FAILURE_EXIT_ENABLED, PORT, START_BOT } from './src/config';
 import { startServerProcessRuntime } from './src/services/runtime/runtimeBootstrap';
 import { stopAutomationModules } from './src/services/automationBot';
 import { stopMcpSkillRouter } from './src/services/mcpSkillRouter';
+import { isDiscordLoginRateLimitedError } from './src/discord/runtime/botRuntimeState';
+import { stopLoginSessionCleanupLoop } from './src/discord/auth';
+import { stopUserEmbeddingLoop } from './src/services/memory/userEmbeddingService';
+import { stopConsolidationLoop } from './src/services/memory/memoryConsolidationService';
+import { stopMemoryJobRunner } from './src/services/memory/memoryJobRunner';
+import { stopObsidianLoreSyncLoop } from './src/services/obsidian/obsidianLoreSyncService';
+import { stopRetrievalEvalLoop } from './src/services/eval/retrievalEvalLoopService';
+import { stopEvalAutoPromoteLoop } from './src/services/eval/evalAutoPromoteLoopService';
+import { stopRewardSignalLoop } from './src/services/eval/rewardSignalLoopService';
+import { stopObserverLoop } from './src/services/observer/observerOrchestrator';
+import { stopOpencodePublishWorker } from './src/services/opencode/opencodePublishWorker';
+import { stopAutoWorkerProposalBackgroundLoop } from './src/services/workerGeneration/backgroundProposalSweep';
+import { stopRuntimeAlerts } from './src/services/runtime/runtimeAlertService';
+import { stopAgentSloAlertLoop } from './src/services/agent/agentSloService';
+import { stopGotCutoverAutopilotLoop, stopAgentDailyLearningLoop } from './src/services/agent/agentOpsService';
+import { stopBotAutoRecovery } from './src/services/runtime/botAutoRecoveryService';
+import { stopSprintScheduledTriggers } from './src/services/sprint/sprintTriggers';
+import { shutdownCrm } from './src/services/discord-support/userCrmService';
 
 // Initialize monitoring (Sentry) if configured
 initMonitoring();
@@ -16,11 +34,6 @@ const HTTP_KEEP_ALIVE_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_KEEP_
 const HTTP_HEADERS_TIMEOUT_MS = Math.max(10_000, Number(process.env.HTTP_HEADERS_TIMEOUT_MS || 66_000));
 const HTTP_REQUEST_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 120_000));
 const HTTP_SHUTDOWN_TIMEOUT_MS = Math.max(5_000, Number(process.env.HTTP_SHUTDOWN_TIMEOUT_MS || 15_000));
-
-const isDiscordLoginRateLimitedError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error || '');
-  return /Discord login rate-limited; retry after/i.test(message);
-};
 
 const exitForRequiredBotFailure = (message: string, error?: unknown) => {
   if (error && isDiscordLoginRateLimitedError(error)) {
@@ -93,10 +106,44 @@ const shutdownServer = (signal: NodeJS.Signals) => {
   shuttingDown = true;
   logger.info('[PROCESS] Received %s, shutting down HTTP server...', signal);
 
-  // Stop background services before closing the HTTP server
-  try { stopAutomationModules(); } catch { /* best-effort */ }
-  try { stopMcpSkillRouter(); } catch { /* best-effort */ }
+  // Stop all background services (sync, best-effort)
+  const syncStops: Array<[string, () => void]> = [
+    ['automationModules', stopAutomationModules],
+    ['mcpSkillRouter', stopMcpSkillRouter],
+    ['loginSessionCleanup', stopLoginSessionCleanupLoop],
+    ['userEmbedding', stopUserEmbeddingLoop],
+    ['memoryConsolidation', stopConsolidationLoop],
+    ['memoryJobRunner', stopMemoryJobRunner],
+    ['obsidianLoreSync', stopObsidianLoreSyncLoop],
+    ['retrievalEval', stopRetrievalEvalLoop],
+    ['evalAutoPromote', stopEvalAutoPromoteLoop],
+    ['rewardSignal', stopRewardSignalLoop],
+    ['observer', stopObserverLoop],
+    ['opencodePublish', stopOpencodePublishWorker],
+    ['autoWorkerProposal', stopAutoWorkerProposalBackgroundLoop],
+    ['runtimeAlerts', stopRuntimeAlerts],
+    ['agentSloAlert', stopAgentSloAlertLoop],
+    ['gotCutoverAutopilot', stopGotCutoverAutopilotLoop],
+    ['agentDailyLearning', stopAgentDailyLearningLoop],
+    ['botAutoRecovery', stopBotAutoRecovery],
+    ['sprintScheduledTriggers', stopSprintScheduledTriggers],
+  ];
 
+  for (const [name, stop] of syncStops) {
+    try { stop(); } catch (err) {
+      logger.warn('[PROCESS] stop %s failed: %s', name, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Flush async resources (CRM activity buffer) before closing
+  shutdownCrm().catch((err) => {
+    logger.warn('[PROCESS] shutdownCrm failed: %s', err instanceof Error ? err.message : String(err));
+  }).finally(() => {
+    closeHttpServer();
+  });
+};
+
+const closeHttpServer = () => {
   const forceExitTimer = setTimeout(() => {
     logger.error('[PROCESS] Graceful shutdown timed out after %dms; forcing exit', HTTP_SHUTDOWN_TIMEOUT_MS);
     process.exit(1);

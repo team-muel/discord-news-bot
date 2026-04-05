@@ -11,6 +11,8 @@
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getClient, fromTable } from '../infra/baseRepository';
+import { T_COMMUNITY_INTERACTION_EVENTS, T_AGENT_SESSIONS, T_MEMORY_RETRIEVAL_LOGS, T_AGENT_LLM_CALL_LOGS, T_REWARD_SIGNAL_SNAPSHOTS } from '../infra/tableRegistry';
 
 const ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_ENABLED, true);
 const WINDOW_HOURS = Math.max(1, Math.min(168, parseIntegerEnv(process.env.REWARD_SIGNAL_WINDOW_HOURS, 6)));
@@ -54,11 +56,11 @@ const fetchReactionSignals = async (
   windowEnd: string,
 ): Promise<{ up: number; down: number }> => {
   try {
-    const client = getSupabaseClient();
+    const qb = fromTable(T_COMMUNITY_INTERACTION_EVENTS);
+    if (!qb) return { up: 0, down: 0 };
     // Use real Discord reaction events from community_interaction_events
     // Emoji metadata: {"emoji":"thumbsup"} = up, {"emoji":"rage"} = down
-    const { data, error } = await client
-      .from('community_interaction_events')
+    const { data, error } = await qb
       .select('metadata')
       .eq('guild_id', guildId)
       .eq('event_type', 'reaction')
@@ -93,9 +95,9 @@ const fetchSessionOutcomes = async (
   windowEnd: string,
 ): Promise<{ total: number; succeeded: number }> => {
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('agent_sessions')
+    const qb = fromTable(T_AGENT_SESSIONS);
+    if (!qb) return { total: 0, succeeded: 0 };
+    const { data, error } = await qb
       .select('status')
       .eq('guild_id', guildId)
       .gte('created_at', windowStart)
@@ -119,9 +121,9 @@ const fetchRetrievalQuality = async (
   windowEnd: string,
 ): Promise<{ count: number; avgScore: number | null }> => {
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('memory_retrieval_logs')
+    const qb = fromTable(T_MEMORY_RETRIEVAL_LOGS);
+    if (!qb) return { count: 0, avgScore: null };
+    const { data, error } = await qb
       .select('avg_score')
       .eq('guild_id', guildId)
       .gte('created_at', windowStart)
@@ -150,9 +152,9 @@ const fetchLatencyMetrics = async (
   windowEnd: string,
 ): Promise<{ avgMs: number | null; p95Ms: number | null }> => {
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('agent_llm_call_logs')
+    const qb = fromTable(T_AGENT_LLM_CALL_LOGS);
+    if (!qb) return { avgMs: null, p95Ms: null };
+    const { data, error } = await qb
       .select('latency_ms')
       .eq('guild_id', guildId)
       .gte('created_at', windowStart)
@@ -251,14 +253,14 @@ export const computeRewardSnapshot = async (guildId: string): Promise<RewardSnap
 };
 
 export const persistRewardSnapshot = async (snapshot: RewardSnapshot): Promise<boolean> => {
-  if (!isSupabaseConfigured()) return false;
+  const db = getClient();
+  if (!db) return false;
 
   try {
-    const client = getSupabaseClient();
 
     // Atomic upsert: UNIQUE index on (guild_id, window_start) prevents duplicates
     // ON CONFLICT DO NOTHING = safe when reward loop and eval loop overlap
-    const { error } = await client.from('reward_signal_snapshots').upsert({
+    const { error } = await db.from(T_REWARD_SIGNAL_SNAPSHOTS).upsert({
       guild_id: snapshot.guildId,
       window_start: snapshot.windowStart,
       window_end: snapshot.windowEnd,
@@ -299,12 +301,11 @@ export const getRecentRewardSnapshots = async (
   guildId: string,
   limit = 20,
 ): Promise<RewardSnapshot[]> => {
-  if (!isSupabaseConfigured()) return [];
+  const qb = fromTable(T_REWARD_SIGNAL_SNAPSHOTS);
+  if (!qb) return [];
 
   try {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from('reward_signal_snapshots')
+    const { data, error } = await qb
       .select('*')
       .eq('guild_id', guildId)
       .order('window_end', { ascending: false })

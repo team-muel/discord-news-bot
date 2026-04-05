@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AUTH_COOKIE_NAME, AUTH_CSRF_COOKIE_NAME, AUTH_CSRF_HEADER_NAME } from '../config';
-import { parseSessionToken } from '../services/authService';
+import { parseSessionToken, verifyCsrfToken } from '../services/authService';
 import { getAdminAllowlist } from '../services/adminAllowlistService';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -33,6 +33,10 @@ export function requireCsrfForStateChange(req: Request, res: Response, next: Nex
 
   if (!headerToken || !cookieToken || headerToken !== cookieToken) {
     return res.status(403).json({ error: 'CSRF', message: 'CSRF token missing or invalid' });
+  }
+
+  if (!verifyCsrfToken(headerToken, req.user.id)) {
+    return res.status(403).json({ error: 'CSRF', message: 'CSRF token not bound to session' });
   }
 
   return next();

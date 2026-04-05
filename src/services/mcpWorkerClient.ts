@@ -2,6 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { logStructuredError } from './structuredErrorLogService';
 import { toWorkerExecutionError, validateMcpCallParams, WorkerExecutionError } from './workerExecution';
+import { MCP_WORKER_AUTH_TOKEN } from '../config';
 
 export type McpTextBlock = { type?: string; text?: string };
 
@@ -11,12 +12,6 @@ export type McpCallPayload = {
 };
 
 const toBaseUrl = (raw: string | undefined): string => String(raw || '').trim().replace(/\/+$/, '');
-const MCP_WORKER_AUTH_TOKEN = String(
-  process.env.MCP_WORKER_AUTH_TOKEN
-  || process.env.AGENT_ROLE_WORKER_AUTH_TOKEN
-  || process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN
-  || '',
-).trim();
 
 // Keep-alive HTTP agents — reuse TCP connections across MCP calls
 const httpKeepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 6, keepAliveMsecs: 30_000 });
