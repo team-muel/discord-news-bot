@@ -1,4 +1,5 @@
 import { rehydrateActivePipelines, listSprintPipelines } from '../sprint/sprintOrchestrator';
+import { rehydrateActiveSessions } from '../multiAgentService';
 import { rehydrateEventSourcingEntities } from '../sprint/eventSourcing/bridge';
 import { startSprintScheduledTriggers } from '../sprint/sprintTriggers';
 import { checkGitConfigHealth } from '../sprint/autonomousGit';
@@ -28,6 +29,11 @@ export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => b
     .catch((error) => {
       logger.debug('[SPRINT] rehydration skipped: %s', getErrorMessage(error));
     });
+
+  // Restore in-progress agent sessions from Supabase
+  void rehydrateActiveSessions().catch((error) => {
+    logger.debug('[AGENT] session rehydration skipped: %s', getErrorMessage(error));
+  });
 
   // Start scheduled sprint triggers (security audit, improvement)
   startSprintScheduledTriggers();
@@ -70,4 +76,15 @@ export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => b
       logger.debug('[OBSERVER] startup skipped: %s', getErrorMessage(error));
     });
   }
+
+  // Phase G: Intent Formation Engine — observation → intent → sprint
+  void import('../../config').then(({ INTENT_FORMATION_ENABLED }) => {
+    if (!INTENT_FORMATION_ENABLED) {
+      logger.debug('[INTENT] Intent Formation disabled (INTENT_FORMATION_ENABLED=false)');
+      return;
+    }
+    logger.info('[RUNTIME] Intent Formation Engine enabled');
+  }).catch((error) => {
+    logger.debug('[INTENT] startup check skipped: %s', getErrorMessage(error));
+  });
 };

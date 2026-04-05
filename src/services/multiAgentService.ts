@@ -14,6 +14,7 @@ import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequ
 import { persistAgentSession } from './agent/agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn, fetchRecentTurnsForUser } from './conversationTurnService';
 import { isAnyLlmConfigured } from './llmClient';
+import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { ensureSessionBudget, getErrorMessage, withTimeout } from './langgraph/runtimeSupport/runtimeBudget';
 import {
   assessRuleBasedOrm,
@@ -225,7 +226,7 @@ const buildInitialSteps = (
   });
 };
 
-const getSession = (sessionId: string): AgentSession => sessions.get(sessionId) as AgentSession;
+const getSession = (sessionId: string): AgentSession | undefined => sessions.get(sessionId);
 
 const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, patch?: Partial<AgentSession>) => {
   const nodeResult = runPersistAndEmitNode({
@@ -904,6 +905,96 @@ export const getMultiAgentRuntimeSnapshot = (): AgentRuntimeSnapshot => {
 export const listAgentSkills = () => listSkills();
 
 export const getAgentPolicy = () => getAgentPolicySnapshot();
+
+// ──── Startup rehydration ──────────────────────────────────────────────────────
+
+let sessionRehydrationInFlight: Promise<number> | null = null;
+
+export const rehydrateActiveSessions = async (): Promise<number> => {
+  if (sessionRehydrationInFlight) return sessionRehydrationInFlight;
+  sessionRehydrationInFlight = rehydrateActiveSessionsInner().finally(() => { sessionRehydrationInFlight = null; });
+  return sessionRehydrationInFlight;
+};
+
+const rehydrateActiveSessionsInner = async (): Promise<number> => {
+  if (!isSupabaseConfigured()) return 0;
+  try {
+    const client = getSupabaseClient();
+    const { data } = await client
+      .from('agent_sessions')
+      .select('*')
+      .in('status', ['queued', 'running'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!data || data.length === 0) return 0;
+
+    // Load steps for the rehydrated sessions
+    const sessionIds = (data as Array<Record<string, unknown>>).map((r) => String(r.id));
+    const { data: stepRows } = await client
+      .from('agent_steps')
+      .select('*')
+      .in('session_id', sessionIds)
+      .order('updated_at', { ascending: true });
+    const stepsBySession = new Map<string, AgentStep[]>();
+    if (stepRows) {
+      for (const row of stepRows as Array<Record<string, unknown>>) {
+        const sid = String(row.session_id || '');
+        const step: AgentStep = {
+          id: String(row.id || ''),
+          role: (row.role || 'coordinator') as AgentStep['role'],
+          title: String(row.title || ''),
+          status: (row.status || 'pending') as AgentStep['status'],
+          startedAt: row.started_at ? String(row.started_at) : null,
+          endedAt: row.ended_at ? String(row.ended_at) : null,
+          output: row.output ? String(row.output) : null,
+          error: row.error ? String(row.error) : null,
+        };
+        const arr = stepsBySession.get(sid) || [];
+        arr.push(step);
+        stepsBySession.set(sid, arr);
+      }
+    }
+
+    let rehydrated = 0;
+    for (const row of data as Array<Record<string, unknown>>) {
+      const id = String(row.id || '');
+      if (!id || sessions.has(id)) continue;
+
+      const session: AgentSession = {
+        id,
+        guildId: String(row.guild_id || ''),
+        requestedBy: String(row.requested_by || ''),
+        goal: String(row.goal || ''),
+        conversationThreadId: row.conversation_thread_id != null ? Number(row.conversation_thread_id) : null,
+        conversationTurnIndex: row.conversation_turn_index != null ? Number(row.conversation_turn_index) : null,
+        priority: (row.priority || 'balanced') as AgentSession['priority'],
+        requestedSkillId: row.requested_skill_id ? String(row.requested_skill_id) as AgentSession['requestedSkillId'] : null,
+        routedIntent: 'uncertain',
+        status: (row.status || 'queued') as AgentSessionStatus,
+        createdAt: String(row.created_at || new Date().toISOString()),
+        updatedAt: String(row.updated_at || new Date().toISOString()),
+        startedAt: row.started_at ? String(row.started_at) : null,
+        endedAt: row.ended_at ? String(row.ended_at) : null,
+        result: row.result ? String(row.result) : null,
+        error: row.error ? String(row.error) : null,
+        cancelRequested: false,
+        memoryHints: [],
+        steps: stepsBySession.get(id) || [],
+        shadowGraph: null,
+      };
+      sessions.set(id, session);
+      rehydrated++;
+    }
+
+    if (rehydrated > 0) {
+      logger.info('[AGENT] rehydrated %d active sessions from Supabase', rehydrated);
+    }
+    return rehydrated;
+  } catch (error) {
+    logger.warn('[AGENT] session rehydration failed: %s', error instanceof Error ? error.message : String(error));
+    return 0;
+  }
+};
 
 export const __resetAgentRuntimeForTests = (): void => {
   queueRuntime.reset();

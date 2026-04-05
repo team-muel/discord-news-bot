@@ -41,9 +41,11 @@ import {
   listAgentDeadletters,
   listAgentSkills,
   listGuildAgentSessions,
+  rehydrateActiveSessions,
   serializeAgentSessionForApi,
   startAgentSession,
 } from './multiAgentService';
+import { isSupabaseConfigured, getSupabaseClient } from './supabaseClient';
 import { appendTrace, createInitialLangGraphState } from './langgraph/stateContract';
 
 beforeEach(() => {
@@ -426,5 +428,149 @@ describe('executeSession integration path', () => {
     expect(completed?.status).toBe('completed');
     // shadowGraph is released after terminal persistence for memory optimization
     expect(completed?.shadowGraph).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────
+describe('rehydrateActiveSessions', () => {
+  it('Supabase 미설정 시 0 반환', async () => {
+    vi.mocked(isSupabaseConfigured).mockReturnValue(false);
+    const count = await rehydrateActiveSessions();
+    expect(count).toBe(0);
+  });
+
+  it('활성 세션 + 스텝을 Supabase에서 복원한다', async () => {
+    vi.mocked(isSupabaseConfigured).mockReturnValue(true);
+
+    const sessionRows = [
+      {
+        id: 'rehy-1',
+        guild_id: 'g-1',
+        requested_by: 'u-1',
+        goal: 'test goal',
+        priority: 'balanced',
+        requested_skill_id: null,
+        status: 'running',
+        created_at: '2026-04-01T00:00:00.000Z',
+        updated_at: '2026-04-01T00:00:01.000Z',
+        started_at: '2026-04-01T00:00:00.000Z',
+        ended_at: null,
+        result: null,
+        error: null,
+        conversation_thread_id: null,
+        conversation_turn_index: null,
+      },
+    ];
+    const stepRows = [
+      {
+        id: 'step-rehy-1',
+        session_id: 'rehy-1',
+        role: 'planner',
+        title: 'plan step',
+        status: 'completed',
+        started_at: '2026-04-01T00:00:00.000Z',
+        ended_at: '2026-04-01T00:00:01.000Z',
+        output: 'plan done',
+        error: null,
+      },
+    ];
+
+    const mockSelect = (table: string) => {
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn().mockReturnValue(chain);
+      chain.in = vi.fn().mockReturnValue(chain);
+      chain.not = vi.fn().mockReturnValue(chain);
+      chain.order = vi.fn().mockImplementation(() => {
+        if (table === 'agent_steps') return Promise.resolve({ data: stepRows });
+        return chain;
+      });
+      chain.limit = vi.fn().mockImplementation(() => {
+        if (table === 'agent_sessions') return Promise.resolve({ data: sessionRows });
+        return Promise.resolve({ data: stepRows });
+      });
+      return chain;
+    };
+
+    vi.mocked(getSupabaseClient).mockReturnValue({
+      from: (table: string) => mockSelect(table),
+    } as any);
+
+    const count = await rehydrateActiveSessions();
+    expect(count).toBe(1);
+
+    const session = getAgentSession('rehy-1');
+    expect(session).not.toBeNull();
+    expect(session?.goal).toBe('test goal');
+    expect(session?.status).toBe('running');
+    expect(session?.steps).toHaveLength(1);
+    expect(session?.steps[0].title).toBe('plan step');
+  });
+
+  it('이미 Map에 있는 세션은 덮어쓰지 않는다', async () => {
+    vi.mocked(isSupabaseConfigured).mockReturnValue(true);
+    vi.mocked(llmClient.isAnyLlmConfigured).mockReturnValue(true);
+
+    // Pre-populate sessions Map via startAgentSession
+    const created = startAgentSession({
+      guildId: 'g-dup',
+      requestedBy: 'u-dup',
+      goal: 'existing session',
+      priority: 'balanced',
+      isAdmin: true,
+    });
+
+    const sessionRows = [
+      {
+        id: created.id,
+        guild_id: 'g-dup',
+        requested_by: 'u-dup',
+        goal: 'stale DB version',
+        priority: 'balanced',
+        status: 'running',
+        created_at: '2026-04-01T00:00:00.000Z',
+        updated_at: '2026-04-01T00:00:01.000Z',
+        started_at: null,
+        ended_at: null,
+        result: null,
+        error: null,
+      },
+    ];
+
+    const mockSelect = () => {
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn().mockReturnValue(chain);
+      chain.in = vi.fn().mockReturnValue(chain);
+      chain.order = vi.fn().mockReturnValue(chain);
+      chain.limit = vi.fn().mockResolvedValue({ data: sessionRows });
+      return chain;
+    };
+
+    vi.mocked(getSupabaseClient).mockReturnValue({
+      from: () => mockSelect(),
+    } as any);
+
+    const count = await rehydrateActiveSessions();
+    expect(count).toBe(0);
+
+    const session = getAgentSession(created.id);
+    expect(session?.goal).toBe('existing session');
+  });
+
+  it('Supabase 에러 시 0 반환하고 예외를 던지지 않는다', async () => {
+    vi.mocked(isSupabaseConfigured).mockReturnValue(true);
+    vi.mocked(getSupabaseClient).mockReturnValue({
+      from: () => ({
+        select: () => ({
+          in: () => ({
+            order: () => ({
+              limit: () => Promise.reject(new Error('connection failed')),
+            }),
+          }),
+        }),
+      }),
+    } as any);
+
+    const count = await rehydrateActiveSessions();
+    expect(count).toBe(0);
   });
 });
