@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../../test/supabaseMock';
 
 // Mock Supabase
 const mockFrom = vi.fn();
@@ -20,17 +21,6 @@ import {
   cosineSimilarity,
   isUserEmbeddingEnabled,
 } from './userEmbeddingService';
-
-// ─── Chainable query builder ─────────────────────────────────────────────────
-const chainableQuery = (result: { data?: unknown; error?: unknown } = {}) => {
-  const chain: Record<string, unknown> = {};
-  const methods = ['select', 'eq', 'neq', 'not', 'or', 'order', 'limit', 'insert', 'upsert', 'maybeSingle', 'in'];
-  for (const m of methods) {
-    chain[m] = vi.fn().mockReturnValue(chain);
-  }
-  chain.then = (resolve: (v: unknown) => void) => resolve(result);
-  return chain;
-};
 
 describe('userEmbeddingService', () => {
   beforeEach(() => {
@@ -72,7 +62,7 @@ describe('userEmbeddingService', () => {
 
   describe('computeUserEmbedding', () => {
     it('returns null when user has fewer items than minimum', async () => {
-      const chain = chainableQuery({ data: [{ embedding: '[0.1,0.2,0.3]' }], error: null });
+      const chain = createSupabaseChain({ data: [{ embedding: '[0.1,0.2,0.3]' }], error: null });
       mockFrom.mockReturnValue(chain);
 
       // USER_EMBEDDING_MIN_ITEMS defaults to 3, so 1 item is not enough
@@ -81,7 +71,7 @@ describe('userEmbeddingService', () => {
     });
 
     it('computes average embedding from multiple memory items', async () => {
-      const chain = chainableQuery({
+      const chain = createSupabaseChain({
         data: [
           { embedding: '[1.0,0.0,0.0]' },
           { embedding: '[0.0,1.0,0.0]' },
@@ -101,7 +91,7 @@ describe('userEmbeddingService', () => {
     });
 
     it('handles array-format embeddings', async () => {
-      const chain = chainableQuery({
+      const chain = createSupabaseChain({
         data: [
           { embedding: [1.0, 0.0, 0.0] },
           { embedding: [0.0, 1.0, 0.0] },
@@ -117,7 +107,7 @@ describe('userEmbeddingService', () => {
     });
 
     it('returns null on database error', async () => {
-      const chain = chainableQuery({ data: null, error: { message: 'db error' } });
+      const chain = createSupabaseChain({ data: null, error: { message: 'db error' } });
       mockFrom.mockReturnValue(chain);
 
       const result = await computeUserEmbedding('user1', 'guild1');
@@ -147,7 +137,7 @@ describe('userEmbeddingService', () => {
 
   describe('getUserEmbedding', () => {
     it('returns user embedding from database', async () => {
-      const chain = chainableQuery({
+      const chain = createSupabaseChain({
         data: {
           user_id: 'user1',
           guild_id: 'guild1',
@@ -167,7 +157,7 @@ describe('userEmbeddingService', () => {
     });
 
     it('returns null when not found', async () => {
-      const chain = chainableQuery({ data: null, error: null });
+      const chain = createSupabaseChain({ data: null, error: null });
       mockFrom.mockReturnValue(chain);
 
       const result = await getUserEmbedding('user1', 'guild1');
@@ -179,7 +169,7 @@ describe('userEmbeddingService', () => {
     it('processes users with owned memory items', async () => {
       const ownerData = [
         { owner_user_id: 'u1', guild_id: 'g1' },
-        { owner_user_id: 'u1', guild_id: 'g1' }, // duplicate — should dedup
+        { owner_user_id: 'u1', guild_id: 'g1' }, // duplicate ??should dedup
         { owner_user_id: 'u2', guild_id: 'g1' },
       ];
 
@@ -188,10 +178,10 @@ describe('userEmbeddingService', () => {
         callCount++;
         if (callCount === 1) {
           // First call: find owner rows
-          return chainableQuery({ data: ownerData, error: null });
+          return createSupabaseChain({ data: ownerData, error: null });
         }
         // Subsequent calls: compute + store
-        return chainableQuery({
+        return createSupabaseChain({
           data: [
             { embedding: '[0.1,0.2]' },
             { embedding: '[0.3,0.4]' },
@@ -206,7 +196,7 @@ describe('userEmbeddingService', () => {
     });
 
     it('returns empty result when no users found', async () => {
-      mockFrom.mockReturnValue(chainableQuery({ data: [], error: null }));
+      mockFrom.mockReturnValue(createSupabaseChain({ data: [], error: null }));
 
       const result = await refreshUserEmbeddings();
       expect(result.usersProcessed).toBe(0);

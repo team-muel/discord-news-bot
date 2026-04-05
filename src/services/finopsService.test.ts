@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../test/supabaseMock';
 
 // ---------- mocks ----------
 vi.mock('../config', async (importOriginal) => {
@@ -6,28 +7,8 @@ vi.mock('../config', async (importOriginal) => {
   return { ...actual };
 });
 
-const buildChainable = (terminal: { data?: unknown[]; count?: number; error?: unknown } = {}) => {
-  const result = { data: terminal.data ?? [], error: terminal.error ?? null, count: terminal.count ?? 0 };
-  const chain: Record<string, unknown> = {};
-  const self = () => chain;
-  chain.eq = vi.fn().mockImplementation(self);
-  chain.gte = vi.fn().mockImplementation(self);
-  chain.lte = vi.fn().mockImplementation(self);
-  chain.or = vi.fn().mockImplementation(self);
-  chain.order = vi.fn().mockImplementation(self);
-  chain.limit = vi.fn().mockImplementation(self);
-  chain.data = result.data;
-  chain.error = result.error;
-  chain.count = result.count;
-  // Supabase query builders are thenable — resolve with plain result object to avoid recursive thenable
-  chain.then = (resolve: (v: unknown) => void, _reject?: (e: unknown) => void) => {
-    return Promise.resolve().then(() => resolve(result));
-  };
-  return chain;
-};
-
 const mockFrom = vi.fn().mockReturnValue({
-  select: vi.fn().mockReturnValue(buildChainable()),
+  select: vi.fn().mockReturnValue(createSupabaseChain({ data: [], error: null, count: 0 })),
 });
 const mockIsConfigured = vi.fn().mockReturnValue(true);
 
@@ -49,7 +30,7 @@ describe('finopsService', () => {
     vi.clearAllMocks();
     mockIsConfigured.mockReturnValue(true);
     mockFrom.mockReturnValue({
-      select: vi.fn().mockReturnValue(buildChainable()),
+      select: vi.fn().mockReturnValue(createSupabaseChain({ data: [], error: null, count: 0 })),
     });
   });
 
@@ -101,9 +82,9 @@ describe('finopsService', () => {
     });
 
     it('scopes to guildId when provided', async () => {
-      // getFinopsSummary calls from() 3 times (actions, retrieval, jobs) — each needs chainable
+      // getFinopsSummary calls from() 3 times (actions, retrieval, jobs) ??each needs chainable
       mockFrom.mockImplementation(() => ({
-        select: vi.fn().mockImplementation(() => buildChainable()),
+        select: vi.fn().mockImplementation(() => createSupabaseChain({ data: [], error: null, count: 0 })),
       }));
       const result = await getFinopsSummary({ guildId: '123456789012345678', days: 1 });
       expect(result.scope).toBe('123456789012345678');

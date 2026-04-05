@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../../test/supabaseMock';
 
 // Mock Supabase
 const mockFrom = vi.fn();
@@ -22,20 +23,6 @@ vi.mock('../llmClient', () => ({
 }));
 
 import { evolveMemoryLinks, batchCountMemoryLinks } from './memoryEvolutionService';
-
-// ─── Chainable query builder mock ────────────────────────────────────────────
-const chainableQuery = (result: { data?: unknown; error?: unknown; count?: number } = {}) => {
-  const chain: Record<string, unknown> = {};
-  const methods = ['select', 'eq', 'neq', 'or', 'order', 'limit', 'insert', 'update', 'in'];
-  for (const m of methods) {
-    chain[m] = vi.fn().mockReturnValue(chain);
-  }
-  // Terminal — resolve to result
-  chain.then = (resolve: (v: unknown) => void) => resolve(result);
-  // Make it thenable
-  (chain as any)[Symbol.for('jest.asymmetricMatch')] = undefined;
-  return chain;
-};
 
 describe('memoryEvolutionService', () => {
   beforeEach(() => {
@@ -178,11 +165,7 @@ describe('memoryEvolutionService', () => {
         { source_id: 'mem_c', target_id: 'mem_a' },
       ];
 
-      const chain: Record<string, any> = {};
-      ['select', 'eq', 'or', 'limit'].forEach((m) => {
-        chain[m] = vi.fn().mockReturnValue(chain);
-      });
-      chain.limit = vi.fn().mockReturnValue({ data: linkRows, error: null });
+      const chain = createSupabaseChain({ data: linkRows, error: null });
 
       mockFrom.mockReturnValue(chain);
 

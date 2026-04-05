@@ -1,23 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../test/supabaseMock';
 
 // ---------- mocks ----------
 const mockData: Array<Record<string, unknown>> = [];
 const mockError: { message: string } | null = null;
 
-const buildChainable = () => {
-  const chain: Record<string, unknown> = {};
-  const self = () => chain;
-  chain.eq = vi.fn().mockImplementation(self);
-  chain.in = vi.fn().mockImplementation(self);
-  chain.select = vi.fn().mockImplementation(self);
-  chain.data = mockData;
-  chain.error = mockError;
-  return chain;
-};
-
 const mockUpsert = vi.fn().mockReturnValue({ error: null });
 const mockFrom = vi.fn().mockImplementation(() => ({
-  select: vi.fn().mockReturnValue(buildChainable()),
+  select: vi.fn().mockReturnValue(createSupabaseChain({ data: mockData, error: mockError })),
   upsert: mockUpsert,
 }));
 const mockIsConfigured = vi.fn().mockReturnValue(true);
@@ -48,7 +38,7 @@ describe('migrationRegistry', () => {
     mockIsConfigured.mockReturnValue(true);
     // Restore default mock implementation after tests that override it
     mockFrom.mockImplementation(() => ({
-      select: vi.fn().mockReturnValue(buildChainable()),
+      select: vi.fn().mockReturnValue(createSupabaseChain({ data: mockData, error: mockError })),
       upsert: mockUpsert,
     }));
   });

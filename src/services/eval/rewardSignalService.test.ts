@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../../test/supabaseMock';
 
 // Mock supabaseClient before importing the module under test
 vi.mock('../supabaseClient', () => ({
@@ -11,26 +12,6 @@ const mockClient = {
   from: mockFrom,
 };
 
-// Helper to build a chainable query mock (thenable like Supabase PostgREST)
-const chainableQuery = (data: any[] | null, error: any = null) => {
-  const resolved = { data, error };
-  const chain: any = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    gte: vi.fn().mockReturnThis(),
-    lte: vi.fn().mockReturnThis(),
-    in: vi.fn().mockReturnThis(),
-    not: vi.fn().mockReturnThis(),
-    order: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockResolvedValue(resolved),
-    insert: vi.fn().mockResolvedValue(resolved),
-    upsert: vi.fn().mockResolvedValue(resolved),
-    single: vi.fn().mockResolvedValue({ data: data?.[0] || null, error }),
-    then: vi.fn((resolve: any) => Promise.resolve(resolved).then(resolve)),
-  };
-  return chain;
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -38,7 +19,7 @@ beforeEach(() => {
 describe('rewardSignalService', () => {
   it('computeRewardSnapshot returns null when no data', async () => {
     // Return empty data for all tables
-    mockFrom.mockReturnValue(chainableQuery([]));
+    mockFrom.mockReturnValue(createSupabaseChain({ data: [], error: null }));
 
     const { computeRewardSnapshot } = await import('./rewardSignalService');
     const result = await computeRewardSnapshot('guild-123');
@@ -81,11 +62,11 @@ describe('rewardSignalService', () => {
     ];
 
     mockFrom.mockImplementation((table: string) => {
-      if (table === 'community_interaction_events') return chainableQuery(reactionData);
-      if (table === 'agent_sessions') return chainableQuery(sessionData);
-      if (table === 'memory_retrieval_logs') return chainableQuery(retrievalData);
-      if (table === 'agent_llm_call_logs') return chainableQuery(latencyData);
-      return chainableQuery([]);
+      if (table === 'community_interaction_events') return createSupabaseChain({ data: reactionData, error: null });
+      if (table === 'agent_sessions') return createSupabaseChain({ data: sessionData, error: null });
+      if (table === 'memory_retrieval_logs') return createSupabaseChain({ data: retrievalData, error: null });
+      if (table === 'agent_llm_call_logs') return createSupabaseChain({ data: latencyData, error: null });
+      return createSupabaseChain({ data: [], error: null });
     });
 
     const { computeRewardSnapshot } = await import('./rewardSignalService');
@@ -94,12 +75,12 @@ describe('rewardSignalService', () => {
     expect(result!.raw.sessionTotal).toBe(10);
     expect(result!.raw.sessionSucceeded).toBe(8);
     expect(result!.sessionSuccessRate).toBeCloseTo(0.8, 1);
-    // Reaction: 3 add up - 1 remove up = 2 net up, 1 down = 2/3 ≈ 0.667
+    // Reaction: 3 add up - 1 remove up = 2 net up, 1 down = 2/3 ??0.667
     expect(result!.reactionScore).toBeCloseTo(0.667, 1);
   });
 
   it('computeRewardTrend returns null with insufficient snapshots', async () => {
-    mockFrom.mockReturnValue(chainableQuery([]));
+    mockFrom.mockReturnValue(createSupabaseChain({ data: [], error: null }));
 
     const { computeRewardTrend } = await import('./rewardSignalService');
     const result = await computeRewardTrend('guild-789');
@@ -111,7 +92,7 @@ describe('rewardSignalService', () => {
       { guild_id: 'g', window_start: '2025-01-01T06:00:00Z', window_end: '2025-01-01T12:00:00Z', reaction_score: 0.6, session_success_rate: 0.7, citation_rate: 0.5, latency_score: 0.5, reward_scalar: 0.6, reaction_up: 5, reaction_down: 2, session_total: 10, session_succeeded: 7 },
       { guild_id: 'g', window_start: '2025-01-01T00:00:00Z', window_end: '2025-01-01T06:00:00Z', reaction_score: 0.5, session_success_rate: 0.6, citation_rate: 0.5, latency_score: 0.5, reward_scalar: 0.5, reaction_up: 3, reaction_down: 3, session_total: 10, session_succeeded: 6 },
     ];
-    mockFrom.mockReturnValue(chainableQuery(snapshots));
+    mockFrom.mockReturnValue(createSupabaseChain({ data: snapshots, error: null }));
 
     const { computeRewardTrend } = await import('./rewardSignalService');
     const result = await computeRewardTrend('guild-boundary-2');
@@ -124,7 +105,7 @@ describe('rewardSignalService', () => {
       { guild_id: 'g', window_start: '2025-01-01T06:00:00Z', window_end: '2025-01-01T12:00:00Z', reward_scalar: 0.70 },
       { guild_id: 'g', window_start: '2025-01-01T00:00:00Z', window_end: '2025-01-01T06:00:00Z', reward_scalar: 0.50 },
     ];
-    mockFrom.mockReturnValue(chainableQuery(snapshots));
+    mockFrom.mockReturnValue(createSupabaseChain({ data: snapshots, error: null }));
 
     const { computeRewardTrend } = await import('./rewardSignalService');
     const result = await computeRewardTrend('guild-boundary-3');

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../../test/supabaseMock';
 
 // Mock Supabase
 const mockFrom = vi.fn();
@@ -26,15 +27,7 @@ describe('memoryConsolidationService', () => {
   });
 
   it('returns empty result when no raw items found', async () => {
-    mockFrom.mockImplementation(() => {
-      const c: Record<string, any> = {};
-      const methods = ['select', 'eq', 'lt', 'order', 'limit'];
-      for (const m of methods) {
-        c[m] = vi.fn().mockReturnValue(c);
-      }
-      c.then = (resolve: (v: unknown) => void) => resolve({ data: [], error: null });
-      return c;
-    });
+    mockFrom.mockImplementation(() => createSupabaseChain({ data: [], error: null }));
 
     const result = await runConsolidationCycle('g1');
     expect(result.groupsProcessed).toBe(0);
@@ -51,20 +44,7 @@ describe('memoryConsolidationService', () => {
 
     // Build a fully chainable + thenable mock
     mockFrom.mockImplementation(() => {
-      const makeChain = (resolveWith: { data?: unknown; error?: unknown }) => {
-        const c: Record<string, any> = {};
-        const methods = ['select', 'eq', 'lt', 'order', 'limit', 'neq', 'or', 'in', 'not'];
-        for (const m of methods) {
-          c[m] = vi.fn().mockReturnValue(c);
-        }
-        c.insert = vi.fn().mockReturnValue({ error: null });
-        c.update = vi.fn().mockReturnValue(c);
-        // Make the chain thenable (await resolves to data/error)
-        c.then = (resolve: (v: unknown) => void) => resolve(resolveWith);
-        return c;
-      };
-
-      return makeChain({ data: rawItems, error: null });
+      return createSupabaseChain({ data: rawItems, error: null });
     });
 
     const result = await runConsolidationCycle('g1');

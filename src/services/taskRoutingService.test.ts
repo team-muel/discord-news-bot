@@ -1,16 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../test/supabaseMock';
 
 // ---------- mocks ----------
-const buildChainable = () => {
-  const chain: Record<string, unknown> = {};
-  const self = () => chain;
-  chain.eq = vi.fn().mockImplementation(self);
-  chain.or = vi.fn().mockImplementation(self);
-  chain.order = vi.fn().mockImplementation(self);
-  chain.limit = vi.fn().mockReturnValue({ data: [], error: null });
-  return chain;
-};
-const mockFrom = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue(buildChainable()) });
+const mockFrom = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue(createSupabaseChain({ data: [], error: null })) });
 vi.mock('./supabaseClient', () => ({
   isSupabaseConfigured: () => true,
   getSupabaseClient: () => ({ from: mockFrom }),

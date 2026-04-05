@@ -1,6 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { createSupabaseChain } from '../../test/supabaseMock';
 
-// ── Hoisted Supabase mock ──────────────────────────────────────────────────
+// ?? Hoisted Supabase mock ??????????????????????????????????????????????????
 const { mockFrom } = vi.hoisted(() => {
   const mockFrom = vi.fn();
   return { mockFrom };
@@ -11,7 +12,7 @@ vi.mock('../supabaseClient', () => ({
   getSupabaseClient: vi.fn(() => ({ from: mockFrom })),
 }));
 
-// ── URL Parsing (pure functions — no DB needed) ─────────────────────────────
+// ?? URL Parsing (pure functions ??no DB needed) ?????????????????????????????
 
 describe('youtubeSubscriptionStore', () => {
   beforeEach(() => {
@@ -67,16 +68,9 @@ describe('youtubeSubscriptionStore', () => {
     });
   });
 
-  // ── createYouTubeSubscription ───────────────────────────────────────────
+  // ?? createYouTubeSubscription ???????????????????????????????????????????
 
   describe('createYouTubeSubscription', () => {
-    const chainable = () => {
-      const chain: any = {};
-      for (const m of ['select', 'eq', 'ilike', 'is', 'lt', 'order', 'limit', 'insert']) {
-        chain[m] = vi.fn(() => chain);
-      }
-      return chain;
-    };
 
     it('returns created:false when subscription already exists', async () => {
       const existingRow = {
@@ -84,7 +78,7 @@ describe('youtubeSubscriptionStore', () => {
         url: 'test', name: 'youtube-videos', last_post_id: null,
         last_post_signature: null, created_at: null,
       };
-      const chain = chainable();
+      const chain = createSupabaseChain();
       chain.limit.mockResolvedValueOnce({ data: [existingRow], error: null });
       mockFrom.mockReturnValue(chain);
 
@@ -104,10 +98,10 @@ describe('youtubeSubscriptionStore', () => {
         url: 'test', name: 'youtube-videos', last_post_id: null,
         last_post_signature: null, created_at: '2026-01-01',
       };
-      const chain = chainable();
-      // First call: existingByScope query → empty
+      const chain = createSupabaseChain();
+      // First call: existingByScope query ??empty
       chain.limit.mockResolvedValueOnce({ data: [], error: null });
-      // Second sequence: insert → select → limit
+      // Second sequence: insert ??select ??limit
       chain.limit.mockResolvedValueOnce({ data: [insertedRow], error: null });
       mockFrom.mockReturnValue(chain);
 
@@ -140,7 +134,7 @@ describe('youtubeSubscriptionStore', () => {
     });
   });
 
-  // ── listYouTubeSubscriptions ────────────────────────────────────────────
+  // ?? listYouTubeSubscriptions ????????????????????????????????????????????
 
   describe('listYouTubeSubscriptions', () => {
     it('returns empty array when Supabase is not configured', async () => {
