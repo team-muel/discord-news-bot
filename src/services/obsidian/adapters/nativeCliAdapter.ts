@@ -76,7 +76,9 @@ const runNativeCli = async (
       env,
     });
     return String(stdout || '');
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[nativeCli] execFile failed: cmd=${cliPath} args=${JSON.stringify(args)} err=${msg}`);
     return null;
   }
 };
