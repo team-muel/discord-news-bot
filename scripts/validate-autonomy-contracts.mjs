@@ -5,7 +5,7 @@ const ROOT = process.cwd();
 const SCHEMA_PATH = path.join(ROOT, 'docs', 'planning', 'AUTONOMY_CONTRACT_SCHEMAS.json');
 const CORE_INTERFACE_DOC_PATH = path.join(ROOT, 'docs', 'planning', 'CORE_COMMAND_INTERFACE_V1.md');
 const ADAPTER_MAPPING_DOC_PATH = path.join(ROOT, 'docs', 'planning', 'DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md');
-const BOT_DISPATCH_PATH = path.join(ROOT, 'src', 'bot.ts');
+const BOT_DISPATCH_PATH = path.join(ROOT, 'src', 'discord', 'runtime', 'commandRouter.ts');
 
 const fail = (message) => {
   console.error(`[AUTONOMY-CONTRACTS] ${message}`);
@@ -179,7 +179,7 @@ while (match) {
 }
 
 const uniqueDispatchCommands = [...new Set(dispatchCommands)];
-assert(uniqueDispatchCommands.length > 0, 'failed to collect command dispatch cases from src/bot.ts');
+assert(uniqueDispatchCommands.length > 0, 'failed to collect command dispatch cases from src/discord/runtime/commandRouter.ts');
 
 const missingFromMapping = uniqueDispatchCommands.filter((command) => {
   const pattern = new RegExp(`\\|\\s*${escapeRegExp(command)}\\s*\\|`, 'u');
