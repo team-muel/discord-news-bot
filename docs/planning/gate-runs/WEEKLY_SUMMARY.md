@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-04-05T13:30:36.307Z
+- generated_at: 2026-04-05T19:03:54.554Z
 - total_runs: 38
 - go: 11
 - no_go: 15
@@ -85,7 +85,6 @@
 
 | Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | Sandbox Delegation | File |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gate-post-fallback-1773928500597 | A | weekly:auto:post-fallback | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-post-fallback-1773928500597.md |
 | gate-20260321-083944 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-083944.md |
 | gate-20260321-084801 | A | weekly:auto | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-084801.md |
 | gate-20260321-084830 | A | weekly:auto | no-go | true | stage | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-084830.md |
@@ -98,5 +97,6 @@
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
-| gate-20260318-081523 | A | guild:demo | pending | unknown | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081523.md |
-| gate-20260318-081925 | B | guild:demo | no-go | true | queue | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081925.md |
+| gate-20260319-111442 | A | guild:demo | no-go | true | stage | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111442.md |
+| gate-20260319-111443 | A | weekly:auto | no-go | true | stage | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111443.md |
+| gate-20260319-111711 | A | weekly:auto | no-go | true | stage | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-111711.md |
