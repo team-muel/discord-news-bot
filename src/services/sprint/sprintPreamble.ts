@@ -369,7 +369,7 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     {
       adapterId: 'mcp-indexing',
       action: 'index.context',
-      args: (obj) => ({ goal: obj.slice(0, 200) }),
+      args: (obj, files) => ({ goal: obj.slice(0, 200), changedPaths: files.slice(0, 20) }),
       label: 'Code index context',
     },
   ],
@@ -377,7 +377,7 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     {
       adapterId: 'mcp-indexing',
       action: 'index.context',
-      args: (obj) => ({ goal: obj.slice(0, 200) }),
+      args: (obj, files) => ({ goal: obj.slice(0, 200), changedPaths: files.slice(0, 20) }),
       label: 'Code index context',
     },
     {
@@ -401,6 +401,18 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
   ],
   review: [
     {
+      adapterId: 'mcp-indexing',
+      action: 'index.context',
+      args: (obj, files) => ({ goal: `Review: ${obj.slice(0, 180)}`, changedPaths: files.slice(0, 20), maxItems: 10 }),
+      label: 'Code context bundle (changed files + symbols)',
+    },
+    {
+      adapterId: 'mcp-indexing',
+      action: 'index.references',
+      args: (_obj, files) => ({ symbolId: files[0] ?? '', limit: 15 }),
+      label: 'Cross-references for primary changed file',
+    },
+    {
       adapterId: 'litellm-admin',
       action: 'proxy.health',
       args: () => ({}),
@@ -414,6 +426,12 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     },
   ],
   qa: [
+    {
+      adapterId: 'mcp-indexing',
+      action: 'index.context',
+      args: (obj, files) => ({ goal: `QA test targets: ${obj.slice(0, 180)}`, changedPaths: files.slice(0, 20), maxItems: 10 }),
+      label: 'Code context bundle (test targets)',
+    },
     {
       adapterId: 'openjarvis',
       action: 'jarvis.ask',
@@ -434,6 +452,18 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     },
   ],
   'security-audit': [
+    {
+      adapterId: 'mcp-indexing',
+      action: 'index.context',
+      args: (obj, files) => ({ goal: `Security audit: ${obj.slice(0, 180)}`, changedPaths: files.slice(0, 20), maxItems: 15 }),
+      label: 'Code context bundle (attack surface)',
+    },
+    {
+      adapterId: 'mcp-indexing',
+      action: 'security.candidates',
+      args: (_obj, _files) => ({ view: 'merged', limit: 50 }),
+      label: 'Security candidate entry points (SAST-like)',
+    },
     {
       adapterId: 'litellm-admin',
       action: 'proxy.health',
