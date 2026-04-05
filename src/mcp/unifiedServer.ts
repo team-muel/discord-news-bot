@@ -40,6 +40,12 @@ const fail = (id: number | string | null, code: number, message: string): JsonRp
   error: { code, message },
 });
 
+// MCP protocol requires tool names to match [a-z0-9_-] — dots not allowed.
+// Internal names use dots (e.g., stock.quote, code.index.symbol_search).
+// Transform: replace dots with hyphens (reversible — no internal names contain hyphens).
+const toMcpName = (name: string): string => name.replace(/\./g, '-');
+const toInternalName = (mcpName: string): string => mcpName.replace(/-/g, '.');
+
 const handleRequest = async (request: JsonRpcRequest): Promise<JsonRpcResponse> => {
   const id = request.id ?? null;
 
@@ -61,22 +67,23 @@ const handleRequest = async (request: JsonRpcRequest): Promise<JsonRpcResponse> 
   }
 
   if (request.method === 'tools/list') {
+    const tools = await listAllMcpTools();
     return ok(id, {
-      tools: await listAllMcpTools(),
+      tools: tools.map((t) => ({ ...t, name: toMcpName(t.name) })),
     });
   }
 
   if (request.method === 'tools/call') {
     const params = asObject(request.params);
-    const name = typeof params.name === 'string' ? params.name : '';
+    const rawName = typeof params.name === 'string' ? params.name : '';
     const args = asObject(params.arguments);
 
-    if (!name) {
+    if (!rawName) {
       return fail(id, -32602, 'name is required');
     }
 
     const result = await callAnyMcpTool({
-      name,
+      name: toInternalName(rawName),
       arguments: args,
     });
 
