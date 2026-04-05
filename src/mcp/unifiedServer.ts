@@ -95,17 +95,30 @@ const handleRequest = async (request: JsonRpcRequest): Promise<JsonRpcResponse> 
 const isNotification = (request: JsonRpcRequest): boolean =>
   request.id === undefined || request.id === null;
 
+// Strip BOM and non-printable prefixes that encoding layers (PowerShell, SSH) may inject
+const sanitizeLine = (line: string): string => {
+  // eslint-disable-next-line no-control-regex
+  return line.replace(/^[\uFEFF\x00-\x08\x0E-\x1F]+/, '').trim();
+};
+
 // ──── Stdio Transport ──────────────────────────────────────────────────────────
 
 export const startUnifiedMcpStdioServer = () => {
+  console.error(`[muel-unified-mcp] setting up readline on stdin...`);
+
   const rl = readline.createInterface({
     input: process.stdin,
     terminal: false,
   });
 
   rl.on('line', async (line) => {
-    const raw = String(line || '').trim();
+    const raw = sanitizeLine(String(line || ''));
+    console.error(`[muel-unified-mcp] recv line (${raw.length} chars): ${raw.substring(0, 100)}`);
     if (!raw) {
+      return;
+    }
+    if (raw[0] !== '{') {
+      console.error(`[muel-unified-mcp] ignoring non-JSON line (${raw.length} bytes): ${raw.substring(0, 80)}`);
       return;
     }
 
@@ -129,6 +142,14 @@ export const startUnifiedMcpStdioServer = () => {
         toResponse(fail(request.id ?? null, -32603, message));
       }
     }
+  });
+
+  rl.on('close', () => {
+    console.error('[muel-unified-mcp] stdin closed (readline close event)');
+  });
+
+  process.stdin.on('end', () => {
+    console.error('[muel-unified-mcp] stdin end event');
   });
 
   console.error('[muel-unified-mcp] stdio server ready (general + indexing tools)');
