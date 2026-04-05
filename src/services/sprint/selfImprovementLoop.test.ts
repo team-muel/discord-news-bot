@@ -12,6 +12,10 @@ vi.mock('./sprintOrchestrator', () => ({
   markPipelineBlocked: (...args: unknown[]) => mockMarkPipelineBlocked(...args),
 }));
 
+vi.mock('./trustScoreService', () => ({
+  resolveTrustBasedAutonomy: vi.fn().mockResolvedValue('approve-impl'),
+}));
+
 vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: () => mockIsSupabaseConfigured(),
   getSupabaseClient: () => mockGetSupabaseClient(),

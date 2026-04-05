@@ -1,4 +1,7 @@
-// Barrel export — LangGraph execution domain services
+// Barrel export — agent graph execution domain services
+// NAMING NOTE: "LangGraph" here is an internal label for a custom loop-based
+// state machine. It is NOT LangChain's @langchain/langgraph library.
+// See docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md → Name Collision Matrix.
 // Usage: import { executeGraph, GraphState } from '../langgraph';
 
 // --- State contract ---

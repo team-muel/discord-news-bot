@@ -25,6 +25,7 @@ Use this document when a role name, runtime label, external OSS name, or model f
 | `nemoclaw` | `review` | review, regression, security, risk | NVIDIA NemoClaw | does not imply direct NVIDIA NemoClaw integration |
 | `openjarvis` | `operate` | operations, workflows, unattended automation | OpenJarvis (Stanford) | internal `openjarvis` labels map to upstream open-jarvis/OpenJarvis framework when integrated |
 | `local-orchestrator` | `coordinate` | routing and multi-role coordination | generic orchestrator frameworks | does not imply generic external orchestrator discovery or embedding |
+| `langgraph` | `agentGraph` | loop-based state machine executor for multi-step agent pipelines (11 nodes, edge resolver, shadow execution) | LangChain LangGraph (`@langchain/langgraph`) | NOT LangChain LangGraph. Internal executor is a 95-line for-loop state machine with no checkpointing, HITL, branching/merging, or time-travel debugging. `@langchain/langgraph` npm package is not installed. Rename to neutral name planned |
 
 ## External Name Reference
 

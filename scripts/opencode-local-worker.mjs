@@ -20,6 +20,12 @@ const WORKER_AUTH_TOKEN = String(process.env.OPENCODE_LOCAL_WORKER_AUTH_TOKEN ||
 const REQUIRE_AUTH = /^(1|true|yes|on)$/i.test(String(process.env.OPENCODE_LOCAL_WORKER_REQUIRE_AUTH || '').trim())
   || WORKER_AUTH_TOKEN.length > 0;
 
+// ── OpenCode SDK proxy mode ──
+const SDK_BASE_URL = String(process.env.OPENCODE_SDK_BASE_URL || '').trim().replace(/\/+$/, '');
+const SDK_AUTH_TOKEN = String(process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
+const SDK_TIMEOUT_MS = Math.max(5000, Number(process.env.OPENCODE_SDK_TIMEOUT_MS || 90000));
+const SDK_ENABLED = SDK_BASE_URL.length > 0;
+
 const DANGEROUS_COMMAND_PATTERN = /(?:\brm\s+-rf\b|\bdel\s+\/f\b|\bformat\b|\bmkfs\b|\bshutdown\b|\breboot\b|\bpoweroff\b|\bgit\s+reset\s+--hard\b|\bgit\s+clean\s+-fd\b|\bRemove-Item\b\s+.*-Recurse|\bStop-Computer\b|\bRestart-Computer\b)/i;
 const WRITE_LIKE_COMMAND_PATTERN = /(?:\bnpm\s+(?:install|i)\b|\bpnpm\s+add\b|\byarn\s+add\b|\bgit\s+(?:add|commit|push|merge|rebase|checkout)\b|\bNew-Item\b|\bSet-Content\b|\bAdd-Content\b|\bOut-File\b|\bCopy-Item\b|\bMove-Item\b|\bRemove-Item\b|\bni\b|\bsc\b|\bac\b|\bmv\b|\bcp\b|\bren\b|\bmkdir\b|\brmdir\b|>|>>)/i;
 const READ_SECRET_LIKE_PATTERN = /(?:\bprintenv\b|\benv\b|\bset\b|\bGet-ChildItem\s+Env:\\b|\bGet-Item\s+Env:\\b|\btype\s+\.env\b|\bcat\s+\.env\b|\bGet-Content\s+\.env\b|\bSelect-String\b\s+.*(?:token|secret|password|api[_-]?key)\b)/i;
@@ -201,6 +207,83 @@ const runCommand = async ({ task, cwd, mode }) => {
   });
 };
 
+// ── OpenCode SDK proxy ────────────────────────────────────────────────────────
+
+/**
+ * Proxy a task to the OpenCode headless server via session API.
+ * Returns null if the SDK is unreachable or the task is not applicable.
+ * Safety guards (DANGEROUS_COMMAND_PATTERN etc.) still apply before this is called.
+ */
+const runViaSdk = async (task, mode) => {
+  if (!task) return null;
+
+  // Safety checks still apply
+  if (DANGEROUS_COMMAND_PATTERN.test(task)) {
+    throw new Error('dangerous command blocked');
+  }
+  if (mode !== 'workspace_write' || !ALLOW_WRITE) {
+    if (WRITE_LIKE_COMMAND_PATTERN.test(task)) {
+      throw new Error('write-like command blocked in read_only mode');
+    }
+    if (READ_SECRET_LIKE_PATTERN.test(task)) {
+      throw new Error('secret-read command blocked in read_only mode');
+    }
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (SDK_AUTH_TOKEN) {
+    headers['Authorization'] = `Bearer ${SDK_AUTH_TOKEN}`;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SDK_TIMEOUT_MS);
+
+  try {
+    // Create session
+    const sessRes = await fetch(`${SDK_BASE_URL}/session`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({}),
+      signal: controller.signal,
+    });
+    if (!sessRes.ok) return null;
+    const sessData = await sessRes.json();
+    const sessionId = sessData?.sessionId || sessData?.id;
+    if (!sessionId) return null;
+
+    try {
+      // Chat with task
+      const chatRes = await fetch(`${SDK_BASE_URL}/session/${encodeURIComponent(sessionId)}/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message: task }),
+        signal: controller.signal,
+      });
+      if (!chatRes.ok) return null;
+      const chatData = await chatRes.json();
+
+      const text = chatData?.message || chatData?.content || JSON.stringify(chatData);
+      return {
+        content: [{ type: 'text', text: `exit_code=0\nduration_ms=0\n[SDK]\nstdout:\n${text}` }],
+        isError: false,
+      };
+    } finally {
+      // Always close session
+      fetch(`${SDK_BASE_URL}/session/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+        headers,
+      }).catch(() => {});
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn('[opencode-local-worker] SDK proxy timed out');
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const handleToolCall = async (payload) => {
   const name = String(payload?.name || '').trim();
   const args = payload?.arguments && typeof payload.arguments === 'object' && !Array.isArray(payload.arguments)
@@ -214,6 +297,17 @@ const handleToolCall = async (payload) => {
   const mode = String(args.mode || 'read_only').trim().toLowerCase() === 'workspace_write'
     ? 'workspace_write'
     : 'read_only';
+
+  // ── SDK proxy: try OpenCode headless server first (if configured) ──
+  if (SDK_ENABLED) {
+    try {
+      const sdkResult = await runViaSdk(String(args.task || '').trim(), mode);
+      if (sdkResult) return sdkResult;
+      // null = SDK unavailable or non-applicable; fall through to shell
+    } catch (sdkError) {
+      console.warn('[opencode-local-worker] SDK proxy failed, falling back to shell:', sdkError.message || sdkError);
+    }
+  }
 
   try {
     const cwd = resolveCwd(args.cwd);
@@ -288,5 +382,5 @@ server.listen(PORT, HOST, () => {
     process.exit(1);
   }
   console.log(`[opencode-local-worker] listening on http://${HOST}:${PORT}`);
-  console.log(`[opencode-local-worker] root=${ROOT} allowWrite=${ALLOW_WRITE} requireAuth=${REQUIRE_AUTH}`);
+  console.log(`[opencode-local-worker] root=${ROOT} allowWrite=${ALLOW_WRITE} requireAuth=${REQUIRE_AUTH} sdkProxy=${SDK_ENABLED}`);
 });

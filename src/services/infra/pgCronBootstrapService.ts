@@ -37,6 +37,9 @@ const OBSIDIAN_SYNC_SCHEDULE = String(process.env.PG_CRON_OBSIDIAN_SYNC_SCHEDULE
 const RETRIEVAL_EVAL_SCHEDULE = String(process.env.PG_CRON_RETRIEVAL_EVAL_SCHEDULE || '0 */24 * * *').trim();
 const REWARD_SIGNAL_SCHEDULE = String(process.env.PG_CRON_REWARD_SIGNAL_SCHEDULE || '0 */6 * * *').trim();
 const EVAL_AUTO_PROMOTE_SCHEDULE = String(process.env.PG_CRON_EVAL_AUTO_PROMOTE_SCHEDULE || '30 */6 * * *').trim();
+const RATE_LIMIT_CLEANUP_SCHEDULE = String(process.env.PG_CRON_RATE_LIMIT_CLEANUP_SCHEDULE || '0 */1 * * *').trim();
+const OBSERVATION_CLEANUP_SCHEDULE = String(process.env.PG_CRON_OBSERVATION_CLEANUP_SCHEDULE || '0 3 * * *').trim();
+const INTENT_EVAL_SCHEDULE = String(process.env.PG_CRON_INTENT_EVAL_SCHEDULE || '*/10 * * * *').trim();
 
 /** Validate cron expression (basic 5-field check). */
 const isValidCron = (expr: string): boolean => /^[\d*/,-]+(\s+[\d*/,-]+){4}$/.test(expr.trim());
@@ -124,6 +127,28 @@ const CRON_JOBS: CronJobSpec[] = [
       body := '{}'::jsonb
     )`,
     description: 'Run A/B eval auto-promote pipeline for all active guilds',
+  },
+  {
+    jobName: 'muel_rate_limit_cleanup',
+    schedule: RATE_LIMIT_CLEANUP_SCHEDULE,
+    command: `DELETE FROM public.rate_limit_buckets WHERE window_end < NOW()`,
+    description: 'Purge expired rate limit windows (no HTTP call needed — direct SQL)',
+  },
+  {
+    jobName: 'muel_observation_cleanup',
+    schedule: OBSERVATION_CLEANUP_SCHEDULE,
+    command: `DELETE FROM public.observations WHERE consumed_at IS NOT NULL AND created_at < NOW() - INTERVAL '7 days'`,
+    description: 'Purge consumed observations older than 7 days',
+  },
+  {
+    jobName: 'muel_intent_eval',
+    schedule: INTENT_EVAL_SCHEDULE,
+    command: `SELECT net.http_post(
+      url := current_setting('app.service_url') || '/api/internal/intent/evaluate',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+      body := '{}'::jsonb
+    )`,
+    description: 'Trigger intent formation evaluation cycle via HTTP',
   },
 ];
 
@@ -247,6 +272,7 @@ export const PG_CRON_LOOP_REPLACEMENTS: Record<string, string> = {
   muel_retrieval_eval: 'retrievalEvalLoop',
   muel_reward_signal: 'rewardSignalLoop',
   muel_eval_auto_promote: 'evalAutoPromoteLoop',
+  muel_intent_eval: 'intentEvalLoop',
 };
 
 /**

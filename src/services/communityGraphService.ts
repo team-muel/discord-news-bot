@@ -380,6 +380,59 @@ export const buildSocialContextHints = async (params: {
   return merged;
 };
 
+/**
+ * Batch-fetch relationship strengths between a requester and multiple target users.
+ * Returns a Map of targetUserId → max(affinity_score) from both directions.
+ * Used by agentMemoryService to boost memory scoring for socially connected users.
+ */
+export const getRelationshipStrengths = async (params: {
+  guildId: string;
+  requesterUserId: string;
+  targetUserIds: string[];
+}): Promise<Map<string, number>> => {
+  const result = new Map<string, number>();
+  if (!params.requesterUserId || params.targetUserIds.length === 0 || !isSupabaseConfigured()) {
+    return result;
+  }
+
+  try {
+    const client = getSupabaseClient();
+
+    // Query both directions in parallel
+    const [outRes, inRes] = await Promise.all([
+      client
+        .from('community_relationship_edges')
+        .select('dst_user_id, affinity_score')
+        .eq('guild_id', params.guildId)
+        .eq('src_user_id', params.requesterUserId)
+        .in('dst_user_id', params.targetUserIds),
+      client
+        .from('community_relationship_edges')
+        .select('src_user_id, affinity_score')
+        .eq('guild_id', params.guildId)
+        .eq('dst_user_id', params.requesterUserId)
+        .in('src_user_id', params.targetUserIds),
+    ]);
+
+    if (outRes.data) {
+      for (const row of outRes.data as Array<{ dst_user_id: string; affinity_score: number }>) {
+        const current = result.get(row.dst_user_id) ?? 0;
+        result.set(row.dst_user_id, Math.max(current, Number(row.affinity_score ?? 0)));
+      }
+    }
+    if (inRes.data) {
+      for (const row of inRes.data as Array<{ src_user_id: string; affinity_score: number }>) {
+        const current = result.get(row.src_user_id) ?? 0;
+        result.set(row.src_user_id, Math.max(current, Number(row.affinity_score ?? 0)));
+      }
+    }
+
+    return result;
+  } catch {
+    return result;
+  }
+};
+
 export const getCommunityGraphOperationalSummary = async (params: {
   guildId: string;
   days?: number;

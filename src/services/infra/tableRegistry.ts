@@ -104,6 +104,11 @@ export const T_OBSERVATIONS = 'observations' as const;
 export const T_ENTITY_SELF_NOTES = 'entity_self_notes' as const;
 export const T_SHADOW_GRAPH_DIVERGENCE_LOGS = 'shadow_graph_divergence_logs' as const;
 
+// ── Intent Formation ────────────────────────────────────────────────────────
+
+export const T_INTENTS = 'intents' as const;
+export const T_AGENT_TRUST_SCORES = 'agent_trust_scores' as const;
+
 // ── Sprint ──────────────────────────────────────────────────────────────────
 
 export const T_SPRINT_PIPELINES = 'sprint_pipelines' as const;

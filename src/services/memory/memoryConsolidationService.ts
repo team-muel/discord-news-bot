@@ -11,7 +11,7 @@
  */
 
 import logger from '../../logger';
-import { memoryConfig } from '../../config';
+import { memoryConfig, MEMORY_CONSOLIDATION_CONCEPT_ENABLED, MEMORY_CONSOLIDATION_CONCEPT_MIN_LINKS, MEMORY_CONSOLIDATION_CONCEPT_MIN_DENSITY } from '../../config';
 import { parseBooleanEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
@@ -257,10 +257,191 @@ export const runConsolidationCycle = async (guildId?: string): Promise<Consolida
       logger.info('[CONSOLIDATION] cycle complete groups=%d created=%d archived=%d', totalGroupsProcessed, totalCreated, totalArchived);
     }
 
+    // Phase 2: summary → concept (link-density based promotion)
+    if (MEMORY_CONSOLIDATION_CONCEPT_ENABLED) {
+      const conceptResult = await runConceptPromotion(client, guildId);
+      totalCreated += conceptResult.memoriesCreated;
+      totalGroupsProcessed += conceptResult.groupsProcessed;
+    }
+
     return { groupsProcessed: totalGroupsProcessed, memoriesCreated: totalCreated, memoriesArchived: totalArchived };
   } catch (err) {
     logger.warn('[CONSOLIDATION] cycle failed: %s', err instanceof Error ? err.message : String(err));
     return EMPTY_RESULT;
+  }
+};
+
+// ──── Phase 2: Concept Tier Promotion ─────────────────────────────────────────
+
+/**
+ * Promote summary-tier memories to concept tier based on link density.
+ *
+ * 1. Find summary-tier items with link_count >= MIN_LINKS
+ * 2. Group candidates that share enough cross-links (density >= MIN_DENSITY)
+ * 3. LLM-summarize each group into a concept-tier memory
+ * 4. Source summaries are NOT archived (concept is a higher abstraction layer)
+ */
+const runConceptPromotion = async (
+  client: ReturnType<typeof getClient>,
+  guildId?: string,
+): Promise<Pick<ConsolidationResult, 'groupsProcessed' | 'memoriesCreated'>> => {
+  if (!client) return { groupsProcessed: 0, memoriesCreated: 0 };
+
+  try {
+    // Find summary-tier items with sufficient link counts
+    let summaryQuery = client
+      .from(T_MEMORY_ITEMS)
+      .select('id, guild_id, title, summary, content, tags, confidence, tier')
+      .eq('status', 'active')
+      .eq('tier', 'summary')
+      .order('guild_id')
+      .limit(200);
+
+    if (guildId) summaryQuery = summaryQuery.eq('guild_id', guildId);
+
+    const { data: summaries, error: sErr } = await summaryQuery;
+    if (sErr || !summaries || summaries.length === 0) return { groupsProcessed: 0, memoriesCreated: 0 };
+
+    // Count links for each summary item
+    const summaryIds = (summaries as Array<Record<string, unknown>>).map((r) => String(r.id));
+    const { data: links, error: lErr } = await client
+      .from(T_MEMORY_ITEM_LINKS)
+      .select('source_id, target_id')
+      .or(`source_id.in.(${summaryIds.join(',')}),target_id.in.(${summaryIds.join(',')})`);
+
+    if (lErr || !links) return { groupsProcessed: 0, memoriesCreated: 0 };
+
+    // Count links per item
+    const linkCount = new Map<string, number>();
+    for (const link of links as Array<{ source_id: string; target_id: string }>) {
+      linkCount.set(link.source_id, (linkCount.get(link.source_id) ?? 0) + 1);
+      linkCount.set(link.target_id, (linkCount.get(link.target_id) ?? 0) + 1);
+    }
+
+    // Filter candidates with sufficient links
+    const candidates = (summaries as Array<Record<string, unknown>>).filter(
+      (r) => (linkCount.get(String(r.id)) ?? 0) >= MEMORY_CONSOLIDATION_CONCEPT_MIN_LINKS,
+    );
+
+    if (candidates.length < 2) return { groupsProcessed: 0, memoriesCreated: 0 };
+
+    // Build link adjacency for density calculation
+    const linkSet = new Set<string>();
+    for (const link of links as Array<{ source_id: string; target_id: string }>) {
+      const key = [link.source_id, link.target_id].sort().join(':');
+      linkSet.add(key);
+    }
+
+    // Group candidates by guild
+    const byGuild = new Map<string, MemoryRow[]>();
+    for (const row of candidates) {
+      const gId = String(row.guild_id || '');
+      const list = byGuild.get(gId) || [];
+      list.push({
+        id: String(row.id || ''),
+        title: String(row.title || ''),
+        summary: String(row.summary || ''),
+        content: String(row.content || ''),
+        tags: Array.isArray(row.tags) ? (row.tags as string[]).map(String) : [],
+        confidence: Number(row.confidence ?? 0.5),
+        tier: 'summary',
+      });
+      byGuild.set(gId, list);
+    }
+
+    let groupsProcessed = 0;
+    let memoriesCreated = 0;
+
+    for (const [currentGuildId, items] of byGuild) {
+      // Group by tag overlap first, then check density
+      const groups = groupByTagOverlap(items);
+
+      for (const group of groups) {
+        if (group.length < 2) continue;
+
+        // Calculate link density within the group
+        const groupIds = new Set(group.map((g) => g.id));
+        let internalLinks = 0;
+        const possibleLinks = (group.length * (group.length - 1)) / 2;
+
+        for (const id1 of groupIds) {
+          for (const id2 of groupIds) {
+            if (id1 >= id2) continue;
+            const key = [id1, id2].sort().join(':');
+            if (linkSet.has(key)) internalLinks++;
+          }
+        }
+
+        const density = possibleLinks > 0 ? internalLinks / possibleLinks : 0;
+        if (density < MEMORY_CONSOLIDATION_CONCEPT_MIN_DENSITY) continue;
+
+        // LLM-generate concept summary
+        const conceptText = await summarizeGroup(group, 'concept');
+        if (!conceptText) continue;
+
+        const mergedTags = [...new Set(group.flatMap((item) => item.tags))].slice(0, 20);
+        const avgConfidence = Math.min(
+          0.98,
+          group.reduce((sum, item) => sum + item.confidence, 0) / group.length + 0.1,
+        );
+
+        const newId = `mem_${crypto.randomUUID()}`;
+
+        const { error: insertError } = await client.from(T_MEMORY_ITEMS).insert({
+          id: newId,
+          guild_id: currentGuildId,
+          type: 'semantic',
+          tier: 'concept',
+          title: `[concept] ${conceptText.slice(0, 60)}`,
+          content: conceptText,
+          summary: conceptText.slice(0, 300),
+          tags: mergedTags,
+          confidence: Number(avgConfidence.toFixed(3)),
+          status: 'active',
+          source_count: group.length,
+          created_by: 'consolidation-service',
+          updated_by: 'consolidation-service',
+        });
+
+        if (insertError) {
+          logger.warn('[CONSOLIDATION] concept insert failed guild=%s: %s', currentGuildId, insertError.message);
+          continue;
+        }
+
+        // Create derived_from links (concept does NOT archive sources)
+        for (const source of group) {
+          try {
+            await client.from(T_MEMORY_ITEM_LINKS).insert({
+              source_id: newId,
+              target_id: source.id,
+              guild_id: currentGuildId,
+              relation_type: 'derived_from',
+              strength: 0.95,
+              created_by: 'consolidation-service',
+            });
+          } catch {
+            /* unique violation is fine */
+          }
+        }
+
+        groupsProcessed++;
+        memoriesCreated++;
+
+        logger.info(
+          '[CONSOLIDATION] summary→concept guild=%s consolidated=%d→1 id=%s density=%.2f',
+          currentGuildId, group.length, newId, density,
+        );
+      }
+    }
+
+    if (groupsProcessed > 0) {
+      logger.info('[CONSOLIDATION] concept promotion complete groups=%d created=%d', groupsProcessed, memoriesCreated);
+    }
+
+    return { groupsProcessed, memoriesCreated };
+  } catch (err) {
+    logger.warn('[CONSOLIDATION] concept promotion failed: %s', err instanceof Error ? err.message : String(err));
+    return { groupsProcessed: 0, memoriesCreated: 0 };
   }
 };
 

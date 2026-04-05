@@ -10,6 +10,7 @@ import { registerBotAgentToolsRoutes } from './bot-agent/toolsRoutes';
 import { registerSprintRoutes } from './bot-agent/sprintRoutes';
 import { registerBotAgentRewardEvalRoutes } from './bot-agent/rewardEvalRoutes';
 import { registerBotAgentCrmRoutes } from './bot-agent/crmRoutes';
+import { registerBotAgentIntentRoutes } from './bot-agent/intentRoutes';
 
 export function registerBotAgentRoutes(deps: BotAgentRouteDeps): void {
   registerBotAgentCoreRoutes(deps);
@@ -23,4 +24,5 @@ export function registerBotAgentRoutes(deps: BotAgentRouteDeps): void {
   registerSprintRoutes(deps);
   registerBotAgentRewardEvalRoutes(deps);
   registerBotAgentCrmRoutes(deps);
+  registerBotAgentIntentRoutes(deps);
 }

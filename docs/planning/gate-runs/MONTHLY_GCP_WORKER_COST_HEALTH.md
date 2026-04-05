@@ -32,4 +32,4 @@
 
 ## Notes
 - If static IP is kept for endpoint stability, expect small recurring IP cost.
-- Keep worker on e2-micro and disk around free-tier baseline where possible.
+- Worker runs on e2-small (2GB). Keep disk around 30GB baseline where possible.

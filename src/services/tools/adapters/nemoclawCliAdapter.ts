@@ -19,7 +19,7 @@ const REVIEW_TIMEOUT_MS = 60_000;
 const IS_WINDOWS = process.platform === 'win32';
 
 /**
- * Lite mode: when the nemoclaw CLI is not installed (e.g. GCP e2-micro without Docker),
+ * Lite mode: when the nemoclaw CLI is not installed (e.g. GCP e2-small without Docker),
  * but a LiteLLM proxy is available, expose code.review capability via LLM inference only.
  * Full sandbox/onboard/connect features remain unavailable.
  */

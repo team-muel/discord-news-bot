@@ -11,3 +11,13 @@ export {
   startOpencodePublishWorker,
   getOpencodePublishWorkerStats,
 } from './opencodePublishWorker';
+export {
+  isOpenCodeSdkAvailable,
+  checkHealth as checkOpenCodeSdkHealth,
+  generateCodeViaSession,
+  type OpenCodeSession,
+  type OpenCodePatch,
+  type OpenCodeChatResult,
+  type OpenCodeDiagnostic,
+  type OpenCodeHealthStatus,
+} from './opencodeSdkClient';

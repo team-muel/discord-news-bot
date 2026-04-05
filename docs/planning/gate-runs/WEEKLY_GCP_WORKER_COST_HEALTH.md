@@ -9,7 +9,7 @@
 - instance: instance-20260319-223412
 - zone: us-central1-c
 - status: RUNNING
-- machineType: e2-micro
+- machineType: e2-small
 - bootDiskGb: 30
 
 ## Endpoint
@@ -33,4 +33,4 @@
 
 ## Notes
 - If static IP is kept for endpoint stability, expect small recurring IP cost.
-- Keep worker on e2-micro and disk around free-tier baseline where possible.
+- Worker runs on e2-small (2GB). Keep disk around 30GB baseline where possible.

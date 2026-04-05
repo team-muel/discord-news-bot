@@ -7,7 +7,7 @@ import { assessMemoryPoisonRisk, batchCountMemoryLinks, getUserEmbedding, isUser
 import { queryObsidianLoreHints, readObsidianLoreWithAdapter } from '../obsidian';
 import type { LoreHint } from '../obsidian';
 // Root-level service imports (no barrel available)
-import { buildSocialContextHints } from '../communityGraphService';
+import { buildSocialContextHints, getRelationshipStrengths } from '../communityGraphService';
 import { loadSelfNotes } from '../entityNervousSystem';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 // Within-domain imports
@@ -376,6 +376,27 @@ export const buildAgentMemoryHints = async (params: {
 
   // Score memory items (ADR-006 scoring + user affinity from Daangn-inspired embeddings)
   const socialByUser = parseSocialUserScores(socialHints);
+
+  // Enhance social scores with direct relationship edge strengths
+  if (params.requesterUserId && memoryHints.length > 0) {
+    const ownerIds = [...new Set(memoryHints.map((m) => m.ownerUserId).filter(Boolean))];
+    if (ownerIds.length > 0) {
+      try {
+        const edgeStrengths = await getRelationshipStrengths({
+          guildId: safeGuildId,
+          requesterUserId: params.requesterUserId,
+          targetUserIds: ownerIds,
+        });
+        for (const [userId, strength] of edgeStrengths) {
+          const current = socialByUser.get(userId) ?? 0;
+          socialByUser.set(userId, Math.max(current, strength));
+        }
+      } catch {
+        // Best-effort — fall back to hint-only social scores
+      }
+    }
+  }
+
   for (const item of memoryHints) {
     const socialScore = item.ownerUserId ? (socialByUser.get(item.ownerUserId) || 0) : 0;
     const recencyScore = parseIsoRecencyScore(item.updatedAt);

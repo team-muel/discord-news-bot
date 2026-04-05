@@ -1,3 +1,9 @@
+/**
+ * NAMING NOTE: "LangGraph" here is a repository-internal label for a custom
+ * loop-based state machine executor. This is NOT LangChain's @langchain/langgraph.
+ * No checkpointing, HITL, branching/merging, or time-travel debugging.
+ * See docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md → Name Collision Matrix.
+ */
 import type { LangGraphNodeId, LangGraphState } from './stateContract';
 
 export type LangGraphNodeHandler<TContext = unknown> = (params: {

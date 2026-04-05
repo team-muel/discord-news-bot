@@ -41,6 +41,15 @@ All sprint pipeline configuration is defined in `src/config.ts`.
 | `SPRINT_FAST_PATH_VITEST_TIMEOUT_MS` | int | `60000` | Vitest execution timeout in fast-path QA |
 | `SPRINT_FAST_PATH_TSC_TIMEOUT_MS` | int | `30000` | tsc --noEmit timeout in fast-path QA |
 
+## OpenCode SDK (Headless Server)
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `OPENCODE_SDK_ENABLED` | boolean | `false` | Enable OpenCode SDK session-based code generation |
+| `OPENCODE_SDK_BASE_URL` | string | `""` | Headless server URL (e.g. `http://34.56.232.61:4096`) |
+| `OPENCODE_SDK_TIMEOUT_MS` | int | `90000` | Request timeout for SDK HTTP calls (min 5000) |
+| `OPENCODE_SDK_AUTH_TOKEN` | string | `""` | Optional Bearer token for SDK server auth |
+
 ## Cross-Model Outside Voice
 
 | Variable | Type | Default | Description |

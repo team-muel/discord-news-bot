@@ -173,7 +173,7 @@ const formatMarkdown = (report) => {
   }
   lines.push('## Notes');
   lines.push('- If static IP is kept for endpoint stability, expect small recurring IP cost.');
-  lines.push('- Keep worker on e2-micro and disk around free-tier baseline where possible.');
+  lines.push('- Worker runs on e2-small (2GB). Keep disk around 30GB baseline where possible.');
   return `${lines.join('\n')}\n`;
 };
 
@@ -272,8 +272,8 @@ const main = async () => {
       if (report.worker.status !== 'RUNNING') {
         failures.push(`Worker instance is not RUNNING (current: ${report.worker.status || 'unknown'}).`);
       }
-      if (report.worker.machineType && report.worker.machineType !== 'e2-micro') {
-        warnings.push(`Machine type is ${report.worker.machineType}; free-tier baseline usually assumes e2-micro.`);
+      if (report.worker.machineType && report.worker.machineType !== 'e2-small') {
+        warnings.push(`Machine type is ${report.worker.machineType}; expected e2-small (2GB) as of 2026-04-05.`);
       }
       if (report.worker.bootDiskGb && report.worker.bootDiskGb > 30) {
         warnings.push(`Boot disk is ${report.worker.bootDiskGb}GB; free-tier baseline for standard persistent disk is about 30GB.`);

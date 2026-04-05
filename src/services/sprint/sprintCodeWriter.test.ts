@@ -98,4 +98,49 @@ describe('sprintCodeWriter', () => {
       expect(change.newContent).toBe('const a = 2;');
     });
   });
+
+  describe('OpenCode SDK path', () => {
+    it('SDK 비활성화 시 LLM 경로로 fallthrough한다', async () => {
+      // SDK is disabled by default, so generateAndApplyCodeChanges should
+      // skip the SDK path and proceed to LLM (which also fails in test env)
+      const { generateAndApplyCodeChanges } = await import('./sprintCodeWriter');
+      const result = await generateAndApplyCodeChanges({
+        objective: 'Test SDK fallthrough',
+        changedFiles: [],
+        sprintId: 'test-sprint-sdk-1',
+      });
+
+      // Should hit LLM_NOT_CONFIGURED (after skipping SDK)
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('LLM_NOT_CONFIGURED');
+    });
+
+    it('SDK 활성화 시 세션 실패하면 LLM으로 fallthrough한다', async () => {
+      vi.resetModules();
+      vi.doMock('../opencode/opencodeSdkClient', () => ({
+        isOpenCodeSdkAvailable: vi.fn(() => true),
+        generateCodeViaSession: vi.fn(async () => ({
+          ok: false,
+          patches: [],
+          diagnostics: [],
+          summary: 'Session creation failed',
+          error: 'CONNECTION_REFUSED',
+        })),
+      }));
+      const { generateAndApplyCodeChanges: fn } = await import('./sprintCodeWriter');
+      try {
+        const result = await fn({
+          objective: 'Test SDK failure fallthrough',
+          changedFiles: [],
+          sprintId: 'test-sprint-sdk-2',
+        });
+        // Should fall through to LLM path
+        expect(result.ok).toBe(false);
+        expect(result.error).toBe('LLM_NOT_CONFIGURED');
+      } finally {
+        vi.doUnmock('../opencode/opencodeSdkClient');
+        vi.resetModules();
+      }
+    });
+  });
 });

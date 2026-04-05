@@ -27,6 +27,7 @@ const lazySelfImprovement = () => import('../sprint/selfImprovementLoop');
 const lazySprintOrchestrator = () => import('../sprint/sprintOrchestrator');
 const lazyTrafficRouting = () => import('../workflow/trafficRoutingService');
 const lazyErrorLog = () => import('../structuredErrorLogService');
+const lazyIntentEngine = () => import('../intent/intentFormationEngine');
 
 /**
  * Wire all signal bus consumers. Idempotent — safe to call multiple times.
@@ -211,6 +212,28 @@ export const wireSignalBusConsumers = (): void => {
       });
     } catch (err) {
       logger.debug('[SIGNAL-WIRING] observation.critical → sprint skipped: %s', err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  // ── Consumer 8: New observation → intent formation engine ────────────────
+  onSignal('observation.new', async (signal: Signal) => {
+    try {
+      const { INTENT_FORMATION_ENABLED } = await import('../../config');
+      if (!INTENT_FORMATION_ENABLED) return;
+
+      const guildId = signal.guildId ?? 'default';
+      const { evaluateIntents, executeIntent } = await lazyIntentEngine();
+      const intents = await evaluateIntents(guildId);
+
+      for (const intent of intents) {
+        if (intent.autonomyLevel === 'full-auto') {
+          void executeIntent(intent).catch((err: unknown) => {
+            logger.debug('[SIGNAL-WIRING] intent auto-execute failed: %s', err instanceof Error ? err.message : String(err));
+          });
+        }
+      }
+    } catch (err) {
+      logger.debug('[SIGNAL-WIRING] observation.new → intent formation skipped: %s', err instanceof Error ? err.message : String(err));
     }
   });
 

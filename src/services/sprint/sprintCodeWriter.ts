@@ -21,6 +21,11 @@ import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { checkFileScope, checkNewFileCreation } from './scopeGuard';
 import { SPRINT_CHANGED_FILE_CAP, SPRINT_DRY_RUN } from '../../config';
+import {
+  isOpenCodeSdkAvailable,
+  generateCodeViaSession,
+  type OpenCodePatch,
+} from '../opencode/opencodeSdkClient';
 
 const resolveProjectRoot = (): string => {
   const cwdRoot = path.resolve(process.cwd());
@@ -255,6 +260,32 @@ export const generateAndApplyCodeChanges = async (params: {
 
   logger.info('[SPRINT-CODE-WRITER] generating changes for sprint=%s context_files=%d', params.sprintId, contextFiles.length);
 
+  // 1b. Try OpenCode SDK session path first (if enabled)
+  if (isOpenCodeSdkAvailable()) {
+    try {
+      const sdkResult = await generateCodeViaSession({
+        objective: params.objective,
+        contextFiles,
+        previousPhaseOutput: params.previousPhaseOutput,
+      });
+
+      if (sdkResult.ok && sdkResult.patches.length > 0) {
+        logger.info('[SPRINT-CODE-WRITER] OpenCode SDK produced %d patches for sprint=%s', sdkResult.patches.length, params.sprintId);
+        const sdkChanges = await applySdkPatches(sdkResult.patches, params.sprintId);
+        if (sdkChanges.length > 0) {
+          const summary = `[SDK] Modified ${sdkChanges.length} file(s): ${sdkChanges.map((c) => c.filePath).join(', ')}`;
+          return { ok: true, changes: sdkChanges, summary };
+        }
+        logger.warn('[SPRINT-CODE-WRITER] SDK patches failed scope/write checks, falling through to LLM');
+      } else {
+        logger.info('[SPRINT-CODE-WRITER] SDK returned no patches (ok=%s), falling through to LLM', sdkResult.ok);
+      }
+    } catch (sdkError) {
+      logger.warn('[SPRINT-CODE-WRITER] SDK session failed: %s, falling through to LLM',
+        sdkError instanceof Error ? sdkError.message : String(sdkError));
+    }
+  }
+
   // 2. Ask LLM for modifications
   let llmResponse: string;
   try {
@@ -355,6 +386,67 @@ export const generateAndApplyCodeChanges = async (params: {
   ].filter(Boolean).join('. ');
 
   return { ok: true, changes, summary };
+};
+
+// ──── SDK patch application ───────────────────────────────────────────────────
+
+/**
+ * Apply OpenCode SDK patches through the same scope guard and safety checks
+ * as the LLM-generated changes.
+ */
+const applySdkPatches = async (
+  patches: OpenCodePatch[],
+  sprintId: string,
+): Promise<CodeChange[]> => {
+  if (patches.length > SPRINT_CHANGED_FILE_CAP) {
+    logger.warn('[SPRINT-CODE-WRITER] SDK patch count %d exceeds cap %d', patches.length, SPRINT_CHANGED_FILE_CAP);
+    return [];
+  }
+
+  const changes: CodeChange[] = [];
+
+  for (const patch of patches) {
+    if (patch.operation === 'delete') {
+      logger.info('[SPRINT-CODE-WRITER] skipping SDK delete patch for %s (not supported)', patch.path);
+      continue;
+    }
+
+    const original = await readProjectFile(patch.path);
+    const fileAlreadyExists = original !== null;
+
+    if (!fileAlreadyExists && patch.operation === 'modify') {
+      logger.warn('[SPRINT-CODE-WRITER] SDK modify patch for non-existent file %s', patch.path);
+      continue;
+    }
+
+    // Skip if content is identical
+    if (original && original.trimEnd() === patch.content.trimEnd()) {
+      continue;
+    }
+
+    // New-file creation guard
+    const newFileCheck = checkNewFileCreation(sprintId, patch.path, fileAlreadyExists);
+    if (!newFileCheck.allowed) {
+      logger.warn('[SPRINT-CODE-WRITER] SDK new-file cap: %s — %s', patch.path, newFileCheck.reason);
+      continue;
+    }
+
+    const writeResult = await writeProjectFile(patch.path, patch.content);
+    if (!writeResult.ok) {
+      logger.warn('[SPRINT-CODE-WRITER] SDK write blocked: %s — %s', patch.path, writeResult.error);
+      continue;
+    }
+
+    changes.push({
+      filePath: patch.path,
+      originalContent: original || '',
+      newContent: patch.content,
+    });
+
+    logger.info('[SPRINT-CODE-WRITER] [SDK] modified: %s', patch.path);
+  }
+
+  return changes;
 };
 
 /**

@@ -29,6 +29,7 @@ import { createSprintBranch, commitSprintChanges, createSprintPr } from './auton
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import type { SprintPhase } from './sprintOrchestrator';
 import type { ActionExecutionResult } from '../skills/actions/types';
+import { isOpenCodeSdkAvailable, getDiagnostics as getSdkDiagnostics } from '../opencode/opencodeSdkClient';
 
 // ──── Subprocess helper ───────────────────────────────────────────────────────
 
@@ -127,6 +128,23 @@ const executeQaFastPath = async (
   objective: string,
   changedFiles: string[],
 ): Promise<ActionExecutionResult> => {
+  // ── Pre-flight: OpenCode SDK LSP diagnostics (best-effort, non-blocking) ──
+  let sdkDiagSection = '';
+  if (isOpenCodeSdkAvailable() && changedFiles.length > 0) {
+    try {
+      const diagnostics = await getSdkDiagnostics('qa-fast-path', changedFiles);
+      const errors = diagnostics.filter((d) => d.severity === 'error');
+      if (errors.length > 0) {
+        sdkDiagSection = `\n## SDK LSP Diagnostics (${errors.length} errors)\n` +
+          errors.slice(0, 10).map((d) => `- ${d.file}:${d.line} ${d.message}`).join('\n');
+        logger.info('[FAST-PATH] qa: SDK LSP found %d errors in %d files', errors.length, changedFiles.length);
+      }
+    } catch (sdkErr) {
+      logger.debug('[FAST-PATH] qa: SDK diagnostics failed (non-blocking): %s',
+        sdkErr instanceof Error ? sdkErr.message : String(sdkErr));
+    }
+  }
+
   // Prefer sandbox execution for fault isolation
   const sandboxResult = await executeSandboxCommand(
     'cd /workspace && npx vitest run --reporter=verbose',
@@ -163,7 +181,8 @@ const executeQaFastPath = async (
       `- exit_code: ${result.exitCode}\n` +
       `- duration: ${result.durationMs}ms\n` +
       `- changed_files: ${changedFiles.length}\n\n` +
-      `## Output\n\`\`\`\n${output.slice(0, 3000)}\n\`\`\``,
+      `## Output\n\`\`\`\n${output.slice(0, 3000)}\n\`\`\`` +
+      sdkDiagSection,
     ],
     verification: passed
       ? ['vitest exit code 0', 'all tests passed']

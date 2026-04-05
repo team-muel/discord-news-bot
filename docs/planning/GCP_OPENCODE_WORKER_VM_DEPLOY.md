@@ -24,8 +24,8 @@
 
 ## 2) 권장 VM 최소 사양
 
-- worker-only: e2-small 이상
-- remote inference 동시 탑재: 별도 VM 권장, 현재 e2-micro 인스턴스와 분리
+- worker + jarvis serve: e2-small (2GB) — 현재 운영 사양 (2026-04-05~)
+- remote inference 동시 탑재: 별도 VM 권장, 현재 e2-small 인스턴스와 분리
 - Ubuntu 22.04 LTS
 - 고정 외부 IP 권장
 - 방화벽: 8787/tcp 허용 또는 reverse proxy 뒤에 배치

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Setup OpenJarvis on GCP VM (e2-micro, Debian/Ubuntu)
+# Setup OpenJarvis on GCP VM (e2-small 2GB, Debian/Ubuntu)
 #
 # NOTE: Stanford OpenJarvis (open-jarvis/OpenJarvis) is NOT published on PyPI.
 # Installation requires: git clone + uv sync (~200MB+ with dependencies).
-# On e2-micro (1GB RAM), this may OOM during dependency compilation.
+# VM is now e2-small (2GB RAM) — full install is the default path.
 #
-# LITE MODE (recommended for e2-micro):
+# LITE MODE (fallback if install fails):
 #   Skip this script entirely. Set OPENJARVIS_ENABLED=true and LITELLM_BASE_URL
 #   in the worker env. The adapter will use LiteLLM proxy for jarvis.ask directly.
 #   jarvis.optimize/bench/trace require the full CLI and are unavailable in lite mode.
 #
-# FULL INSTALL (requires e2-small/2GB+ RAM):
+# FULL INSTALL (current VM — e2-small/2GB RAM):
 #   git clone https://github.com/open-jarvis/OpenJarvis.git /opt/openjarvis
 #   cd /opt/openjarvis && pip install --break-system-packages -e .
 #   jarvis init --engine litellm
@@ -44,11 +44,11 @@ echo "[2/5] Attempting OpenJarvis install from GitHub..."
 if pip3 install --user --break-system-packages --quiet git+https://github.com/open-jarvis/OpenJarvis.git 2>/dev/null; then
   echo "  Installed from GitHub source"
 else
-  echo "  WARNING: GitHub install failed (likely OOM on e2-micro)."
+  echo "  WARNING: GitHub install failed (unexpected on e2-small 2GB)."
   echo "  Falling back to LITE MODE — adapter will use LiteLLM proxy directly."
   echo "  Set OPENJARVIS_ENABLED=true and LITELLM_BASE_URL in worker env."
   echo ""
-  echo "  For full install, upgrade VM to e2-small (2GB) and retry."
+  echo "  Check disk space and network. VM is e2-small (2GB), should be sufficient."
   echo ""
   echo "=== Lite Mode Active ==="
   echo "Enable in worker env: OPENJARVIS_ENABLED=true"
@@ -77,7 +77,7 @@ JARVIS_CONFIG="$JARVIS_CONFIG_DIR/config.toml"
 mkdir -p "$JARVIS_CONFIG_DIR"
 
 cat > "$JARVIS_CONFIG" << EOF
-# OpenJarvis config — GCP e2-micro (LiteLLM proxy mode)
+# OpenJarvis config — GCP e2-small (LiteLLM proxy mode)
 # All inference routed through Render LiteLLM proxy.
 # No local model loading (insufficient RAM).
 

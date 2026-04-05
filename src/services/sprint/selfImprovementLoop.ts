@@ -35,6 +35,7 @@ import {
   runFullSprintPipeline,
   markPipelineBlocked,
 } from './sprintOrchestrator';
+import { resolveTrustBasedAutonomy } from './trustScoreService';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,12 +116,13 @@ export const triggerLacunaSprintIfNeeded = async (
   const objective = `Auto-triggered capability development: ${candidates.length} gaps (total score ${totalScore.toFixed(1)}).\n\nTop gaps:\n${gapSummary}\n\n[origin:lacuna-sprint]`;
 
   try {
+    const autonomyLevel = await resolveTrustBasedAutonomy(top[0].guildId || 'system', 'feature');
     const pipeline = createSprintPipeline({
       triggerId: `lacuna-sprint-${now}`,
       triggerType: 'feature-request',
       guildId: top[0].guildId || 'system',
       objective,
-      autonomyLevel: 'approve-impl',
+      autonomyLevel,
     });
     lastLacunaSprintTriggeredAt = now;
 
@@ -184,12 +186,13 @@ export const checkWeeklyPatternsForBugfixTrigger = async (): Promise<{ triggered
     ].join('\n');
 
     const objective = `Auto-triggered bugfix: ${highCount} high-severity, ${worsened.length} worsening.\n\n${lines}\n\n[origin:weekly-bugfix]`;
+    const autonomyLevel = await resolveTrustBasedAutonomy('system', 'bugfix');
     const pipeline = createSprintPipeline({
       triggerId: `weekly-bugfix-${now}`,
       triggerType: 'self-improvement',
       guildId: 'system',
       objective,
-      autonomyLevel: 'approve-impl',
+      autonomyLevel,
     });
     lastBugfixTriggeredAt = now;
 
@@ -258,12 +261,13 @@ export const checkBenchRegressionAndTrigger = async (): Promise<{ triggered: boo
     const decline = recent[0] - recent[recent.length - 1];
     const objective = `Auto-triggered regression analysis: quality declined ${consecutiveDeclines} consecutive weeks (${recent.map((s) => s.toFixed(1)).join(' → ')}, Δ${decline.toFixed(1)}%).\n\nActions: identify root cause, revert if needed, add regression guard.\n\n[origin:bench-regression]`;
 
+    const autonomyLevel = await resolveTrustBasedAutonomy('system', 'bugfix');
     const pipeline = createSprintPipeline({
       triggerId: `bench-regression-${now}`,
       triggerType: 'error-detection',
       guildId: 'system',
       objective,
-      autonomyLevel: 'approve-impl',
+      autonomyLevel,
     });
     lastRegressionTriggeredAt = now;
 

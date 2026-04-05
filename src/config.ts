@@ -77,8 +77,9 @@ export const OBSIDIAN_RAG_CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_R
 
 // ──── Sprint Pipeline (Autonomous Agent) ────
 export const SPRINT_ENABLED = parseBooleanEnv(process.env.SPRINT_ENABLED, false);
-export const SPRINT_AUTONOMY_LEVEL = (process.env.SPRINT_AUTONOMY_LEVEL || 'approve-ship') as
-  | 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
+export type AutonomyLevelConfig = 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
+export const SPRINT_AUTONOMY_LEVEL = (process.env.SPRINT_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
+export const SPRINT_BUGFIX_AUTONOMY_LEVEL = (process.env.SPRINT_BUGFIX_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
 export const SPRINT_MAX_IMPL_REVIEW_LOOPS = parseIntegerEnv(process.env.SPRINT_MAX_IMPL_REVIEW_LOOPS, 3);
 export const SPRINT_MAX_TOTAL_PHASES = parseIntegerEnv(process.env.SPRINT_MAX_TOTAL_PHASES, 12);
 export const SPRINT_CHANGED_FILE_CAP = parseIntegerEnv(process.env.SPRINT_CHANGED_FILE_CAP, 10);
@@ -160,7 +161,24 @@ export const OBSERVER_CODE_HEALTH_ENABLED = parseBooleanEnv(process.env.OBSERVER
 export const OBSERVER_CONVERGENCE_DIGEST_ENABLED = parseBooleanEnv(process.env.OBSERVER_CONVERGENCE_DIGEST_ENABLED, true);
 export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, false);
 
+// ──── Intent Formation (Phase G: Autonomous Agent Evolution) ────
+export const INTENT_FORMATION_ENABLED = parseBooleanEnv(process.env.INTENT_FORMATION_ENABLED, false);
+export const INTENT_MAX_PENDING = parseIntegerEnv(process.env.INTENT_MAX_PENDING, 10);
+export const INTENT_COOLDOWN_MS = parseIntegerEnv(process.env.INTENT_COOLDOWN_MS, 30 * 60_000);
+export const INTENT_DAILY_BUDGET_TOKENS = parseIntegerEnv(process.env.INTENT_DAILY_BUDGET_TOKENS, 100_000);
 
+// ──── Progressive Trust Engine (Phase H) ────
+export const TRUST_ENGINE_ENABLED = parseBooleanEnv(process.env.TRUST_ENGINE_ENABLED, false);
+export const TRUST_MAX_AUTONOMY_LEVEL = (process.env.TRUST_MAX_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
+export const TRUST_BUGFIX_THRESHOLD = parseNumberEnv(process.env.TRUST_BUGFIX_THRESHOLD, 0.7);
+export const TRUST_FEATURE_THRESHOLD = parseNumberEnv(process.env.TRUST_FEATURE_THRESHOLD, 0.85);
+export const TRUST_DEFAULT_SCORE = parseNumberEnv(process.env.TRUST_DEFAULT_SCORE, 0.35);
+export const TRUST_CACHE_TTL_MS = parseIntegerEnv(process.env.TRUST_CACHE_TTL_MS, 60 * 60_000);
+
+// ──── Memory Consolidation Concept Tier ────
+export const MEMORY_CONSOLIDATION_CONCEPT_ENABLED = parseBooleanEnv(process.env.MEMORY_CONSOLIDATION_CONCEPT_ENABLED, false);
+export const MEMORY_CONSOLIDATION_CONCEPT_MIN_LINKS = parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_CONCEPT_MIN_LINKS, 5);
+export const MEMORY_CONSOLIDATION_CONCEPT_MIN_DENSITY = parseNumberEnv(process.env.MEMORY_CONSOLIDATION_CONCEPT_MIN_DENSITY, 0.4);
 
 // ──── Traffic Routing (LangGraph Phase 2 Cutover) ────
 export const TRAFFIC_ROUTING_ENABLED = parseBooleanEnv(process.env.TRAFFIC_ROUTING_ENABLED, false);
@@ -275,6 +293,12 @@ export const OPENJARVIS_REQUIRE_OPENCODE_WORKER = parseBooleanEnv(process.env.OP
 export const UNATTENDED_WORKER_HEALTH_TIMEOUT_MS = Math.max(1000, Math.min(30_000, parseIntegerEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000)));
 export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);
 export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN, false);
+
+// ── OpenCode SDK (headless server) ──
+export const OPENCODE_SDK_ENABLED = parseBooleanEnv(process.env.OPENCODE_SDK_ENABLED, false);
+export const OPENCODE_SDK_BASE_URL = (process.env.OPENCODE_SDK_BASE_URL || '').trim().replace(/\/+$/, '');
+export const OPENCODE_SDK_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000));
+export const OPENCODE_SDK_AUTH_TOKEN = (process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
 
 // ── API Idempotency ──
 export const API_IDEMPOTENCY_TABLE = (process.env.API_IDEMPOTENCY_TABLE || 'api_idempotency_keys').trim();
