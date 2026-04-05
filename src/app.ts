@@ -10,6 +10,7 @@ import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
 import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
+import { createDashboardRouter } from './routes/dashboard';
 import { createResearchRouter } from './routes/research';
 
 const buildCorsOrigins = () =>
@@ -53,6 +54,7 @@ export function createApp(): Express {
   });
 
   app.use(createHealthRouter());
+  app.use(createDashboardRouter());
   app.use('/api/auth', createAuthRouter());
   app.use('/api/research', createResearchRouter());
   app.use('/api/fred', createFredRouter());
