@@ -1,0 +1,45 @@
+{
+  "servers": {
+    "muelCore": {
+      "type": "stdio",
+      "command": "npm",
+      "args": [
+        "run",
+        "mcp:dev"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    "muelIndexing": {
+      "type": "stdio",
+      "command": "npm",
+      "args": [
+        "run",
+        "mcp:indexing:dev"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "INDEXING_MCP_REPO_ID": "muel-backend",
+        "INDEXING_MCP_REPO_ROOT": "${workspaceFolder}"
+      }
+    },
+    "deepwiki": {
+      "url": "https://mcp.deepwiki.com/mcp"
+    },
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp?project_ref=pqzmehtuwnxyspfhyucd"
+    },
+    "gcpCompute": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "LogLevel=ERROR",
+        "-i", "${env:USERPROFILE}/.ssh/google_compute_engine",
+        "fancy@34.56.232.61",
+        "cd /opt/muel/discord-news-bot && set -a && . config/env/unified-mcp.gcp.env && set +a && exec node --import tsx scripts/unified-mcp-stdio.ts"
+      ]
+    }
+  }
+}
