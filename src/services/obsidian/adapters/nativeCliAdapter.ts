@@ -385,6 +385,7 @@ const listTasks = async (): Promise<ObsidianTask[]> => {
     'format=json',
   ]);
 
+  // CLI returns {status, text, file, line} — status 'x' = completed
   const items = tryParseJsonArray<Record<string, unknown>>(output);
   return items
     .filter((item) => typeof item === 'object' && item !== null && 'text' in item)
@@ -392,7 +393,7 @@ const listTasks = async (): Promise<ObsidianTask[]> => {
       filePath: String(item.file ?? item.path ?? ''),
       line: Number(item.line ?? 0),
       text: String(item.text ?? ''),
-      completed: Boolean(item.completed ?? item.done ?? false),
+      completed: String(item.status ?? '') === 'x',
       tags: Array.isArray(item.tags) ? (item.tags as unknown[]).map(String) : undefined,
     }));
 };
@@ -430,10 +431,10 @@ const getOutline = async (
 
   const items = tryParseJsonArray<Record<string, unknown>>(output);
   return items
-    .filter((item) => typeof item === 'object' && item !== null && 'text' in item)
+    .filter((item) => typeof item === 'object' && item !== null && ('heading' in item || 'text' in item))
     .map((item) => ({
       level: Number(item.level ?? 1),
-      text: String(item.text ?? ''),
+      text: String(item.heading ?? item.text ?? ''),
       line: Number(item.line ?? 0),
     }));
 };
@@ -455,14 +456,30 @@ const searchContext = async (
     'format=json',
   ]);
 
+  // CLI returns {file, matches: [{line, text}]} — flatten to flat list
   const items = tryParseJsonArray<Record<string, unknown>>(output);
-  return items
-    .filter((item) => typeof item === 'object' && item !== null)
-    .map((item) => ({
-      filePath: String(item.file ?? item.filePath ?? ''),
-      line: Number(item.line ?? 0),
-      text: String(item.text ?? item.content ?? ''),
-    }));
+  const flat: ObsidianSearchContextResult[] = [];
+  for (const item of items) {
+    if (typeof item !== 'object' || item === null) continue;
+    const filePath = String(item.file ?? item.filePath ?? '');
+    const matches = Array.isArray(item.matches) ? item.matches as Record<string, unknown>[] : [];
+    if (matches.length > 0) {
+      for (const m of matches) {
+        flat.push({
+          filePath,
+          line: Number(m.line ?? 0),
+          text: String(m.text ?? m.content ?? ''),
+        });
+      }
+    } else {
+      flat.push({
+        filePath,
+        line: Number(item.line ?? 0),
+        text: String(item.text ?? item.content ?? ''),
+      });
+    }
+  }
+  return flat;
 };
 
 // ── property:read / property:set ───────────────────
@@ -514,20 +531,23 @@ const listFiles = async (
   if (params.extension) args.push(`ext=${sanitizeArg(params.extension, 10)}`);
 
   const output = await runNativeCli(args);
-  const items = tryParseJsonArray<Record<string, unknown>>(output);
+  // CLI returns plain string array of file paths
+  if (!output) return [];
+  let paths: string[];
+  try {
+    const parsed = JSON.parse(output.trim());
+    paths = Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    paths = output.trim().split('\n').filter(Boolean);
+  }
 
-  return items
-    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
-    .map((item) => {
-      const filePath = String(item.path ?? item.file ?? item);
-      return {
-        filePath,
-        name: String(item.name ?? path.basename(filePath, path.extname(filePath))),
-        extension: String(item.extension ?? path.extname(filePath).slice(1)),
-        sizeBytes: Number(item.size ?? 0),
-        modifiedAt: Number(item.modified ?? 0),
-      };
-    });
+  return paths.map((filePath) => ({
+    filePath,
+    name: path.basename(filePath, path.extname(filePath)),
+    extension: path.extname(filePath).slice(1),
+    sizeBytes: 0,
+    modifiedAt: 0,
+  }));
 };
 
 // ── append ─────────────────────────────────────────
