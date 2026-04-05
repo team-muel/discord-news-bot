@@ -21,7 +21,37 @@ Copy this block for each change:
 
 ## Entries
 
-## 2026-04-04 - [UNCOMMITTED] Observer Layer: Autonomous Environment Scanning (Phase F)
+## 2026-04-06 - Render Adapter + Platform Dashboard + Obsidian Headless Sync
+
+- Why: 에이전트가 Render 인프라를 자율적으로 관리하고, 모든 플랫폼 상태를 시각적으로 모니터링하며, Obsidian Cloud와 서버 vault를 양방향 동기화한다.
+- Scope: 12 files — `renderAdapter.ts` (new, 9 caps), `renderAdapter.test.ts` (new, 20 tests), `dashboard.ts` (new, visual HTML), `obsidian-headless-startup.sh` (new, startup sync), `app.ts`, `health.ts`, `bot.ts` (contracts), `externalAdapterRegistry.ts`, `externalAdapterTypes.ts`, `externalToolProbe.test.ts`, `render.yaml`, `.env.example`
+- Impacted Routes: `GET /dashboard` (visual platform status page)
+- Impacted Services: Render adapter (service/deploy/events/env management), Obsidian headless sync pipeline, health endpoint (vault readiness), dashboard (adapter chain + capability routing)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: Render adapter read-only by default (env.update requires explicit call). Headless sync gracefully degrades if `ob` CLI unavailable. Dashboard is public (no auth) — shows only operational metadata, no secrets.
+- Validation: 36/36 tests passed, tsc clean, live API verified (7/7 Render capabilities).
+
+## 2026-04-06 - M-15 Pluggable Adapter Framework
+
+- Why: 기존 ExternalAdapterId가 closed union literal (`'openshell' | 'nemoclaw' | 'openclaw' | 'openjarvis'`)이라 새 어댑터를 추가할 때마다 타입 파일 수정이 필요했다. 동적 어댑터 등록과 glob scan 자동 발견으로 확장성을 확보한다.
+- Scope: 7 files — `externalAdapterTypes.ts`, `externalAdapterRegistry.ts`, `adapterAutoLoader.ts` (new), `externalToolProbe.test.ts`, `runtimeBootstrap.ts` → `bootstrapServerInfra.ts`, `generate-onboarding-checklist.mjs`, `package.json`
+- Impacted Routes: N/A
+- Impacted Services: `externalAdapterTypes.ts` (branded string ID + `ADAPTER_ID_PATTERN` + `validateAdapterId` + `KNOWN_ADAPTER_IDS`), `externalAdapterRegistry.ts` (`registerExternalAdapter`/`unregisterExternalAdapter`), `adapterAutoLoader.ts` (glob scan + duck-type check), `bootstrapServerInfra.ts` (startup auto-load)
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: 기존 4개 built-in 어댑터 호환 유지. built-in ID 덮어쓰기/해제 차단.
+- Validation: `npx tsc --noEmit` (0 errors), `npx vitest run` (151 files, 1365 tests), `npm run tools:onboarding` dry run 검증.
+
+## 2026-04-05 - Phase F+G+H Autonomous Agent Evolution Loop
+
+- Why: 에이전트의 자율 진화를 위해 환경 스캔(F) → 의도 형성(G) → 신뢰 기반 자율 실행(H) 3단계 루프를 구축한다.
+- Scope: 30+ files — `src/services/observer/` (11 files), `src/services/intent/` (5 files), `src/services/sprint/trustScoreService.ts`, `src/services/runtime/signalBusWiring.ts`, `src/services/runtime/bootstrapServerInfra.ts`, config, migration SQL, profile env
+- Impacted Routes: `src/routes/bot-agent/intentRoutes.ts` (Phase G API)
+- Impacted Services: Observer (6 channels + orchestrator + store), Intent Formation (6 rules + engine + store), Progressive Trust (trust score computation + trust decay + loop breaker)
+- Impacted Tables/RPC: `observations` (Phase F), `intents` (Phase G), `agent_trust_scores` (Phase H)
+- Risk/Regression Notes: 모든 Phase는 env flag로 통제 (OBSERVER_ENABLED, INTENT_FORMATION_ENABLED, TRUST_ENGINE_ENABLED). 기본값 비활성화. production-pilot.profile.env에서 활성화.
+- Validation: 1365 tests passed, tsc clean.
+
+## 2026-04-04 - Observer Layer: Autonomous Environment Scanning (Phase F)
 
 - Why: Agent 자율 진화를 위해 환경(에러 패턴, 메모리 갭, LLM 성능 드리프트, 코드 건강도, 수렴 추세, Discord 활동량)을 주기적으로 스캔하고 위험 신호를 자동 감지하는 계층이 필요했다.
 - Scope: 11 files — `src/services/observer/` 전체 디렉토리 (types, orchestrator, store, 7 channels)
@@ -31,7 +61,7 @@ Copy this block for each change:
 - Risk/Regression Notes: 미커밋 상태. 스캐닝은 fire-and-forget이며 핵심 응답 경로를 블로킹하지 않음. 각 channel은 독립적으로 비활성화 가능.
 - Validation: 미커밋 — 컴파일은 기존 빌드에 포함되지 않음.
 
-## 2026-04-04 - [UNCOMMITTED] Platform Signal Bus: In-Process Event Hub
+## 2026-04-04 - Platform Signal Bus: In-Process Event Hub
 
 - Why: "Supabase에 쓰고 누가 읽기를 기대하는" 패턴을 즉시 인프로세스 신호 전파로 대체하여 eval 루프, go/no-go, convergence, memory quality, workflow 이벤트를 sprint trigger, runtime alert, traffic routing에 즉시 연결한다.
 - Scope: 3 files — `src/services/runtime/signalBus.ts`, `signalBusWiring.ts`, `signalBus.test.ts`
@@ -41,7 +71,7 @@ Copy this block for each change:
 - Risk/Regression Notes: 미커밋 상태. 리스너는 비동기이며 producer를 블로킹하지 않음. `SIGNAL_BUS_ENABLED` env로 통제.
 - Validation: 미커밋 — 로컬 테스트 존재.
 
-## 2026-04-04 - [UNCOMMITTED] Bot Auto-Recovery Service
+## 2026-04-04 - Bot Auto-Recovery Service
 
 - Why: Discord gateway 연결 끊김이나 예상치 못한 크래시 이후 수동 개입 없이 봇이 자동 복구되어야 하는 운영 요구사항.
 - Scope: 2 files — `src/services/runtime/botAutoRecoveryService.ts`, `botAutoRecoveryService.test.ts`

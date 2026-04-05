@@ -49,7 +49,14 @@ Use this document when a role name, runtime label, external OSS name, or model f
 | Advisory role workers | `coordinate`, `architect`, `review`, `operate` (legacy aliases: `local-orchestrator`, `opendev`, `nemoclaw`, `openjarvis`) | HTTP workers from `scripts/agent-role-worker.ts` | `GET /api/bot/agent/runtime/role-workers`, `GET /api/bot/agent/runtime/unattended-health` | no | worker URL env plus optional token required | implemented when configured |
 | Local CLI tool slice | `operate` (legacy: `openjarvis`) | `tools.run.cli`, `src/services/tools/*` | `GET /api/bot/agent/tools/status`, `GET /api/bot/agent/actions/catalog` | no | explicit env registration required | implemented as a narrow single-tool slice |
 | Ollama provider support | LLM provider layer | `src/services/llmClient.ts` provider config | provider/env validation and runtime behavior | no | Ollama runtime plus env config required | implemented when configured |
-| Generic local OSS CLI discovery | future tool layer | not present; pluggable framework target (M-15) | none | no | would require new discovery and registry layer | not implemented; M-15 targets: dynamic ExternalAdapterId, glob-scan auto-registration, base adapter abstraction |
+| Generic local OSS CLI discovery | tool auto-loader layer | `src/services/tools/adapterAutoLoader.ts` glob scan + duck-type check, `registerExternalAdapter`/`unregisterExternalAdapter` | `GET /api/bot/agent/tools/adapters` | no | adapter file in `adapters/` dir + valid ID pattern required | **implemented (M-15)** — branded string ExternalAdapterId, glob-scan auto-registration, onboarding checklist generation |
+| Observer Layer (Phase F) | autonomous scanning | `src/services/observer/observerOrchestrator.ts` + 6 channels | internal signal bus (no HTTP API) | no | `OBSERVER_ENABLED=true` required | implemented — error patterns, memory gaps, perf drift, code health, convergence, Discord pulse |
+| Intent Formation (Phase G) | autonomous intent | `src/services/intent/intentFormationEngine.ts` + 6 rules | `src/routes/bot-agent/intentRoutes.ts` | no | `INTENT_FORMATION_ENABLED=true` required | implemented — observation → rule-based intent → sprint trigger |
+| Progressive Trust (Phase H) | trust scoring | `src/services/sprint/trustScoreService.ts` | internal (trust-gated sprint autonomy) | no | `TRUST_ENGINE_ENABLED=true` required | implemented — guild×category trust score, daily decay, loop breaker |
+| Signal Bus | in-process event hub | `src/services/runtime/signalBus.ts` + `signalBusWiring.ts` | `SIGNAL_BUS_ENABLED` + internal diagnostics | yes | no extra config | implemented — 17 signal types, async fire-and-forget, cooldown/dedup |
+| Workflow Persistence + Traffic Routing | A/B routing | `src/services/workflow/trafficRoutingService.ts` + `workflowPersistenceService.ts` | `GET /agent/traffic/decisions`, `GET /agent/traffic/distribution` | no | `TRAFFIC_ROUTING_ENABLED=true` | implemented — 4-gate routing (flag/readiness/bucket/divergence) |
+| User CRM | user profiling | `src/services/discord-support/userCrmService.ts` | `src/routes/bot-agent/crmRoutes.ts` (GET /agent/crm/*) | no | Supabase user_profiles table | implemented — write-behind activity tracking, profiles, leaderboard |
+| MCP Unified Server | single MCP entry | `src/mcp/unifiedServer.ts` (40 tools) | GCP VM :8850 (Caddy :8447) or local stdio | no | GCP VM access or local `scripts/unified-mcp-stdio.ts` | implemented — standard + indexing + Obsidian + ext.* |
 | Generic upstream framework embedding for OpenShell, NemoClaw, OpenClaw, OpenJarvis, DeepWiki, n8n | external runtime integration | 6 adapters implemented + probed; 33 capabilities mapped; composite execution (primary + secondary) active | see `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md`, `docs/contracts/SPRINT_DATA_FLOW.md` | no | install + env config + adapter enable flags required | Phase 1 complete; external adapter capability expansion (고도화) complete — 28 enrichment actions, 5 secondary adapter mappings, ext.* MCP bridge, OpenClaw session bootstrap |
 | ext.* MCP bridge | sprint pipeline / tool layer | `src/mcp/unifiedToolAdapter.ts` ext.* routing | `ext.<adapterId>.<capability>` tool calls via MCP | no | at least one external adapter enabled | implemented — routes external adapter capabilities as MCP tools with `ext.` namespace |
 | OpenClaw Gateway session bootstrap | sprint pipeline | `src/services/tools/adapters/openclawCliAdapter.ts` bootstrapOpenClawSession | OpenClaw session endpoint `/api/sessions/{id}/message` | no | `OPENCLAW_GATEWAY_URL` + `OPENCLAW_GATEWAY_TOKEN` required | implemented — idempotent per sessionId, registers ext.* tools as session skills before implement phase |
@@ -71,13 +78,21 @@ If a role or tool name appears only in `.github` customization files or planning
 
 - action registration: `src/services/skills/actions/registry.ts`
 - role-backed action implementations: `src/services/skills/actions/agentCollab.ts`
-- advisory worker definitions: `src/services/agentRoleWorkerService.ts`
+- advisory worker definitions: `src/services/agent/agentRoleWorkerService.ts`
 - action catalog and direct execution API: `src/routes/bot-agent/governanceRoutes.ts`
 - role worker and unattended runtime status API: `src/routes/bot-agent/runtimeRoutes.ts`
 - local CLI tool status API: `src/routes/bot-agent/toolsRoutes.ts`
 - super-agent facade API: `src/routes/bot-agent/coreRoutes.ts`
 - ext.* MCP bridge: `src/mcp/unifiedToolAdapter.ts`
 - external adapter composite execution: `src/services/sprint/sprintWorkerRouter.ts`
+- observer orchestrator: `src/services/observer/observerOrchestrator.ts`
+- intent formation engine: `src/services/intent/intentFormationEngine.ts`
+- trust score service: `src/services/sprint/trustScoreService.ts`
+- signal bus: `src/services/runtime/signalBus.ts`
+- adapter auto-loader: `src/services/tools/adapterAutoLoader.ts`
+- traffic routing: `src/services/workflow/trafficRoutingService.ts`
+- user CRM: `src/services/discord-support/userCrmService.ts`
+- unified MCP server: `src/mcp/unifiedServer.ts`
 - phase enrichment map: `src/services/sprint/sprintPreamble.ts`
 - OpenClaw session bootstrap: `src/services/tools/adapters/openclawCliAdapter.ts`
 - shared circuit breaker: `src/utils/circuitBreaker.ts`

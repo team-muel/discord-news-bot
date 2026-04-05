@@ -27,17 +27,18 @@
 | agent_retention_policies | - |
 | agent_runtime_policies | src/services/agent/agentPolicyService.ts |
 | agent_semantic_answer_cache | src/services/agent/agentGotAnalyticsService.ts<br/>src/services/semanticAnswerCacheService.ts |
-| agent_sessions | src/services/agent/agentSessionStore.ts<br/>src/services/conversationTurnService.ts<br/>src/services/privacyForgetService.ts |
+| agent_sessions | src/services/agent/agentSessionStore.ts<br/>src/services/conversationTurnService.ts<br/>src/services/multiAgentService.ts<br/>src/services/privacyForgetService.ts |
 | agent_skill_catalog | src/services/skills/registry.ts |
 | agent_slo_alert_events | - |
 | agent_slo_policies | - |
-| agent_steps | src/services/agent/agentSessionStore.ts |
+| agent_steps | src/services/agent/agentSessionStore.ts<br/>src/services/multiAgentService.ts |
 | agent_telemetry_queue_tasks | - |
 | agent_tool_learning_candidates | src/services/agent/agentSloService.ts<br/>src/services/toolLearningService.ts |
 | agent_tool_learning_logs | src/services/toolLearningService.ts |
 | agent_tool_learning_rules | src/services/agent/agentSloService.ts<br/>src/services/taskRoutingService.ts<br/>src/services/toolLearningService.ts |
 | agent_tot_candidate_pairs | src/services/agent/agentGotAnalyticsService.ts<br/>src/services/agent/agentTotPolicyService.ts |
 | agent_tot_policies | src/services/agent/agentTotPolicyService.ts<br/>src/services/entityNervousSystem.ts |
+| agent_trust_scores | - |
 | agent_user_privacy_preferences | - |
 | agent_weekly_reports | src/services/sprint/selfImprovementLoop.ts |
 | agent_workflow_profiles | src/services/agent/agentWorkflowService.ts |
@@ -51,10 +52,13 @@
 | community_relationship_edges | src/services/communityGraphService.ts<br/>src/services/privacyForgetService.ts<br/>src/services/userPersonaService.ts |
 | discord_login_sessions | - |
 | distributed_locks | src/services/infra/distributedLockService.ts |
+| entity_self_notes | src/services/entityNervousSystem.ts |
 | error_history | - |
+| eval_ab_runs | - |
 | guild_lore_docs | src/services/agent/agentMemoryService.ts |
 | guild_memberships | - |
 | intent_exemplars | src/services/langgraph/nodes/intentExemplarStore.ts |
+| intents | - |
 | logs | - |
 | macro_data | - |
 | macro_series | - |
@@ -68,6 +72,7 @@
 | memory_retrieval_logs | src/services/agent/agentMemoryStore.ts<br/>src/services/finopsService.ts |
 | memory_sources | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/privacyForgetService.ts |
 | news_sentiment | - |
+| observations | src/services/openclaw/gatewayHealth.ts |
 | retrieval_eval_cases | - |
 | retrieval_eval_results | src/services/agent/agentGotAnalyticsService.ts |
 | retrieval_eval_runs | src/services/agent/agentRuntimeReadinessService.ts |
@@ -75,7 +80,9 @@
 | retrieval_eval_targets | - |
 | retrieval_ranker_active_profiles | src/services/entityNervousSystem.ts |
 | retrieval_ranker_experiments | - |
+| reward_signal_snapshots | - |
 | settings | - |
+| shadow_graph_divergence_logs | src/services/langgraph/shadowGraphRunner.ts<br/>src/services/workflow/trafficRoutingService.ts |
 | sources | src/services/agent/agentSloService.ts<br/>src/services/goNoGoService.ts |
 | sprint_journal_entries | src/services/sprint/selfImprovementLoop.ts |
 | sprint_pipelines | src/services/sprint/selfImprovementLoop.ts |
@@ -83,11 +90,16 @@
 | trades | - |
 | trading_engine_configs | - |
 | trading_signals | - |
+| traffic_routing_decisions | src/services/workflow/trafficRoutingService.ts |
+| user_embeddings | - |
 | user_profiles | - |
 | user_roles | - |
 | users | - |
 | ventyd_events | - |
 | worker_approvals | - |
+| workflow_events | src/services/workflow/workflowPersistenceService.ts |
+| workflow_sessions | src/services/workflow/workflowPersistenceService.ts |
+| workflow_steps | src/services/workflow/workflowPersistenceService.ts |
 
 ## RPC Functions
 

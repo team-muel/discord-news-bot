@@ -3671,3 +3671,139 @@ create policy trust_scores_service_role_all on public.agent_trust_scores
   for all
   using (true)
   with check (true);
+
+-- ============================================================
+-- 25. Reward Signal & Eval (Migration 005)
+-- ============================================================
+
+-- 25.1 Reward signal snapshots
+create table if not exists public.reward_signal_snapshots (
+  id          bigint generated always as identity primary key,
+  guild_id    text        not null,
+  session_id  text,
+  user_id     text,
+  signal_type text        not null default 'blended',
+  score       real        not null,
+  components  jsonb       not null default '{}',
+  created_at  timestamptz not null default now()
+);
+
+-- 25.2 A/B evaluation runs
+create table if not exists public.eval_ab_runs (
+  id            bigint generated always as identity primary key,
+  guild_id      text        not null,
+  run_type      text        not null default 'retrieval',
+  baseline      jsonb       not null default '{}',
+  candidate     jsonb       not null default '{}',
+  status        text        not null default 'pending',
+  result        jsonb,
+  created_at    timestamptz not null default now(),
+  completed_at  timestamptz
+);
+
+-- 25.3 Shadow graph divergence logs
+create table if not exists public.shadow_graph_divergence_logs (
+  id            bigint generated always as identity primary key,
+  session_id    text        not null,
+  node_name     text        not null,
+  main_output   text,
+  shadow_output text,
+  divergence    real,
+  created_at    timestamptz not null default now()
+);
+
+-- ============================================================
+-- 26. Entity Nervous System (Migration 006)
+-- ============================================================
+
+create table if not exists public.entity_self_notes (
+  id          bigint generated always as identity primary key,
+  guild_id    text        not null,
+  note_type   text        not null default 'reflection',
+  content     text        not null,
+  source      text,
+  created_at  timestamptz not null default now()
+);
+
+-- ============================================================
+-- 27. Workflow Persistence & Traffic Routing (Migration 007)
+-- ============================================================
+
+-- 27.1 Workflow sessions
+create table if not exists public.workflow_sessions (
+  id            bigint generated always as identity primary key,
+  session_id    text        not null unique,
+  guild_id      text        not null,
+  workflow_type text        not null default 'agent',
+  status        text        not null default 'active',
+  metadata      jsonb       not null default '{}',
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+-- 27.2 Workflow steps
+create table if not exists public.workflow_steps (
+  id            bigint generated always as identity primary key,
+  session_id    text        not null,
+  step_name     text        not null,
+  status        text        not null default 'pending',
+  input         jsonb,
+  output        jsonb,
+  started_at    timestamptz,
+  completed_at  timestamptz,
+  created_at    timestamptz not null default now()
+);
+
+-- 27.3 Workflow events
+create table if not exists public.workflow_events (
+  id            bigint generated always as identity primary key,
+  session_id    text        not null,
+  event_type    text        not null,
+  payload       jsonb       not null default '{}',
+  created_at    timestamptz not null default now()
+);
+
+-- 27.4 Traffic routing decisions
+create table if not exists public.traffic_routing_decisions (
+  id            bigint generated always as identity primary key,
+  session_id    text        not null,
+  guild_id      text        not null,
+  route         text        not null default 'main',
+  gates         jsonb       not null default '{}',
+  created_at    timestamptz not null default now()
+);
+
+-- ============================================================
+-- 28. Observer Layer (Migration 008)
+-- ============================================================
+
+create table if not exists public.observations (
+  id            bigint generated always as identity primary key,
+  guild_id      text,
+  channel       text        not null,
+  severity      text        not null default 'info',
+  title         text        not null,
+  payload       jsonb       not null default '{}',
+  consumed_at   timestamptz,
+  sprint_id     text,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists idx_observations_channel_severity
+  on public.observations (channel, severity, created_at desc);
+
+-- ============================================================
+-- 29. User Embeddings & Feedback (Migration 010)
+-- ============================================================
+
+create table if not exists public.user_embeddings (
+  user_id     text        not null,
+  guild_id    text        not null,
+  embedding   vector(1536),
+  item_count  integer     not null default 0,
+  computed_at timestamptz not null default now(),
+  primary key (user_id, guild_id)
+);
+
+-- Note: memory_feedback_signals table and get_memory_feedback_summary RPC
+-- are defined in migration 010_user_embedding_feedback.sql

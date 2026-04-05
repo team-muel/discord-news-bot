@@ -1,24 +1,24 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 351
+- Nodes: 358
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/logger.ts | 119 |
-| src/services/supabaseClient.ts | 86 |
-| src/config.ts | 76 |
-| src/utils/env.ts | 70 |
+| src/logger.ts | 125 |
+| src/services/supabaseClient.ts | 89 |
+| src/config.ts | 79 |
+| src/utils/env.ts | 71 |
 | src/services/skills/actions/types.ts | 34 |
 | src/services/llmClient.ts | 33 |
-| src/services/infra/baseRepository.ts | 23 |
-| src/services/infra/tableRegistry.ts | 22 |
+| src/services/infra/baseRepository.ts | 25 |
+| src/services/infra/tableRegistry.ts | 24 |
+| src/middleware/auth.ts | 17 |
 | src/services/skills/types.ts | 17 |
-| src/middleware/auth.ts | 16 |
+| src/services/multiAgentService.ts | 16 |
 | src/services/agent/agentRuntimeTypes.ts | 15 |
-| src/services/multiAgentService.ts | 15 |
 
 ## Mermaid
 
@@ -288,6 +288,13 @@ graph LR
   "src/routes/bot-agent/governanceRoutes.ts" --> "src/services/superAgentService.ts"
   "src/routes/bot-agent/governanceRoutes.ts" --> "src/services/workerExecution.ts"
   "src/routes/bot-agent/governanceRoutes.ts" --> "src/utils/validation.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/logger.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/middleware/auth.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/routes/bot-agent/types.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/services/intent/intentFormationEngine.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/services/intent/intentStore.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/services/intent/intentTypes.ts"
+  "src/routes/bot-agent/intentRoutes.ts" --> "src/utils/validation.ts"
   "src/routes/bot-agent/learningRoutes.ts" --> "src/middleware/auth.ts"
   "src/routes/bot-agent/learningRoutes.ts" --> "src/routes/bot-agent/types.ts"
   "src/routes/bot-agent/learningRoutes.ts" --> "src/services/taskRoutingAnalyticsService.ts"
@@ -379,6 +386,7 @@ graph LR
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/crmRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/gotRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/governanceRoutes.ts"
+  "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/intentRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/learningRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/memoryRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/qualityPrivacyRoutes.ts"
@@ -644,6 +652,23 @@ graph LR
   "src/services/infra/supabaseRateLimitService.ts" --> "src/services/supabaseClient.ts"
   "src/services/infra/supabaseRateLimitService.ts" --> "src/utils/supabaseErrors.ts"
   "src/services/infra/tableRegistry.ts":::file
+  "src/services/intent/intentFormationEngine.ts" --> "src/config.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/logger.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/services/intent/intentStore.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/services/intent/intentTypes.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/services/intent/metricReviewService.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/services/observer/observationStore.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/services/observer/observerTypes.ts"
+  "src/services/intent/intentFormationEngine.ts" --> "src/services/sprint/sprintOrchestrator.ts"
+  "src/services/intent/intentStore.ts" --> "src/logger.ts"
+  "src/services/intent/intentStore.ts" --> "src/services/infra/baseRepository.ts"
+  "src/services/intent/intentStore.ts" --> "src/services/infra/tableRegistry.ts"
+  "src/services/intent/intentStore.ts" --> "src/services/intent/intentTypes.ts"
+  "src/services/intent/intentStore.ts" --> "src/services/supabaseClient.ts"
+  "src/services/intent/intentTypes.ts" --> "src/services/observer/observerTypes.ts"
+  "src/services/intent/metricReviewService.ts" --> "src/logger.ts"
+  "src/services/intent/metricReviewService.ts" --> "src/services/intent/intentTypes.ts"
+  "src/services/intent/metricReviewService.ts" --> "src/services/observer/observerTypes.ts"
   "src/services/langgraph/executor.ts" --> "src/services/langgraph/stateContract.ts"
   "src/services/langgraph/nodes/composeNodes.ts":::file
   "src/services/langgraph/nodes/coreNodes.ts" --> "src/services/agent/agentPrivacyPolicyService.ts"
@@ -825,6 +850,7 @@ graph LR
   "src/services/multiAgentService.ts" --> "src/services/skills/engine.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/registry.ts"
   "src/services/multiAgentService.ts" --> "src/services/skills/types.ts"
+  "src/services/multiAgentService.ts" --> "src/services/supabaseClient.ts"
   "src/services/multiAgentService.ts" --> "src/services/workflow/trafficRoutingService.ts"
   "src/services/multiAgentService.ts" --> "src/utils/ttlCache.ts"
   "src/services/multiAgentTypes.ts" --> "src/services/agent/agentRuntimeTypes.ts"
@@ -982,6 +1008,9 @@ graph LR
   "src/services/opencode/opencodePublishWorker.ts" --> "src/services/infra/distributedLockService.ts"
   "src/services/opencode/opencodePublishWorker.ts" --> "src/services/supabaseClient.ts"
   "src/services/opencode/opencodePublishWorker.ts" --> "src/utils/env.ts"
+  "src/services/opencode/opencodeSdkClient.ts" --> "src/logger.ts"
+  "src/services/opencode/opencodeSdkClient.ts" --> "src/utils/env.ts"
+  "src/services/opencode/opencodeSdkClient.ts" --> "src/utils/network.ts"
   "src/services/privacyForgetService.ts" --> "src/config.ts"
   "src/services/privacyForgetService.ts" --> "src/logger.ts"
   "src/services/privacyForgetService.ts" --> "src/services/supabaseClient.ts"
@@ -1008,8 +1037,10 @@ graph LR
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/services/eval/rewardSignalLoopService.ts"
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/utils/errorMessage.ts"
+  "src/services/runtime/bootstrapServerInfra.ts" --> "src/config.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/logger.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/mcpSkillRouter.ts"
+  "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/multiAgentService.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/observer/observerOrchestrator.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/runtime/signalBusWiring.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/skills/actionRunner.ts"
@@ -1017,6 +1048,7 @@ graph LR
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/sprint/eventSourcing/bridge.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/sprint/sprintOrchestrator.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/sprint/sprintTriggers.ts"
+  "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/sprint/trustScoreService.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/tools/adapterAutoLoader.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/utils/errorMessage.ts"
   "src/services/runtime/botAutoRecoveryService.ts" --> "src/bot.ts"
@@ -1066,10 +1098,12 @@ graph LR
   "src/services/runtime/signalBusWiring.ts" --> "src/config.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/logger.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/entityNervousSystem.ts"
+  "src/services/runtime/signalBusWiring.ts" --> "src/services/intent/intentFormationEngine.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/runtime/signalBus.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/sprint/selfImprovementLoop.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/sprint/sprintOrchestrator.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/sprint/sprintTriggers.ts"
+  "src/services/runtime/signalBusWiring.ts" --> "src/services/sprint/trustScoreService.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/structuredErrorLogService.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/workflow/trafficRoutingService.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/utils/env.ts"
@@ -1307,6 +1341,7 @@ graph LR
   "src/services/sprint/eventSourcing/supabaseAdapter.ts":::file
   "src/services/sprint/fastPathExecutors.ts" --> "src/config.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/logger.ts"
+  "src/services/sprint/fastPathExecutors.ts" --> "src/services/opencode/opencodeSdkClient.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/skills/actions/types.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/sprint/autonomousGit.ts"
   "src/services/sprint/fastPathExecutors.ts" --> "src/services/sprint/sprintCodeWriter.ts"
@@ -1321,12 +1356,14 @@ graph LR
   "src/services/sprint/selfImprovementLoop.ts" --> "src/logger.ts"
   "src/services/sprint/selfImprovementLoop.ts" --> "src/services/runtime/signalBus.ts"
   "src/services/sprint/selfImprovementLoop.ts" --> "src/services/sprint/sprintOrchestrator.ts"
+  "src/services/sprint/selfImprovementLoop.ts" --> "src/services/sprint/trustScoreService.ts"
   "src/services/sprint/selfImprovementLoop.ts" --> "src/services/supabaseClient.ts"
   "src/services/sprint/skillPromptLoader.ts" --> "src/logger.ts"
   "src/services/sprint/skillPromptLoader.ts" --> "src/utils/ttlCache.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/config.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/logger.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/services/llmClient.ts"
+  "src/services/sprint/sprintCodeWriter.ts" --> "src/services/opencode/opencodeSdkClient.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/services/sprint/scopeGuard.ts"
   "src/services/sprint/sprintCodeWriter.ts" --> "src/utils/atomicWrite.ts"
   "src/services/sprint/sprintDiffSummarizer.ts" --> "src/services/sprint/sprintCodeWriter.ts"
@@ -1391,6 +1428,12 @@ graph LR
   "src/services/sprint/sprintWorkerRouter.ts" --> "src/services/sprint/sprintOrchestrator.ts"
   "src/services/sprint/sprintWorkerRouter.ts" --> "src/utils/circuitBreaker.ts"
   "src/services/sprint/sprintWorkerRouter.ts" --> "src/utils/ttlCache.ts"
+  "src/services/sprint/trustScoreService.ts" --> "src/config.ts"
+  "src/services/sprint/trustScoreService.ts" --> "src/logger.ts"
+  "src/services/sprint/trustScoreService.ts" --> "src/services/infra/baseRepository.ts"
+  "src/services/sprint/trustScoreService.ts" --> "src/services/infra/tableRegistry.ts"
+  "src/services/sprint/trustScoreService.ts" --> "src/services/sprint/sprintOrchestrator.ts"
+  "src/services/sprint/trustScoreService.ts" --> "src/services/supabaseClient.ts"
   "src/services/structuredErrorLogService.ts" --> "src/config.ts"
   "src/services/structuredErrorLogService.ts" --> "src/logger.ts"
   "src/services/structuredErrorLogService.ts" --> "src/services/supabaseClient.ts"

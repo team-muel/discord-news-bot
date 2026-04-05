@@ -7,6 +7,7 @@
 | Method | Path | Auth | Admin | Rate Limit | Source |
 | --- | --- | --- | --- | --- | --- |
 | GET | / | no | no | no | src/routes/health.ts:165 |
+| GET | /dashboard | no | no | no | src/routes/dashboard.ts:108 |
 | GET | /api/auth/callback | no | no | yes | src/routes/auth.ts:282 |
 | GET | /api/auth/invite | no | no | no | src/routes/auth.ts:271 |
 | GET | /api/auth/login | no | no | yes | src/routes/auth.ts:255 |
@@ -45,6 +46,11 @@
 | GET | /api/bot/agent/got/runs/:runId | no | yes | no | src/routes/bot-agent/gotRoutes.ts:34 |
 | GET | /api/bot/agent/got/runs/:runId/nodes | no | yes | no | src/routes/bot-agent/gotRoutes.ts:49 |
 | GET | /api/bot/agent/got/runs/:runId/selection-events | no | yes | no | src/routes/bot-agent/gotRoutes.ts:65 |
+| POST | /api/bot/agent/intent-formation/run | no | yes | yes | src/routes/bot-agent/intentRoutes.ts:117 |
+| GET | /api/bot/agent/intents | no | yes | no | src/routes/bot-agent/intentRoutes.ts:20 |
+| POST | /api/bot/agent/intents/:id/approve | no | yes | yes | src/routes/bot-agent/intentRoutes.ts:58 |
+| POST | /api/bot/agent/intents/:id/reject | no | yes | yes | src/routes/bot-agent/intentRoutes.ts:92 |
+| GET | /api/bot/agent/intents/stats | no | yes | no | src/routes/bot-agent/intentRoutes.ts:36 |
 | POST | /api/bot/agent/learning/run | no | yes | yes | src/routes/bot-agent/coreRoutes.ts:128 |
 | GET | /api/bot/agent/learning/task-routing/candidates | no | yes | no | src/routes/bot-agent/learningRoutes.ts:113 |
 | POST | /api/bot/agent/learning/task-routing/candidates/:candidateId/decision | no | yes | yes | src/routes/bot-agent/learningRoutes.ts:137 |

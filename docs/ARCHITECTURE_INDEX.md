@@ -120,30 +120,50 @@ Planning note:
 
 Canonical runtime loop snapshot:
 
-- `src/services/runtimeSchedulerPolicyService.ts` (`getRuntimeSchedulerPolicySnapshot`)
+- `src/services/runtime/runtimeSchedulerPolicyService.ts` (`getRuntimeSchedulerPolicySnapshot`)
 - Operator API surface: `GET /api/bot/agent/runtime/scheduler-policy`
 
-Startup phase `service-init`:
+Startup phase `server-process` (via `startServerProcessRuntime` → `bootstrapServerInfrastructure`):
 
-- `memory-job-runner` (`src/services/memoryJobRunner.ts`)
-- `opencode-publish-worker` (`src/services/opencodePublishWorker.ts`)
-- `trading-engine` (`src/services/tradingEngine.ts`)
-- `runtime-alerts` (`src/services/runtimeAlertService.ts`)
+- `automation-jobs` (`src/services/automationBot.ts`)
+- `memory-job-runner` (`src/services/memory/memoryJobRunner.ts`)
+- `consolidation-loop` (`src/services/memory/memoryConsolidationService.ts`) — pg_cron 대체 가능
+- `user-embedding-loop` (`src/services/memory/userEmbeddingService.ts`) — pg_cron 대체 가능
+- `opencode-publish-worker` (`src/services/opencode/opencodePublishWorker.ts`)
+- `runtime-alerts` (`src/services/runtime/runtimeAlertService.ts`)
+- `bot-auto-recovery` (`src/services/runtime/botAutoRecoveryService.ts`)
+- `sprint-pipeline-rehydration` (`src/services/sprint/sprintOrchestrator.ts`)
+- `session-rehydration` (`src/services/multiAgentService.ts`)
+- `event-sourcing-rehydration` (`src/services/sprint/eventSourcing/bridge.ts`)
+- `sprint-scheduled-triggers` (`src/services/sprint/sprintTriggers.ts`)
+- `mcp-skill-router` (`src/services/mcpSkillRouter.ts`)
+- `sandbox-policy-sync` (`src/services/skills/actionRunner.ts`) — startup + 6h re-sync
+- `adapter-auto-loader` (`src/services/tools/adapterAutoLoader.ts`) — M-15 동적 어댑터
+- `signal-bus-consumers` (`src/services/runtime/signalBusWiring.ts`)
+- `trust-decay-timer` (`src/services/sprint/trustScoreService.ts`) — Phase H, pg_cron 대체 가능
+- `observer-loop` (`src/services/observer/observerOrchestrator.ts`) — Phase F, pg_cron 대체 가능
+- `intent-formation` (`src/services/intent/intentFormationEngine.ts`) — Phase G
 
-Startup phase `discord-ready`:
+Startup phase `discord-ready` (via `startDiscordReadyRuntime` → `bootstrapDiscordLoops`):
 
 - `automation-modules` (`src/services/automationBot.ts`)
 - `agent-daily-learning` (`src/services/agent/agentOpsService.ts`)
 - `got-cutover-autopilot` (`src/services/agent/agentOpsService.ts`)
-- `login-session-cleanup` when owner=`app` (`src/discord/auth.ts`)
-- `obsidian-sync-loop` (`src/services/obsidianLoreSyncService.ts`)
-- `retrieval-eval-loop` (`src/services/retrievalEvalLoopService.ts`)
-- `agent-slo-alert-loop` (`src/services/agent/agentSloService.ts`)
+- `login-session-cleanup` when owner=`app` (`src/discord/auth.ts`) — pg_cron 대체 가능
+- `obsidian-sync-loop` (`src/services/obsidian/obsidianLoreSyncService.ts`) — pg_cron 대체 가능
+- `retrieval-eval-loop` (`src/services/eval/retrievalEvalLoopService.ts`) — pg_cron 대체 가능
+- `reward-signal-loop` (`src/services/eval/rewardSignalLoopService.ts`) — pg_cron 대체 가능
+- `eval-auto-promote-loop` (`src/services/eval/evalAutoPromoteLoopService.ts`) — pg_cron 대체 가능
+- `agent-slo-alert-loop` (`src/services/agent/agentSloService.ts`) — pg_cron 대체 가능
+- `guild-topology-sync` (`src/services/discord-support/discordTopologySyncService.ts`)
 
-Startup phase `database`:
+Startup phase `database` (pg_cron):
 
-- `supabase-maintenance-cron` (`src/services/supabaseExtensionOpsService.ts`)
+- `supabase-maintenance-cron` (`src/services/infra/pgCronBootstrapService.ts`)
 - `login-session-cleanup` when owner=`db` (`src/discord/auth.ts` + pg_cron)
+- `muel_rate_limit_cleanup` (hourly)
+- `muel_observation_cleanup` (daily)
+- `muel_intent_eval` (10min)
 
 Terminology rule:
 
@@ -265,28 +285,84 @@ Profile note:
 
 ## Core Service Domains
 
-- Auth and identity: session parse, cookie/token validation, admin allowlist.
-- Automation runtime: scheduled jobs and worker health.
-- Agent runtime: multi-agent orchestration, policy, memory/session persistence.
-- Trading runtime: strategy, engine loop, distributed lock protections.
-- Integrations: Supabase, Discord, LLM providers, external market/macro sources.
+- **Auth and identity**: session parse, cookie/token validation, admin allowlist.
+- **Automation runtime**: scheduled jobs and worker health.
+- **Agent runtime**: multi-agent orchestration, policy, memory/session persistence.
+- **Trading runtime**: strategy, engine loop, distributed lock protections.
+- **Sprint pipeline**: plan → implement → review → qa → security-audit → ops-validate → ship → retro (8단계, 결정론적 fast-path 지원).
+- **Memory 4-tier**: raw → summary → concept → schema (진화 링크 + 통합 배치 + 사용자 임베딩).
+- **Autonomous evolution** (Phase F/G/H):
+  - Phase F: Observer Layer — 6 채널 자율 환경 스캐닝 (에러 패턴, 메모리 갭, 성능 드리프트, 코드 건강도, 수렴 추세, Discord 활동량)
+  - Phase G: Intent Formation — 관측 → 의도 변환 엔진 (6 규칙 기반 룰)
+  - Phase H: Progressive Trust — 길드별 신뢰 점수 기반 자율 실행 범위 결정 (trust decay + loop breaker)
+- **External tool adapters**: 7대 OSS 통합 (OpenShell, NemoClaw, OpenClaw, OpenJarvis, DeepWiki, n8n, Render) + Ollama/LiteLLM/MCP 인프라 어댑터. M-15로 동적 어댑터 등록 지원.
+- **Signal Bus**: 인프로세스 typed event hub (17개 시그널 타입, eval/go-no-go/convergence/workflow 이벤트 즉시 전파).
+- **Traffic routing**: main / shadow / langgraph 3-경로 A/B 라우팅 의사결정.
+- **User CRM**: write-behind 활동 추적, 프로필, 길드 멤버십, 리더보드.
+- **Integrations**: Supabase, Discord, LLM providers, external market/macro sources.
+- **Platform dashboard**: `/dashboard` — 런타임 상태, 어댑터 가용성, Obsidian vault 어댑터 체인 + capability 라우팅 시각화.
 
 ## Data Boundaries
 
-- Canonical schema bootstrap: `docs/SUPABASE_SCHEMA.sql`.
+- Canonical schema bootstrap: `docs/SUPABASE_SCHEMA.sql` (82 tables) + `scripts/migrations/` (003-012, 추가 테이블).
 - Schema usage map (generated): `docs/SCHEMA_SERVICE_MAP.md`.
 - Table families:
-- User/authn/authz (`users`, `user_roles`, `settings`).
-- News and automation telemetry (`sources`, `alerts`, `logs`, `news_sentiment`, `youtube_log`).
-- Trading (`trading_strategy`, `trades`, related control/runtime tables).
-- Agent runtime (`agent_sessions`, `agent_steps`, policy/memory-related tables when configured).
-- Infra primitives (`distributed_locks`, rate-limit RPC backing objects).
+  - User/authn/authz: `users`, `user_roles`, `settings`, `user_profiles`, `guild_memberships`.
+  - News and automation: `sources`, `alert_slots`, `logs`, `news_sentiment`.
+  - Trading: `trading_signals`, `market_regime`, `trades`, `candles`, `trading_engine_configs`.
+  - Agent runtime: `agent_sessions`, `agent_steps`, `agent_action_logs`, `agent_llm_call_logs`, `agent_weekly_reports`, `agent_skill_catalog`, `agent_workflow_profiles`.
+  - Memory: `memory_items`, `memory_sources`, `memory_feedback`, `memory_conflicts`, `memory_jobs`, `memory_item_links`, `memory_job_deadletters`.
+  - Eval/reward: `retrieval_eval_sets/cases/targets/runs/results`, `retrieval_ranker_experiments`, `retrieval_ranker_active_profiles`.
+  - GoT/ToT: `agent_got_runs/nodes/edges/selection_events/cutover_profiles`, `agent_tot_policies/candidate_pairs`.
+  - Sprint: `sprint_pipelines`, `sprint_journal_entries`, `ventyd_events` (event sourcing).
+  - Community: `community_interaction_events`, `community_relationship_edges`, `community_actor_profiles`.
+  - Autonomous evolution: `intents` (Phase G), `agent_trust_scores` (Phase H), observations (Phase F, migration 008).
+  - Workflow: `workflow_sessions`, `workflow_steps`, `workflow_events` (migration 007).
+  - Tool learning: `agent_tool_learning_logs/candidates/rules`.
+  - Privacy/policy: `agent_privacy_policies/gate_samples`, `agent_user_privacy_preferences`, `agent_retention_policies`, `agent_action_policies`.
+  - Infra: `distributed_locks`, `api_rate_limits`, `api_idempotency_keys`.
 
 ## Generated Analysis Artifacts
 
 - Route inventory: `docs/ROUTES_INVENTORY.md`
 - Dependency graph: `docs/DEPENDENCY_GRAPH.md`
 - Schema-service usage map: `docs/SCHEMA_SERVICE_MAP.md`
+- Service directory map: `src/services/DIRECTORY_MAP.md`
+
+## Autonomous Evolution Pipeline (Phase F-H)
+
+5-Phase architecture — 3 phases implemented, 2 planned:
+
+| Phase | Name | Status | Entry |
+|-------|------|--------|-------|
+| F | Observer Layer | ✅ 활성 | `src/services/observer/observerOrchestrator.ts` |
+| G | Intent Formation | ✅ 활성 | `src/services/intent/intentFormationEngine.ts` |
+| H | Progressive Trust | ✅ 활성 | `src/services/sprint/trustScoreService.ts` |
+| I | Synthesis | 미구현 | — |
+| J | MetaCognition | 미구현 | — |
+
+Phase F: 6개 채널이 환경을 스캔 → `observations` 테이블에 기록 → Signal Bus로 전파.
+Phase G: Observation → 규칙 기반 의도 생성 → `intents` 테이블 → (trust 충분 시) Sprint 자동 트리거.
+Phase H: 길드×카테고리 신뢰 점수 = successRate×0.35 + rollbackRate×0.20 + scopeCompliance×0.15 + reviewQuality×0.15 + ageDecay×0.15. 신뢰 점수에 따라 자율 실행 범위 결정.
+
+Design doc: `docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`
+
+## MCP Architecture (Multi-Server)
+
+| Surface | Location | 도구 수 | 역할 |
+|---------|----------|---------|------|
+| muelCore | `.vscode/mcp.json` (local stdio) | 5 | 일반 도구 |
+| muelIndexing | `.vscode/mcp.json` (local stdio) | 7 | 코드 인덱싱 |
+| gcpCompute | GCP VM `:8850` (SSH stdio) | 40 | 외부 어댑터 + Obsidian + 인덱싱 통합 |
+| Supabase | Supabase MCP | DB | 스키마/데이터 조회 |
+| DeepWiki | DeepWiki MCP | — | 외부 repo 문서 질의 |
+
+MCP 서버 코드:
+- `src/mcp/server.ts` — 기본 MCP 서버 (stdio/http)
+- `src/mcp/indexingServer.ts` — 인덱싱 전용
+- `src/mcp/unifiedServer.ts` — 통합 진입점 (기본 + 인덱싱 + Obsidian + ext.*)
+- `src/mcp/obsidianToolAdapter.ts` — Obsidian vault 도구 (search/read/write/backlinks)
+- `src/mcp/unifiedToolAdapter.ts` — ext.* MCP 브릿지 (외부 어댑터 capability를 MCP 도구로 노출)
 
 Regeneration command:
 

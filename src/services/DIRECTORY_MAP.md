@@ -193,3 +193,49 @@ Discord-specific data services (telemetry, rewards, topology, login sessions, CR
 - `discord-support/discordTopologySyncService.ts` — Guild topology sync to Obsidian
 - `discord-support/discordLoginSessionStore.ts` — Login session persistence
 - `discord-support/userCrmService.ts` — User CRM: global profiles, guild memberships, activity tracking (write-behind buffer)
+
+### Intent Formation (`intent/`)
+Observation → intent conversion engine (Phase G of Autonomous Evolution).
+- `intent/intentTypes.ts` — Intent domain types (severity, category, rule names)
+- `intent/intentFormationEngine.ts` — 6 rule-based intent formation + signal bus integration
+- `intent/intentStore.ts` — Exemplar CRUD for intent classification training
+- `intent/metricReviewService.ts` — Metric review formatter for intent decisions
+
+### LLM Client (`llm/`)
+Provider-agnostic LLM text generation and routing.
+- `llm/client.ts` — generateText + cache + logging (delegates to providers.ts)
+- `llm/providers.ts` — 9 HTTP providers (OpenAI, Anthropic, Gemini, Ollama, LiteLLM, HuggingFace, OpenClaw, OpenJarvis, Nemotron)
+- `llm/routing.ts` — Provider chain selection, policy actions, experiment arms
+
+### Automation (`automation/`)
+Automation worker orchestration and external workflow delegation.
+- `automation/n8nDelegationService.ts` — n8n workflow delegation
+- `automation/types.ts` — ChannelSink and automation types
+- `automation/runtimeState.ts` — Automation runtime health state
+- `automation/health.ts` — Health check helpers
+
+### Workflow & Traffic Routing (`workflow/`)
+A/B traffic routing and workflow event persistence.
+- `workflow/trafficRoutingService.ts` — 4-gate routing decision engine (flag/readiness/bucket/divergence)
+- `workflow/workflowPersistenceService.ts` — Workflow session/step/event persistence
+
+### Worker Generation (`workerGeneration/`)
+Dynamic worker auto-proposal and approval pipeline.
+- `workerGeneration/backgroundProposalSweep.ts` — Background auto-worker proposal evaluation loop
+- `workerGeneration/workerApprovalStore.ts` — Worker approval CRUD
+- `workerGeneration/dynamicWorkerRegistry.ts` — Dynamic worker registration
+- `workerGeneration/proposalMetrics.ts` — Proposal success metrics
+
+### Security (`security/`)
+Automated security scanning pipeline.
+- `security/securityPipelineOrchestrator.ts` — OWASP Top 10 + STRIDE threat model automation
+
+### OpenClaw (`openclaw/`)
+OpenClaw gateway health monitoring.
+- `openclaw/openclawGatewayHealthService.ts` — Gateway status monitoring
+
+### Runtime Alerts (`runtime-alerts/`)
+Alert rule evaluation and dispatch.
+- `runtime-alerts/alertRules.ts` — Alert condition definitions
+- `runtime-alerts/alertDispatcher.ts` — Alert routing and dispatch
+- `runtime-alerts/alertConfig.ts` — Alert configuration
