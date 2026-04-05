@@ -1,17 +1,19 @@
 import { parseBooleanEnv } from '../../utils/env';
 import logger from '../../logger';
 import { headlessCliObsidianAdapter } from './adapters/headlessCliAdapter.ts';
-import { localFsObsidianAdapter } from './adapters/localFsAdapter.ts';
 import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
 import { scriptCliObsidianAdapter } from './adapters/scriptCliAdapter.ts';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import type {
   ObsidianCapability,
+  ObsidianFileInfo,
   ObsidianLoreQuery,
   ObsidianNode,
   ObsidianNoteWriteInput,
+  ObsidianOutlineHeading,
   ObsidianReadFileQuery,
+  ObsidianSearchContextResult,
   ObsidianSearchQuery,
   ObsidianSearchResult,
   ObsidianTask,
@@ -19,7 +21,7 @@ import type {
 } from './types';
 import { supportsCapability } from './types';
 
-const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli', 'local-fs'];
+const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli'];
 
 const parseAdapterOrder = (value: string | undefined): string[] => String(value || '')
   .split(',')
@@ -39,6 +41,11 @@ const ORDER_ENV_BY_CAPABILITY: Record<ObsidianCapability, string | undefined> = 
   set_property: undefined,
   set_tags: undefined,
   run_plugin_command: undefined,
+  outline: undefined,
+  search_context: undefined,
+  property_read: undefined,
+  files_list: undefined,
+  append_content: undefined,
 };
 const OBSIDIAN_ADAPTER_STRICT = parseBooleanEnv(process.env.OBSIDIAN_ADAPTER_STRICT, false);
 
@@ -46,7 +53,6 @@ const registry: Record<string, ObsidianVaultAdapter> = {
   [nativeCliObsidianAdapter.id]: nativeCliObsidianAdapter,
   [headlessCliObsidianAdapter.id]: headlessCliObsidianAdapter,
   [scriptCliObsidianAdapter.id]: scriptCliObsidianAdapter,
-  [localFsObsidianAdapter.id]: localFsObsidianAdapter,
 };
 
 const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'];
@@ -93,7 +99,7 @@ const getOrderedAdapters = (capability?: ObsidianCapability): ObsidianVaultAdapt
     return ordered;
   }
 
-  return [nativeCliObsidianAdapter, headlessCliObsidianAdapter, scriptCliObsidianAdapter, localFsObsidianAdapter];
+  return [nativeCliObsidianAdapter, headlessCliObsidianAdapter, scriptCliObsidianAdapter];
 };
 
 const pickAdapter = (capability: ObsidianCapability): ObsidianVaultAdapter | null => {
@@ -522,4 +528,90 @@ export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
     readCapable,
     searchCapable,
   };
+};
+
+// ── New capability routers ────────────────────────────────────────────────────
+
+export const getObsidianOutlineWithAdapter = async (
+  vaultPath: string,
+  filePath: string,
+): Promise<ObsidianOutlineHeading[]> => {
+  const adapter = pickAdapter('outline');
+  if (!adapter?.getOutline) return [];
+  try {
+    return await adapter.getOutline({ vaultPath, filePath });
+  } catch {
+    return [];
+  }
+};
+
+export const searchObsidianContextWithAdapter = async (
+  vaultPath: string,
+  query: string,
+  limit?: number,
+): Promise<ObsidianSearchContextResult[]> => {
+  const adapter = pickAdapter('search_context');
+  if (!adapter?.searchContext) return [];
+  try {
+    return await adapter.searchContext({ vaultPath, query, limit });
+  } catch {
+    return [];
+  }
+};
+
+export const readObsidianPropertyWithAdapter = async (
+  vaultPath: string,
+  filePath: string,
+  name: string,
+): Promise<string | null> => {
+  const adapter = pickAdapter('property_read');
+  if (!adapter?.readProperty) return null;
+  try {
+    return await adapter.readProperty({ vaultPath, filePath, name });
+  } catch {
+    return null;
+  }
+};
+
+export const setObsidianPropertyWithAdapter = async (
+  vaultPath: string,
+  filePath: string,
+  name: string,
+  value: string,
+): Promise<boolean> => {
+  const adapter = pickAdapter('set_property');
+  if (!adapter?.setProperty) return false;
+  try {
+    return await adapter.setProperty({ vaultPath, filePath, name, value });
+  } catch {
+    return false;
+  }
+};
+
+export const listObsidianFilesWithAdapter = async (
+  vaultPath: string,
+  folder?: string,
+  extension?: string,
+): Promise<ObsidianFileInfo[]> => {
+  const adapter = pickAdapter('files_list');
+  if (!adapter?.listFiles) return [];
+  try {
+    return await adapter.listFiles({ vaultPath, folder, extension });
+  } catch {
+    return [];
+  }
+};
+
+export const appendObsidianContentWithAdapter = async (
+  vaultPath: string,
+  filePath: string,
+  content: string,
+): Promise<boolean> => {
+  const adapter = pickAdapter('append_content');
+  if (!adapter?.appendContent) return false;
+  try {
+    return await adapter.appendContent({ vaultPath, filePath, content });
+  } catch {
+    return false;
+  }
 };

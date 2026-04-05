@@ -15,7 +15,18 @@ import {
   getObsidianGraphMetadataWithAdapter,
   writeObsidianNoteWithAdapter,
   getObsidianAdapterRuntimeStatus,
+  getObsidianOutlineWithAdapter,
+  searchObsidianContextWithAdapter,
+  readObsidianPropertyWithAdapter,
+  setObsidianPropertyWithAdapter,
+  listObsidianFilesWithAdapter,
+  appendObsidianContentWithAdapter,
+  appendDailyNoteWithAdapter,
+  readDailyNoteWithAdapter,
+  listObsidianTasksWithAdapter,
+  toggleObsidianTaskWithAdapter,
 } from '../services/obsidian/router';
+import { evalCode as obsidianEvalCode } from '../services/obsidian/adapters/nativeCliAdapter';
 import { queryObsidianRAG } from '../services/obsidian/obsidianRagService';
 import { getCacheStats } from '../services/obsidian/obsidianCacheService';
 import { getObsidianLoreSyncLoopStats } from '../services/obsidian/obsidianLoreSyncService';
@@ -135,6 +146,138 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.outline',
+    description: '파일의 제목(heading) 구조를 트리 형태로 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'vault 내 상대 파일 경로' },
+      },
+      required: ['filePath'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.search.context',
+    description: 'grep 스타일 라인 컨텍스트 포함 검색 — path:line:text 형식으로 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '검색 쿼리' },
+        limit: { type: 'number', description: '최대 결과 수 (기본: 50)' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.property.read',
+    description: '파일의 frontmatter 속성 값을 읽습니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'vault 내 상대 파일 경로' },
+        name: { type: 'string', description: '속성 이름' },
+      },
+      required: ['filePath', 'name'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.property.set',
+    description: '파일의 frontmatter 속성을 설정합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'vault 내 상대 파일 경로' },
+        name: { type: 'string', description: '속성 이름' },
+        value: { type: 'string', description: '속성 값' },
+      },
+      required: ['filePath', 'name', 'value'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.files',
+    description: 'Vault 내 파일 목록을 조회합니다. 폴더와 확장자로 필터링 가능.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        folder: { type: 'string', description: '필터링할 폴더 경로 (선택)' },
+        extension: { type: 'string', description: '확장자 필터 (예: md, json) (선택)' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.daily.read',
+    description: '오늘의 일일 노트 내용을 읽습니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.daily.append',
+    description: '오늘의 일일 노트에 내용을 추가합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: '추가할 내용' },
+      },
+      required: ['content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.tasks',
+    description: 'Vault 전체의 마크다운 작업(체크박스)을 나열합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.task.toggle',
+    description: '특정 작업의 완료/미완료 상태를 전환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: '파일 경로' },
+        line: { type: 'number', description: '작업이 있는 줄 번호 (1-indexed)' },
+      },
+      required: ['filePath', 'line'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.append',
+    description: '기존 파일 끝에 내용을 추가합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'vault 내 상대 파일 경로' },
+        content: { type: 'string', description: '추가할 내용' },
+      },
+      required: ['filePath', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.eval',
+    description: 'Obsidian 앱 컨텍스트에서 JavaScript를 실행하고 결과를 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: '실행할 JavaScript 코드' },
+      },
+      required: ['code'],
       additionalProperties: false,
     },
   },
@@ -280,6 +423,111 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
   // ── obsidian.adapter.status ─────────────────────────────────────────────
   if (name === 'obsidian.adapter.status') {
     return toJsonResult(getObsidianAdapterRuntimeStatus());
+  }
+
+  // ── obsidian.outline ────────────────────────────────────────────────────
+  if (name === 'obsidian.outline') {
+    const filePath = compact(args.filePath);
+    if (!filePath) return toTextResult('filePath is required', true);
+    if (filePath.includes('..') || /^[a-zA-Z]:/.test(filePath) || filePath.startsWith('/')) {
+      return toTextResult('invalid filePath: path traversal or absolute path not allowed', true);
+    }
+    const headings = await getObsidianOutlineWithAdapter(vaultPath || '', filePath);
+    if (headings.length === 0) return toTextResult('No headings found.');
+    return toJsonResult(headings);
+  }
+
+  // ── obsidian.search.context ─────────────────────────────────────────────
+  if (name === 'obsidian.search.context') {
+    const query = compact(args.query);
+    if (!query) return toTextResult('query is required', true);
+    const limit = typeof args.limit === 'number' ? args.limit : 50;
+    const results = await searchObsidianContextWithAdapter(vaultPath || '', query, limit);
+    if (results.length === 0) return toTextResult('No matches found.');
+    return toJsonResult(results);
+  }
+
+  // ── obsidian.property.read ──────────────────────────────────────────────
+  if (name === 'obsidian.property.read') {
+    const filePath = compact(args.filePath);
+    const propName = compact(args.name);
+    if (!filePath || !propName) return toTextResult('filePath and name are required', true);
+    if (filePath.includes('..')) return toTextResult('invalid filePath', true);
+    const value = await readObsidianPropertyWithAdapter(vaultPath || '', filePath, propName);
+    if (value === null) return toTextResult(`Property "${propName}" not found in ${filePath}`);
+    return toTextResult(value);
+  }
+
+  // ── obsidian.property.set ───────────────────────────────────────────────
+  if (name === 'obsidian.property.set') {
+    const filePath = compact(args.filePath);
+    const propName = compact(args.name);
+    const propValue = compact(args.value);
+    if (!filePath || !propName) return toTextResult('filePath and name are required', true);
+    if (filePath.includes('..')) return toTextResult('invalid filePath', true);
+    const ok = await setObsidianPropertyWithAdapter(vaultPath || '', filePath, propName, propValue);
+    return ok ? toJsonResult({ ok: true }) : toTextResult('Failed to set property', true);
+  }
+
+  // ── obsidian.files ──────────────────────────────────────────────────────
+  if (name === 'obsidian.files') {
+    const folder = compact(args.folder) || undefined;
+    const extension = compact(args.extension) || undefined;
+    if (folder?.includes('..')) return toTextResult('invalid folder path', true);
+    const files = await listObsidianFilesWithAdapter(vaultPath || '', folder, extension);
+    return toJsonResult({ count: files.length, files });
+  }
+
+  // ── obsidian.daily.read ─────────────────────────────────────────────────
+  if (name === 'obsidian.daily.read') {
+    const content = await readDailyNoteWithAdapter();
+    if (content === null) return toTextResult('No daily note for today.');
+    return toTextResult(content);
+  }
+
+  // ── obsidian.daily.append ───────────────────────────────────────────────
+  if (name === 'obsidian.daily.append') {
+    const content = compact(args.content);
+    if (!content) return toTextResult('content is required', true);
+    const ok = await appendDailyNoteWithAdapter(content);
+    return ok ? toJsonResult({ ok: true }) : toTextResult('Failed to append to daily note', true);
+  }
+
+  // ── obsidian.tasks ──────────────────────────────────────────────────────
+  if (name === 'obsidian.tasks') {
+    const tasks = await listObsidianTasksWithAdapter();
+    return toJsonResult({ count: tasks.length, tasks });
+  }
+
+  // ── obsidian.task.toggle ────────────────────────────────────────────────
+  if (name === 'obsidian.task.toggle') {
+    const filePath = compact(args.filePath);
+    const line = typeof args.line === 'number' ? args.line : 0;
+    if (!filePath || line <= 0) return toTextResult('filePath and line (>0) are required', true);
+    if (filePath.includes('..')) return toTextResult('invalid filePath', true);
+    const ok = await toggleObsidianTaskWithAdapter(filePath, line);
+    return ok ? toJsonResult({ ok: true }) : toTextResult('Failed to toggle task', true);
+  }
+
+  // ── obsidian.append ─────────────────────────────────────────────────────
+  if (name === 'obsidian.append') {
+    const filePath = compact(args.filePath);
+    const content = compact(args.content);
+    if (!filePath || !content) return toTextResult('filePath and content are required', true);
+    if (filePath.includes('..') || /^[a-zA-Z]:/.test(filePath) || filePath.startsWith('/')) {
+      return toTextResult('invalid filePath', true);
+    }
+    const ok = await appendObsidianContentWithAdapter(vaultPath || '', filePath, content);
+    return ok ? toJsonResult({ ok: true }) : toTextResult('Failed to append content', true);
+  }
+
+  // ── obsidian.eval ───────────────────────────────────────────────────────
+  if (name === 'obsidian.eval') {
+    const code = compact(args.code);
+    if (!code) return toTextResult('code is required', true);
+    const result = await obsidianEvalCode(code);
+    if (result === null) return toTextResult('eval failed (CLI unavailable or execution error)', true);
+    return toTextResult(result);
   }
 
   return toTextResult(`Unknown obsidian tool: ${name}`, true);

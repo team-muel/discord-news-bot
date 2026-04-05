@@ -71,7 +71,7 @@ describe('obsidianToolAdapter', () => {
   describe('listObsidianMcpTools', () => {
     it('returns all obsidian tools with valid specs', () => {
       const tools = listObsidianMcpTools();
-      expect(tools.length).toBe(9);
+      expect(tools.length).toBe(20);
 
       const names = tools.map((t) => t.name);
       expect(names).toContain('obsidian.search');
@@ -83,6 +83,16 @@ describe('obsidianToolAdapter', () => {
       expect(names).toContain('obsidian.cache.stats');
       expect(names).toContain('obsidian.quality.audit');
       expect(names).toContain('obsidian.adapter.status');
+      expect(names).toContain('obsidian.outline');
+      expect(names).toContain('obsidian.search.context');
+      expect(names).toContain('obsidian.property.read');
+      expect(names).toContain('obsidian.property.set');
+      expect(names).toContain('obsidian.files');
+      expect(names).toContain('obsidian.daily.read');
+      expect(names).toContain('obsidian.daily.append');
+      expect(names).toContain('obsidian.tasks');
+      expect(names).toContain('obsidian.task.toggle');
+      expect(names).toContain('obsidian.append');
     });
 
     it('each tool has a valid inputSchema', () => {
@@ -103,7 +113,7 @@ describe('obsidianToolAdapter', () => {
 
   describe('OBSIDIAN_TOOL_NAMES', () => {
     it('contains all tool names', () => {
-      expect(OBSIDIAN_TOOL_NAMES.size).toBe(9);
+      expect(OBSIDIAN_TOOL_NAMES.size).toBe(20);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.search')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.write')).toBe(true);
     });

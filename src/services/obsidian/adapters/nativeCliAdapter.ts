@@ -3,10 +3,13 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
 import type {
+  ObsidianFileInfo,
   ObsidianLoreQuery,
   ObsidianNode,
   ObsidianNoteWriteInput,
+  ObsidianOutlineHeading,
   ObsidianReadFileQuery,
+  ObsidianSearchContextResult,
   ObsidianSearchQuery,
   ObsidianSearchResult,
   ObsidianTask,
@@ -51,6 +54,9 @@ const sanitizeArg = (value: unknown, maxLen = 300): string =>
     .slice(0, maxLen);
 
 // ── Core runner ────────────────────────────────────
+const getXdgRuntimeDir = (): string =>
+  String(process.env.XDG_RUNTIME_DIR || '').trim();
+
 const runNativeCli = async (
   args: string[],
   timeout?: number,
@@ -58,11 +64,16 @@ const runNativeCli = async (
   const cliPath = getNativeCliPath();
   if (!cliPath) return null;
 
+  const env: Record<string, string> = { ...process.env as Record<string, string> };
+  const xdg = getXdgRuntimeDir();
+  if (xdg) env.XDG_RUNTIME_DIR = xdg;
+
   try {
     const { stdout } = await execFileAsync(cliPath, args, {
       timeout: timeout ?? getTimeoutMs(),
       windowsHide: true,
       maxBuffer: 2 * 1024 * 1024,
+      env,
     });
     return String(stdout || '');
   } catch {
@@ -400,10 +411,161 @@ const toggleTask = async (params: { filePath: string; line: number }): Promise<b
   return output !== null;
 };
 
+// ── outline ────────────────────────────────────────
+const getOutline = async (
+  params: { vaultPath: string; filePath: string },
+): Promise<ObsidianOutlineHeading[]> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safePath = sanitizeArg(params.filePath, 400);
+  if (!safePath) return [];
+
+  const output = await runNativeCli([
+    'outline',
+    `path=${safePath}`,
+    `vault=${vaultName}`,
+    'format=json',
+  ]);
+
+  const items = tryParseJsonArray<Record<string, unknown>>(output);
+  return items
+    .filter((item) => typeof item === 'object' && item !== null && 'text' in item)
+    .map((item) => ({
+      level: Number(item.level ?? 1),
+      text: String(item.text ?? ''),
+      line: Number(item.line ?? 0),
+    }));
+};
+
+// ── search:context ─────────────────────────────────
+const searchContext = async (
+  params: { vaultPath: string; query: string; limit?: number },
+): Promise<ObsidianSearchContextResult[]> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safeQuery = sanitizeArg(params.query, 300);
+  const limit = Math.max(1, Math.min(200, params.limit ?? 50));
+  if (!safeQuery) return [];
+
+  const output = await runNativeCli([
+    'search:context',
+    `query=${safeQuery}`,
+    `vault=${vaultName}`,
+    `limit=${limit}`,
+    'format=json',
+  ]);
+
+  const items = tryParseJsonArray<Record<string, unknown>>(output);
+  return items
+    .filter((item) => typeof item === 'object' && item !== null)
+    .map((item) => ({
+      filePath: String(item.file ?? item.filePath ?? ''),
+      line: Number(item.line ?? 0),
+      text: String(item.text ?? item.content ?? ''),
+    }));
+};
+
+// ── property:read / property:set ───────────────────
+const readProperty = async (
+  params: { vaultPath: string; filePath: string; name: string },
+): Promise<string | null> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safePath = sanitizeArg(params.filePath, 400);
+  const safeName = sanitizeArg(params.name, 60);
+  if (!safePath || !safeName) return null;
+
+  const output = await runNativeCli([
+    'property:read',
+    `path=${safePath}`,
+    `vault=${vaultName}`,
+    `name=${safeName}`,
+  ]);
+
+  return output?.trim() || null;
+};
+
+const setProperty = async (
+  params: { vaultPath: string; filePath: string; name: string; value: string },
+): Promise<boolean> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safePath = sanitizeArg(params.filePath, 400);
+  const safeName = sanitizeArg(params.name, 60);
+  const safeValue = sanitizeArg(params.value, 200);
+  if (!safePath || !safeName) return false;
+
+  const output = await runNativeCli([
+    'property:set',
+    `path=${safePath}`,
+    `vault=${vaultName}`,
+    `name=${safeName}`,
+    `value=${safeValue}`,
+  ]);
+
+  return output !== null;
+};
+
+// ── files listing ──────────────────────────────────
+const listFiles = async (
+  params: { vaultPath: string; folder?: string; extension?: string },
+): Promise<ObsidianFileInfo[]> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const args = ['files', `vault=${vaultName}`, 'format=json'];
+  if (params.folder) args.push(`folder=${sanitizeArg(params.folder, 200)}`);
+  if (params.extension) args.push(`ext=${sanitizeArg(params.extension, 10)}`);
+
+  const output = await runNativeCli(args);
+  const items = tryParseJsonArray<Record<string, unknown>>(output);
+
+  return items
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .map((item) => {
+      const filePath = String(item.path ?? item.file ?? item);
+      return {
+        filePath,
+        name: String(item.name ?? path.basename(filePath, path.extname(filePath))),
+        extension: String(item.extension ?? path.extname(filePath).slice(1)),
+        sizeBytes: Number(item.size ?? 0),
+        modifiedAt: Number(item.modified ?? 0),
+      };
+    });
+};
+
+// ── append ─────────────────────────────────────────
+const appendContent = async (
+  params: { vaultPath: string; filePath: string; content: string },
+): Promise<boolean> => {
+  const vaultName = sanitizeArg(getVaultName(), 120);
+  const safePath = sanitizeArg(params.filePath, 400);
+  const safeContent = String(params.content || '').slice(0, 4000);
+  if (!safePath || !safeContent) return false;
+
+  const output = await runNativeCli([
+    'append',
+    `path=${safePath}`,
+    `vault=${vaultName}`,
+    `content=${safeContent}`,
+  ]);
+
+  return output !== null;
+};
+
+// ── eval (JS execution in Obsidian context) ────────
+export const evalCode = async (code: string): Promise<string | null> => {
+  const safeCode = String(code || '').slice(0, 2000);
+  if (!safeCode) return null;
+
+  return runNativeCli([
+    'eval',
+    `code=${safeCode}`,
+  ]);
+};
+
 // ── Export ──────────────────────────────────────────
 export const nativeCliObsidianAdapter: ObsidianVaultAdapter = {
   id: 'native-cli',
-  capabilities: ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'],
+  capabilities: [
+    'read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note',
+    'daily_note', 'task_management',
+    'outline', 'search_context', 'property_read', 'set_property', 'files_list', 'append_content',
+  ],
   isAvailable: () => NATIVE_CLI_ENABLED && getNativeCliPath().length > 0,
   readLore,
   searchVault,
@@ -414,4 +576,10 @@ export const nativeCliObsidianAdapter: ObsidianVaultAdapter = {
   dailyRead,
   listTasks,
   toggleTask,
+  getOutline,
+  searchContext,
+  readProperty,
+  setProperty,
+  listFiles,
+  appendContent,
 };

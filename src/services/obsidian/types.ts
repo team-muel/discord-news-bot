@@ -8,7 +8,12 @@ export type ObsidianCapability =
   | 'set_tags'
   | 'run_plugin_command'
   | 'daily_note'
-  | 'task_management';
+  | 'task_management'
+  | 'outline'
+  | 'search_context'
+  | 'property_read'
+  | 'files_list'
+  | 'append_content';
 
 export type ObsidianNode = {
   filePath: string;
@@ -59,6 +64,26 @@ export type ObsidianTask = {
   tags?: string[];
 };
 
+export type ObsidianOutlineHeading = {
+  level: number;
+  text: string;
+  line: number;
+};
+
+export type ObsidianSearchContextResult = {
+  filePath: string;
+  line: number;
+  text: string;
+};
+
+export type ObsidianFileInfo = {
+  filePath: string;
+  name: string;
+  extension: string;
+  sizeBytes: number;
+  modifiedAt: number;
+};
+
 export type ObsidianVaultAdapter = {
   id: string;
   capabilities: ReadonlyArray<ObsidianCapability>;
@@ -73,6 +98,12 @@ export type ObsidianVaultAdapter = {
   dailyRead?: () => Promise<string | null>;
   listTasks?: () => Promise<ObsidianTask[]>;
   toggleTask?: (params: { filePath: string; line: number }) => Promise<boolean>;
+  getOutline?: (params: { vaultPath: string; filePath: string }) => Promise<ObsidianOutlineHeading[]>;
+  searchContext?: (params: { vaultPath: string; query: string; limit?: number }) => Promise<ObsidianSearchContextResult[]>;
+  readProperty?: (params: { vaultPath: string; filePath: string; name: string }) => Promise<string | null>;
+  setProperty?: (params: { vaultPath: string; filePath: string; name: string; value: string }) => Promise<boolean>;
+  listFiles?: (params: { vaultPath: string; folder?: string; extension?: string }) => Promise<ObsidianFileInfo[]>;
+  appendContent?: (params: { vaultPath: string; filePath: string; content: string }) => Promise<boolean>;
 };
 
 export const supportsCapability = (

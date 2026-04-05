@@ -1,0 +1,15 @@
+[Unit]
+Description=Obsidian Headless (Xvfb + Electron)
+After=network.target
+
+[Service]
+Type=simple
+User=fancy
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+ExecStart=/usr/bin/xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24 -nolisten tcp" /opt/obsidian-app/obsidian --no-sandbox --remote-debugging-port=9222
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
