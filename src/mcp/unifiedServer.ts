@@ -16,7 +16,7 @@ import readline from 'node:readline';
 import { listAllMcpTools, callAnyMcpTool } from './unifiedToolAdapter';
 import type { JsonRpcRequest, JsonRpcResponse, McpToolCallResult } from './types';
 
-const MCP_PROTOCOL_VERSION = '2026-03-01';
+const MCP_PROTOCOL_VERSION = '2024-11-05';
 
 const asObject = (value: unknown): Record<string, unknown> => {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -83,15 +83,23 @@ const handleRequest = async (request: JsonRpcRequest): Promise<JsonRpcResponse> 
     return ok(id, result);
   }
 
+  // MCP notifications (no id) — acknowledge silently, no response
+  if (request.method === 'notifications/initialized' || request.method === 'ping') {
+    return ok(id, {});
+  }
+
   return fail(id, -32601, `method not found: ${request.method}`);
 };
+
+// Notifications have no id — must not send a response per JSON-RPC 2.0 spec
+const isNotification = (request: JsonRpcRequest): boolean =>
+  request.id === undefined || request.id === null;
 
 // ──── Stdio Transport ──────────────────────────────────────────────────────────
 
 export const startUnifiedMcpStdioServer = () => {
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout,
     terminal: false,
   });
 
@@ -111,10 +119,15 @@ export const startUnifiedMcpStdioServer = () => {
 
     try {
       const response = await handleRequest(request);
-      toResponse(response);
+      // JSON-RPC 2.0: notifications (no id) must not receive a response
+      if (!isNotification(request)) {
+        toResponse(response);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toResponse(fail(request.id ?? null, -32603, message));
+      if (!isNotification(request)) {
+        toResponse(fail(request.id ?? null, -32603, message));
+      }
     }
   });
 
