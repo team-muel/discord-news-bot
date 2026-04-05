@@ -3597,3 +3597,77 @@ begin
   end if;
 end
 $$;
+
+-- ==========================================
+-- 24. Intent Formation Engine (Migration 012)
+-- ==========================================
+
+-- 24.1 Intents table
+create table if not exists public.intents (
+  id              bigint generated always as identity primary key,
+  guild_id        text        not null,
+  hypothesis      text        not null,
+  objective       text        not null,
+  rule_id         text        not null,
+  priority_score  real        not null default 0.5,
+  autonomy_level  text        not null default 'approve-impl',
+  status          text        not null default 'pending'
+    check (status in ('pending', 'approved', 'executing', 'completed', 'rejected', 'expired')),
+  observation_ids text[]      not null default '{}',
+  sprint_id       text,
+  cooldown_key    text        not null,
+  token_cost      int         not null default 0,
+  decided_at      timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists idx_intents_guild_status_created
+  on public.intents (guild_id, status, created_at desc);
+
+create index if not exists idx_intents_cooldown_created
+  on public.intents (cooldown_key, created_at desc);
+
+create index if not exists idx_intents_sprint
+  on public.intents (sprint_id)
+  where sprint_id is not null;
+
+create or replace function public.update_intents_updated_at()
+returns trigger as $$
+begin
+  NEW.updated_at := now();
+  return NEW;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_intents_updated_at on public.intents;
+create trigger trg_intents_updated_at
+  before update on public.intents
+  for each row execute function public.update_intents_updated_at();
+
+alter table public.intents enable row level security;
+
+create policy intents_service_role_all on public.intents
+  for all
+  using (true)
+  with check (true);
+
+-- 24.2 Agent trust scores table (Phase H preview)
+create table if not exists public.agent_trust_scores (
+  id          bigint generated always as identity primary key,
+  guild_id    text        not null,
+  category    text        not null,
+  score       real        not null default 0.35,
+  factors     jsonb       not null default '{}',
+  computed_at timestamptz not null default now()
+);
+
+create index if not exists idx_trust_scores_guild_category_computed
+  on public.agent_trust_scores (guild_id, category, computed_at desc);
+
+alter table public.agent_trust_scores enable row level security;
+
+create policy trust_scores_service_role_all on public.agent_trust_scores
+  for all
+  using (true)
+  with check (true);
