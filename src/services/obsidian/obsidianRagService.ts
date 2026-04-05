@@ -432,13 +432,14 @@ async function findRelatedDocuments(
 
     // Fallback: if tag search yielded no results, try keyword search using the question itself.
     if (scoredResults.size === 0) {
-      logger.debug('[OBSIDIAN-RAG] tag search returned 0 results — falling back to keyword search');
+      logger.info('[OBSIDIAN-RAG] tag search returned 0 results — falling back to keyword search for: %s', question.slice(0, 80));
       const ragVaultPathFb = getObsidianVaultRoot() || '';
       const keywordResults = await searchObsidianVaultWithAdapter({
         vaultPath: ragVaultPathFb,
         query: question.slice(0, 200),
         limit,
       });
+      logger.info('[OBSIDIAN-RAG] keyword fallback returned %d results (vault=%s)', keywordResults.length, ragVaultPathFb);
       for (const r of keywordResults) {
         const p = normalizeResultPath(r.filePath);
         if (p) scoredResults.set(p, Number.isFinite(r.score) ? Number(r.score) : 0);
