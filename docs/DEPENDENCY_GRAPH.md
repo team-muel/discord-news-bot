@@ -1,16 +1,16 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 358
+- Nodes: 360
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/logger.ts | 125 |
+| src/logger.ts | 126 |
 | src/services/supabaseClient.ts | 89 |
-| src/config.ts | 79 |
-| src/utils/env.ts | 71 |
+| src/config.ts | 80 |
+| src/utils/env.ts | 72 |
 | src/services/skills/actions/types.ts | 34 |
 | src/services/llmClient.ts | 33 |
 | src/services/infra/baseRepository.ts | 25 |
@@ -61,6 +61,7 @@ graph LR
   "src/app.ts" --> "src/routes/auth.ts"
   "src/app.ts" --> "src/routes/benchmark.ts"
   "src/app.ts" --> "src/routes/bot.ts"
+  "src/app.ts" --> "src/routes/dashboard.ts"
   "src/app.ts" --> "src/routes/fred.ts"
   "src/app.ts" --> "src/routes/health.ts"
   "src/app.ts" --> "src/routes/research.ts"
@@ -395,6 +396,14 @@ graph LR
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/sprintRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/toolsRoutes.ts"
   "src/routes/botAgentRoutes.ts" --> "src/routes/bot-agent/types.ts"
+  "src/routes/dashboard.ts" --> "src/bot.ts"
+  "src/routes/dashboard.ts" --> "src/config.ts"
+  "src/routes/dashboard.ts" --> "src/services/automation/n8nDelegationService.ts"
+  "src/routes/dashboard.ts" --> "src/services/automationBot.ts"
+  "src/routes/dashboard.ts" --> "src/services/obsidian/router.ts"
+  "src/routes/dashboard.ts" --> "src/services/tools/externalAdapterRegistry.ts"
+  "src/routes/dashboard.ts" --> "src/utils/migrationRegistry.ts"
+  "src/routes/dashboard.ts" --> "src/utils/obsidianEnv.ts"
   "src/routes/fred.ts" --> "src/utils/validation.ts"
   "src/routes/health.ts" --> "src/bot.ts"
   "src/routes/health.ts" --> "src/config.ts"
@@ -403,6 +412,7 @@ graph LR
   "src/routes/health.ts" --> "src/services/automationBot.ts"
   "src/routes/health.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/routes/health.ts" --> "src/utils/migrationRegistry.ts"
+  "src/routes/health.ts" --> "src/utils/obsidianEnv.ts"
   "src/routes/research.ts" --> "src/contracts/researchPreset.ts"
   "src/routes/research.ts" --> "src/middleware/auth.ts"
   "src/routes/research.ts" --> "src/services/researchPresetStore.ts"
@@ -1482,6 +1492,9 @@ graph LR
   "src/services/tools/adapters/openjarvisAdapter.ts" --> "src/utils/env.ts"
   "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/config.ts"
   "src/services/tools/adapters/openshellCliAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/renderAdapter.ts" --> "src/logger.ts"
+  "src/services/tools/adapters/renderAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/renderAdapter.ts" --> "src/utils/env.ts"
   "src/services/tools/adapters/scriptCliToolAdapter.ts" --> "src/services/tools/types.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/logger.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/deepwikiAdapter.ts"
@@ -1491,6 +1504,7 @@ graph LR
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openclawCliAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openjarvisAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openshellCliAdapter.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/renderAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/externalAdapterTypes.ts":::file
   "src/services/tools/externalToolProbe.ts" --> "src/config.ts"

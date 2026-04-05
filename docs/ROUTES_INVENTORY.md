@@ -6,8 +6,7 @@
 
 | Method | Path | Auth | Admin | Rate Limit | Source |
 | --- | --- | --- | --- | --- | --- |
-| GET | / | no | no | no | src/routes/health.ts:165 |
-| GET | /dashboard | no | no | no | src/routes/dashboard.ts:108 |
+| GET | / | no | no | no | src/routes/health.ts:195 |
 | GET | /api/auth/callback | no | no | yes | src/routes/auth.ts:282 |
 | GET | /api/auth/invite | no | no | no | src/routes/auth.ts:271 |
 | GET | /api/auth/login | no | no | yes | src/routes/auth.ts:255 |
@@ -172,6 +171,7 @@
 | POST | /api/research/preset/:presetKey | no | yes | no | src/routes/research.ts:36 |
 | GET | /api/research/preset/:presetKey/history | yes | no | no | src/routes/research.ts:25 |
 | POST | /api/research/preset/:presetKey/restore/:historyId | no | yes | no | src/routes/research.ts:58 |
-| GET | /api/status | no | no | no | src/routes/health.ts:161 |
-| GET | /health | no | no | no | src/routes/health.ts:91 |
-| GET | /ready | no | no | no | src/routes/health.ts:146 |
+| GET | /api/status | no | no | no | src/routes/health.ts:191 |
+| GET | /dashboard | no | no | no | src/routes/dashboard.ts:120 |
+| GET | /health | no | no | no | src/routes/health.ts:93 |
+| GET | /ready | no | no | no | src/routes/health.ts:176 |
