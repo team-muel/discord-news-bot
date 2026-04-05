@@ -430,6 +430,21 @@ async function findRelatedDocuments(
       }
     }
 
+    // Fallback: if tag search yielded no results, try keyword search using the question itself.
+    if (scoredResults.size === 0) {
+      logger.debug('[OBSIDIAN-RAG] tag search returned 0 results — falling back to keyword search');
+      const ragVaultPathFb = getObsidianVaultRoot() || '';
+      const keywordResults = await searchObsidianVaultWithAdapter({
+        vaultPath: ragVaultPathFb,
+        query: question.slice(0, 200),
+        limit,
+      });
+      for (const r of keywordResults) {
+        const p = normalizeResultPath(r.filePath);
+        if (p) scoredResults.set(p, Number.isFinite(r.score) ? Number(r.score) : 0);
+      }
+    }
+
     const rankedPaths = [...scoredResults.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([filePath]) => filePath);
