@@ -130,4 +130,54 @@ describe('scopeGuard', () => {
       expect(getNewFileCount(sid)).toBe(3);
     });
   });
+
+  describe('immutable self-protection', () => {
+    it('scopeGuard.ts 자체 수정을 차단한다', () => {
+      const result = checkFileScope('src/services/sprint/scopeGuard.ts');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Immutable safety file');
+    });
+
+    it('sprintOrchestrator.ts 수정을 차단한다', () => {
+      const result = checkFileScope('src/services/sprint/sprintOrchestrator.ts');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Immutable safety file');
+    });
+
+    it('sprintCodeWriter.ts 수정을 차단한다', () => {
+      const result = checkFileScope('src/services/sprint/sprintCodeWriter.ts');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Immutable safety file');
+    });
+
+    it('autonomousGit.ts 수정을 차단한다', () => {
+      const result = checkFileScope('src/services/sprint/autonomousGit.ts');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Immutable safety file');
+    });
+
+    it('config.ts 수정을 차단한다', () => {
+      const result = checkFileScope('src/config.ts');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Immutable safety file');
+    });
+
+    it('./ 접두사가 있어도 차단한다', () => {
+      const result = checkFileScope('./src/services/sprint/scopeGuard.ts');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Immutable safety file');
+    });
+
+    it('스냅샷에 immutableSafetyFiles 목록이 포함된다', () => {
+      const snap = getScopeGuardSnapshot();
+      expect(snap.immutableSafetyFiles).toContain('src/services/sprint/scopeGuard.ts');
+      expect(snap.immutableSafetyFiles).toContain('src/config.ts');
+      expect(snap.immutableSafetyFiles.length).toBeGreaterThanOrEqual(7);
+    });
+
+    it('보호 대상이 아닌 스프린트 파일은 여전히 허용된다', () => {
+      const result = checkFileScope('src/services/sprint/sprintPreamble.ts');
+      expect(result.allowed).toBe(true);
+    });
+  });
 });

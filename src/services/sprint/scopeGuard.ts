@@ -27,6 +27,7 @@ export type ScopeGuardSnapshot = {
   enabled: boolean;
   allowedDirs: string[];
   protectedFiles: string[];
+  immutableSafetyFiles: string[];
   blockedAttempts: number;
   recentBlocked: Array<{ file: string; reason: string; at: string }>;
   newFileCap: number;
@@ -42,6 +43,21 @@ const PROTECTED_FILES = new Set(
   SPRINT_SCOPE_GUARD_PROTECTED_FILES
     .split(',').map((f) => f.trim()).filter(Boolean),
 );
+
+// ──── Immutable self-protection ───────────────────────────────────────────────
+// Hardcoded list of safety-critical files that the autonomous pipeline must
+// NEVER modify. This list is intentionally NOT configurable via environment
+// variables — an agent that can reconfigure its own safety constraints can
+// effectively disable them.
+const IMMUTABLE_SAFETY_PATHS = new Set([
+  'src/services/sprint/scopeGuard.ts',
+  'src/services/sprint/sprintOrchestrator.ts',
+  'src/services/sprint/sprintCodeWriter.ts',
+  'src/services/sprint/autonomousGit.ts',
+  'src/services/sprint/trustScoreService.ts',
+  'src/services/sprint/selfImprovementLoop.ts',
+  'src/config.ts',
+]);
 
 // Destructive patterns that should always be blocked
 const DESTRUCTIVE_PATTERNS = [
@@ -85,7 +101,16 @@ export const checkFileScope = (filePath: string): ScopeCheckResult => {
   const normalized = filePath.replace(/\\/g, '/');
   const basename = path.basename(normalized);
 
-  // Check protected files
+  // Immutable self-protection: safety-critical files cannot be modified by
+  // the autonomous pipeline regardless of env configuration
+  const stripped = normalized.replace(/^\.\//, '');
+  if (IMMUTABLE_SAFETY_PATHS.has(stripped)) {
+    const reason = `Immutable safety file: ${basename}. Cannot be modified by autonomous pipeline.`;
+    recordBlocked(filePath, reason);
+    return { allowed: false, reason };
+  }
+
+  // Check protected files (env-configurable)
   if (PROTECTED_FILES.has(basename) || PROTECTED_FILES.has(normalized)) {
     const reason = `Protected file: ${basename}. Manual modification required.`;
     recordBlocked(filePath, reason);
@@ -194,6 +219,7 @@ export const getScopeGuardSnapshot = (): ScopeGuardSnapshot => ({
   enabled: SPRINT_SCOPE_GUARD_ENABLED,
   allowedDirs: ALLOWED_DIRS,
   protectedFiles: Array.from(PROTECTED_FILES),
+  immutableSafetyFiles: Array.from(IMMUTABLE_SAFETY_PATHS),
   blockedAttempts,
   recentBlocked: recentBlocked.slice(-10),
   newFileCap: SPRINT_NEW_FILE_CAP,
