@@ -82,10 +82,10 @@ describe('externalAdapterTypes', () => {
 });
 
 describe('externalAdapterRegistry', () => {
-  it('listExternalAdapters returns all 7 adapters', async () => {
+  it('listExternalAdapters returns all 8 adapters', async () => {
     const { listExternalAdapters } = await import('./externalAdapterRegistry');
     const adapters = listExternalAdapters();
-    expect(adapters.length).toBe(7);
+    expect(adapters.length).toBe(8);
 
     const ids = adapters.map((a) => a.id);
     expect(ids).toContain('openshell');
@@ -95,6 +95,7 @@ describe('externalAdapterRegistry', () => {
     expect(ids).toContain('n8n');
     expect(ids).toContain('deepwiki');
     expect(ids).toContain('obsidian');
+    expect(ids).toContain('render');
   });
 
   it('getExternalAdapter returns undefined for unknown ID', async () => {
@@ -123,7 +124,7 @@ describe('externalAdapterRegistry', () => {
   it('getExternalAdapterStatus returns availability for all adapters', async () => {
     const { getExternalAdapterStatus } = await import('./externalAdapterRegistry');
     const statuses = await getExternalAdapterStatus();
-    expect(statuses.length).toBe(7);
+    expect(statuses.length).toBe(8);
     for (const s of statuses) {
       expect(s).toHaveProperty('id');
       expect(s).toHaveProperty('available');
@@ -157,7 +158,7 @@ describe('externalAdapterTypes — M-15 schema validation', () => {
     expect(validateAdapterId('MyAdapter')).toBe('myadapter');
   });
 
-  it('KNOWN_ADAPTER_IDS contains the 7 built-ins', async () => {
+  it('KNOWN_ADAPTER_IDS contains the 8 built-ins', async () => {
     const { KNOWN_ADAPTER_IDS } = await import('./externalAdapterTypes');
     expect(KNOWN_ADAPTER_IDS.has('openshell')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('nemoclaw')).toBe(true);
@@ -166,7 +167,8 @@ describe('externalAdapterTypes — M-15 schema validation', () => {
     expect(KNOWN_ADAPTER_IDS.has('n8n')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('deepwiki')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('obsidian')).toBe(true);
-    expect(KNOWN_ADAPTER_IDS.size).toBe(7);
+    expect(KNOWN_ADAPTER_IDS.has('render')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.size).toBe(8);
   });
 });
 

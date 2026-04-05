@@ -4,8 +4,8 @@ services:
     runtime: node
     plan: starter
     autoDeploy: true
-    buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build
-    startCommand: npm run start
+    buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build; npm install -g obsidian-headless
+    startCommand: bash scripts/obsidian-headless-startup.sh
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
@@ -190,6 +190,27 @@ services:
         value: "true"
       - key: PLANNER_PATTERN_CACHE_TTL_MS
         value: "1800000"
+      # Obsidian Headless Sync (ephemeral vault on /tmp)
+      - key: OBSIDIAN_VAULT_PATH
+        value: /tmp/vault
+      - key: OBSIDIAN_VAULT_NAME
+        value: docs
+      - key: OBSIDIAN_HEADLESS_ENABLED
+        value: "true"
+      - key: OBSIDIAN_SYNC_MODE
+        value: bidirectional
+      - key: OBSIDIAN_SYNC_CONFLICT
+        value: merge
+      - key: OBSIDIAN_EMAIL
+        sync: false
+      - key: OBSIDIAN_PASSWORD
+        sync: false
+      - key: OBSIDIAN_E2EE_PASSWORD
+        sync: false
+      - key: OBSIDIAN_LOCAL_FS_ENABLED
+        value: "true"
+      - key: OBSIDIAN_SYNC_VAULT_PATH
+        value: /tmp/vault
       - key: OBSIDIAN_SYNC_LOOP_ENABLED
         value: "true"
       - key: OBSIDIAN_SYNC_LOOP_INTERVAL_MIN
@@ -198,6 +219,11 @@ services:
         value: "app"
       - key: AGENT_SLO_ALERT_LOOP_OWNER
         value: "app"
+      # Render API adapter (self-management)
+      - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_ADAPTER_DISABLED
+        value: "false"
       - key: DISCORD_LOGIN_SESSION_CLEANUP_OWNER
         value: "db"
 

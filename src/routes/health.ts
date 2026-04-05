@@ -6,6 +6,8 @@ import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/a
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
 import { getLastMigrationValidation } from '../utils/migrationRegistry';
+import { getObsidianVaultRoot } from '../utils/obsidianEnv';
+import { existsSync, readdirSync } from 'node:fs';
 
 export type RuntimeReadinessState = {
   botEnabled: boolean;
@@ -130,6 +132,33 @@ export function createHealthRouter(): Router {
       // Non-critical: don't fail health endpoint if n8n probe errors
     }
 
+    // Obsidian vault readiness
+    let obsidianStatus: HealthResponse['obsidian'];
+    const vaultPath = getObsidianVaultRoot();
+    if (vaultPath) {
+      const vaultExists = existsSync(vaultPath);
+      let fileCount = 0;
+      if (vaultExists) {
+        try {
+          const countMd = (dir: string): number => {
+            let n = 0;
+            for (const entry of readdirSync(dir, { withFileTypes: true })) {
+              if (entry.isDirectory() && !entry.name.startsWith('.')) n += countMd(`${dir}/${entry.name}`);
+              else if (entry.isFile() && entry.name.endsWith('.md')) n++;
+            }
+            return n;
+          };
+          fileCount = countMd(vaultPath);
+        } catch { /* non-critical */ }
+      }
+      obsidianStatus = {
+        vaultPath,
+        vaultReady: vaultExists && fileCount > 0,
+        headlessEnabled: process.env.OBSIDIAN_HEADLESS_ENABLED === 'true',
+        fileCount,
+      };
+    }
+
     const payload: HealthResponse = {
       status,
       botStatusGrade,
@@ -137,6 +166,7 @@ export function createHealthRouter(): Router {
       bot,
       automation,
       ...(n8nStatus ? { n8n: n8nStatus } : {}),
+      ...(obsidianStatus ? { obsidian: obsidianStatus } : {}),
       migrations: getLastMigrationValidation(),
     };
 

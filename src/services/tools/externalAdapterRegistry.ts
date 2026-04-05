@@ -5,6 +5,7 @@ import { openjarvisAdapter } from './adapters/openjarvisAdapter';
 import { n8nAdapter } from './adapters/n8nAdapter';
 import { deepwikiAdapter } from './adapters/deepwikiAdapter';
 import { obsidianExternalAdapter } from './adapters/obsidianAdapter';
+import { renderAdapter } from './adapters/renderAdapter';
 import type { ExternalAdapterId, ExternalToolAdapter, ExternalAdapterResult } from './externalAdapterTypes';
 import { validateAdapterId } from './externalAdapterTypes';
 import logger from '../../logger';
@@ -18,6 +19,7 @@ const BUILTIN_ADAPTERS: ReadonlyArray<ExternalToolAdapter> = [
   n8nAdapter,
   deepwikiAdapter,
   obsidianExternalAdapter,
+  renderAdapter,
 ];
 
 /** Mutable map — built-ins + dynamically registered adapters. */

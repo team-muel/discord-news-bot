@@ -194,6 +194,12 @@ export type HealthResponse = {
     configuredTasks: number;
     totalTasks: number;
   };
+  obsidian?: {
+    vaultPath: string;
+    vaultReady: boolean;
+    headlessEnabled: boolean;
+    fileCount: number;
+  };
   migrations?: {
     ok: boolean;
     trackingTableExists: boolean;
