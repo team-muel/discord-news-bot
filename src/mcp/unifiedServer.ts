@@ -1,5 +1,7 @@
 /* eslint-disable no-console */
 import { MCP_WORKER_AUTH_TOKEN, NODE_ENV } from '../config';
+import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 /**
  * Unified MCP Server
  *
@@ -121,8 +123,8 @@ export const startUnifiedMcpStdioServer = () => {
 
 // ──── HTTP Transport ───────────────────────────────────────────────────────────
 
-type HttpIncomingMessage = import('node:http').IncomingMessage;
-type HttpServerResponse = import('node:http').ServerResponse;
+type HttpIncomingMessage = http.IncomingMessage;
+type HttpServerResponse = http.ServerResponse;
 
 const MAX_HTTP_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
 
@@ -153,7 +155,6 @@ const validateAuthToken = (req: HttpIncomingMessage, expectedToken: string): boo
   if (!expectedToken) return false; // no token configured = deny all
   const fromHeader = String(req.headers['x-opencode-worker-token'] || '').trim();
   if (fromHeader) {
-    const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto');
     const expected = Buffer.from(expectedToken);
     const incoming = Buffer.from(fromHeader);
     if (expected.length !== incoming.length) return false;
@@ -162,7 +163,6 @@ const validateAuthToken = (req: HttpIncomingMessage, expectedToken: string): boo
   const authHeader = String(req.headers.authorization || '').trim();
   if (/^Bearer\s+/i.test(authHeader)) {
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto');
     const expected = Buffer.from(expectedToken);
     const incoming = Buffer.from(token);
     if (expected.length !== incoming.length) return false;
@@ -316,8 +316,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
  * Start a standalone HTTP MCP server.
  * Can be used alongside the main Express server or independently.
  */
-export const startMcpHttpServer = (port: number, options?: { authToken?: string }): import('node:http').Server => {
-  const http = require('node:http') as typeof import('node:http');
+export const startMcpHttpServer = (port: number, options?: { authToken?: string }): http.Server => {
   const handler = createMcpHttpHandler(options);
   const server = http.createServer(handler);
   server.listen(port, '127.0.0.1', () => {
