@@ -6,6 +6,7 @@ import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegis
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
 import { getLastMigrationValidation } from '../utils/migrationRegistry';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
+import { getObsidianAdapterRuntimeStatus } from '../services/obsidian/router';
 import { existsSync, readdirSync } from 'node:fs';
 
 /* ─── HTML Template Helpers ──────────────────────────────────────── */
@@ -99,6 +100,16 @@ const CSS = `
   .header { display: flex; align-items: center; margin-bottom: 24px; }
   .header h1 { margin-bottom: 0; }
   .status-pill { margin-left: 12px; font-size: 12px; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+  .card-wide { grid-column: span 2; }
+  .cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px; margin-top: 8px; }
+  .cap-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 8px; background: var(--bg); border-radius: 4px; }
+  .cap-item .cap-name { color: var(--muted); }
+  .cap-item .cap-handler { font-weight: 600; }
+  .section-label { font-size: 12px; color: var(--muted); margin-top: 12px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .obs-adapter-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .obs-adapter-name { font-weight: 600; min-width: 90px; }
+  .obs-caps-list { color: var(--muted); font-size: 11px; }
+  @media (max-width: 768px) { .card-wide { grid-column: span 1; } }
 </style>`;
 
 /* ─── Router ─────────────────────────────────────────────────────── */
@@ -122,6 +133,10 @@ export function createDashboardRouter(): Router {
 
     // Obsidian vault
     const vault = getVaultStats();
+
+    // Obsidian adapter chain
+    let obsAdapterStatus: ReturnType<typeof getObsidianAdapterRuntimeStatus> | null = null;
+    try { obsAdapterStatus = getObsidianAdapterRuntimeStatus(); } catch { /* */ }
 
     // n8n delegation
     let n8n: { delegationEnabled: boolean; configuredTasks: number; totalTasks: number } | null = null;
@@ -183,15 +198,46 @@ export function createDashboardRouter(): Router {
       `).join('')}
     </div>
 
-    <!-- Obsidian Vault -->
-    <div class="card">
+    <!-- Obsidian Vault + Adapter Chain -->
+    <div class="card card-wide">
       <h2>${dot(vault?.vaultReady ?? false)} Obsidian Vault</h2>
       ${vault ? `
         <div class="kv"><span class="k">Path</span><span class="v" style="font-size:11px">${esc(vault.vaultPath)}</span></div>
         <div class="kv"><span class="k">Vault Ready</span><span class="v">${badge(vault.vaultReady ? 'Yes' : 'No', vault.vaultReady)}</span></div>
-        <div class="kv"><span class="k">Headless Sync</span><span class="v">${badge(vault.headlessEnabled ? 'Enabled' : 'Disabled', vault.headlessEnabled)}</span></div>
+        <div class="kv"><span class="k">Sync Mode</span><span class="v">${vault.headlessEnabled
+          ? badge('Headless (ob sync)', true)
+          : vault.vaultReady
+            ? '<span class="badge bg-blue">Desktop App Sync</span>'
+            : badge('Not Syncing', false)
+        }</span></div>
         <div class="kv"><span class="k">Markdown Files</span><span class="v">${vault.fileCount.toLocaleString()}</span></div>
       ` : `<div style="color:var(--muted);font-size:13px">No vault configured</div>`}
+
+      ${obsAdapterStatus ? `
+        <div class="section-label">Adapter Chain (priority order)</div>
+        ${obsAdapterStatus.adapters.map(a => {
+          const isSelected = Object.values(obsAdapterStatus!.selectedByCapability).includes(a.id);
+          return `<div class="obs-adapter-row">
+            ${dot(a.available)}
+            <span class="obs-adapter-name">${esc(a.id)}</span>
+            ${a.available
+              ? (isSelected ? badge('Active', true) : '<span class="badge bg-yellow">Standby</span>')
+              : badge('Unavailable', false)}
+            <span class="obs-caps-list">${a.capabilities.join(', ')}</span>
+          </div>`;
+        }).join('')}
+
+        <div class="section-label">Capability Routing</div>
+        <div class="cap-grid">
+          ${Object.entries(obsAdapterStatus.selectedByCapability).map(([cap, handler]) => `
+            <div class="cap-item">
+              ${dot(handler !== null)}
+              <span class="cap-name">${esc(cap.replace('_', ' '))}</span>
+              <span class="cap-handler">${handler ? esc(handler) : '<span style="color:var(--red)">none</span>'}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
     </div>
 
     <!-- n8n Delegation -->
