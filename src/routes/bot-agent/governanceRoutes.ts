@@ -66,11 +66,11 @@ const toCatalogEntry = (action: ReturnType<typeof listActions>[number], policy?:
 export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
 
-  router.get('/agent/super/capabilities', requireAdmin, async (_req, res) => {
+  router.get('/agent/super/capabilities', requireAdmin, async (_req, res, next) => {
     return res.json({ ok: true, capabilities: getSuperAgentCapabilities() });
   });
 
-  router.post('/agent/super/recommend', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/super/recommend', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guild_id) || toStringParam(req.body?.guildId);
     const objective = toStringParam(req.body?.objective);
     if (!guildId || !objective) {
@@ -90,7 +90,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     }
   });
 
-  router.post('/agent/super/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/super/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guild_id) || toStringParam(req.body?.guildId);
     const objective = toStringParam(req.body?.objective);
     if (!guildId || !objective) {
@@ -108,12 +108,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.status(202).json({ ok: true, ...result, approvalPending: Boolean(result.pendingApproval) });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.startsWith('PRIVACY_PREFLIGHT_BLOCKED:')) {
-        return res.status(403).json({ ok: false, error: 'PRIVACY_PREFLIGHT_BLOCKED', message: 'Privacy preflight check blocked this operation' });
-      }
-      logger.warn('[GOVERNANCE] start super agent session failed: %s', message);
-      return res.status(409).json({ ok: false, error: 'SUPER_AGENT_SESSION_START_FAILED', message: 'Failed to start super agent session' });
+      next(error);
     }
   });
 
@@ -187,7 +182,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     }
   });
 
-  router.get('/agent/actions/approvals', requireAdmin, async (req, res) => {
+  router.get('/agent/actions/approvals', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const statusValue = toStringParam(req.query?.status) as 'pending' | 'approved' | 'rejected' | 'expired' | '';
     const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
@@ -209,7 +204,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     return res.json({ ok: true, items });
   });
 
-  router.post('/agent/actions/execute', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/actions/execute', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const actionName = toStringParam(req.body?.actionName);
     const goal = toStringParam(req.body?.goal);
     const guildId = toStringParam(req.body?.guildId) || undefined;
@@ -257,7 +252,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     }
   });
 
-  router.post('/agent/actions/approvals/:requestId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/actions/approvals/:requestId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const requestId = toStringParam(req.params.requestId);
     const decision = toStringParam(req.body?.decision);
     const reason = toStringParam(req.body?.reason);
@@ -285,7 +280,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     return res.json({ ok: true, request: updated });
   });
 
-  router.post('/agent/opencode/bootstrap-policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/opencode/bootstrap-policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const runMode = toStringParam(req.body?.runMode) || 'approval_required';
     const enabledRaw = req.body?.enabled;
@@ -312,12 +307,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.status(202).json({ ok: true, policy });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'OPENCODE_POLICY_BOOTSTRAP_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/self-growth/policy', requireAdmin, async (req, res) => {
+  router.get('/agent/self-growth/policy', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -345,7 +339,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     });
   });
 
-  router.post('/agent/self-growth/policy/apply', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/self-growth/policy/apply', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const profile = toStringParam(req.body?.profile || req.query?.profile).toLowerCase();
     if (!guildId || !isOneOf(profile, ['human_gate', 'conditional_auto', 'disabled'] as const)) {
@@ -369,12 +363,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.status(202).json({ ok: true, guildId, profile, policy });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'SELF_GROWTH_POLICY_APPLY_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/opencode/summary', requireAdmin, async (req, res) => {
+  router.get('/agent/opencode/summary', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const days = toBoundedInt(req.query?.days, 7, { min: 1, max: 90 });
     if (!guildId) {
@@ -385,18 +378,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       const summary = await getOpencodeExecutionSummary({ guildId, days });
       return res.json({ ok: true, summary });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_SUMMARY_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/opencode/change-requests', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+  router.post('/agent/opencode/change-requests', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const title = toStringParam(req.body?.title);
     const riskTierRaw = toStringParam(req.body?.riskTier).toLowerCase();
@@ -428,18 +414,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.status(201).json({ ok: true, item: created });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid payload' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_CHANGE_REQUEST_CREATE_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/opencode/change-requests', requireAdmin, async (req, res) => {
+  router.get('/agent/opencode/change-requests', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const statusRaw = toStringParam(req.query?.status).toLowerCase();
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
@@ -458,18 +437,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.json({ ok: true, items, count: items.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_CHANGE_REQUEST_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/opencode/change-requests/:changeRequestId/decision', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+  router.post('/agent/opencode/change-requests/:changeRequestId/decision', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const changeRequestId = toBoundedInt(req.params.changeRequestId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
     const decision = toStringParam(req.body?.decision).toLowerCase();
@@ -493,21 +465,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.json({ ok: true, item: updated });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'OPENCODE_CHANGE_REQUEST_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_CHANGE_REQUEST_DECIDE_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/opencode/change-requests/:changeRequestId/queue-publish', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+  router.post('/agent/opencode/change-requests/:changeRequestId/queue-publish', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const changeRequestId = toBoundedInt(req.params.changeRequestId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
     if (!guildId || changeRequestId < 1) {
@@ -529,24 +491,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       const deduplicated = Boolean((job as Record<string, unknown>).deduplicated);
       return res.status(202).json({ ok: true, job, deduplicated });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'OPENCODE_CHANGE_REQUEST_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
-      }
-      if (message === 'OPENCODE_CHANGE_REQUEST_NOT_APPROVED') {
-        return res.status(409).json({ ok: false, error: 'CONFLICT', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_PUBLISH_QUEUE_ENQUEUE_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/opencode/publish-queue', requireAdmin, async (req, res) => {
+  router.get('/agent/opencode/publish-queue', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const statusRaw = toStringParam(req.query?.status).toLowerCase();
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
@@ -565,18 +514,11 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.json({ ok: true, items, count: items.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_PUBLISH_QUEUE_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/opencode/readiness', requireAdmin, async (req, res) => {
+  router.get('/agent/opencode/readiness', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -586,14 +528,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       const readiness = await summarizeOpencodeQueueReadiness({ guildId });
       return res.json({ ok: true, readiness });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'OPENCODE_READINESS_FAILED', message });
+      next(error);
     }
   });
 

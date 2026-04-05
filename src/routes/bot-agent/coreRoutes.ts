@@ -20,7 +20,7 @@ import { BotAgentRouteDeps } from './types';
 
 export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
-  router.get('/agent/sessions', requireAdmin, async (req, res) => {
+  router.get('/agent/sessions', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required' });
@@ -37,7 +37,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     });
   });
 
-  router.get('/agent/conversations/threads', requireAdmin, async (req, res) => {
+  router.get('/agent/conversations/threads', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const requestedBy = toStringParam(req.query?.requestedBy) || undefined;
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
@@ -49,18 +49,11 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
       const items = await listConversationThreads({ guildId, requestedBy, limit });
       return res.json({ ok: true, items, count: items.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'CONVERSATION_THREAD_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/conversations/threads/:threadId/turns', requireAdmin, async (req, res) => {
+  router.get('/agent/conversations/threads/:threadId/turns', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const threadId = toBoundedInt(req.params.threadId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
     const limit = toBoundedInt(req.query?.limit, 200, { min: 1, max: 500 });
@@ -72,18 +65,11 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
       const turns = await listConversationTurns({ guildId, threadId, limit });
       return res.json({ ok: true, threadId, turns, count: turns.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'CONVERSATION_TURN_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/conversations/by-session/:sessionId', requireAdmin, async (req, res) => {
+  router.get('/agent/conversations/by-session/:sessionId', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const sessionId = toStringParam(req.params.sessionId);
     if (!guildId || !sessionId) {
@@ -97,18 +83,11 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
       }
       return res.json({ ok: true, ...item, count: item.turns.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'CONVERSATION_BY_SESSION_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/deadletters', requireAdmin, async (req, res) => {
+  router.get('/agent/deadletters', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
     const deadletters = listAgentDeadletters({ guildId, limit });
@@ -119,16 +98,16 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     });
   });
 
-  router.get('/agent/skills', requireAdmin, async (_req, res) => {
+  router.get('/agent/skills', requireAdmin, async (_req, res, next) => {
     return res.json({ skills: listAgentSkills() });
   });
 
-  router.get('/agent/policy', requireAdmin, async (_req, res) => {
+  router.get('/agent/policy', requireAdmin, async (_req, res, next) => {
     return res.json({ policy: getAgentPolicy(), ops: getAgentOpsSnapshot() });
   });
 
 
-  router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'guildId is required' });
@@ -146,13 +125,13 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     return res.status(result.ok ? 202 : 409).json(result);
   });
 
-  router.post('/agent/learning/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/learning/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const result = triggerDailyLearningRun(client, guildId || undefined);
     return res.status(result.ok ? 202 : 409).json(result);
   });
 
-  router.get('/agent/sessions/:sessionId', requireAdmin, async (req, res) => {
+  router.get('/agent/sessions/:sessionId', requireAdmin, async (req, res, next) => {
     const sessionId = toStringParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'sessionId is required' });
@@ -169,7 +148,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     return res.json({ session: serializeAgentSessionForApi(session, { includeShadowGraph, traceTailLimit }) });
   });
 
-  router.post('/agent/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const goal = toStringParam(req.body?.goal);
     const skillId = toStringParam(req.body?.skillId);
@@ -190,8 +169,7 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
         isAdmin: true,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(409).json({ ok: false, error: 'SESSION_START_FAILED', message });
+      return next(error);
     }
 
     return res.status(202).json({ ok: true, session: serializeAgentSessionForApi(session) });

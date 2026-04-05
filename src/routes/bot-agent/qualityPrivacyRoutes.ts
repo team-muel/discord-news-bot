@@ -16,7 +16,7 @@ import { BotAgentRouteDeps } from './types';
 export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
 
-  router.post('/agent/quality/reviews', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/quality/reviews', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const reviewerId = toStringParam(req.body?.reviewerId);
     const strategyRaw = String(req.body?.strategy || '').trim().toLowerCase();
@@ -40,18 +40,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.json({ ok: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_QUALITY_REVIEW_INSERT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/quality/reviews', requireAdmin, async (req, res) => {
+  router.get('/agent/quality/reviews', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
@@ -63,18 +56,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       const rows = await listAgentAnswerQualityReviews({ guildId, days, limit });
       return res.json({ ok: true, rows, count: rows.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_QUALITY_REVIEW_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/quality/reviews/summary', requireAdmin, async (req, res) => {
+  router.get('/agent/quality/reviews/summary', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
     if (!guildId) {
@@ -85,24 +71,17 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       const summary = await getAgentAnswerQualityReviewSummary({ guildId, days });
       return res.json({ ok: true, summary });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_QUALITY_REVIEW_SUMMARY_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/privacy/policy', requireAdmin, async (req, res) => {
+  router.get('/agent/privacy/policy', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || '*';
     const policy = getAgentPrivacyPolicySnapshot(guildId);
     return res.json({ guildId, policy });
   });
 
-  router.get('/agent/privacy/consent', requireAuth, async (req, res) => {
+  router.get('/agent/privacy/consent', requireAuth, async (req, res, next) => {
     const requester = toStringParam(req.user?.id) || '';
     const guildId = toStringParam(req.query?.guildId);
     const targetUserId = toStringParam(req.query?.userId) || requester;
@@ -123,7 +102,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     return res.json({ ok: true, consent });
   });
 
-  router.put('/agent/privacy/consent', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+  router.put('/agent/privacy/consent', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
     const requester = toStringParam(req.user?.id) || '';
     const guildId = toStringParam(req.body?.guildId);
     const targetUserId = toStringParam(req.body?.userId) || requester;
@@ -152,21 +131,17 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.json({ ok: true, consent });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and userId are required' });
-      }
-      return res.status(500).json({ ok: false, error: 'CONSENT_UPSERT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/privacy/retention-policy', requireAdmin, async (req, res) => {
+  router.get('/agent/privacy/retention-policy', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || '*';
     const policy = await getAgentRetentionPolicySnapshot(guildId);
     return res.json({ ok: true, policy });
   });
 
-  router.put('/agent/privacy/retention-policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.put('/agent/privacy/retention-policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId) || '*';
     try {
       const updatedBy = toStringParam(req.user?.id) || 'api';
@@ -181,15 +156,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.json({ ok: true, policy });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
-      }
-      return res.status(500).json({ ok: false, error: 'RETENTION_POLICY_UPSERT_FAILED', message });
+      next(error);
     }
   });
 
-  router.put('/agent/privacy/policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.put('/agent/privacy/policy', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId) || '*';
     const modeDefault = toStringParam(req.body?.modeDefault) as 'direct' | 'plan_act' | 'deliberate' | 'guarded';
     const reviewScore = toBoundedInt(req.body?.reviewScore, 60, { min: 0, max: 100 });
@@ -218,15 +189,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.json({ ok: true, policy: row });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'PRIVACY_POLICY_UPSERT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/privacy/tuning/samples', requireAdmin, async (req, res) => {
+  router.get('/agent/privacy/tuning/samples', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
     const status = toStringParam(req.query?.status) as 'reviewed' | 'unreviewed' | '';
@@ -241,15 +208,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       const items = await listPrivacyGateSamples({ guildId, limit, status: status || undefined });
       return res.json({ ok: true, items });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'PRIVACY_TUNING_SAMPLES_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/privacy/tuning/samples/:sampleId/review', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/privacy/tuning/samples/:sampleId/review', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const sampleId = toBoundedInt(req.params.sampleId, 0, { min: 1, max: Number.MAX_SAFE_INTEGER });
     const expectedDecision = toStringParam(req.body?.expectedDecision) as 'allow' | 'review' | 'block';
     if (!isOneOf(expectedDecision, ['allow', 'review', 'block'])) {
@@ -266,15 +229,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.json({ ok: true, sample: row });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'PRIVACY_TUNING_REVIEW_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/privacy/tuning/recommendation', requireAdmin, async (req, res) => {
+  router.get('/agent/privacy/tuning/recommendation', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const lookbackDays = toBoundedInt(req.query?.lookbackDays, 7, { min: 1, max: 90 });
     if (!guildId) {
@@ -285,22 +244,18 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       const recommendation = await buildPrivacyTuningRecommendation({ guildId, lookbackDays });
       return res.json({ ok: true, recommendation });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'PRIVACY_TUNING_RECOMMENDATION_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/obsidian/runtime', requireAdmin, async (_req, res) => {
+  router.get('/agent/obsidian/runtime', requireAdmin, async (_req, res, next) => {
     return res.json({
       vaultPathConfigured: Boolean(getObsidianVaultRoot()),
       adapterRuntime: getObsidianAdapterRuntimeStatus(),
     });
   });
 
-  router.get('/agent/obsidian/quality', requireAdmin, async (_req, res) => {
+  router.get('/agent/obsidian/quality', requireAdmin, async (_req, res, next) => {
     const snapshot = await getLatestObsidianGraphAuditSnapshot();
     return res.json({
       vaultPathConfigured: Boolean(getObsidianVaultRoot()),
@@ -308,7 +263,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     });
   });
 
-  router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res) => {
+  router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
     const requester = toStringParam(req.user?.id) || '';
     const targetUserId = toStringParam(req.body?.userId) || requester;
     const guildId = toStringParam(req.body?.guildId) || undefined;
@@ -346,18 +301,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.status(202).json({ ok: true, result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      if (message === 'USER_ID_REQUIRED') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      return res.status(500).json({ ok: false, error: 'FORGET_USER_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/privacy/forget-guild', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/privacy/forget-guild', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const confirm = toStringParam(req.body?.confirm);
     const requester = toStringParam(req.user?.id) || 'api';
@@ -379,18 +327,11 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       });
       return res.status(202).json({ ok: true, result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      if (message === 'GUILD_ID_REQUIRED') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      return res.status(500).json({ ok: false, error: 'FORGET_GUILD_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/privacy/forget-preview', requireAuth, async (req, res) => {
+  router.get('/agent/privacy/forget-preview', requireAuth, async (req, res, next) => {
     const scope = toStringParam(req.query?.scope) || 'user';
     const requester = toStringParam(req.user?.id) || '';
     const guildId = toStringParam(req.query?.guildId) || undefined;
@@ -420,11 +361,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       const preview = await previewForgetUserRagData({ userId, guildId });
       return res.json({ ok: true, preview });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'FORGET_PREVIEW_FAILED', message });
+      next(error);
     }
   });
 

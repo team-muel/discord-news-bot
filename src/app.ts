@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { FRONTEND_ORIGIN, JSON_BODY_LIMIT, NODE_ENV } from './config';
 import { attachUser, requireCsrfForStateChange } from './middleware/auth';
+import { errorHandler } from './middleware/errorHandler';
 import { createAuthRouter } from './routes/auth';
 import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
@@ -61,6 +62,9 @@ export function createApp(): Express {
   app.use((_req, res) => {
     res.status(404).json({ error: 'NOT_FOUND' });
   });
+
+  // Global error handler — must be registered AFTER all routes and the 404 fallback
+  app.use(errorHandler);
 
   return app;
 }

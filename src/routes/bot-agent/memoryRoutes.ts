@@ -25,7 +25,7 @@ import { BotAgentRouteDeps } from './types';
 export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
 
-  router.get('/agent/memory/search', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/search', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const q = toStringParam(req.query?.q).slice(0, 2000);
     const typeValue = toStringParam(req.query?.type);
@@ -50,15 +50,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_SEARCH_FAILED', message: 'Search operation failed.' });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/items', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/items', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const channelId = toStringParam(req.body?.channelId);
     const ownerUserId = toStringParam(req.body?.ownerUserId);
@@ -111,21 +107,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
 
       return res.status(201).json({ ok: true, item });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      if (message.startsWith('OBSIDIAN_SANITIZER_BLOCKED:')) {
-        return res.status(422).json({ ok: false, error: 'SANITIZER', message });
-      }
-      if (message === 'MEMORY_CONTENT_BLOCKED_BY_POISON_GUARD') {
-        return res.status(422).json({ ok: false, error: 'POISON_GUARD', message: 'content blocked by poison guard' });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_CREATE_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/items/:memoryId/feedback', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/items/:memoryId/feedback', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const memoryId = toStringParam(req.params.memoryId);
     const guildId = toStringParam(req.body?.guildId);
     const action = toStringParam(req.body?.action);
@@ -156,18 +142,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
 
       return res.status(202).json({ ok: true, message: 'feedback accepted', memoryId, action });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'MEMORY_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_FEEDBACK_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/conflicts', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/conflicts', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const statusValue = toStringParam(req.query?.status) || 'open';
     const limit = toBoundedInt(req.query?.limit, 20, { min: 1, max: 100 });
@@ -183,15 +162,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const conflicts = await listMemoryConflicts({ guildId, status: statusValue, limit });
       return res.json({ ok: true, conflicts });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_CONFLICTS_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/conflicts/:conflictId/resolve', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/conflicts/:conflictId/resolve', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const conflictId = toBoundedInt(req.params.conflictId, -1, { min: 1 });
     const status = toStringParam(req.body?.status) || 'resolved';
@@ -217,21 +192,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, conflict: result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'MEMORY_CONFLICT_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
-      }
-      if (message === 'INVALID_KEEP_ITEM_ID') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_CONFLICT_RESOLVE_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/jobs/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/jobs/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const jobType = toStringParam(req.body?.jobType);
     const windowStartedAt = toStringParam(req.body?.windowStartedAt);
@@ -261,15 +226,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, job });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_QUEUE_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/jobs/stats', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/jobs/stats', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
 
     try {
@@ -283,15 +244,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_STATS_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/jobs/deadletters', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/jobs/deadletters', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const limit = toBoundedInt(req.query?.limit, 30, { min: 1, max: 200 });
 
@@ -299,15 +256,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const deadletters = await listMemoryJobDeadletters({ guildId, limit });
       return res.json({ ok: true, deadletters, guildScope: guildId || 'all' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_DEADLETTERS_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/jobs/deadletters/:deadletterId/requeue', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/jobs/deadletters/:deadletterId/requeue', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const deadletterId = toBoundedInt(req.params.deadletterId, -1, { min: -1 });
     if (deadletterId < 0) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid deadletterId' });
@@ -318,18 +271,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const result = await requeueDeadletterJob({ deadletterId, actorId });
       return res.status(202).json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'DEADLETTER_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_REQUEUE_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/jobs/:jobId/cancel', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/jobs/:jobId/cancel', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const jobId = toStringParam(req.params.jobId);
     if (!jobId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'jobId is required' });
@@ -340,18 +286,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const result = await cancelMemoryJob({ jobId, actorId });
       return res.status(202).json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'JOB_NOT_CANCELABLE') {
-        return res.status(409).json({ ok: false, error: 'CONFLICT', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_JOB_CANCEL_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/quality/metrics', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/quality/metrics', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
 
@@ -359,15 +298,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const metrics = await getMemoryQualityMetrics({ guildId, days });
       return res.json({ ok: true, ...metrics });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'MEMORY_QUALITY_METRICS_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/sets', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/sets', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const name = toStringParam(req.body?.name);
     const description = toStringParam(req.body?.description);
@@ -380,18 +315,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const evalSet = await createRetrievalEvalSet({ guildId, name, description, createdBy });
       return res.status(201).json({ ok: true, evalSet });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid payload' });
-      }
-      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_SET_CREATE_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/cases', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/cases', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const evalSetId = toBoundedInt(req.body?.evalSetId, -1, { min: -1 });
     const query = toStringParam(req.body?.query);
@@ -419,18 +347,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(201).json({ ok: true, evalCase });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid payload' });
-      }
-      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_CASE_UPSERT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/retrieval-eval/cases', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/retrieval-eval/cases', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const evalSetId = toBoundedInt(req.query?.evalSetId, -1, { min: -1 });
     const limit = toBoundedInt(req.query?.limit, 200, { min: 1, max: 1000 });
@@ -447,15 +368,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.json({ ok: true, cases, count: cases.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_CASE_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/runs', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/runs', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const evalSetId = toBoundedInt(req.body?.evalSetId, -1, { min: -1 });
     const topK = toBoundedInt(req.body?.topK, 5, { min: 1, max: 20 });
@@ -478,18 +395,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      if (message === 'OBSIDIAN_VAULT_PATH_MISSING') {
-        return res.status(400).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_RUN_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/retrieval-eval/runs/:runId', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/retrieval-eval/runs/:runId', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const runId = toBoundedInt(req.params.runId, -1, { min: -1 });
     if (!guildId || runId < 0) {
@@ -500,18 +410,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const run = await getRetrievalEvalRun({ runId, guildId });
       return res.json({ ok: true, run });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'RETRIEVAL_EVAL_RUN_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: 'NOT_FOUND', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'RETRIEVAL_EVAL_RUN_READ_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/memory/retrieval-eval/runs/:runId/tune', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/memory/retrieval-eval/runs/:runId/tune', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const runId = toBoundedInt(req.params.runId, -1, { min: -1 });
     const applyIfBetter = Boolean(req.body?.applyIfBetter);
@@ -529,15 +432,11 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'RETRIEVAL_AUTO_TUNING_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/memory/beta/go-no-go', requireAdmin, async (req, res) => {
+  router.get('/agent/memory/beta/go-no-go', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
 
@@ -545,11 +444,7 @@ export function registerBotAgentMemoryRoutes(deps: BotAgentRouteDeps): void {
       const report = await buildGoNoGoReport({ guildId, days });
       return res.json({ ok: true, report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'GO_NO_GO_REPORT_FAILED', message });
+      next(error);
     }
   });
 

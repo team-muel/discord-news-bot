@@ -1,15 +1,15 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 349
+- Nodes: 351
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/logger.ts | 118 |
+| src/logger.ts | 119 |
 | src/services/supabaseClient.ts | 86 |
-| src/config.ts | 75 |
+| src/config.ts | 76 |
 | src/utils/env.ts | 70 |
 | src/services/skills/actions/types.ts | 34 |
 | src/services/llmClient.ts | 33 |
@@ -57,6 +57,7 @@ graph LR
   "server.ts" --> "src/services/workerGeneration/backgroundProposalSweep.ts"
   "src/app.ts" --> "src/config.ts"
   "src/app.ts" --> "src/middleware/auth.ts"
+  "src/app.ts" --> "src/middleware/errorHandler.ts"
   "src/app.ts" --> "src/routes/auth.ts"
   "src/app.ts" --> "src/routes/benchmark.ts"
   "src/app.ts" --> "src/routes/bot.ts"
@@ -240,6 +241,9 @@ graph LR
   "src/middleware/auth.ts" --> "src/config.ts"
   "src/middleware/auth.ts" --> "src/services/adminAllowlistService.ts"
   "src/middleware/auth.ts" --> "src/services/authService.ts"
+  "src/middleware/errorHandler.ts" --> "src/logger.ts"
+  "src/middleware/errorHandler.ts" --> "src/utils/errorMessage.ts"
+  "src/middleware/errorHandler.ts" --> "src/utils/errors.ts"
   "src/middleware/idempotency.ts" --> "src/config.ts"
   "src/middleware/idempotency.ts" --> "src/logger.ts"
   "src/middleware/idempotency.ts" --> "src/services/supabaseClient.ts"
@@ -1059,6 +1063,7 @@ graph LR
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/runtime/runtimeBootstrap.ts"
   "src/services/runtime/signalBus.ts" --> "src/logger.ts"
   "src/services/runtime/signalBus.ts" --> "src/utils/env.ts"
+  "src/services/runtime/signalBusWiring.ts" --> "src/config.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/logger.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/entityNervousSystem.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/runtime/signalBus.ts"
@@ -1529,6 +1534,7 @@ graph LR
   "src/utils/discordChannelMeta.ts":::file
   "src/utils/env.ts":::file
   "src/utils/errorMessage.ts":::file
+  "src/utils/errors.ts":::file
   "src/utils/migrationRegistry.ts" --> "src/logger.ts"
   "src/utils/migrationRegistry.ts" --> "src/services/supabaseClient.ts"
   "src/utils/migrationRegistry.ts" --> "src/utils/supabaseErrors.ts"

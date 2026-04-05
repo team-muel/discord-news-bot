@@ -104,7 +104,7 @@ const probeOpencodeWorkerHealth = async () => {
 
 export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
-  router.get('/agent/runtime/worker-approval-gates', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/worker-approval-gates', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const recentLimit = toBoundedInt(req.query?.recentLimit, 5, { min: 1, max: 20 });
     if (!guildId) {
@@ -115,15 +115,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const snapshot = await buildWorkerApprovalGateSnapshot({ guildId, recentLimit });
       return res.json({ ok: true, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      return res.status(500).json({ ok: false, error: 'WORKER_APPROVAL_GATES_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/social-quality-snapshot', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/social-quality-snapshot', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
     if (!guildId) {
@@ -134,33 +130,25 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const snapshot = await buildSocialQualityOperationalSnapshot({ guildId, days });
       return res.json({ ok: true, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'SOCIAL_QUALITY_SNAPSHOT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/telemetry-queue', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/telemetry-queue', requireAdmin, async (_req, res, next) => {
     return res.json({ ok: true, queue: getAgentTelemetryQueueSnapshot() });
   });
 
-  router.get('/agent/runtime/role-workers', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/role-workers', requireAdmin, async (_req, res, next) => {
     try {
       const specs = listAgentRoleWorkerSpecs();
       const health = await getAgentRoleWorkersHealthSnapshot();
       return res.json({ ok: true, workers: specs, health });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'ROLE_WORKERS_RUNTIME_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/unattended-health', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/unattended-health', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     try {
       const telemetry = getAgentTelemetryQueueSnapshot();
@@ -185,67 +173,50 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'UNATTENDED_HEALTH_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/supabase/extensions', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/supabase/extensions', requireAdmin, async (req, res, next) => {
     const includeTopQueries = String(req.query?.includeTopQueries || 'true').trim().toLowerCase() !== 'false';
     const topLimit = toBoundedInt(req.query?.topLimit, 10, { min: 1, max: 50 });
     try {
       const snapshot = await getSupabaseExtensionOpsSnapshot({ includeTopQueries, topLimit });
       return res.json({ ok: true, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'SUPABASE_EXTENSION_RUNTIME_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/supabase/cron-jobs', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/supabase/cron-jobs', requireAdmin, async (_req, res, next) => {
     try {
       const jobs = await listSupabaseCronJobs();
       return res.json({ ok: true, jobs, count: jobs.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'SUPABASE_CRON_JOBS_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/runtime/supabase/cron-jobs/ensure-maintenance', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/runtime/supabase/cron-jobs/ensure-maintenance', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const llmRetentionDays = toBoundedInt(req.body?.llmRetentionDays, 30, { min: 1, max: 365 });
     try {
       const installed = await ensureSupabaseMaintenanceCronJobs({ llmRetentionDays });
       return res.status(202).json({ ok: true, llmRetentionDays, installed, count: installed.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'SUPABASE_CRON_ENSURE_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/supabase/hypopg/candidates', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/supabase/hypopg/candidates', requireAdmin, async (_req, res, next) => {
     try {
       const candidates = await getHypoPgCandidates();
       return res.json({ ok: true, candidates, count: candidates.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'HYPOPG_CANDIDATES_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/runtime/supabase/hypopg/evaluate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/runtime/supabase/hypopg/evaluate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const ddls = Array.isArray(req.body?.ddls)
       ? req.body.ddls.map((item: unknown) => toStringParam(item)).filter(Boolean)
       : [];
@@ -257,51 +228,38 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const evaluations = await evaluateHypoPgIndexes(ddls);
       return res.status(202).json({ ok: true, evaluations, count: evaluations.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'HYPOPG_EVALUATION_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/lightweighting-plan', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/lightweighting-plan', requireAdmin, async (_req, res, next) => {
     try {
       const report = await getPlatformLightweightingReport();
       return res.json({ ok: true, report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'LIGHTWEIGHTING_PLAN_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/scheduler-policy', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/scheduler-policy', requireAdmin, async (_req, res, next) => {
     try {
       const snapshot = await getRuntimeSchedulerPolicySnapshot();
       return res.json({ ok: true, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'SCHEDULER_POLICY_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/efficiency', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/efficiency', requireAdmin, async (_req, res, next) => {
     try {
       const snapshot = await getEfficiencySnapshot();
       return res.json({ ok: true, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'EFFICIENCY_SNAPSHOT_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/runtime/efficiency/quick-wins', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/runtime/efficiency/quick-wins', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const dryRun = String(req.body?.dryRun ?? 'true').trim().toLowerCase() !== 'false';
     const llmRetentionDays = toBoundedInt(req.body?.llmRetentionDays, 30, { min: 1, max: 365 });
     const evaluateHypopgTop = toBoundedInt(req.body?.evaluateHypopgTop, 2, { min: 1, max: 10 });
@@ -314,16 +272,12 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'EFFICIENCY_QUICK_WINS_FAILED', message });
+      next(error);
     }
   });
 
 
-  router.get('/agent/runtime/loops', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/loops', requireAdmin, async (_req, res, next) => {
     return res.json({
       ok: true,
       memoryJobRunner: getMemoryJobRunnerStats(),
@@ -334,7 +288,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
   });
 
 
-  router.get('/agent/runtime/readiness', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/readiness', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const windowDays = toBoundedInt(req.query?.windowDays, 30, { min: 1, max: 180 });
     if (!guildId) {
@@ -345,18 +299,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const report = await buildAgentRuntimeReadinessReport({ guildId, windowDays });
       return res.json({ ok: true, report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_READINESS_REPORT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/slo/report', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/slo/report', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -366,18 +313,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const report = await evaluateGuildSloReport({ guildId });
       return res.json({ ok: true, report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_SLO_REPORT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/slo/alerts', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/slo/alerts', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const limit = toBoundedInt(req.query?.limit, 100, { min: 1, max: 500 });
     if (!guildId) {
@@ -388,18 +328,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const alerts = await listGuildSloAlertEvents({ guildId, limit });
       return res.json({ ok: true, guildId, alerts, count: alerts.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_SLO_ALERT_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/runtime/slo/evaluate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/runtime/slo/evaluate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const force = String(req.body?.force || req.query?.force || '').trim().toLowerCase() === 'true';
     if (!guildId) {
@@ -411,18 +344,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const report = await evaluateGuildSloAndPersistAlerts({ guildId, actorId, force });
       return res.status(202).json({ ok: true, report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'AGENT_SLO_EVALUATION_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/finops/summary', requireAdmin, async (req, res) => {
+  router.get('/agent/finops/summary', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
 
@@ -430,15 +356,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const summary = await getFinopsSummary({ guildId, days });
       return res.json({ ok: true, summary });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'FINOPS_SUMMARY_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/finops/showback', requireAdmin, async (req, res) => {
+  router.get('/agent/finops/showback', requireAdmin, async (req, res, next) => {
     const days = toBoundedInt(req.query?.days, 30, { min: 1, max: 180 });
 
     try {
@@ -450,15 +372,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         generatedAt: summary.generatedAt,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'FINOPS_SHOWBACK_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/finops/budget', requireAdmin, async (req, res) => {
+  router.get('/agent/finops/budget', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -468,12 +386,11 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const budget = await getFinopsBudgetStatus(guildId);
       return res.json({ ok: true, budget });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'FINOPS_BUDGET_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/llm/experiments/summary', requireAdmin, async (req, res) => {
+  router.get('/agent/llm/experiments/summary', requireAdmin, async (req, res, next) => {
     const experimentName = toStringParam(req.query?.experimentName || req.query?.name || LLM_EXPERIMENT_NAME || 'hf_ab_v1');
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 180 });
@@ -485,14 +402,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const summary = await getLlmExperimentSummary({ experimentName, guildId, days });
       return res.json({ ok: true, summary });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'LLM_EXPERIMENT_SUMMARY_FAILED', message });
+      next(error);
     }
   });
 
@@ -533,7 +443,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     } catch { /* non-blocking: cache is authoritative during outage */ }
   };
 
-  router.get('/agent/runtime/channel-routing', requireAdmin, async (req, res) => {
+  router.get('/agent/runtime/channel-routing', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
@@ -542,7 +452,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     return res.json({ ok: true, guildId, channels });
   });
 
-  router.put('/agent/runtime/channel-routing', requireAdmin, adminActionRateLimiter, async (req, res) => {
+  router.put('/agent/runtime/channel-routing', requireAdmin, adminActionRateLimiter, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     const channels = req.body?.channels as Record<string, string> | undefined;
     if (!guildId) {
@@ -572,46 +482,42 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
 
   // ── D-06: Sync HIGH_RISK_APPROVAL_ACTIONS to OpenShell network policy ──
 
-  router.post('/agent/runtime/sandbox-policy-sync', requireAdmin, adminActionRateLimiter, async (_req, res) => {
+  router.post('/agent/runtime/sandbox-policy-sync', requireAdmin, adminActionRateLimiter, async (_req, res, next) => {
     try {
       const result = await syncHighRiskActionsToSandboxPolicy();
       return res.json({ ok: result.synced, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'SANDBOX_POLICY_SYNC_FAILED', message });
+      next(error);
     }
   });
 
   // ──── Self-Improvement Loop Endpoints ───────────────────────────────────────
 
-  router.get('/agent/runtime/self-improvement/gradient', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/self-improvement/gradient', requireAdmin, async (_req, res, next) => {
     try {
       const gradient = await computeSystemGradient();
       return res.json({ ok: true, gradient });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'GRADIENT_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/self-improvement/convergence', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/self-improvement/convergence', requireAdmin, async (_req, res, next) => {
     try {
       const report = await computeConvergenceReport();
       return res.json({ ok: true, convergence: report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'CONVERGENCE_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/runtime/self-improvement/cross-loop', requireAdmin, async (_req, res) => {
+  router.get('/agent/runtime/self-improvement/cross-loop', requireAdmin, async (_req, res, next) => {
     try {
       const origins = getCrossLoopOriginsSnapshot();
       const outcomes = await evaluateCrossLoopOutcomes();
       return res.json({ ok: true, origins: origins.slice(0, 50), outcomes });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return res.status(500).json({ ok: false, error: 'CROSS_LOOP_FAILED', message });
+      next(error);
     }
   });
 

@@ -9,7 +9,7 @@ import { BotAgentRouteDeps } from './types';
 export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
 
-  router.get('/agent/task-routing/summary', requireAdmin, async (req, res) => {
+  router.get('/agent/task-routing/summary', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 7, { min: 1, max: 90 });
 
@@ -17,15 +17,11 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       const summary = await getTaskRoutingSummary({ guildId, days });
       return res.json({ ok: true, summary });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TASK_ROUTING_SUMMARY_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/task-routing/feedback', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/task-routing/feedback', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const route = toStringParam(req.body?.route).toLowerCase();
     const channel = toStringParam(req.body?.channel).toLowerCase();
@@ -74,7 +70,7 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
     return res.status(202).json({ ok: true });
   });
 
-  router.get('/agent/task-routing/policy-hints', requireAdmin, async (req, res) => {
+  router.get('/agent/task-routing/policy-hints', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId) || undefined;
     const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
 
@@ -83,15 +79,11 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       const hints = buildTaskRoutingPolicyHints(summary);
       return res.json({ ok: true, hints });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TASK_ROUTING_POLICY_HINTS_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/learning/task-routing/candidates/generate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/learning/task-routing/candidates/generate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const days = toBoundedInt(req.body?.days, 14, { min: 1, max: 90 });
     const minSamples = toBoundedInt(req.body?.minSamples, 4, { min: 2, max: 100 });
@@ -114,18 +106,11 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_CANDIDATE_GENERATE_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/learning/task-routing/candidates', requireAdmin, async (req, res) => {
+  router.get('/agent/learning/task-routing/candidates', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const status = toStringParam(req.query?.status).toLowerCase();
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
@@ -145,18 +130,11 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.json({ ok: true, items, count: items.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_CANDIDATE_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.post('/agent/learning/task-routing/candidates/:candidateId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+  router.post('/agent/learning/task-routing/candidates/:candidateId/decision', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId || req.query?.guildId);
     const candidateId = toBoundedInt(req.params.candidateId, -1, { min: 1, max: Number.MAX_SAFE_INTEGER });
     const decision = toStringParam(req.body?.decision).toLowerCase();
@@ -179,21 +157,11 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'invalid parameters' });
-      }
-      if (message === 'TOOL_LEARNING_CANDIDATE_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: message, message });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_CANDIDATE_DECISION_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/learning/task-routing/rules', requireAdmin, async (req, res) => {
+  router.get('/agent/learning/task-routing/rules', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const status = toStringParam(req.query?.status).toLowerCase();
     const limit = toBoundedInt(req.query?.limit, 50, { min: 1, max: 200 });
@@ -213,18 +181,11 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.json({ ok: true, items, count: items.length });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_RULE_LIST_FAILED', message });
+      next(error);
     }
   });
 
-  router.get('/agent/learning/task-routing/weekly-report', requireAdmin, async (req, res) => {
+  router.get('/agent/learning/task-routing/weekly-report', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
     const days = toBoundedInt(req.query?.days, 7, { min: 1, max: 90 });
 
@@ -236,14 +197,7 @@ export function registerBotAgentLearningRoutes(deps: BotAgentRouteDeps): void {
       const report = await buildToolLearningWeeklyReport({ guildId, days });
       return res.json({ ok: true, report });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'VALIDATION') {
-        return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is invalid' });
-      }
-      if (message === 'SUPABASE_NOT_CONFIGURED') {
-        return res.status(503).json({ ok: false, error: 'CONFIG', message });
-      }
-      return res.status(500).json({ ok: false, error: 'TOOL_LEARNING_WEEKLY_REPORT_FAILED', message });
+      next(error);
     }
   });
 
