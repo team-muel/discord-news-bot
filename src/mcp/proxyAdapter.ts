@@ -207,10 +207,6 @@ export const callProxiedTool = async (
     };
   }
 
-  // Recover original tool name: look up from cache or use sanitized form as-is.
-  // Upstream accepts the sanitized name — most MCP servers are lenient about underscores.
-  const upstreamToolName = resolveOriginalToolName(server.id, sanitizedToolName) ?? sanitizedToolName;
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -225,7 +221,7 @@ export const callProxiedTool = async (
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: upstreamToolName, arguments: args },
+        params: { name: sanitizedToolName, arguments: args },
       }),
       signal: controller.signal,
     });
@@ -269,25 +265,3 @@ export const callProxiedTool = async (
   }
 };
 
-// ──── Internal: original name lookup ──────────────────────────────────────────
-
-/**
- * Look up the original (pre-sanitization) tool name from the tool cache.
- * Returns undefined if the cache has no entry for this server.
- */
-const resolveOriginalToolName = (serverId: string, sanitizedName: string): string | undefined => {
-  const cached = toolCache.get(serverId);
-  if (!cached) return undefined;
-  for (const tool of cached.tools) {
-    // tool.name is the internal prefixed form: upstream.<ns>.<sanitized>
-    // Extract just the sanitized part after the second dot
-    const parts = tool.name.split('.');
-    const cachedSanitized = parts.slice(2).join('.');
-    if (cachedSanitized === sanitizedName) {
-      // Reverse lookup: we stored the sanitized name, so we cannot recover
-      // the original from the cache alone. Return undefined to use sanitized form.
-      return undefined;
-    }
-  }
-  return undefined;
-};
