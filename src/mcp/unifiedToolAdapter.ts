@@ -5,7 +5,7 @@
  * proxied servers) into a single adapter.
  *
  * Tool namespace summary:
- *   - muelCore tools:      stock.*, investment.*, action.*, diag.*
+ *   - general tools:      stock.*, investment.*, action.*, diag.*  (via toolAdapter.ts)
  *   - muelIndexing tools:  code.index.*, security.*
  *   - obsidian tools:      obsidian.*
  *   - external adapters:   ext.<adapterId>.<capability>

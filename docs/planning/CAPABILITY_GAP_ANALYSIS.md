@@ -17,7 +17,7 @@ Use this before sprint planning. Every item here should have a milestone in the 
 
 | Surface | Entry point | Status |
 |---------|-------------|--------|
-| `muelCore` (6 tools) | `src/mcp/server.ts` + `toolAdapter.ts` | ✅ Running locally |
+| `muelCore` (6 tools) | `src/mcp/server.ts` + `toolAdapter.ts` | ✅ 통합됨 — `muelUnified`에 포함 |
 | `muelIndexing` (7 tools) | `src/mcp/indexingServer.ts` + `indexingToolAdapter.ts` | ✅ Running locally |
 | `muelUnified` (40+ tools) | `src/mcp/unifiedServer.ts` + `unifiedToolAdapter.ts` | ✅ Running on GCP VM via SSH |
 | `muelObsidian` (20+ tools) | `src/mcp/obsidianToolAdapter.ts` | ✅ Part of unified |

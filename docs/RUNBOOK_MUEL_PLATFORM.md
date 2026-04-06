@@ -507,7 +507,8 @@ npm run start
 npm run docs:build
 npm run docs:check
 npm run smoke:api
-npm run mcp:dev
+npm run mcp:unified:dev
+npm run mcp:indexing:dev
 npm run worker:crawler
 npm run sync:obsidian-lore:dry
 npm run sync:obsidian-lore
