@@ -68,6 +68,8 @@ export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env
 
 // ──── Obsidian Headless CLI (RAG Integration) ────
 export const OBSIDIAN_HEADLESS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);
+export const OBSIDIAN_LOCAL_FS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_LOCAL_FS_ENABLED, false);
+export const OBSIDIAN_VAULT_PATH = (process.env.OBSIDIAN_VAULT_PATH || '').trim();
 export const OBSIDIAN_EMAIL = process.env.OBSIDIAN_EMAIL || '';
 export const OBSIDIAN_PASSWORD = process.env.OBSIDIAN_PASSWORD || '';
 export const OBSIDIAN_VAULT_NAME = process.env.OBSIDIAN_VAULT_NAME || 'docs';

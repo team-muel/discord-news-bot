@@ -9,7 +9,8 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { parseBooleanEnv } from '../../../utils/env';
+import { OBSIDIAN_LOCAL_FS_ENABLED, OBSIDIAN_VAULT_PATH } from '../../../config';
+import { atomicWriteFile } from '../../../utils/atomicWrite';
 import type {
   ObsidianLoreQuery,
   ObsidianNoteWriteInput,
@@ -20,13 +21,10 @@ import type {
   ObsidianVaultAdapter,
 } from '../types';
 
-const LOCAL_FS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_LOCAL_FS_ENABLED, false);
-const VAULT_PATH = String(process.env.OBSIDIAN_VAULT_PATH || '').trim();
-
-const isAvailable = (): boolean => LOCAL_FS_ENABLED && VAULT_PATH.length > 0;
+const isAvailable = (): boolean => OBSIDIAN_LOCAL_FS_ENABLED && OBSIDIAN_VAULT_PATH.length > 0;
 
 const resolveVaultPath = (vaultPath: string): string => {
-  const resolved = path.resolve(vaultPath || VAULT_PATH || '.');
+  const resolved = path.resolve(vaultPath || OBSIDIAN_VAULT_PATH || '.');
   return resolved;
 };
 
@@ -136,7 +134,7 @@ const writeNote = async (params: ObsidianNoteWriteInput): Promise<{ path: string
   const dir = path.dirname(filePath);
 
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(filePath, params.content, 'utf-8');
+  await atomicWriteFile(filePath, params.content);
 
   return { path: params.fileName };
 };
