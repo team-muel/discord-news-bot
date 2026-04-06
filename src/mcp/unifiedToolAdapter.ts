@@ -63,8 +63,11 @@ const buildExternalMcpTools = async (): Promise<McpToolSpec[]> => {
         description: `External adapter: ${adapter.id} — ${cap}`,
         inputSchema: {
           type: 'object',
+          // Arguments may be passed either flat (top-level properties) or nested
+          // under an "args" key. callAnyMcpTool prefers request.arguments.args
+          // and falls back to request.arguments directly, so both forms work.
           properties: {
-            args: { type: 'object', description: 'Arguments for the external adapter action' },
+            args: { type: 'object', description: 'Action arguments (nested). Alternatively pass arguments flat at the top level.' },
           },
           additionalProperties: true,
         },

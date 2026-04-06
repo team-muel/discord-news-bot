@@ -27,13 +27,27 @@ const FETCH_TIMEOUT_MS = 8_000;
 
 /**
  * Sanitize an upstream tool name for use in the internal catalog.
- * Dots and hyphens → underscores (reversible for purposes of routing).
+ * Dots and hyphens → underscores so the result is safe as an internal dot-delimited
+ * segment. The original name is preserved separately in `originalUpstreamNames`.
  */
 const sanitizeToolName = (rawName: string): string => rawName.replace(/[.\-]/g, '_');
 
 /** Build the internal tool name: `upstream.<namespace>.<sanitizedName>` */
 const buildInternalName = (namespace: string, rawName: string): string =>
   `${UPSTREAM_PREFIX}${namespace}.${sanitizeToolName(rawName)}`;
+
+// ──── Original name registry ───────────────────────────────────────────────────
+
+/**
+ * Maps internal tool name → original upstream tool name.
+ *
+ * Sanitization is a one-way transformation: hyphens and dots both become
+ * underscores, so "list-tables" and "list.tables" would both map to "list_tables".
+ * Without this map, callProxiedTool would send the sanitized underscore name to
+ * the upstream server, causing 404/method-not-found for any tool whose original
+ * name contained a hyphen or dot.
+ */
+const originalUpstreamNames = new Map<string, string>();
 
 // ──── Per-server tool cache ────────────────────────────────────────────────────
 
@@ -54,6 +68,7 @@ export const invalidateServerCache = (serverId: string): void => {
 /** Invalidate all cached tool lists. */
 export const invalidateAllServerCaches = (): void => {
   toolCache.clear();
+  originalUpstreamNames.clear();
 };
 
 // ──── Upstream HTTP helpers ────────────────────────────────────────────────────
@@ -137,8 +152,12 @@ const parseToolSpecs = (rawTools: unknown[], namespace: string): McpToolSpec[] =
     const inputSchema = (t.inputSchema && typeof t.inputSchema === 'object' && !Array.isArray(t.inputSchema))
       ? (t.inputSchema as McpToolSpec['inputSchema'])
       : { type: 'object' as const, properties: {} };
+    const internalName = buildInternalName(namespace, name);
+    // Preserve the original name so callProxiedTool can send the exact name the
+    // upstream server registered (hyphens must not be silently converted).
+    originalUpstreamNames.set(internalName, name);
     result.push({
-      name: buildInternalName(namespace, name),
+      name: internalName,
       description,
       inputSchema,
     });
@@ -197,7 +216,12 @@ export const callProxiedTool = async (
   }
 
   const namespace = withoutPrefix.slice(0, dotIdx);
-  const sanitizedToolName = withoutPrefix.slice(dotIdx + 1);
+
+  // Restore the original upstream tool name. sanitizeToolName() replaces hyphens
+  // and dots with underscores, which is irreversible in general. We must look up
+  // the name that the upstream server originally advertised; otherwise tools like
+  // "list-tables" would be called as "list_tables" → 404/method-not-found.
+  const originalName = originalUpstreamNames.get(internalName) ?? withoutPrefix.slice(dotIdx + 1);
 
   const server = findUpstreamByNamespace(namespace);
   if (!server) {
@@ -221,7 +245,7 @@ export const callProxiedTool = async (
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: sanitizedToolName, arguments: args },
+        params: { name: originalName, arguments: args },
       }),
       signal: controller.signal,
     });
