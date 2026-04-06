@@ -153,6 +153,47 @@ Lite-mode adapters (available even when full capabilities are restricted):
 
 ---
 
+## upstream.* Upstream Proxy Tools
+
+Entry: `src/mcp/unifiedToolAdapter.ts` → `src/mcp/proxyAdapter.ts` → `src/mcp/proxyRegistry.ts`
+
+Bootstrap: `MCP_UPSTREAM_SERVERS` JSON array (see `.env.example`)
+
+### Naming Convention
+
+| Upstream original tool | Internal name (dot-based) | MCP wire name (hyphen-based) |
+|---|---|---|
+| `query-database` | `upstream.supabase.query_database` | `upstream-supabase-query_database` |
+| `wiki.query` | `upstream.deepwiki.wiki_query` | `upstream-deepwiki-wiki_query` |
+| `list_files` | `upstream.custom.list_files` | `upstream-custom-list_files` |
+
+Upstream tool name dots (`.`) and hyphens (`-`) are normalized to underscores (`_`) for the internal catalog so they round-trip through the existing dot↔hyphen wire transform without collision.
+
+### Server Config Fields
+
+```jsonc
+{
+  "id": "supabase",          // unique registry key
+  "url": "https://mcp.supabase.com/mcp",  // base URL (no trailing slash)
+  "namespace": "supabase",   // prefix used in tool names [a-z0-9_]
+  "token": "sbp_xxx",        // optional Bearer auth token (masked in logs)
+  "enabled": true            // default true; set false to temporarily disable
+}
+```
+
+### Transport
+
+1. Primary: JSON-RPC 2.0 `tools/list` / `tools/call` over `POST /mcp/rpc`
+2. Fallback: REST `POST /tools/list` (for servers without `/mcp/rpc`)
+
+### Failure Isolation
+
+- Per-server independent timeout (8 s). A timed-out server contributes zero tools; other servers are unaffected.
+- Tool catalog is cached per server for `MCP_UPSTREAM_TOOL_CACHE_TTL_MS` (default 5 min).
+- `invalidateToolCache()` from `unifiedToolAdapter.ts` forces a full refresh.
+
+---
+
 ## Worker Tools (Crawler Worker, legacy)
 
 Handled by `scripts/crawler-worker.ts`:
@@ -181,6 +222,7 @@ Handled by `scripts/crawler-worker.ts`:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v3 | 2026-04-06 | Added `upstream.*` proxy namespace; `proxyRegistry.ts` + `proxyAdapter.ts`; `MCP_UPSTREAM_SERVERS` env var |
 | v2 | 2026-04-05 | Full multi-server inventory; added `diag.llm`, Obsidian tools, ext.* adapter table |
 | v1 | 2026-03-18 | Initial spec (muelCore 5 tools only) |
 

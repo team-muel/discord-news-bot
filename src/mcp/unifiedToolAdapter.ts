@@ -1,16 +1,26 @@
 /**
  * Unified MCP Tool Adapter
  *
- * Combines all tool catalogs (general + indexing + external adapters) into a
- * single adapter.  External adapters (OpenClaw, NemoClaw, OpenJarvis, etc.)
- * are surfaced with an `ext.<adapterId>.<capability>` naming convention so
- * consumers can call them through the standard MCP interface.
+ * Combines all tool catalogs (general + indexing + external adapters + upstream
+ * proxied servers) into a single adapter.
+ *
+ * Tool namespace summary:
+ *   - muelCore tools:      stock.*, investment.*, action.*, diag.*
+ *   - muelIndexing tools:  code.index.*, security.*
+ *   - obsidian tools:      obsidian.*
+ *   - external adapters:   ext.<adapterId>.<capability>
+ *   - upstream proxy:      upstream.<namespace>.<tool>
  */
 
 import { listMcpTools, callMcpTool } from './toolAdapter';
 import { listIndexingMcpTools, callIndexingMcpTool } from './indexingToolAdapter';
 import { listObsidianMcpTools, callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from './obsidianToolAdapter';
+import { listProxiedTools, callProxiedTool, invalidateAllServerCaches } from './proxyAdapter';
+import { loadUpstreamsFromConfig } from './proxyRegistry';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
+
+// Bootstrap upstream servers from environment at module init (idempotent)
+loadUpstreamsFromConfig();
 
 // Lazy-loaded — avoids importing all 7 CLI adapters at module init
 let _externalRegistry: typeof import('../services/tools/externalAdapterRegistry') | null = null;
@@ -32,6 +42,8 @@ const getGeneralToolNames = (): Set<string> => {
 
 /** Prefix for external adapter tools exposed as MCP tools. */
 const EXT_PREFIX = 'ext.';
+/** Prefix for upstream proxied MCP server tools. */
+const UPSTREAM_PREFIX = 'upstream.';
 
 /**
  * Build MCP tool specs from registered external adapters.
@@ -65,6 +77,16 @@ const buildExternalMcpTools = async (): Promise<McpToolSpec[]> => {
 
 let _allToolsCache: McpToolSpec[] | null = null;
 
+/**
+ * Invalidate the unified tool cache so the next call to listAllMcpTools()
+ * re-fetches from all adapters including upstream servers.
+ * Call this after registering or unregistering upstream servers at runtime.
+ */
+export const invalidateToolCache = (): void => {
+  _allToolsCache = null;
+  invalidateAllServerCaches();
+};
+
 export const listAllMcpTools = async (): Promise<McpToolSpec[]> => {
   if (_allToolsCache) return _allToolsCache;
   _allToolsCache = [
@@ -72,6 +94,7 @@ export const listAllMcpTools = async (): Promise<McpToolSpec[]> => {
     ...listIndexingMcpTools(),
     ...listObsidianMcpTools(),
     ...(await buildExternalMcpTools()),
+    ...(await listProxiedTools()),
   ];
   return _allToolsCache;
 };
@@ -98,6 +121,11 @@ export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpTo
       content: [{ type: 'text', text: result.ok ? result.output.join('\n') || result.summary : `ERROR: ${result.error ?? result.summary}` }],
       isError: !result.ok,
     };
+  }
+
+  // Route upstream.* calls to the proxy adapter
+  if (name.startsWith(UPSTREAM_PREFIX)) {
+    return callProxiedTool(name, request.arguments ?? {});
   }
 
   // Route to the correct adapter

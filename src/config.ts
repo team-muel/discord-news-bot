@@ -417,6 +417,15 @@ export const MCP_HEALTH_SWEEP_INTERVAL_MS = Math.max(15_000, parseIntegerEnv(pro
 export const MCP_PROBE_TIMEOUT_MS = Math.max(2_000, parseIntegerEnv(process.env.MCP_PROBE_TIMEOUT_MS, 5_000));
 export const MCP_HEALTH_TTL_MS = Math.max(10_000, parseIntegerEnv(process.env.MCP_HEALTH_TTL_MS, 60_000));
 
+// ── MCP Upstream Proxy ──
+/** JSON array of UpstreamMcpServerConfig objects — parsed by proxyRegistry.ts */
+export const MCP_UPSTREAM_SERVERS_RAW = (process.env.MCP_UPSTREAM_SERVERS || '').trim();
+/** TTL in ms for upstream server tool catalog cache (default 5 minutes) */
+export const MCP_UPSTREAM_TOOL_CACHE_TTL_MS = Math.max(
+  10_000,
+  parseIntegerEnv(process.env.MCP_UPSTREAM_TOOL_CACHE_TTL_MS, 5 * 60_000),
+);
+
 // ── Semantic Answer Cache ──
 export const SEMANTIC_ANSWER_CACHE_ENABLED = parseBooleanEnv(process.env.SEMANTIC_ANSWER_CACHE_ENABLED, true);
 export const SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY, 0.82, 0, 1);

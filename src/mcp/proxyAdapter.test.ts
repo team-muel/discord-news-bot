@@ -1,0 +1,333 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// ── Mock config module ─────────────────────────────────────────────────────────
+vi.mock('../config', () => ({
+  MCP_UPSTREAM_SERVERS_RAW: '',
+  MCP_UPSTREAM_TOOL_CACHE_TTL_MS: 300_000,
+}));
+
+// Import registry and adapter AFTER mocks are set up
+import {
+  registerUpstream,
+  unregisterUpstream,
+  listUpstreams,
+  findUpstreamByNamespace,
+  clearUpstreams,
+  loadUpstreamsFromConfig,
+} from './proxyRegistry';
+import { listProxiedTools, callProxiedTool, invalidateAllServerCaches } from './proxyAdapter';
+
+// ──── Helpers ─────────────────────────────────────────────────────────────────
+
+const mockFetch = vi.fn();
+
+beforeEach(() => {
+  clearUpstreams();
+  invalidateAllServerCaches();
+  vi.stubGlobal('fetch', mockFetch);
+  mockFetch.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// ──── proxyRegistry tests ─────────────────────────────────────────────────────
+
+describe('proxyRegistry', () => {
+  describe('registerUpstream', () => {
+    it('registers a server and returns it via listUpstreams', () => {
+      registerUpstream({ id: 'test', url: 'http://test.example', namespace: 'test' });
+      const upstreams = listUpstreams();
+      expect(upstreams).toHaveLength(1);
+      expect(upstreams[0].id).toBe('test');
+      expect(upstreams[0].namespace).toBe('test');
+    });
+
+    it('strips trailing slash from url', () => {
+      registerUpstream({ id: 'slash', url: 'http://test.example/', namespace: 'slash' });
+      const found = findUpstreamByNamespace('slash');
+      expect(found?.url).toBe('http://test.example');
+    });
+
+    it('defaults enabled to true when omitted', () => {
+      registerUpstream({ id: 'en', url: 'http://en.example', namespace: 'en' });
+      expect(findUpstreamByNamespace('en')?.enabled).toBe(true);
+    });
+
+    it('updates existing server on re-register', () => {
+      registerUpstream({ id: 'upd', url: 'http://v1.example', namespace: 'upd' });
+      registerUpstream({ id: 'upd', url: 'http://v2.example', namespace: 'upd' });
+      const upstreams = listUpstreams();
+      expect(upstreams).toHaveLength(1);
+      expect(upstreams[0].url).toBe('http://v2.example');
+    });
+
+    it('throws when id is empty', () => {
+      expect(() => registerUpstream({ id: '', url: 'http://x', namespace: 'x' }))
+        .toThrowError('id is required');
+    });
+
+    it('throws when namespace contains uppercase', () => {
+      expect(() => registerUpstream({ id: 'bad', url: 'http://x', namespace: 'BadNs' }))
+        .toThrowError('namespace must match');
+    });
+
+    it('throws when namespace is already used by a different server', () => {
+      registerUpstream({ id: 'a', url: 'http://a', namespace: 'shared' });
+      expect(() => registerUpstream({ id: 'b', url: 'http://b', namespace: 'shared' }))
+        .toThrowError('Namespace "shared" is already used by server "a"');
+    });
+
+    it('allows re-registering same id with same namespace', () => {
+      registerUpstream({ id: 'same', url: 'http://same', namespace: 'same' });
+      expect(() => registerUpstream({ id: 'same', url: 'http://same2', namespace: 'same' }))
+        .not.toThrow();
+    });
+  });
+
+  describe('unregisterUpstream', () => {
+    it('removes the server and its namespace', () => {
+      registerUpstream({ id: 'rm', url: 'http://rm', namespace: 'rm' });
+      const removed = unregisterUpstream('rm');
+      expect(removed).toBe(true);
+      expect(listUpstreams()).toHaveLength(0);
+      expect(findUpstreamByNamespace('rm')).toBeUndefined();
+    });
+
+    it('returns false for unknown id', () => {
+      expect(unregisterUpstream('nonexistent')).toBe(false);
+    });
+  });
+
+  describe('findUpstreamByNamespace', () => {
+    it('returns undefined for unknown namespace', () => {
+      expect(findUpstreamByNamespace('unknown')).toBeUndefined();
+    });
+
+    it('returns undefined for disabled server', () => {
+      registerUpstream({ id: 'dis', url: 'http://dis', namespace: 'dis', enabled: false });
+      expect(findUpstreamByNamespace('dis')).toBeUndefined();
+    });
+
+    it('returns config for enabled server', () => {
+      registerUpstream({ id: 'ok', url: 'http://ok', namespace: 'ok', enabled: true });
+      expect(findUpstreamByNamespace('ok')?.id).toBe('ok');
+    });
+  });
+
+  describe('listUpstreams', () => {
+    it('excludes disabled servers', () => {
+      registerUpstream({ id: 'on', url: 'http://on', namespace: 'on', enabled: true });
+      registerUpstream({ id: 'off', url: 'http://off', namespace: 'off', enabled: false });
+      expect(listUpstreams()).toHaveLength(1);
+      expect(listUpstreams()[0].id).toBe('on');
+    });
+  });
+
+  describe('loadUpstreamsFromConfig', () => {
+    it('silently does nothing when MCP_UPSTREAM_SERVERS_RAW is empty', () => {
+      loadUpstreamsFromConfig();
+      expect(listUpstreams()).toHaveLength(0);
+    });
+  });
+});
+
+// ──── proxyAdapter tests ──────────────────────────────────────────────────────
+
+describe('proxyAdapter', () => {
+  const makeRpcToolsResponse = (tools: Array<{ name: string; description?: string }>) =>
+    new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { tools: tools.map((t) => ({ name: t.name, description: t.description ?? t.name })) },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  describe('listProxiedTools', () => {
+    it('returns empty array when no upstreams are registered', async () => {
+      const tools = await listProxiedTools();
+      expect(tools).toHaveLength(0);
+    });
+
+    it('returns tools from upstream with upstream.<ns>.<tool> naming', async () => {
+      registerUpstream({ id: 'supa', url: 'http://supa.test', namespace: 'supabase' });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([{ name: 'query-db', description: 'Query DB' }]));
+
+      const tools = await listProxiedTools();
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('upstream.supabase.query_db');
+      expect(tools[0].description).toBe('Query DB');
+    });
+
+    it('normalizes dots in tool name to underscores', async () => {
+      registerUpstream({ id: 'dw', url: 'http://dw.test', namespace: 'deepwiki' });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([{ name: 'wiki.query' }]));
+
+      const tools = await listProxiedTools();
+      expect(tools[0].name).toBe('upstream.deepwiki.wiki_query');
+    });
+
+    it('returns cached tools on second call without re-fetching', async () => {
+      registerUpstream({ id: 'cache_test', url: 'http://cache.test', namespace: 'cached' });
+      mockFetch.mockResolvedValue(makeRpcToolsResponse([{ name: 'tool_a' }]));
+
+      await listProxiedTools();
+      await listProxiedTools();
+
+      // fetch should only have been called once (for /mcp/rpc)
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('excludes tools from a failed upstream, does not throw', async () => {
+      registerUpstream({ id: 'good', url: 'http://good.test', namespace: 'good' });
+      registerUpstream({ id: 'bad', url: 'http://bad.test', namespace: 'bad' });
+
+      mockFetch
+        .mockImplementationOnce(async (url: string) => {
+          if (String(url).includes('good')) return makeRpcToolsResponse([{ name: 'ok_tool' }]);
+          throw new Error('connection refused');
+        })
+        .mockImplementationOnce(async (url: string) => {
+          if (String(url).includes('bad')) throw new Error('connection refused');
+          return makeRpcToolsResponse([{ name: 'ok_tool' }]);
+        });
+
+      const tools = await listProxiedTools();
+      // Only the good server's tool should appear
+      const names = tools.map((t) => t.name);
+      expect(names.some((n) => n.startsWith('upstream.good'))).toBe(true);
+      expect(names.some((n) => n.startsWith('upstream.bad'))).toBe(false);
+    });
+
+    it('falls back to /tools/list when /mcp/rpc returns non-ok', async () => {
+      registerUpstream({ id: 'fb', url: 'http://fb.test', namespace: 'fallback' });
+
+      // /mcp/rpc returns 404
+      mockFetch
+        .mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+        // /tools/list returns success
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ tools: [{ name: 'fb_tool', description: 'fallback tool' }] }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+
+      const tools = await listProxiedTools();
+      expect(tools[0].name).toBe('upstream.fallback.fb_tool');
+    });
+  });
+
+  describe('callProxiedTool', () => {
+    it('returns error for non-upstream tool name', async () => {
+      const result = await callProxiedTool('stock.quote', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Not a proxied tool name');
+    });
+
+    it('returns error for malformed upstream tool name', async () => {
+      const result = await callProxiedTool('upstream.onlyone', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Malformed');
+    });
+
+    it('returns error when namespace is not registered', async () => {
+      const result = await callProxiedTool('upstream.unknown.some_tool', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No upstream server registered');
+    });
+
+    it('forwards tool call to upstream and returns content', async () => {
+      registerUpstream({ id: 'fwd', url: 'http://fwd.test', namespace: 'fwd' });
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: { content: [{ type: 'text', text: 'hello from upstream' }] },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+      const result = await callProxiedTool('upstream.fwd.my_tool', { key: 'val' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toBe('hello from upstream');
+
+      // Verify correct body was sent
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(String(init.body));
+      expect(body.method).toBe('tools/call');
+      expect(body.params.name).toBe('my_tool');
+      expect(body.params.arguments).toEqual({ key: 'val' });
+    });
+
+    it('returns error when upstream responds with HTTP error', async () => {
+      registerUpstream({ id: 'err', url: 'http://err.test', namespace: 'err' });
+      mockFetch.mockResolvedValueOnce(new Response('Server Error', { status: 500 }));
+
+      const result = await callProxiedTool('upstream.err.tool', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('HTTP 500');
+    });
+
+    it('returns error when upstream returns JSON-RPC error', async () => {
+      registerUpstream({ id: 'rpcerr', url: 'http://rpcerr.test', namespace: 'rpcerr' });
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'method not found' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+      const result = await callProxiedTool('upstream.rpcerr.tool', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('method not found');
+    });
+
+    it('returns error when upstream fetch throws (timeout)', async () => {
+      registerUpstream({ id: 'timeout', url: 'http://timeout.test', namespace: 'timeout' });
+      mockFetch.mockRejectedValueOnce(new Error('The operation was aborted'));
+
+      const result = await callProxiedTool('upstream.timeout.slow_tool', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Upstream call failed');
+    });
+
+    it('includes Authorization header when token is configured', async () => {
+      registerUpstream({ id: 'auth', url: 'http://auth.test', namespace: 'auth', token: 'secret-token' });
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+      await callProxiedTool('upstream.auth.tool', {});
+
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe('Bearer secret-token');
+    });
+
+    it('does not include Authorization header when no token', async () => {
+      registerUpstream({ id: 'noauth', url: 'http://noauth.test', namespace: 'noauth' });
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+      await callProxiedTool('upstream.noauth.tool', {});
+
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['Authorization']).toBeUndefined();
+    });
+  });
+});
