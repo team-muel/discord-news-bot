@@ -113,8 +113,13 @@ export const sprintPipelineSchema = defineSchema('sprint_pipeline', {
 });
 
 // ──── Reducer ─────────────────────────────────────────────────────────────────
+//
+// Type-cast note: ventyd v1.19 + valibot StandardSchemaV1 integration widens
+// event body string-literal types (e.g. picklist values) to `string` at the
+// TypeScript level, even though `as const` arrays are used for the schema.
+// The `as typeof prevState.X` casts below are safe — they only re-assert the
+// literal union that the schema already guarantees at runtime.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevState, event) => {
   switch (event.eventName) {
     case 'sprint_pipeline:created':
