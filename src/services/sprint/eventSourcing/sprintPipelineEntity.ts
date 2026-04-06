@@ -15,20 +15,20 @@ const SprintPhaseEnum = v.picklist([
   'plan', 'implement', 'review', 'qa',
   'security-audit', 'ops-validate', 'ship', 'retro',
   'complete', 'blocked', 'cancelled',
-]);
+] as const);
 
 const TriggerTypeEnum = v.picklist([
   'error-detection', 'cs-ticket', 'feature-request',
   'scheduled', 'manual', 'self-improvement', 'observation',
-]);
+] as const);
 
 const AutonomyLevelEnum = v.picklist([
   'full-auto', 'approve-ship', 'approve-impl', 'manual',
-]);
+] as const);
 
 const PhaseStatusEnum = v.picklist([
   'success', 'failed', 'blocked', 'skipped', 'awaiting-approval', 'approved',
-]);
+] as const);
 
 // ──── Schema ──────────────────────────────────────────────────────────────────
 
@@ -113,18 +113,24 @@ export const sprintPipelineSchema = defineSchema('sprint_pipeline', {
 });
 
 // ──── Reducer ─────────────────────────────────────────────────────────────────
+//
+// Type-cast note: ventyd v1.19 + valibot StandardSchemaV1 integration widens
+// event body string-literal types (e.g. picklist values) to `string` at the
+// TypeScript level, even though `as const` arrays are used for the schema.
+// The `as typeof prevState.X` casts below are safe — they only re-assert the
+// literal union that the schema already guarantees at runtime.
 
-export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevState, event): typeof prevState => {
+export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevState, event) => {
   switch (event.eventName) {
     case 'sprint_pipeline:created':
       return {
         triggerId: event.body.triggerId,
-        triggerType: event.body.triggerType,
+        triggerType: event.body.triggerType as typeof prevState.triggerType,
         guildId: event.body.guildId,
         objective: event.body.objective,
-        autonomyLevel: event.body.autonomyLevel,
-        currentPhase: event.body.phaseOrder[0],
-        phaseOrder: [...event.body.phaseOrder],
+        autonomyLevel: event.body.autonomyLevel as typeof prevState.autonomyLevel,
+        currentPhase: (event.body.phaseOrder[0] ?? 'plan') as typeof prevState.currentPhase,
+        phaseOrder: [...event.body.phaseOrder] as typeof prevState.phaseOrder,
         phaseResults: {} as typeof prevState.phaseResults,
         implementReviewLoopCount: 0,
         maxImplReviewLoops: event.body.maxImplReviewLoops,
@@ -139,8 +145,8 @@ export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevSt
         phaseResults: {
           ...prevState.phaseResults,
           [event.body.phase]: {
-            phase: event.body.phase,
-            status: event.body.status,
+            phase: event.body.phase as typeof prevState.currentPhase,
+            status: event.body.status as typeof prevState.phaseResults[string]['status'],
             output: event.body.output,
             artifacts: event.body.artifacts,
             startedAt: event.body.startedAt,
@@ -154,14 +160,14 @@ export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevSt
     case 'sprint_pipeline:looped_back':
       return {
         ...prevState,
-        currentPhase: event.body.toPhase,
+        currentPhase: event.body.toPhase as typeof prevState.currentPhase,
         implementReviewLoopCount: event.body.loopCount,
       };
 
     case 'sprint_pipeline:phase_advanced':
       return {
         ...prevState,
-        currentPhase: event.body.nextPhase,
+        currentPhase: event.body.nextPhase as typeof prevState.currentPhase,
       };
 
     case 'sprint_pipeline:files_changed':
@@ -173,20 +179,20 @@ export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevSt
     case 'sprint_pipeline:blocked':
       return {
         ...prevState,
-        currentPhase: 'blocked',
+        currentPhase: 'blocked' as typeof prevState.currentPhase,
         error: event.body.reason,
       };
 
     case 'sprint_pipeline:cancelled':
       return {
         ...prevState,
-        currentPhase: 'cancelled',
+        currentPhase: 'cancelled' as typeof prevState.currentPhase,
       };
 
     case 'sprint_pipeline:completed':
       return {
         ...prevState,
-        currentPhase: 'complete',
+        currentPhase: 'complete' as typeof prevState.currentPhase,
       };
 
     default:

@@ -40,7 +40,19 @@
 ## Queued Now (Approved, Not In Active WIP)
 
 1. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-21 완료 후 승격
+   - `muelUnified` 로컬 stdio 진입점을 `.vscode/mcp.json`에 추가 (현재 GCP SSH만)
+   - NemoClaw / n8n 어댑터 통합 테스트 또는 헬스 페이지 문서화
+   - 어댑터 활용률 대시보드 (성공률, p95 레이턴시 per tool) 추가
+   - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 4
 2. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
+   - `docs/archive/` 가치 있는 내용을 living doc으로 통합
+   - MCP Tool Spec v2 기준으로 관련 문서 정렬 완료 (2026-04-05 일부 완료)
+   - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 5
+3. [M-24] Discord 표면 OpenClaw 연동 — M-22 이후 또는 병행 가능
+   - `/해줘`, `뮤엘 ...` 메시지를 `OPENCLAW_ENABLED=true` + gateway health 통과 시 OpenClaw로 라우팅
+   - 게이트웨이 실패 시 기존 action runner 폴백 유지
+   - 진입점: `src/discord/runtime/commandRouter.ts` OpenClaw 분기 강화
+   - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 2
 
 ## Closed on 2026-04-06
 
