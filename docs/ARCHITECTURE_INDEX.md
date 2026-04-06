@@ -351,24 +351,31 @@ Design doc: `docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`
 
 | Surface | Location | 도구 수 | 역할 |
 |---------|----------|---------|------|
-| muelCore | `.vscode/mcp.json` (local stdio) | 5 | 일반 도구 |
+| muelCore | `.vscode/mcp.json` (local stdio) | 6 | 일반 도구 (`diag.llm` 포함) |
 | muelIndexing | `.vscode/mcp.json` (local stdio) | 7 | 코드 인덱싱 |
-| gcpCompute | GCP VM `:8850` (SSH stdio) | 40 | 외부 어댑터 + Obsidian + 인덱싱 통합 |
+| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (Core + Indexing + Obsidian + ext.*) |
+| gcpCompute | GCP VM `34.56.232.61` (SSH stdio) | 40+ | 원격 통합 서버 (로컬 대비 외부 어댑터 더 풍부) |
 | Supabase | Supabase MCP | DB | 스키마/데이터 조회 |
 | DeepWiki | DeepWiki MCP | — | 외부 repo 문서 질의 |
+
+> **Note**: `muelUnified`(로컬)와 `gcpCompute`는 같은 unified 서버지만, 외부 OSS 어댑터(NemoClaw, OpenJarvis 등) 가용성은 환경에 따라 다를 수 있습니다.
 
 MCP 서버 코드:
 - `src/mcp/server.ts` — 기본 MCP 서버 (stdio/http)
 - `src/mcp/indexingServer.ts` — 인덱싱 전용
 - `src/mcp/unifiedServer.ts` — 통합 진입점 (기본 + 인덱싱 + Obsidian + ext.*)
-- `src/mcp/obsidianToolAdapter.ts` — Obsidian vault 도구 (search/read/write/backlinks)
+- `src/mcp/obsidianToolAdapter.ts` — Obsidian vault 도구 (search/read/write/backlinks + 20+ 도구)
 - `src/mcp/unifiedToolAdapter.ts` — ext.* MCP 브릿지 (외부 어댑터 capability를 MCP 도구로 노출)
+
+전체 도구 카탈로그: `docs/planning/mcp/MCP_TOOL_SPEC.md`  
+갭 분석: `docs/planning/CAPABILITY_GAP_ANALYSIS.md`
 
 Regeneration command:
 
 ```bash
 npm run docs:build
 ```
+
 
 ## Change Control
 

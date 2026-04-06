@@ -1,57 +1,79 @@
 # MCP Rollout Plan (1 Week)
 
+> **Status: Complete (2026-03-18 → 2026-03-25)** — Initial rollout finished. See iteration notes below.
+
 ## Goal
 
 Ship a production-safe MCP bridge for Muel with governance controls and observability.
 
-## Day 1 - Contract Freeze
+## Day 1 - Contract Freeze ✅
 
-- Finalize tool names, inputs, outputs.
-- Freeze error code style and compatibility policy.
-- Publish `MCP_TOOL_SPEC.md`.
+- Finalized tool names, inputs, outputs.
+- Froze error code style and compatibility policy.
+- Published `MCP_TOOL_SPEC.md`.
 
-## Day 2 - Runtime Integration
+## Day 2 - Runtime Integration ✅
 
-- Wire MCP server startup script and local smoke tests.
-- Validate stock/analysis/action tools with real env.
-- Add baseline logs for tool calls.
+- Wired MCP server startup script and local smoke tests.
+- Validated stock/analysis/action tools with real env.
+- Added baseline logs for tool calls.
 
-## Day 3 - Safety Hardening
+## Day 3 - Safety Hardening ✅
 
-- Enforce tenant context requirement.
-- Restrict direct action execution to approved scopes.
-- Verify allowlist and approval queue interaction.
+- Enforced tenant context requirement.
+- Restricted direct action execution to approved scopes.
+- Verified allowlist and approval queue interaction.
 
-## Day 4 - SRE Guardrails
+## Day 4 - SRE Guardrails ✅
 
-- Define SLO for MCP tool latency/success.
-- Add alert thresholds (error burst, timeout burst).
-- Add runbook section for MCP incident response.
+- Defined SLO for MCP tool latency/success.
+- Added alert thresholds (error burst, timeout burst).
+- Added runbook section for MCP incident response.
 
-## Day 5 - Staging Drill
+## Day 5 - Staging Drill ✅
 
-- Run canary traffic in staging.
-- Execute failure injection:
+- Ran canary traffic in staging.
+- Executed failure injection:
   - upstream timeout
   - invalid tool args
   - policy-denied execution
-- Validate rollback playbook.
+- Validated rollback playbook.
 
-## Day 6 - Production Canary
+## Day 6 - Production Canary ✅
 
-- Enable for small admin cohort.
-- Monitor tool success and approval queue behavior.
-- Keep fallback route to existing bot/API flow.
+- Enabled for small admin cohort.
+- Monitored tool success and approval queue behavior.
+- Kept fallback route to existing bot/API flow.
 
-## Day 7 - General Availability Gate
+## Day 7 - General Availability Gate ✅
 
-- Review KPIs and incident logs.
-- Decide GA vs extended canary.
-- Publish post-rollout report and next-iteration backlog.
+- Reviewed KPIs and incident logs.
+- Decided GA.
+- Published post-rollout report and next-iteration backlog.
 
-## Exit Criteria
+## Exit Criteria ✅
 
-- No sev incident during canary window
-- Tool success rate >= 99% for safe tools
-- Approval-required actions have auditable lifecycle
-- Rollback tested and documented
+- No sev incident during canary window ✅
+- Tool success rate >= 99% for safe tools ✅
+- Approval-required actions have auditable lifecycle ✅
+- Rollback tested and documented ✅
+
+---
+
+## Iteration 2 (2026-04-05+)
+
+### New in This Iteration
+
+1. **Multi-server architecture**: muelCore + muelIndexing + gcpCompute (SSH) + Supabase + DeepWiki
+2. **Obsidian tool adapter**: 20+ tools for vault read/write/RAG operations
+3. **ext.* adapter bridge**: 8 external adapters exposed as MCP tools via `unifiedToolAdapter.ts`
+4. **`diag.llm` tool**: LLM connectivity diagnostic added to muelCore (v2 spec)
+5. **Unified MCP server**: `src/mcp/unifiedServer.ts` for full-catalog access via SSH to GCP VM
+
+### Next Iteration Targets
+
+- `muelUnified` local entry in `.vscode/mcp.json` (currently only available via SSH gcpCompute)
+- Auth context propagation for tenant-scoped tool calls
+- Per-tool rate limiting and quota enforcement
+- Tool call observability dashboard (success rate, p95 latency per tool)
+
