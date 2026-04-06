@@ -87,6 +87,7 @@ let _allToolsCache: McpToolSpec[] | null = null;
  */
 export const invalidateToolCache = (): void => {
   _allToolsCache = null;
+  _externalToolsCache = null;
   invalidateAllServerCaches();
 };
 
@@ -141,6 +142,11 @@ export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpTo
     return callObsidianMcpTool(request);
   }
 
-  // Default to indexing adapter (covers code.index.* and security.* tools)
-  return callIndexingMcpTool(request);
+  // Route code.index.* and security.* tools to the indexing adapter
+  if (name.startsWith('code.index.') || name.startsWith('security.')) {
+    return callIndexingMcpTool(request);
+  }
+
+  // No matching route — return explicit error instead of silently falling through
+  return { content: [{ type: 'text', text: `unknown tool: ${name}` }], isError: true };
 };

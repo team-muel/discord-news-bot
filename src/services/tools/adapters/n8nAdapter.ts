@@ -78,6 +78,7 @@ export const n8nAdapter: ExternalToolAdapter = {
     'workflow.trigger',
     'workflow.status',
   ],
+  liteCapabilities: ['workflow.list', 'workflow.status'],
 
   isAvailable: async (): Promise<boolean> => {
     if (!isNotDisabled() || !N8N_BASE_URL) return false;
