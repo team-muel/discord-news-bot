@@ -1,10 +1,10 @@
 # Memory Queue Observability Weekly Report
 
-- generated_at: 2026-04-06T03:41:38.030Z
+- generated_at: 2026-04-06T08:02:16.976Z
 - window_days: 7
 - guild_id: *
-- baseline_from: 2026-03-30T03:41:38.030Z
-- baseline_to: 2026-04-06T03:41:38.030Z
+- baseline_from: 2026-03-30T08:02:16.976Z
+- baseline_to: 2026-04-06T08:02:16.976Z
 
 ## Queue Summary
 
