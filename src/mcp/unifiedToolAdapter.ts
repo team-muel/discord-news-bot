@@ -1,16 +1,26 @@
 /**
  * Unified MCP Tool Adapter
  *
- * Combines all tool catalogs (general + indexing + external adapters) into a
- * single adapter.  External adapters (OpenClaw, NemoClaw, OpenJarvis, etc.)
- * are surfaced with an `ext.<adapterId>.<capability>` naming convention so
- * consumers can call them through the standard MCP interface.
+ * Combines all tool catalogs (general + indexing + external adapters + upstream
+ * proxied servers) into a single adapter.
+ *
+ * Tool namespace summary:
+ *   - general tools:      stock.*, investment.*, action.*, diag.*  (via toolAdapter.ts)
+ *   - muelIndexing tools:  code.index.*, security.*
+ *   - obsidian tools:      obsidian.*
+ *   - external adapters:   ext.<adapterId>.<capability>
+ *   - upstream proxy:      upstream.<namespace>.<tool>
  */
 
 import { listMcpTools, callMcpTool } from './toolAdapter';
 import { listIndexingMcpTools, callIndexingMcpTool } from './indexingToolAdapter';
 import { listObsidianMcpTools, callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from './obsidianToolAdapter';
+import { listProxiedTools, callProxiedTool, invalidateAllServerCaches } from './proxyAdapter';
+import { loadUpstreamsFromConfig } from './proxyRegistry';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
+
+// Bootstrap upstream servers from environment at module init (idempotent)
+loadUpstreamsFromConfig();
 
 // Lazy-loaded — avoids importing all 7 CLI adapters at module init
 let _externalRegistry: typeof import('../services/tools/externalAdapterRegistry') | null = null;
@@ -32,6 +42,8 @@ const getGeneralToolNames = (): Set<string> => {
 
 /** Prefix for external adapter tools exposed as MCP tools. */
 const EXT_PREFIX = 'ext.';
+/** Prefix for upstream proxied MCP server tools. */
+const UPSTREAM_PREFIX = 'upstream.';
 
 /**
  * Build MCP tool specs from registered external adapters.
@@ -51,8 +63,11 @@ const buildExternalMcpTools = async (): Promise<McpToolSpec[]> => {
         description: `External adapter: ${adapter.id} — ${cap}`,
         inputSchema: {
           type: 'object',
+          // Arguments may be passed either flat (top-level properties) or nested
+          // under an "args" key. callAnyMcpTool prefers request.arguments.args
+          // and falls back to request.arguments directly, so both forms work.
           properties: {
-            args: { type: 'object', description: 'Arguments for the external adapter action' },
+            args: { type: 'object', description: 'Action arguments (nested). Alternatively pass arguments flat at the top level.' },
           },
           additionalProperties: true,
         },
@@ -65,6 +80,23 @@ const buildExternalMcpTools = async (): Promise<McpToolSpec[]> => {
 
 let _allToolsCache: McpToolSpec[] | null = null;
 
+/**
+ * Invalidate all three tool cache layers so the next call to listAllMcpTools()
+ * re-fetches from all adapters including upstream servers.
+ *
+ * Layers cleared:
+ *   1. _allToolsCache     — merged listing of all tools
+ *   2. _externalToolsCache — ext.* adapter tool specs
+ *   3. upstream proxy caches (toolCache + originalUpstreamNames in proxyAdapter)
+ *
+ * Call this after registering/unregistering adapters or upstream servers at runtime.
+ */
+export const invalidateToolCache = (): void => {
+  _allToolsCache = null;
+  _externalToolsCache = null;
+  invalidateAllServerCaches();
+};
+
 export const listAllMcpTools = async (): Promise<McpToolSpec[]> => {
   if (_allToolsCache) return _allToolsCache;
   _allToolsCache = [
@@ -72,6 +104,7 @@ export const listAllMcpTools = async (): Promise<McpToolSpec[]> => {
     ...listIndexingMcpTools(),
     ...listObsidianMcpTools(),
     ...(await buildExternalMcpTools()),
+    ...(await listProxiedTools()),
   ];
   return _allToolsCache;
 };
@@ -100,6 +133,11 @@ export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpTo
     };
   }
 
+  // Route upstream.* calls to the proxy adapter
+  if (name.startsWith(UPSTREAM_PREFIX)) {
+    return callProxiedTool(name, request.arguments ?? {});
+  }
+
   // Route to the correct adapter
   if (getGeneralToolNames().has(name)) {
     return callMcpTool(request);
@@ -110,6 +148,11 @@ export const callAnyMcpTool = async (request: McpToolCallRequest): Promise<McpTo
     return callObsidianMcpTool(request);
   }
 
-  // Default to indexing adapter (covers code.index.* and security.* tools)
-  return callIndexingMcpTool(request);
+  // Route code.index.* and security.* tools to the indexing adapter
+  if (name.startsWith('code.index.') || name.startsWith('security.')) {
+    return callIndexingMcpTool(request);
+  }
+
+  // No matching route — return explicit error instead of silently falling through
+  return { content: [{ type: 'text', text: `unknown tool: ${name}` }], isError: true };
 };

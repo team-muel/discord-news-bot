@@ -6,7 +6,7 @@ import { buildAgentRuntimeReadinessReport } from '../../agent/agentRuntimeReadin
 import { isAnyLlmConfigured } from '../../llmClient';
 import { recommendSuperAgent } from '../../superAgentService';
 import { runNemoClawDiscoverExecutor } from '../../workerGeneration/workerExecutors';
-import { executeExternalAction } from '../../tools/externalAdapterRegistry';
+import { runExternalAction } from '../../tools/toolRouter';
 import type { ActionDefinition } from './types';
 import {
   compact,
@@ -151,7 +151,7 @@ export const nemoclawReviewAction: ActionDefinition = {
 
     // Try external NemoClaw sandbox review if available
     if (code) {
-      const sandboxReview = await executeExternalAction('nemoclaw', 'code.review', { code, goal: query });
+      const sandboxReview = await runExternalAction('nemoclaw', 'code.review', { code, goal: query });
       if (sandboxReview.ok && sandboxReview.output.length > 0) {
         return withRouting({
           ok: true,
@@ -261,7 +261,7 @@ export const openjarvisOpsAction: ActionDefinition = {
     }
 
     // Try external OpenJarvis adapter (jarvis serve API)
-    const jarvisResult = await executeExternalAction('openjarvis', 'jarvis.ask', {
+    const jarvisResult = await runExternalAction('openjarvis', 'jarvis.ask', {
       question: `Ops review: ${query}`,
     });
     if (jarvisResult.ok && jarvisResult.output.length > 0) {

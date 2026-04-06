@@ -6,6 +6,9 @@ import { n8nAdapter } from './adapters/n8nAdapter';
 import { deepwikiAdapter } from './adapters/deepwikiAdapter';
 import { obsidianExternalAdapter } from './adapters/obsidianAdapter';
 import { renderAdapter } from './adapters/renderAdapter';
+import { ollamaAdapter } from './adapters/ollamaAdapter';
+import { litellmAdminAdapter } from './adapters/litellmAdminAdapter';
+import { mcpIndexingAdapter } from './adapters/mcpIndexingAdapter';
 import type { ExternalAdapterId, ExternalToolAdapter, ExternalAdapterResult } from './externalAdapterTypes';
 import { validateAdapterId } from './externalAdapterTypes';
 import logger from '../../logger';
@@ -20,6 +23,9 @@ const BUILTIN_ADAPTERS: ReadonlyArray<ExternalToolAdapter> = [
   deepwikiAdapter,
   obsidianExternalAdapter,
   renderAdapter,
+  ollamaAdapter,
+  litellmAdminAdapter,
+  mcpIndexingAdapter,
 ];
 
 /** Mutable map — built-ins + dynamically registered adapters. */

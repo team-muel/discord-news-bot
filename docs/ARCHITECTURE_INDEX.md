@@ -351,12 +351,11 @@ Design doc: `docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`
 
 | Surface | Location | 도구 수 | 역할 |
 |---------|----------|---------|------|
-| muelCore | `.vscode/mcp.json` (local stdio) | 6 | 일반 도구 (`diag.llm` 포함) |
 | muelIndexing | `.vscode/mcp.json` (local stdio) | 7 | 코드 인덱싱 |
-| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (Core + Indexing + Obsidian + ext.*) |
+| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (general + Indexing + Obsidian + ext.* + upstream.*) |
 | gcpCompute | GCP VM `34.56.232.61` (SSH stdio) | 40+ | 원격 통합 서버 (로컬 대비 외부 어댑터 더 풍부) |
-| Supabase | Supabase MCP | DB | 스키마/데이터 조회 |
-| DeepWiki | DeepWiki MCP | — | 외부 repo 문서 질의 |
+| Supabase | `MCP_UPSTREAM_SERVERS` → `upstream.supabase.*` | DB | 스키마/데이터 조회 |
+| DeepWiki | `MCP_UPSTREAM_SERVERS` → `upstream.deepwiki.*` | — | 외부 repo 문서 질의 |
 
 > **Note**: `muelUnified`(로컬)와 `gcpCompute`는 같은 unified 서버지만, 외부 OSS 어댑터(NemoClaw, OpenJarvis 등) 가용성은 환경에 따라 다를 수 있습니다.
 

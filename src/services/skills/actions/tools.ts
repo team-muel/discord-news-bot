@@ -1,4 +1,4 @@
-﻿import { executeToolByName, getToolRuntimeStatus } from '../../tools/toolRouter';
+import { executeToolByName, getToolRuntimeStatus } from '../../tools/toolRouter';
 import type { ActionDefinition, ActionExecutionResult } from './types';
 
 const MAX_GOAL_LENGTH = 2_400;
@@ -24,7 +24,9 @@ const withOperateRouting = (
 
 export const toolsRunCliAction: ActionDefinition = {
   name: 'tools.run.cli',
-  description: '?섍꼍蹂?섎줈 ?깅줉???⑥씪 濡쒖뺄 CLI ?꾧뎄瑜??덉쟾???몄옄 ?쒗뵆由우쑝濡??ㅽ뻾?⑸땲??',  category: 'tool',  execute: async ({ goal, args, guildId, requestedBy }) => {
+  description: '설정된 로컬 CLI 도구를 안전한 샌드박스 환경에서 실행합니다.',
+  category: 'tool',
+  execute: async ({ goal, args, guildId, requestedBy }) => {
     const trimmedGoal = String(goal || '').trim();
     const toolName = toSingleLine(args?.toolName || args?.name || '');
 
@@ -32,7 +34,7 @@ export const toolsRunCliAction: ActionDefinition = {
       return withOperateRouting({
         ok: false,
         name: 'tools.run.cli',
-        summary: '?ㅽ뻾??goal??鍮꾩뼱 ?덉뒿?덈떎.',
+        summary: '실행할 goal이 비어 있습니다.',
         artifacts: [],
         verification: ['goal input required'],
         error: 'TOOLS_RUN_CLI_GOAL_EMPTY',
@@ -43,7 +45,7 @@ export const toolsRunCliAction: ActionDefinition = {
       return withOperateRouting({
         ok: false,
         name: 'tools.run.cli',
-        summary: `goal 湲몄씠媛 ?덈Т 源곷땲??max=${MAX_GOAL_LENGTH}).`,
+        summary: `goal 길이가 너무 깁니다 (max=${MAX_GOAL_LENGTH}).`,
         artifacts: [],
         verification: ['goal length guardrail'],
         error: 'TOOLS_RUN_CLI_GOAL_TOO_LONG',

@@ -15,7 +15,11 @@ export type ExternalAdapterId = string & { readonly __brand?: 'ExternalAdapterId
 export const ADAPTER_ID_PATTERN = /^[a-z][a-z0-9-]{1,49}$/;
 
 /** Built-in adapter IDs for backward compatibility. */
-export const KNOWN_ADAPTER_IDS = new Set<string>(['openshell', 'nemoclaw', 'openclaw', 'openjarvis', 'n8n', 'deepwiki', 'obsidian', 'render']);
+export const KNOWN_ADAPTER_IDS = new Set<string>([
+  'openshell', 'nemoclaw', 'openclaw', 'openjarvis',
+  'n8n', 'deepwiki', 'obsidian', 'render',
+  'ollama', 'litellm-admin', 'mcp-indexing',
+]);
 
 /** Validate and narrow a string to ExternalAdapterId. Returns null on invalid. */
 export const validateAdapterId = (id: unknown): ExternalAdapterId | null => {

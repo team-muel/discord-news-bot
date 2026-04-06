@@ -6,7 +6,7 @@ All sprint pipeline configuration is defined in `src/config.ts`.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `SPRINT_ENABLED` | boolean | `false` | Master switch — enables autonomous sprint pipeline |
+| `SPRINT_ENABLED` | boolean | `true` | Master switch — enables autonomous sprint pipeline |
 | `SPRINT_AUTONOMY_LEVEL` | enum | `approve-ship` | `full-auto` / `approve-ship` / `approve-impl` / `manual` |
 | `SPRINT_MAX_IMPL_REVIEW_LOOPS` | int | `3` | Max implement→review loop iterations before forced advance |
 | `SPRINT_MAX_TOTAL_PHASES` | int | `12` | Circuit breaker — max total phase transitions per pipeline |
@@ -93,6 +93,25 @@ All sprint pipeline configuration is defined in `src/config.ts`.
 | `DEEPWIKI_ADAPTER_ENABLED` | boolean | `false` | Enable DeepWiki adapter (plan/retro enrichment) |
 | `N8N_ENABLED` | boolean | `false` | Enable n8n adapter (ops-validate enrichment) |
 | `SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED` | boolean | `false` | Enable NemoClaw as cross-model outside voice for review phases |
+
+## Recursive Self-Improvement Loop
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `SELF_IMPROVEMENT_LACUNA_SPRINT_ENABLED` | boolean | `true` | Lacuna detection → auto-trigger feature sprints for capability gaps |
+| `SELF_IMPROVEMENT_LACUNA_SPRINT_MIN_SCORE` | number | `15` | Minimum aggregated lacuna score to trigger |
+| `SELF_IMPROVEMENT_LACUNA_SPRINT_MIN_COUNT` | int | `3` | Minimum distinct lacuna candidates required |
+| `SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED` | boolean | `true` | Weekly high-severity patterns → auto-trigger bugfix sprints |
+| `SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED` | boolean | `true` | Sustained bench score regression → root-cause sprint |
+| `SELF_IMPROVEMENT_BENCH_REGRESSION_WEEKS` | int | `2` | Consecutive weeks of decline before triggering |
+| `SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED` | boolean | `true` | Track success rate of self-triggered sprints |
+| `SELF_IMPROVEMENT_CONVERGENCE_ENABLED` | boolean | `true` | Compute convergence reports (improving/stable/degrading) |
+
+## Memory Consolidation
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `MEMORY_CONSOLIDATION_VAULT_WRITEBACK` | boolean | `true` | Write consolidation results to Obsidian vault |
 
 ## Recommended Profiles
 

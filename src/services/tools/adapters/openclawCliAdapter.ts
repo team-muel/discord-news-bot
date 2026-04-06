@@ -20,7 +20,7 @@ const HTTP_TIMEOUT_MS = 30_000;
  * - null: not yet determined
  */
 let transport: 'gateway' | 'cli' | null = null;
-let cliAvailable = false;
+let cliAvailable: boolean | null = null;
 
 const gatewayPost = async (path: string, body: Record<string, unknown>): Promise<{ ok: boolean; data: unknown }> => {
   try {

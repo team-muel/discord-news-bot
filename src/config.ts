@@ -78,7 +78,7 @@ export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MA
 export const OBSIDIAN_RAG_CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_RAG_CACHE_ENABLED, true);
 
 // ──── Sprint Pipeline (Autonomous Agent) ────
-export const SPRINT_ENABLED = parseBooleanEnv(process.env.SPRINT_ENABLED, false);
+export const SPRINT_ENABLED = parseBooleanEnv(process.env.SPRINT_ENABLED, true);
 export type AutonomyLevelConfig = 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
 export const SPRINT_AUTONOMY_LEVEL = (process.env.SPRINT_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
 export const SPRINT_BUGFIX_AUTONOMY_LEVEL = (process.env.SPRINT_BUGFIX_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
@@ -141,14 +141,14 @@ const _fastFailRaw = parseIntegerEnv(process.env.MCP_FAST_FAIL_TIMEOUT_MS, 10_00
 export const MCP_FAST_FAIL_TIMEOUT_MS = Math.max(3_000, Math.min(_fastFailRaw, Math.floor(_phaseTimeoutMs * 0.5)));
 
 // ──── Recursive Self-Improvement Loop ────
-export const SELF_IMPROVEMENT_LACUNA_SPRINT_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_LACUNA_SPRINT_ENABLED, false);
+export const SELF_IMPROVEMENT_LACUNA_SPRINT_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_LACUNA_SPRINT_ENABLED, true);
 export const SELF_IMPROVEMENT_LACUNA_SPRINT_MIN_SCORE = parseNumberEnv(process.env.SELF_IMPROVEMENT_LACUNA_SPRINT_MIN_SCORE, 15);
 export const SELF_IMPROVEMENT_LACUNA_SPRINT_MIN_COUNT = parseIntegerEnv(process.env.SELF_IMPROVEMENT_LACUNA_SPRINT_MIN_COUNT, 3);
-export const SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED, false);
-export const SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED, false);
+export const SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED, true);
+export const SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED, true);
 export const SELF_IMPROVEMENT_BENCH_REGRESSION_WEEKS = parseIntegerEnv(process.env.SELF_IMPROVEMENT_BENCH_REGRESSION_WEEKS, 2);
-export const SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED, false);
-export const SELF_IMPROVEMENT_CONVERGENCE_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_CONVERGENCE_ENABLED, false);
+export const SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED, true);
+export const SELF_IMPROVEMENT_CONVERGENCE_ENABLED = parseBooleanEnv(process.env.SELF_IMPROVEMENT_CONVERGENCE_ENABLED, true);
 
 // ──── Observer Layer (Phase F: Autonomous Agent Evolution) ────
 export const OBSERVER_ENABLED = parseBooleanEnv(process.env.OBSERVER_ENABLED, false);
@@ -418,6 +418,15 @@ export const MCP_SKILL_ROUTER_ENABLED = parseBooleanEnv(process.env.MCP_SKILL_RO
 export const MCP_HEALTH_SWEEP_INTERVAL_MS = Math.max(15_000, parseIntegerEnv(process.env.MCP_HEALTH_SWEEP_INTERVAL_MS, 30_000));
 export const MCP_PROBE_TIMEOUT_MS = Math.max(2_000, parseIntegerEnv(process.env.MCP_PROBE_TIMEOUT_MS, 5_000));
 export const MCP_HEALTH_TTL_MS = Math.max(10_000, parseIntegerEnv(process.env.MCP_HEALTH_TTL_MS, 60_000));
+
+// ── MCP Upstream Proxy ──
+/** JSON array of UpstreamMcpServerConfig objects — parsed by proxyRegistry.ts */
+export const MCP_UPSTREAM_SERVERS_RAW = (process.env.MCP_UPSTREAM_SERVERS || '').trim();
+/** TTL in ms for upstream server tool catalog cache (default 5 minutes) */
+export const MCP_UPSTREAM_TOOL_CACHE_TTL_MS = Math.max(
+  10_000,
+  parseIntegerEnv(process.env.MCP_UPSTREAM_TOOL_CACHE_TTL_MS, 5 * 60_000),
+);
 
 // ── Semantic Answer Cache ──
 export const SEMANTIC_ANSWER_CACHE_ENABLED = parseBooleanEnv(process.env.SEMANTIC_ANSWER_CACHE_ENABLED, true);

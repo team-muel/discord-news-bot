@@ -13,19 +13,23 @@ Methods: `initialize`, `tools/list`, `tools/call`
 
 | Server ID | Location | Transport | Tool Count |
 |-----------|----------|-----------|------------|
-| `muelCore` | Local / `.vscode/mcp.json` | stdio | 6 |
 | `muelIndexing` | Local / `.vscode/mcp.json` | stdio | 7 |
+| `muelUnified` | Local / `.vscode/mcp.json` | stdio | 40+ |
 | `gcpCompute` | GCP VM → SSH stdio | stdio (SSH) | 40+ (unified) |
-| `supabase` | Supabase MCP | HTTP | DB |
-| `deepwiki` | DeepWiki MCP | HTTP | — |
+| `supabase` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | DB |
+| `deepwiki` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | — |
 
-Configuration file: `.vscode/mcp.json`
+Configuration file: `.vscode/mcp.json` (stdio servers); `MCP_UPSTREAM_SERVERS` env var (HTTP upstream servers)
 
 ---
 
-## muelCore Tools (6)
+## muelCore Tools — migrated to muelUnified
 
-Entry: `scripts/mcp-stdio.ts` → `src/mcp/server.ts` → `src/mcp/toolAdapter.ts`
+> The 6 tools below (`stock.quote`, `stock.chart`, `investment.analysis`, `action.catalog`, `action.execute.direct`, `diag.llm`) were previously exposed by the standalone `muelCore` stdio server.  
+> They are now consolidated into `muelUnified` (`scripts/unified-mcp-stdio.ts`).  
+> The `muelCore` entry has been removed from `.vscode/mcp.json`.
+
+Entry: `src/mcp/toolAdapter.ts` (included via `src/mcp/unifiedToolAdapter.ts`)
 
 ### 1) `stock.quote`
 
@@ -112,7 +116,7 @@ Requires env: `INDEXING_MCP_REPO_ID`, `INDEXING_MCP_REPO_ROOT`
 ## muelObsidian Tools (20+)
 
 Entry: `src/mcp/obsidianToolAdapter.ts`  
-Accessible via `muelCore` unified server or `gcpCompute`
+Accessible via `muelUnified` server or `gcpCompute`
 
 Key tools:
 - `obsidian.search` — graph-first 검색
@@ -153,6 +157,47 @@ Lite-mode adapters (available even when full capabilities are restricted):
 
 ---
 
+## upstream.* Upstream Proxy Tools
+
+Entry: `src/mcp/unifiedToolAdapter.ts` → `src/mcp/proxyAdapter.ts` → `src/mcp/proxyRegistry.ts`
+
+Bootstrap: `MCP_UPSTREAM_SERVERS` JSON array (see `.env.example`)
+
+### Naming Convention
+
+| Upstream original tool | Internal name (dot-based) | MCP wire name (hyphen-based) |
+|---|---|---|
+| `query-database` | `upstream.supabase.query_database` | `upstream-supabase-query_database` |
+| `wiki.query` | `upstream.deepwiki.wiki_query` | `upstream-deepwiki-wiki_query` |
+| `list_files` | `upstream.custom.list_files` | `upstream-custom-list_files` |
+
+Upstream tool name dots (`.`) and hyphens (`-`) are normalized to underscores (`_`) for the internal catalog so they round-trip through the existing dot↔hyphen wire transform without collision.
+
+### Server Config Fields
+
+```jsonc
+{
+  "id": "supabase",          // unique registry key
+  "url": "https://mcp.supabase.com/mcp",  // base URL (no trailing slash)
+  "namespace": "supabase",   // prefix used in tool names [a-z0-9_]
+  "token": "sbp_xxx",        // optional Bearer auth token (masked in logs)
+  "enabled": true            // default true; set false to temporarily disable
+}
+```
+
+### Transport
+
+1. Primary: JSON-RPC 2.0 `tools/list` / `tools/call` over `POST /mcp/rpc`
+2. Fallback: REST `POST /tools/list` (for servers without `/mcp/rpc`)
+
+### Failure Isolation
+
+- Per-server independent timeout (8 s). A timed-out server contributes zero tools; other servers are unaffected.
+- Tool catalog is cached per server for `MCP_UPSTREAM_TOOL_CACHE_TTL_MS` (default 5 min).
+- `invalidateToolCache()` from `unifiedToolAdapter.ts` forces a full refresh.
+
+---
+
 ## Worker Tools (Crawler Worker, legacy)
 
 Handled by `scripts/crawler-worker.ts`:
@@ -181,6 +226,8 @@ Handled by `scripts/crawler-worker.ts`:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v4 | 2026-04-06 | Removed `muelCore` from `.vscode/mcp.json` (consolidated into `muelUnified`); moved `deepwiki`/`supabase` HTTP entries to `MCP_UPSTREAM_SERVERS` |
+| v3 | 2026-04-06 | Added `upstream.*` proxy namespace; `proxyRegistry.ts` + `proxyAdapter.ts`; `MCP_UPSTREAM_SERVERS` env var |
 | v2 | 2026-04-05 | Full multi-server inventory; added `diag.llm`, Obsidian tools, ext.* adapter table |
 | v1 | 2026-03-18 | Initial spec (muelCore 5 tools only) |
 
