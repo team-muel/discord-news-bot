@@ -13,19 +13,23 @@ Methods: `initialize`, `tools/list`, `tools/call`
 
 | Server ID | Location | Transport | Tool Count |
 |-----------|----------|-----------|------------|
-| `muelCore` | Local / `.vscode/mcp.json` | stdio | 6 |
 | `muelIndexing` | Local / `.vscode/mcp.json` | stdio | 7 |
+| `muelUnified` | Local / `.vscode/mcp.json` | stdio | 40+ |
 | `gcpCompute` | GCP VM → SSH stdio | stdio (SSH) | 40+ (unified) |
-| `supabase` | Supabase MCP | HTTP | DB |
-| `deepwiki` | DeepWiki MCP | HTTP | — |
+| `supabase` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | DB |
+| `deepwiki` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | — |
 
-Configuration file: `.vscode/mcp.json`
+Configuration file: `.vscode/mcp.json` (stdio servers); `MCP_UPSTREAM_SERVERS` env var (HTTP upstream servers)
 
 ---
 
-## muelCore Tools (6)
+## muelCore Tools — migrated to muelUnified
 
-Entry: `scripts/mcp-stdio.ts` → `src/mcp/server.ts` → `src/mcp/toolAdapter.ts`
+> The 6 tools below (`stock.quote`, `stock.chart`, `investment.analysis`, `action.catalog`, `action.execute.direct`, `diag.llm`) were previously exposed by the standalone `muelCore` stdio server.  
+> They are now consolidated into `muelUnified` (`scripts/unified-mcp-stdio.ts`).  
+> The `muelCore` entry has been removed from `.vscode/mcp.json`.
+
+Entry: `src/mcp/toolAdapter.ts` (included via `src/mcp/unifiedToolAdapter.ts`)
 
 ### 1) `stock.quote`
 
@@ -112,7 +116,7 @@ Requires env: `INDEXING_MCP_REPO_ID`, `INDEXING_MCP_REPO_ROOT`
 ## muelObsidian Tools (20+)
 
 Entry: `src/mcp/obsidianToolAdapter.ts`  
-Accessible via `muelCore` unified server or `gcpCompute`
+Accessible via `muelUnified` server or `gcpCompute`
 
 Key tools:
 - `obsidian.search` — graph-first 검색
@@ -222,6 +226,7 @@ Handled by `scripts/crawler-worker.ts`:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v4 | 2026-04-06 | Removed `muelCore` from `.vscode/mcp.json` (consolidated into `muelUnified`); moved `deepwiki`/`supabase` HTTP entries to `MCP_UPSTREAM_SERVERS` |
 | v3 | 2026-04-06 | Added `upstream.*` proxy namespace; `proxyRegistry.ts` + `proxyAdapter.ts`; `MCP_UPSTREAM_SERVERS` env var |
 | v2 | 2026-04-05 | Full multi-server inventory; added `diag.llm`, Obsidian tools, ext.* adapter table |
 | v1 | 2026-03-18 | Initial spec (muelCore 5 tools only) |

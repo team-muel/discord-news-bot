@@ -1,15 +1,5 @@
 {
   "servers": {
-    "muelCore": {
-      "type": "stdio",
-      "command": "npm",
-      "args": [
-        "run",
-        "mcp:dev"
-      ],
-      "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env"
-    },
     "muelIndexing": {
       "type": "stdio",
       "command": "npm",
@@ -37,12 +27,6 @@
         "INDEXING_MCP_REPO_ID": "muel-backend",
         "INDEXING_MCP_REPO_ROOT": "${workspaceFolder}"
       }
-    },
-    "deepwiki": {
-      "url": "https://mcp.deepwiki.com/mcp"
-    },
-    "supabase": {
-      "url": "https://mcp.supabase.com/mcp?project_ref=pqzmehtuwnxyspfhyucd"
     },
     "gcpCompute": {
       "type": "stdio",
