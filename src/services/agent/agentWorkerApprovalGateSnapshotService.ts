@@ -95,7 +95,7 @@ const OPENCODE_ACTION_NAME = 'opencode.execute';
 
 const toMaskedRuntimePath = (value: string): string => {
   const relative = path.relative(process.cwd(), value).replace(/\\/g, '/');
-  if (!relative || relative.startsWith('..')) {
+  if (!relative || relative.startsWith('..') || /^[A-Za-z]:/.test(relative)) {
     return `.runtime/${path.basename(value)}`;
   }
   return relative;

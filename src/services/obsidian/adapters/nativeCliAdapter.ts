@@ -393,7 +393,7 @@ const listTasks = async (): Promise<ObsidianTask[]> => {
       filePath: String(item.file ?? item.path ?? ''),
       line: Number(item.line ?? 0),
       text: String(item.text ?? ''),
-      completed: String(item.status ?? '') === 'x',
+      completed: item.completed === true || String(item.status ?? '') === 'x',
       tags: Array.isArray(item.tags) ? (item.tags as unknown[]).map(String) : undefined,
     }));
 };
