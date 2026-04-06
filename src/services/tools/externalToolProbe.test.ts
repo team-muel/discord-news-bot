@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('node:child_process', () => {
-  const fakeCb = (_cmd: unknown, _opts: unknown, cb?: Function) => {
-    const callback = cb ?? _opts;
-    if (typeof callback === 'function') callback(null, { stdout: 'v1.0.0\n', stderr: '' });
+  const fakeCb = (...args: unknown[]) => {
+    const callback = args.find((a) => typeof a === 'function') as Function | undefined;
+    if (callback) callback(null, { stdout: 'v1.0.0\n', stderr: '' });
     return { stdout: 'v1.0.0\n', stderr: '' };
   };
   return {

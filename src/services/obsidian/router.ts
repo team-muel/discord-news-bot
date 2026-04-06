@@ -3,6 +3,7 @@ import logger from '../../logger';
 import { headlessCliObsidianAdapter } from './adapters/headlessCliAdapter.ts';
 import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
 import { scriptCliObsidianAdapter } from './adapters/scriptCliAdapter.ts';
+import { localFsObsidianAdapter } from './adapters/localFsAdapter.ts';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import type {
@@ -21,7 +22,7 @@ import type {
 } from './types';
 import { supportsCapability } from './types';
 
-const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli'];
+const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli', 'local-fs'];
 
 const parseAdapterOrder = (value: string | undefined): string[] => String(value || '')
   .split(',')
@@ -53,6 +54,7 @@ const registry: Record<string, ObsidianVaultAdapter> = {
   [nativeCliObsidianAdapter.id]: nativeCliObsidianAdapter,
   [headlessCliObsidianAdapter.id]: headlessCliObsidianAdapter,
   [scriptCliObsidianAdapter.id]: scriptCliObsidianAdapter,
+  [localFsObsidianAdapter.id]: localFsObsidianAdapter,
 };
 
 const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'];
