@@ -2,7 +2,7 @@
  * OpenJarvis extended capability actions — research, digest, memory, eval, telemetry, scheduler, skill discovery.
  * Extracted from agentCollab.ts for domain-scoped cohesion.
  */
-import { executeExternalAction } from '../../tools/externalAdapterRegistry';
+import { runExternalAction } from '../../tools/toolRouter';
 import type { ActionDefinition } from './types';
 import {
   compact,
@@ -26,7 +26,7 @@ export const jarvisResearchAction: ActionDefinition = {
         artifacts: [], verification: ['query required'], error: 'QUERY_EMPTY', agentRole: 'operate',
       }, 'operate', 'task validation failed');
     }
-    const result = await executeExternalAction('openjarvis', 'jarvis.research', {
+    const result = await runExternalAction('openjarvis', 'jarvis.research', {
       query, ...(args?.sources ? { sources: args.sources } : {}),
     });
     return withRouting({
@@ -48,7 +48,7 @@ export const jarvisDigestAction: ActionDefinition = {
     { name: 'sources', description: 'Optional source list', required: false },
   ],
   execute: async ({ args }) => {
-    const result = await executeExternalAction('openjarvis', 'jarvis.digest', {
+    const result = await runExternalAction('openjarvis', 'jarvis.digest', {
       topic: compact(args?.topic) || 'daily briefing',
       ...(args?.sources ? { sources: args.sources } : {}),
       ...(args?.json ? { json: true } : {}),
@@ -78,7 +78,7 @@ export const jarvisMemoryIndexAction: ActionDefinition = {
         artifacts: [], verification: ['path required'], error: 'PATH_EMPTY', agentRole: 'operate',
       }, 'operate', 'task validation failed');
     }
-    const result = await executeExternalAction('openjarvis', 'jarvis.memory.index', { path: indexPath });
+    const result = await runExternalAction('openjarvis', 'jarvis.memory.index', { path: indexPath });
     return withRouting({
       ok: result.ok, name: 'jarvis.memory.index',
       summary: result.ok ? `인덱싱 완료: ${indexPath}` : (result.error || '인덱싱 실패'),
@@ -105,7 +105,7 @@ export const jarvisMemorySearchAction: ActionDefinition = {
         artifacts: [], verification: ['query required'], error: 'QUERY_EMPTY', agentRole: 'operate',
       }, 'operate', 'task validation failed');
     }
-    const result = await executeExternalAction('openjarvis', 'jarvis.memory.search', {
+    const result = await runExternalAction('openjarvis', 'jarvis.memory.search', {
       query, ...(args?.limit ? { limit: Number(args.limit) } : {}),
     });
     return withRouting({
@@ -127,7 +127,7 @@ export const jarvisEvalAction: ActionDefinition = {
     { name: 'limit', description: 'Max eval samples', required: false },
   ],
   execute: async ({ args }) => {
-    const result = await executeExternalAction('openjarvis', 'jarvis.eval', {
+    const result = await runExternalAction('openjarvis', 'jarvis.eval', {
       dataset: compact(args?.dataset) || 'ipw_mixed',
       ...(args?.limit ? { limit: Number(args.limit) } : {}),
     });
@@ -149,7 +149,7 @@ export const jarvisTelemetryAction: ActionDefinition = {
     { name: 'window', description: 'Time window (default: 1h)', required: false },
   ],
   execute: async ({ args }) => {
-    const result = await executeExternalAction('openjarvis', 'jarvis.telemetry', {
+    const result = await runExternalAction('openjarvis', 'jarvis.telemetry', {
       window: compact(args?.window) || '1h',
     });
     return withRouting({
@@ -177,7 +177,7 @@ export const jarvisSchedulerRunAction: ActionDefinition = {
         artifacts: [], verification: ['task required'], error: 'TASK_EMPTY', agentRole: 'operate',
       }, 'operate', 'task validation failed');
     }
-    const result = await executeExternalAction('openjarvis', 'jarvis.scheduler.run', { task: taskName });
+    const result = await runExternalAction('openjarvis', 'jarvis.scheduler.run', { task: taskName });
     return withRouting({
       ok: result.ok, name: 'jarvis.scheduler.run',
       summary: result.ok ? `스케줄러 태스크 '${taskName}' 실행 완료` : (result.error || '실행 실패'),
@@ -196,7 +196,7 @@ export const jarvisSkillDiscoverAction: ActionDefinition = {
     { name: 'limit', description: 'Max skill candidates (default: 5)', required: false },
   ],
   execute: async ({ args }) => {
-    const result = await executeExternalAction('openjarvis', 'jarvis.skill.discover', {
+    const result = await runExternalAction('openjarvis', 'jarvis.skill.discover', {
       ...(args?.limit ? { limit: Number(args.limit) } : {}),
     });
     return withRouting({

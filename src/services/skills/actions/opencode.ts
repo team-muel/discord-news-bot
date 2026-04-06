@@ -1,6 +1,6 @@
 import type { ActionDefinition, ActionExecutionResult } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
-import { executeExternalAction, getExternalAdapter } from '../../tools/externalAdapterRegistry';
+import { runExternalAction, getExternalAdapterById } from '../../tools/toolRouter';
 import logger from '../../../logger';
 import {
   MCP_OPENCODE_TOOL_NAME as OPENCODE_TOOL_NAME,
@@ -99,16 +99,16 @@ export const opencodeExecuteAction: ActionDefinition = {
 
     // D-05: OpenShell sandbox delegation — when enabled, route execution through sandboxed environment
     if (OPENSHELL_SANDBOX_DELEGATION && OPENSHELL_DEFAULT_SANDBOX_ID) {
-      const adapter = getExternalAdapter('openshell');
+      const adapter = getExternalAdapterById('openshell');
       if (adapter) {
         const available = await adapter.isAvailable();
         if (available) {
           // Verify sandbox exists; auto-create if missing (D-05 gap closure)
-          const listResult = await executeExternalAction('openshell', 'sandbox.list', {});
+          const listResult = await runExternalAction('openshell', 'sandbox.list', {});
           const sandboxExists = listResult.ok && listResult.output.some((line) => line.includes(OPENSHELL_DEFAULT_SANDBOX_ID));
           if (!sandboxExists) {
             logger.info('[OPENCODE] sandbox=%s not found, attempting auto-create', OPENSHELL_DEFAULT_SANDBOX_ID);
-            const createResult = await executeExternalAction('openshell', 'sandbox.create', {
+            const createResult = await runExternalAction('openshell', 'sandbox.create', {
               from: OPENSHELL_DEFAULT_SANDBOX_IMAGE,
             });
             if (!createResult.ok) {
@@ -118,7 +118,7 @@ export const opencodeExecuteAction: ActionDefinition = {
           }
 
           logger.info('[OPENCODE] routing implement.execute through OpenShell sandbox=%s', OPENSHELL_DEFAULT_SANDBOX_ID);
-          const sandboxResult = await executeExternalAction('openshell', 'sandbox.exec', {
+          const sandboxResult = await runExternalAction('openshell', 'sandbox.exec', {
             sandboxId: OPENSHELL_DEFAULT_SANDBOX_ID,
             command: task,
             mode,
@@ -182,7 +182,7 @@ export const opencodeExecuteAction: ActionDefinition = {
 
     if (!delegated) {
       // ── OpenShell sandbox fallback: try running task in sandboxed environment ──
-      const sandboxResult = await executeExternalAction('openshell', 'sandbox.list');
+      const sandboxResult = await runExternalAction('openshell', 'sandbox.list');
       if (sandboxResult.ok && sandboxResult.output.length > 0) {
         return withOpencodeRouting({
           ok: false,

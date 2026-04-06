@@ -48,7 +48,7 @@ const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
  * Returns { synced, actions, error? }. Graceful no-op when OpenShell is unavailable.
  */
 export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: boolean; actions: string[]; error?: string }> => {
-  const { executeExternalAction } = await import('../tools/externalAdapterRegistry');
+  const { runExternalAction } = await import('../tools/toolRouter');
   const actions = [...HIGH_RISK_APPROVAL_ACTIONS];
   if (actions.length === 0) {
     return { synced: false, actions, error: 'no high-risk actions configured' };
@@ -62,7 +62,7 @@ export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: bo
       '  rules:',
       ...actions.map((a) => `    - action: "${a}"\n      network: deny\n      approval_required: true`),
     ].join('\n');
-    const result = await executeExternalAction('openshell', 'policy.set', { policy: policyYaml });
+    const result = await runExternalAction('openshell', 'policy.set', { policy: policyYaml });
     if (result.ok) {
       logger.info('[ACTION-RUNNER] high-risk actions synced to OpenShell policy: %d actions', actions.length);
       return { synced: true, actions };
