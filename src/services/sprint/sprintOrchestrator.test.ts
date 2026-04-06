@@ -1,4 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Explicitly set SPRINT_ENABLED=false so the "disabled" test path is exercised
+// regardless of the production default (which is true).
+vi.mock('../../config', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, SPRINT_ENABLED: false };
+});
+
 import {
   createSprintPipeline,
   getSprintPipeline,
@@ -12,8 +20,8 @@ import {
 } from './sprintOrchestrator';
 import { buildExternalAdapterArgs, buildSecondaryAdapterArgs } from './sprintWorkerRouter';
 
-// Note: SPRINT_ENABLED=false in test env, so createSprintPipeline throws.
-// We test that behavior + runtime snapshot (always available).
+// SPRINT_ENABLED is mocked to false above — createSprintPipeline throws.
+// Other runtime snapshot functions remain testable.
 
 describe('sprintOrchestrator', () => {
   describe('createSprintPipeline', () => {

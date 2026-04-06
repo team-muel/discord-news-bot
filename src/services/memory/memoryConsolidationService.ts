@@ -27,7 +27,7 @@ const CONSOLIDATION_INTERVAL_MS = memoryConfig.consolidationIntervalMs;
 const CONSOLIDATION_MIN_GROUP_SIZE = memoryConfig.consolidationMinGroupSize;
 const CONSOLIDATION_MAX_BATCH = memoryConfig.consolidationMaxBatch;
 const CONSOLIDATION_RAW_AGE_HOURS = memoryConfig.consolidationRawAgeHours;
-const VAULT_WRITEBACK_ENABLED = parseBooleanEnv(process.env.MEMORY_CONSOLIDATION_VAULT_WRITEBACK, false);
+const VAULT_WRITEBACK_ENABLED = parseBooleanEnv(process.env.MEMORY_CONSOLIDATION_VAULT_WRITEBACK, true);
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
