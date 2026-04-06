@@ -221,7 +221,11 @@ export const callProxiedTool = async (
   // and dots with underscores, which is irreversible in general. We must look up
   // the name that the upstream server originally advertised; otherwise tools like
   // "list-tables" would be called as "list_tables" → 404/method-not-found.
-  const originalName = originalUpstreamNames.get(internalName) ?? withoutPrefix.slice(dotIdx + 1);
+  const mapLookup = originalUpstreamNames.get(internalName);
+  if (!mapLookup) {
+    console.warn('[mcp-proxy] originalUpstreamNames miss for %s — cache may have been cleared; falling back to sanitized segment', internalName);
+  }
+  const originalName = mapLookup ?? withoutPrefix.slice(dotIdx + 1);
 
   const server = findUpstreamByNamespace(namespace);
   if (!server) {
