@@ -81,9 +81,15 @@ const buildExternalMcpTools = async (): Promise<McpToolSpec[]> => {
 let _allToolsCache: McpToolSpec[] | null = null;
 
 /**
- * Invalidate the unified tool cache so the next call to listAllMcpTools()
+ * Invalidate all three tool cache layers so the next call to listAllMcpTools()
  * re-fetches from all adapters including upstream servers.
- * Call this after registering or unregistering upstream servers at runtime.
+ *
+ * Layers cleared:
+ *   1. _allToolsCache     — merged listing of all tools
+ *   2. _externalToolsCache — ext.* adapter tool specs
+ *   3. upstream proxy caches (toolCache + originalUpstreamNames in proxyAdapter)
+ *
+ * Call this after registering/unregistering adapters or upstream servers at runtime.
  */
 export const invalidateToolCache = (): void => {
   _allToolsCache = null;
