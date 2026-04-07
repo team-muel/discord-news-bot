@@ -1,17 +1,11 @@
-const toBounded = (value: unknown, fallback: number, min: number, max: number): number => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.max(min, Math.min(max, parsed));
-};
+import { parseBoundedNumberEnv } from '../../utils/env';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
 const lower = (value: unknown): string => compact(value).toLowerCase();
 
-const POISON_BLOCK_THRESHOLD = toBounded(process.env.MEMORY_POISON_BLOCK_THRESHOLD, 0.85, 0, 1);
-const POISON_REVIEW_THRESHOLD = toBounded(process.env.MEMORY_POISON_REVIEW_THRESHOLD, 0.55, 0, 1);
+const POISON_BLOCK_THRESHOLD = parseBoundedNumberEnv(process.env.MEMORY_POISON_BLOCK_THRESHOLD, 0.85, 0, 1);
+const POISON_REVIEW_THRESHOLD = parseBoundedNumberEnv(process.env.MEMORY_POISON_REVIEW_THRESHOLD, 0.55, 0, 1);
 
 const PROMPT_INJECTION_PATTERNS: RegExp[] = [
   /ignore\s+previous\s+instructions/i,

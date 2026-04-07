@@ -75,3 +75,23 @@ export const parseUrlEnv = (value: string | undefined, fallback: string): string
  */
 export const parseCsvList = (value: string | undefined): string[] =>
   (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+/**
+ * Parse a string env var, strip characters not matching the allow-list
+ * (i.e. apply a negated character-class replacement), then fall back to the
+ * default when the result is absent or all characters were stripped.
+ *
+ * Use for values that must be shell-safe identifiers (sandbox names, hostnames).
+ *
+ * @param {RegExp} stripPattern - Regex of characters to REMOVE (typically /[^allowed]/g)
+ */
+export const parseSanitizedStringEnv = (
+  value: string | undefined,
+  fallback: string,
+  stripPattern: RegExp,
+): string => {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return fallback;
+  const sanitized = trimmed.replace(stripPattern, '');
+  return sanitized || fallback;
+};

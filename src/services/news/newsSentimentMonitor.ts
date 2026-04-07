@@ -62,12 +62,12 @@ const FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.NEWS_MONITOR_FETCH_TIMEOUT_M
 const NEWS_CANDIDATE_LIMIT = parseMinIntEnv(process.env.NEWS_MONITOR_CANDIDATE_LIMIT, 12, 3);
 const NEWS_HISTORY_LOOKBACK_HOURS = parseMinIntEnv(process.env.NEWS_DEDUP_LOOKBACK_HOURS, 24, 1);
 const NEWS_HISTORY_MAX_ITEMS = parseMinIntEnv(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS, 60, 10);
-const NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || process.env.NEWS_DEDUP_MODEL || undefined;
-const NEWS_SUMMARY_MODEL = process.env.OPENAI_NEWS_SUMMARY_MODEL || process.env.NEWS_SUMMARY_MODEL || undefined;
+const NEWS_DEDUP_MODEL = parseStringEnv(process.env.OPENAI_NEWS_DEDUP_MODEL ?? process.env.NEWS_DEDUP_MODEL, '') || undefined;
+const NEWS_SUMMARY_MODEL = parseStringEnv(process.env.OPENAI_NEWS_SUMMARY_MODEL ?? process.env.NEWS_SUMMARY_MODEL, '') || undefined;
 const NEWS_AI_DEDUP_ENABLED = parseBooleanEnv(process.env.NEWS_AI_DEDUP_ENABLED, true);
 const NEWS_KR_SUMMARY_ENABLED = parseBooleanEnv(process.env.NEWS_KR_SUMMARY_ENABLED, true);
 const SUMMARY_FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS, 12_000, 5_000);
-const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
+const INSTANCE_ID = parseStringEnv(process.env.RENDER_INSTANCE_ID ?? process.env.RENDER_SERVICE_ID ?? process.env.HOSTNAME, `local-${process.pid}`);
 
 const isGoogleFinanceSourceRow = (row: NewsChannelRow): boolean => {
   const name = String(row.name || '').toLowerCase();
@@ -90,7 +90,7 @@ type NewsHistoryRow = {
 
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 const isHistoryUnavailableError = (error: any): boolean => isSchemaUnavailableError(error, 'news_sentiment', 'event_signature', 'sentiment_score');
 

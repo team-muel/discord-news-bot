@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseMinIntEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseUrlEnv } from '../../../utils/env';
 import { callMcpTool, parseMcpTextBlocks as parseMcpTextBlocksShared, type McpCallPayload } from '../../mcpWorkerClient';
 
 export type McpCallResponse = McpCallPayload;
@@ -9,8 +9,6 @@ export type McpWorkerKind = 'youtube' | 'news' | 'community' | 'web' | 'opencode
 const ACTION_MCP_DELEGATION_ENABLED = parseBooleanEnv(process.env.ACTION_MCP_DELEGATION_ENABLED, true);
 const ACTION_MCP_STRICT_ROUTING = parseBooleanEnv(process.env.ACTION_MCP_STRICT_ROUTING, false);
 const ACTION_MCP_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_MCP_TIMEOUT_MS, 8000, 1000);
-
-const toBaseUrl = (raw: string | undefined): string => String(raw || '').trim().replace(/\/+$/, '');
 
 // ──── Worker URL resolution ─────────────────────────────────────────────────
 // Neutral names are the source of truth. Legacy names resolve through them.
@@ -49,7 +47,7 @@ const resolveWorkerUrl = (kind: McpWorkerKind): string | undefined => {
 };
 
 export const getMcpWorkerUrl = (kind: McpWorkerKind): string => {
-  return toBaseUrl(resolveWorkerUrl(kind));
+  return parseUrlEnv(resolveWorkerUrl(kind), '');
 };
 
 export const isMcpDelegationEnabled = (): boolean => ACTION_MCP_DELEGATION_ENABLED;
@@ -60,7 +58,7 @@ export const callMcpWorkerTool = async (params: {
   toolName: string;
   args: Record<string, unknown>;
 }): Promise<McpCallResponse> => {
-  const base = toBaseUrl(params.workerUrl);
+  const base = parseUrlEnv(params.workerUrl, '');
   if (!ACTION_MCP_DELEGATION_ENABLED || !base) {
     throw new Error('MCP_WORKER_NOT_CONFIGURED');
   }

@@ -62,7 +62,7 @@ let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 const MONITOR_INTERVAL_MS = parseMinIntEnv(process.env.YOUTUBE_MONITOR_INTERVAL_MS, 5 * 60_000, 60_000);
 const MONITOR_CONCURRENCY = parseMinIntEnv(process.env.YOUTUBE_MONITOR_CONCURRENCY, 5, 1);
 const LOCK_LEASE_MS = parseMinIntEnv(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS, 120_000, 30_000);
-const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
+const INSTANCE_ID = parseStringEnv(process.env.RENDER_INSTANCE_ID ?? process.env.RENDER_SERVICE_ID ?? process.env.HOSTNAME, `local-${process.pid}`);
 
 const parseMode = (row: SubscriptionRow): 'videos' | 'posts' => {
   if (row.url.endsWith('#posts')) {

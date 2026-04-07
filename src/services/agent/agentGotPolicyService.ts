@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseStringEnv } from '../../utils/env';
 
 export type AgentPriorityLike = 'fast' | 'balanced' | 'precise';
 
@@ -33,10 +33,6 @@ const isAllowedGuild = (guildId: string | undefined, allowlist: string[]): boole
   return Boolean(normalized) && allowlist.includes(normalized);
 };
 
-const toBoundedInt = (value: string | undefined, fallback: number, min: number, max: number): number => {
-  return Math.max(min, Math.min(max, parseIntegerEnv(value, fallback)));
-};
-
 export const getAgentGotPolicySnapshot = (guildId?: string): AgentGotPolicySnapshot => {
   const shadowAllowlist = parseAllowlist(process.env.GOT_SHADOW_GUILD_ALLOWLIST);
   const activeAllowlist = parseAllowlist(process.env.GOT_ACTIVE_GUILD_ALLOWLIST);
@@ -52,12 +48,12 @@ export const getAgentGotPolicySnapshot = (guildId?: string): AgentGotPolicySnaps
     activeEnabled,
     shadowAllowlist,
     activeAllowlist,
-    maxNodesFast: toBoundedInt(process.env.GOT_MAX_NODES_FAST, 10, 2, 200),
-    maxNodesBalanced: toBoundedInt(process.env.GOT_MAX_NODES_BALANCED, 24, 2, 200),
-    maxNodesPrecise: toBoundedInt(process.env.GOT_MAX_NODES_PRECISE, 40, 2, 200),
-    maxEdgesFast: toBoundedInt(process.env.GOT_MAX_EDGES_FAST, 20, 1, 800),
-    maxEdgesBalanced: toBoundedInt(process.env.GOT_MAX_EDGES_BALANCED, 64, 1, 800),
-    maxEdgesPrecise: toBoundedInt(process.env.GOT_MAX_EDGES_PRECISE, 120, 1, 800),
+    maxNodesFast: parseBoundedNumberEnv(process.env.GOT_MAX_NODES_FAST, 10, 2, 200),
+    maxNodesBalanced: parseBoundedNumberEnv(process.env.GOT_MAX_NODES_BALANCED, 24, 2, 200),
+    maxNodesPrecise: parseBoundedNumberEnv(process.env.GOT_MAX_NODES_PRECISE, 40, 2, 200),
+    maxEdgesFast: parseBoundedNumberEnv(process.env.GOT_MAX_EDGES_FAST, 20, 1, 800),
+    maxEdgesBalanced: parseBoundedNumberEnv(process.env.GOT_MAX_EDGES_BALANCED, 64, 1, 800),
+    maxEdgesPrecise: parseBoundedNumberEnv(process.env.GOT_MAX_EDGES_PRECISE, 120, 1, 800),
     minSelectedScore: parseBoundedNumberEnv(process.env.GOT_MIN_SELECTED_SCORE, 0.5, 0, 1),
   };
 };
