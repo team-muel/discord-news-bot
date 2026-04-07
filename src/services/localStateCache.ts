@@ -16,6 +16,7 @@ import { atomicWriteFileSync } from '../utils/atomicWrite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import logger from '../logger';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +54,7 @@ export function readLocalCache<T = unknown>(key: string): T | null {
     }
     return envelope.data;
   } catch (err) {
-    logger.debug('[LOCAL-CACHE] read failed key=%s: %s', key, err instanceof Error ? err.message : String(err));
+    logger.debug('[LOCAL-CACHE] read failed key=%s: %s', key, getErrorMessage(err));
     return null;
   }
 }
@@ -72,7 +73,7 @@ export function writeLocalCache<T = unknown>(key: string, data: T, ttlMs?: numbe
     atomicWriteFileSync(filePath(key), json, 'utf-8');
     evictIfNeeded();
   } catch (err) {
-    logger.debug('[LOCAL-CACHE] write failed key=%s: %s', key, err instanceof Error ? err.message : String(err));
+    logger.debug('[LOCAL-CACHE] write failed key=%s: %s', key, getErrorMessage(err));
   }
 }
 
@@ -102,7 +103,7 @@ function evictIfNeeded(): void {
       try { unlinkSync(entries[i].file); } catch (_e) { /* eviction cleanup */ }
     }
   } catch (err) {
-    logger.debug('[LOCAL-CACHE] eviction failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[LOCAL-CACHE] eviction failed: %s', getErrorMessage(err));
   }
 }
 
@@ -112,7 +113,7 @@ export function localCacheSize(): number {
     ensureCacheDir();
     return readdirSync(CACHE_DIR).filter((f) => f.endsWith('.json')).length;
   } catch (err) {
-    logger.debug('[LOCAL-CACHE] size check failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[LOCAL-CACHE] size check failed: %s', getErrorMessage(err));
     return 0;
   }
 }

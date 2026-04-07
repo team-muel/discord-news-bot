@@ -12,6 +12,7 @@ import { rehydrateFromEvents, getEventSourcedEntity, getEventTimeline } from '..
 import { toBoundedInt, toStringParam, isOneOf } from '../../utils/validation';
 import type { BotAgentRouteDeps } from './types';
 import type { AutonomyLevel } from '../../services/sprint/sprintOrchestrator';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const AUTONOMY_LEVELS: readonly AutonomyLevel[] = ['full-auto', 'approve-ship', 'approve-impl', 'manual'];
 
@@ -103,7 +104,7 @@ export function registerSprintRoutes(deps: BotAgentRouteDeps): void {
       });
       return res.status(202).json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(409).json({ ok: false, error: 'SPRINT_TRIGGER_FAILED', message });
     }
   });

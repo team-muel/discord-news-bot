@@ -3,6 +3,7 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runRetrievalAutoTuning, runRetrievalEval } from './retrievalEvalService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const RETRIEVAL_AUTO_EVAL_ENABLED = parseBooleanEnv(process.env.RETRIEVAL_AUTO_EVAL_ENABLED, false);
 const RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS = Math.max(1, parseIntegerEnv(process.env.RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS, 24));
@@ -78,7 +79,7 @@ const runOnce = async (client: Client): Promise<EvalRunStats> => {
         stats.completedGuilds += 1;
       } catch (error) {
         stats.failedGuilds += 1;
-        logger.warn('[RETRIEVAL-EVAL-LOOP] guild run failed guild=%s error=%s', guildId, error instanceof Error ? error.message : String(error));
+        logger.warn('[RETRIEVAL-EVAL-LOOP] guild run failed guild=%s error=%s', guildId, getErrorMessage(error));
       }
     }
   } finally {

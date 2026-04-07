@@ -10,6 +10,7 @@ import {
   type MergedSecurityReviewUnit,
   type SecurityCandidateAnchor,
 } from '../securityCandidateContract';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type SymbolKind = 'function' | 'class' | 'interface' | 'enum' | 'type' | 'method';
 type ReferenceKind = 'import' | 'call' | 'read' | 'write';
@@ -979,7 +980,7 @@ export const listSecurityCandidates = async (args: CandidateListArgs) => {
     try {
       rawItems = parseJsonl(raw, normalizeSecurityCandidateAnchor);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       throw new Error(`invalid security candidate JSONL (${normalizeSlashes(path.relative(resolved.repoRoot, rawCandidateFilePath))}): ${message}`);
     }
   }
@@ -990,7 +991,7 @@ export const listSecurityCandidates = async (args: CandidateListArgs) => {
     try {
       mergedItems = parseJsonl(raw, normalizeMergedSecurityReviewUnit);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       throw new Error(`invalid merged security candidate JSONL (${normalizeSlashes(path.relative(resolved.repoRoot, mergedCandidateFilePath))}): ${message}`);
     }
   }

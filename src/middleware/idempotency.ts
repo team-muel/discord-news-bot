@@ -7,6 +7,7 @@ import {
   API_IDEMPOTENCY_REQUIRE_HEADER,
 } from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
+import { getErrorMessage } from '../utils/errorMessage';
 
 type IdempotencyState = 'in_progress' | 'completed';
 
@@ -293,7 +294,7 @@ export const createIdempotencyGuard = (params: {
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       logger.warn('[IDEMPOTENCY] store unavailable, bypassing guard scope=%s err=%s', scope, message);
       return next();
     }
@@ -342,7 +343,7 @@ export const createIdempotencyGuard = (params: {
             releaseMemoryRecord(scope, key);
           }
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = getErrorMessage(error);
           logger.warn('[IDEMPOTENCY] finalize failed scope=%s err=%s', scope, message);
         }
       })();

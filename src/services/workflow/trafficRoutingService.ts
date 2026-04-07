@@ -22,6 +22,7 @@ import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';
 import type { AgentGotCutoverDecision } from '../agent/agentGotCutoverService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Configuration ──────────────────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ export const persistTrafficRoutingDecision = async (params: {
     logger.warn(
       '[TRAFFIC-ROUTING] persist failed session=%s: %s',
       params.sessionId,
-      err instanceof Error ? err.message : String(err),
+      getErrorMessage(err),
     );
   }
 };

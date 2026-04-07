@@ -6,6 +6,7 @@ import { fromTable } from '../infra/baseRepository';
 import { T_SOURCES } from '../infra/tableRegistry';
 import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 import type { ChannelSink } from '../automation/types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type SubscriptionRow = {
   id: number;
@@ -262,7 +263,7 @@ const runTick = async (sink: ChannelSink, guildId?: string, options?: TickOption
       }
     } catch (err) {
       stats.failed += 1;
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
       logger.warn('[YT-MONITOR] source=%s failed: %s', String(row.id), msg);
     }
@@ -317,7 +318,7 @@ const executeTick = async (sink: ChannelSink, guildId?: string, options?: TickOp
     lastTickProcessedSources = 0;
     lastTickFailedSources = 0;
     lastErrorAt = new Date().toISOString();
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = getErrorMessage(err);
     lastDurationMs = Date.now() - startMs;
     logger.warn('[YT-MONITOR] tick failed: %o', err);
     return { ok: false, message: lastError || 'Tick failed' as const };

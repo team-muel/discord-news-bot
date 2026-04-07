@@ -154,7 +154,7 @@ export const clearLoginRateLimit = (): void => {
 };
 
 export const isDiscordLoginRateLimitedError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error || '');
+  const message = getErrorMessage(error);
   return /Discord login rate-limited; retry after/i.test(message);
 };
 

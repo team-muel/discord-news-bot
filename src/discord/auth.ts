@@ -142,7 +142,7 @@ export const hasAdminPermission = async (
   try {
     return await isUserAdmin(interaction.user.id);
   } catch (err) {
-    logger.warn('[AUTH] admin check failed userId=%s error=%s', interaction.user.id, err instanceof Error ? err.message : String(err));
+    logger.warn('[AUTH] admin check failed userId=%s error=%s', interaction.user.id, getErrorMessage(err));
     return false;
   }
 };

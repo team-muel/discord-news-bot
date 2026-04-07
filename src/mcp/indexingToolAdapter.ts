@@ -8,6 +8,7 @@ import {
   resolveIndexedSymbolDefinition,
   searchIndexedSymbols,
 } from '../services/opencode/codeIndexService';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const toTextResult = (text: string, isError = false): McpToolCallResult => ({
   content: [{ type: 'text', text }],
@@ -228,7 +229,7 @@ export const callIndexingMcpTool = async (request: McpToolCallRequest): Promise<
       }));
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return toTextResult(message, true);
   }
 

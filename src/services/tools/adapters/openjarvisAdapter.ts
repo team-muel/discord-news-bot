@@ -10,6 +10,7 @@ import {
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 export type BenchResult = {
   benchScore: number | null;
@@ -105,7 +106,7 @@ const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ 
     const data = await resp.json();
     return { ok: resp.ok, data };
   } catch (fetchErr) {
-    logger.debug('[OPENJARVIS] httpPost %s failed: %s', path, fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
+    logger.debug('[OPENJARVIS] httpPost %s failed: %s', path, getErrorMessage(fetchErr));
     return { ok: false, data: null };
   }
 };
@@ -406,7 +407,7 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           return makeResult(false, `Unknown action: ${action}`, [], 'UNKNOWN_ACTION');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       return makeResult(false, `openjarvis ${action} failed`, [message], 'EXECUTION_FAILED');
     }
   },

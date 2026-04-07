@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type ActionRunMode = 'auto' | 'approval_required' | 'disabled';
 export type ActionApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
@@ -158,7 +159,7 @@ export const getGuildActionPolicy = async (guildId: string, actionName: string):
 
     return normalizePolicyRow(data);
   } catch (err) {
-    logger.debug('[GOVERNANCE] policy fetch failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] policy fetch failed guildId=%s: %s', guildId, getErrorMessage(err));
     return ACTION_POLICY_EFFECTIVE_FAIL_OPEN ? failOpenFallback : fallback;
   }
 };
@@ -187,7 +188,7 @@ export const listGuildActionPolicies = async (guildId: string): Promise<GuildAct
 
     return (data as Record<string, unknown>[]).map((row) => normalizePolicyRow(row));
   } catch (err) {
-    logger.debug('[GOVERNANCE] policy list failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] policy list failed guildId=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };
@@ -343,7 +344,7 @@ export const createActionApprovalRequest = async (params: {
 
     return normalizeApprovalRow(data);
   } catch (err) {
-    logger.debug('[GOVERNANCE] approval create persist failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] approval create persist failed: %s', getErrorMessage(err));
     safeSetApproval(request.id, request);
     return request;
   }
@@ -384,7 +385,7 @@ export const listActionApprovalRequests = async (params: {
 
     return (data as Record<string, unknown>[]).map((row) => normalizeApprovalRow(row));
   } catch (err) {
-    logger.debug('[GOVERNANCE] approval list failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] approval list failed: %s', getErrorMessage(err));
     return [];
   }
 };
@@ -452,7 +453,7 @@ export const decideActionApprovalRequest = async (params: {
 
     return normalizeApprovalRow(data);
   } catch (err) {
-    logger.debug('[GOVERNANCE] approval decide failed requestId=%s: %s', params.requestId, err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] approval decide failed requestId=%s: %s', params.requestId, getErrorMessage(err));
     return null;
   }
 };

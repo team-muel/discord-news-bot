@@ -1,6 +1,7 @@
 import { isMemoryType, searchGuildMemory, type MemoryType } from '../../agent/agentMemoryStore';
 import { buildAgentMemoryHints } from '../../agent/agentMemoryService';
 import type { ActionDefinition } from './types';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -148,7 +149,7 @@ export const ragRetrieveAction: ActionDefinition = {
         summary: 'RAG 검색 실행 실패',
         artifacts: [],
         verification: ['searchGuildMemory exception'],
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       };
     }
   },

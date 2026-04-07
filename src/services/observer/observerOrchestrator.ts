@@ -21,6 +21,7 @@ import type {
   ObserverScanResult,
   ObserverStats,
 } from './observerTypes';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Channel Registry ────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ export const runObserverScan = async (guildId: string): Promise<ObserverScanResu
 
       result.byChannel[channel.kind] = channelResult.observations.length;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       result.errors.push(`${channel.kind}: ${msg}`);
       logger.debug('[OBSERVER] channel %s scan failed: %s', channel.kind, msg);
     }
@@ -162,14 +163,14 @@ export const startObserverLoop = (guildId = 'system'): void => {
 
   scanInterval = setInterval(() => {
     void runObserverScan(guildId).catch((err) => {
-      logger.debug('[OBSERVER] scan error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[OBSERVER] scan error: %s', getErrorMessage(err));
     });
   }, OBSERVER_SCAN_INTERVAL_MS);
 
   // Run first scan after a short delay (let startup finish)
   setTimeout(() => {
     void runObserverScan(guildId).catch((err) => {
-      logger.debug('[OBSERVER] initial scan error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[OBSERVER] initial scan error: %s', getErrorMessage(err));
     });
   }, 30_000);
 
@@ -190,42 +191,42 @@ const loadAndRegisterChannels = async (): Promise<void> => {
     const { default: errorPattern } = await import('./errorPatternChannel');
     registerChannel(errorPattern);
   } catch (err) {
-    logger.debug('[OBSERVER] errorPatternChannel unavailable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER] errorPatternChannel unavailable: %s', getErrorMessage(err));
   }
 
   try {
     const { default: memoryGap } = await import('./memoryGapChannel');
     registerChannel(memoryGap);
   } catch (err) {
-    logger.debug('[OBSERVER] memoryGapChannel unavailable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER] memoryGapChannel unavailable: %s', getErrorMessage(err));
   }
 
   try {
     const { default: perfDrift } = await import('./perfDriftChannel');
     registerChannel(perfDrift);
   } catch (err) {
-    logger.debug('[OBSERVER] perfDriftChannel unavailable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER] perfDriftChannel unavailable: %s', getErrorMessage(err));
   }
 
   try {
     const { default: codeHealth } = await import('./codeHealthChannel');
     registerChannel(codeHealth);
   } catch (err) {
-    logger.debug('[OBSERVER] codeHealthChannel unavailable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER] codeHealthChannel unavailable: %s', getErrorMessage(err));
   }
 
   try {
     const { default: convergenceDigest } = await import('./convergenceDigestChannel');
     registerChannel(convergenceDigest);
   } catch (err) {
-    logger.debug('[OBSERVER] convergenceDigestChannel unavailable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER] convergenceDigestChannel unavailable: %s', getErrorMessage(err));
   }
 
   try {
     const { default: discordPulse } = await import('./discordPulseChannel');
     registerChannel(discordPulse);
   } catch (err) {
-    logger.debug('[OBSERVER] discordPulseChannel unavailable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER] discordPulseChannel unavailable: %s', getErrorMessage(err));
   }
 };
 

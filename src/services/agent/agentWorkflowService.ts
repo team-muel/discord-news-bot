@@ -1,6 +1,7 @@
 import { parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type WorkflowPriority = 'fast' | 'balanced' | 'precise';
 export type WorkflowRole = 'planner' | 'researcher' | 'critic';
@@ -19,45 +20,45 @@ const DEFAULT_STEPS: Record<WorkflowPriority, WorkflowStepTemplate[]> = {
   fast: [
     {
       role: 'planner',
-      title: '목표 ?�행 계획 ?�립',
+      title: '목표 ?�행 계획 ?�립',
       skipWhenFast: true,
     },
     {
       role: 'researcher',
-      title: '?�행??근거 초안 ?�성',
+      title: '?�행??근거 초안 ?�성',
     },
     {
       role: 'critic',
-      title: '리스??검??�?보완',
+      title: '리스??검??�?보완',
       skipWhenFast: true,
     },
   ],
   balanced: [
     {
       role: 'planner',
-      title: '목표 ?�행 계획 ?�립',
+      title: '목표 ?�행 계획 ?�립',
     },
     {
       role: 'researcher',
-      title: '?�행??근거 초안 ?�성',
+      title: '?�행??근거 초안 ?�성',
     },
     {
       role: 'critic',
-      title: '리스??검??�?보완',
+      title: '리스??검??�?보완',
     },
   ],
   precise: [
     {
       role: 'planner',
-      title: '목표 ?�행 계획 ?�립',
+      title: '목표 ?�행 계획 ?�립',
     },
     {
       role: 'researcher',
-      title: '?�행??근거 초안 ?�성',
+      title: '?�행??근거 초안 ?�성',
     },
     {
       role: 'critic',
-      title: '리스??검??�?보완',
+      title: '리스??검??�?보완',
     },
   ],
 };
@@ -162,7 +163,7 @@ export const primeWorkflowProfileCache = (): void => {
       const nowMs = Date.now();
       if (nowMs - lastWorkflowCacheErrorLogAt >= WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS) {
         lastWorkflowCacheErrorLogAt = nowMs;
-        logger.warn('[AGENT-WORKFLOW] cache refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+        logger.warn('[AGENT-WORKFLOW] cache refresh failed (throttled): %s', getErrorMessage(error));
       }
     })
     .finally(() => {

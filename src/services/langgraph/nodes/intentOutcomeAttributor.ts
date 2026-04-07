@@ -13,6 +13,7 @@
 
 import logger from '../../../logger';
 import { attributeIntentOutcome } from './intentExemplarStore';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ──── Types ─────────────────────────────────────────────────────────────────
 
@@ -114,7 +115,7 @@ export const attributeAndPersistIntentOutcome = async (input: IntentOutcomeInput
       input.sessionReward !== null ? input.sessionReward.toFixed(3) : 'null',
     );
   } catch (err) {
-    logger.warn('[INTENT-ATTRIBUTOR] persist failed session=%s: %s', input.sessionId, err instanceof Error ? err.message : String(err));
+    logger.warn('[INTENT-ATTRIBUTOR] persist failed session=%s: %s', input.sessionId, getErrorMessage(err));
   }
 
   return result;

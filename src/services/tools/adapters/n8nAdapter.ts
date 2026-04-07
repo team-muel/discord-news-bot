@@ -15,6 +15,7 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
 import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterResult, ExternalAdapterId } from '../externalAdapterTypes';
 import logger from '../../../logger';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ export const n8nAdapter: ExternalToolAdapter = {
           logger.info('[N8N] workflow.execute ok: workflowId=%s durationMs=%d', workflowId, Date.now() - start);
           return makeResult(true, action, `Workflow ${workflowId} executed`, output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           logger.warn('[N8N] workflow.execute error: %s', msg);
           return makeResult(false, action, `workflow.execute failed: ${msg}`, [], start, 'EXECUTION_ERROR');
         }
@@ -165,7 +166,7 @@ export const n8nAdapter: ExternalToolAdapter = {
 
           return makeResult(true, action, 'Workflows listed', output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           return makeResult(false, action, `workflow.list failed: ${msg}`, [], start, 'LIST_ERROR');
         }
       }
@@ -210,7 +211,7 @@ export const n8nAdapter: ExternalToolAdapter = {
           logger.info('[N8N] workflow.trigger ok: path=%s durationMs=%d', sanitized, Date.now() - start);
           return makeResult(true, action, `Webhook ${sanitized} triggered`, output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           return makeResult(false, action, `workflow.trigger failed: ${msg}`, [], start, 'TRIGGER_ERROR');
         }
       }
@@ -237,7 +238,7 @@ export const n8nAdapter: ExternalToolAdapter = {
 
           return makeResult(true, action, `Execution ${executionId} status retrieved`, output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           return makeResult(false, action, `workflow.status failed: ${msg}`, [], start, 'STATUS_ERROR');
         }
       }

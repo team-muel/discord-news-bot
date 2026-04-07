@@ -1,6 +1,7 @@
 import logger from '../../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 let missingInfrastructureLogged = false;
 
@@ -52,7 +53,7 @@ export const consumeSupabaseRateLimit = async (params: {
       return { ok: false, allowed: true, retryAfterSec: 1 };
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     logger.warn('[RATE_LIMIT] Supabase limiter failed, fallback to memory: %s', message);
     return { ok: false, allowed: true, retryAfterSec: 1 };
   }

@@ -12,6 +12,7 @@ import {
 } from '../../services/privacyForgetService';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from '../../services/skills/actionGovernanceStore';
 import { DISCORD_MESSAGES } from '../messages';
+import { PUBLIC_BASE_URL } from '../../config';
 
 type BotRuntimeSnapshotLike = {
   ready: boolean;
@@ -147,7 +148,7 @@ export const createAdminHandlers = (deps: AdminDeps) => {
   };
 
   const handleSettingsCommand = async (interaction: ChatInputCommandInteraction) => {
-    const base = String(process.env.PUBLIC_BASE_URL || process.env.FRONTEND_ORIGIN || '').split(',')[0].trim();
+    const base = PUBLIC_BASE_URL.split(',')[0].trim();
     const dashboardUrl = base ? `${base.replace(/\/$/, '')}/dashboard` : '';
     const line = dashboardUrl
       ? `대시보드로 이동: ${dashboardUrl}`

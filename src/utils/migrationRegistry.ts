@@ -1,6 +1,7 @@
 import logger from '../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';
 import { isMissingTableError } from './supabaseErrors';
+import { getErrorMessage } from './errorMessage';
 
 /**
  * Known migration files in docs/ that should be applied to Supabase.
@@ -188,7 +189,7 @@ export const validateMigrationsAtStartup = async (): Promise<MigrationValidation
 
     return result;
   } catch (err) {
-    logger.warn('[MIGRATIONS] Failed to check migration status: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[MIGRATIONS] Failed to check migration status: %s', getErrorMessage(err));
     return noopResult;
   }
 };

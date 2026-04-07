@@ -29,6 +29,7 @@ import type {
   RuleEvaluationContext,
   ObservationSnapshot,
 } from './intentTypes';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ── Intent Rules Registry ───────────────────────────────────────────────────
 
@@ -244,7 +245,7 @@ export async function evaluateIntents(guildId: string): Promise<IntentRecord[]> 
         logger.info('[INTENT] created intent %s (rule=%s, priority=%.2f)', persisted.id, rule.id, persisted.priorityScore);
       }
     } catch (err) {
-      logger.debug('[INTENT] rule %s error: %s', rule.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT] rule %s error: %s', rule.id, getErrorMessage(err));
     }
   }
 
@@ -275,12 +276,12 @@ export async function executeIntent(intent: IntentRecord): Promise<string | null
     logger.info('[INTENT] sprint created for intent %s → %s', intent.id, sprintId);
 
     void runFullSprintPipeline(sprintId).catch((err: unknown) => {
-      logger.debug('[INTENT] sprint execution failed for %s: %s', sprintId, err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT] sprint execution failed for %s: %s', sprintId, getErrorMessage(err));
     });
 
     return sprintId;
   } catch (err) {
-    logger.debug('[INTENT] execute error for %s: %s', intent.id, err instanceof Error ? err.message : String(err));
+    logger.debug('[INTENT] execute error for %s: %s', intent.id, getErrorMessage(err));
     const { updateIntentStatus } = await import('./intentStore');
     await updateIntentStatus(intent.id!, 'pending');
     return null;

@@ -8,6 +8,7 @@
 import crypto from 'crypto';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export const createWorkflowSession = async (session: WorkflowSession): Promise<{
     }
     return { ok: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     logger.warn('[WORKFLOW-PERSIST] createSession exception: %s', msg);
     return { ok: false, error: msg };
   }
@@ -125,7 +126,7 @@ export const updateWorkflowSessionStatus = async (
     }
     return { ok: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ok: false, error: msg };
   }
 };
@@ -153,7 +154,7 @@ export const insertWorkflowStep = async (step: WorkflowStep): Promise<{ ok: bool
     }
     return { ok: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ok: false, error: msg };
   }
 };
@@ -185,7 +186,7 @@ export const updateWorkflowStep = async (
     }
     return { ok: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ok: false, error: msg };
   }
 };
@@ -215,7 +216,7 @@ export const recordWorkflowEvent = async (event: WorkflowEvent): Promise<{ ok: b
     }
     return { ok: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ok: false, error: msg };
   }
 };

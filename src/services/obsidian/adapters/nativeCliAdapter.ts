@@ -15,6 +15,7 @@ import type {
   ObsidianTask,
   ObsidianVaultAdapter,
 } from '../types';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const execFileAsync = promisify(execFile);
 
@@ -77,7 +78,7 @@ const runNativeCli = async (
     });
     return String(stdout || '');
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     console.error(`[nativeCli] execFile failed: cmd=${cliPath} args=${JSON.stringify(args)} err=${msg}`);
     return null;
   }

@@ -13,6 +13,7 @@ import { T_USER_PROFILES, T_GUILD_MEMBERSHIPS } from '../infra/tableRegistry';
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { logCatchError } from '../../utils/errorMessage';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,7 +122,7 @@ const ensureFlushTimer = (): void => {
   if (flushTimer) return;
   flushTimer = setInterval(() => {
     void flushActivityBuffer().catch((err) =>
-      logger.debug('[CRM] flush error: %s', err instanceof Error ? err.message : String(err)),
+      logger.debug('[CRM] flush error: %s', getErrorMessage(err)),
     );
   }, FLUSH_INTERVAL_MS);
   if (flushTimer && typeof flushTimer === 'object' && 'unref' in flushTimer) {

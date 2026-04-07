@@ -7,6 +7,7 @@ import { hasMemoryConsent } from './agentConsentService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { runWithConcurrency } from '../../utils/async';
 import { generateQueryEmbedding, generateEmbedding, storeMemoryEmbedding, isEmbeddingEnabled } from '../memory/memoryEmbeddingService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;
@@ -259,7 +260,7 @@ export const searchMemoryTiered = async (
         remaining--;
       }
     } catch (err) {
-      logger.debug('[MEMORY-TIERED] tier=%s search failed, continuing: %s', tier, err instanceof Error ? err.message : String(err));
+      logger.debug('[MEMORY-TIERED] tier=%s search failed, continuing: %s', tier, getErrorMessage(err));
     }
   }
 

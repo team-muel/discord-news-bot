@@ -7,6 +7,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
 import { T_MEMORY_ITEMS, T_MEMORY_CONFLICTS, T_MEMORY_SOURCES, T_MEMORY_JOBS, T_MEMORY_JOB_DEADLETTERS } from '../infra/tableRegistry';
 import { evolveMemoryLinks } from './memoryEvolutionService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
 const MEMORY_JOBS_POLL_INTERVAL_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 8_000));
@@ -420,7 +421,7 @@ const processDurableExtraction = async (params: {
     content: sanitized.cleaned.content || '',
     summary: sanitized.cleaned.summary || '',
   }).catch((err) => {
-    logger.debug('[MEMORY-JOB] evolution skipped for %s: %s', row.id, err instanceof Error ? err.message : String(err));
+    logger.debug('[MEMORY-JOB] evolution skipped for %s: %s', row.id, getErrorMessage(err));
     return null;
   });
 

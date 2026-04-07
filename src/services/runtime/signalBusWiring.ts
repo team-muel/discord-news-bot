@@ -15,6 +15,7 @@
 import logger from '../../logger';
 import { onSignal, type Signal } from './signalBus';
 import { parseBooleanEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const WIRING_ENABLED = parseBooleanEnv(process.env.SIGNAL_BUS_WIRING_ENABLED, true);
 
@@ -46,7 +47,7 @@ export const wireSignalBusConsumers = (): void => {
         code: 'REWARD_DEGRADING',
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] reward.degrading → sprintTrigger skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] reward.degrading → sprintTrigger skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -58,7 +59,7 @@ export const wireSignalBusConsumers = (): void => {
         code: 'CONVERGENCE_DEGRADING',
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] convergence.degrading → sprintTrigger skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] convergence.degrading → sprintTrigger skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -71,7 +72,7 @@ export const wireSignalBusConsumers = (): void => {
         code: 'MEMORY_QUALITY_BELOW',
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] memory.quality.below → sprintTrigger skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] memory.quality.below → sprintTrigger skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -103,7 +104,7 @@ export const wireSignalBusConsumers = (): void => {
         code: 'SPRINT_PHASE_LOOPING',
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] workflow.phase.looping → loopBreaker skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] workflow.phase.looping → loopBreaker skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -127,7 +128,7 @@ export const wireSignalBusConsumers = (): void => {
         },
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] gonogo.no-go → trafficRouting skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] gonogo.no-go → trafficRouting skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -211,7 +212,7 @@ export const wireSignalBusConsumers = (): void => {
       const { runSelfImprovementChecks } = await lazySelfImprovement();
       await runSelfImprovementChecks();
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] weekly.report.ready → selfImprovement skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] weekly.report.ready → selfImprovement skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -228,10 +229,10 @@ export const wireSignalBusConsumers = (): void => {
         objective: `[자동] ${objective}`,
       });
       void runFullSprintPipeline(pipeline.sprintId).catch((err: unknown) => {
-        logger.debug('[SIGNAL-WIRING] observation.critical sprint failed: %s', err instanceof Error ? err.message : String(err));
+        logger.debug('[SIGNAL-WIRING] observation.critical sprint failed: %s', getErrorMessage(err));
       });
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] observation.critical → sprint skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] observation.critical → sprint skipped: %s', getErrorMessage(err));
     }
   });
 
@@ -248,12 +249,12 @@ export const wireSignalBusConsumers = (): void => {
       for (const intent of intents) {
         if (intent.autonomyLevel === 'full-auto') {
           void executeIntent(intent).catch((err: unknown) => {
-            logger.debug('[SIGNAL-WIRING] intent auto-execute failed: %s', err instanceof Error ? err.message : String(err));
+            logger.debug('[SIGNAL-WIRING] intent auto-execute failed: %s', getErrorMessage(err));
           });
         }
       }
     } catch (err) {
-      logger.debug('[SIGNAL-WIRING] observation.new → intent formation skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SIGNAL-WIRING] observation.new → intent formation skipped: %s', getErrorMessage(err));
     }
   });
 

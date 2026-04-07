@@ -272,12 +272,12 @@ export async function startBot(token: string): Promise<void> {
       return;
     } catch (err) {
       if (isDiscordLoginRateLimitedError(err)) {
-        logger.warn('[BOT] Login attempt %d deferred by Discord rate limit: %s', attempt, err instanceof Error ? err.message : String(err));
+        logger.warn('[BOT] Login attempt %d deferred by Discord rate limit: %s', attempt, getErrorMessage(err));
       } else {
         logger.error('[BOT] Login attempt %d failed: %o', attempt, err);
       }
       botRuntimeState.lastLoginErrorAt = new Date().toISOString();
-      botRuntimeState.lastLoginError = err instanceof Error ? err.message : String(err);
+      botRuntimeState.lastLoginError = getErrorMessage(err);
       botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
       botRuntimeState.lastAlertReason = botRuntimeState.lastLoginError;
       try {

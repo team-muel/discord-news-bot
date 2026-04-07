@@ -7,6 +7,7 @@ import { listGuildAgentSessions, startAgentSession } from '../multiAgentService'
 import { autoBootstrapGuildKnowledgeOnJoin } from '../obsidian/obsidianBootstrapService';
 import { autoSyncGuildTopologyOnJoin } from '../discord-support/discordTopologySyncService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const AGENT_AUTO_ONBOARDING_ENABLED = parseBooleanEnv(process.env.AGENT_AUTO_ONBOARDING_ENABLED, true);
 const AGENT_DAILY_LEARNING_ENABLED = parseBooleanEnv(process.env.AGENT_DAILY_LEARNING_ENABLED, true);
@@ -81,7 +82,7 @@ export const triggerGuildOnboardingSession = (params: {
       sessionId: session.id,
     },
   }).catch((error) => {
-    logger.warn('[AGENT-OPS] onboarding snapshot queue failed guild=%s error=%s', params.guildId, error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-OPS] onboarding snapshot queue failed guild=%s error=%s', params.guildId, getErrorMessage(error));
   });
 
   return { ok: true, message: '?�보???�션???�작?�습?�다.', sessionId: session.id };
@@ -316,7 +317,7 @@ export const getAgentOpsSnapshot = () => ({
 
 export const onGuildJoined = (guild: Guild) => {
   void autoSyncGuildTopologyOnJoin(guild).catch((error) => {
-    logger.warn('[AGENT-OPS] topology sync failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-OPS] topology sync failed guild=%s error=%s', guild.id, getErrorMessage(error));
   });
 
   void autoBootstrapGuildKnowledgeOnJoin({
@@ -324,7 +325,7 @@ export const onGuildJoined = (guild: Guild) => {
     guildName: guild.name,
     reason: 'guildCreate',
   }).catch((error) => {
-    logger.warn('[AGENT-OPS] obsidian bootstrap failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-OPS] obsidian bootstrap failed guild=%s error=%s', guild.id, getErrorMessage(error));
   });
 
   return triggerGuildOnboardingSession({

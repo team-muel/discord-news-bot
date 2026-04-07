@@ -15,6 +15,7 @@
 
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
@@ -163,11 +164,11 @@ export const emitSignal = <T extends Record<string, unknown>>(
         const result = listener(signal as Signal);
         if (result && typeof (result as Promise<void>).catch === 'function') {
           (result as Promise<void>).catch((err) => {
-            logger.warn('[SIGNAL-BUS] listener error signal=%s source=%s: %s', name, source, err instanceof Error ? err.message : String(err));
+            logger.warn('[SIGNAL-BUS] listener error signal=%s source=%s: %s', name, source, getErrorMessage(err));
           });
         }
       } catch (err) {
-        logger.warn('[SIGNAL-BUS] listener sync error signal=%s: %s', name, err instanceof Error ? err.message : String(err));
+        logger.warn('[SIGNAL-BUS] listener sync error signal=%s: %s', name, getErrorMessage(err));
       }
     }
   };

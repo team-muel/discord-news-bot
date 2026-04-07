@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../utils/errorMessage';
 export type CandidateKind =
   | 'untrusted-input-review'
   | 'output-boundary-review'
@@ -275,7 +276,7 @@ export const parseJsonl = <T>(raw: string, normalizeLine: (value: unknown) => T)
     try {
       return normalizeLine(JSON.parse(line));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       throw new Error(`invalid JSONL at line ${index + 1}: ${message}`);
     }
   });

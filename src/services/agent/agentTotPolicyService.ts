@@ -1,6 +1,7 @@
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type AgentTotPolicySnapshot = {
   shadowEnabled: boolean;
@@ -209,7 +210,7 @@ export const primeAgentTotPolicyCache = (): void => {
       const now = Date.now();
       if (now - lastPolicyCacheErrorLogAt >= AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS) {
         lastPolicyCacheErrorLogAt = now;
-        logger.warn('[AGENT-TOT-POLICY] cache refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+        logger.warn('[AGENT-TOT-POLICY] cache refresh failed (throttled): %s', getErrorMessage(error));
       }
     })
     .finally(() => {

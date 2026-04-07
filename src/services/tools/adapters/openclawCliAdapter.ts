@@ -8,6 +8,7 @@ import {
   OPENCLAW_GATEWAY_URL as GATEWAY_URL,
 } from '../../../config';
 import { checkOpenClawGatewayHealth, getGatewayHeaders } from '../../openclaw/gatewayHealth';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const execFileAsync = promisify(execFile);
 const CLI_TIMEOUT_MS = 15_000;
@@ -33,7 +34,7 @@ const gatewayPost = async (path: string, body: Record<string, unknown>): Promise
     const data = await resp.json().catch(() => null);
     return { ok: resp.ok, data };
   } catch (err) {
-    logger.debug('[OPENCLAW] gatewayPost %s failed: %s', path, err instanceof Error ? err.message : String(err));
+    logger.debug('[OPENCLAW] gatewayPost %s failed: %s', path, getErrorMessage(err));
     return { ok: false, data: null };
   }
 };
@@ -172,7 +173,7 @@ export const openclawAdapter: ExternalToolAdapter = {
           return makeResult(false, `Unknown action: ${action}`, [], 'UNKNOWN_ACTION');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       return makeResult(false, `openclaw ${action} failed`, [message], 'EXECUTION_FAILED');
     }
   },
@@ -262,7 +263,7 @@ export const bootstrapOpenClawSession = async (sessionId: string): Promise<{ ok:
 
     return { ok, toolCount: tools.length };
   } catch (err) {
-    logger.debug('[OPENCLAW] session bootstrap failed for %s: %s', sessionId, err instanceof Error ? err.message : String(err));
+    logger.debug('[OPENCLAW] session bootstrap failed for %s: %s', sessionId, getErrorMessage(err));
     return { ok: false, toolCount: 0 };
   }
 };

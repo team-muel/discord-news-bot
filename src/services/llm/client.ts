@@ -46,6 +46,7 @@ import {
   resolveWorkflowModelBinding,
   resolveLlmProvider,
 } from './routing';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Re-exports (public API) ────────────────────────────────────────────────
 
@@ -307,7 +308,7 @@ export const generateTextWithMeta = async (
     return enriched;
   } catch (error) {
     const latencyMs = Math.max(0, Date.now() - startedAt);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     void persistLlmCallLog({
       request: params,
       provider,

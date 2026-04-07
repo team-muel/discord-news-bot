@@ -89,6 +89,7 @@ type NewsHistoryRow = {
 };
 
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const isHistoryUnavailableError = (error: any): boolean => isSchemaUnavailableError(error, 'news_sentiment', 'event_signature', 'sentiment_score');
 
@@ -614,7 +615,7 @@ const runTick = async (sink: ChannelSink, guildId?: string): Promise<NewsTickSta
         });
       } catch (err) {
         stats.failed += 1;
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
         logger.warn('[NEWS-MONITOR] source=%s failed: %s', String(row.id), msg);
       } finally {
@@ -679,7 +680,7 @@ const executeTick = async (sink: ChannelSink, guildId?: string) => {
     lastTickProcessedSources = 0;
     lastTickFailedSources = 0;
     lastErrorAt = new Date().toISOString();
-    lastError = error instanceof Error ? error.message : String(error);
+    lastError = getErrorMessage(error);
     lastDurationMs = Date.now() - startMs;
     logger.warn('[NEWS-MONITOR] tick failed: %o', error);
     return { ok: false, message: lastError || 'News tick failed' as const };

@@ -14,6 +14,7 @@
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { inferAgentRoleByActionName, type ActionExecutionResult, type ActionPlan, type AgentRoleName } from './actions/types';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -275,7 +276,7 @@ export const executePipeline = async (
               if (!r.ok) overallOk = false;
             } else {
               const errorMsg = settled.status === 'rejected'
-                ? (settled.reason instanceof Error ? settled.reason.message : String(settled.reason))
+                ? (getErrorMessage(settled.reason))
                 : 'null_result';
               results.push({
                 stepName: pStep.name,

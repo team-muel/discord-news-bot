@@ -1,6 +1,7 @@
 import { START_BOT } from '../../config';
 import logger from '../../logger';
 import type { BotRuntimeStatus } from '../../contracts/bot';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const BOT_AUTO_RECOVERY_ENABLED = String(process.env.BOT_AUTO_RECOVERY_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS = Math.max(10_000, Number(process.env.BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS || 60_000));
@@ -146,13 +147,13 @@ export const startBotAutoRecovery = (loadBotModule: () => Promise<BotModuleLike>
   state.started = true;
   state.bootedAtMs = Date.now();
   void runScan(loadBotModule).catch((error) => {
-    state.lastAttemptResult = `scan_error:${error instanceof Error ? error.message : String(error)}`;
+    state.lastAttemptResult = `scan_error:${getErrorMessage(error)}`;
     logger.warn('[BOT-AUTO-RECOVERY] initial scan failed: %o', error);
   });
 
   state.timer = setInterval(() => {
     void runScan(loadBotModule).catch((error) => {
-      state.lastAttemptResult = `scan_error:${error instanceof Error ? error.message : String(error)}`;
+      state.lastAttemptResult = `scan_error:${getErrorMessage(error)}`;
       logger.warn('[BOT-AUTO-RECOVERY] scan failed: %o', error);
     });
   }, BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS);

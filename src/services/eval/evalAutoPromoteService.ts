@@ -20,6 +20,7 @@ import {
   persistRewardSnapshot,
   type RewardSnapshot,
 } from './rewardSignalService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_ENABLED, true);
 const MIN_SAMPLES = Math.max(3, parseIntegerEnv(process.env.EVAL_MIN_SAMPLES, 10));
@@ -103,7 +104,7 @@ export const createEvalRun = async (params: {
       promotedAt: null,
     };
   } catch (err) {
-    logger.debug('[EVAL-AB] register failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] register failed: %s', getErrorMessage(err));
     return null;
   }
 };
@@ -124,7 +125,7 @@ export const getPendingEvalRuns = async (guildId: string): Promise<EvalAbRun[]> 
 
     return (data as Record<string, unknown>[]).map(rowToEvalRun);
   } catch (err) {
-    logger.debug('[EVAL-AB] pending runs fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] pending runs fetch failed guild=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };
@@ -204,7 +205,7 @@ const collectEvalSampleWithSnapshot = async (
 
     return { baselineReward: avgBaseline, candidateReward: avgCandidate };
   } catch (err) {
-    logger.debug('[EVAL-AB] reward computation failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] reward computation failed: %s', getErrorMessage(err));
     return null;
   }
 };
@@ -263,7 +264,7 @@ const judgeEvalRun = async (evalRun: EvalAbRun): Promise<{
   } catch (err) {
     return {
       verdict: 'inconclusive',
-      reasoning: `LLM judge failed: ${err instanceof Error ? err.message : String(err)}`,
+      reasoning: `LLM judge failed: ${getErrorMessage(err)}`,
     };
   }
 };
@@ -331,7 +332,7 @@ export const runEvalPipeline = async (guildId: string): Promise<{
 
       await db.from(T_EVAL_AB_RUNS).update(updates).eq('id', run.id);
     } catch (err) {
-      logger.debug('[EVAL-AB] verdict persist failed run=%s: %s', run.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[EVAL-AB] verdict persist failed run=%s: %s', run.id, getErrorMessage(err));
     }
   }
 
@@ -358,7 +359,7 @@ export const getRecentEvalRuns = async (
     if (error || !data) return [];
     return (data as Record<string, unknown>[]).map(rowToEvalRun);
   } catch (err) {
-    logger.debug('[EVAL-AB] recent results fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] recent results fetch failed guild=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };

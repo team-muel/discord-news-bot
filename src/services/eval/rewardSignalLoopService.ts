@@ -10,6 +10,7 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { computeRewardSnapshot, persistRewardSnapshot } from './rewardSignalService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const REWARD_LOOP_ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_LOOP_ENABLED, true);
 const REWARD_LOOP_INTERVAL_HOURS = Math.max(1, parseIntegerEnv(process.env.REWARD_SIGNAL_LOOP_INTERVAL_HOURS, 6));
@@ -84,7 +85,7 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
           stats.failedGuilds += 1;
           logger.warn(
             '[REWARD-SIGNAL-LOOP] guild run failed error=%s',
-            result.reason instanceof Error ? result.reason.message : String(result.reason),
+            getErrorMessage(result.reason),
           );
         }
         // fulfilled with false = guild skipped (Supabase not configured, etc.) — not counted as failure

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../utils/errorMessage';
 /**
  * Agent Role Worker Service
  *
@@ -100,7 +101,7 @@ const withFetchTimeout = async (url: string, timeoutMs: number): Promise<{ ok: b
     return {
       ok: false,
       status: 0,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     };
   } finally {
     clearTimeout(timer);

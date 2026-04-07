@@ -10,6 +10,7 @@ import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_OBSERVATIONS } from '../infra/tableRegistry';
 import type { Observation, ObservationSeverity, ObservationChannelKind } from './observerTypes';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // In-memory fallback buffer (capped)
 const FALLBACK_MAX = 500;
@@ -50,7 +51,7 @@ export const persistObservations = async (observations: Observation[]): Promise<
 
     return observations.length;
   } catch (err) {
-    logger.debug('[OBSERVER-STORE] persist error: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER-STORE] persist error: %s', getErrorMessage(err));
     for (const obs of observations) {
       fallbackBuffer.push(obs);
       if (fallbackBuffer.length > FALLBACK_MAX) fallbackBuffer.shift();
@@ -119,7 +120,7 @@ export const markObservationsConsumed = async (ids: string[], sprintId?: string)
 
     await sb.from(T_OBSERVATIONS).update(update).in('id', ids);
   } catch (err) {
-    logger.debug('[OBSERVER-STORE] mark consumed failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSERVER-STORE] mark consumed failed: %s', getErrorMessage(err));
   }
 };
 

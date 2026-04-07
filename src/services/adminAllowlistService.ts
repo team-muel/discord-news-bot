@@ -6,6 +6,7 @@ import {
 } from '../config';
 import logger from '../logger';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const staticAllowlist = new Set(
   RESEARCH_PRESET_ADMIN_USER_IDS.split(',')
@@ -80,7 +81,7 @@ export async function getAdminAllowlist(): Promise<Set<string>> {
     return new Set(cachedAllowlist);
   } catch (error) {
     if (now - lastFetchErrorAtMs >= 60_000) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       logger.warn('[AUTH] Failed to refresh admin allowlist from %s: %s', ADMIN_ALLOWLIST_TABLE, message);
       lastFetchErrorAtMs = now;
     }

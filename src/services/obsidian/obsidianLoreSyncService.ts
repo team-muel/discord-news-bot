@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const OBSIDIAN_SYNC_LOOP_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_SYNC_LOOP_ENABLED, false);
 const OBSIDIAN_SYNC_LOOP_INTERVAL_MIN = Math.max(5, parseIntegerEnv(process.env.OBSIDIAN_SYNC_LOOP_INTERVAL_MIN, 60));
@@ -82,7 +83,7 @@ const runSyncOnce = async () => {
 
   child.once('error', (error) => {
     finalize('failed', null);
-    logger.warn('[OBSIDIAN-SYNC-LOOP] process error: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-SYNC-LOOP] process error: %s', getErrorMessage(error));
   });
 
   child.once('close', (code) => {

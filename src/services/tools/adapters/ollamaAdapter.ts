@@ -15,6 +15,7 @@
 
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.OLLAMA_ADAPTER_DISABLED, false);
@@ -59,7 +60,7 @@ const listModels = async (): Promise<ExternalAdapterResult> => {
     const names = models.map((m) => String(m.name || ''));
     return makeResult(true, 'model.list', `${names.length} models installed`, names, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'model.list', 'Ollama unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'model.list', 'Ollama unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -75,7 +76,7 @@ const pullModel = async (name: string): Promise<ExternalAdapterResult> => {
     if (!ok) return makeResult(false, 'model.pull', 'Pull failed', [], Date.now() - start, 'PULL_FAILED');
     return makeResult(true, 'model.pull', `Pulled ${sanitized}`, [JSON.stringify(body)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'model.pull', 'Pull error', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'model.pull', 'Pull error', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -96,7 +97,7 @@ const modelInfo = async (name: string): Promise<ExternalAdapterResult> => {
       : sanitized;
     return makeResult(true, 'model.info', summary, [JSON.stringify(info)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'model.info', 'Info error', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'model.info', 'Info error', [], Date.now() - start, getErrorMessage(err));
   }
 };
 

@@ -2,6 +2,7 @@ import type { SkillDefinition, SkillId } from './types';
 import { parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const SKILL_CATALOG_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_TTL_MS, 60_000));
 const SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
@@ -214,7 +215,7 @@ export const primeSkillCatalogCache = (): void => {
       const nowMs = Date.now();
       if (nowMs - lastSkillCatalogErrorLogAt >= SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS) {
         lastSkillCatalogErrorLogAt = nowMs;
-        logger.warn('[SKILL-REGISTRY] catalog refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+        logger.warn('[SKILL-REGISTRY] catalog refresh failed (throttled): %s', getErrorMessage(error));
       }
     })
     .finally(() => {

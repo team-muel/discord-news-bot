@@ -31,6 +31,7 @@ import {
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
 const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, Number(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS || 120_000));
@@ -645,7 +646,7 @@ export async function writeRetroToVault(params: {
     }
     return result;
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Failed to write retro to vault: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Failed to write retro to vault: %s', getErrorMessage(error));
     return null;
   }
 }
@@ -713,7 +714,7 @@ async function writeQueryInsight(params: {
     });
     logger.debug('[OBSIDIAN-RAG] Query insight written: %s', fileName);
   } catch (error) {
-    logger.debug('[OBSIDIAN-RAG] Query insight write failed (non-critical): %s', error instanceof Error ? error.message : String(error));
+    logger.debug('[OBSIDIAN-RAG] Query insight write failed (non-critical): %s', getErrorMessage(error));
   }
 }
 
@@ -806,7 +807,7 @@ export async function flushKnowledgeGaps(): Promise<{ path: string } | null> {
     }
     return result;
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Knowledge gap flush failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Knowledge gap flush failed: %s', getErrorMessage(error));
     return null;
   }
 }
@@ -892,7 +893,7 @@ export async function queryObsidianLoreHints(
       .sort((a, b) => b.score - a.score)
       .slice(0, maxDocs);
   } catch (err) {
-    logger.debug('[OBSIDIAN-RAG] Lore hints failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSIDIAN-RAG] Lore hints failed: %s', getErrorMessage(err));
     return [];
   }
 }
@@ -902,7 +903,7 @@ export async function appendToDailyNote(content: string): Promise<boolean> {
     const { appendDailyNoteWithAdapter } = await import('./router');
     return appendDailyNoteWithAdapter(content);
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Daily note append failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Daily note append failed: %s', getErrorMessage(error));
     return false;
   }
 }
@@ -912,7 +913,7 @@ export async function readDailyNote(): Promise<string | null> {
     const { readDailyNoteWithAdapter } = await import('./router');
     return readDailyNoteWithAdapter();
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Daily note read failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Daily note read failed: %s', getErrorMessage(error));
     return null;
   }
 }

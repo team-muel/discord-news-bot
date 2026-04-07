@@ -25,6 +25,7 @@ import {
 import { executeLangGraph, type LangGraphNodeHandler } from './executor';
 import { runCompilePromptNode, runRouteIntentNode, runPolicyGateNode } from './nodes/coreNodes';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const SHADOW_RUNNER_ENABLED = parseBooleanEnv(process.env.SHADOW_GRAPH_RUNNER_ENABLED, false);
 const SHADOW_TIMEOUT_MS = Math.max(5_000, Math.min(120_000, Number(process.env.SHADOW_GRAPH_TIMEOUT_MS || 30_000) || 30_000));
@@ -255,7 +256,7 @@ export const runShadowGraph = async (params: {
     };
   } catch (err) {
     const elapsedMs = Date.now() - startedAt;
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorMsg = getErrorMessage(err);
     logger.warn('[SHADOW-GRAPH] failed session=%s error=%s elapsedMs=%d', params.sessionId, errorMsg, elapsedMs);
 
     return {

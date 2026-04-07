@@ -15,6 +15,7 @@ import {
   SPRINT_LLM_JUDGE_PHASES,
 } from '../../config';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export const judgePhaseOutput = async (params: {
   } catch (error) {
     logger.warn(
       '[LLM-JUDGE] evaluation failed (non-fatal): %s',
-      error instanceof Error ? error.message : String(error),
+      getErrorMessage(error),
     );
     return null;
   }

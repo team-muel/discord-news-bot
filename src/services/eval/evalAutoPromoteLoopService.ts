@@ -10,6 +10,7 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runEvalPipeline } from './evalAutoPromoteService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const EVAL_LOOP_ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_ENABLED, true);
 const EVAL_LOOP_INTERVAL_HOURS = Math.max(1, parseIntegerEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_INTERVAL_HOURS, 6));
@@ -90,7 +91,7 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
           stats.failedGuilds += 1;
           logger.warn(
             '[EVAL-PROMOTE-LOOP] guild run failed error=%s',
-            result.reason instanceof Error ? result.reason.message : String(result.reason),
+            getErrorMessage(result.reason),
           );
         }
       }

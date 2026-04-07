@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getBotRuntimeSnapshot } from '../bot';
-import { START_BOT } from '../config';
+import { START_BOT, OBSIDIAN_HEADLESS_ENABLED } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
@@ -52,7 +52,7 @@ const getVaultStats = () => {
   return {
     vaultPath,
     vaultReady: vaultExists && fileCount > 0,
-    headlessEnabled: process.env.OBSIDIAN_HEADLESS_ENABLED === 'true',
+    headlessEnabled: OBSIDIAN_HEADLESS_ENABLED,
     fileCount,
   };
 };

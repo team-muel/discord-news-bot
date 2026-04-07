@@ -21,6 +21,7 @@ import type {
   ObsidianVaultAdapter,
 } from './types';
 import { supportsCapability } from './types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli', 'local-fs'];
 
@@ -164,7 +165,7 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
   try {
     hints = await adapter.readLore(params);
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] read_lore failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] read_lore failed on %s: %s', adapter.id, getErrorMessage(error));
   }
 
   if (hints.length > 0) {
@@ -192,7 +193,7 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
         return fallbackHints;
       }
     } catch (err) {
-      logger.debug('[OBSIDIAN-ROUTER] readLore fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[OBSIDIAN-ROUTER] readLore fallback=%s failed: %s', fallback.id, getErrorMessage(err));
       // Continue fallback chain.
     }
   }
@@ -221,7 +222,7 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
     logAdapterSignal({ capability: 'write_note', outcome: 'success', primary: adapter.id, detail: 'primary_write_ok' });
     return primary;
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] write_note failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] write_note failed on %s: %s', adapter.id, getErrorMessage(error));
     if (OBSIDIAN_ADAPTER_STRICT) {
       logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: adapter.id, detail: 'strict_primary_error' });
       return null;
@@ -239,7 +240,7 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
         logAdapterSignal({ capability: 'write_note', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_write_ok' });
         return fallbackResult;
       } catch (err) {
-        logger.debug('[OBSIDIAN-ROUTER] writeNote fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+        logger.debug('[OBSIDIAN-ROUTER] writeNote fallback=%s failed: %s', fallback.id, getErrorMessage(err));
         // Continue fallback chain.
       }
     }
@@ -260,7 +261,7 @@ export const searchObsidianVaultWithAdapter = async (params: ObsidianSearchQuery
   try {
     primaryResults = await adapter.searchVault(params);
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] search_vault failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] search_vault failed on %s: %s', adapter.id, getErrorMessage(error));
     primaryFailed = true;
   }
 
@@ -288,7 +289,7 @@ export const searchObsidianVaultWithAdapter = async (params: ObsidianSearchQuery
         return fallbackResults;
       }
     } catch (err) {
-      logger.debug('[OBSIDIAN-ROUTER] searchVault fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[OBSIDIAN-ROUTER] searchVault fallback=%s failed: %s', fallback.id, getErrorMessage(err));
       // Continue fallback chain.
     }
   }
@@ -309,7 +310,7 @@ export const readObsidianFileWithAdapter = async (params: ObsidianReadFileQuery)
   try {
     primaryContent = await adapter.readFile(params);
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] read_file failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] read_file failed on %s: %s', adapter.id, getErrorMessage(error));
     primaryFailed = true;
   }
 
@@ -337,7 +338,7 @@ export const readObsidianFileWithAdapter = async (params: ObsidianReadFileQuery)
         return fallbackContent;
       }
     } catch (err) {
-      logger.debug('[OBSIDIAN-ROUTER] readFile fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[OBSIDIAN-ROUTER] readFile fallback=%s failed: %s', fallback.id, getErrorMessage(err));
       // Continue fallback chain.
     }
   }
@@ -358,7 +359,7 @@ export const getObsidianGraphMetadataWithAdapter = async (params: { vaultPath: s
   try {
     primaryResult = await adapter.getGraphMetadata(params);
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] graph_metadata failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] graph_metadata failed on %s: %s', adapter.id, getErrorMessage(error));
     primaryFailed = true;
   }
 
@@ -386,7 +387,7 @@ export const getObsidianGraphMetadataWithAdapter = async (params: { vaultPath: s
         return fallbackMetadata;
       }
     } catch (err) {
-      logger.debug('[OBSIDIAN-ROUTER] graphMetadata fallback=%s failed: %s', fallback.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[OBSIDIAN-ROUTER] graphMetadata fallback=%s failed: %s', fallback.id, getErrorMessage(err));
       // Continue fallback chain.
     }
   }
@@ -407,7 +408,7 @@ export const warmupObsidianAdapters = async (vaultPath: string): Promise<void> =
       try {
         await adapter.warmup?.({ vaultPath: safeVaultPath });
       } catch (error) {
-        logger.warn('[OBSIDIAN-ADAPTER] warmup failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+        logger.warn('[OBSIDIAN-ADAPTER] warmup failed on %s: %s', adapter.id, getErrorMessage(error));
       }
     });
 
@@ -428,7 +429,7 @@ export const appendDailyNoteWithAdapter = async (content: string): Promise<boole
     logAdapterSignal({ capability: 'daily_note', outcome: ok ? 'success' : 'failure', primary: adapter.id, detail: ok ? 'append_ok' : 'append_empty' });
     return ok;
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] daily_note append failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] daily_note append failed on %s: %s', adapter.id, getErrorMessage(error));
     logAdapterSignal({ capability: 'daily_note', outcome: 'failure', primary: adapter.id, detail: 'exception' });
     return false;
   }
@@ -446,7 +447,7 @@ export const readDailyNoteWithAdapter = async (): Promise<string | null> => {
     logAdapterSignal({ capability: 'daily_note', outcome: content !== null ? 'success' : 'failure', primary: adapter.id, detail: content !== null ? 'read_ok' : 'read_empty' });
     return content;
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] daily_note read failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] daily_note read failed on %s: %s', adapter.id, getErrorMessage(error));
     logAdapterSignal({ capability: 'daily_note', outcome: 'failure', primary: adapter.id, detail: 'exception' });
     return null;
   }
@@ -466,7 +467,7 @@ export const listObsidianTasksWithAdapter = async (): Promise<ObsidianTask[]> =>
     logAdapterSignal({ capability: 'task_management', outcome: tasks.length > 0 ? 'success' : 'failure', primary: adapter.id, detail: `listed_${tasks.length}` });
     return tasks;
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] task_management list failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] task_management list failed on %s: %s', adapter.id, getErrorMessage(error));
     logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: adapter.id, detail: 'exception' });
     return [];
   }
@@ -484,7 +485,7 @@ export const toggleObsidianTaskWithAdapter = async (filePath: string, line: numb
     logAdapterSignal({ capability: 'task_management', outcome: ok ? 'success' : 'failure', primary: adapter.id, detail: ok ? 'toggle_ok' : 'toggle_failed' });
     return ok;
   } catch (error) {
-    logger.warn('[OBSIDIAN-ADAPTER] task_management toggle failed on %s: %s', adapter.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-ADAPTER] task_management toggle failed on %s: %s', adapter.id, getErrorMessage(error));
     logAdapterSignal({ capability: 'task_management', outcome: 'failure', primary: adapter.id, detail: 'exception' });
     return false;
   }

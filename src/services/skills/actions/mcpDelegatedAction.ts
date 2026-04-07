@@ -1,6 +1,7 @@
 import type { ActionExecutionResult } from './types';
 import { callMcpWorkerTool, getMcpWorkerUrl, isMcpStrictRouting, parseMcpTextBlocks, type McpWorkerKind } from './mcpDelegate';
 import { appendOutcomeSignalVerification, type OutcomeSignal } from '../../observability/outcomeSignal';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const toAgentRole = (workerKind: McpWorkerKind): NonNullable<ActionExecutionResult['agentRole']> => {
   switch (workerKind) {
@@ -114,7 +115,7 @@ export const runDelegatedAction = async (options: RunDelegatedActionOptions): Pr
         summary: options.strictFailureSummary,
         artifacts: [],
         verification: options.strictFailureVerification || ['strict routing enabled'],
-        error: options.strictFailureError || (error instanceof Error ? error.message : String(error)),
+        error: options.strictFailureError || (getErrorMessage(error)),
       }, 'failure', options.workerKind, options.toolName);
     }
 

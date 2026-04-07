@@ -6,6 +6,7 @@ import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { parseBooleanEnv } from '../../utils/env';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
 import { resolveChannelMeta, channelDisplayPrefix, parentLabel, isThreadChannel } from '../../utils/discordChannelMeta';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const AUTO_SYNC_ON_GUILD_JOIN = parseBooleanEnv(process.env.OBSIDIAN_AUTO_TOPOLOGY_SYNC_ON_GUILD_JOIN, true);
 const AUTO_SYNC_ON_READY = parseBooleanEnv(process.env.OBSIDIAN_AUTO_TOPOLOGY_SYNC_ON_READY, true);
@@ -167,7 +168,7 @@ export const autoSyncGuildTopologiesOnReady = async (guilds: Iterable<Guild>): P
     try {
       await syncGuildTopologySnapshot(guild, 'clientReady');
     } catch (error) {
-      logger.debug('[DISCORD-TOPOLOGY] ready sync skipped guild=%s reason=%s', guild.id, error instanceof Error ? error.message : String(error));
+      logger.debug('[DISCORD-TOPOLOGY] ready sync skipped guild=%s reason=%s', guild.id, getErrorMessage(error));
     }
   }
 };

@@ -16,6 +16,7 @@ import {
 } from '../../config';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export const requestCrossModelReview = async (params: {
         }
         logger.info('[CROSS-MODEL] nemoclaw adapter unavailable or empty, falling through to LLM path');
       } catch (nemoclawErr) {
-        logger.warn('[CROSS-MODEL] nemoclaw sandbox failed (non-fatal): %s', nemoclawErr instanceof Error ? nemoclawErr.message : String(nemoclawErr));
+        logger.warn('[CROSS-MODEL] nemoclaw sandbox failed (non-fatal): %s', getErrorMessage(nemoclawErr));
       }
     }
 
@@ -161,7 +162,7 @@ export const requestCrossModelReview = async (params: {
   } catch (error) {
     logger.warn(
       '[CROSS-MODEL] review failed (non-fatal): %s',
-      error instanceof Error ? error.message : String(error),
+      getErrorMessage(error),
     );
     return null;
   }

@@ -19,6 +19,7 @@
 
 import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.DEEPWIKI_ADAPTER_DISABLED, false);
@@ -115,7 +116,7 @@ const readWiki = async (repo: string): Promise<ExternalAdapterResult> => {
   } catch (err) {
     return makeResult(
       false, 'wiki.read', 'DeepWiki unreachable', [],
-      Date.now() - start, err instanceof Error ? err.message : String(err),
+      Date.now() - start, getErrorMessage(err),
     );
   }
 };
@@ -151,7 +152,7 @@ const askWiki = async (repo: string, question: string): Promise<ExternalAdapterR
   } catch (err) {
     return makeResult(
       false, 'wiki.ask', 'DeepWiki unreachable', [],
-      Date.now() - start, err instanceof Error ? err.message : String(err),
+      Date.now() - start, getErrorMessage(err),
     );
   }
 };
@@ -182,7 +183,7 @@ const searchWiki = async (query: string): Promise<ExternalAdapterResult> => {
   } catch (err) {
     return makeResult(
       false, 'wiki.search', 'DeepWiki unreachable', [],
-      Date.now() - start, err instanceof Error ? err.message : String(err),
+      Date.now() - start, getErrorMessage(err),
     );
   }
 };

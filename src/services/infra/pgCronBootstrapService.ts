@@ -27,6 +27,7 @@
 import logger from '../../logger';
 import { parseBooleanEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.PG_CRON_BOOTSTRAP_ENABLED, true);
 const CONSOLIDATION_SCHEDULE = String(process.env.PG_CRON_CONSOLIDATION_SCHEDULE || '0 */6 * * *').trim();
@@ -207,7 +208,7 @@ export const bootstrapPgCronJobs = async (): Promise<BootstrapResult> => {
         logger.info('[PG-CRON] job %s: %s', spec.jobName, status);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       results.jobs.push({ jobName: spec.jobName, status: 'error', message: msg });
       logger.warn('[PG-CRON] job %s error: %s', spec.jobName, msg);
     }

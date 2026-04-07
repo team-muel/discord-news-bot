@@ -16,6 +16,7 @@ import {
 } from './sprintOrchestrator';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { runSelfImprovementChecks } from './selfImprovementLoop';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Error Detection Trigger ─────────────────────────────────────────────────
 
@@ -203,7 +204,7 @@ const triggerSprint = async (params: {
   // Run pipeline asynchronously (don't block the trigger)
   runFullSprintPipeline(pipeline.sprintId).catch((error) => {
     logger.error('[SPRINT-TRIGGER] pipeline run failed sprint=%s error=%s', pipeline.sprintId, error);
-    markPipelineBlocked(pipeline.sprintId, `Pipeline run crashed: ${error instanceof Error ? error.message : String(error)}`);
+    markPipelineBlocked(pipeline.sprintId, `Pipeline run crashed: ${getErrorMessage(error)}`);
   });
 
   return pipeline;

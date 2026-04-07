@@ -397,7 +397,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
             const trimmed = content.length > 1900 ? content.slice(0, 1900) + '\n\n_(잘림)_' : content;
             await interaction.editReply({ content: trimmed });
           } catch (err) {
-            await interaction.editReply({ content: `Metric Review 생성 실패: ${err instanceof Error ? err.message : String(err)}` });
+            await interaction.editReply({ content: `Metric Review 생성 실패: ${getErrorMessage(err)}` });
           }
           return;
         }
@@ -478,9 +478,9 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     botRuntimeState.lastAlertReason = null;
     botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
-    void registerSlashCommands(client).catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', err instanceof Error ? err.message : String(err)));
-    void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', err instanceof Error ? err.message : String(err)));
-    void enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]).catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', err instanceof Error ? err.message : String(err)));
+    void registerSlashCommands(client).catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', getErrorMessage(err)));
+    void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', getErrorMessage(err)));
+    void enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]).catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', getErrorMessage(err)));
     // OpenClaw Gateway preflight — warn early if configured but unreachable
     if (OPENCLAW_ENABLED || OPENCLAW_GATEWAY_URL) {
       void checkOpenClawGatewayHealth().then((ok) => {

@@ -75,6 +75,7 @@ const setStoreError = (error: unknown) => {
 };
 
 import { isMissingTableError as _isMissingTableBase } from '../../utils/supabaseErrors';
+import { getErrorMessage } from '../../utils/errorMessage';
 const isMissingTableError = (error: any): boolean => _isMissingTableBase(error, 'worker_approvals', APPROVAL_DB_TABLE);
 
 const shouldUseSupabaseStore = (): boolean => {
@@ -213,7 +214,7 @@ const saveStoreBestEffort = async (): Promise<void> => {
       return;
     }
     lastSaveChainErrorLogAt = nowMs;
-    logger.warn('[WORKER-APPROVAL] %s (throttled): %s', scope, error instanceof Error ? error.message : String(error));
+    logger.warn('[WORKER-APPROVAL] %s (throttled): %s', scope, getErrorMessage(error));
   };
 
   saveChain = saveChain

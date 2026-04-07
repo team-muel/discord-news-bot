@@ -2,6 +2,7 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { acquireDistributedLease, releaseDistributedLease } from '../infra/distributedLockService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type PublishJobRow = {
   id: number;
@@ -852,7 +853,7 @@ const runTick = async () => {
       } catch (error) {
         const normalized = error instanceof PublishWorkerError
           ? error
-          : new PublishWorkerError('PUBLISH_FAILED', error instanceof Error ? error.message : String(error), false);
+          : new PublishWorkerError('PUBLISH_FAILED', getErrorMessage(error), false);
         await markJobFailed(job, normalized);
         logger.warn(
           '[OPENCODE_PUBLISH] failed jobId=%d changeRequestId=%d code=%s retryable=%s message=%s',

@@ -15,6 +15,7 @@ import { timingSafeEqual } from 'node:crypto';
 import readline from 'node:readline';
 import { listAllMcpTools, callAnyMcpTool } from './unifiedToolAdapter';
 import type { JsonRpcRequest, JsonRpcResponse, McpToolCallResult } from './types';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
 
@@ -137,7 +138,7 @@ export const startUnifiedMcpStdioServer = () => {
         toResponse(response);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       if (!isNotification(request)) {
         toResponse(fail(request.id ?? null, -32603, message));
       }
@@ -299,7 +300,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
         const result: McpToolCallResult = await callAnyMcpTool({ name, arguments: args });
         jsonResponse(res, 200, result);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getErrorMessage(error);
         jsonResponse(res, 500, { content: [{ type: 'text', text: message }], isError: true });
       }
       return;
@@ -327,7 +328,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
         const rpcResponse = await handleRequest(rpcRequest);
         jsonResponse(res, 200, rpcResponse);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getErrorMessage(error);
         jsonResponse(res, 500, fail(rpcRequest.id ?? null, -32603, message));
       }
       return;

@@ -15,6 +15,7 @@
 
 import { parseBooleanEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.LITELLM_ADMIN_ADAPTER_DISABLED, false);
@@ -57,7 +58,7 @@ const checkHealth = async (): Promise<ExternalAdapterResult> => {
     if (!ok) return makeResult(false, 'proxy.health', 'Proxy unhealthy', [], Date.now() - start, 'UNHEALTHY');
     return makeResult(true, 'proxy.health', 'Proxy healthy', [JSON.stringify(body)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'proxy.health', 'Proxy unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'proxy.health', 'Proxy unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -70,7 +71,7 @@ const listModels = async (): Promise<ExternalAdapterResult> => {
     const models = Array.isArray(data) ? data.map((m: Record<string, unknown>) => String(m.id || '')) : [];
     return makeResult(true, 'proxy.models', `${models.length} models available`, models, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'proxy.models', 'Model list error', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'proxy.models', 'Model list error', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -83,7 +84,7 @@ const getUsage = async (): Promise<ExternalAdapterResult> => {
     const logs = Array.isArray(body) ? body.slice(0, 10) : [];
     return makeResult(true, 'proxy.usage', `${logs.length} recent spend entries`, logs.map((l) => JSON.stringify(l)), Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'proxy.usage', 'Usage query error', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'proxy.usage', 'Usage query error', [], Date.now() - start, getErrorMessage(err));
   }
 };
 

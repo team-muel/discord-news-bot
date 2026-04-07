@@ -2,6 +2,7 @@ import logger from '../../logger';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { logStructuredError } from '../structuredErrorLogService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type TelemetryTask = {
   id: string;
@@ -75,7 +76,7 @@ const toPayloadRecord = (value: unknown): Record<string, unknown> => {
 
 const markDurableUnavailable = (error: unknown) => {
   durableHealthy = false;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = getErrorMessage(error);
   logger.error('[AGENT-TELEMETRY-QUEUE] durable queue disabled due to persistent error: %s', message);
 };
 
@@ -327,7 +328,7 @@ const scheduleDrain = () => {
         .catch((error) => {
           failed += 1;
           lastErrorAt = nowIso();
-          lastErrorMessage = error instanceof Error ? error.message : String(error);
+          lastErrorMessage = getErrorMessage(error);
           maybeLogError(`${task.name}: ${lastErrorMessage}`);
           void markFailedOrRetry(task, lastErrorMessage);
           void persistQueueError({
@@ -371,7 +372,7 @@ export const enqueueTelemetryTask = (params: {
         .catch((error) => {
           failed += 1;
           lastErrorAt = nowIso();
-          lastErrorMessage = error instanceof Error ? error.message : String(error);
+          lastErrorMessage = getErrorMessage(error);
           maybeLogError(`${taskName}: ${lastErrorMessage}`);
           void persistQueueError({
             code: 'TELEMETRY_TASK_FAILED',

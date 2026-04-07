@@ -6,6 +6,7 @@ import { buildGoNoGoReport } from '../goNoGoService';
 import { summarizeOpencodeQueueReadiness } from '../opencode/opencodeGitHubQueueService';
 import { getMemoryQueueHealthSnapshot } from '../memory/memoryJobRunner';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type SloLayer = 'intelligence' | 'engine' | 'agents' | 'tools_memory' | 'learning';
 type SloCheckStatus = 'pass' | 'warn' | 'fail';
@@ -628,13 +629,13 @@ const runSloLoopTick = async () => {
         const result = await evaluateGuildSloAndPersistAlerts({ guildId, actorId: 'system:slo-loop' });
         emittedTotal += result.emittedAlerts;
       } catch (error) {
-        logger.warn('[AGENT-SLO] evaluation failed guild=%s error=%s', guildId, error instanceof Error ? error.message : String(error));
+        logger.warn('[AGENT-SLO] evaluation failed guild=%s error=%s', guildId, getErrorMessage(error));
       }
     }, SLO_LOOP_CONCURRENCY);
 
     logger.info('[AGENT-SLO] loop tick completed guilds=%d emittedAlerts=%d', guildIds.length, emittedTotal);
   } catch (error) {
-    logger.warn('[AGENT-SLO] loop tick failed error=%s', error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-SLO] loop tick failed error=%s', getErrorMessage(error));
   } finally {
     sloLoopRunning = false;
   }

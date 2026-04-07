@@ -65,6 +65,7 @@ import {
   shadowPipelineBlocked,
 } from './eventSourcing/bridge';
 import { logCatchError, debugCatchError } from '../../utils/errorMessage';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const catchPersist = logCatchError(logger, '[SPRINT] persistPipeline');
 const catchShadow = debugCatchError(logger, '[VENTYD] shadow');
@@ -221,7 +222,7 @@ const refreshReconfigHints = async (): Promise<void> => {
     cachedReconfigHints = await loadWorkflowReconfigHints();
     cachedReconfigHintsAt = Date.now();
   } catch (err) {
-    logger.debug('[SPRINT] reconfig-hints refresh failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[SPRINT] reconfig-hints refresh failed: %s', getErrorMessage(err));
   }
 };
 
@@ -480,7 +481,7 @@ const executePhaseAction = async (
 
         logger.warn('[SPRINT] worker-generation failed: %s, falling through to standard implement', pipeResult.error);
       } catch (wgError) {
-        logger.warn('[SPRINT] worker-generation threw: %s, falling through to standard implement', wgError instanceof Error ? wgError.message : String(wgError));
+        logger.warn('[SPRINT] worker-generation threw: %s, falling through to standard implement', getErrorMessage(wgError));
       }
     }
 
@@ -527,7 +528,7 @@ const executePhaseAction = async (
 
         logger.warn('[SPRINT] code-modification returned no changes: %s, falling through to LLM action', codeResult.summary);
       } catch (cmError) {
-        logger.warn('[SPRINT] code-modification threw: %s, falling through to LLM action', cmError instanceof Error ? cmError.message : String(cmError));
+        logger.warn('[SPRINT] code-modification threw: %s, falling through to LLM action', getErrorMessage(cmError));
       }
     }
 
@@ -575,7 +576,7 @@ const executePhaseAction = async (
         enrichedGoal = `${goal}\n\n${enrichment}`;
       }
     } catch (err) {
-      logger.debug('[SPRINT] phase enrichment failed phase=%s: %s', phase, err instanceof Error ? err.message : String(err));
+      logger.debug('[SPRINT] phase enrichment failed phase=%s: %s', phase, getErrorMessage(err));
     }
 
     const goalWithLoopWarning = loopWarning ? `${enrichedGoal}\n\n${loopWarning}` : enrichedGoal;
@@ -618,7 +619,7 @@ const executePhaseAction = async (
       } catch (mcpError) {
         recordWorkerHealth(workerUrl, false);
         logger.warn('[SPRINT] MCP worker %s failed for phase=%s (%s), falling through to next fallback',
-          workerKind, phase, mcpError instanceof Error ? mcpError.message : String(mcpError));
+          workerKind, phase, getErrorMessage(mcpError));
       }
     } else if (workerUrl) {
       logger.info('[SPRINT] skipping known-dead MCP worker %s for phase=%s', workerKind, phase);
@@ -638,7 +639,7 @@ const executePhaseAction = async (
             const sessionId = `sprint-${pipeline.sprintId}`;
             await raceWithTimeout(bootstrapOpenClawSession(sessionId), 5_000, 'OpenClaw bootstrap timeout');
           } catch (err) {
-            logger.debug('[SPRINT] OpenClaw bootstrap failed: %s', err instanceof Error ? err.message : String(err));
+            logger.debug('[SPRINT] OpenClaw bootstrap failed: %s', getErrorMessage(err));
           }
         }
 
@@ -649,7 +650,7 @@ const executePhaseAction = async (
             const adapterOutput = adapterResult.ok ? adapterResult.output.join('\n').trim() : '';
             return { ok: adapterResult.ok && adapterOutput.length >= 50, output: adapterOutput, durationMs: adapterResult.durationMs, error: adapterResult.error };
           } catch (err) {
-            return { ok: false, output: '', durationMs: 0, error: err instanceof Error ? err.message : String(err) };
+            return { ok: false, output: '', durationMs: 0, error: getErrorMessage(err) };
           }
         };
 
@@ -684,7 +685,7 @@ const executePhaseAction = async (
                 recordAdapterResult(externalMapping.secondary.adapterId, false);
               }
             } catch (secErr) {
-              logger.debug('[SPRINT] secondary adapter %s failed for phase=%s: %s', externalMapping.secondary.adapterId, phase, secErr instanceof Error ? secErr.message : String(secErr));
+              logger.debug('[SPRINT] secondary adapter %s failed for phase=%s: %s', externalMapping.secondary.adapterId, phase, getErrorMessage(secErr));
             }
           }
 
@@ -759,7 +760,7 @@ const executePhaseAction = async (
       iterationCount: 1,
     };
   } catch (error) {
-    const rawError = error instanceof Error ? error.message : String(error);
+    const rawError = getErrorMessage(error);
     logger.error('[SPRINT] phase=%s action=%s error=%s', phase, actionName, rawError);
     return {
       phase,
@@ -932,7 +933,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
         phaseResult.output += `\n\n${journalSection}`;
       }
     } catch (err) {
-      logger.debug('[SPRINT] journal enrichment failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SPRINT] journal enrichment failed: %s', getErrorMessage(err));
     }
 
     const autoplanResult = await runAutoplan({
@@ -1079,7 +1080,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     };
 
     recordSprintJournalEntry(journalEntry).catch((err) =>
-      logger.warn('[SPRINT] journal entry write failed: %s', err instanceof Error ? err.message : String(err)),
+      logger.warn('[SPRINT] journal entry write failed: %s', getErrorMessage(err)),
     );
 
     // ── SOP auto-update: extract lessons from retro and persist to tribal knowledge ──
@@ -1097,7 +1098,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
         args: { lessons, section: 'Sprint Lessons Learned' },
         guildId: pipeline.guildId,
       }).catch((err) =>
-        logger.debug('[SPRINT] sop.update best-effort failed: %s', err instanceof Error ? err.message : String(err)),
+        logger.debug('[SPRINT] sop.update best-effort failed: %s', getErrorMessage(err)),
       );
     }
 
@@ -1108,7 +1109,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       optimizeHints: journalEntry.optimizeHints,
       failedPhases: journalEntry.failedPhases,
     }).catch((err) =>
-      logger.warn('[SPRINT] retro insight ingestion failed: %s', err instanceof Error ? err.message : String(err)),
+      logger.warn('[SPRINT] retro insight ingestion failed: %s', getErrorMessage(err)),
     );
 
     // Layer 3 Bridge: precipitate sprint outcome as agent memory for cross-system context
@@ -1121,7 +1122,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       stepCount: pipeline.totalPhasesExecuted,
       requestedBy: 'sprint-pipeline',
     }).catch((err) =>
-      logger.debug('[SPRINT] memory precipitation failed: %s', err instanceof Error ? err.message : String(err)),
+      logger.debug('[SPRINT] memory precipitation failed: %s', getErrorMessage(err)),
     );
   }
 
@@ -1140,7 +1141,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
           fromPhase: currentPhase, toPhase: 'implement',
         });
       } catch (err) {
-        logger.debug('[SPRINT] signal-emit workflow.phase.looping failed: %s', err instanceof Error ? err.message : String(err));
+        logger.debug('[SPRINT] signal-emit workflow.phase.looping failed: %s', getErrorMessage(err));
       }
     }
 
@@ -1193,7 +1194,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       });
       phaseResult.output += `\n\nAPPROVAL_REQUEST_ID: ${approvalReq.id}`;
     } catch (approvalError) {
-      logger.warn('[SPRINT] approval request creation failed: %s', approvalError instanceof Error ? approvalError.message : String(approvalError));
+      logger.warn('[SPRINT] approval request creation failed: %s', getErrorMessage(approvalError));
     }
     pipeline.updatedAt = new Date().toISOString();
     persistPipeline(pipeline).catch(catchPersist);
@@ -1255,7 +1256,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
 
     // ENS Circuit 2: sprint success is a positive signal — re-evaluate behavior
     void adjustBehaviorFromReward(pipeline.guildId).catch((err) =>
-      logger.debug('[SPRINT] ENS behavior adjustment after completion failed: %s', err instanceof Error ? err.message : String(err)),
+      logger.debug('[SPRINT] ENS behavior adjustment after completion failed: %s', getErrorMessage(err)),
     );
 
     // Signal bus: sprint completed
@@ -1267,7 +1268,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
         changedFiles: pipeline.changedFiles,
       });
     } catch (err) {
-      logger.debug('[SPRINT] signal-emit sprint.completed failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SPRINT] signal-emit sprint.completed failed: %s', getErrorMessage(err));
     }
   } else if (nextPhase === 'blocked') {
     pipeline.error = `Phase ${currentPhase} failed: ${phaseResult.output.slice(0, 200)}`;
@@ -1275,7 +1276,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
 
     // ENS Circuit 2: sprint failure is a negative signal — boost exploration
     void adjustBehaviorFromReward(pipeline.guildId).catch((err) =>
-      logger.debug('[SPRINT] ENS behavior adjustment after block failed: %s', err instanceof Error ? err.message : String(err)),
+      logger.debug('[SPRINT] ENS behavior adjustment after block failed: %s', getErrorMessage(err)),
     );
 
     // Signal bus: sprint failed
@@ -1287,7 +1288,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
         changedFiles: pipeline.changedFiles,
       });
     } catch (err) {
-      logger.debug('[SPRINT] signal-emit sprint.failed failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[SPRINT] signal-emit sprint.failed failed: %s', getErrorMessage(err));
     }
   }
 
@@ -1378,13 +1379,13 @@ export const approveSprintPhase = async (sprintId: string, approvedBy: string): 
 
     // Continue the pipeline until next approval gate or completion
     void runFullSprintPipeline(sprintId).catch((err) =>
-      logger.error('[SPRINT] pipeline resume after approval failed: %s', err instanceof Error ? err.message : String(err)),
+      logger.error('[SPRINT] pipeline resume after approval failed: %s', getErrorMessage(err)),
     );
 
     return { ok: true, message: `Phase ${approvedPhase} approved and executed, pipeline resuming` };
   } catch (err) {
     pipeline.autonomyLevel = originalAutonomy;
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     logger.error('[SPRINT] phase re-execution after approval failed: %s', msg);
     persistPipeline(pipeline).catch(catchPersist);
     return { ok: false, message: `Phase execution failed after approval: ${msg}` };
@@ -1435,7 +1436,7 @@ const persistPipeline = async (pipeline: SprintPipeline): Promise<void> => {
       completed_at: pipeline.completedAt || null,
     }, { onConflict: 'sprint_id' });
   } catch (error) {
-    logger.debug('[SPRINT] persist failed: %s', error instanceof Error ? error.message : String(error));
+    logger.debug('[SPRINT] persist failed: %s', getErrorMessage(error));
   }
 };
 
@@ -1510,13 +1511,13 @@ const rehydrateActivePipelinesInner = async (): Promise<number> => {
       }
 
       void runFullSprintPipeline(sprintId).catch((err) =>
-        logger.warn('[SPRINT] rehydrated pipeline resume failed sprint=%s: %s', sprintId, err instanceof Error ? err.message : String(err)),
+        logger.warn('[SPRINT] rehydrated pipeline resume failed sprint=%s: %s', sprintId, getErrorMessage(err)),
       );
     }
 
     return data.length;
   } catch (error) {
-    logger.warn('[SPRINT] rehydration failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SPRINT] rehydration failed: %s', getErrorMessage(error));
     return 0;
   }
 };

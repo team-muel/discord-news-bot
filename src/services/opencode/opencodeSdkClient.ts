@@ -18,6 +18,7 @@
 import { fetchWithTimeout } from '../../utils/network';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ const request = async <T>(
     }
     return { ok: true, status: res.status, data };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = getErrorMessage(err);
     logger.debug('[OPENCODE-SDK] %s %s failed: %s', method, path, message);
     return { ok: false, status: 0, data: null, error: message };
   }
@@ -296,7 +297,7 @@ export const generateCodeViaSession = async (params: {
       sessionId: session.sessionId,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ...fail(`Session error: ${msg}`), sessionId: session.sessionId };
   } finally {
     // 4. Always close session

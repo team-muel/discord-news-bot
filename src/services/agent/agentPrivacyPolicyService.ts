@@ -1,6 +1,7 @@
 import { parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type AgentPrivacyMode = 'direct' | 'plan_act' | 'deliberate' | 'guarded';
 
@@ -183,7 +184,7 @@ export const primeAgentPrivacyPolicyCache = (): void => {
       const now = Date.now();
       if (now - lastErrorLogAt >= AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS) {
         lastErrorLogAt = now;
-        logger.warn('[AGENT-PRIVACY-POLICY] cache refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+        logger.warn('[AGENT-PRIVACY-POLICY] cache refresh failed (throttled): %s', getErrorMessage(error));
       }
     })
     .finally(() => {

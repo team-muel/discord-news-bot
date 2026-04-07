@@ -67,7 +67,7 @@ export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: bo
     }
     return { synced: false, actions, error: result.error || result.summary };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     logger.debug('[ACTION-RUNNER] OpenShell policy sync skipped: %s', msg);
     return { synced: false, actions, error: msg };
   }
@@ -97,7 +97,7 @@ const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string 
     }
     return { overall, providerProfileTarget };
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] guild-policy lookup failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] guild-policy lookup failed guildId=%s: %s', guildId, getErrorMessage(err));
     const cached = cachedGateVerdict.get(guildId);
     return { overall: cached?.overall || null, providerProfileTarget: cached?.providerProfileTarget || null };
   }
@@ -238,7 +238,7 @@ const getFinopsBudgetStatusSafely = async (guildId: string) => {
       lastFinopsBudgetFetchErrorLogAt = now;
       logger.warn(
         '[ACTION-RUNNER] FinOps budget lookup failed; fallback to normal mode (throttled): %s',
-        error instanceof Error ? error.message : String(error),
+        getErrorMessage(error),
       );
     }
     return null;
@@ -339,7 +339,7 @@ const canonicalizeUrl = (urlText: string): string => {
     url.hash = '';
     return url.toString();
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] url-parse fallback: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] url-parse fallback: %s', getErrorMessage(err));
     return urlText.trim();
   }
 };
@@ -370,7 +370,7 @@ const parseNewsArtifact = (artifact: string): ParsedNewsArtifact | null => {
   try {
     domain = normalizeDomain(new URL(url).hostname);
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] domain extraction failed url=%s: %s', url?.slice(0, 80), err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] domain extraction failed url=%s: %s', url?.slice(0, 80), getErrorMessage(err));
     return null;
   }
 
@@ -410,7 +410,7 @@ const isNewsCaptureAllowedByPolicy = async (params: {
       return false;
     }
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] capture-policy check failed guildId=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] capture-policy check failed guildId=%s: %s', params.guildId, getErrorMessage(err));
     return false;
   }
 
@@ -439,7 +439,7 @@ const captureExternalNewsMemory = async (params: {
     const dbDomainList = await listGuildAllowedDomains(params.guildId);
     dbDomains = new Set(dbDomainList);
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] domains DB load failed guildId=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] domains DB load failed guildId=%s: %s', params.guildId, getErrorMessage(err));
     return;
   }
   const effectiveDomainFilter = new Set([...ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS, ...dbDomains]);
@@ -565,7 +565,7 @@ const captureExternalNewsMemory = async (params: {
       ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
     });
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] news memory-persist failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] news memory-persist failed: %s', getErrorMessage(err));
   }
 };
 
@@ -765,7 +765,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     try {
       governance = await getGuildActionPolicy(input.guildId, action.name);
     } catch (err) {
-      logger.warn('[ACTION-RUNNER] action-governance failed action=%s guildId=%s: %s', action.name, input.guildId, err instanceof Error ? err.message : String(err));
+      logger.warn('[ACTION-RUNNER] action-governance failed action=%s guildId=%s: %s', action.name, input.guildId, getErrorMessage(err));
       recordFailureCategory('ACTION_POLICY_UNAVAILABLE');
       lines.push(`액션: ${action.name}`);
       lines.push('상태: 실패 (ACTION_POLICY_UNAVAILABLE)');
@@ -1157,6 +1157,7 @@ import {
   updateWorkflowStep,
   recordWorkflowEvent,
 } from '../workflow';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const PIPELINE_MODE_ENABLED = parseBooleanEnv(process.env.PIPELINE_MODE_ENABLED, false);
 
@@ -1336,7 +1337,7 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
         pipeOutput: true,
       }));
     } catch (err) {
-      logger.debug('[ACTION-RUNNER] pipeline-build replan failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[ACTION-RUNNER] pipeline-build replan failed: %s', getErrorMessage(err));
       return [];
     }
   };

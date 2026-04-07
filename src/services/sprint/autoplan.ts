@@ -14,6 +14,7 @@ import {
   SPRINT_AUTOPLAN_LENSES,
 } from '../../config';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -134,7 +135,7 @@ export const runAutoplan = async (params: {
 
       logger.info('[AUTOPLAN] lens=%s verdict=%s duration=%dms', lens, parsed.verdict, Date.now() - start);
     } catch (error) {
-      logger.warn('[AUTOPLAN] lens=%s failed (non-fatal): %s', lens, error instanceof Error ? error.message : String(error));
+      logger.warn('[AUTOPLAN] lens=%s failed (non-fatal): %s', lens, getErrorMessage(error));
       reviews.push({
         lens,
         verdict: 'approve',

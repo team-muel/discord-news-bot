@@ -196,7 +196,7 @@ export const storeUserEmbedding = async (
     }
     return true;
   } catch (err) {
-    logger.debug('[USER-EMBEDDING] store error: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[USER-EMBEDDING] store error: %s', getErrorMessage(err));
     return false;
   }
 };
@@ -333,7 +333,7 @@ export const refreshUserEmbeddings = async (
       result.usersProcessed, result.usersUpdated, result.usersSkipped, result.errors,
     );
   } catch (err) {
-    logger.warn('[USER-EMBEDDING] refresh error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[USER-EMBEDDING] refresh error: %s', getErrorMessage(err));
   }
 
   return result;
@@ -342,6 +342,7 @@ export const refreshUserEmbeddings = async (
 // ──── Background Loop ─────────────────────────────────────────────────────────
 
 import { BackgroundLoop } from '../../utils/backgroundLoop';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const loop = new BackgroundLoop(
   async () => {

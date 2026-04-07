@@ -3,6 +3,7 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { buildGotPerformanceDashboard } from './agentGotAnalyticsService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type AgentGotCutoverDecision = {
   guildId: string;
@@ -155,7 +156,7 @@ export const getAgentGotCutoverDecision = async (params: {
 
     return decision;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     const allowed = CUTOVER_FAIL_OPEN;
     const decision = buildFallbackDecision(guildId, `dashboard_error:${message}`, allowed);
     cache.set(cacheKey, decision, CUTOVER_CACHE_TTL_MS);

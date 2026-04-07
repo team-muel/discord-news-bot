@@ -1,6 +1,7 @@
 import type { ActionDefinition } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { extractQuery } from './queryUtils';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const extractYoutubeWebhookQuery = (goal: string, args?: Record<string, unknown>): string => {
   return extractQuery({
@@ -55,7 +56,7 @@ export const youtubeSearchWebhookAction: ActionDefinition = {
         summary: '워커 호출 실패로 webhook 전송을 수행하지 못했습니다.',
         artifacts: [],
         verification: ['worker call failed'],
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       }),
     });
 

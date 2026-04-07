@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type GuildKnowledgeManifest = {
   version: number;
@@ -238,7 +239,7 @@ export const autoBootstrapGuildKnowledgeOnJoin = async (params: {
     logger.warn(
       '[OBSIDIAN-BOOTSTRAP] initial ops-cycle failed guild=%s error=%s',
       params.guildId,
-      error instanceof Error ? error.message : String(error),
+      getErrorMessage(error),
     );
   }
 };

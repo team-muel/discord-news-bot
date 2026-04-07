@@ -12,6 +12,7 @@
 /* eslint-disable no-console */
 
 import { MCP_UPSTREAM_SERVERS_RAW } from '../config';
+import { getErrorMessage } from '../utils/errorMessage';
 
 // ──── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ export const loadUpstreamsFromConfig = (): void => {
     try {
       registerUpstream(entry as UpstreamMcpServerConfig);
     } catch (err) {
-      console.error('[mcp-proxy] skipping invalid upstream entry:', err instanceof Error ? err.message : String(err));
+      console.error('[mcp-proxy] skipping invalid upstream entry:', getErrorMessage(err));
     }
   }
 };

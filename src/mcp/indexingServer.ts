@@ -2,6 +2,7 @@
 import readline from 'node:readline';
 import { callIndexingMcpTool, listIndexingMcpTools } from './indexingToolAdapter';
 import type { JsonRpcRequest, JsonRpcResponse } from './types';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const MCP_PROTOCOL_VERSION = '2026-03-01';
 
@@ -98,7 +99,7 @@ export const startIndexingMcpStdioServer = () => {
       const response = await handleRequest(request);
       toResponse(response);
     } catch (error) {
-      toResponse(fail(request.id ?? null, -32000, error instanceof Error ? error.message : String(error)));
+      toResponse(fail(request.id ?? null, -32000, getErrorMessage(error)));
     }
   });
 

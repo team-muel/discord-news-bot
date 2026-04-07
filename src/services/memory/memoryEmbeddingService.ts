@@ -13,6 +13,7 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_MEMORY_ITEMS } from '../infra/tableRegistry';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, true);
 const EMBEDDING_MODEL = String(process.env.MEMORY_EMBEDDING_MODEL || 'text-embedding-3-small').trim();
@@ -71,7 +72,7 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
 
     return embedding;
   } catch (err) {
-    logger.warn('[EMBEDDING] Failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[EMBEDDING] Failed: %s', getErrorMessage(err));
     return null;
   }
 };
@@ -105,7 +106,7 @@ export const storeMemoryEmbedding = async (memoryItemId: string, embedding: numb
     }
     return true;
   } catch (err) {
-    logger.warn('[EMBEDDING] Store error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[EMBEDDING] Store error: %s', getErrorMessage(err));
     return false;
   }
 };

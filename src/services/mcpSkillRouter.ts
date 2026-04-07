@@ -21,6 +21,7 @@ import {
 } from '../config';
 import logger from '../logger';
 import { TtlCache } from '../utils/ttlCache';
+import { getErrorMessage } from '../utils/errorMessage';
 
 // ──── Config ────────────────────────────────────────────────────────────────────
 
@@ -244,7 +245,7 @@ export const initMcpSkillRouter = async (): Promise<void> => {
         await registerWorker(spec.id, url);
         registered.push(spec.id);
       } catch (err) {
-        logger.warn('[MCP-ROUTER] Failed to register %s: %s', spec.id, err instanceof Error ? err.message : String(err));
+        logger.warn('[MCP-ROUTER] Failed to register %s: %s', spec.id, getErrorMessage(err));
       }
     }
   }
