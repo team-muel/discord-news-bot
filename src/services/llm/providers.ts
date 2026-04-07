@@ -33,6 +33,7 @@ import {
   OPENJARVIS_MODEL,
   OPENJARVIS_SERVE_URL,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { fetchWithTimeout as baseFetchWithTimeout } from '../../utils/network';
 import { logStructuredError } from '../structuredErrorLogService';
 import { sendGatewayChat, isModelOnCooldown, setModelCooldown, getModelCooldownUntil, parseRetryDelayMs } from '../openclaw/gatewayHealth';
@@ -79,8 +80,7 @@ export type LlmTextWithMetaResponse = {
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
-export const getOpenClawFallbackModels = (): string[] =>
-  OPENCLAW_FALLBACK_MODELS_RAW.split(',').map((model) => model.trim()).filter(Boolean);
+export const getOpenClawFallbackModels = (): string[] => parseCsvList(OPENCLAW_FALLBACK_MODELS_RAW);
 
 export const isOpenClawConfigured = () => Boolean(OPENCLAW_BASE_URL);
 export const isOllamaConfigured = () => Boolean(OLLAMA_MODEL || ['ollama', 'local'].includes(AI_PROVIDER));

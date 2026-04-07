@@ -26,6 +26,7 @@ import {
   SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED,
   SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
@@ -337,7 +338,7 @@ const extractDeterministicPatterns = (entries: string[]): ReconfigProposal[] => 
   for (const entry of entries) {
     const match = entry.match(/Failed:\s*([^\n]+)/);
     if (match && match[1].trim() !== 'none') {
-      for (const phase of match[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+      for (const phase of parseCsvList(match[1])) {
         phaseFailCounts[phase] = (phaseFailCounts[phase] || 0) + 1;
       }
     }

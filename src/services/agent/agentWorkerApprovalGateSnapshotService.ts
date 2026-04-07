@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseBooleanEnv } from '../../utils/env';
+import { parseBooleanEnv, parseCsvList } from '../../utils/env';
 import {
   LLM_PROVIDER_FALLBACK_CHAIN_RAW,
   LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER_RAW,
@@ -526,7 +526,7 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
       actionPolicyFailOpenOnError,
       actionAllowedActions: actionAllowedActionsRaw === '*'
         ? ['*']
-        : actionAllowedActionsRaw.split(',').map((item) => item.trim()).filter(Boolean),
+        : parseCsvList(actionAllowedActionsRaw),
       opencodeExecutePolicy: {
         actionName: opencodePolicy.actionName,
         enabled: opencodePolicy.enabled,

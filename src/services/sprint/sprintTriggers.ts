@@ -17,8 +17,7 @@ import {
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { runSelfImprovementChecks } from './selfImprovementLoop';
 import { getErrorMessage } from '../../utils/errorMessage';
-
-// ──── Error Detection Trigger ─────────────────────────────────────────────────
+import { parseCsvList } from '../../utils/env';
 
 type ErrorAccumulator = {
   recentErrors: Array<{ message: string; at: string; code?: string }>;
@@ -77,9 +76,7 @@ export const recordRuntimeError = (error: { message: string; code?: string }): v
 
 // ──── CS Ticket Trigger ───────────────────────────────────────────────────────
 
-const CS_CHANNEL_IDS = new Set(
-  SPRINT_TRIGGER_CS_CHANNEL_IDS.split(',').map((s) => s.trim()).filter(Boolean),
-);
+const CS_CHANNEL_IDS = new Set(parseCsvList(SPRINT_TRIGGER_CS_CHANNEL_IDS));
 
 export type CsClassification = 'bug-report' | 'feature-request' | 'question' | 'noise';
 

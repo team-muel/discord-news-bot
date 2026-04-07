@@ -14,6 +14,7 @@ import {
   FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW,
   FINOPS_CACHE_TTL_MS,
 } from '../config';
+import { parseCsvList } from '../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 type FinopsSummaryParams = {
@@ -51,8 +52,8 @@ type FinopsActionDecision = {
 };
 
 const csvSet = (raw: string, fallback: string[]): Set<string> => {
-  const list = raw.split(',').map((v) => v.trim()).filter(Boolean);
-  return new Set((list.length > 0 ? list : fallback).map((v) => v.trim()));
+  const list = parseCsvList(raw);
+  return new Set(list.length > 0 ? list : fallback);
 };
 
 const FINOPS_DEGRADE_ALLOWED_ACTIONS = csvSet(

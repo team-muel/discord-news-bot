@@ -14,11 +14,10 @@ import {
   SPRINT_CROSS_MODEL_PHASES,
   SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import { getErrorMessage } from '../../utils/errorMessage';
-
-// ──── Types ───────────────────────────────────────────────────────────────────
 
 export type CrossModelResult = {
   enabled: boolean;
@@ -31,9 +30,7 @@ export type CrossModelResult = {
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────
 
-const ENABLED_PHASES = new Set(
-  SPRINT_CROSS_MODEL_PHASES.split(',').map((p) => p.trim()).filter(Boolean),
-);
+const ENABLED_PHASES = new Set(parseCsvList(SPRINT_CROSS_MODEL_PHASES));
 
 export const isCrossModelPhase = (phase: string): boolean =>
   SPRINT_CROSS_MODEL_ENABLED && ENABLED_PHASES.has(phase);

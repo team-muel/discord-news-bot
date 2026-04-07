@@ -35,3 +35,10 @@ export const parseBoundedNumberEnv = (
   const parsed = parseNumberEnv(value, fallback);
   return Math.max(min, Math.min(max, parsed));
 };
+
+/**
+ * Split a comma-separated string into a trimmed, non-empty string array.
+ * Handles undefined/empty input gracefully (returns []).
+ */
+export const parseCsvList = (value: string | undefined): string[] =>
+  (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);

@@ -32,6 +32,7 @@ import {
   DISCORD_FEEDBACK_REACTION_SEED_DOWN_RAW,
   DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES_RAW,
 } from '../config';
+import { parseCsvList } from '../utils/env';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
@@ -84,7 +85,7 @@ export const DISCORD_VIBE_DEDUP_MAX_ENTRIES = clamp(DISCORD_VIBE_DEDUP_MAX_ENTRI
 // ─── H-001: Simple command allowlist ──────────────────────────────────────────
 const parseCommandAllowlist = (): ReadonlySet<string> => {
   if (DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW) {
-    return new Set(DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW.split(',').map((s) => s.trim()).filter(Boolean));
+    return new Set(parseCsvList(DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW));
   }
   return new Set([
     'ping', 'help', '도움말', '로그인', '구독', '해줘', '만들어줘',

@@ -23,6 +23,7 @@ import {
   OPENJARVIS_ENABLED,
   LITELLM_ENABLED,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import {
   type LlmProvider,
   type LlmProviderProfile,
@@ -51,9 +52,7 @@ type WorkflowModelBinding = { pattern: string; provider: LlmProvider; model: str
 
 // ──── Provider Alias / Parsing ───────────────────────────────────────────────
 
-const LLM_EXPERIMENT_GUILD_ALLOWLIST = new Set(
-  LLM_EXPERIMENT_GUILD_ALLOWLIST_RAW.split(',').map((v) => v.trim()).filter(Boolean),
-);
+const LLM_EXPERIMENT_GUILD_ALLOWLIST = new Set(parseCsvList(LLM_EXPERIMENT_GUILD_ALLOWLIST_RAW));
 
 export const normalizeProviderAlias = (value: string): LlmProvider | null => {
   const normalized = String(value || '').trim().toLowerCase();

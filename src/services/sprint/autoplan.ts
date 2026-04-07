@@ -13,10 +13,9 @@ import {
   SPRINT_AUTOPLAN_ENABLED,
   SPRINT_AUTOPLAN_LENSES,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { getErrorMessage } from '../../utils/errorMessage';
-
-// ──── Types ───────────────────────────────────────────────────────────────────
 
 export type PlanLens = 'ceo' | 'engineering' | 'security' | 'design';
 
@@ -38,8 +37,7 @@ export type AutoplanResult = {
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
-const CONFIGURED_LENSES = SPRINT_AUTOPLAN_LENSES
-  .split(',').map((l) => l.trim()).filter(Boolean) as PlanLens[];
+const CONFIGURED_LENSES = parseCsvList(SPRINT_AUTOPLAN_LENSES) as PlanLens[];
 
 // ──── Lens system prompts ─────────────────────────────────────────────────────
 

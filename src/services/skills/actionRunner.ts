@@ -15,7 +15,7 @@ import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseCsvList } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
 import logger from '../../logger';
@@ -37,7 +37,7 @@ export type { SkillActionResult, FailureDiagnostics } from './actionRunnerDiagno
 
 /** Actions that require approval_required enforcement regardless of guild policy runMode. */
 const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
-  String(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute').split(',').map((s) => s.trim()).filter(Boolean),
+  parseCsvList(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute'),
 );
 
 /**
@@ -125,8 +125,8 @@ const ACTION_GOVERNANCE_FAST_PATH_ENABLED = parseBooleanEnv(process.env.ACTION_G
 
 /** Read-only actions that skip guild policy + FinOps + gate-verdict governance. */
 const GOVERNANCE_FAST_PATH_ACTIONS: ReadonlySet<string> = new Set(
-  String(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '').trim()
-    ? String(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS).split(',').map((s) => s.trim()).filter(Boolean)
+  parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '').length > 0
+    ? parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '')
     : [
       'web.search',
       'web.fetch',
