@@ -1,6 +1,6 @@
 import type { Client } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runRetrievalAutoTuning, runRetrievalEval } from './retrievalEvalService';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -10,7 +10,7 @@ const RETRIEVAL_AUTO_EVAL_INTERVAL_HOURS = parseMinIntEnv(process.env.RETRIEVAL_
 const RETRIEVAL_AUTO_EVAL_RUN_ON_START = parseBooleanEnv(process.env.RETRIEVAL_AUTO_EVAL_RUN_ON_START, false);
 const RETRIEVAL_AUTO_EVAL_APPLY_TUNING = parseBooleanEnv(process.env.RETRIEVAL_AUTO_EVAL_APPLY_TUNING, false);
 const RETRIEVAL_AUTO_EVAL_MAX_GUILDS = parseMinIntEnv(process.env.RETRIEVAL_AUTO_EVAL_MAX_GUILDS, 30, 1);
-const RETRIEVAL_AUTO_EVAL_TOP_K = Math.max(1, Math.min(20, parseIntegerEnv(process.env.RETRIEVAL_AUTO_EVAL_TOP_K, 5)));
+const RETRIEVAL_AUTO_EVAL_TOP_K = parseBoundedNumberEnv(process.env.RETRIEVAL_AUTO_EVAL_TOP_K, 5, 1, 20);
 
 const parseOptionalEvalSetId = (value: string | undefined): number | undefined => {
   const parsed = Number(String(value || '').trim());

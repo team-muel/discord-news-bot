@@ -17,7 +17,7 @@
  *   DEEPWIKI_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
-import { parseBooleanEnv, parseIntegerEnv, parseUrlEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
@@ -27,7 +27,7 @@ const LEGACY_ENABLED_RAW = process.env.DEEPWIKI_ADAPTER_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
 const BASE_URL = parseUrlEnv(process.env.DEEPWIKI_BASE_URL, 'https://api.deepwiki.com');
-const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.DEEPWIKI_TIMEOUT_MS, 30_000));
+const TIMEOUT_MS = parseMinIntEnv(process.env.DEEPWIKI_TIMEOUT_MS, 30_000, 5_000);
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -16,7 +16,7 @@ import { T_COMMUNITY_INTERACTION_EVENTS, T_AGENT_SESSIONS, T_MEMORY_RETRIEVAL_LO
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_ENABLED, true);
-const WINDOW_HOURS = Math.max(1, Math.min(168, parseIntegerEnv(process.env.REWARD_SIGNAL_WINDOW_HOURS, 6)));
+const WINDOW_HOURS = parseBoundedNumberEnv(process.env.REWARD_SIGNAL_WINDOW_HOURS, 6, 1, 168);
 
 // Blend weights (must sum to 1.0)
 const W_REACTION   = parseBoundedNumberEnv(process.env.REWARD_W_REACTION, 0.20, 0, 1);

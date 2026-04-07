@@ -1,4 +1,4 @@
-import { parseCsvList, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
+import { parseBoundedNumberEnv, parseCsvList, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 
 const toSet = (raw: string): Set<string> => {
   return new Set(
@@ -34,7 +34,7 @@ const WEB_ALLOWED_HOSTS = new Set(
 );
 const DB_ALLOWED_TABLES = toSet(process.env.ACTION_DB_READ_ALLOWED_TABLES || 'guild_lore_docs,memory_items');
 
-export const ACTION_MAX_READ_LIMIT = Math.max(1, Math.min(50, parseIntegerEnv(process.env.ACTION_DB_READ_MAX_ROWS, 5)));
+export const ACTION_MAX_READ_LIMIT = parseBoundedNumberEnv(process.env.ACTION_DB_READ_MAX_ROWS, 5, 1, 50);
 
 export const getActionRunnerMode = (): 'execute' | 'dry-run' => RUNNER_MODE;
 

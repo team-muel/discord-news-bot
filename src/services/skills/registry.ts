@@ -1,11 +1,11 @@
 import type { SkillDefinition, SkillId } from './types';
-import { parseIntegerEnv } from '../../utils/env';
+import { parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 
-const SKILL_CATALOG_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_TTL_MS, 60_000));
-const SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const SKILL_CATALOG_CACHE_TTL_MS = parseMinIntEnv(process.env.AGENT_SKILL_CATALOG_CACHE_TTL_MS, 60_000, 5_000);
+const SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 const SUPPORTED_EXECUTOR_KEYS = new Set([
   'casual_chat',
   'ops-plan',

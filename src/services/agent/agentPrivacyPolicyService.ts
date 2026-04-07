@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -26,8 +26,8 @@ export type AgentPrivacyPolicySnapshot = {
   blockRules: AgentPrivacyCompiledRule[];
 };
 
-const AGENT_PRIVACY_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_TTL_MS, 60_000));
-const AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const AGENT_PRIVACY_POLICY_CACHE_TTL_MS = parseMinIntEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_TTL_MS, 60_000, 5_000);
+const AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 
 const DEFAULT_MODE: AgentPrivacyMode = parseBooleanEnv(process.env.AGENT_PRIVACY_GUARDED_DEFAULT, true)
   ? 'guarded'

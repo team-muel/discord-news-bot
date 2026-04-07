@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -33,7 +33,7 @@ export type ActionApprovalRequest = {
 
 const ACTION_POLICY_TABLE = parseStringEnv(process.env.ACTION_POLICY_TABLE, 'agent_action_policies');
 const ACTION_APPROVAL_TABLE = parseStringEnv(process.env.ACTION_APPROVAL_TABLE, 'agent_action_approval_requests');
-const ACTION_APPROVAL_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_APPROVAL_TTL_MS, 60 * 60 * 1000));
+const ACTION_APPROVAL_TTL_MS = parseMinIntEnv(process.env.ACTION_APPROVAL_TTL_MS, 60 * 60 * 1000, 60_000);
 const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
 const ACTION_POLICY_DEFAULT_RUN_MODE = parseStringEnv(process.env.ACTION_POLICY_DEFAULT_RUN_MODE, 'approval_required');
 const ACTION_POLICY_FAIL_OPEN_ON_ERROR = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);

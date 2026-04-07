@@ -19,7 +19,7 @@ const userEmbeddingCache = new TtlCache<number[] | null>(50);
 const USER_EMBEDDING_CACHE_TTL_MS = 5 * 60_000; // 5min — user embeddings refresh every 24h
 
 const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();
-const OBSIDIAN_INPUT_MAX_LENGTH = Math.max(40, Math.min(1200, parseIntegerEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320)));
+const OBSIDIAN_INPUT_MAX_LENGTH = parseBoundedNumberEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320, 40, 1200);
 const MEMORY_HINT_MIN_CONFIDENCE = parseBoundedNumberEnv(process.env.MEMORY_HINT_MIN_CONFIDENCE, 0.35, 0, 1);
 const MEMORY_HINT_RECENCY_HALF_LIFE_DAYS = parseMinIntEnv(process.env.MEMORY_HINT_RECENCY_HALF_LIFE_DAYS, 30, 3);
 const MEMORY_TIERED_SEARCH_ENABLED = parseBooleanEnv(process.env.MEMORY_TIERED_SEARCH_ENABLED, true);

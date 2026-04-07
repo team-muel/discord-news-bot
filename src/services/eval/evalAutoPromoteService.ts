@@ -26,7 +26,7 @@ const ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_ENABLED, true);
 const MIN_SAMPLES = parseMinIntEnv(process.env.EVAL_MIN_SAMPLES, 10, 3);
 const PROMOTE_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_PROMOTE_DELTA, 0.05, 0.01, 0.5);
 const REJECT_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_REJECT_DELTA, -0.05, -0.5, -0.01);
-const EVAL_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.EVAL_ROLLOUT_PERCENT, 50)));
+const EVAL_ROLLOUT_PERCENT = parseBoundedNumberEnv(process.env.EVAL_ROLLOUT_PERCENT, 50, 0, 100);
 
 /** Stable bucket: deterministic 0-99 for a given key (SHA256-based, same as llmClient pattern) */
 const stableBucket = (key: string): number => {

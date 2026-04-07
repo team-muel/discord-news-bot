@@ -346,9 +346,9 @@ export const DISCORD_FEEDBACK_REACTION_SEED_DOWN_RAW = (process.env.DISCORD_FEED
 export const DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES_RAW = parseIntegerEnv(process.env.DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES, 500);
 
 // ── Discord Auth / Session ──
-export const DISCORD_LOGIN_SESSION_TTL_MS = Math.max(5 * 60 * 1000, parseIntegerEnv(process.env.DISCORD_LOGIN_SESSION_TTL_MS, 24 * 60 * 60 * 1000));
-export const DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS = Math.max(60 * 1000, parseIntegerEnv(process.env.DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS, 2 * 60 * 60 * 1000));
-export const DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, parseIntegerEnv(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS, 30 * 60 * 1000));
+export const DISCORD_LOGIN_SESSION_TTL_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_SESSION_TTL_MS, 24 * 60 * 60 * 1000, 300_000);
+export const DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS, 2 * 60 * 60 * 1000, 60_000);
+export const DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS, 30 * 60 * 1000, 60_000);
 export const DISCORD_LOGIN_SESSION_CLEANUP_OWNER = (process.env.DISCORD_LOGIN_SESSION_CLEANUP_OWNER || 'db').trim().toLowerCase() === 'app' ? 'app' as const : 'db' as const;
 export const DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND = parseBooleanEnv(process.env.DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND, true);
 export const DISCORD_SIMPLE_COMMANDS_ENABLED = parseBooleanEnv(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED, true);
@@ -385,9 +385,9 @@ export const GO_NO_GO_MIN_CITATION_RATE = _clampPct(process.env.GO_NO_GO_MIN_CIT
 export const GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE = _clampPct(process.env.GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE, 0.05);
 export const GO_NO_GO_MAX_JOB_FAILURE_RATE = _clampPct(process.env.GO_NO_GO_MAX_JOB_FAILURE_RATE, 0.10);
 export const GO_NO_GO_MIN_RECALL_AT_5 = _clampPct(process.env.GO_NO_GO_MIN_RECALL_AT_5, 0.60);
-export const GO_NO_GO_MIN_PILOT_GUILDS = Math.max(1, Math.trunc(parseNumberEnv(process.env.GO_NO_GO_MIN_PILOT_GUILDS, 3)));
-export const GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN = Math.max(0.1, Math.min(24 * 60, parseNumberEnv(process.env.GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN, 5)));
-export const GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL = Math.max(0, Math.trunc(parseNumberEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0)));
+export const GO_NO_GO_MIN_PILOT_GUILDS = parseMinIntEnv(process.env.GO_NO_GO_MIN_PILOT_GUILDS, 3, 1);
+export const GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN = parseBoundedNumberEnv(process.env.GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN, 5, 0.1, 1440);
+export const GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL = parseIntegerEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0);
 export const GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE = _clampPct(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE, 0.02);
 
 // ── Entity Nervous System ──
@@ -469,7 +469,7 @@ export const SOCIAL_RECENCY_HALF_LIFE_DAYS = parseMinIntEnv(process.env.SOCIAL_R
 export const OBSIDIAN_SYNC_VAULT_PATH = (process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
 
 // ── Conversation Turn Service ──
-export const AGENT_CONVERSATION_THREAD_IDLE_MS = Math.max(5 * 60_000, parseIntegerEnv(process.env.AGENT_CONVERSATION_THREAD_IDLE_MS, 6 * 60 * 60_000));
+export const AGENT_CONVERSATION_THREAD_IDLE_MS = parseMinIntEnv(process.env.AGENT_CONVERSATION_THREAD_IDLE_MS, 6 * 60 * 60_000, 300_000);
 
 // ── Super Agent Service ──
 export const SUPER_AGENT_PAYLOAD_CLIP_CHARS = parseMinIntEnv(process.env.SUPER_AGENT_PAYLOAD_CLIP_CHARS, 2_000, 400);

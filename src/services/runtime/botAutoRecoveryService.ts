@@ -2,11 +2,11 @@ import { START_BOT } from '../../config';
 import logger from '../../logger';
 import type { BotRuntimeStatus } from '../../contracts/bot';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 
 const BOT_AUTO_RECOVERY_ENABLED = parseBooleanEnv(process.env.BOT_AUTO_RECOVERY_ENABLED, true);
-const BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS = Math.max(10_000, parseIntegerEnv(process.env.BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS, 60_000));
-const BOT_AUTO_RECOVERY_OFFLINE_THRESHOLD_MS = Math.max(30_000, parseIntegerEnv(process.env.BOT_AUTO_RECOVERY_OFFLINE_THRESHOLD_MS, 3 * 60_000));
+const BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS = parseMinIntEnv(process.env.BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS, 60_000, 10_000);
+const BOT_AUTO_RECOVERY_OFFLINE_THRESHOLD_MS = parseMinIntEnv(process.env.BOT_AUTO_RECOVERY_OFFLINE_THRESHOLD_MS, 3 * 60_000, 30_000);
 
 type BotModuleLike = {
   getBotRuntimeSnapshot: () => {

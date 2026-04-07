@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
-import { parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 export type WorkerApprovalStatus = 'pending' | 'approved' | 'rejected' | 'refactor_requested';
 
@@ -58,7 +58,7 @@ const APPROVAL_STORE_MODE = APPROVAL_STORE_MODE_RAW === 'supabase' || APPROVAL_S
   ? APPROVAL_STORE_MODE_RAW
   : 'auto';
 const APPROVAL_DB_TABLE = parseStringEnv(process.env.WORKER_APPROVAL_DB_TABLE, 'worker_approvals') || 'worker_approvals';
-const WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 let loaded = false;
 let saveChain: Promise<void> = Promise.resolve();
 let supabaseStoreDisabled = false;

@@ -68,8 +68,8 @@ const SLO_LOOP_INTERVAL_MIN = parseMinIntEnv(process.env.AGENT_SLO_ALERT_LOOP_IN
 export type SloLoopOwner = 'app' | 'db';
 const SLO_LOOP_OWNER: SloLoopOwner =
   parseStringEnv(process.env.AGENT_SLO_ALERT_LOOP_OWNER, 'app').toLowerCase() === 'db' ? 'db' : 'app';
-const SLO_LOOP_MAX_GUILDS = Math.max(1, Math.min(500, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_MAX_GUILDS, 100)));
-const SLO_LOOP_CONCURRENCY = Math.max(1, Math.min(20, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_CONCURRENCY, 4)));
+const SLO_LOOP_MAX_GUILDS = parseBoundedNumberEnv(process.env.AGENT_SLO_ALERT_LOOP_MAX_GUILDS, 100, 1, 500);
+const SLO_LOOP_CONCURRENCY = parseBoundedNumberEnv(process.env.AGENT_SLO_ALERT_LOOP_CONCURRENCY, 4, 1, 20);
 
 const DEFAULT_THRESHOLDS: SloThresholds = {
   intelligenceMaxLlmErrorRate: parseBoundedNumberEnv(process.env.AGENT_SLO_INTELLIGENCE_MAX_LLM_ERROR_RATE, 0.08, 0, 1),

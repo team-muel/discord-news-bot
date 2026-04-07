@@ -60,8 +60,8 @@ const PUBLISH_QUEUE_TABLE = parseStringEnv(process.env.OPENCODE_PUBLISH_QUEUE_TA
 
 const WORKER_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_WORKER_ENABLED, false);
 const WORKER_INTERVAL_MS = parseMinIntEnv(process.env.OPENCODE_PUBLISH_WORKER_INTERVAL_MS, 5000, 2000);
-const WORKER_BATCH_SIZE = Math.max(1, Math.min(10, parseIntegerEnv(process.env.OPENCODE_PUBLISH_WORKER_BATCH_SIZE, 2)));
-const WORKER_MAX_ATTEMPTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.OPENCODE_PUBLISH_MAX_ATTEMPTS, 3)));
+const WORKER_BATCH_SIZE = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_WORKER_BATCH_SIZE, 2, 1, 10);
+const WORKER_MAX_ATTEMPTS = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_MAX_ATTEMPTS, 3, 1, 10);
 const WORKER_STALE_RUNNING_MS = parseMinIntEnv(process.env.OPENCODE_PUBLISH_STALE_RUNNING_MS, 900_000, 60_000);
 const WORKER_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);
 const WORKER_LOCK_FAIL_OPEN = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN, false);
@@ -77,8 +77,8 @@ const DEFAULT_REPO_OWNER = parseStringEnv(process.env.OPENCODE_TARGET_REPO_OWNER
 const DEFAULT_REPO_NAME = parseStringEnv(process.env.OPENCODE_TARGET_REPO_NAME, '');
 const REQUIRE_EVIDENCE_FOR_HIGH_RISK = parseBooleanEnv(process.env.OPENCODE_PUBLISH_REQUIRE_EVIDENCE_FOR_HIGH_RISK, true);
 const MIN_SCORE_CARD_TOTAL = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL, 0, 0, 100);
-const PATCH_MAX_FILES = Math.max(1, Math.min(500, parseIntegerEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_FILES, 120)));
-const PATCH_MAX_LINES = Math.max(10, Math.min(20_000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_LINES, 4000)));
+const PATCH_MAX_FILES = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_FILES, 120, 1, 500);
+const PATCH_MAX_LINES = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_LINES, 4000, 10, 20_000);
 
 let timer: NodeJS.Timeout | null = null;
 let inFlight = false;

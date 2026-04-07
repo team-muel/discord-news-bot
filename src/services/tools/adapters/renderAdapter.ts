@@ -25,14 +25,14 @@
  */
 
 import logger from '../../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.RENDER_ADAPTER_DISABLED, false);
 const API_KEY = parseStringEnv(process.env.RENDER_API_KEY, '');
 const BASE_URL = parseUrlEnv(process.env.RENDER_API_BASE_URL, 'https://api.render.com/v1');
-const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.RENDER_TIMEOUT_MS, 15_000));
+const TIMEOUT_MS = parseMinIntEnv(process.env.RENDER_TIMEOUT_MS, 15_000, 5_000);
 const DEFAULT_WORKSPACE = parseStringEnv(process.env.RENDER_WORKSPACE_ID, '');
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────

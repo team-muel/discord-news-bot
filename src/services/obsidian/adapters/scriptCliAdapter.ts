@@ -1,7 +1,7 @@
 import path from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
 import type { ObsidianLoreQuery, ObsidianVaultAdapter } from '../types';
 
 const execFileAsync = promisify(execFile);
@@ -11,7 +11,7 @@ const OBSIDIAN_CLI_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_CLI_ENABLED, t
 const OBSIDIAN_CLI_COMMAND = parseStringEnv(process.env.OBSIDIAN_CLI_COMMAND, '');
 const OBSIDIAN_CLI_ARGS_JSON = parseStringEnv(process.env.OBSIDIAN_CLI_ARGS_JSON, '');
 const OBSIDIAN_CLI_TIMEOUT_MS = parseMinIntEnv(process.env.OBSIDIAN_CLI_TIMEOUT_MS, 4_000, 500);
-const OBSIDIAN_CLI_MAX_HINTS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.OBSIDIAN_CLI_MAX_HINTS, 8)));
+const OBSIDIAN_CLI_MAX_HINTS = parseBoundedNumberEnv(process.env.OBSIDIAN_CLI_MAX_HINTS, 8, 1, 20);
 
 const sanitizeCliArg = (value: unknown, maxLen = 280): string => String(value || '')
   .replace(/[\u0000-\u001f\u007f]/g, ' ')

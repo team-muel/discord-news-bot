@@ -11,7 +11,7 @@
  * n8n handles external execution (RSS, API calls, SNS posting)
  * while the pipeline engine handles judgment (chaining, branching, replanning).
  */
-import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
 import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterResult, ExternalAdapterId } from '../externalAdapterTypes';
 import logger from '../../../logger';
@@ -26,7 +26,7 @@ const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW 
 
 const N8N_BASE_URL = parseStringEnv(process.env.N8N_BASE_URL, 'http://localhost:5678').replace(/\/+$/, '');
 const N8N_API_KEY = parseStringEnv(process.env.N8N_API_KEY, '');
-const N8N_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.N8N_TIMEOUT_MS, 30_000));
+const N8N_TIMEOUT_MS = parseMinIntEnv(process.env.N8N_TIMEOUT_MS, 30_000, 5_000);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
@@ -11,7 +11,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
 const MEMORY_JOBS_POLL_INTERVAL_MS = parseMinIntEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 8_000, 5_000);
-const MEMORY_JOBS_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.MEMORY_JOBS_CONCURRENCY, 4)));
+const MEMORY_JOBS_CONCURRENCY = parseBoundedNumberEnv(process.env.MEMORY_JOBS_CONCURRENCY, 4, 1, 8);
 const MEMORY_JOBS_MAX_RETRIES = parseMinIntEnv(process.env.MEMORY_JOBS_MAX_RETRIES, 3, 1);
 const MEMORY_JOBS_BACKOFF_BASE_MS = parseMinIntEnv(process.env.MEMORY_JOBS_BACKOFF_BASE_MS, 15_000, 1_000);
 const MEMORY_JOBS_BACKOFF_MAX_MS = Math.max(MEMORY_JOBS_BACKOFF_BASE_MS, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_MAX_MS, 30 * 60_000));

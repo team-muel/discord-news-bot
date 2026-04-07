@@ -1,6 +1,6 @@
 import type { Client, Guild } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { queueMemoryJob } from './agentMemoryStore';
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { listGuildAgentSessions, startAgentSession } from '../multiAgentService';
@@ -17,7 +17,7 @@ const AGENT_ONBOARDING_COOLDOWN_MS = parseMinIntEnv(process.env.AGENT_ONBOARDING
 const AGENT_GOT_CUTOVER_AUTOPILOT_ENABLED = parseBooleanEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_ENABLED, true);
 const AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN, 60, 5);
 const AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS, 100, 1);
-const AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT, 100)));
+const AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT = parseBoundedNumberEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT, 100, 0, 100);
 const AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES, 20, 0);
 
 let dailyTimer: NodeJS.Timeout | null = null;

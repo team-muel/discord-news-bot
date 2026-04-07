@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { buildGotPerformanceDashboard } from './agentGotAnalyticsService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
@@ -17,10 +17,10 @@ export type AgentGotCutoverDecision = {
   windowDays: number;
 };
 
-const CUTOVER_WINDOW_DAYS = Math.max(1, Math.min(90, parseIntegerEnv(process.env.GOT_CUTOVER_DASHBOARD_WINDOW_DAYS, 14)));
-const CUTOVER_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.GOT_CUTOVER_CACHE_TTL_MS, 60_000));
+const CUTOVER_WINDOW_DAYS = parseBoundedNumberEnv(process.env.GOT_CUTOVER_DASHBOARD_WINDOW_DAYS, 14, 1, 90);
+const CUTOVER_CACHE_TTL_MS = parseMinIntEnv(process.env.GOT_CUTOVER_CACHE_TTL_MS, 60_000, 5_000);
 const CUTOVER_FAIL_OPEN = parseBooleanEnv(process.env.GOT_CUTOVER_FAIL_OPEN, false);
-const GOT_ACTIVE_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.GOT_ACTIVE_ROLLOUT_PERCENT, 100)));
+const GOT_ACTIVE_ROLLOUT_PERCENT = parseBoundedNumberEnv(process.env.GOT_ACTIVE_ROLLOUT_PERCENT, 100, 0, 100);
 
 const cache = new TtlCache<AgentGotCutoverDecision>(200);
 

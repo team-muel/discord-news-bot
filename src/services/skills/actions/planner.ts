@@ -14,7 +14,7 @@ import type { ExternalAdapterId } from '../../tools/externalAdapterTypes';
 const PLANNER_CONFIG = {
   selfConsistency: {
     enabled: parseBooleanEnv(process.env.PLANNER_SELF_CONSISTENCY_ENABLED, true),
-    samples: Math.max(1, Math.min(5, parseIntegerEnv(process.env.PLANNER_SELF_CONSISTENCY_SAMPLES, 3))),
+    samples: parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_SAMPLES, 3, 1, 5),
     temperature: parseBoundedNumberEnv(process.env.PLANNER_SELF_CONSISTENCY_TEMPERATURE, 0.35, 0, 1),
     adaptiveSamplesEnabled: parseBooleanEnv(process.env.PLANNER_ADAPTIVE_SAMPLES_ENABLED, true),
   },
