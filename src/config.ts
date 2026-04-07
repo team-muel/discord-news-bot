@@ -35,11 +35,11 @@ export const BOT_MANUAL_RECONNECT_COOLDOWN_MS = parseIntegerEnv(
 export const DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS, 5 * 60_000, 0);
 export const DYNAMIC_WORKER_RESTORE_ON_BOOT = parseBooleanEnv(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT, true);
 const JWT_SECRET_FALLBACK = 'dev-jwt-secret-change-in-production';
-const JWT_SECRET_FROM_ENV = parseStringEnv(process.env.JWT_SECRET ?? process.env.SESSION_SECRET, '');
-if (NODE_ENV === 'production' && (!JWT_SECRET_FROM_ENV || JWT_SECRET_FROM_ENV === JWT_SECRET_FALLBACK)) {
+const jwtSecretRaw = parseStringEnv(process.env.JWT_SECRET ?? process.env.SESSION_SECRET, '');
+if (NODE_ENV === 'production' && (!jwtSecretRaw || jwtSecretRaw === JWT_SECRET_FALLBACK)) {
   throw new Error('JWT_SECRET (or SESSION_SECRET) must be set to a non-default value in production');
 }
-export const JWT_SECRET = JWT_SECRET_FROM_ENV || JWT_SECRET_FALLBACK;
+export const JWT_SECRET = jwtSecretRaw || JWT_SECRET_FALLBACK;
 export const AUTH_COOKIE_NAME = parseStringEnv(process.env.AUTH_COOKIE_NAME, 'muel_session');
 export const AUTH_CSRF_COOKIE_NAME = parseStringEnv(process.env.AUTH_CSRF_COOKIE_NAME, 'muel_csrf');
 export const AUTH_CSRF_HEADER_NAME = parseStringEnv(process.env.AUTH_CSRF_HEADER_NAME, 'x-csrf-token');

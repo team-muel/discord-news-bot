@@ -52,6 +52,8 @@ export const OPENAI_API_KEY = parseStringEnv(process.env.OPENAI_API_KEY, '');
 export const OPENAI_ANALYSIS_MODEL = parseStringEnv(process.env.OPENAI_ANALYSIS_MODEL, 'gpt-4o-mini');
 
 // ── Gemini ──
+// ── Gemini ──
+// Note: GEMINI_API_KEY and GOOGLE_API_KEY are accepted aliases.
 export const GEMINI_API_KEY = parseStringEnv(process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY, '');
 export const GEMINI_MODEL = parseStringEnv(process.env.GEMINI_MODEL, 'gemini-2.5-flash');
 
@@ -125,6 +127,8 @@ export const LITELLM_ENABLED = parseBooleanEnv(process.env.LITELLM_ENABLED, lite
 export const LITELLM_MODEL = parseStringEnv(process.env.LITELLM_MODEL, 'muel-balanced');
 
 // ── Kimi ──
+// ── Kimi / Moonshot ──
+// Note: KIMI_API_KEY and MOONSHOT_API_KEY are accepted aliases.
 export const KIMI_API_KEY = parseStringEnv(process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY, '');
 export const KIMI_BASE_URL = parseUrlEnv(process.env.KIMI_BASE_URL, 'https://api.moonshot.cn');
 export const KIMI_MODEL = parseStringEnv(process.env.KIMI_MODEL, 'moonshot-v1-128k');
