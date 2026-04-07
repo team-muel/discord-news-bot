@@ -6,7 +6,7 @@
  *
  * Re-exported from config.ts for backward compatibility.
  */
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseStringEnv, parseUrlEnv } from './utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseSanitizedStringEnv, parseStringEnv, parseUrlEnv } from './utils/env';
 
 // Primary provider selection
 export const AI_PROVIDER = parseStringEnv(process.env.AI_PROVIDER, '').toLowerCase();
@@ -82,23 +82,23 @@ export const OPENCLAW_LACUNA_SKILL_CREATE_ENABLED = parseBooleanEnv(process.env.
 // ── NemoClaw ──
 export const NEMOCLAW_ENABLED = parseBooleanEnv(process.env.NEMOCLAW_ENABLED, false);
 export const NEMOCLAW_DISABLED = parseBooleanEnv(process.env.NEMOCLAW_DISABLED, false);
-// Characters filtered for shell-safe use in sandbox/gateway identifiers.
-export const NEMOCLAW_SANDBOX_NAME = parseStringEnv(process.env.NEMOCLAW_SANDBOX_NAME, 'muel-assistant').replace(/[^a-zA-Z0-9._-]/g, '');
+// Shell-safe identifier: only alphanumeric, dots, underscores, hyphens allowed.
+export const NEMOCLAW_SANDBOX_NAME = parseSanitizedStringEnv(process.env.NEMOCLAW_SANDBOX_NAME, 'muel-assistant', /[^a-zA-Z0-9._-]/g);
 export const NEMOCLAW_INFERENCE_MODEL = parseStringEnv(process.env.NEMOCLAW_INFERENCE_MODEL, 'qwen2.5:7b-instruct');
 export const NEMOCLAW_SANDBOX_OLLAMA_URL = parseStringEnv(process.env.NEMOCLAW_SANDBOX_OLLAMA_URL, 'http://localhost:11434');
 
 // ── OpenShell ──
 export const OPENSHELL_ENABLED = parseBooleanEnv(process.env.OPENSHELL_ENABLED, false);
 export const OPENSHELL_DISABLED = parseBooleanEnv(process.env.OPENSHELL_DISABLED, false);
-// Characters filtered for shell-safe SSH host format (user@host:port).
-export const OPENSHELL_REMOTE_GATEWAY = parseStringEnv(process.env.OPENSHELL_REMOTE_GATEWAY, '').replace(/[^a-zA-Z0-9@._:-]/g, '');
+// Shell-safe SSH host format (user@host:port): only safe chars allowed.
+export const OPENSHELL_REMOTE_GATEWAY = parseSanitizedStringEnv(process.env.OPENSHELL_REMOTE_GATEWAY, '', /[^a-zA-Z0-9@._:-]/g);
 export const OPENSHELL_SANDBOX_DELEGATION = parseBooleanEnv(process.env.OPENSHELL_SANDBOX_DELEGATION, false);
 export const OPENSHELL_DEFAULT_SANDBOX_ID = parseStringEnv(process.env.OPENSHELL_DEFAULT_SANDBOX_ID, '');
 export const OPENSHELL_DEFAULT_SANDBOX_IMAGE = parseStringEnv(process.env.OPENSHELL_DEFAULT_SANDBOX_IMAGE, 'ollama');
 
 // ── Shared (WSL) ──
-// Characters filtered to keep WSL distro name shell-safe.
-export const WSL_DISTRO = parseStringEnv(process.env.WSL_DISTRO, 'Ubuntu-24.04').replace(/[^a-zA-Z0-9._-]/g, '');
+// Shell-safe WSL distro name: only alphanumeric, dots, underscores, hyphens.
+export const WSL_DISTRO = parseSanitizedStringEnv(process.env.WSL_DISTRO, 'Ubuntu-24.04', /[^a-zA-Z0-9._-]/g);
 
 // ── MCP Tool Names ──
 export const MCP_OPENCODE_TOOL_NAME = parseStringEnv(process.env.MCP_OPENCODE_TOOL_NAME, 'opencode.run');
