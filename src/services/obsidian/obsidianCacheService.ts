@@ -7,11 +7,11 @@
 
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
-import { parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3_600_000));
-const CACHE_ENABLED = process.env.OBSIDIAN_RAG_CACHE_ENABLED !== 'false';
+const CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_RAG_CACHE_ENABLED, true);
 const HIT_FLUSH_INTERVAL_MS = 30_000;
 const MAX_PENDING_HIT_ENTRIES = 500; // Prevent unbounded in-memory growth
 const MAX_PARALLEL_LOADS = 10; // Limit concurrent vault loads to prevent memory pressure

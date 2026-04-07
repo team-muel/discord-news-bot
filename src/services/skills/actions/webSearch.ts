@@ -10,10 +10,10 @@
 import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { compactText, extractQuery } from './queryUtils';
-import { parseIntegerEnv } from '../../../utils/env';
+import { parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
-const SERPER_API_KEY = process.env.SERPER_API_KEY || '';
+const SERPER_API_KEY = parseStringEnv(process.env.SERPER_API_KEY, '');
 const MAX_RESULTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.WEB_SEARCH_MAX_RESULTS, 5)));
 const FETCH_TIMEOUT_MS = 8_000;
 

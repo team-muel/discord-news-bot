@@ -244,20 +244,11 @@ const getFinopsBudgetStatusSafely = async (guildId: string) => {
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
-const csvToSet = (value: string): Set<string> => {
-  return new Set(
-    String(value || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  );
-};
-
-const ACTION_NEWS_CAPTURE_ALLOW_GUILDS = csvToSet(process.env.ACTION_NEWS_CAPTURE_ALLOW_GUILDS || '');
-const ACTION_NEWS_CAPTURE_DENY_GUILDS = csvToSet(process.env.ACTION_NEWS_CAPTURE_DENY_GUILDS || '');
-const ACTION_NEWS_CAPTURE_DENY_USERS = csvToSet(process.env.ACTION_NEWS_CAPTURE_DENY_USERS || '');
+const ACTION_NEWS_CAPTURE_ALLOW_GUILDS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_ALLOW_GUILDS));
+const ACTION_NEWS_CAPTURE_DENY_GUILDS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_DENY_GUILDS));
+const ACTION_NEWS_CAPTURE_DENY_USERS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_DENY_USERS));
 const ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS = new Set(
-  Array.from(csvToSet(process.env.ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS || ''))
+  Array.from(parseCsvList(process.env.ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS))
     .map((domain) => domain.toLowerCase().replace(/^\*\./, '').replace(/^www\./, ''))
     .filter(Boolean),
 );

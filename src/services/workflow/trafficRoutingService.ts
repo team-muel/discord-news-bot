@@ -17,7 +17,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';
@@ -27,7 +27,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 // ──── Configuration ──────────────────────────────────────────────────────────
 
 export const TRAFFIC_ROUTING_ENABLED = parseBooleanEnv(process.env.TRAFFIC_ROUTING_ENABLED, false);
-const TRAFFIC_ROUTING_MODE = (process.env.TRAFFIC_ROUTING_MODE || 'shadow') as TrafficRoute;
+const TRAFFIC_ROUTING_MODE = parseStringEnv(process.env.TRAFFIC_ROUTING_MODE, 'shadow') as TrafficRoute;
 const TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD = Math.max(0, Math.min(1, parseNumberEnv(process.env.TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD, 0.3)));
 const TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD = Math.max(-1, Math.min(0, parseNumberEnv(process.env.TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD, -0.2)));
 const TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES = Math.max(10, parseIntegerEnv(process.env.TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES, 50));
