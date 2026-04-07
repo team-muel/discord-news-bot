@@ -8,6 +8,7 @@ import {
   OPENCLAW_GATEWAY_URL as GATEWAY_URL,
 } from '../../../config';
 import { checkOpenClawGatewayHealth, getGatewayHeaders } from '../../openclaw/gatewayHealth';
+import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 const execFileAsync = promisify(execFile);
@@ -72,8 +73,14 @@ export const openclawAdapter: ExternalToolAdapter = {
     } catch {
       transport = null;
       cliAvailable = false;
-      return false;
     }
+
+    // Lite mode: no gateway or CLI, but central LLM is configured → agent.chat still works
+    if (isAnyLlmConfigured()) {
+      return true;
+    }
+
+    return false;
   },
 
   execute: async (action, args) => {
@@ -94,6 +101,7 @@ export const openclawAdapter: ExternalToolAdapter = {
           const gatewayOk = await checkOpenClawGatewayHealth();
           if (gatewayOk) return makeResult(true, 'Gateway healthy', [`url=${GATEWAY_URL}`, 'transport=gateway']);
           if (transport === 'cli') return makeResult(true, 'CLI available', ['transport=cli']);
+          if (isAnyLlmConfigured()) return makeResult(true, 'LLM lite mode active', ['transport=llm-lite']);
           return makeResult(false, 'No transport available', [], 'NO_TRANSPORT');
         }
 
@@ -128,8 +136,33 @@ export const openclawAdapter: ExternalToolAdapter = {
           }
 
           // CLI fallback
-          const { stdout } = await runCli(['agent', '--message', stripShellMeta(message)]);
-          return makeResult(true, 'Chat response via CLI', stdout.trim().split('\n'));
+          if (cliAvailable !== false) {
+            try {
+              const { stdout } = await runCli(['agent', '--message', stripShellMeta(message)]);
+              return makeResult(true, 'Chat response via CLI', stdout.trim().split('\n'));
+            } catch {
+              // CLI failed — fall through to LLM lite mode
+            }
+          }
+
+          // Lite mode: central LLM pipeline when gateway and CLI are both unavailable
+          if (isAnyLlmConfigured()) {
+            try {
+              const content = await generateText({
+                system: 'You are a helpful always-on AI assistant (OpenClaw lite mode).',
+                user: message,
+                actionName: 'agent.chat',
+              });
+              if (content) {
+                logger.debug('[OPENCLAW] agent.chat served via LLM lite mode');
+                return makeResult(true, 'Chat response via LLM (lite mode)', content.split('\n').slice(0, 40));
+              }
+            } catch (liteErr) {
+              logger.debug('[OPENCLAW] LLM lite mode failed: %s', getErrorMessage(liteErr));
+            }
+          }
+
+          return makeResult(false, 'No transport available for agent.chat', [], 'NO_TRANSPORT');
         }
 
         case 'agent.skill.create': {

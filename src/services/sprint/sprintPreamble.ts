@@ -135,6 +135,9 @@ export const storeLearningInsight = (insight: LearningInsight): void => {
   }
 };
 
+/** Number of accumulated learning insights (used to gate optimize calls). */
+export const getLearningInsightCount = (): number => learningStore.length;
+
 /** Get recent learning insights for injection into plan phase. */
 export const getRecentLearningContext = (maxEntries = 5): string => {
   if (learningStore.length === 0) return '';
