@@ -129,6 +129,9 @@ services:
         value: team-muel
       - key: OBSIDIAN_VAULT_GITHUB_REPO
         value: discord-news-bot
+      # GitHub MCP worker (optional — enables runtime GitHub operations via MCP protocol)
+      - key: MCP_GITHUB_WORKER_URL
+        sync: false
       # Self-improvement loop (approve-ship gate protects production)
       - key: SELF_IMPROVEMENT_CONVERGENCE_ENABLED
         value: "true"

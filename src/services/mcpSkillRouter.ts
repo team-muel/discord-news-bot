@@ -216,6 +216,7 @@ const ENV_WORKER_MAP: Array<{ id: string; envKeys: string[] }> = [
   { id: 'operate', envKeys: ['MCP_OPERATE_WORKER_URL', 'MCP_OPENJARVIS_WORKER_URL'] },
   { id: 'coordinate', envKeys: ['MCP_COORDINATE_WORKER_URL', 'MCP_LOCAL_ORCHESTRATOR_WORKER_URL'] },
   { id: 'implement', envKeys: ['MCP_IMPLEMENT_WORKER_URL', 'MCP_OPENCODE_WORKER_URL'] },
+  { id: 'github', envKeys: ['MCP_GITHUB_WORKER_URL'] },
   { id: 'youtube', envKeys: ['MCP_YOUTUBE_WORKER_URL'] },
   { id: 'news', envKeys: ['MCP_NEWS_WORKER_URL'] },
   { id: 'community', envKeys: ['MCP_COMMUNITY_WORKER_URL'] },
