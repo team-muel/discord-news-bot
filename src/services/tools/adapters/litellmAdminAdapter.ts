@@ -13,7 +13,7 @@
  *   LITELLM_ADMIN_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
-import { parseBooleanEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseStringEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
@@ -22,8 +22,8 @@ const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.LITELLM_ADMIN_ADAPTER_DI
 const LEGACY_ENABLED_RAW = process.env.LITELLM_ADMIN_ADAPTER_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
-const BASE_URL = String(process.env.LITELLM_BASE_URL || '').trim().replace(/\/+$/, '');
-const MASTER_KEY = String(process.env.LITELLM_MASTER_KEY || '').trim();
+const BASE_URL = parseStringEnv(process.env.LITELLM_BASE_URL, '').replace(/\/+$/, '');
+const MASTER_KEY = parseStringEnv(process.env.LITELLM_MASTER_KEY, '');
 const TIMEOUT_MS = 10_000;
 
 const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({

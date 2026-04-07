@@ -11,6 +11,7 @@ import {
   type SecurityCandidateAnchor,
 } from '../securityCandidateContract';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { parseStringEnv } from '../../utils/env';
 
 type SymbolKind = 'function' | 'class' | 'interface' | 'enum' | 'type' | 'method';
 type ReferenceKind = 'import' | 'call' | 'read' | 'write';
@@ -173,12 +174,12 @@ const toRelativePath = (repoRoot: string, filePath: string): string => {
 };
 
 const getConfiguredRepoId = (): string => {
-  const envRepoId = String(process.env.INDEXING_MCP_REPO_ID || '').trim();
+  const envRepoId = parseStringEnv(process.env.INDEXING_MCP_REPO_ID, '');
   return envRepoId || 'muel-backend';
 };
 
 const getConfiguredRepoRoot = (): string => {
-  const envRoot = String(process.env.INDEXING_MCP_REPO_ROOT || '').trim();
+  const envRoot = parseStringEnv(process.env.INDEXING_MCP_REPO_ROOT, '');
   return path.resolve(envRoot || process.cwd());
 };
 
@@ -187,7 +188,7 @@ const getIndexTtlMs = (): number => parsePositiveIntegerEnv(process.env.INDEXING
 const isIndexingStrictMode = (): boolean => parseBooleanEnv(process.env.INDEXING_MCP_STRICT, false);
 
 const getStalePolicy = (): StalePolicy => {
-  const raw = String(process.env.INDEXING_MCP_STALE_POLICY || '').trim().toLowerCase();
+  const raw = parseStringEnv(process.env.INDEXING_MCP_STALE_POLICY, '').toLowerCase();
   if (raw === 'warn' || raw === 'fail') {
     return raw;
   }

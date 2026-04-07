@@ -1,4 +1,4 @@
-import { parseIntegerEnv } from '../../../utils/env';
+import { parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 
 const toSet = (raw: string): Set<string> => {
   return new Set(
@@ -23,9 +23,9 @@ const normalizeHostRule = (value: string): string => {
   return host;
 };
 
-const RUNNER_MODE_RAW = String(process.env.ACTION_RUNNER_MODE || 'execute').trim().toLowerCase();
+const RUNNER_MODE_RAW = parseStringEnv(process.env.ACTION_RUNNER_MODE, 'execute').toLowerCase();
 const RUNNER_MODE = RUNNER_MODE_RAW === 'dry-run' ? 'dry-run' : 'execute';
-const ALLOWED_ACTIONS_RAW = String(process.env.ACTION_ALLOWED_ACTIONS || '*').trim();
+const ALLOWED_ACTIONS_RAW = parseStringEnv(process.env.ACTION_ALLOWED_ACTIONS, '*');
 const ALLOWED_ACTIONS = toSet(ALLOWED_ACTIONS_RAW);
 const WEB_ALLOWED_HOSTS = new Set(
   String(process.env.ACTION_WEB_FETCH_ALLOWED_HOSTS || '')

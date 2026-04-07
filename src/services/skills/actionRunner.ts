@@ -15,7 +15,7 @@ import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
-import { parseBooleanEnv, parseIntegerEnv, parseCsvList } from '../../utils/env';
+import { parseBooleanEnv, parseCsvList, parseIntegerEnv, parseStringEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
 import logger from '../../logger';
@@ -151,7 +151,7 @@ const ACTION_NEWS_CAPTURE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.
 const ACTION_NEWS_CAPTURE_MIN_ITEMS = Math.max(1, Math.min(5, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2)));
 const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = Math.max(6, Math.min(24 * 30, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72)));
 const ACTION_NEWS_CAPTURE_MAX_ITEMS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5)));
-const ACTION_NEWS_CAPTURE_SOURCE = String(process.env.ACTION_NEWS_CAPTURE_SOURCE || 'google_news_rss').trim() || 'google_news_rss';
+const ACTION_NEWS_CAPTURE_SOURCE = parseStringEnv(process.env.ACTION_NEWS_CAPTURE_SOURCE, 'google_news_rss') || 'google_news_rss';
 const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000));
 const DEFAULT_CACHEABLE_ACTIONS = [
   'code.generate',

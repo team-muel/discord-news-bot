@@ -37,6 +37,14 @@ export const parseBoundedNumberEnv = (
 };
 
 /**
+ * Return a trimmed string env var, or the fallback when the var is absent or blank.
+ */
+export const parseStringEnv = (value: string | undefined, fallback: string): string => {
+  const trimmed = (value ?? '').trim();
+  return trimmed || fallback;
+};
+
+/**
  * Split a comma-separated string into a trimmed, non-empty string array.
  * Handles undefined/empty input gracefully (returns []).
  */

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
-import { parseIntegerEnv } from '../../utils/env';
+import { parseIntegerEnv, parseStringEnv } from '../../utils/env';
 
 export type WorkerApprovalStatus = 'pending' | 'approved' | 'rejected' | 'refactor_requested';
 
@@ -53,11 +53,11 @@ export type WorkerApprovalStoreSnapshot = {
 const MAX_APPROVALS = 200;
 const store = new Map<string, PendingWorkerApproval>();
 const APPROVAL_STORE_PATH = String(process.env.WORKER_APPROVAL_STORE_PATH || path.join(process.cwd(), '.runtime', 'worker-approvals.json')).trim();
-const APPROVAL_STORE_MODE_RAW = String(process.env.WORKER_APPROVAL_STORE_MODE || 'auto').trim().toLowerCase();
+const APPROVAL_STORE_MODE_RAW = parseStringEnv(process.env.WORKER_APPROVAL_STORE_MODE, 'auto').toLowerCase();
 const APPROVAL_STORE_MODE = APPROVAL_STORE_MODE_RAW === 'supabase' || APPROVAL_STORE_MODE_RAW === 'file'
   ? APPROVAL_STORE_MODE_RAW
   : 'auto';
-const APPROVAL_DB_TABLE = String(process.env.WORKER_APPROVAL_DB_TABLE || 'worker_approvals').trim() || 'worker_approvals';
+const APPROVAL_DB_TABLE = parseStringEnv(process.env.WORKER_APPROVAL_DB_TABLE, 'worker_approvals') || 'worker_approvals';
 const WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
 let loaded = false;
 let saveChain: Promise<void> = Promise.resolve();

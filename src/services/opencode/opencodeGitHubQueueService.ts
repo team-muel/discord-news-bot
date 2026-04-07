@@ -1,4 +1,4 @@
-import { parseIntegerEnv } from '../../utils/env';
+import { parseIntegerEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type OpencodeChangeRequestStatus =
@@ -13,8 +13,8 @@ export type OpencodeChangeRequestStatus =
 export type OpencodePublishJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type OpencodeRiskTier = 'low' | 'medium' | 'high' | 'critical';
 
-const CHANGE_REQUEST_TABLE = String(process.env.OPENCODE_CHANGE_REQUEST_TABLE || 'agent_opencode_change_requests').trim();
-const PUBLISH_QUEUE_TABLE = String(process.env.OPENCODE_PUBLISH_QUEUE_TABLE || 'agent_opencode_publish_queue').trim();
+const CHANGE_REQUEST_TABLE = parseStringEnv(process.env.OPENCODE_CHANGE_REQUEST_TABLE, 'agent_opencode_change_requests');
+const PUBLISH_QUEUE_TABLE = parseStringEnv(process.env.OPENCODE_PUBLISH_QUEUE_TABLE, 'agent_opencode_publish_queue');
 const DEFAULT_LIMIT = Math.max(1, Math.min(200, parseIntegerEnv(process.env.OPENCODE_QUEUE_LIST_DEFAULT_LIMIT, 50)));
 
 const CHANGE_REQUEST_STATUSES: OpencodeChangeRequestStatus[] = ['draft', 'review_pending', 'approved', 'rejected', 'queued_for_publish', 'published', 'failed'];

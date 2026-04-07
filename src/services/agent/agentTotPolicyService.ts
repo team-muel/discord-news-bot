@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getErrorMessage } from '../../utils/errorMessage';
 
@@ -33,7 +33,7 @@ const AGENT_TOT_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.en
 const AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
 
 const parseBranchAnglesEnv = (): string[] => {
-  const jsonRaw = String(process.env.TOT_SHADOW_BRANCH_ANGLES_JSON || '').trim();
+  const jsonRaw = parseStringEnv(process.env.TOT_SHADOW_BRANCH_ANGLES_JSON, '');
   if (jsonRaw) {
     try {
       const parsed = JSON.parse(jsonRaw);
@@ -48,7 +48,7 @@ const parseBranchAnglesEnv = (): string[] => {
     }
   }
 
-  const csvRaw = String(process.env.TOT_SHADOW_BRANCH_ANGLES || '').trim();
+  const csvRaw = parseStringEnv(process.env.TOT_SHADOW_BRANCH_ANGLES, '');
   if (!csvRaw) {
     return [];
   }
@@ -61,7 +61,7 @@ const parseBranchAnglesEnv = (): string[] => {
 
 const DEFAULT_POLICY: AgentTotPolicySnapshot = {
   shadowEnabled: parseBooleanEnv(process.env.TOT_SHADOW_ENABLED, false),
-  strategy: String(process.env.TOT_SHADOW_STRATEGY || 'bfs').trim().toLowerCase() === 'dfs' ? 'dfs' : 'bfs',
+  strategy: parseStringEnv(process.env.TOT_SHADOW_STRATEGY, 'bfs').toLowerCase() === 'dfs' ? 'dfs' : 'bfs',
   branchAngles: parseBranchAnglesEnv(),
   adaptiveSamplingEnabled: parseBooleanEnv(process.env.TOT_ADAPTIVE_SAMPLING_ENABLED, true),
   samplingTempMin: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_SAMPLING_TEMP_MIN, 0.12))),

@@ -9,16 +9,16 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_MEMORY_ITEMS } from '../infra/tableRegistry';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, true);
-const EMBEDDING_MODEL = String(process.env.MEMORY_EMBEDDING_MODEL || 'text-embedding-3-small').trim();
+const EMBEDDING_MODEL = parseStringEnv(process.env.MEMORY_EMBEDDING_MODEL, 'text-embedding-3-small');
 const EMBEDDING_DIMENSIONS = Math.max(256, parseIntegerEnv(process.env.MEMORY_EMBEDDING_DIMENSIONS, 1536));
-const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000').trim().replace(/\/+$/, '');
+const LITELLM_BASE_URL = parseStringEnv(process.env.LITELLM_BASE_URL, 'http://127.0.0.1:4000').replace(/\/+$/, '');
 const LITELLM_API_KEY = String(process.env.LITELLM_MASTER_KEY || process.env.LITELLM_API_KEY || '').trim();
 const EMBEDDING_BATCH_SIZE = Math.max(1, Math.min(100, parseIntegerEnv(process.env.MEMORY_EMBEDDING_BATCH_SIZE, 20)));
 const EMBEDDING_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_EMBEDDING_TIMEOUT_MS, 30_000));

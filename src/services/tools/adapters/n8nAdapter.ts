@@ -11,7 +11,7 @@
  * n8n handles external execution (RSS, API calls, SNS posting)
  * while the pipeline engine handles judgment (chaining, branching, replanning).
  */
-import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterResult, ExternalAdapterId } from '../externalAdapterTypes';
 import logger from '../../../logger';
@@ -24,8 +24,8 @@ const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.N8N_DISABLED, false);
 const LEGACY_ENABLED_RAW = process.env.N8N_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
-const N8N_BASE_URL = String(process.env.N8N_BASE_URL || 'http://localhost:5678').trim().replace(/\/+$/, '');
-const N8N_API_KEY = String(process.env.N8N_API_KEY || '').trim();
+const N8N_BASE_URL = parseStringEnv(process.env.N8N_BASE_URL, 'http://localhost:5678').replace(/\/+$/, '');
+const N8N_API_KEY = parseStringEnv(process.env.N8N_API_KEY, '');
 const N8N_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.N8N_TIMEOUT_MS, 30_000));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

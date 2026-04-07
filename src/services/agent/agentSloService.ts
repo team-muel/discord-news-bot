@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
 import { runWithConcurrency } from '../../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from '../goNoGoService';
@@ -60,14 +60,14 @@ type SloAlertEvent = {
   createdAt: string;
 };
 
-const SLO_POLICY_TABLE = String(process.env.AGENT_SLO_POLICY_TABLE || 'agent_slo_policies').trim();
-const SLO_ALERT_TABLE = String(process.env.AGENT_SLO_ALERT_TABLE || 'agent_slo_alert_events').trim();
+const SLO_POLICY_TABLE = parseStringEnv(process.env.AGENT_SLO_POLICY_TABLE, 'agent_slo_policies');
+const SLO_ALERT_TABLE = parseStringEnv(process.env.AGENT_SLO_ALERT_TABLE, 'agent_slo_alert_events');
 
 const SLO_LOOP_ENABLED = parseBooleanEnv(process.env.AGENT_SLO_ALERT_LOOP_ENABLED, true);
 const SLO_LOOP_INTERVAL_MIN = Math.max(1, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_INTERVAL_MIN, 15));
 export type SloLoopOwner = 'app' | 'db';
 const SLO_LOOP_OWNER: SloLoopOwner =
-  String(process.env.AGENT_SLO_ALERT_LOOP_OWNER || 'app').trim().toLowerCase() === 'db' ? 'db' : 'app';
+  parseStringEnv(process.env.AGENT_SLO_ALERT_LOOP_OWNER, 'app').toLowerCase() === 'db' ? 'db' : 'app';
 const SLO_LOOP_MAX_GUILDS = Math.max(1, Math.min(500, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_MAX_GUILDS, 100)));
 const SLO_LOOP_CONCURRENCY = Math.max(1, Math.min(20, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_CONCURRENCY, 4)));
 

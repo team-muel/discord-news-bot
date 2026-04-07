@@ -9,16 +9,16 @@ import type {
   ObsidianSearchResult,
   ObsidianVaultAdapter,
 } from '../types';
-import { parseBoundedNumberEnv, parseBooleanEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseStringEnv } from '../../../utils/env';
 
 const execFileAsync = promisify(execFile);
 
 const getHeadlessCommand = (): string => {
-  return String(process.env.OBSIDIAN_HEADLESS_COMMAND || 'ob').trim();
+  return parseStringEnv(process.env.OBSIDIAN_HEADLESS_COMMAND, 'ob');
 };
 
 const getVaultName = (): string => {
-  return String(process.env.OBSIDIAN_VAULT_NAME || 'docs').trim();
+  return parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 };
 
 const isHeadlessEnabled = (): boolean => parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);

@@ -1,15 +1,15 @@
 import path from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 import type { ObsidianLoreQuery, ObsidianVaultAdapter } from '../types';
 
 const execFileAsync = promisify(execFile);
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
 const OBSIDIAN_CLI_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_CLI_ENABLED, true);
-const OBSIDIAN_CLI_COMMAND = String(process.env.OBSIDIAN_CLI_COMMAND || '').trim();
-const OBSIDIAN_CLI_ARGS_JSON = String(process.env.OBSIDIAN_CLI_ARGS_JSON || '').trim();
+const OBSIDIAN_CLI_COMMAND = parseStringEnv(process.env.OBSIDIAN_CLI_COMMAND, '');
+const OBSIDIAN_CLI_ARGS_JSON = parseStringEnv(process.env.OBSIDIAN_CLI_ARGS_JSON, '');
 const OBSIDIAN_CLI_TIMEOUT_MS = Math.max(500, parseIntegerEnv(process.env.OBSIDIAN_CLI_TIMEOUT_MS, 4_000));
 const OBSIDIAN_CLI_MAX_HINTS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.OBSIDIAN_CLI_MAX_HINTS, 8)));
 

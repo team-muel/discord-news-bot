@@ -1,4 +1,4 @@
-import { parseBooleanEnv } from '../../utils/env';
+import { parseBooleanEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type AgentUserConsentSnapshot = {
@@ -13,7 +13,7 @@ export type AgentUserConsentSnapshot = {
   source: 'default' | 'stored';
 };
 
-const CONSENT_TABLE = String(process.env.AGENT_USER_CONSENT_TABLE || 'agent_user_privacy_preferences').trim();
+const CONSENT_TABLE = parseStringEnv(process.env.AGENT_USER_CONSENT_TABLE, 'agent_user_privacy_preferences');
 const REQUIRE_EXPLICIT_CONSENT = parseBooleanEnv(process.env.AGENT_REQUIRE_EXPLICIT_CONSENT, false);
 const DEFAULT_MEMORY_ENABLED = parseBooleanEnv(process.env.AGENT_CONSENT_DEFAULT_MEMORY_ENABLED, !REQUIRE_EXPLICIT_CONSENT);
 const DEFAULT_SOCIAL_GRAPH_ENABLED = parseBooleanEnv(process.env.AGENT_CONSENT_DEFAULT_SOCIAL_GRAPH_ENABLED, !REQUIRE_EXPLICIT_CONSENT);

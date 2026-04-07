@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
 import { logStructuredError } from '../structuredErrorLogService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -33,9 +33,9 @@ type TelemetryQueueStats = {
 const QUEUE_MAX_SIZE = Math.max(50, parseIntegerEnv(process.env.AGENT_TELEMETRY_QUEUE_MAX_SIZE, 1000));
 const QUEUE_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.AGENT_TELEMETRY_QUEUE_CONCURRENCY, 2)));
 const ERROR_LOG_THROTTLE_MS = Math.max(10_000, parseIntegerEnv(process.env.AGENT_TELEMETRY_QUEUE_ERROR_LOG_THROTTLE_MS, 60_000));
-const SATURATION_MODE = String(process.env.AGENT_TELEMETRY_QUEUE_SATURATION_MODE || 'drop').trim().toLowerCase();
+const SATURATION_MODE = parseStringEnv(process.env.AGENT_TELEMETRY_QUEUE_SATURATION_MODE, 'drop').toLowerCase();
 const DURABLE_QUEUE_ENABLED = parseBooleanEnv(process.env.AGENT_TELEMETRY_DURABLE_QUEUE_ENABLED, true);
-const DURABLE_TABLE = String(process.env.AGENT_TELEMETRY_DURABLE_TABLE || 'agent_telemetry_queue_tasks').trim();
+const DURABLE_TABLE = parseStringEnv(process.env.AGENT_TELEMETRY_DURABLE_TABLE, 'agent_telemetry_queue_tasks');
 const DURABLE_MAX_ATTEMPTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_MAX_ATTEMPTS, 5)));
 const DURABLE_RETRY_BASE_MS = Math.max(1000, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_RETRY_BASE_MS, 5000));
 const DURABLE_RETRY_MAX_MS = Math.max(DURABLE_RETRY_BASE_MS, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_RETRY_MAX_MS, 300_000));

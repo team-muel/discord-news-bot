@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseStringEnv } from '../../../utils/env';
 import {
   OPENJARVIS_ENABLED as CONFIG_OPENJARVIS_ENABLED,
   OPENJARVIS_DISABLED as CONFIG_OPENJARVIS_DISABLED,
@@ -58,7 +58,7 @@ const ENABLED = CONFIG_OPENJARVIS_ENABLED;
 const EXPLICITLY_DISABLED = CONFIG_OPENJARVIS_DISABLED;
 const SERVE_URL = CONFIG_OPENJARVIS_SERVE_URL;
 const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
-const SERVE_API_KEY = String(process.env.OPENJARVIS_API_KEY || '').trim();
+const SERVE_API_KEY = parseStringEnv(process.env.OPENJARVIS_API_KEY, '');
 
 /**
  * Lite mode: when jarvis CLI is not installed but LiteLLM proxy is available,

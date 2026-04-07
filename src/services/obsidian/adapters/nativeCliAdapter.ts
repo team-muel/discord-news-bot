@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 import type {
   ObsidianFileInfo,
   ObsidianLoreQuery,
@@ -23,10 +23,10 @@ const execFileAsync = promisify(execFile);
 const NATIVE_CLI_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_NATIVE_CLI_ENABLED, false);
 
 const getNativeCliPath = (): string =>
-  String(process.env.OBSIDIAN_NATIVE_CLI_PATH || '').trim();
+  parseStringEnv(process.env.OBSIDIAN_NATIVE_CLI_PATH, '');
 
 const getVaultName = (): string =>
-  String(process.env.OBSIDIAN_VAULT_NAME || 'docs').trim();
+  parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 
 const getLoreMaxHints = (): number => {
   const raw = parseIntegerEnv(process.env.OBSIDIAN_NATIVE_CLI_LORE_MAX_HINTS, 8);
@@ -56,7 +56,7 @@ const sanitizeArg = (value: unknown, maxLen = 300): string =>
 
 // ── Core runner ────────────────────────────────────
 const getXdgRuntimeDir = (): string =>
-  String(process.env.XDG_RUNTIME_DIR || '').trim();
+  parseStringEnv(process.env.XDG_RUNTIME_DIR, '');
 
 const runNativeCli = async (
   args: string[],
