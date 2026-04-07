@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseNumberEnv } from './utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseNumberEnv } from './utils/env';
 
 const parsePositiveNumberEnv = (raw: string | undefined, fallback: number): number => {
   const numeric = Number(raw);
@@ -33,7 +33,7 @@ export const BOT_MANUAL_RECONNECT_COOLDOWN_MS = parseIntegerEnv(
   process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS || process.env.DISCORD_MANUAL_RECONNECT_COOLDOWN_MS,
   30_000,
 );
-export const DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS = Math.max(0, parseIntegerEnv(process.env.DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS, 5 * 60_000));
+export const DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS, 5 * 60_000, 0);
 export const DYNAMIC_WORKER_RESTORE_ON_BOOT = parseBooleanEnv(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT, true);
 const JWT_SECRET_FALLBACK = 'dev-jwt-secret-change-in-production';
 const JWT_SECRET_FROM_ENV = process.env.JWT_SECRET || process.env.SESSION_SECRET || '';
@@ -127,7 +127,7 @@ export const SPRINT_AUTOPLAN_LENSES = process.env.SPRINT_AUTOPLAN_LENSES || 'ceo
 // ──── Sprint Learning Journal ────
 export const SPRINT_LEARNING_JOURNAL_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_ENABLED, true);
 export const SPRINT_LEARNING_JOURNAL_GUILD_ID = process.env.SPRINT_LEARNING_JOURNAL_GUILD_ID || 'system';
-export const SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW = Math.max(3, parseIntegerEnv(process.env.SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW, 10));
+export const SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW = parseMinIntEnv(process.env.SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW, 10, 3);
 export const SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED, true);
 export const SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED, false);
 // Accept 0-1 (e.g. 0.85) or 1-100 (e.g. 85) — normalize to 0-1 range, clamp to [0.5, 1]
@@ -152,13 +152,13 @@ export const SELF_IMPROVEMENT_CONVERGENCE_ENABLED = parseBooleanEnv(process.env.
 
 // ──── Observer Layer (Phase F: Autonomous Agent Evolution) ────
 export const OBSERVER_ENABLED = parseBooleanEnv(process.env.OBSERVER_ENABLED, false);
-export const OBSERVER_SCAN_INTERVAL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSERVER_SCAN_INTERVAL_MS, 5 * 60_000));
+export const OBSERVER_SCAN_INTERVAL_MS = parseMinIntEnv(process.env.OBSERVER_SCAN_INTERVAL_MS, 5 * 60_000, 60_000);
 export const OBSERVER_ERROR_PATTERN_ENABLED = parseBooleanEnv(process.env.OBSERVER_ERROR_PATTERN_ENABLED, true);
-export const OBSERVER_ERROR_PATTERN_MIN_FREQUENCY = Math.max(1, parseIntegerEnv(process.env.OBSERVER_ERROR_PATTERN_MIN_FREQUENCY, 3));
+export const OBSERVER_ERROR_PATTERN_MIN_FREQUENCY = parseMinIntEnv(process.env.OBSERVER_ERROR_PATTERN_MIN_FREQUENCY, 3, 1);
 export const OBSERVER_MEMORY_GAP_ENABLED = parseBooleanEnv(process.env.OBSERVER_MEMORY_GAP_ENABLED, true);
-export const OBSERVER_MEMORY_GAP_STALE_HOURS = Math.max(1, parseIntegerEnv(process.env.OBSERVER_MEMORY_GAP_STALE_HOURS, 48));
+export const OBSERVER_MEMORY_GAP_STALE_HOURS = parseMinIntEnv(process.env.OBSERVER_MEMORY_GAP_STALE_HOURS, 48, 1);
 export const OBSERVER_PERF_DRIFT_ENABLED = parseBooleanEnv(process.env.OBSERVER_PERF_DRIFT_ENABLED, true);
-export const OBSERVER_PERF_DRIFT_THRESHOLD_PCT = Math.max(1, parseNumberEnv(process.env.OBSERVER_PERF_DRIFT_THRESHOLD_PCT, 20));
+export const OBSERVER_PERF_DRIFT_THRESHOLD_PCT = parseMinNumberEnv(process.env.OBSERVER_PERF_DRIFT_THRESHOLD_PCT, 20, 1);
 export const OBSERVER_CODE_HEALTH_ENABLED = parseBooleanEnv(process.env.OBSERVER_CODE_HEALTH_ENABLED, false);
 export const OBSERVER_CONVERGENCE_DIGEST_ENABLED = parseBooleanEnv(process.env.OBSERVER_CONVERGENCE_DIGEST_ENABLED, true);
 export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, false);
@@ -200,19 +200,19 @@ export const MEMORY_EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBED
 
 export const memoryConfig = {
   consolidationEnabled: parseBooleanEnv(process.env.MEMORY_CONSOLIDATION_ENABLED, true),
-  consolidationIntervalMs: Math.max(60_000, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_INTERVAL_MS, 6 * 60 * 60_000)),
-  consolidationMinGroupSize: Math.max(2, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_MIN_GROUP_SIZE, 3)),
-  consolidationMaxBatch: Math.max(1, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_MAX_BATCH, 5)),
-  consolidationRawAgeHours: Math.max(1, parseIntegerEnv(process.env.MEMORY_CONSOLIDATION_RAW_AGE_HOURS, 6)),
+  consolidationIntervalMs: parseMinIntEnv(process.env.MEMORY_CONSOLIDATION_INTERVAL_MS, 6 * 60 * 60_000, 60_000),
+  consolidationMinGroupSize: parseMinIntEnv(process.env.MEMORY_CONSOLIDATION_MIN_GROUP_SIZE, 3, 2),
+  consolidationMaxBatch: parseMinIntEnv(process.env.MEMORY_CONSOLIDATION_MAX_BATCH, 5, 1),
+  consolidationRawAgeHours: parseMinIntEnv(process.env.MEMORY_CONSOLIDATION_RAW_AGE_HOURS, 6, 1),
   evolutionEnabled: parseBooleanEnv(process.env.MEMORY_EVOLUTION_ENABLED, true),
-  evolutionMaxLinks: Math.max(1, Math.min(10, parseIntegerEnv(process.env.MEMORY_EVOLUTION_MAX_LINKS, 5))),
+  evolutionMaxLinks: parseBoundedNumberEnv(process.env.MEMORY_EVOLUTION_MAX_LINKS, 5, 1, 10),
   evolutionMinSimilarity: Math.max(0, Math.min(1, Number(process.env.MEMORY_EVOLUTION_MIN_SIMILARITY || 0.25))),
   evolutionConfidenceBoost: Math.max(0, Math.min(0.1, Number(process.env.MEMORY_EVOLUTION_CONFIDENCE_BOOST || 0.03))),
   evolutionLlmClassify: parseBooleanEnv(process.env.MEMORY_EVOLUTION_LLM_CLASSIFY, false),
   embeddingEnabled: MEMORY_EMBEDDING_ENABLED,
   userEmbeddingEnabled: parseBooleanEnv(process.env.USER_EMBEDDING_ENABLED, true),
-  userEmbeddingRefreshIntervalMs: Math.max(60_000, parseIntegerEnv(process.env.USER_EMBEDDING_REFRESH_INTERVAL_MS, 24 * 60 * 60_000)),
-  userEmbeddingMinItems: Math.max(1, parseIntegerEnv(process.env.USER_EMBEDDING_MIN_ITEMS, 3)),
+  userEmbeddingRefreshIntervalMs: parseMinIntEnv(process.env.USER_EMBEDDING_REFRESH_INTERVAL_MS, 24 * 60 * 60_000, 60_000),
+  userEmbeddingMinItems: parseMinIntEnv(process.env.USER_EMBEDDING_MIN_ITEMS, 3, 1),
 } as const;
 
 // ──── LLM Provider Configuration ─────────────────────────────────────────────
@@ -248,18 +248,18 @@ export {
 
 // ── Vibe Auto Worker (bot.ts worker config) ──
 export const VIBE_AUTO_WORKER_PROMOTION_ENABLED = parseBooleanEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_ENABLED, true);
-export const VIBE_AUTO_WORKER_PROMOTION_MIN_FREQUENCY = Math.max(1, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_FREQUENCY, 5));
-export const VIBE_AUTO_WORKER_PROMOTION_WINDOW_DAYS = Math.max(1, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_WINDOW_DAYS, 7));
-export const VIBE_AUTO_WORKER_PROMOTION_MIN_DISTINCT_REQUESTERS = Math.max(1, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_DISTINCT_REQUESTERS, 3));
-export const VIBE_AUTO_WORKER_PROMOTION_MIN_OUTCOME_SCORE = Math.min(1, Math.max(0, parseNumberEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_OUTCOME_SCORE, 0.65)));
-export const VIBE_AUTO_WORKER_PROMOTION_MAX_POLICY_BLOCK_RATE = Math.min(1, Math.max(0, parseNumberEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MAX_POLICY_BLOCK_RATE, 0.10)));
-export const VIBE_AUTO_WORKER_PROPOSAL_DAILY_CAP_PER_GUILD = Math.max(1, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_DAILY_CAP_PER_GUILD, 10));
-export const VIBE_AUTO_WORKER_PROPOSAL_DUPLICATE_WINDOW_MS = Math.max(60_000, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_DUPLICATE_WINDOW_MS, 24 * 60 * 60_000));
-export const VIBE_AUTO_WORKER_PROPOSAL_MIN_SUCCESS_RATE = Math.min(1, Math.max(0, parseNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_MIN_SUCCESS_RATE, 0.45)));
-export const VIBE_AUTO_WORKER_PROPOSAL_MIN_SAMPLES = Math.max(3, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_MIN_SAMPLES, 6));
-export const VIBE_MESSAGE_DEDUP_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.VIBE_MESSAGE_DEDUP_TTL_MS, 5 * 60_000));
+export const VIBE_AUTO_WORKER_PROMOTION_MIN_FREQUENCY = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_FREQUENCY, 5, 1);
+export const VIBE_AUTO_WORKER_PROMOTION_WINDOW_DAYS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_WINDOW_DAYS, 7, 1);
+export const VIBE_AUTO_WORKER_PROMOTION_MIN_DISTINCT_REQUESTERS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_DISTINCT_REQUESTERS, 3, 1);
+export const VIBE_AUTO_WORKER_PROMOTION_MIN_OUTCOME_SCORE = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MIN_OUTCOME_SCORE, 0.65, 0, 1);
+export const VIBE_AUTO_WORKER_PROMOTION_MAX_POLICY_BLOCK_RATE = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROMOTION_MAX_POLICY_BLOCK_RATE, 0.10, 0, 1);
+export const VIBE_AUTO_WORKER_PROPOSAL_DAILY_CAP_PER_GUILD = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_DAILY_CAP_PER_GUILD, 10, 1);
+export const VIBE_AUTO_WORKER_PROPOSAL_DUPLICATE_WINDOW_MS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_DUPLICATE_WINDOW_MS, 24 * 60 * 60_000, 60_000);
+export const VIBE_AUTO_WORKER_PROPOSAL_MIN_SUCCESS_RATE = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_MIN_SUCCESS_RATE, 0.45, 0, 1);
+export const VIBE_AUTO_WORKER_PROPOSAL_MIN_SAMPLES = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_MIN_SAMPLES, 6, 3);
+export const VIBE_MESSAGE_DEDUP_TTL_MS = parseMinIntEnv(process.env.VIBE_MESSAGE_DEDUP_TTL_MS, 5 * 60_000, 30_000);
 export const VIBE_AUTO_WORKER_PROPOSAL_ENABLED = parseBooleanEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_ENABLED, false);
-export const VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS = Math.max(60_000, parseIntegerEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS, 15 * 60_000));
+export const VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS, 15 * 60_000, 60_000);
 
 // ── Action Governance Policy ──
 export const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
@@ -285,7 +285,7 @@ export const FINOPS_DEGRADE_THRESHOLD_PCT = Math.max(0.1, Math.min(2, Number(pro
 export const FINOPS_HARD_BLOCK_THRESHOLD_PCT = Math.max(FINOPS_DEGRADE_THRESHOLD_PCT, Math.min(3, Number(process.env.FINOPS_HARD_BLOCK_THRESHOLD_PCT || 1.0)));
 export const FINOPS_DEGRADE_ALLOWED_ACTIONS_RAW = (process.env.FINOPS_DEGRADE_ALLOWED_ACTIONS || '').trim();
 export const FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW = (process.env.FINOPS_HARD_BLOCK_EXEMPT_ACTIONS || '').trim();
-export const FINOPS_CACHE_TTL_MS = Math.max(10_000, parseIntegerEnv(process.env.FINOPS_CACHE_TTL_MS, 60_000));
+export const FINOPS_CACHE_TTL_MS = parseMinIntEnv(process.env.FINOPS_CACHE_TTL_MS, 60_000, 10_000);
 
 // ── MCP Worker ──
 export const MCP_WORKER_AUTH_TOKEN = (
@@ -296,19 +296,19 @@ export const MCP_WORKER_AUTH_TOKEN = (
 ).trim();
 export const MCP_OPENCODE_WORKER_URL = (process.env.MCP_OPENCODE_WORKER_URL || '').trim();
 export const OPENJARVIS_REQUIRE_OPENCODE_WORKER = parseBooleanEnv(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
-export const UNATTENDED_WORKER_HEALTH_TIMEOUT_MS = Math.max(1000, Math.min(30_000, parseIntegerEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000)));
+export const UNATTENDED_WORKER_HEALTH_TIMEOUT_MS = parseBoundedNumberEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000, 1000, 30_000);
 export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);
 export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN, false);
 
 // ── OpenCode SDK (headless server) ──
 export const OPENCODE_SDK_ENABLED = parseBooleanEnv(process.env.OPENCODE_SDK_ENABLED, false);
 export const OPENCODE_SDK_BASE_URL = (process.env.OPENCODE_SDK_BASE_URL || '').trim().replace(/\/+$/, '');
-export const OPENCODE_SDK_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000));
+export const OPENCODE_SDK_TIMEOUT_MS = parseMinIntEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000, 5_000);
 export const OPENCODE_SDK_AUTH_TOKEN = (process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
 
 // ── API Idempotency ──
 export const API_IDEMPOTENCY_TABLE = (process.env.API_IDEMPOTENCY_TABLE || 'api_idempotency_keys').trim();
-export const API_IDEMPOTENCY_TTL_SEC = Math.max(60, parseIntegerEnv(process.env.API_IDEMPOTENCY_TTL_SEC, 86_400));
+export const API_IDEMPOTENCY_TTL_SEC = parseMinIntEnv(process.env.API_IDEMPOTENCY_TTL_SEC, 86_400, 60);
 export const API_IDEMPOTENCY_REQUIRE_HEADER = parseBooleanEnv(process.env.API_IDEMPOTENCY_REQUIRE_HEADER, false);
 
 // ── Discord Runtime Policy ──
@@ -359,28 +359,28 @@ export const DISCORD_ENABLE_FEEDBACK_PROMPT = parseBooleanEnv(process.env.DISCOR
 export const DISCORD_FEEDBACK_PROMPT_LINE = (process.env.DISCORD_FEEDBACK_PROMPT_LINE || '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.').trim();
 
 // ── Agent Reasoning Strategies ──
-export const AGENT_SESSION_TIMEOUT_MS = Math.max(20_000, parseIntegerEnv(process.env.AGENT_SESSION_TIMEOUT_MS, 120_000));
-export const AGENT_STEP_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_STEP_TIMEOUT_MS, 45_000));
+export const AGENT_SESSION_TIMEOUT_MS = parseMinIntEnv(process.env.AGENT_SESSION_TIMEOUT_MS, 120_000, 20_000);
+export const AGENT_STEP_TIMEOUT_MS = parseMinIntEnv(process.env.AGENT_STEP_TIMEOUT_MS, 45_000, 5_000);
 export const FINAL_SELF_CONSISTENCY_ENABLED = parseBooleanEnv(process.env.FINAL_SELF_CONSISTENCY_ENABLED, true);
-export const FINAL_SELF_CONSISTENCY_SAMPLES = Math.max(1, Math.min(5, parseIntegerEnv(process.env.FINAL_SELF_CONSISTENCY_SAMPLES, 3)));
+export const FINAL_SELF_CONSISTENCY_SAMPLES = parseBoundedNumberEnv(process.env.FINAL_SELF_CONSISTENCY_SAMPLES, 3, 1, 5);
 export const LEAST_TO_MOST_ENABLED = parseBooleanEnv(process.env.LEAST_TO_MOST_ENABLED, true);
-export const LEAST_TO_MOST_MAX_SUBGOALS = Math.max(2, Math.min(8, parseIntegerEnv(process.env.LEAST_TO_MOST_MAX_SUBGOALS, 4)));
-export const LEAST_TO_MOST_MIN_GOAL_LENGTH = Math.max(20, parseIntegerEnv(process.env.LEAST_TO_MOST_MIN_GOAL_LENGTH, 40));
+export const LEAST_TO_MOST_MAX_SUBGOALS = parseBoundedNumberEnv(process.env.LEAST_TO_MOST_MAX_SUBGOALS, 4, 2, 8);
+export const LEAST_TO_MOST_MIN_GOAL_LENGTH = parseMinIntEnv(process.env.LEAST_TO_MOST_MIN_GOAL_LENGTH, 40, 20);
 export const SELF_REFINE_LITE_ENABLED = parseBooleanEnv(process.env.SELF_REFINE_LITE_ENABLED, true);
-export const SELF_REFINE_LITE_MAX_PASSES = Math.max(1, Math.min(2, parseIntegerEnv(process.env.SELF_REFINE_LITE_MAX_PASSES, 1)));
+export const SELF_REFINE_LITE_MAX_PASSES = parseBoundedNumberEnv(process.env.SELF_REFINE_LITE_MAX_PASSES, 1, 1, 2);
 export const SELF_REFINE_LITE_REQUIRE_ACTIONABLE = parseBooleanEnv(process.env.SELF_REFINE_LITE_REQUIRE_ACTIONABLE, true);
-export const SELF_REFINE_LITE_MIN_SCORE_GAIN = Math.max(0, Math.min(10, parseIntegerEnv(process.env.SELF_REFINE_LITE_MIN_SCORE_GAIN, 1)));
-export const ORM_RULE_PASS_THRESHOLD = Math.max(50, Math.min(95, parseIntegerEnv(process.env.ORM_RULE_PASS_THRESHOLD, 75)));
-export const ORM_RULE_REVIEW_THRESHOLD = Math.max(35, Math.min(90, parseIntegerEnv(process.env.ORM_RULE_REVIEW_THRESHOLD, 55)));
+export const SELF_REFINE_LITE_MIN_SCORE_GAIN = parseBoundedNumberEnv(process.env.SELF_REFINE_LITE_MIN_SCORE_GAIN, 1, 0, 10);
+export const ORM_RULE_PASS_THRESHOLD = parseBoundedNumberEnv(process.env.ORM_RULE_PASS_THRESHOLD, 75, 50, 95);
+export const ORM_RULE_REVIEW_THRESHOLD = parseBoundedNumberEnv(process.env.ORM_RULE_REVIEW_THRESHOLD, 55, 35, 90);
 export const TOT_SELF_EVAL_ENABLED = parseBooleanEnv(process.env.TOT_SELF_EVAL_ENABLED, true);
-export const TOT_SELF_EVAL_TEMPERATURE = Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_SELF_EVAL_TEMPERATURE, 0.1)));
+export const TOT_SELF_EVAL_TEMPERATURE = parseBoundedNumberEnv(process.env.TOT_SELF_EVAL_TEMPERATURE, 0.1, 0, 1);
 export const TOT_PROVIDER_LOGPROB_ENABLED = parseBooleanEnv(process.env.TOT_PROVIDER_LOGPROB_ENABLED, true);
 export const AGENT_DYNAMIC_REASONING_BUDGET_ENABLED = parseBooleanEnv(process.env.AGENT_DYNAMIC_REASONING_BUDGET_ENABLED, true);
-export const AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH = Math.max(30, parseIntegerEnv(process.env.AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH, 120));
+export const AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH = parseMinIntEnv(process.env.AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH, 120, 30);
 export const AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH = Math.max(AGENT_DYNAMIC_REASONING_LOW_GOAL_LENGTH + 20, parseIntegerEnv(process.env.AGENT_DYNAMIC_REASONING_HIGH_GOAL_LENGTH, 320));
 
 // ── Go/No-Go Gate Defaults ──
-const _clampPct = (raw: string | undefined, fallback: number) => Math.max(0, Math.min(1, parseNumberEnv(raw, fallback)));
+const _clampPct = (raw: string | undefined, fallback: number) => parseBoundedNumberEnv(raw, fallback, 0, 1);
 export const GO_NO_GO_MIN_CITATION_RATE = _clampPct(process.env.GO_NO_GO_MIN_CITATION_RATE, 0.95);
 export const GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE = _clampPct(process.env.GO_NO_GO_MAX_UNRESOLVED_CONFLICT_RATE, 0.05);
 export const GO_NO_GO_MAX_JOB_FAILURE_RATE = _clampPct(process.env.GO_NO_GO_MAX_JOB_FAILURE_RATE, 0.10);
@@ -393,32 +393,32 @@ export const GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE = _clampPct(process.env.GO_N
 // ── Entity Nervous System ──
 export const ENTITY_NERVOUS_SYSTEM_ENABLED = parseBooleanEnv(process.env.ENTITY_NERVOUS_SYSTEM_ENABLED, true);
 export const ENTITY_MEMORY_PRECIPITATION_ENABLED = parseBooleanEnv(process.env.ENTITY_MEMORY_PRECIPITATION_ENABLED, true);
-export const ENTITY_MEMORY_PRECIPITATION_MIN_STEPS = Math.max(1, parseIntegerEnv(process.env.ENTITY_MEMORY_PRECIPITATION_MIN_STEPS, 2));
+export const ENTITY_MEMORY_PRECIPITATION_MIN_STEPS = parseMinIntEnv(process.env.ENTITY_MEMORY_PRECIPITATION_MIN_STEPS, 2, 1);
 export const ENTITY_REWARD_BEHAVIOR_ENABLED = parseBooleanEnv(process.env.ENTITY_REWARD_BEHAVIOR_ENABLED, true);
 export const ENTITY_SELF_NOTES_ENABLED = parseBooleanEnv(process.env.ENTITY_SELF_NOTES_ENABLED, true);
-export const ENTITY_SELF_NOTES_MAX_LENGTH = Math.max(200, parseIntegerEnv(process.env.ENTITY_SELF_NOTES_MAX_LENGTH, 2000));
-export const ENTITY_SELF_NOTES_MAX_ITEMS = Math.max(3, parseIntegerEnv(process.env.ENTITY_SELF_NOTES_MAX_ITEMS, 10));
+export const ENTITY_SELF_NOTES_MAX_LENGTH = parseMinIntEnv(process.env.ENTITY_SELF_NOTES_MAX_LENGTH, 2000, 200);
+export const ENTITY_SELF_NOTES_MAX_ITEMS = parseMinIntEnv(process.env.ENTITY_SELF_NOTES_MAX_ITEMS, 10, 3);
 
 // ── Multi-Agent Service ──
-export const AGENT_MAX_SESSION_HISTORY = Math.max(50, parseIntegerEnv(process.env.AGENT_MAX_SESSION_HISTORY, 300));
-export const AGENT_MEMORY_HINT_TIMEOUT_MS = Math.max(500, parseIntegerEnv(process.env.AGENT_MEMORY_HINT_TIMEOUT_MS, 5_000));
-export const AGENT_QUEUE_POLL_MS = Math.max(100, parseIntegerEnv(process.env.AGENT_QUEUE_POLL_MS, 250));
-export const AGENT_MAX_QUEUE_SIZE = Math.max(10, parseIntegerEnv(process.env.AGENT_MAX_QUEUE_SIZE, 300));
-export const AGENT_SESSION_MAX_ATTEMPTS = Math.max(1, parseIntegerEnv(process.env.AGENT_SESSION_MAX_ATTEMPTS, 1));
-export const AGENT_DEADLETTER_MAX = Math.max(10, parseIntegerEnv(process.env.AGENT_DEADLETTER_MAX, 300));
+export const AGENT_MAX_SESSION_HISTORY = parseMinIntEnv(process.env.AGENT_MAX_SESSION_HISTORY, 300, 50);
+export const AGENT_MEMORY_HINT_TIMEOUT_MS = parseMinIntEnv(process.env.AGENT_MEMORY_HINT_TIMEOUT_MS, 5_000, 500);
+export const AGENT_QUEUE_POLL_MS = parseMinIntEnv(process.env.AGENT_QUEUE_POLL_MS, 250, 100);
+export const AGENT_MAX_QUEUE_SIZE = parseMinIntEnv(process.env.AGENT_MAX_QUEUE_SIZE, 300, 10);
+export const AGENT_SESSION_MAX_ATTEMPTS = parseMinIntEnv(process.env.AGENT_SESSION_MAX_ATTEMPTS, 1, 1);
+export const AGENT_DEADLETTER_MAX = parseMinIntEnv(process.env.AGENT_DEADLETTER_MAX, 300, 10);
 
 // ── Bot Status / Admin Rate Limits ──
-export const BOT_STATUS_CACHE_TTL_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_STATUS_CACHE_TTL_MS, 5_000));
-export const BOT_STATUS_RATE_WINDOW_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_STATUS_RATE_WINDOW_MS, 60_000));
-export const BOT_STATUS_RATE_MAX = Math.max(1, parseIntegerEnv(process.env.BOT_STATUS_RATE_MAX, 60));
-export const BOT_ADMIN_ACTION_RATE_WINDOW_MS = Math.max(1_000, parseIntegerEnv(process.env.BOT_ADMIN_ACTION_RATE_WINDOW_MS, 60_000));
-export const BOT_ADMIN_ACTION_RATE_MAX = Math.max(1, parseIntegerEnv(process.env.BOT_ADMIN_ACTION_RATE_MAX, 20));
+export const BOT_STATUS_CACHE_TTL_MS = parseMinIntEnv(process.env.BOT_STATUS_CACHE_TTL_MS, 5_000, 1_000);
+export const BOT_STATUS_RATE_WINDOW_MS = parseMinIntEnv(process.env.BOT_STATUS_RATE_WINDOW_MS, 60_000, 1_000);
+export const BOT_STATUS_RATE_MAX = parseMinIntEnv(process.env.BOT_STATUS_RATE_MAX, 60, 1);
+export const BOT_ADMIN_ACTION_RATE_WINDOW_MS = parseMinIntEnv(process.env.BOT_ADMIN_ACTION_RATE_WINDOW_MS, 60_000, 1_000);
+export const BOT_ADMIN_ACTION_RATE_MAX = parseMinIntEnv(process.env.BOT_ADMIN_ACTION_RATE_MAX, 20, 1);
 
 // ── MCP Skill Router ──
 export const MCP_SKILL_ROUTER_ENABLED = parseBooleanEnv(process.env.MCP_SKILL_ROUTER_ENABLED, true);
-export const MCP_HEALTH_SWEEP_INTERVAL_MS = Math.max(15_000, parseIntegerEnv(process.env.MCP_HEALTH_SWEEP_INTERVAL_MS, 30_000));
-export const MCP_PROBE_TIMEOUT_MS = Math.max(2_000, parseIntegerEnv(process.env.MCP_PROBE_TIMEOUT_MS, 5_000));
-export const MCP_HEALTH_TTL_MS = Math.max(10_000, parseIntegerEnv(process.env.MCP_HEALTH_TTL_MS, 60_000));
+export const MCP_HEALTH_SWEEP_INTERVAL_MS = parseMinIntEnv(process.env.MCP_HEALTH_SWEEP_INTERVAL_MS, 30_000, 15_000);
+export const MCP_PROBE_TIMEOUT_MS = parseMinIntEnv(process.env.MCP_PROBE_TIMEOUT_MS, 5_000, 2_000);
+export const MCP_HEALTH_TTL_MS = parseMinIntEnv(process.env.MCP_HEALTH_TTL_MS, 60_000, 10_000);
 
 // ── MCP Upstream Proxy ──
 /** JSON array of UpstreamMcpServerConfig objects — parsed by proxyRegistry.ts */
@@ -432,18 +432,18 @@ export const MCP_UPSTREAM_TOOL_CACHE_TTL_MS = Math.max(
 // ── Semantic Answer Cache ──
 export const SEMANTIC_ANSWER_CACHE_ENABLED = parseBooleanEnv(process.env.SEMANTIC_ANSWER_CACHE_ENABLED, true);
 export const SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.SEMANTIC_ANSWER_CACHE_MIN_SIMILARITY, 0.82, 0, 1);
-export const SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS = Math.max(1, parseIntegerEnv(process.env.SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS, 14));
-export const SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT = Math.max(10, Math.min(500, parseIntegerEnv(process.env.SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT, 120)));
+export const SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS = parseMinIntEnv(process.env.SEMANTIC_ANSWER_CACHE_LOOKBACK_DAYS, 14, 1);
+export const SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT = parseBoundedNumberEnv(process.env.SEMANTIC_ANSWER_CACHE_CANDIDATE_LIMIT, 120, 10, 500);
 
 // ── Session Shadow (LangGraph) ──
 export const LANGGRAPH_EXECUTOR_SHADOW_ENABLED = parseBooleanEnv(process.env.LANGGRAPH_EXECUTOR_SHADOW_ENABLED, false);
-export const LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE = Math.max(0, Math.min(1, parseNumberEnv(process.env.LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE, 0.2)));
-export const LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS = Math.max(5, Math.min(200, parseIntegerEnv(process.env.LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS, 60)));
+export const LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE = parseBoundedNumberEnv(process.env.LANGGRAPH_EXECUTOR_SHADOW_SAMPLE_RATE, 0.2, 0, 1);
+export const LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS = parseBoundedNumberEnv(process.env.LANGGRAPH_EXECUTOR_SHADOW_MAX_STEPS, 60, 5, 200);
 
 // ── Obsidian File Lock ──
-export const OBSIDIAN_FILE_LOCK_TIMEOUT_MS = Math.max(1, parseIntegerEnv(process.env.OBSIDIAN_FILE_LOCK_TIMEOUT_MS, 8_000));
-export const OBSIDIAN_FILE_LOCK_STALE_MS = Math.max(1, parseIntegerEnv(process.env.OBSIDIAN_FILE_LOCK_STALE_MS, 60_000));
-export const OBSIDIAN_FILE_LOCK_RETRY_MS = Math.max(1, parseIntegerEnv(process.env.OBSIDIAN_FILE_LOCK_RETRY_MS, 120));
+export const OBSIDIAN_FILE_LOCK_TIMEOUT_MS = parseMinIntEnv(process.env.OBSIDIAN_FILE_LOCK_TIMEOUT_MS, 8_000, 1);
+export const OBSIDIAN_FILE_LOCK_STALE_MS = parseMinIntEnv(process.env.OBSIDIAN_FILE_LOCK_STALE_MS, 60_000, 1);
+export const OBSIDIAN_FILE_LOCK_RETRY_MS = parseMinIntEnv(process.env.OBSIDIAN_FILE_LOCK_RETRY_MS, 120, 1);
 
 // ── Privacy (Forget) ──
 export const FORGET_OBSIDIAN_ENABLED = parseBooleanEnv(process.env.FORGET_OBSIDIAN_ENABLED, true);
@@ -456,14 +456,14 @@ export const ERROR_LOG_TABLE = (process.env.ERROR_LOG_TABLE || 'system_error_eve
 
 // ── Local State Cache ──
 export const LOCAL_CACHE_DIR = (process.env.LOCAL_CACHE_DIR || '').trim();
-export const LOCAL_CACHE_MAX_ENTRIES = Math.max(10, parseIntegerEnv(process.env.LOCAL_CACHE_MAX_ENTRIES, 200));
+export const LOCAL_CACHE_MAX_ENTRIES = parseMinIntEnv(process.env.LOCAL_CACHE_MAX_ENTRIES, 200, 10);
 
 // ── Task Routing ──
-export const TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS, 60_000));
-export const TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE = Math.max(0, Math.min(1, parseNumberEnv(process.env.TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE, 0.65)));
+export const TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS = parseMinIntEnv(process.env.TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS, 60_000, 5_000);
+export const TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE = parseBoundedNumberEnv(process.env.TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE, 0.65, 0, 1);
 
 // ── Community Graph ──
-export const SOCIAL_RECENCY_HALF_LIFE_DAYS = Math.max(3, parseIntegerEnv(process.env.SOCIAL_RECENCY_HALF_LIFE_DAYS, 21));
+export const SOCIAL_RECENCY_HALF_LIFE_DAYS = parseMinIntEnv(process.env.SOCIAL_RECENCY_HALF_LIFE_DAYS, 21, 3);
 
 // ── Obsidian Vault Path ──
 export const OBSIDIAN_SYNC_VAULT_PATH = (process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
@@ -472,8 +472,8 @@ export const OBSIDIAN_SYNC_VAULT_PATH = (process.env.OBSIDIAN_SYNC_VAULT_PATH ||
 export const AGENT_CONVERSATION_THREAD_IDLE_MS = Math.max(5 * 60_000, parseIntegerEnv(process.env.AGENT_CONVERSATION_THREAD_IDLE_MS, 6 * 60 * 60_000));
 
 // ── Super Agent Service ──
-export const SUPER_AGENT_PAYLOAD_CLIP_CHARS = Math.max(400, parseIntegerEnv(process.env.SUPER_AGENT_PAYLOAD_CLIP_CHARS, 2_000));
+export const SUPER_AGENT_PAYLOAD_CLIP_CHARS = parseMinIntEnv(process.env.SUPER_AGENT_PAYLOAD_CLIP_CHARS, 2_000, 400);
 export const SUPER_AGENT_REVIEW_APPROVAL_ACTION = (process.env.SUPER_AGENT_REVIEW_APPROVAL_ACTION || 'super.inference.review').trim() || 'super.inference.review';
 
 // ── Supabase Fetch ──
-export const SUPABASE_FETCH_TIMEOUT_MS = Math.max(1_000, parseIntegerEnv(process.env.SUPABASE_FETCH_TIMEOUT_MS, 12_000));
+export const SUPABASE_FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.SUPABASE_FETCH_TIMEOUT_MS, 12_000, 1_000);

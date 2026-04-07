@@ -232,7 +232,7 @@ export const startSprintScheduledTriggers = (): void => {
   if (securityIntervalMs > 0 && !securityAuditTimer) {
     securityAuditTimer = setInterval(() => {
       triggerScheduledSecurityAudit('system').catch((e) =>
-        logger.error('[SPRINT-TRIGGER] scheduled security audit failed: %s', e),
+        logger.error('[SPRINT-TRIGGER] scheduled security audit failed: %s', getErrorMessage(e)),
       );
     }, securityIntervalMs);
     securityAuditTimer.unref();
@@ -243,7 +243,7 @@ export const startSprintScheduledTriggers = (): void => {
   if (improvementIntervalMs > 0 && !improvementTimer) {
     improvementTimer = setInterval(() => {
       triggerScheduledImprovement('system').catch((e) =>
-        logger.error('[SPRINT-TRIGGER] scheduled improvement failed: %s', e),
+        logger.error('[SPRINT-TRIGGER] scheduled improvement failed: %s', getErrorMessage(e)),
       );
     }, improvementIntervalMs);
     improvementTimer.unref();
@@ -255,7 +255,7 @@ export const startSprintScheduledTriggers = (): void => {
   if (!selfImprovementLoopTimer) {
     selfImprovementLoopTimer = setInterval(() => {
       runSelfImprovementChecks().catch((e) =>
-        logger.error('[SPRINT-TRIGGER] self-improvement loop failed: %s', e),
+        logger.error('[SPRINT-TRIGGER] self-improvement loop failed: %s', getErrorMessage(e)),
       );
     }, SELF_IMPROVE_INTERVAL_MS);
     selfImprovementLoopTimer.unref();
