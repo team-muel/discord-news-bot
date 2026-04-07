@@ -124,6 +124,11 @@ services:
         value: muel-s
       - key: SPRINT_GITHUB_REPO
         value: muel-platform
+      # LLM-Wiki PR pipeline — vault GitHub target (set in Render dashboard)
+      - key: OBSIDIAN_VAULT_GITHUB_OWNER
+        sync: false
+      - key: OBSIDIAN_VAULT_GITHUB_REPO
+        sync: false
       # Self-improvement loop (approve-ship gate protects production)
       - key: SELF_IMPROVEMENT_CONVERGENCE_ENABLED
         value: "true"
