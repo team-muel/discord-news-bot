@@ -1,6 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInteraction, type Message } from 'discord.js';
-import type { AgentSession } from '../../services/multiAgentService';
-import { getAgentSession } from '../../services/multiAgentService';
+import { type AgentSession, getAgentSession } from '../../services/multiAgentService';
 import { DISCORD_MESSAGES } from '../messages';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';

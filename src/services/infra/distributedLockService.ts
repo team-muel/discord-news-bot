@@ -1,6 +1,7 @@
 import logger from '../../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { isMissingTableError, isMissingFunctionError } from '../../utils/supabaseErrors';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const unavailableLockNames = new Set<string>();
 const MAX_UNAVAILABLE_LOCK_NAMES = 200;
@@ -91,7 +92,7 @@ export const acquireDistributedLease = async (params: {
       return { ok: false, reason: 'LOCK_TABLE_UNAVAILABLE' };
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     logger.warn('[LOCK] acquire failed lock=%s err=%s', params.name, message);
     return { ok: false, reason: 'LOCK_ERROR' };
   }
@@ -117,7 +118,7 @@ export const releaseDistributedLease = async (params: {
       logger.warn('[LOCK] release failed lock=%s err=%s', params.name, error.message);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     logger.warn('[LOCK] release error lock=%s err=%s', params.name, message);
   }
 };

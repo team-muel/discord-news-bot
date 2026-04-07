@@ -13,6 +13,7 @@ import {
   type ActivityCounter,
 } from '../../discord-support/userCrmService';
 import logger from '../../../logger';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Lazy-loaded Discord client to avoid bot.ts side effects at import time. */
 let _client: Client | null = null;
@@ -263,7 +264,7 @@ export const guildAnalyticsAction: ActionDefinition = {
         durationMs: Date.now() - startMs,
       };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = getErrorMessage(err);
       logger.warn('[guild.analytics] error: %s', errMsg);
       return {
         ok: false,

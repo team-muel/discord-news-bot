@@ -11,6 +11,7 @@ import { isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_INTENTS } from '../infra/tableRegistry';
 import type { IntentRecord, IntentStatus } from './intentTypes';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ── In-memory fallback ──────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ export async function persistIntent(intent: IntentRecord): Promise<IntentRecord 
     }
     return fromRow(data as Record<string, unknown>);
   } catch (err) {
-    logger.debug('[INTENT-STORE] persist error: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[INTENT-STORE] persist error: %s', getErrorMessage(err));
     return null;
   }
 }

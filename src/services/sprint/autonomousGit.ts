@@ -6,6 +6,7 @@ import {
   SPRINT_GITHUB_REPO,
   SPRINT_DRY_RUN,
 } from '../../config';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ export const createSprintBranch = async (sprintId: string, baseBranch = 'main'):
     logger.info('[SPRINT-GIT] branch created: %s from %s', branchName, safeBase);
     return { ok: true, branchName };
   } catch (error) {
-    return { ok: false, branchName, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, branchName, error: getErrorMessage(error) };
   }
 };
 
@@ -174,7 +175,7 @@ export const commitSprintChanges = async (params: {
     logger.info('[SPRINT-GIT] committed %d files to %s sha=%s', params.files.length, params.branchName, newCommitData.sha.slice(0, 8));
     return { ok: true, sha: newCommitData.sha };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, error: getErrorMessage(error) };
   }
 };
 
@@ -215,7 +216,7 @@ export const createSprintPr = async (params: {
     logger.info('[SPRINT-GIT] PR created: %s', prData.html_url);
     return { ok: true, prUrl: prData.html_url, prNumber: prData.number };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, error: getErrorMessage(error) };
   }
 };
 

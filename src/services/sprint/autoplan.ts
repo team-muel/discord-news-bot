@@ -13,9 +13,9 @@ import {
   SPRINT_AUTOPLAN_ENABLED,
   SPRINT_AUTOPLAN_LENSES,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
-
-// ──── Types ───────────────────────────────────────────────────────────────────
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type PlanLens = 'ceo' | 'engineering' | 'security' | 'design';
 
@@ -37,8 +37,7 @@ export type AutoplanResult = {
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
-const CONFIGURED_LENSES = SPRINT_AUTOPLAN_LENSES
-  .split(',').map((l) => l.trim()).filter(Boolean) as PlanLens[];
+const CONFIGURED_LENSES = parseCsvList(SPRINT_AUTOPLAN_LENSES) as PlanLens[];
 
 // ──── Lens system prompts ─────────────────────────────────────────────────────
 
@@ -134,7 +133,7 @@ export const runAutoplan = async (params: {
 
       logger.info('[AUTOPLAN] lens=%s verdict=%s duration=%dms', lens, parsed.verdict, Date.now() - start);
     } catch (error) {
-      logger.warn('[AUTOPLAN] lens=%s failed (non-fatal): %s', lens, error instanceof Error ? error.message : String(error));
+      logger.warn('[AUTOPLAN] lens=%s failed (non-fatal): %s', lens, getErrorMessage(error));
       reviews.push({
         lens,
         verdict: 'approve',

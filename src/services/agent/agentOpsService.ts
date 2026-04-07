@@ -1,23 +1,24 @@
 import type { Client, Guild } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { queueMemoryJob } from './agentMemoryStore';
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { listGuildAgentSessions, startAgentSession } from '../multiAgentService';
 import { autoBootstrapGuildKnowledgeOnJoin } from '../obsidian/obsidianBootstrapService';
 import { autoSyncGuildTopologyOnJoin } from '../discord-support/discordTopologySyncService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const AGENT_AUTO_ONBOARDING_ENABLED = parseBooleanEnv(process.env.AGENT_AUTO_ONBOARDING_ENABLED, true);
 const AGENT_DAILY_LEARNING_ENABLED = parseBooleanEnv(process.env.AGENT_DAILY_LEARNING_ENABLED, true);
-const AGENT_DAILY_LEARNING_HOUR = Math.min(23, Math.max(0, parseIntegerEnv(process.env.AGENT_DAILY_LEARNING_HOUR, 4)));
-const AGENT_DAILY_MAX_GUILDS = Math.max(1, parseIntegerEnv(process.env.AGENT_DAILY_MAX_GUILDS, 30));
-const AGENT_ONBOARDING_COOLDOWN_MS = Math.max(60_000, parseIntegerEnv(process.env.AGENT_ONBOARDING_COOLDOWN_MS, 6 * 60 * 60 * 1000));
+const AGENT_DAILY_LEARNING_HOUR = Math.min(23, parseMinIntEnv(process.env.AGENT_DAILY_LEARNING_HOUR, 4, 0));
+const AGENT_DAILY_MAX_GUILDS = parseMinIntEnv(process.env.AGENT_DAILY_MAX_GUILDS, 30, 1);
+const AGENT_ONBOARDING_COOLDOWN_MS = parseMinIntEnv(process.env.AGENT_ONBOARDING_COOLDOWN_MS, 6 * 60 * 60 * 1000, 60_000);
 const AGENT_GOT_CUTOVER_AUTOPILOT_ENABLED = parseBooleanEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_ENABLED, true);
-const AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN = Math.max(5, parseIntegerEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN, 60));
-const AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS = Math.max(1, parseIntegerEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS, 100));
-const AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT, 100)));
-const AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES = Math.max(0, parseIntegerEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES, 20));
+const AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN, 60, 5);
+const AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS, 100, 1);
+const AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT = parseBoundedNumberEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT, 100, 0, 100);
+const AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES, 20, 0);
 
 let dailyTimer: NodeJS.Timeout | null = null;
 let gotCutoverAutopilotTimer: NodeJS.Timeout | null = null;
@@ -81,7 +82,7 @@ export const triggerGuildOnboardingSession = (params: {
       sessionId: session.id,
     },
   }).catch((error) => {
-    logger.warn('[AGENT-OPS] onboarding snapshot queue failed guild=%s error=%s', params.guildId, error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-OPS] onboarding snapshot queue failed guild=%s error=%s', params.guildId, getErrorMessage(error));
   });
 
   return { ok: true, message: '?�보???�션???�작?�습?�다.', sessionId: session.id };
@@ -316,7 +317,7 @@ export const getAgentOpsSnapshot = () => ({
 
 export const onGuildJoined = (guild: Guild) => {
   void autoSyncGuildTopologyOnJoin(guild).catch((error) => {
-    logger.warn('[AGENT-OPS] topology sync failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-OPS] topology sync failed guild=%s error=%s', guild.id, getErrorMessage(error));
   });
 
   void autoBootstrapGuildKnowledgeOnJoin({
@@ -324,7 +325,7 @@ export const onGuildJoined = (guild: Guild) => {
     guildName: guild.name,
     reason: 'guildCreate',
   }).catch((error) => {
-    logger.warn('[AGENT-OPS] obsidian bootstrap failed guild=%s error=%s', guild.id, error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-OPS] obsidian bootstrap failed guild=%s error=%s', guild.id, getErrorMessage(error));
   });
 
   return triggerGuildOnboardingSession({

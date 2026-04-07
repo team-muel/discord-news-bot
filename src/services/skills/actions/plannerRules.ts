@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ActionPlan } from './types';
 import logger from '../../../logger';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const DEFAULT_RAG_INTENT_PATTERN = 'rag|근거|출처|기억|메모리|memory|회상|리콜|retrieve|retrieval|요약근거';
 const RULES_DOC_PATH = path.resolve(process.cwd(), 'docs', 'SKILL_ACTION_RULES.json');
@@ -139,7 +140,7 @@ const loadPlannerRulesConfig = async (): Promise<PlannerRulesConfig> => {
 
     return { ragIntentPattern, rules };
   } catch (error) {
-    logger.warn('[PLANNER-RULES] failed to load %s: %s', RULES_DOC_PATH, error instanceof Error ? error.message : String(error));
+    logger.warn('[PLANNER-RULES] failed to load %s: %s', RULES_DOC_PATH, getErrorMessage(error));
     return {
       ragIntentPattern: DEFAULT_RAG_INTENT_PATTERN,
       rules: [],
@@ -162,7 +163,7 @@ const compileIntentRuleSpecs = (configRules: IntentRuleConfig[]): IntentRuleSpec
         })),
       });
     } catch (error) {
-      logger.warn('[PLANNER-RULES] invalid regex rule id=%s: %s', rule.id, error instanceof Error ? error.message : String(error));
+      logger.warn('[PLANNER-RULES] invalid regex rule id=%s: %s', rule.id, getErrorMessage(error));
     }
   }
 

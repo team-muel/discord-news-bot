@@ -13,12 +13,14 @@
 import logger from '../../logger';
 import { memoryConfig, MEMORY_CONSOLIDATION_CONCEPT_ENABLED, MEMORY_CONSOLIDATION_CONCEPT_MIN_LINKS, MEMORY_CONSOLIDATION_CONCEPT_MIN_DENSITY } from '../../config';
 import { parseBooleanEnv } from '../../utils/env';
+import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
 import { T_MEMORY_ITEMS, T_MEMORY_ITEM_LINKS } from '../infra/tableRegistry';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { writeObsidianNoteWithAdapter } from '../obsidian/router';
 import { doc } from '../obsidian/obsidianDocBuilder';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
 
@@ -266,7 +268,7 @@ export const runConsolidationCycle = async (guildId?: string): Promise<Consolida
 
     return { groupsProcessed: totalGroupsProcessed, memoriesCreated: totalCreated, memoriesArchived: totalArchived };
   } catch (err) {
-    logger.warn('[CONSOLIDATION] cycle failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[CONSOLIDATION] cycle failed: %s', getErrorMessage(err));
     return EMPTY_RESULT;
   }
 };
@@ -440,7 +442,7 @@ const runConceptPromotion = async (
 
     return { groupsProcessed, memoriesCreated };
   } catch (err) {
-    logger.warn('[CONSOLIDATION] concept promotion failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[CONSOLIDATION] concept promotion failed: %s', getErrorMessage(err));
     return { groupsProcessed: 0, memoriesCreated: 0 };
   }
 };
@@ -459,7 +461,7 @@ const writeConsolidationToVault = async (params: {
   tags: string[];
   sourceCount: number;
 }): Promise<void> => {
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
   if (!vaultPath) return;
 
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -495,7 +497,7 @@ const writeConsolidationToVault = async (params: {
     });
     logger.debug('[CONSOLIDATION] vault writeback: %s', fileName);
   } catch (err) {
-    logger.debug('[CONSOLIDATION] vault writeback failed (non-critical): %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[CONSOLIDATION] vault writeback failed (non-critical): %s', getErrorMessage(err));
   }
 };
 
@@ -513,13 +515,13 @@ export const startConsolidationLoop = (): void => {
   const INITIAL_DELAY_MS = 5 * 60_000; // 5 min
   setTimeout(() => {
     void runConsolidationCycle().catch((err) => {
-      logger.debug('[CONSOLIDATION] initial run skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[CONSOLIDATION] initial run skipped: %s', getErrorMessage(err));
     });
   }, INITIAL_DELAY_MS);
 
   consolidationTimer = setInterval(() => {
     void runConsolidationCycle().catch((err) => {
-      logger.debug('[CONSOLIDATION] periodic run skipped: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[CONSOLIDATION] periodic run skipped: %s', getErrorMessage(err));
     });
   }, CONSOLIDATION_INTERVAL_MS);
 

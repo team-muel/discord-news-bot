@@ -17,6 +17,7 @@ import {
   withRouting,
   maybeGenerateRoleText,
 } from './agentCollabHelpers';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ──── Sprint Phase Actions ────────────────────────────────────────────────────
 
@@ -396,7 +397,7 @@ export const sopUpdateAction: ActionDefinition = {
         ok: false,
         name: 'sop.update',
         summary: 'SOP update failed.',
-        artifacts: [clip(error instanceof Error ? error.message : String(error), 400)],
+        artifacts: [clip(getErrorMessage(error), 400)],
         verification: ['write failed'],
         error: 'SOP_UPDATE_FAILED',
         agentRole: 'architect',

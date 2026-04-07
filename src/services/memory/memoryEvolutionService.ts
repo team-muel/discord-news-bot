@@ -22,6 +22,7 @@ import { getClient, fromTable } from '../infra/baseRepository';
 import { T_MEMORY_ITEMS, T_MEMORY_ITEM_LINKS } from '../infra/tableRegistry';
 import { searchMemoryHybrid } from '../agent/agentMemoryStore';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ const classifyRelationLlm = async (
     logger.debug('[MEMORY-EVOLUTION] LLM classify returned invalid: %s, using heuristic', raw);
     return fallback;
   } catch (err) {
-    logger.debug('[MEMORY-EVOLUTION] LLM classify failed, using heuristic: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[MEMORY-EVOLUTION] LLM classify failed, using heuristic: %s', getErrorMessage(err));
     return fallback;
   }
 };
@@ -255,7 +256,7 @@ export const evolveMemoryLinks = async (params: {
 
     return { evolved: true, linksCreated, memoriesBoosted, candidates };
   } catch (err) {
-    logger.warn('[MEMORY-EVOLUTION] failed guild=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
+    logger.warn('[MEMORY-EVOLUTION] failed guild=%s: %s', params.guildId, getErrorMessage(err));
     return EMPTY_RESULT;
   }
 };

@@ -1,5 +1,6 @@
 import logger from '../../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type GotNodeType = 'root' | 'hypothesis' | 'evidence' | 'critique' | 'merge' | 'decision' | 'patch';
 
@@ -287,7 +288,7 @@ export const recordGotShadowRun = async (params: RecordGotShadowRunInput): Promi
 
     return runId;
   } catch (error) {
-    logger.warn('[AGENT-GOT] shadow run record failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT-GOT] shadow run record failed: %s', getErrorMessage(error));
     return null;
   }
 };

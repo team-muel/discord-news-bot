@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseBooleanEnv } from '../../utils/env';
+import { parseCsvList } from '../../utils/env';
 import {
   LLM_PROVIDER_FALLBACK_CHAIN_RAW,
   LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER_RAW,
@@ -477,8 +477,9 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
 
   const actionPolicyDefaultEnabled = ACTION_POLICY_DEFAULT_ENABLED;
   const actionPolicyDefaultRunModeRaw = ACTION_POLICY_DEFAULT_RUN_MODE;
-  const actionPolicyDefaultRunMode = (['auto', 'approval_required', 'disabled'] as const).includes(
-    actionPolicyDefaultRunModeRaw as any,
+  // Cast to `readonly string[]` so `.includes()` accepts the runtime string; the ternary enforces the fallback.
+  const actionPolicyDefaultRunMode = (['auto', 'approval_required', 'disabled'] as readonly string[]).includes(
+    actionPolicyDefaultRunModeRaw,
   )
     ? actionPolicyDefaultRunModeRaw
     : 'approval_required';
@@ -525,7 +526,7 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
       actionPolicyFailOpenOnError,
       actionAllowedActions: actionAllowedActionsRaw === '*'
         ? ['*']
-        : actionAllowedActionsRaw.split(',').map((item) => item.trim()).filter(Boolean),
+        : parseCsvList(actionAllowedActionsRaw),
       opencodeExecutePolicy: {
         actionName: opencodePolicy.actionName,
         enabled: opencodePolicy.enabled,

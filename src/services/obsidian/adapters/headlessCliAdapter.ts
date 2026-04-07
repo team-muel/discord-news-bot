@@ -9,36 +9,23 @@ import type {
   ObsidianSearchResult,
   ObsidianVaultAdapter,
 } from '../types';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseStringEnv } from '../../../utils/env';
 
 const execFileAsync = promisify(execFile);
 
 const getHeadlessCommand = (): string => {
-  return String(process.env.OBSIDIAN_HEADLESS_COMMAND || 'ob').trim();
+  return parseStringEnv(process.env.OBSIDIAN_HEADLESS_COMMAND, 'ob');
 };
 
 const getVaultName = (): string => {
-  return String(process.env.OBSIDIAN_VAULT_NAME || 'docs').trim();
+  return parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 };
 
-const isHeadlessEnabled = (): boolean => {
-  return String(process.env.OBSIDIAN_HEADLESS_ENABLED || '').trim().toLowerCase() === 'true';
-};
+const isHeadlessEnabled = (): boolean => parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);
 
-const getHeadlessLoreMaxHints = (): number => {
-  const raw = Number(process.env.OBSIDIAN_HEADLESS_LORE_MAX_HINTS ?? 6);
-  if (!Number.isFinite(raw)) {
-    return 6;
-  }
-  return Math.max(1, Math.min(12, Math.trunc(raw)));
-};
+const getHeadlessLoreMaxHints = (): number => parseBoundedNumberEnv(process.env.OBSIDIAN_HEADLESS_LORE_MAX_HINTS, 6, 1, 12);
 
-const getHeadlessLoreMaxChars = (): number => {
-  const raw = Number(process.env.OBSIDIAN_HEADLESS_LORE_MAX_CHARS ?? 220);
-  if (!Number.isFinite(raw)) {
-    return 220;
-  }
-  return Math.max(80, Math.min(600, Math.trunc(raw)));
-};
+const getHeadlessLoreMaxChars = (): number => parseBoundedNumberEnv(process.env.OBSIDIAN_HEADLESS_LORE_MAX_CHARS, 220, 80, 600);
 
 const sanitizeArg = (value: unknown, maxLen = 300): string => String(value || '')
   .replace(/[\u0000-\u001f\u007f]/g, ' ')

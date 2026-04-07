@@ -3,6 +3,7 @@ import { runGoalActions } from '../services/skills/actionRunner';
 import { NODE_ENV } from '../config';
 import { generateText, isAnyLlmConfigured, resolveLlmProvider } from '../services/llmClient';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const MCP_GUILD_ID = 'MCP';
 const MCP_REQUESTER = 'mcp-adapter';
@@ -192,7 +193,7 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
       const text = await generateText({ system: 'Reply briefly.', user: prompt, actionName: 'diag.llm', maxTokens: 50 });
       return toTextResult(JSON.stringify({ configured: true, provider, latencyMs: Date.now() - start, text: text.slice(0, 200) }));
     } catch (err) {
-      return toTextResult(JSON.stringify({ configured: true, provider, error: err instanceof Error ? err.message : String(err) }), true);
+      return toTextResult(JSON.stringify({ configured: true, provider, error: getErrorMessage(err) }), true);
     }
   }
 

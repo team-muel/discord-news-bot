@@ -28,6 +28,7 @@ import {
   nemoclawReviewAction,
   openjarvisOpsAction,
 } from './agentCollabRoles';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const executeRoleAction = async (params: {
   role: AgentRoleName;
@@ -213,7 +214,7 @@ export const localOrchestratorRouteAction: ActionDefinition = {
         ok: false,
         name: 'local.orchestrator.route',
         summary: 'local-orchestrator 라우팅 생성에 실패했습니다.',
-        artifacts: [clip(error instanceof Error ? error.message : String(error), 400)],
+        artifacts: [clip(getErrorMessage(error), 400)],
         verification: ['super-agent routing failed'],
         error: 'LOCAL_ORCHESTRATOR_ROUTE_FAILED',
         agentRole: 'operate',
@@ -337,7 +338,7 @@ export const localOrchestratorAllAction: ActionDefinition = {
         ok: false,
         name: 'local.orchestrator.all',
         summary: 'local-orchestrator 전체 협업 실행에 실패했습니다.',
-        artifacts: [clip(error instanceof Error ? error.message : String(error), 400)],
+        artifacts: [clip(getErrorMessage(error), 400)],
         verification: ['local orchestrator full collaboration failed'],
         error: 'LOCAL_ORCHESTRATOR_ALL_FAILED',
         agentRole: 'operate',

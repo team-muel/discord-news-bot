@@ -2,8 +2,7 @@
  * Login-session cache + feature-access gate.
  * Wraps Supabase-backed session persistence with an in-process TTL map.
  */
-import type { ChatInputCommandInteraction } from 'discord.js';
-import { PermissionFlagsBits } from 'discord.js';
+import { type ChatInputCommandInteraction, PermissionFlagsBits } from 'discord.js';
 import { isUserAdmin } from '../services/adminAllowlistService';
 import {
   getDiscordLoginSessionExpiryMs,
@@ -143,7 +142,7 @@ export const hasAdminPermission = async (
   try {
     return await isUserAdmin(interaction.user.id);
   } catch (err) {
-    logger.warn('[AUTH] admin check failed userId=%s error=%s', interaction.user.id, err instanceof Error ? err.message : String(err));
+    logger.warn('[AUTH] admin check failed userId=%s error=%s', interaction.user.id, getErrorMessage(err));
     return false;
   }
 };

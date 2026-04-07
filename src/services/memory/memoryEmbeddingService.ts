@@ -9,18 +9,19 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_MEMORY_ITEMS } from '../infra/tableRegistry';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const EMBEDDING_ENABLED = parseBooleanEnv(process.env.MEMORY_EMBEDDING_ENABLED, true);
-const EMBEDDING_MODEL = String(process.env.MEMORY_EMBEDDING_MODEL || 'text-embedding-3-small').trim();
-const EMBEDDING_DIMENSIONS = Math.max(256, parseIntegerEnv(process.env.MEMORY_EMBEDDING_DIMENSIONS, 1536));
-const LITELLM_BASE_URL = String(process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000').trim().replace(/\/+$/, '');
-const LITELLM_API_KEY = String(process.env.LITELLM_MASTER_KEY || process.env.LITELLM_API_KEY || '').trim();
-const EMBEDDING_BATCH_SIZE = Math.max(1, Math.min(100, parseIntegerEnv(process.env.MEMORY_EMBEDDING_BATCH_SIZE, 20)));
-const EMBEDDING_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_EMBEDDING_TIMEOUT_MS, 30_000));
+const EMBEDDING_MODEL = parseStringEnv(process.env.MEMORY_EMBEDDING_MODEL, 'text-embedding-3-small');
+const EMBEDDING_DIMENSIONS = parseMinIntEnv(process.env.MEMORY_EMBEDDING_DIMENSIONS, 1536, 256);
+const LITELLM_BASE_URL = parseUrlEnv(process.env.LITELLM_BASE_URL, 'http://127.0.0.1:4000');
+const LITELLM_API_KEY = parseStringEnv(process.env.LITELLM_MASTER_KEY ?? process.env.LITELLM_API_KEY, '');
+const EMBEDDING_BATCH_SIZE = parseBoundedNumberEnv(process.env.MEMORY_EMBEDDING_BATCH_SIZE, 20, 1, 100);
+const EMBEDDING_TIMEOUT_MS = parseMinIntEnv(process.env.MEMORY_EMBEDDING_TIMEOUT_MS, 30_000, 5_000);
 
 export const isEmbeddingEnabled = (): boolean => EMBEDDING_ENABLED && isSupabaseConfigured();
 
@@ -71,7 +72,7 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
 
     return embedding;
   } catch (err) {
-    logger.warn('[EMBEDDING] Failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[EMBEDDING] Failed: %s', getErrorMessage(err));
     return null;
   }
 };
@@ -105,7 +106,7 @@ export const storeMemoryEmbedding = async (memoryItemId: string, embedding: numb
     }
     return true;
   } catch (err) {
-    logger.warn('[EMBEDDING] Store error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[EMBEDDING] Store error: %s', getErrorMessage(err));
     return false;
   }
 };

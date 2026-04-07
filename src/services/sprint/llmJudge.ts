@@ -14,8 +14,9 @@ import {
   SPRINT_LLM_JUDGE_ENABLED,
   SPRINT_LLM_JUDGE_PHASES,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
-
+import { getErrorMessage } from '../../utils/errorMessage';
 // ──── Types ───────────────────────────────────────────────────────────────────
 
 export type JudgeScore = {
@@ -36,9 +37,7 @@ export type JudgeResult = {
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
-const JUDGE_PHASES = new Set(
-  SPRINT_LLM_JUDGE_PHASES.split(',').map((p) => p.trim()).filter(Boolean),
-);
+const JUDGE_PHASES = new Set(parseCsvList(SPRINT_LLM_JUDGE_PHASES));
 
 export const isJudgePhase = (phase: string): boolean =>
   SPRINT_LLM_JUDGE_ENABLED && JUDGE_PHASES.has(phase);
@@ -120,7 +119,7 @@ export const judgePhaseOutput = async (params: {
   } catch (error) {
     logger.warn(
       '[LLM-JUDGE] evaluation failed (non-fatal): %s',
-      error instanceof Error ? error.message : String(error),
+      getErrorMessage(error),
     );
     return null;
   }

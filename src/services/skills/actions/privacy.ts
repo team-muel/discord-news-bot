@@ -1,6 +1,7 @@
 import { forgetGuildRagData, forgetUserRagData } from '../../privacyForgetService';
 import logger from '../../../logger';
 import type { ActionDefinition } from './types';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const toBool = (value: unknown, fallback: boolean): boolean => {
   if (typeof value === 'boolean') {
@@ -70,7 +71,7 @@ export const privacyForgetGuildAction: ActionDefinition = {
         ],
       };
     } catch (error) {
-      logger.warn('[PRIVACY] forgetGuildRagData failed guild=%s: %s', targetGuildId, error instanceof Error ? error.message : String(error));
+      logger.warn('[PRIVACY] forgetGuildRagData failed guild=%s: %s', targetGuildId, getErrorMessage(error));
       return {
         ok: false,
         name: 'privacy.forget.guild',
@@ -152,7 +153,7 @@ export const privacyForgetUserAction: ActionDefinition = {
         ],
       };
     } catch (error) {
-      logger.warn('[PRIVACY] forgetUserRagData failed user=%s guild=%s: %s', targetUserId, targetGuildId || 'all', error instanceof Error ? error.message : String(error));
+      logger.warn('[PRIVACY] forgetUserRagData failed user=%s guild=%s: %s', targetUserId, targetGuildId || 'all', getErrorMessage(error));
       return {
         ok: false,
         name: 'privacy.forget.user',

@@ -15,6 +15,7 @@ import {
 import { toStringParam, toBoundedInt } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency } = deps;
@@ -35,7 +36,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'REWARD_SNAPSHOT_FAILED', message });
     }
   });
@@ -55,7 +56,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       const persisted = await persistRewardSnapshot(snapshot);
       return res.json({ ok: true, persisted, snapshot });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'REWARD_COMPUTE_FAILED', message });
     }
   });
@@ -72,7 +73,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       const snapshots = await getRecentRewardSnapshots(guildId, limit);
       return res.json({ ok: true, count: snapshots.length, snapshots });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'REWARD_HISTORY_FAILED', message });
     }
   });
@@ -91,7 +92,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, trend });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'REWARD_TREND_FAILED', message });
     }
   });
@@ -130,7 +131,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.status(201).json({ ok: true, evalRun });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'EVAL_CREATE_FAILED', message });
     }
   });
@@ -146,7 +147,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       const result = await runEvalPipeline(guildId);
       return res.json({ ok: true, ...result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'EVAL_PIPELINE_FAILED', message });
     }
   });
@@ -163,7 +164,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       const runs = await getRecentEvalRuns(guildId, limit);
       return res.json({ ok: true, count: runs.length, runs });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'EVAL_RECENT_FAILED', message });
     }
   });
@@ -191,7 +192,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, count: (data || []).length, logs: data || [] });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'SHADOW_DIVERGENCE_FAILED', message });
     }
   });
@@ -214,7 +215,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, log: data });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'SHADOW_DIVERGENCE_FAILED', message });
     }
   });
@@ -234,7 +235,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, stats });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'SHADOW_STATS_FAILED', message });
     }
   });
@@ -258,7 +259,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, decisions: data });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'TRAFFIC_DECISIONS_FAILED', message });
     }
   });
@@ -280,7 +281,7 @@ export function registerBotAgentRewardEvalRoutes(deps: BotAgentRouteDeps): void 
       }
       return res.json({ ok: true, distribution, total, windowHours });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       return res.status(500).json({ ok: false, error: 'TRAFFIC_DISTRIBUTION_FAILED', message });
     }
   });

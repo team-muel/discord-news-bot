@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
 
 export type AgentPriorityLike = 'fast' | 'balanced' | 'precise';
 
@@ -47,7 +47,7 @@ export const getAgentGotPolicySnapshot = (guildId?: string): AgentGotPolicySnaps
     && isAllowedGuild(guildId, activeAllowlist);
 
   return {
-    strategy: String(process.env.GOT_STRATEGY || 'got_v1').trim() || 'got_v1',
+    strategy: parseStringEnv(process.env.GOT_STRATEGY, 'got_v1') || 'got_v1',
     shadowEnabled,
     activeEnabled,
     shadowAllowlist,

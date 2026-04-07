@@ -1,4 +1,4 @@
-import { parseIntegerEnv, parseNumberEnv } from '../../utils/env';
+import { parseBoundedNumberEnv, parseMinIntEnv, parseNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type DashboardParams = {
@@ -6,12 +6,12 @@ type DashboardParams = {
   days?: number;
 };
 
-const ORM_REVIEW_THRESHOLD = Math.max(0, Math.min(100, parseIntegerEnv(process.env.ORM_RULE_REVIEW_THRESHOLD, 55)));
-const GOT_CUTOVER_MIN_RUNS = Math.max(1, parseIntegerEnv(process.env.GOT_CUTOVER_MIN_RUNS, 30));
+const ORM_REVIEW_THRESHOLD = parseBoundedNumberEnv(process.env.ORM_RULE_REVIEW_THRESHOLD, 55, 0, 100);
+const GOT_CUTOVER_MIN_RUNS = parseMinIntEnv(process.env.GOT_CUTOVER_MIN_RUNS, 30, 1);
 const GOT_CUTOVER_MIN_SCORE_DELTA = parseNumberEnv(process.env.GOT_CUTOVER_MIN_SCORE_DELTA, 0);
 const GOT_CUTOVER_MIN_LATENCY_GAIN_MS = parseNumberEnv(process.env.GOT_CUTOVER_MIN_LATENCY_GAIN_MS, 0);
 const GOT_CUTOVER_MAX_HALLUCINATION_DELTA_PCT = parseNumberEnv(process.env.GOT_CUTOVER_MAX_HALLUCINATION_DELTA_PCT, 0);
-const GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES = Math.max(0, parseIntegerEnv(process.env.GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES, 20));
+const GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES = parseMinIntEnv(process.env.GOT_CUTOVER_MIN_LABELED_HALLUCINATION_SAMPLES, 20, 0);
 
 const avg = (values: number[]): number | null => {
   if (values.length === 0) {

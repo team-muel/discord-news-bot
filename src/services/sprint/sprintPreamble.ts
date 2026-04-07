@@ -11,8 +11,7 @@
 import { SPRINT_AUTOPLAN_ENABLED } from '../../config';
 import { loadWorkflowReconfigHints, formatReconfigHintsForPreamble } from './sprintLearningJournal';
 import { buildToolCatalogPrompt } from '../skills/actions/registry';
-import type { ActionCategory } from '../skills/actions/types';
-import type { ActionExecutionResult } from '../skills/actions/types';
+import type { ActionCategory, ActionExecutionResult } from '../skills/actions/types';
 
 // ──── Phase → tool category mapping (Cline-inspired variant config) ───────────
 

@@ -4,7 +4,7 @@ import { listApprovals } from './workerApprovalStore';
 import { runWorkerGenerationPipeline } from './workerGenerationPipeline';
 import { recordWorkerGenerationResult, getWorkerProposalMetricsSnapshot } from './workerProposalMetrics';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
-import { parseBooleanEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { triggerLacunaSprintIfNeeded, type LacunaCandidate } from '../sprint/selfImprovementLoop';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from '../skills/actionGovernanceStore';
 import { runWithConcurrency } from '../../utils/async';
@@ -15,18 +15,18 @@ import { OPENCLAW_LACUNA_SKILL_CREATE_ENABLED } from '../../config';
 // Config
 // ---------------------------------------------------------------------------
 
-const AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED || 'true').trim());
-const AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS = Math.max(5 * 60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS || 30 * 60_000));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS = Math.max(1, Math.min(30, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS || 7)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS = Math.max(1, Math.min(72, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS || 6)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT = Math.max(1, Math.min(20, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT || 2)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS = Math.max(1, Math.min(10, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS || 1)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN = Math.max(1, Math.min(10, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN || 2)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD = Math.max(1, Math.min(20, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD || 5)));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS || 7 * 24 * 60 * 60_000));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = Math.max(60_000, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS || 6 * 60 * 60_000));
-const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = Math.max(6, Math.min(120, Number(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH || 8)));
-const IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY || process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY || 4)));
+const AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED = parseBooleanEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_ENABLED, true);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_INTERVAL_MS, 30 * 60_000, 300_000);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_LOOKBACK_DAYS, 7, 1, 30);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_NO_REQUEST_HOURS, 6, 1, 72);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_MISSING_COUNT, 2, 1, 20);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_DISTINCT_REQUESTERS, 1, 1, 10);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PROPOSALS_PER_RUN, 2, 1, 10);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MAX_PENDING_PER_GUILD, 5, 1, 20);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_DUPLICATE_WINDOW_MS, 7 * 24 * 60 * 60_000, 60_000);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS = parseMinIntEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_GUILD_COOLDOWN_MS, 6 * 60 * 60_000, 60_000);
+const AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH = parseBoundedNumberEnv(process.env.VIBE_AUTO_WORKER_PROPOSAL_BACKGROUND_MIN_GOAL_LENGTH, 8, 6, 120);
+const IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY = parseBoundedNumberEnv(process.env.IMPLEMENT_PILOT_POLICY_ENFORCE_CONCURRENCY ?? process.env.OPENCODE_PILOT_POLICY_ENFORCE_CONCURRENCY, 4, 1, 20);
 
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 

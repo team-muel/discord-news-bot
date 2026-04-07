@@ -9,6 +9,7 @@ import { fromTable, getClient } from '../infra/baseRepository';
 import { T_NEWS_CAPTURE_FINGERPRINTS } from '../infra/tableRegistry';
 import { isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const FINGERPRINT_TABLE = T_NEWS_CAPTURE_FINGERPRINTS;
 
@@ -63,7 +64,7 @@ export const isNewsFingerprinted = async (params: {
 
     return Boolean(data);
   } catch (err) {
-    logger.debug('[NEWS-DEDUP] DB check fallback to memory: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[NEWS-DEDUP] DB check fallback to memory: %s', getErrorMessage(err));
     return Boolean(memoryCache.get(memKey));
   }
 };
@@ -100,6 +101,6 @@ export const recordNewsFingerprint = async (params: {
         { onConflict: 'guild_id,fingerprint', ignoreDuplicates: true },
       );
   } catch (err) {
-    logger.debug('[NEWS-DEDUP] DB record fallback to memory: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[NEWS-DEDUP] DB record fallback to memory: %s', getErrorMessage(err));
   }
 };

@@ -3,14 +3,13 @@ import { searchObsidianVaultWithAdapter } from '../obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
 import { T_RETRIEVAL_EVAL_SETS, T_RETRIEVAL_EVAL_CASES, T_RETRIEVAL_EVAL_TARGETS, T_RETRIEVAL_EVAL_RUNS, T_RETRIEVAL_EVAL_RESULTS, T_RETRIEVAL_RANKER_EXPERIMENTS, T_RETRIEVAL_RANKER_ACTIVE_PROFILES } from '../infra/tableRegistry';
+import { parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseMinNumberEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
-const RETRIEVAL_EVAL_DEFAULT_TOP_K = Math.max(1, Math.min(20, Number(process.env.RETRIEVAL_EVAL_DEFAULT_TOP_K || 5)));
-const RETRIEVAL_TUNING_MIN_CASES = Math.max(10, Number(process.env.RETRIEVAL_TUNING_MIN_CASES || 30));
-const RETRIEVAL_TUNING_MIN_NDCG_DELTA = Math.max(0.001, Number(process.env.RETRIEVAL_TUNING_MIN_NDCG_DELTA || 0.03));
-const RETRIEVAL_SHADOW_VARIANTS = String(process.env.RETRIEVAL_SHADOW_VARIANTS || 'intent_prefix,keyword_expansion')
-  .split(',')
-  .map((v) => v.trim())
-  .filter(Boolean);
+const RETRIEVAL_EVAL_DEFAULT_TOP_K = parseBoundedNumberEnv(process.env.RETRIEVAL_EVAL_DEFAULT_TOP_K, 5, 1, 20);
+const RETRIEVAL_TUNING_MIN_CASES = parseMinIntEnv(process.env.RETRIEVAL_TUNING_MIN_CASES, 30, 10);
+const RETRIEVAL_TUNING_MIN_NDCG_DELTA = parseMinNumberEnv(process.env.RETRIEVAL_TUNING_MIN_NDCG_DELTA, 0.03, 0.001);
+const RETRIEVAL_SHADOW_VARIANTS = parseCsvList(process.env.RETRIEVAL_SHADOW_VARIANTS || 'intent_prefix,keyword_expansion');
 
 export type RetrievalShadowVariant = 'baseline' | 'intent_prefix' | 'keyword_expansion';
 
@@ -401,7 +400,7 @@ export async function runRetrievalEval(params: {
       summary,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     await client
       .from(T_RETRIEVAL_EVAL_RUNS)
       .update({

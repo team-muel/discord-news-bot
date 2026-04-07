@@ -31,6 +31,7 @@ import { isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_SPRINT_PIPELINES, T_AGENT_TRUST_SCORES } from '../infra/tableRegistry';
 import type { AutonomyLevel } from './sprintOrchestrator';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ export async function computeTrustScore(
 
     return result;
   } catch (err) {
-    logger.debug('[TRUST] compute error for %s/%s: %s', guildId, category, err instanceof Error ? err.message : String(err));
+    logger.debug('[TRUST] compute error for %s/%s: %s', guildId, category, getErrorMessage(err));
     return {
       guildId,
       category,
@@ -452,7 +453,7 @@ export async function runTrustDecayCycle(): Promise<{ decayed: number; skipped: 
       }
     }
   } catch (err) {
-    logger.debug('[TRUST-DECAY] cycle error: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[TRUST-DECAY] cycle error: %s', getErrorMessage(err));
   }
 
   return { decayed, skipped };
@@ -472,7 +473,7 @@ export function startTrustDecayTimer(): void {
 
   decayTimerId = setInterval(() => {
     void runTrustDecayCycle().catch((err: unknown) => {
-      logger.debug('[TRUST-DECAY] cycle failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[TRUST-DECAY] cycle failed: %s', getErrorMessage(err));
     });
   }, TRUST_DECAY_INTERVAL_MS);
 }

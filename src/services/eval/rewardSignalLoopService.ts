@@ -7,15 +7,16 @@
 
 import type { Client } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { computeRewardSnapshot, persistRewardSnapshot } from './rewardSignalService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const REWARD_LOOP_ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_LOOP_ENABLED, true);
-const REWARD_LOOP_INTERVAL_HOURS = Math.max(1, parseIntegerEnv(process.env.REWARD_SIGNAL_LOOP_INTERVAL_HOURS, 6));
+const REWARD_LOOP_INTERVAL_HOURS = parseMinIntEnv(process.env.REWARD_SIGNAL_LOOP_INTERVAL_HOURS, 6, 1);
 const REWARD_LOOP_RUN_ON_START = parseBooleanEnv(process.env.REWARD_SIGNAL_LOOP_RUN_ON_START, false);
-const REWARD_LOOP_MAX_GUILDS = Math.max(1, parseIntegerEnv(process.env.REWARD_SIGNAL_LOOP_MAX_GUILDS, 30));
-const REWARD_LOOP_CONCURRENCY = Math.max(1, parseIntegerEnv(process.env.REWARD_SIGNAL_LOOP_CONCURRENCY, 4));
+const REWARD_LOOP_MAX_GUILDS = parseMinIntEnv(process.env.REWARD_SIGNAL_LOOP_MAX_GUILDS, 30, 1);
+const REWARD_LOOP_CONCURRENCY = parseMinIntEnv(process.env.REWARD_SIGNAL_LOOP_CONCURRENCY, 4, 1);
 
 let running = false;
 let lastRunAt: string | null = null;
@@ -84,7 +85,7 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
           stats.failedGuilds += 1;
           logger.warn(
             '[REWARD-SIGNAL-LOOP] guild run failed error=%s',
-            result.reason instanceof Error ? result.reason.message : String(result.reason),
+            getErrorMessage(result.reason),
           );
         }
         // fulfilled with false = guild skipped (Supabase not configured, etc.) — not counted as failure

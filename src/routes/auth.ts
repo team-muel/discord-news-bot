@@ -17,8 +17,7 @@ import {
   FRONTEND_ORIGIN,
   NODE_ENV,
 } from '../config';
-import { buildDevUserFromCode, clearSessionCookie, getCookieOptions, issueSessionToken } from '../services/authService';
-import { clearCsrfCookie, issueCsrfToken, setCsrfCookie } from '../services/authService';
+import { buildDevUserFromCode, clearSessionCookie, getCookieOptions, issueSessionToken, clearCsrfCookie, issueCsrfToken, setCsrfCookie } from '../services/authService';
 import { requireAuth } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabaseClient';

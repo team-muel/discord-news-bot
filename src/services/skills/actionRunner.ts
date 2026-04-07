@@ -2,22 +2,20 @@ import crypto from 'crypto';
 // Cross-domain imports via barrel exports (domain boundary contracts)
 import { buildNewsFingerprint, isNewsFingerprinted, recordNewsFingerprint } from '../news';
 import { getDynamicAction } from '../workerGeneration';
-import { createMemoryItem } from '../agent';
-import { buildWorkerApprovalGateSnapshot } from '../agent';
+import { createMemoryItem, buildWorkerApprovalGateSnapshot } from '../agent';
 import { compilePromptGoal } from '../infra';
 // Root-level service imports (no barrel available)
 import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
-import { setGateProviderProfileOverride } from '../llmClient';
-import type { LlmProviderProfile } from '../llmClient';
+import { setGateProviderProfileOverride, type LlmProviderProfile } from '../llmClient';
 // Within-domain imports
 import { getAction } from './actions/registry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
 import logger from '../../logger';
@@ -39,7 +37,7 @@ export type { SkillActionResult, FailureDiagnostics } from './actionRunnerDiagno
 
 /** Actions that require approval_required enforcement regardless of guild policy runMode. */
 const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
-  String(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute').split(',').map((s) => s.trim()).filter(Boolean),
+  parseCsvList(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute'),
 );
 
 /**
@@ -69,7 +67,7 @@ export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: bo
     }
     return { synced: false, actions, error: result.error || result.summary };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     logger.debug('[ACTION-RUNNER] OpenShell policy sync skipped: %s', msg);
     return { synced: false, actions, error: msg };
   }
@@ -77,7 +75,7 @@ export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: bo
 
 /** Gate verdict enforcement: block execution when latest gate-run overall = 'no-go'. */
 const GATE_VERDICT_ENFORCEMENT_ENABLED = parseBooleanEnv(process.env.GATE_VERDICT_ENFORCEMENT_ENABLED, false);
-const GATE_VERDICT_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000));
+const GATE_VERDICT_CACHE_TTL_MS = parseMinIntEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000, 30_000);
 let cachedGateVerdict: Map<string, { overall: string; providerProfileTarget: string | null; fetchedAt: number }> = new Map();
 
 const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string | null; providerProfileTarget: string | null }> => {
@@ -99,7 +97,7 @@ const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string 
     }
     return { overall, providerProfileTarget };
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] guild-policy lookup failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] guild-policy lookup failed guildId=%s: %s', guildId, getErrorMessage(err));
     const cached = cachedGateVerdict.get(guildId);
     return { overall: cached?.overall || null, providerProfileTarget: cached?.providerProfileTarget || null };
   }
@@ -112,23 +110,23 @@ type GoalActionInput = {
 };
 
 const ACTION_RUNNER_ENABLED = parseBooleanEnv(process.env.ACTION_RUNNER_ENABLED, true);
-const ACTION_RETRY_MAX = Math.max(0, parseIntegerEnv(process.env.ACTION_RETRY_MAX, 2));
-const ACTION_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_TIMEOUT_MS, 15_000));
+const ACTION_RETRY_MAX = parseMinIntEnv(process.env.ACTION_RETRY_MAX, 2, 0);
+const ACTION_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_TIMEOUT_MS, 15_000, 1000);
 const ACTION_CIRCUIT_BREAKER_ENABLED = parseBooleanEnv(process.env.ACTION_CIRCUIT_BREAKER_ENABLED, true);
-const ACTION_CIRCUIT_FAILURE_THRESHOLD = Math.max(1, parseIntegerEnv(process.env.ACTION_CIRCUIT_FAILURE_THRESHOLD, 3));
-const ACTION_CIRCUIT_OPEN_MS = Math.max(5_000, parseIntegerEnv(process.env.ACTION_CIRCUIT_OPEN_MS, 60_000));
-const ACTION_FINOPS_DEGRADED_RETRY_MAX = Math.max(0, parseIntegerEnv(process.env.ACTION_FINOPS_DEGRADED_RETRY_MAX, 1));
-const ACTION_FINOPS_DEGRADED_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_FINOPS_DEGRADED_TIMEOUT_MS, 8_000));
+const ACTION_CIRCUIT_FAILURE_THRESHOLD = parseMinIntEnv(process.env.ACTION_CIRCUIT_FAILURE_THRESHOLD, 3, 1);
+const ACTION_CIRCUIT_OPEN_MS = parseMinIntEnv(process.env.ACTION_CIRCUIT_OPEN_MS, 60_000, 5_000);
+const ACTION_FINOPS_DEGRADED_RETRY_MAX = parseMinIntEnv(process.env.ACTION_FINOPS_DEGRADED_RETRY_MAX, 1, 0);
+const ACTION_FINOPS_DEGRADED_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_FINOPS_DEGRADED_TIMEOUT_MS, 8_000, 1000);
 const ACTION_RUNNER_MODE = getActionRunnerMode();
 const ACTION_CACHE_ENABLED = parseBooleanEnv(process.env.ACTION_CACHE_ENABLED, true);
-const ACTION_CACHE_TTL_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000));
-const ACTION_CACHE_MAX_ENTRIES = Math.max(50, parseIntegerEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000));
+const ACTION_CACHE_TTL_MS = parseMinIntEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000, 1000);
+const ACTION_CACHE_MAX_ENTRIES = parseMinIntEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000, 50);
 const ACTION_GOVERNANCE_FAST_PATH_ENABLED = parseBooleanEnv(process.env.ACTION_GOVERNANCE_FAST_PATH_ENABLED, true);
 
 /** Read-only actions that skip guild policy + FinOps + gate-verdict governance. */
 const GOVERNANCE_FAST_PATH_ACTIONS: ReadonlySet<string> = new Set(
-  String(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '').trim()
-    ? String(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS).split(',').map((s) => s.trim()).filter(Boolean)
+  parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '').length > 0
+    ? parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '')
     : [
       'web.search',
       'web.fetch',
@@ -149,12 +147,12 @@ const isGovernanceFastPathEligible = (actionName: string): boolean => {
 };
 
 const ACTION_NEWS_CAPTURE_ENABLED = parseBooleanEnv(process.env.ACTION_NEWS_CAPTURE_ENABLED, true);
-const ACTION_NEWS_CAPTURE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000));
-const ACTION_NEWS_CAPTURE_MIN_ITEMS = Math.max(1, Math.min(5, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2)));
-const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = Math.max(6, Math.min(24 * 30, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72)));
-const ACTION_NEWS_CAPTURE_MAX_ITEMS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5)));
-const ACTION_NEWS_CAPTURE_SOURCE = String(process.env.ACTION_NEWS_CAPTURE_SOURCE || 'google_news_rss').trim() || 'google_news_rss';
-const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000));
+const ACTION_NEWS_CAPTURE_TTL_MS = parseMinIntEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000, 60_000);
+const ACTION_NEWS_CAPTURE_MIN_ITEMS = parseBoundedNumberEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2, 1, 5);
+const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = parseBoundedNumberEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72, 6, 720);
+const ACTION_NEWS_CAPTURE_MAX_ITEMS = parseBoundedNumberEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5, 1, 20);
+const ACTION_NEWS_CAPTURE_SOURCE = parseStringEnv(process.env.ACTION_NEWS_CAPTURE_SOURCE, 'google_news_rss') || 'google_news_rss';
+const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = parseMinIntEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 const DEFAULT_CACHEABLE_ACTIONS = [
   'code.generate',
   'rag.retrieve',
@@ -169,10 +167,7 @@ const DEFAULT_CACHEABLE_ACTIONS = [
   'db.supabase.read',
 ];
 const ACTION_CACHEABLE_ACTION_SET = new Set(
-  String(process.env.ACTION_CACHEABLE_ACTIONS || '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean),
+  parseCsvList(process.env.ACTION_CACHEABLE_ACTIONS),
 );
 if (ACTION_CACHEABLE_ACTION_SET.size === 0) {
   for (const actionName of DEFAULT_CACHEABLE_ACTIONS) {
@@ -240,7 +235,7 @@ const getFinopsBudgetStatusSafely = async (guildId: string) => {
       lastFinopsBudgetFetchErrorLogAt = now;
       logger.warn(
         '[ACTION-RUNNER] FinOps budget lookup failed; fallback to normal mode (throttled): %s',
-        error instanceof Error ? error.message : String(error),
+        getErrorMessage(error),
       );
     }
     return null;
@@ -249,20 +244,11 @@ const getFinopsBudgetStatusSafely = async (guildId: string) => {
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
-const csvToSet = (value: string): Set<string> => {
-  return new Set(
-    String(value || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  );
-};
-
-const ACTION_NEWS_CAPTURE_ALLOW_GUILDS = csvToSet(process.env.ACTION_NEWS_CAPTURE_ALLOW_GUILDS || '');
-const ACTION_NEWS_CAPTURE_DENY_GUILDS = csvToSet(process.env.ACTION_NEWS_CAPTURE_DENY_GUILDS || '');
-const ACTION_NEWS_CAPTURE_DENY_USERS = csvToSet(process.env.ACTION_NEWS_CAPTURE_DENY_USERS || '');
+const ACTION_NEWS_CAPTURE_ALLOW_GUILDS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_ALLOW_GUILDS));
+const ACTION_NEWS_CAPTURE_DENY_GUILDS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_DENY_GUILDS));
+const ACTION_NEWS_CAPTURE_DENY_USERS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_DENY_USERS));
 const ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS = new Set(
-  Array.from(csvToSet(process.env.ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS || ''))
+  Array.from(parseCsvList(process.env.ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS))
     .map((domain) => domain.toLowerCase().replace(/^\*\./, '').replace(/^www\./, ''))
     .filter(Boolean),
 );
@@ -341,7 +327,7 @@ const canonicalizeUrl = (urlText: string): string => {
     url.hash = '';
     return url.toString();
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] url-parse fallback: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] url-parse fallback: %s', getErrorMessage(err));
     return urlText.trim();
   }
 };
@@ -372,7 +358,7 @@ const parseNewsArtifact = (artifact: string): ParsedNewsArtifact | null => {
   try {
     domain = normalizeDomain(new URL(url).hostname);
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] domain extraction failed url=%s: %s', url?.slice(0, 80), err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] domain extraction failed url=%s: %s', url?.slice(0, 80), getErrorMessage(err));
     return null;
   }
 
@@ -412,7 +398,7 @@ const isNewsCaptureAllowedByPolicy = async (params: {
       return false;
     }
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] capture-policy check failed guildId=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] capture-policy check failed guildId=%s: %s', params.guildId, getErrorMessage(err));
     return false;
   }
 
@@ -441,7 +427,7 @@ const captureExternalNewsMemory = async (params: {
     const dbDomainList = await listGuildAllowedDomains(params.guildId);
     dbDomains = new Set(dbDomainList);
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] domains DB load failed guildId=%s: %s', params.guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] domains DB load failed guildId=%s: %s', params.guildId, getErrorMessage(err));
     return;
   }
   const effectiveDomainFilter = new Set([...ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS, ...dbDomains]);
@@ -567,7 +553,7 @@ const captureExternalNewsMemory = async (params: {
       ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
     });
   } catch (err) {
-    logger.debug('[ACTION-RUNNER] news memory-persist failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[ACTION-RUNNER] news memory-persist failed: %s', getErrorMessage(err));
   }
 };
 
@@ -767,7 +753,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     try {
       governance = await getGuildActionPolicy(input.guildId, action.name);
     } catch (err) {
-      logger.warn('[ACTION-RUNNER] action-governance failed action=%s guildId=%s: %s', action.name, input.guildId, err instanceof Error ? err.message : String(err));
+      logger.warn('[ACTION-RUNNER] action-governance failed action=%s guildId=%s: %s', action.name, input.guildId, getErrorMessage(err));
       recordFailureCategory('ACTION_POLICY_UNAVAILABLE');
       lines.push(`액션: ${action.name}`);
       lines.push('상태: 실패 (ACTION_POLICY_UNAVAILABLE)');
@@ -1159,6 +1145,7 @@ import {
   updateWorkflowStep,
   recordWorkflowEvent,
 } from '../workflow';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const PIPELINE_MODE_ENABLED = parseBooleanEnv(process.env.PIPELINE_MODE_ENABLED, false);
 
@@ -1338,7 +1325,7 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
         pipeOutput: true,
       }));
     } catch (err) {
-      logger.debug('[ACTION-RUNNER] pipeline-build replan failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[ACTION-RUNNER] pipeline-build replan failed: %s', getErrorMessage(err));
       return [];
     }
   };

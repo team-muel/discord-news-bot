@@ -31,9 +31,11 @@ import {
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
+import { getErrorMessage } from '../../utils/errorMessage';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
-const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, Number(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS || 120_000));
+const GRAPH_META_CACHE_TTL_MS = parseMinIntEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000, 30_000);
 const graphMetaCache = new TtlCache<Record<string, any>>(4);
 const GRAPH_META_CACHE_KEY = 'graph_metadata';
 
@@ -72,8 +74,8 @@ const INTENT_ROUTES: Record<string, {
 
 // ── Dynamic intent enrichment from vault tag distribution ──────
 
-const DYNAMIC_INTENT_ENABLED = String(process.env.OBSIDIAN_DYNAMIC_INTENT_ROUTING ?? 'true').trim() === 'true';
-const DYNAMIC_INTENT_MIN_TAG_COUNT = Math.max(2, Number(process.env.OBSIDIAN_DYNAMIC_INTENT_MIN_TAG_COUNT || 3));
+const DYNAMIC_INTENT_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_ROUTING, true);
+const DYNAMIC_INTENT_MIN_TAG_COUNT = parseMinIntEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_MIN_TAG_COUNT, 3, 2);
 
 let _dynamicIntentEnriched = false;
 
@@ -164,12 +166,12 @@ export interface RAGQueryResult {
 type GuildScopeMode = 'off' | 'prefer' | 'strict';
 
 const DEFAULT_CONTEXT_MODE: 'full' | 'metadata_first' =
-  String(process.env.OBSIDIAN_RAG_CONTEXT_MODE || 'metadata_first').trim().toLowerCase() === 'full'
+  parseStringEnv(process.env.OBSIDIAN_RAG_CONTEXT_MODE, 'metadata_first').toLowerCase() === 'full'
     ? 'full'
     : 'metadata_first';
 
 const DEFAULT_GUILD_SCOPE_MODE: GuildScopeMode = (() => {
-  const raw = String(process.env.OBSIDIAN_RAG_GUILD_SCOPE_MODE || 'prefer').trim().toLowerCase();
+  const raw = parseStringEnv(process.env.OBSIDIAN_RAG_GUILD_SCOPE_MODE, 'prefer').toLowerCase();
   if (raw === 'off' || raw === 'strict') {
     return raw;
   }
@@ -203,7 +205,7 @@ export async function initObsidianRAG(): Promise<boolean> {
     // Periodic cache cleanup (every hour)
     const cacheCleanupTimer = setInterval(() => {
       clearExpiredCache().catch(error =>
-        logger.warn('[OBSIDIAN-RAG] Cache cleanup failed: %o', error)
+        logger.warn('[OBSIDIAN-RAG] Cache cleanup failed: %s', getErrorMessage(error))
       );
     }, 3600000);
     cacheCleanupTimer.unref();
@@ -211,7 +213,7 @@ export async function initObsidianRAG(): Promise<boolean> {
     initialized = true;
     return true;
   } catch (error) {
-    logger.error('[OBSIDIAN-RAG] Initialization failed: %o', error);
+    logger.error('[OBSIDIAN-RAG] Initialization failed: %s', getErrorMessage(error));
     return false;
   }
 }
@@ -318,7 +320,7 @@ export async function queryObsidianRAG(
 
     return result;
   } catch (error) {
-    logger.error('[OBSIDIAN-RAG] Query failed: %o', error);
+    logger.error('[OBSIDIAN-RAG] Query failed: %s', getErrorMessage(error));
     return {
       sourceFiles: [],
       documentContext: 'RAG query failed. Please try again later.',
@@ -454,7 +456,7 @@ async function findRelatedDocuments(
     logger.debug('[OBSIDIAN-RAG] Found %d documents (incl. 2-hop) for intent, returning %d', scoredResults.size, paths.length);
     return paths;
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Document search failed: %o', error);
+    logger.warn('[OBSIDIAN-RAG] Document search failed: %s', getErrorMessage(error));
     return [];
   }
 }
@@ -580,7 +582,7 @@ export async function writeRetroToVault(params: {
   /** Vault-relative path to the previous retro for the follows chain. */
   prevRetroPath?: string;
 }): Promise<{ path: string } | null> {
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const fileName = `${dateStr}_retro_${params.sprintId}.md`;
@@ -645,17 +647,17 @@ export async function writeRetroToVault(params: {
     }
     return result;
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Failed to write retro to vault: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Failed to write retro to vault: %s', getErrorMessage(error));
     return null;
   }
 }
 
 // ── Reactive Learning Loop ─────────────────────────────────────
 
-const REACTIVE_LEARNING_ENABLED = String(process.env.OBSIDIAN_REACTIVE_LEARNING ?? 'true').trim() === 'true';
+const REACTIVE_LEARNING_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_REACTIVE_LEARNING, true);
 const REACTIVE_MIN_DOCS = 2; // Only record insights when >= N docs found (skip trivial queries)
 let _insightCounter = 0;
-const INSIGHT_WRITE_INTERVAL = Math.max(1, Number(process.env.OBSIDIAN_REACTIVE_WRITE_INTERVAL || 5)); // Write every N-th query
+const INSIGHT_WRITE_INTERVAL = parseMinIntEnv(process.env.OBSIDIAN_REACTIVE_WRITE_INTERVAL, 5, 1); // Write every N-th query
 
 async function writeQueryInsight(params: {
   question: string;
@@ -671,7 +673,7 @@ async function writeQueryInsight(params: {
   _insightCounter++;
   if (_insightCounter % INSIGHT_WRITE_INTERVAL !== 0) return;
 
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
   const dateStr = new Date().toISOString().slice(0, 10);
   const timeTag = new Date().toISOString().slice(11, 16).replace(':', '');
   const fileName = `insights/${dateStr}_query_${timeTag}.md`;
@@ -713,7 +715,7 @@ async function writeQueryInsight(params: {
     });
     logger.debug('[OBSIDIAN-RAG] Query insight written: %s', fileName);
   } catch (error) {
-    logger.debug('[OBSIDIAN-RAG] Query insight write failed (non-critical): %s', error instanceof Error ? error.message : String(error));
+    logger.debug('[OBSIDIAN-RAG] Query insight write failed (non-critical): %s', getErrorMessage(error));
   }
 }
 
@@ -728,7 +730,7 @@ interface KnowledgeGapEntry {
 
 const _knowledgeGaps: KnowledgeGapEntry[] = [];
 const KNOWLEDGE_GAP_MAX_BUFFER = 50;
-const KNOWLEDGE_GAP_FLUSH_THRESHOLD = Math.max(3, Number(process.env.OBSIDIAN_GAP_FLUSH_THRESHOLD || 10));
+const KNOWLEDGE_GAP_FLUSH_THRESHOLD = parseMinIntEnv(process.env.OBSIDIAN_GAP_FLUSH_THRESHOLD, 10, 3);
 
 function recordKnowledgeGap(question: string, intent: IntentCategory, guildId?: string): void {
   _knowledgeGaps.push({
@@ -752,7 +754,7 @@ function recordKnowledgeGap(question: string, intent: IntentCategory, guildId?: 
 export async function flushKnowledgeGaps(): Promise<{ path: string } | null> {
   if (_knowledgeGaps.length === 0) return null;
 
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
   const dateStr = new Date().toISOString().slice(0, 10);
   const fileName = `gaps/${dateStr}_knowledge_gaps.md`;
 
@@ -806,7 +808,7 @@ export async function flushKnowledgeGaps(): Promise<{ path: string } | null> {
     }
     return result;
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Knowledge gap flush failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Knowledge gap flush failed: %s', getErrorMessage(error));
     return null;
   }
 }
@@ -892,7 +894,7 @@ export async function queryObsidianLoreHints(
       .sort((a, b) => b.score - a.score)
       .slice(0, maxDocs);
   } catch (err) {
-    logger.debug('[OBSIDIAN-RAG] Lore hints failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[OBSIDIAN-RAG] Lore hints failed: %s', getErrorMessage(err));
     return [];
   }
 }
@@ -902,7 +904,7 @@ export async function appendToDailyNote(content: string): Promise<boolean> {
     const { appendDailyNoteWithAdapter } = await import('./router');
     return appendDailyNoteWithAdapter(content);
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Daily note append failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Daily note append failed: %s', getErrorMessage(error));
     return false;
   }
 }
@@ -912,7 +914,7 @@ export async function readDailyNote(): Promise<string | null> {
     const { readDailyNoteWithAdapter } = await import('./router');
     return readDailyNoteWithAdapter();
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Daily note read failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[OBSIDIAN-RAG] Daily note read failed: %s', getErrorMessage(error));
     return null;
   }
 }

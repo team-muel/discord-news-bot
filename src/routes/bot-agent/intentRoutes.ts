@@ -12,6 +12,7 @@ import { requireAdmin } from '../../middleware/auth';
 import logger from '../../logger';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
 import type { BotAgentRouteDeps } from './types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export function registerBotAgentIntentRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter } = deps;
@@ -27,7 +28,7 @@ export function registerBotAgentIntentRoutes(deps: BotAgentRouteDeps): void {
       const intents = await getIntents({ guildId: guildId || undefined, status, limit });
       return res.json({ ok: true, intents, count: intents.length });
     } catch (err) {
-      logger.debug('[INTENT-API] list error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-API] list error: %s', getErrorMessage(err));
       return res.status(500).json({ ok: false, error: 'INTERNAL', message: 'Failed to list intents' });
     }
   });
@@ -49,7 +50,7 @@ export function registerBotAgentIntentRoutes(deps: BotAgentRouteDeps): void {
 
       return res.json({ ok: true, stats, rules });
     } catch (err) {
-      logger.debug('[INTENT-API] stats error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-API] stats error: %s', getErrorMessage(err));
       return res.status(500).json({ ok: false, error: 'INTERNAL', message: 'Failed to get intent stats' });
     }
   });
@@ -83,7 +84,7 @@ export function registerBotAgentIntentRoutes(deps: BotAgentRouteDeps): void {
 
       return res.json({ ok: true, intentId, status: 'approved', sprintId });
     } catch (err) {
-      logger.debug('[INTENT-API] approve error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-API] approve error: %s', getErrorMessage(err));
       return res.status(500).json({ ok: false, error: 'INTERNAL', message: 'Failed to approve intent' });
     }
   });
@@ -108,7 +109,7 @@ export function registerBotAgentIntentRoutes(deps: BotAgentRouteDeps): void {
       await updateIntentStatus(intentId, 'rejected');
       return res.json({ ok: true, intentId, status: 'rejected' });
     } catch (err) {
-      logger.debug('[INTENT-API] reject error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-API] reject error: %s', getErrorMessage(err));
       return res.status(500).json({ ok: false, error: 'INTERNAL', message: 'Failed to reject intent' });
     }
   });
@@ -136,7 +137,7 @@ export function registerBotAgentIntentRoutes(deps: BotAgentRouteDeps): void {
         })),
       });
     } catch (err) {
-      logger.debug('[INTENT-API] manual run error: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-API] manual run error: %s', getErrorMessage(err));
       return res.status(500).json({ ok: false, error: 'INTERNAL', message: 'Failed to run intent formation' });
     }
   });

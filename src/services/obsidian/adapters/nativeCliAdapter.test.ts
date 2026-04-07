@@ -7,6 +7,7 @@ vi.mock('node:child_process', () => ({
 vi.mock('../../../utils/env', () => ({
   parseBooleanEnv: (_v: unknown, _fallback: boolean) => true,
   parseIntegerEnv: (_v: unknown, fallback: number) => fallback,
+  parseStringEnv: (v: unknown, fallback: string) => (typeof v === 'string' && v.trim() ? v.trim() : fallback),
 }));
 
 // Enable native CLI for tests

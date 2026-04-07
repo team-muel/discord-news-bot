@@ -1,7 +1,8 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { logStructuredError } from '../structuredErrorLogService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type TelemetryTask = {
   id: string;
@@ -29,17 +30,17 @@ type TelemetryQueueStats = {
   durableHealthy: boolean;
 };
 
-const QUEUE_MAX_SIZE = Math.max(50, parseIntegerEnv(process.env.AGENT_TELEMETRY_QUEUE_MAX_SIZE, 1000));
-const QUEUE_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.AGENT_TELEMETRY_QUEUE_CONCURRENCY, 2)));
-const ERROR_LOG_THROTTLE_MS = Math.max(10_000, parseIntegerEnv(process.env.AGENT_TELEMETRY_QUEUE_ERROR_LOG_THROTTLE_MS, 60_000));
-const SATURATION_MODE = String(process.env.AGENT_TELEMETRY_QUEUE_SATURATION_MODE || 'drop').trim().toLowerCase();
+const QUEUE_MAX_SIZE = parseMinIntEnv(process.env.AGENT_TELEMETRY_QUEUE_MAX_SIZE, 1000, 50);
+const QUEUE_CONCURRENCY = parseBoundedNumberEnv(process.env.AGENT_TELEMETRY_QUEUE_CONCURRENCY, 2, 1, 8);
+const ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_TELEMETRY_QUEUE_ERROR_LOG_THROTTLE_MS, 60_000, 10_000);
+const SATURATION_MODE = parseStringEnv(process.env.AGENT_TELEMETRY_QUEUE_SATURATION_MODE, 'drop').toLowerCase();
 const DURABLE_QUEUE_ENABLED = parseBooleanEnv(process.env.AGENT_TELEMETRY_DURABLE_QUEUE_ENABLED, true);
-const DURABLE_TABLE = String(process.env.AGENT_TELEMETRY_DURABLE_TABLE || 'agent_telemetry_queue_tasks').trim();
-const DURABLE_MAX_ATTEMPTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_MAX_ATTEMPTS, 5)));
-const DURABLE_RETRY_BASE_MS = Math.max(1000, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_RETRY_BASE_MS, 5000));
+const DURABLE_TABLE = parseStringEnv(process.env.AGENT_TELEMETRY_DURABLE_TABLE, 'agent_telemetry_queue_tasks');
+const DURABLE_MAX_ATTEMPTS = parseBoundedNumberEnv(process.env.AGENT_TELEMETRY_DURABLE_MAX_ATTEMPTS, 5, 1, 10);
+const DURABLE_RETRY_BASE_MS = parseMinIntEnv(process.env.AGENT_TELEMETRY_DURABLE_RETRY_BASE_MS, 5000, 1000);
 const DURABLE_RETRY_MAX_MS = Math.max(DURABLE_RETRY_BASE_MS, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_RETRY_MAX_MS, 300_000));
-const DURABLE_RECOVERY_BATCH = Math.max(10, Math.min(1000, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_RECOVERY_BATCH, 200)));
-const DURABLE_STALE_RUNNING_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_TELEMETRY_DURABLE_STALE_RUNNING_MS, 300_000));
+const DURABLE_RECOVERY_BATCH = parseBoundedNumberEnv(process.env.AGENT_TELEMETRY_DURABLE_RECOVERY_BATCH, 200, 10, 1000);
+const DURABLE_STALE_RUNNING_MS = parseMinIntEnv(process.env.AGENT_TELEMETRY_DURABLE_STALE_RUNNING_MS, 300_000, 30_000);
 
 const queue: TelemetryTask[] = [];
 const handlers = new Map<string, TelemetryTaskHandler>();
@@ -75,7 +76,7 @@ const toPayloadRecord = (value: unknown): Record<string, unknown> => {
 
 const markDurableUnavailable = (error: unknown) => {
   durableHealthy = false;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = getErrorMessage(error);
   logger.error('[AGENT-TELEMETRY-QUEUE] durable queue disabled due to persistent error: %s', message);
 };
 
@@ -327,7 +328,7 @@ const scheduleDrain = () => {
         .catch((error) => {
           failed += 1;
           lastErrorAt = nowIso();
-          lastErrorMessage = error instanceof Error ? error.message : String(error);
+          lastErrorMessage = getErrorMessage(error);
           maybeLogError(`${task.name}: ${lastErrorMessage}`);
           void markFailedOrRetry(task, lastErrorMessage);
           void persistQueueError({
@@ -371,7 +372,7 @@ export const enqueueTelemetryTask = (params: {
         .catch((error) => {
           failed += 1;
           lastErrorAt = nowIso();
-          lastErrorMessage = error instanceof Error ? error.message : String(error);
+          lastErrorMessage = getErrorMessage(error);
           maybeLogError(`${taskName}: ${lastErrorMessage}`);
           void persistQueueError({
             code: 'TELEMETRY_TASK_FAILED',

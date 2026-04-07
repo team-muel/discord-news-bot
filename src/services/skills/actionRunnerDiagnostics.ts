@@ -2,7 +2,7 @@
  * Action runner diagnostics — failure tracking, trend analysis, and snapshot export.
  * Extracted from actionRunner to reduce file size.
  */
-import { parseIntegerEnv } from '../../utils/env';
+import { parseBoundedNumberEnv } from '../../utils/env';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ type ActionRunnerRunSample = {
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
-const ACTION_RUNNER_TREND_WINDOW_RUNS = Math.max(4, Math.min(50, parseIntegerEnv(process.env.ACTION_RUNNER_TREND_WINDOW_RUNS, 10)));
+const ACTION_RUNNER_TREND_WINDOW_RUNS = parseBoundedNumberEnv(process.env.ACTION_RUNNER_TREND_WINDOW_RUNS, 10, 4, 50);
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────
 

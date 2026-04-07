@@ -12,6 +12,7 @@ import {
   NEMOCLAW_SANDBOX_OLLAMA_URL as SANDBOX_OLLAMA_URL,
   WSL_DISTRO,
 } from '../../../config';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
@@ -126,7 +127,7 @@ export const nemoclawAdapter: ExternalToolAdapter = {
               return makeResult(true, `AI code review via sandbox ${name}`, parsed.response.split('\n').slice(0, 40));
             }
           } catch (sandboxErr) {
-            logger.debug('[NEMOCLAW] sandbox inference unavailable: %s', sandboxErr instanceof Error ? sandboxErr.message : String(sandboxErr));
+            logger.debug('[NEMOCLAW] sandbox inference unavailable: %s', getErrorMessage(sandboxErr));
             // Sandbox inference unavailable — fall through to OpenClaw Gateway / host LLM
           }
 
@@ -144,7 +145,7 @@ export const nemoclawAdapter: ExternalToolAdapter = {
               return makeResult(true, `Code review via OpenClaw Gateway${mode}`, gwResult.split('\n').slice(0, 40));
             }
           } catch (gwErr) {
-            logger.debug('[NEMOCLAW] OpenClaw Gateway fallback skipped: %s', gwErr instanceof Error ? gwErr.message : String(gwErr));
+            logger.debug('[NEMOCLAW] OpenClaw Gateway fallback skipped: %s', getErrorMessage(gwErr));
           }
 
           // Fallback 3: use llmClient pipeline (routing, retry, telemetry all handled centrally)
@@ -162,7 +163,7 @@ export const nemoclawAdapter: ExternalToolAdapter = {
                 return makeResult(true, `Code review via llmClient${mode}`, content.split('\n').slice(0, 40));
               }
             } catch (llmErr) {
-              logger.debug('[NEMOCLAW] llmClient fallback failed: %s', llmErr instanceof Error ? llmErr.message : String(llmErr));
+              logger.debug('[NEMOCLAW] llmClient fallback failed: %s', getErrorMessage(llmErr));
             }
           }
 
@@ -172,7 +173,7 @@ export const nemoclawAdapter: ExternalToolAdapter = {
           return makeResult(false, `Unknown action: ${action}`, [], 'UNKNOWN_ACTION');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       return makeResult(false, `nemoclaw ${action} failed`, [message], 'EXECUTION_FAILED');
     }
   },

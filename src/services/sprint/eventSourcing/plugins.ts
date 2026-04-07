@@ -7,7 +7,7 @@
 import type { Plugin, InferEventFromSchema, InferStateFromSchema } from 'ventyd';
 import logger from '../../../logger';
 import { sprintPipelineSchema } from './sprintPipelineEntity';
-import { logCatchError } from '../../../utils/errorMessage';
+import { logCatchError, getErrorMessage } from '../../../utils/errorMessage';
 
 export type SprintPlugin = Plugin<typeof sprintPipelineSchema>;
 type SprintEvent = InferEventFromSchema<typeof sprintPipelineSchema>;
@@ -165,7 +165,7 @@ export function createSignalBusPlugin(): SprintPlugin {
               break;
           }
         } catch (err) {
-          logger.debug('[VENTYD] signal-emit failed: %s', err instanceof Error ? err.message : String(err));
+          logger.debug('[VENTYD] signal-emit failed: %s', getErrorMessage(err));
         }
       }
     },

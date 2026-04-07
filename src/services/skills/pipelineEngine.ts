@@ -11,15 +11,15 @@
  * - Composable: each step produces typed output that feeds into the next
  * - Observable: every step transition is recorded via workflowPersistenceService
  */
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
-import { inferAgentRoleByActionName } from './actions/types';
-import type { ActionExecutionResult, ActionPlan, AgentRoleName } from './actions/types';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
+import { inferAgentRoleByActionName, type ActionExecutionResult, type ActionPlan, type AgentRoleName } from './actions/types';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const PIPELINE_MAX_STEPS = Math.max(3, parseIntegerEnv(process.env.PIPELINE_MAX_STEPS, 20));
-const PIPELINE_MAX_REPLAN_ATTEMPTS = Math.max(0, parseIntegerEnv(process.env.PIPELINE_MAX_REPLAN_ATTEMPTS, 2));
+const PIPELINE_MAX_STEPS = parseMinIntEnv(process.env.PIPELINE_MAX_STEPS, 20, 3);
+const PIPELINE_MAX_REPLAN_ATTEMPTS = parseMinIntEnv(process.env.PIPELINE_MAX_REPLAN_ATTEMPTS, 2, 0);
 const PIPELINE_PARALLEL_ENABLED = parseBooleanEnv(process.env.PIPELINE_PARALLEL_ENABLED, true);
 const PIPELINE_DATA_FLOW_ENABLED = parseBooleanEnv(process.env.PIPELINE_DATA_FLOW_ENABLED, true);
 
@@ -276,7 +276,7 @@ export const executePipeline = async (
               if (!r.ok) overallOk = false;
             } else {
               const errorMsg = settled.status === 'rejected'
-                ? (settled.reason instanceof Error ? settled.reason.message : String(settled.reason))
+                ? (getErrorMessage(settled.reason))
                 : 'null_result';
               results.push({
                 stepName: pStep.name,

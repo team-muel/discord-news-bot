@@ -25,14 +25,15 @@
  */
 
 import logger from '../../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.RENDER_ADAPTER_DISABLED, false);
-const API_KEY = (process.env.RENDER_API_KEY || '').trim();
-const BASE_URL = String(process.env.RENDER_API_BASE_URL || 'https://api.render.com/v1').trim().replace(/\/+$/, '');
-const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.RENDER_TIMEOUT_MS, 15_000));
-const DEFAULT_WORKSPACE = (process.env.RENDER_WORKSPACE_ID || '').trim();
+const API_KEY = parseStringEnv(process.env.RENDER_API_KEY, '');
+const BASE_URL = parseUrlEnv(process.env.RENDER_API_BASE_URL, 'https://api.render.com/v1');
+const TIMEOUT_MS = parseMinIntEnv(process.env.RENDER_TIMEOUT_MS, 15_000, 5_000);
+const DEFAULT_WORKSPACE = parseStringEnv(process.env.RENDER_WORKSPACE_ID, '');
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ const listServices = async (limit?: number): Promise<ExternalAdapterResult> => {
 
     return makeResult(true, 'service.list', `${summaries.length} services`, summaries, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'service.list', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'service.list', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -123,7 +124,7 @@ const getServiceDetails = async (serviceId: string): Promise<ExternalAdapterResu
     if (!ok) return makeResult(false, 'service.details', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
     return makeResult(true, 'service.details', `Service ${id}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'service.details', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'service.details', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -145,7 +146,7 @@ const listDeploys = async (serviceId: string, limit?: number): Promise<ExternalA
 
     return makeResult(true, 'deploy.list', `${summaries.length} deploys`, summaries, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'deploy.list', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'deploy.list', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -160,7 +161,7 @@ const getDeployDetails = async (serviceId: string, deployId: string): Promise<Ex
     if (!ok) return makeResult(false, 'deploy.details', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
     return makeResult(true, 'deploy.details', `Deploy ${dId}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'deploy.details', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'deploy.details', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -190,7 +191,7 @@ const queryLogs = async (serviceId: string, filters?: Record<string, unknown>): 
 
     return makeResult(true, 'log.query', `${lines.length} events`, lines, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'log.query', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'log.query', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -230,7 +231,7 @@ const getMetrics = async (serviceId: string, _args: Record<string, unknown>): Pr
 
     return makeResult(true, 'metrics.get', `Deploy health for ${id}`, output, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'metrics.get', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'metrics.get', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -252,7 +253,7 @@ const listEnvVars = async (serviceId: string): Promise<ExternalAdapterResult> =>
 
     return makeResult(true, 'env.list', `${summaries.length} env vars`, summaries, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'env.list', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'env.list', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -288,7 +289,7 @@ const updateEnvVars = async (serviceId: string, vars: unknown): Promise<External
     const updated = Array.isArray(body) ? body.length : 0;
     return makeResult(true, 'env.update', `Updated ${updated} env vars on ${id}`, [`${sanitized.length} vars applied`], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'env.update', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'env.update', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -323,7 +324,7 @@ const queryPostgres = async (databaseId: string, sql: string): Promise<ExternalA
 
     return makeResult(true, 'postgres.query', `${rows.length} rows`, output, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'postgres.query', 'Render unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'postgres.query', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 

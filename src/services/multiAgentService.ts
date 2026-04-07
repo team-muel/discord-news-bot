@@ -167,7 +167,6 @@ export const getRecentSessionOutcomes = (guildId: string): SessionOutcomeEntry[]
   return recentSessionOutcomes.get(guildId) || [];
 };
 
-
 registerTelemetryTaskHandler(GOT_SHADOW_RECORD_TASK, async (payload) => {
   await recordGotShadowRun(payload as Parameters<typeof recordGotShadowRun>[0]);
 });
@@ -297,7 +296,7 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
     userClarifiedWithinTurns: earlyStepFailureWithLowConfidence,
     stepFailureCount: failedStepCount,
   }).catch((err) => {
-    logger.warn('[SESSION-CLEANUP] Intent attribution failed session=%s: %s', session.id, err instanceof Error ? err.message : String(err));
+    logger.warn('[SESSION-CLEANUP] Intent attribution failed session=%s: %s', session.id, getErrorMessage(err));
   });
 
   // Capture shadow trace before releasing in-memory structures
@@ -394,7 +393,7 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
             );
           }
         } catch (err) {
-          logger.debug('[TRAFFIC-ROUTING] decision failed session=%s: %s', session.id, err instanceof Error ? err.message : String(err));
+          logger.debug('[TRAFFIC-ROUTING] decision failed session=%s: %s', session.id, getErrorMessage(err));
         }
       }
     }).catch(() => {
@@ -991,7 +990,7 @@ const rehydrateActiveSessionsInner = async (): Promise<number> => {
     }
     return rehydrated;
   } catch (error) {
-    logger.warn('[AGENT] session rehydration failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[AGENT] session rehydration failed: %s', getErrorMessage(error));
     return 0;
   }
 };

@@ -1,4 +1,4 @@
-import { parseIntegerEnv } from '../../utils/env';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type AgentRetentionPolicySnapshot = {
@@ -13,12 +13,12 @@ export type AgentRetentionPolicySnapshot = {
   source: 'default' | 'stored';
 };
 
-const RETENTION_TABLE = String(process.env.AGENT_RETENTION_POLICY_TABLE || 'agent_retention_policies').trim();
-const DEFAULT_ACTION_LOG_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_ACTION_LOG_RETENTION_DAYS, 90));
-const DEFAULT_MEMORY_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_MEMORY_RETENTION_DAYS, 180));
-const DEFAULT_SOCIAL_GRAPH_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_SOCIAL_GRAPH_RETENTION_DAYS, 180));
-const DEFAULT_CONVERSATION_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_CONVERSATION_RETENTION_DAYS, 90));
-const DEFAULT_APPROVAL_REQUEST_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_APPROVAL_RETENTION_DAYS, 30));
+const RETENTION_TABLE = parseStringEnv(process.env.AGENT_RETENTION_POLICY_TABLE, 'agent_retention_policies');
+const DEFAULT_ACTION_LOG_DAYS = parseMinIntEnv(process.env.AGENT_ACTION_LOG_RETENTION_DAYS, 90, 1);
+const DEFAULT_MEMORY_DAYS = parseMinIntEnv(process.env.AGENT_MEMORY_RETENTION_DAYS, 180, 1);
+const DEFAULT_SOCIAL_GRAPH_DAYS = parseMinIntEnv(process.env.AGENT_SOCIAL_GRAPH_RETENTION_DAYS, 180, 1);
+const DEFAULT_CONVERSATION_DAYS = parseMinIntEnv(process.env.AGENT_CONVERSATION_RETENTION_DAYS, 90, 1);
+const DEFAULT_APPROVAL_REQUEST_DAYS = parseMinIntEnv(process.env.AGENT_APPROVAL_RETENTION_DAYS, 30, 1);
 
 const MAX_POLICY_CACHE_ENTRIES = 300;
 const memoryPolicies = new Map<string, AgentRetentionPolicySnapshot>();

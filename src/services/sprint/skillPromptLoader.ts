@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import logger from '../../logger';
 import { TtlCache } from '../../utils/ttlCache';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -112,7 +113,7 @@ const discoverReferenceFiles = (skillName: string): string[] => {
       .filter((f) => f.endsWith('.md'))
       .sort();
   } catch (err) {
-    logger.debug('[SKILL-PROMPT] discoverReferenceFiles failed for skill=%s: %s', skillName, err instanceof Error ? err.message : String(err));
+    logger.debug('[SKILL-PROMPT] discoverReferenceFiles failed for skill=%s: %s', skillName, getErrorMessage(err));
     return [];
   }
 };
@@ -196,7 +197,7 @@ export const listAvailableSkills = (): string[] => {
       return fs.existsSync(skillPath);
     });
   } catch (err) {
-    logger.debug('[SKILL-PROMPT] listAvailableSkills failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[SKILL-PROMPT] listAvailableSkills failed: %s', getErrorMessage(err));
     return [];
   }
 };
@@ -220,7 +221,7 @@ export const loadSkillReference = (skillName: string, refFileName: string): stri
   try {
     return fs.readFileSync(refPath, 'utf-8');
   } catch (err) {
-    logger.debug('[SKILL-PROMPT] readReferenceFile failed for %s/%s: %s', skillName, refFileName, err instanceof Error ? err.message : String(err));
+    logger.debug('[SKILL-PROMPT] readReferenceFile failed for %s/%s: %s', skillName, refFileName, getErrorMessage(err));
     return null;
   }
 };

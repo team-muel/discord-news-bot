@@ -17,6 +17,7 @@ import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import type { ExternalAdapterResult } from '../tools/externalAdapterTypes';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ─── Dynamic Configuration (re-read every call, no restart needed) ────────────
 
@@ -228,7 +229,7 @@ export const delegateToN8n = async <T = unknown>(
       durationMs: Date.now() - start,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     logger.warn('[N8N-DELEGATE] task=%s exception: %s', task, msg);
     return {
       delegated: true,

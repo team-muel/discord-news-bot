@@ -16,7 +16,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { cosineSimilarity } from '../../utils/vectorMath';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
@@ -33,9 +33,9 @@ const USER_EMBEDDING_REFRESH_INTERVAL_MS = Math.max(
   60_000,
   parseIntegerEnv(process.env.USER_EMBEDDING_REFRESH_INTERVAL_MS, 24 * 60 * 60_000),
 );
-const USER_EMBEDDING_MIN_ITEMS = Math.max(1, parseIntegerEnv(process.env.USER_EMBEDDING_MIN_ITEMS, 3));
-const USER_EMBEDDING_MAX_ITEMS = Math.max(10, parseIntegerEnv(process.env.USER_EMBEDDING_MAX_ITEMS, 200));
-const USER_EMBEDDING_BATCH_SIZE = Math.max(1, parseIntegerEnv(process.env.USER_EMBEDDING_BATCH_SIZE, 50));
+const USER_EMBEDDING_MIN_ITEMS = parseMinIntEnv(process.env.USER_EMBEDDING_MIN_ITEMS, 3, 1);
+const USER_EMBEDDING_MAX_ITEMS = parseMinIntEnv(process.env.USER_EMBEDDING_MAX_ITEMS, 200, 10);
+const USER_EMBEDDING_BATCH_SIZE = parseMinIntEnv(process.env.USER_EMBEDDING_BATCH_SIZE, 50, 1);
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -196,7 +196,7 @@ export const storeUserEmbedding = async (
     }
     return true;
   } catch (err) {
-    logger.debug('[USER-EMBEDDING] store error: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[USER-EMBEDDING] store error: %s', getErrorMessage(err));
     return false;
   }
 };
@@ -333,7 +333,7 @@ export const refreshUserEmbeddings = async (
       result.usersProcessed, result.usersUpdated, result.usersSkipped, result.errors,
     );
   } catch (err) {
-    logger.warn('[USER-EMBEDDING] refresh error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[USER-EMBEDDING] refresh error: %s', getErrorMessage(err));
   }
 
   return result;
@@ -342,6 +342,7 @@ export const refreshUserEmbeddings = async (
 // ──── Background Loop ─────────────────────────────────────────────────────────
 
 import { BackgroundLoop } from '../../utils/backgroundLoop';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const loop = new BackgroundLoop(
   async () => {

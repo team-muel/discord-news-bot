@@ -18,6 +18,7 @@ import {
 } from '../config';
 import logger from '../logger';
 import { isSupabaseConfigured, getSupabaseClient } from './supabaseClient';
+import { getErrorMessage } from '../utils/errorMessage';
 
 // ──── Configuration ──────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ export const precipitateSessionToMemory = async (input: SessionPrecipitationInpu
     logger.info('[NERVOUS-SYSTEM] precipitated session=%s to memory queue guild=%s', input.sessionId, input.guildId);
     return true;
   } catch (err) {
-    logger.warn('[NERVOUS-SYSTEM] session precipitation failed session=%s: %s', input.sessionId, err instanceof Error ? err.message : String(err));
+    logger.warn('[NERVOUS-SYSTEM] session precipitation failed session=%s: %s', input.sessionId, getErrorMessage(err));
     return false;
   }
 };
@@ -217,7 +218,7 @@ export const adjustBehaviorFromReward = async (guildId: string): Promise<RewardB
       actions,
     };
   } catch (err) {
-    logger.warn('[NERVOUS-SYSTEM] behavior adjustment failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.warn('[NERVOUS-SYSTEM] behavior adjustment failed guild=%s: %s', guildId, getErrorMessage(err));
     return null;
   }
 };
@@ -253,7 +254,7 @@ export const persistSelfNote = async (entry: SelfNoteEntry): Promise<boolean> =>
     logger.debug('[NERVOUS-SYSTEM] self-note persisted guild=%s source=%s', entry.guildId, entry.source);
     return true;
   } catch (err) {
-    logger.warn('[NERVOUS-SYSTEM] self-note persist failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[NERVOUS-SYSTEM] self-note persist failed: %s', getErrorMessage(err));
     return false;
   }
 };
@@ -341,7 +342,7 @@ export const loadSelfNotes = async (guildId: string): Promise<string[]> => {
     selfNotesCache.set(guildId, { entries, cachedAt: Date.now() });
     return entries.map((n) => `[자기 성찰: ${n.source}] ${n.note}`);
   } catch (err) {
-    logger.warn('[NERVOUS-SYSTEM] loadSelfNotes failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.warn('[NERVOUS-SYSTEM] loadSelfNotes failed guild=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };

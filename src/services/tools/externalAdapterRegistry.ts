@@ -9,8 +9,7 @@ import { renderAdapter } from './adapters/renderAdapter';
 import { ollamaAdapter } from './adapters/ollamaAdapter';
 import { litellmAdminAdapter } from './adapters/litellmAdminAdapter';
 import { mcpIndexingAdapter } from './adapters/mcpIndexingAdapter';
-import type { ExternalAdapterId, ExternalToolAdapter, ExternalAdapterResult } from './externalAdapterTypes';
-import { validateAdapterId } from './externalAdapterTypes';
+import { validateAdapterId, type ExternalAdapterId, type ExternalToolAdapter, type ExternalAdapterResult } from './externalAdapterTypes';
 import logger from '../../logger';
 
 /** Built-in adapters loaded at module init. */

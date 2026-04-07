@@ -3,7 +3,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type GuildKnowledgeManifest = {
   version: number;
@@ -25,7 +26,7 @@ export type GuildBootstrapSummary = {
 const AUTO_BOOTSTRAP_ON_GUILD_JOIN = parseBooleanEnv(process.env.OBSIDIAN_AUTO_BOOTSTRAP_ON_GUILD_JOIN, true);
 const AUTO_BOOTSTRAP_FORCE = parseBooleanEnv(process.env.OBSIDIAN_AUTO_BOOTSTRAP_FORCE, false);
 const AUTO_BOOTSTRAP_RUN_OPS_CYCLE = parseBooleanEnv(process.env.OBSIDIAN_AUTO_BOOTSTRAP_RUN_OPS_CYCLE, false);
-const AUTO_BOOTSTRAP_OPS_TIMEOUT_SEC = Math.max(60, parseIntegerEnv(process.env.OBSIDIAN_AUTO_BOOTSTRAP_OPS_TIMEOUT_SEC, 1200));
+const AUTO_BOOTSTRAP_OPS_TIMEOUT_SEC = parseMinIntEnv(process.env.OBSIDIAN_AUTO_BOOTSTRAP_OPS_TIMEOUT_SEC, 1200, 60);
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -238,7 +239,7 @@ export const autoBootstrapGuildKnowledgeOnJoin = async (params: {
     logger.warn(
       '[OBSIDIAN-BOOTSTRAP] initial ops-cycle failed guild=%s error=%s',
       params.guildId,
-      error instanceof Error ? error.message : String(error),
+      getErrorMessage(error),
     );
   }
 };

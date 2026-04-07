@@ -62,6 +62,7 @@ import {
 import {
   getAutomationRuntimeSnapshot,
   triggerAutomationJob,
+  type AutomationJobName,
 } from '../../services/automationBot';
 import { trackUserActivity } from '../../services/discord-support/userCrmService';
 import { recordReactionRewardSignal } from '../../services/discord-support/discordReactionRewardService';
@@ -120,7 +121,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     getUsageSummaryLine: () => getUsageSummaryLine(client),
     getGuildUsageSummaryLine,
     forceRegisterSlashCommands: deps.forceRegisterSlashCommands,
-    triggerAutomationJob: (jobName, options) => triggerAutomationJob(jobName as any, options),
+    triggerAutomationJob: (jobName, options) => triggerAutomationJob(jobName as AutomationJobName, options),
     getManualReconnectCooldownRemainingSec,
     hasActiveToken: () => Boolean(deps.getActiveToken()),
     requestManualReconnect: deps.runManualReconnect,
@@ -182,7 +183,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     if (!WORKER_APPROVAL_CHANNEL_ID) return;
     try {
       const ch = await client.channels.fetch(WORKER_APPROVAL_CHANNEL_ID);
-      if (ch && 'send' in ch) await (ch as any).send(message);
+      if (ch?.isSendable()) await ch.send(message);
     } catch (error) {
       logger.debug('[BOT] dynamic worker admin notify skipped: %s', getErrorMessage(error));
     }
@@ -204,7 +205,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         streamSessionProgress,
       });
     } catch (error) {
-      logger.error('[BOT] button interaction handler failed: %o', error);
+      logger.error('[BOT] button interaction handler failed: %s', getErrorMessage(error));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
       }
@@ -223,7 +224,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         await personaHandlers.handleUserContextCommand(interaction);
       }
     } catch (error) {
-      logger.error('[BOT] user context interaction handler failed: %o', error);
+      logger.error('[BOT] user context interaction handler failed: %s', getErrorMessage(error));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
       }
@@ -242,7 +243,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         await personaHandlers.handleUserNoteModal(interaction);
       }
     } catch (error) {
-      logger.error('[BOT] modal interaction handler failed: %o', error);
+      logger.error('[BOT] modal interaction handler failed: %s', getErrorMessage(error));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
       }
@@ -396,7 +397,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
             const trimmed = content.length > 1900 ? content.slice(0, 1900) + '\n\n_(잘림)_' : content;
             await interaction.editReply({ content: trimmed });
           } catch (err) {
-            await interaction.editReply({ content: `Metric Review 생성 실패: ${err instanceof Error ? err.message : String(err)}` });
+            await interaction.editReply({ content: `Metric Review 생성 실패: ${getErrorMessage(err)}` });
           }
           return;
         }
@@ -405,7 +406,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         }
       }
     } catch (error) {
-      logger.error('[BOT] interaction handler failed: %o', error);
+      logger.error('[BOT] interaction handler failed: %s', getErrorMessage(error));
       recordRuntimeError({ message: getErrorMessage(error), code: 'INTERACTION_HANDLER' });
       const errorBody = DISCORD_MESSAGES.bot.executionFailedBody;
       if (interaction.deferred || interaction.replied) {
@@ -443,7 +444,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
       try {
         await vibeHandlers.handleVibeMessage(message);
       } catch (error) {
-        logger.warn('[BOT] vibe message handling failed: %o', error);
+        logger.warn('[BOT] vibe message handling failed: %s', getErrorMessage(error));
       }
 
       // Skip passive memory (including Discord API fetch) when guild learning is disabled
@@ -461,7 +462,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         logger.debug('[BOT] CS channel message handler skipped: %s', getErrorMessage(error));
       });
     } catch (error) {
-      logger.warn('[BOT] messageCreate handler failed: %o', error);
+      logger.warn('[BOT] messageCreate handler failed: %s', getErrorMessage(error));
       recordRuntimeError({ message: getErrorMessage(error), code: 'MESSAGE_CREATE_HANDLER' });
     }
   });
@@ -477,9 +478,9 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     botRuntimeState.lastAlertReason = null;
     botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
-    void registerSlashCommands(client).catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', err instanceof Error ? err.message : String(err)));
-    void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', err instanceof Error ? err.message : String(err)));
-    void enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]).catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', err instanceof Error ? err.message : String(err)));
+    void registerSlashCommands(client).catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', getErrorMessage(err)));
+    void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', getErrorMessage(err)));
+    void enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]).catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', getErrorMessage(err)));
     // OpenClaw Gateway preflight — warn early if configured but unreachable
     if (OPENCLAW_ENABLED || OPENCLAW_GATEWAY_URL) {
       void checkOpenClawGatewayHealth().then((ok) => {
@@ -641,11 +642,11 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
   });
 
   client.on('shardError', (error) => {
-    logger.error('[BOT] shardError: %o', error);
+    logger.error('[BOT] shardError: %s', getErrorMessage(error));
   });
 
   client.on('error', (error) => {
-    logger.error('[BOT] client error: %o', error);
+    logger.error('[BOT] client error: %s', getErrorMessage(error));
   });
 
   client.on('warn', (info) => {

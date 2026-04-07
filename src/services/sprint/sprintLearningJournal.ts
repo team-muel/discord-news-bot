@@ -26,6 +26,8 @@ import {
   SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED,
   SPRINT_LEARNING_JOURNAL_AUTO_APPLY_MIN_CONFIDENCE,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Configuration ───────────────────────────────────────────────────────────
 
@@ -174,7 +176,7 @@ const writeJournalToSupabase = async (entry: JournalEntry): Promise<{ ok: boolea
     logger.info('[SPRINT-JOURNAL] recorded entry via Supabase for sprint=%s', entry.sprintId);
     return { ok: true, path };
   } catch (err) {
-    logger.warn('[SPRINT-JOURNAL] Supabase write failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[SPRINT-JOURNAL] Supabase write failed: %s', getErrorMessage(err));
     return { ok: false, path: null };
   }
 };
@@ -198,7 +200,7 @@ const loadJournalEntriesFromSupabase = async (limit: number): Promise<string[]> 
       .map((row: { content?: string }) => row.content)
       .filter((c): c is string => typeof c === 'string' && c.length > 0);
   } catch (err) {
-    logger.warn('[SPRINT-JOURNAL] Supabase read failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[SPRINT-JOURNAL] Supabase read failed: %s', getErrorMessage(err));
     return [];
   }
 };
@@ -260,7 +262,7 @@ const recordJournalToObsidian = async (entry: JournalEntry, vaultPath: string): 
 
     return { ok: result.ok, path: result.path };
   } catch (err) {
-    logger.warn('[SPRINT-JOURNAL] recordSprintJournalEntry error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[SPRINT-JOURNAL] recordSprintJournalEntry error: %s', getErrorMessage(err));
     return { ok: false, path: null };
   }
 };
@@ -301,7 +303,7 @@ const loadJournalEntriesFromObsidian = async (vaultPath: string, limit: number):
 
     return contents;
   } catch (err) {
-    logger.warn('[SPRINT-JOURNAL] loadRecentJournalEntries error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[SPRINT-JOURNAL] loadRecentJournalEntries error: %s', getErrorMessage(err));
     return [];
   }
 };
@@ -336,7 +338,7 @@ const extractDeterministicPatterns = (entries: string[]): ReconfigProposal[] => 
   for (const entry of entries) {
     const match = entry.match(/Failed:\s*([^\n]+)/);
     if (match && match[1].trim() !== 'none') {
-      for (const phase of match[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+      for (const phase of parseCsvList(match[1])) {
         phaseFailCounts[phase] = (phaseFailCounts[phase] || 0) + 1;
       }
     }
@@ -405,7 +407,7 @@ Analyze the patterns and propose additional workflow reconfigurations.`,
       }))
       .slice(0, 5);
   } catch (err) {
-    logger.debug('[SPRINT-JOURNAL] LLM reconfig generation failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[SPRINT-JOURNAL] LLM reconfig generation failed: %s', getErrorMessage(err));
     return [];
   }
 };
@@ -443,7 +445,7 @@ export const loadWorkflowReconfigHints = async (): Promise<WorkflowReconfigHints
       journalEntriesAnalyzed: entries.length,
     };
   } catch (err) {
-    logger.warn('[SPRINT-JOURNAL] loadWorkflowReconfigHints error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[SPRINT-JOURNAL] loadWorkflowReconfigHints error: %s', getErrorMessage(err));
     return null;
   }
 };

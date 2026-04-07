@@ -14,10 +14,11 @@ import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { compactText, extractQuery } from './queryUtils';
 import logger from '../../../logger';
-import { parseIntegerEnv } from '../../../utils/env';
+import { parseBoundedNumberEnv } from '../../../utils/env';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const FETCH_TIMEOUT_MS = 7_000;
-const VERIFY_SOURCE_LIMIT = Math.max(2, Math.min(10, parseIntegerEnv(process.env.NEWS_VERIFY_SOURCE_LIMIT, 4)));
+const VERIFY_SOURCE_LIMIT = parseBoundedNumberEnv(process.env.NEWS_VERIFY_SOURCE_LIMIT, 4, 2, 10);
 
 // ── Text extraction ──────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export const newsVerifyAction: ActionDefinition = {
         candidates = parseNewsRssLinks(xml, VERIFY_SOURCE_LIMIT);
       }
     } catch (error) {
-      logger.debug('[ACTION][news.verify] rss fetch failed: %s', error instanceof Error ? error.message : String(error));
+      logger.debug('[ACTION][news.verify] rss fetch failed: %s', getErrorMessage(error));
     }
 
     if (candidates.length < 2) {

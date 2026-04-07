@@ -1,3 +1,5 @@
+import { getErrorMessage } from '../../utils/errorMessage';
+import { parseMinIntEnv } from '../../utils/env';
 /**
  * Agent Role Worker Service
  *
@@ -100,7 +102,7 @@ const withFetchTimeout = async (url: string, timeoutMs: number): Promise<{ ok: b
     return {
       ok: false,
       status: 0,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     };
   } finally {
     clearTimeout(timer);
@@ -170,7 +172,7 @@ export const probeAgentRoleWorkerHealth = async (spec: AgentRoleWorkerSpec, time
   };
 };
 
-export const getAgentRoleWorkersHealthSnapshot = async (timeoutMs = Math.max(1000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000))) => {
+export const getAgentRoleWorkersHealthSnapshot = async (timeoutMs = parseMinIntEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000, 1000)) => {
   const entries = await Promise.all(listAgentRoleWorkerSpecs().map(async (spec) => [
     spec.id,
     await probeAgentRoleWorkerHealth(spec, timeoutMs),

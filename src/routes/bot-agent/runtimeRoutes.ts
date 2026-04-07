@@ -276,7 +276,6 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-
   router.get('/agent/runtime/loops', requireAdmin, async (_req, res, next) => {
     return res.json({
       ok: true,
@@ -286,7 +285,6 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       generatedAt: new Date().toISOString(),
     });
   });
-
 
   router.get('/agent/runtime/readiness', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
@@ -520,6 +518,5 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       next(error);
     }
   });
-
 
 }

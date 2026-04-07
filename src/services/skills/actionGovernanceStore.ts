@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type ActionRunMode = 'auto' | 'approval_required' | 'disabled';
 export type ActionApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
@@ -30,13 +31,13 @@ export type ActionApprovalRequest = {
   expiresAt: string;
 };
 
-const ACTION_POLICY_TABLE = String(process.env.ACTION_POLICY_TABLE || 'agent_action_policies').trim();
-const ACTION_APPROVAL_TABLE = String(process.env.ACTION_APPROVAL_TABLE || 'agent_action_approval_requests').trim();
-const ACTION_APPROVAL_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_APPROVAL_TTL_MS, 60 * 60 * 1000));
+const ACTION_POLICY_TABLE = parseStringEnv(process.env.ACTION_POLICY_TABLE, 'agent_action_policies');
+const ACTION_APPROVAL_TABLE = parseStringEnv(process.env.ACTION_APPROVAL_TABLE, 'agent_action_approval_requests');
+const ACTION_APPROVAL_TTL_MS = parseMinIntEnv(process.env.ACTION_APPROVAL_TTL_MS, 60 * 60 * 1000, 60_000);
 const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
-const ACTION_POLICY_DEFAULT_RUN_MODE = String(process.env.ACTION_POLICY_DEFAULT_RUN_MODE || 'approval_required').trim();
+const ACTION_POLICY_DEFAULT_RUN_MODE = parseStringEnv(process.env.ACTION_POLICY_DEFAULT_RUN_MODE, 'approval_required');
 const ACTION_POLICY_FAIL_OPEN_ON_ERROR = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);
-const ACTION_POLICY_IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const ACTION_POLICY_IS_PRODUCTION = parseStringEnv(process.env.NODE_ENV, '').toLowerCase() === 'production';
 const ACTION_POLICY_EFFECTIVE_FAIL_OPEN = !ACTION_POLICY_IS_PRODUCTION && ACTION_POLICY_FAIL_OPEN_ON_ERROR;
 
 if (ACTION_POLICY_IS_PRODUCTION && ACTION_POLICY_FAIL_OPEN_ON_ERROR) {
@@ -158,7 +159,7 @@ export const getGuildActionPolicy = async (guildId: string, actionName: string):
 
     return normalizePolicyRow(data);
   } catch (err) {
-    logger.debug('[GOVERNANCE] policy fetch failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] policy fetch failed guildId=%s: %s', guildId, getErrorMessage(err));
     return ACTION_POLICY_EFFECTIVE_FAIL_OPEN ? failOpenFallback : fallback;
   }
 };
@@ -187,7 +188,7 @@ export const listGuildActionPolicies = async (guildId: string): Promise<GuildAct
 
     return (data as Record<string, unknown>[]).map((row) => normalizePolicyRow(row));
   } catch (err) {
-    logger.debug('[GOVERNANCE] policy list failed guildId=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] policy list failed guildId=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };
@@ -343,7 +344,7 @@ export const createActionApprovalRequest = async (params: {
 
     return normalizeApprovalRow(data);
   } catch (err) {
-    logger.debug('[GOVERNANCE] approval create persist failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] approval create persist failed: %s', getErrorMessage(err));
     safeSetApproval(request.id, request);
     return request;
   }
@@ -384,7 +385,7 @@ export const listActionApprovalRequests = async (params: {
 
     return (data as Record<string, unknown>[]).map((row) => normalizeApprovalRow(row));
   } catch (err) {
-    logger.debug('[GOVERNANCE] approval list failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] approval list failed: %s', getErrorMessage(err));
     return [];
   }
 };
@@ -452,7 +453,7 @@ export const decideActionApprovalRequest = async (params: {
 
     return normalizeApprovalRow(data);
   } catch (err) {
-    logger.debug('[GOVERNANCE] approval decide failed requestId=%s: %s', params.requestId, err instanceof Error ? err.message : String(err));
+    logger.debug('[GOVERNANCE] approval decide failed requestId=%s: %s', params.requestId, getErrorMessage(err));
     return null;
   }
 };

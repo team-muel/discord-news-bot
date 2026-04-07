@@ -2,7 +2,7 @@ import { getActionRunnerDiagnosticsSnapshot } from '../skills/actionRunner';
 import { getWorkerProposalMetricsSnapshot } from '../workerGeneration/workerProposalMetrics';
 import { buildGoNoGoReport } from '../goNoGoService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
 
 type ReadinessStatus = 'pass' | 'fail' | 'warn';
@@ -17,22 +17,22 @@ type ReadinessCheck = {
   detail?: string;
 };
 
-const AGENT_READINESS_WINDOW_DAYS = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_WINDOW_DAYS, 30));
+const AGENT_READINESS_WINDOW_DAYS = parseMinIntEnv(process.env.AGENT_READINESS_WINDOW_DAYS, 30, 1);
 const AGENT_READINESS_FAIL_OPEN = parseBooleanEnv(process.env.AGENT_READINESS_FAIL_OPEN, false);
 const AGENT_READINESS_ALLOW_WARN = parseBooleanEnv(process.env.AGENT_READINESS_ALLOW_WARN, false);
-const AGENT_READINESS_IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const AGENT_READINESS_IS_PRODUCTION = parseStringEnv(process.env.NODE_ENV, '').toLowerCase() === 'production';
 const AGENT_READINESS_EFFECTIVE_FAIL_OPEN = !AGENT_READINESS_IS_PRODUCTION && AGENT_READINESS_FAIL_OPEN;
 const AGENT_READINESS_REQUIRE_RETRIEVAL_EVAL = parseBooleanEnv(process.env.AGENT_READINESS_REQUIRE_RETRIEVAL_EVAL, true);
-const AGENT_READINESS_RETRIEVAL_MAX_AGE_HOURS = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_RETRIEVAL_MAX_AGE_HOURS, 24 * 7));
+const AGENT_READINESS_RETRIEVAL_MAX_AGE_HOURS = parseMinIntEnv(process.env.AGENT_READINESS_RETRIEVAL_MAX_AGE_HOURS, 24 * 7, 1);
 const AGENT_READINESS_MIN_RETRIEVAL_NDCG = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_RETRIEVAL_NDCG, 0.45, 0, 1);
 const AGENT_READINESS_MAX_ACTION_FAILURE_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MAX_ACTION_FAILURE_RATE, 0.35, 0, 1);
-const AGENT_READINESS_MAX_ACTION_MISSING_TOTAL = Math.max(0, parseIntegerEnv(process.env.AGENT_READINESS_MAX_ACTION_MISSING_TOTAL, 5));
+const AGENT_READINESS_MAX_ACTION_MISSING_TOTAL = parseMinIntEnv(process.env.AGENT_READINESS_MAX_ACTION_MISSING_TOTAL, 5, 0);
 const AGENT_READINESS_MAX_ACTION_POLICY_BLOCK_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MAX_ACTION_POLICY_BLOCK_RATE, 0.5, 0, 1);
-const AGENT_READINESS_MIN_OBSERVED_RUNS = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_MIN_OBSERVED_RUNS, 5));
+const AGENT_READINESS_MIN_OBSERVED_RUNS = parseMinIntEnv(process.env.AGENT_READINESS_MIN_OBSERVED_RUNS, 5, 1);
 const AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_WORKER_GENERATION_SUCCESS_RATE, 0.4, 0, 1);
 const AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_PASS_RATE, 0.3, 0, 1);
-const AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES = Math.max(1, parseIntegerEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES, 3));
-const AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL = Math.max(0, parseIntegerEnv(process.env.AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0));
+const AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES = parseMinIntEnv(process.env.AGENT_READINESS_MIN_WORKER_APPROVAL_SAMPLES, 3, 1);
+const AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL = parseMinIntEnv(process.env.AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0, 0);
 const AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROP_RATE = parseBoundedNumberEnv(process.env.AGENT_READINESS_MAX_TELEMETRY_QUEUE_DROP_RATE, 0.02, 0, 1);
 
 if (AGENT_READINESS_IS_PRODUCTION && AGENT_READINESS_FAIL_OPEN) {

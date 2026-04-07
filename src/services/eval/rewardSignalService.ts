@@ -9,13 +9,14 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_COMMUNITY_INTERACTION_EVENTS, T_AGENT_SESSIONS, T_MEMORY_RETRIEVAL_LOGS, T_AGENT_LLM_CALL_LOGS, T_REWARD_SIGNAL_SNAPSHOTS } from '../infra/tableRegistry';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.REWARD_SIGNAL_ENABLED, true);
-const WINDOW_HOURS = Math.max(1, Math.min(168, parseIntegerEnv(process.env.REWARD_SIGNAL_WINDOW_HOURS, 6)));
+const WINDOW_HOURS = parseBoundedNumberEnv(process.env.REWARD_SIGNAL_WINDOW_HOURS, 6, 1, 168);
 
 // Blend weights (must sum to 1.0)
 const W_REACTION   = parseBoundedNumberEnv(process.env.REWARD_W_REACTION, 0.20, 0, 1);
@@ -24,7 +25,7 @@ const W_CITATION   = parseBoundedNumberEnv(process.env.REWARD_W_CITATION, 0.25, 
 const W_LATENCY    = parseBoundedNumberEnv(process.env.REWARD_W_LATENCY, 0.20, 0, 1);
 
 // Latency normalization: score = clamp(1 - latency/TARGET, 0, 1)
-const LATENCY_TARGET_MS = Math.max(500, parseIntegerEnv(process.env.REWARD_LATENCY_TARGET_MS, 10_000));
+const LATENCY_TARGET_MS = parseMinIntEnv(process.env.REWARD_LATENCY_TARGET_MS, 10_000, 500);
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
@@ -84,7 +85,7 @@ const fetchReactionSignals = async (
     }
     return { up: Math.max(0, up), down: Math.max(0, down) };
   } catch (err) {
-    logger.debug('[REWARD-SIGNAL] emoji-score compute failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[REWARD-SIGNAL] emoji-score compute failed: %s', getErrorMessage(err));
     return { up: 0, down: 0 };
   }
 };
@@ -110,7 +111,7 @@ const fetchSessionOutcomes = async (
     const succeeded = data.filter((r: any) => r.status === 'completed').length;
     return { total, succeeded };
   } catch (err) {
-    logger.debug('[REWARD-SIGNAL] session-outcomes fetch failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[REWARD-SIGNAL] session-outcomes fetch failed: %s', getErrorMessage(err));
     return { total: 0, succeeded: 0 };
   }
 };
@@ -141,7 +142,7 @@ const fetchRetrievalQuality = async (
     const avg = scores.reduce((sum, v) => sum + v, 0) / scores.length;
     return { count: data.length, avgScore: avg };
   } catch (err) {
-    logger.debug('[REWARD-SIGNAL] retrieval-quality metric failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[REWARD-SIGNAL] retrieval-quality metric failed: %s', getErrorMessage(err));
     return { count: 0, avgScore: null };
   }
 };
@@ -176,7 +177,7 @@ const fetchLatencyMetrics = async (
     const p95Ms = latencies[p95Index];
     return { avgMs, p95Ms };
   } catch (err) {
-    logger.debug('[REWARD-SIGNAL] latency-metrics fetch failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[REWARD-SIGNAL] latency-metrics fetch failed: %s', getErrorMessage(err));
     return { avgMs: null, p95Ms: null };
   }
 };
@@ -247,7 +248,7 @@ export const computeRewardSnapshot = async (guildId: string): Promise<RewardSnap
       },
     };
   } catch (err) {
-    logger.warn('[REWARD-SIGNAL] computeRewardSnapshot failed guild=%s err=%s', guildId, err instanceof Error ? err.message : String(err));
+    logger.warn('[REWARD-SIGNAL] computeRewardSnapshot failed guild=%s err=%s', guildId, getErrorMessage(err));
     return null;
   }
 };
@@ -289,7 +290,7 @@ export const persistRewardSnapshot = async (snapshot: RewardSnapshot): Promise<b
 
     return true;
   } catch (err) {
-    logger.warn('[REWARD-SIGNAL] reward-persist failed guild=%s: %s', snapshot.guildId, err instanceof Error ? err.message : String(err));
+    logger.warn('[REWARD-SIGNAL] reward-persist failed guild=%s: %s', snapshot.guildId, getErrorMessage(err));
     return false;
   }
 };
@@ -334,7 +335,7 @@ export const getRecentRewardSnapshots = async (
       },
     }));
   } catch (err) {
-    logger.debug('[REWARD-SIGNAL] reward-snapshots fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[REWARD-SIGNAL] reward-snapshots fetch failed guild=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };

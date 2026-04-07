@@ -48,6 +48,7 @@ vi.mock('../observability/outcomeSignal', () => ({
 vi.mock('../../utils/env', () => ({
   parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
   parseIntegerEnv: (_v: unknown, fallback: number) => fallback,
+  parseMinIntEnv: (_v: unknown, fallback: number, min: number) => Math.max(min, fallback),
 }));
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

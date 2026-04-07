@@ -1,7 +1,8 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { acquireDistributedLease, releaseDistributedLease } from '../infra/distributedLockService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type PublishJobRow = {
   id: number;
@@ -54,38 +55,36 @@ class PublishWorkerError extends Error {
   }
 }
 
-const CHANGE_REQUEST_TABLE = String(process.env.OPENCODE_CHANGE_REQUEST_TABLE || 'agent_opencode_change_requests').trim();
-const PUBLISH_QUEUE_TABLE = String(process.env.OPENCODE_PUBLISH_QUEUE_TABLE || 'agent_opencode_publish_queue').trim();
+const CHANGE_REQUEST_TABLE = parseStringEnv(process.env.OPENCODE_CHANGE_REQUEST_TABLE, 'agent_opencode_change_requests');
+const PUBLISH_QUEUE_TABLE = parseStringEnv(process.env.OPENCODE_PUBLISH_QUEUE_TABLE, 'agent_opencode_publish_queue');
 
 const WORKER_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_WORKER_ENABLED, false);
-const WORKER_INTERVAL_MS = Math.max(2000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_WORKER_INTERVAL_MS, 5000));
-const WORKER_BATCH_SIZE = Math.max(1, Math.min(10, parseIntegerEnv(process.env.OPENCODE_PUBLISH_WORKER_BATCH_SIZE, 2)));
-const WORKER_MAX_ATTEMPTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.OPENCODE_PUBLISH_MAX_ATTEMPTS, 3)));
-const WORKER_STALE_RUNNING_MS = Math.max(60_000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_STALE_RUNNING_MS, 900_000));
+const WORKER_INTERVAL_MS = parseMinIntEnv(process.env.OPENCODE_PUBLISH_WORKER_INTERVAL_MS, 5000, 2000);
+const WORKER_BATCH_SIZE = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_WORKER_BATCH_SIZE, 2, 1, 10);
+const WORKER_MAX_ATTEMPTS = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_MAX_ATTEMPTS, 3, 1, 10);
+const WORKER_STALE_RUNNING_MS = parseMinIntEnv(process.env.OPENCODE_PUBLISH_STALE_RUNNING_MS, 900_000, 60_000);
 const WORKER_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);
 const WORKER_LOCK_FAIL_OPEN = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN, false);
 const WORKER_LOCK_LEASE_MS = Math.max(
   Math.max(30_000, WORKER_INTERVAL_MS * 3),
   parseIntegerEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_LEASE_MS, Math.max(30_000, WORKER_INTERVAL_MS * 3)),
 );
-const WORKER_LOCK_NAME = String(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_NAME || 'opencode.publish.worker').trim();
+const WORKER_LOCK_NAME = parseStringEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_NAME, 'opencode.publish.worker');
 const WORKER_LOCK_OWNER = `opencode-publish:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
 
-const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || '').trim();
-const DEFAULT_REPO_OWNER = String(process.env.OPENCODE_TARGET_REPO_OWNER || '').trim();
-const DEFAULT_REPO_NAME = String(process.env.OPENCODE_TARGET_REPO_NAME || '').trim();
+const GITHUB_TOKEN = parseStringEnv(process.env.GITHUB_TOKEN, '');
+const DEFAULT_REPO_OWNER = parseStringEnv(process.env.OPENCODE_TARGET_REPO_OWNER, '');
+const DEFAULT_REPO_NAME = parseStringEnv(process.env.OPENCODE_TARGET_REPO_NAME, '');
 const REQUIRE_EVIDENCE_FOR_HIGH_RISK = parseBooleanEnv(process.env.OPENCODE_PUBLISH_REQUIRE_EVIDENCE_FOR_HIGH_RISK, true);
-const MIN_SCORE_CARD_TOTAL = Number.isFinite(Number(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL))
-  ? Math.max(0, Math.min(100, Number(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL)))
-  : 0;
-const PATCH_MAX_FILES = Math.max(1, Math.min(500, parseIntegerEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_FILES, 120)));
-const PATCH_MAX_LINES = Math.max(10, Math.min(20_000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_LINES, 4000)));
+const MIN_SCORE_CARD_TOTAL = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL, 0, 0, 100);
+const PATCH_MAX_FILES = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_FILES, 120, 1, 500);
+const PATCH_MAX_LINES = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_LINES, 4000, 10, 20_000);
 
 let timer: NodeJS.Timeout | null = null;
 let inFlight = false;
 let started = false;
 
-const TOOL_LEARNING_LOG_TABLE = String(process.env.TOOL_LEARNING_LOG_TABLE || 'agent_tool_learning_logs').trim();
+const TOOL_LEARNING_LOG_TABLE = parseStringEnv(process.env.TOOL_LEARNING_LOG_TABLE, 'agent_tool_learning_logs');
 
 const nowIso = () => new Date().toISOString();
 
@@ -852,7 +851,7 @@ const runTick = async () => {
       } catch (error) {
         const normalized = error instanceof PublishWorkerError
           ? error
-          : new PublishWorkerError('PUBLISH_FAILED', error instanceof Error ? error.message : String(error), false);
+          : new PublishWorkerError('PUBLISH_FAILED', getErrorMessage(error), false);
         await markJobFailed(job, normalized);
         logger.warn(
           '[OPENCODE_PUBLISH] failed jobId=%d changeRequestId=%d code=%s retryable=%s message=%s',

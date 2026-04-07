@@ -14,6 +14,7 @@
 import type { PromptCompileResult } from '../../infra/promptCompiler';
 import type { IntentTaxonomy } from '../../agent/agentRuntimeTypes';
 import logger from '../../../logger';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ──── Types ─────────────────────────────────────────────────────────────────
 
@@ -170,7 +171,7 @@ export const enrichIntentSignals = async (params: {
       recentTurns = await deps.loadRecentTurns({ guildId, requestedBy, limit: 4 });
       turnPosition = recentTurns.filter((t) => t.role === 'user').length;
     } catch (err) {
-      logger.debug('[INTENT-ENRICHER] loadRecentTurns failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-ENRICHER] loadRecentTurns failed: %s', getErrorMessage(err));
     }
   }
 
@@ -185,7 +186,7 @@ export const enrichIntentSignals = async (params: {
       graphNeighborTags = graphSignal.tags;
       graphClusterHint = graphSignal.clusterHint;
     } catch (err) {
-      logger.debug('[INTENT-ENRICHER] loadGraphMetadata failed: %s', err instanceof Error ? err.message : String(err));
+      logger.debug('[INTENT-ENRICHER] loadGraphMetadata failed: %s', getErrorMessage(err));
     }
   }
 
@@ -198,7 +199,7 @@ export const enrichIntentSignals = async (params: {
     userIntentHistory = history.userHistory;
     guildDominantIntent = history.guildDominant;
   } catch (err) {
-    logger.debug('[INTENT-ENRICHER] loadIntentHistory failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[INTENT-ENRICHER] loadIntentHistory failed: %s', getErrorMessage(err));
   }
 
   return {

@@ -4,10 +4,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { getErrorMessage } from '../../utils/errorMessage';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
-const CIRCUIT_FAILURE_THRESHOLD = Math.max(2, Number(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD || 3));
-const CIRCUIT_OPEN_MS = Math.max(10_000, Number(process.env.DYNAMIC_CIRCUIT_OPEN_MS || 120_000));
-const DYNAMIC_WORKER_RUNTIME_DIR = String(process.env.DYNAMIC_WORKER_RUNTIME_DIR || path.join(process.cwd(), '.runtime', 'dynamic-workers')).trim();
+const CIRCUIT_FAILURE_THRESHOLD = parseMinIntEnv(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD, 3, 2);
+const CIRCUIT_OPEN_MS = parseMinIntEnv(process.env.DYNAMIC_CIRCUIT_OPEN_MS, 120_000, 10_000);
+const DYNAMIC_WORKER_RUNTIME_DIR = parseStringEnv(process.env.DYNAMIC_WORKER_RUNTIME_DIR, path.join(process.cwd(), '.runtime', 'dynamic-workers'));
 
 type DynamicEntry = {
   definition: ActionDefinition;
@@ -73,7 +75,7 @@ const wrapExecute = (name: string, execute: ActionDefinition['execute']): Action
     } catch (error) {
       entry.failures += 1;
       if (entry.failures >= CIRCUIT_FAILURE_THRESHOLD) openCircuit(name, entry);
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       logger.error('[DYNAMIC-WORKER] execute threw for %s: %s', name, message);
       return { ok: false, name, summary: '동적 워커 예외 발생', artifacts: [], verification: [], error: message };
     }
@@ -151,7 +153,7 @@ export const loadDynamicWorkerFromFile = async (
     }
     return activateDynamicDefinition(def, approvalId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     logger.error('[DYNAMIC-WORKER] import failed path=%s: %s', filePath, message);
     return { ok: false, error: message };
   }
@@ -183,7 +185,7 @@ export const loadDynamicWorkerFromCode = async (
     await fs.mkdir(artifactDir, { recursive: true });
     await fs.writeFile(filePath, `${code}\n`, 'utf-8');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     logger.error('[DYNAMIC-WORKER] code artifact write failed approval=%s: %s', params.approvalId, message);
     return { ok: false, error: `artifact write failed: ${message}` };
   }

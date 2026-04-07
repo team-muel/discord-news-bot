@@ -7,6 +7,7 @@ import {
   OPENSHELL_REMOTE_GATEWAY as REMOTE_GATEWAY,
   WSL_DISTRO,
 } from '../../../config';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
@@ -100,7 +101,7 @@ export const openshellAdapter: ExternalToolAdapter = {
           return makeResult(false, `Unknown action: ${action}`, [], 'UNKNOWN_ACTION');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       return makeResult(false, `openshell ${action} failed`, [message], 'EXECUTION_FAILED');
     }
   },

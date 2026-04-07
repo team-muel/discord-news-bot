@@ -383,6 +383,6 @@ const ALL_COMMANDS = [
 export const commandDefinitions = ALL_COMMANDS
   .map((d) => d.toJSON())
   .filter((d) => {
-    const name = String((d as any).name || '');
+    const name = String(d.name || '');
     return !SIMPLE_COMMANDS_ENABLED || SIMPLE_COMMAND_ALLOWLIST.has(name);
   });

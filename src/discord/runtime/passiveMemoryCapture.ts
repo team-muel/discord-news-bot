@@ -34,8 +34,6 @@ export const isGuildLearningEnabled = async (guildId: string): Promise<boolean> 
   return policy.enabled;
 };
 
-
-
 const collectCoPresenceSignals = async (
   message: Message,
   excludedTargetIds: Set<string>,

@@ -12,12 +12,12 @@
  */
 
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 import { registerExternalAdapter, getExternalAdapter } from './externalAdapterRegistry';
 import { KNOWN_ADAPTER_IDS, type ExternalToolAdapter } from './externalAdapterTypes';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,7 +44,7 @@ export const autoLoadAdapters = async (): Promise<{ loaded: number; skipped: str
   try {
     files = await readdir(ADAPTERS_DIR);
   } catch (err) {
-    logger.debug('[ADAPTER-LOADER] adapters directory not readable: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[ADAPTER-LOADER] adapters directory not readable: %s', getErrorMessage(err));
     return result;
   }
 
@@ -82,7 +82,7 @@ export const autoLoadAdapters = async (): Promise<{ loaded: number; skipped: str
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       result.errors.push(`${file}: ${msg}`);
       logger.debug('[ADAPTER-LOADER] failed to load %s: %s', file, msg);
     }

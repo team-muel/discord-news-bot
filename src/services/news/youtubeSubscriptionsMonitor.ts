@@ -6,6 +6,8 @@ import { fromTable } from '../infra/baseRepository';
 import { T_SOURCES } from '../infra/tableRegistry';
 import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 import type { ChannelSink } from '../automation/types';
+import { getErrorMessage } from '../../utils/errorMessage';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 type SubscriptionRow = {
   id: number;
@@ -57,9 +59,9 @@ let lastTickProcessedSources = 0;
 let lastTickFailedSources = 0;
 let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 
-const MONITOR_INTERVAL_MS = Math.max(60_000, Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS || 5 * 60_000));
-const MONITOR_CONCURRENCY = Math.max(1, Number(process.env.YOUTUBE_MONITOR_CONCURRENCY || 5));
-const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS || 120_000));
+const MONITOR_INTERVAL_MS = parseMinIntEnv(process.env.YOUTUBE_MONITOR_INTERVAL_MS, 5 * 60_000, 60_000);
+const MONITOR_CONCURRENCY = parseMinIntEnv(process.env.YOUTUBE_MONITOR_CONCURRENCY, 5, 1);
+const LOCK_LEASE_MS = parseMinIntEnv(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS, 120_000, 30_000);
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 
 const parseMode = (row: SubscriptionRow): 'videos' | 'posts' => {
@@ -86,11 +88,10 @@ const isYouTubeSourceRow = (row: SubscriptionRow): boolean => {
   return url.includes('youtube.com/') || url.includes('youtu.be/');
 };
 
-
-const COMMUNITY_INITIAL_TITLE_PREFIX = process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX || '🔔 Muel 구독 시작';
-const COMMUNITY_NEW_POST_TITLE_TEMPLATE = process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE || '{author}님의 새 커뮤니티 게시글';
-const COMMUNITY_THREAD_REASON = process.env.YT_COMMUNITY_THREAD_REASON || 'YouTube community post subscription update';
-const COMMUNITY_AUTO_ARCHIVE_MIN = Math.max(60, Number(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN || 60));
+const COMMUNITY_INITIAL_TITLE_PREFIX = parseStringEnv(process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX, '🔔 Muel 구독 시작');
+const COMMUNITY_NEW_POST_TITLE_TEMPLATE = parseStringEnv(process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE, '{author}님의 새 커뮤니티 게시글');
+const COMMUNITY_THREAD_REASON = parseStringEnv(process.env.YT_COMMUNITY_THREAD_REASON, 'YouTube community post subscription update');
+const COMMUNITY_AUTO_ARCHIVE_MIN = parseMinIntEnv(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN, 60, 60);
 
 const buildCommunityStarterTitle = (latest: FeedEntry, isFirstNotification: boolean) => {
   if (isFirstNotification) {
@@ -262,7 +263,7 @@ const runTick = async (sink: ChannelSink, guildId?: string, options?: TickOption
       }
     } catch (err) {
       stats.failed += 1;
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
       logger.warn('[YT-MONITOR] source=%s failed: %s', String(row.id), msg);
     }
@@ -317,9 +318,9 @@ const executeTick = async (sink: ChannelSink, guildId?: string, options?: TickOp
     lastTickProcessedSources = 0;
     lastTickFailedSources = 0;
     lastErrorAt = new Date().toISOString();
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = getErrorMessage(err);
     lastDurationMs = Date.now() - startMs;
-    logger.warn('[YT-MONITOR] tick failed: %o', err);
+    logger.warn('[YT-MONITOR] tick failed: %s', getErrorMessage(err));
     return { ok: false, message: lastError || 'Tick failed' as const };
   } finally {
     running = false;

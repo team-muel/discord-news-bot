@@ -19,6 +19,7 @@
 import { parseBooleanEnv } from '../../../utils/env';
 import { callIndexingMcpTool } from '../../../mcp/indexingToolAdapter';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.MCP_INDEXING_ADAPTER_DISABLED, false);
@@ -60,7 +61,7 @@ const callTool = async (action: string, args: Record<string, unknown>): Promise<
     const ok = !result.isError;
     return makeResult(ok, action, ok ? `${action} completed` : `${action} failed`, texts, Date.now() - start, ok ? undefined : texts[0]);
   } catch (err) {
-    return makeResult(false, action, `${action} error`, [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, action, `${action} error`, [], Date.now() - start, getErrorMessage(err));
   }
 };
 

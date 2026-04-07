@@ -30,6 +30,7 @@ import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import type { SprintPhase } from './sprintOrchestrator';
 import type { ActionExecutionResult } from '../skills/actions/types';
 import { isOpenCodeSdkAvailable, getDiagnostics as getSdkDiagnostics } from '../opencode/opencodeSdkClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Subprocess helper ───────────────────────────────────────────────────────
 
@@ -117,7 +118,7 @@ const executeSandboxCommand = async (
     };
   } catch (err) {
     logger.warn('[FAST-PATH] sandbox exec threw for %s: %s, falling through to host',
-      phase, err instanceof Error ? err.message : String(err));
+      phase, getErrorMessage(err));
     return null;
   }
 };
@@ -141,7 +142,7 @@ const executeQaFastPath = async (
       }
     } catch (sdkErr) {
       logger.debug('[FAST-PATH] qa: SDK diagnostics failed (non-blocking): %s',
-        sdkErr instanceof Error ? sdkErr.message : String(sdkErr));
+        getErrorMessage(sdkErr));
     }
   }
 

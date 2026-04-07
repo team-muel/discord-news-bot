@@ -5,9 +5,8 @@
  * Every state transition (phase start, complete, loop-back, block, cancel)
  * is captured as an immutable event, enabling full audit trail and time-travel.
  */
-import { defineSchema, defineReducer, Entity, mutation, createRepository } from 'ventyd';
+import { defineSchema, defineReducer, Entity, mutation, createRepository, type Adapter } from 'ventyd';
 import { valibot, v } from 'ventyd/valibot';
-import type { Adapter } from 'ventyd';
 
 // ──── Domain value types (matching sprintOrchestrator.ts) ─────────────────────
 

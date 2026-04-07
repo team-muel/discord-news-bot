@@ -3,6 +3,7 @@ import { generateText } from '../llmClient';
 import { createApproval, updateApprovalCode, type PendingWorkerApproval } from './workerApprovalStore';
 import { cleanupSandbox, writeSandboxFile } from './workerSandbox';
 import { runNemoClawDiscoverExecutor, runArchitectVerifyExecutor } from './workerExecutors';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const compact = (v: unknown): string => String(v || '').replace(/\s+/g, ' ').trim();
 
@@ -79,7 +80,7 @@ export const runWorkerGenerationPipeline = async (params: {
       maxTokens: 1800,
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = getErrorMessage(error);
     logger.error('[WORKER-GEN] LLM generation failed: %s', msg);
     return { ok: false, error: `코드 생성 실패: ${msg}` };
   }
@@ -106,7 +107,7 @@ export const runWorkerGenerationPipeline = async (params: {
   try {
     sandbox = await writeSandboxFile(code);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = getErrorMessage(error);
     logger.error('[WORKER-GEN] sandbox write failed: %s', msg);
     return { ok: false, error: `샌드박스 저장 실패: ${msg}` };
   }

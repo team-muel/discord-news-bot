@@ -1,6 +1,7 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import logger from '../logger';
 import type { TaskRoute } from './taskRoutingService';
+import { getErrorMessage } from '../utils/errorMessage';
 
 type TaskRoutingMetricEvent = {
   guildId: string;
@@ -88,7 +89,7 @@ export const recordTaskRoutingMetric = async (event: TaskRoutingMetricEvent): Pr
       circuit_open: false,
     });
   } catch (error) {
-    logger.debug('[TASK-ROUTING-METRIC] skipped: %s', error instanceof Error ? error.message : String(error));
+    logger.debug('[TASK-ROUTING-METRIC] skipped: %s', getErrorMessage(error));
   }
 };
 
@@ -134,6 +135,6 @@ export const recordTaskRoutingFeedbackMetric = async (event: TaskRoutingFeedback
       circuit_open: false,
     });
   } catch (error) {
-    logger.debug('[TASK-ROUTING-FEEDBACK] skipped: %s', error instanceof Error ? error.message : String(error));
+    logger.debug('[TASK-ROUTING-FEEDBACK] skipped: %s', getErrorMessage(error));
   }
 };

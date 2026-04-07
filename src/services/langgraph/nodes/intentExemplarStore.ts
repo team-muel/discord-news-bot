@@ -11,6 +11,7 @@ import logger from '../../../logger';
 import { getSupabaseClient, isSupabaseConfigured } from '../../supabaseClient';
 import { isMissingTableError } from '../../../utils/supabaseErrors';
 import type { IntentClassification, IntentTaxonomy } from '../../agent/agentRuntimeTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ──── Types ─────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ const ensureTable = async (): Promise<boolean> => {
     tableVerified = true;
     return true;
   } catch (err) {
-    logger.warn('[INTENT-EXEMPLAR] Table check failed: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[INTENT-EXEMPLAR] Table check failed: %s', getErrorMessage(err));
     return false;
   }
 };
@@ -97,7 +98,7 @@ export const persistIntentExemplar = async (input: IntentExemplarInsert): Promis
 
     return true;
   } catch (err) {
-    logger.warn('[INTENT-EXEMPLAR] persist error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[INTENT-EXEMPLAR] persist error: %s', getErrorMessage(err));
     return false;
   }
 };
@@ -136,7 +137,7 @@ export const attributeIntentOutcome = async (params: {
 
     return true;
   } catch (err) {
-    logger.warn('[INTENT-EXEMPLAR] attribution error: %s', err instanceof Error ? err.message : String(err));
+    logger.warn('[INTENT-EXEMPLAR] attribution error: %s', getErrorMessage(err));
     return false;
   }
 };

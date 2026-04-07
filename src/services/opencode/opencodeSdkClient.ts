@@ -16,15 +16,16 @@
  */
 
 import { fetchWithTimeout } from '../../utils/network';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../utils/env';
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
 const ENABLED = parseBooleanEnv(process.env.OPENCODE_SDK_ENABLED, false);
-const BASE_URL = String(process.env.OPENCODE_SDK_BASE_URL || '').trim().replace(/\/+$/, '');
-const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000));
-const AUTH_TOKEN = (process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
+const BASE_URL = parseUrlEnv(process.env.OPENCODE_SDK_BASE_URL, '');
+const TIMEOUT_MS = parseMinIntEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000, 5_000);
+const AUTH_TOKEN = parseStringEnv(process.env.OPENCODE_SDK_AUTH_TOKEN, '');
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ const request = async <T>(
     }
     return { ok: true, status: res.status, data };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = getErrorMessage(err);
     logger.debug('[OPENCODE-SDK] %s %s failed: %s', method, path, message);
     return { ok: false, status: 0, data: null, error: message };
   }
@@ -296,7 +297,7 @@ export const generateCodeViaSession = async (params: {
       sessionId: session.sessionId,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ...fail(`Session error: ${msg}`), sessionId: session.sessionId };
   } finally {
     // 4. Always close session

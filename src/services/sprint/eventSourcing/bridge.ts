@@ -12,15 +12,15 @@
  *   Phase C (final):   remove legacy persistence, Entity becomes source of truth
  */
 import logger from '../../../logger';
-import type { Adapter } from 'ventyd';
+import { type Adapter, createRepository } from 'ventyd';
 import { SprintPipelineEntity, createSprintPipelineRepository } from './sprintPipelineEntity';
 import { createSupabaseAdapter } from './supabaseAdapter';
 import { auditLogPlugin, type SprintPlugin } from './plugins';
-import { createRepository } from 'ventyd';
 import { isSupabaseConfigured, getSupabaseClient } from '../../supabaseClient';
 import { SPRINT_DRY_RUN, VENTYD_EVENTS_TABLE, VENTYD_ENABLED } from '../../../config';
 
-import type { SprintPipeline, SprintPhase } from '../sprintOrchestrator';
+import type { SprintPipeline, SprintPhase, PhaseResult } from '../sprintOrchestrator';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ──── In-memory adapter (fallback when Supabase unavailable) ──────────────────
 
@@ -73,7 +73,7 @@ export function getEventSourcingRepo() {
     adapter: getAdapter(),
     plugins: buildPlugins(),
     onPluginError: (error) => {
-      logger.debug('[VENTYD] plugin error: %s', error instanceof Error ? error.message : String(error));
+      logger.debug('[VENTYD] plugin error: %s', getErrorMessage(error));
     },
   });
   return _repo;
@@ -117,7 +117,7 @@ export async function shadowPipelineCreated(pipeline: SprintPipeline): Promise<v
 
     logger.debug('[VENTYD] shadowed pipeline creation: %s', pipeline.sprintId);
   } catch (err) {
-    logger.debug('[VENTYD] shadow creation failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[VENTYD] shadow creation failed: %s', getErrorMessage(err));
   }
 }
 
@@ -126,8 +126,8 @@ export async function shadowPipelineCreated(pipeline: SprintPipeline): Promise<v
  * Call after recording phaseResult in the orchestrator.
  */
 export async function shadowPhaseCompleted(sprintId: string, params: {
-  phase: string;
-  status: string;
+  phase: SprintPhase;
+  status: PhaseResult['status'];
   output: string;
   artifacts: string[];
   startedAt: string;
@@ -140,8 +140,8 @@ export async function shadowPhaseCompleted(sprintId: string, params: {
     if (!entity) return;
 
     entity.completePhase({
-      phase: params.phase as any,
-      status: params.status as any,
+      phase: params.phase,
+      status: params.status,
       output: params.output.slice(0, 5000), // cap to avoid oversized events
       artifacts: params.artifacts,
       startedAt: params.startedAt,
@@ -154,7 +154,7 @@ export async function shadowPhaseCompleted(sprintId: string, params: {
 
     logger.debug('[VENTYD] shadowed phase completion: %s/%s → %s', sprintId, params.phase, entity.currentPhase);
   } catch (err) {
-    logger.debug('[VENTYD] shadow phase-complete failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[VENTYD] shadow phase-complete failed: %s', getErrorMessage(err));
   }
 }
 
@@ -172,7 +172,7 @@ export async function shadowFilesChanged(sprintId: string, files: string[]): Pro
     const repo = getEventSourcingRepo();
     await repo.commit(entity);
   } catch (err) {
-    logger.debug('[VENTYD] shadow files-changed failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[VENTYD] shadow files-changed failed: %s', getErrorMessage(err));
   }
 }
 
@@ -190,7 +190,7 @@ export async function shadowPipelineCancelled(sprintId: string): Promise<void> {
     const repo = getEventSourcingRepo();
     await repo.commit(entity);
   } catch (err) {
-    logger.debug('[VENTYD] shadow cancel failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[VENTYD] shadow cancel failed: %s', getErrorMessage(err));
   }
 }
 
@@ -208,7 +208,7 @@ export async function shadowPipelineBlocked(sprintId: string, reason: string): P
     const repo = getEventSourcingRepo();
     await repo.commit(entity);
   } catch (err) {
-    logger.debug('[VENTYD] shadow block failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[VENTYD] shadow block failed: %s', getErrorMessage(err));
   }
 }
 
@@ -232,7 +232,7 @@ export async function rehydrateFromEvents(sprintId: string): Promise<SprintPipel
     }
     return entity;
   } catch (err) {
-    logger.debug('[VENTYD] rehydrate failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[VENTYD] rehydrate failed: %s', getErrorMessage(err));
     return null;
   }
 }

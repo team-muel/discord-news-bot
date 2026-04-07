@@ -3,6 +3,7 @@ import logger from '../../logger';
 import { delegateAlertDispatch, shouldDelegate } from '../automation/n8nDelegationService';
 import { RUNTIME_ALERT_COOLDOWN_MS, RUNTIME_ALERT_WEBHOOK_URL } from './config';
 import type { EmitAlert } from './types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 type AlertState = {
   lastSentAtMs: number;
@@ -45,7 +46,7 @@ const sendWebhookAlert = async (title: string, message: string, tags?: Record<st
       }),
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     logger.warn('[ALERT] Failed to send webhook alert: %s', errorMessage);
   }
 };

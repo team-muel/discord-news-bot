@@ -22,6 +22,7 @@ import {
   maybeDelegateAgentAction,
   MAX_PROMPT_CODE_CHARS,
 } from './agentCollabHelpers';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 export const opendevPlanAction: ActionDefinition = {
   name: 'opendev.plan',
@@ -300,7 +301,7 @@ export const openjarvisOpsAction: ActionDefinition = {
         }));
       }
     } catch (error) {
-      readinessArtifact = `runtime_readiness_error=${clip(error instanceof Error ? error.message : String(error), 400)}`;
+      readinessArtifact = `runtime_readiness_error=${clip(getErrorMessage(error), 400)}`;
       readinessStatus = 'error';
     }
 

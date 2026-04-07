@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '../../utils/network';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SUCCESS_CACHE_TTL_MS = 10 * 60_000;
@@ -117,7 +118,7 @@ const probeGatewayHello = async (gatewayUrl: string, timeoutMs: number): Promise
         finish({ ok: false, error: `gateway closed code=${String(event.code ?? 'unknown')} reason=${String(event.reason || 'unknown')}` });
       };
     } catch (error) {
-      finish({ ok: false, error: error instanceof Error ? error.message : String(error) });
+      finish({ ok: false, error: getErrorMessage(error) });
     }
   });
 };
@@ -183,7 +184,7 @@ export async function probeDiscordGatewayConnectivity(token: string, timeoutMs: 
     }, wsProbe.ok ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS);
   } catch (error) {
     return rememberResult(normalizedToken, buildResult({
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
       blocking: false,
     }), FAILURE_CACHE_TTL_MS);
   }

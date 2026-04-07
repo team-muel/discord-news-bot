@@ -109,12 +109,10 @@ export function registerBotAgentGotRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
-
   router.post('/agent/got/cutover/autopilot/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
     const guildId = toStringParam(req.body?.guildId);
     const result = await triggerGotCutoverAutopilotRun(client, guildId || undefined);
     return res.status(result.ok ? 202 : 409).json(result);
   });
-
 
 }

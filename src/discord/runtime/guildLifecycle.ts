@@ -2,6 +2,7 @@ import type { Guild } from 'discord.js';
 import logger from '../../logger';
 import { onGuildJoined } from '../../services/agent/agentOpsService';
 import { forgetGuildRagData } from '../../services/privacyForgetService';
+import { parseBooleanEnv } from '../../utils/env';
 
 const toErrorMessage = (error: unknown): string => {
   if (error instanceof Error && error.message) {
@@ -28,7 +29,7 @@ export const handleGuildCreateLifecycle = (guild: Guild): void => {
 };
 
 export const handleGuildDeleteLifecycle = (guild: Guild): void => {
-  const autoPurgeEnabled = String(process.env.FORGET_ON_GUILD_DELETE || 'true').trim().toLowerCase() !== 'false';
+  const autoPurgeEnabled = parseBooleanEnv(process.env.FORGET_ON_GUILD_DELETE, true);
   if (!autoPurgeEnabled) {
     return;
   }

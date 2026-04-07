@@ -36,6 +36,7 @@ import {
   markPipelineBlocked,
 } from './sprintOrchestrator';
 import { resolveTrustBasedAutonomy } from './trustScoreService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -131,14 +132,14 @@ export const triggerLacunaSprintIfNeeded = async (
       triggeredAt: new Date().toISOString(), objective,
     });
     runFullSprintPipeline(pipeline.sprintId).catch((err) => {
-      logger.error('[SELF-IMPROVE] lacuna sprint failed sprint=%s: %s', pipeline.sprintId, err);
-      markPipelineBlocked(pipeline.sprintId, `Lacuna sprint crashed: ${err instanceof Error ? err.message : String(err)}`);
+      logger.error('[SELF-IMPROVE] lacuna sprint failed sprint=%s: %s', pipeline.sprintId, getErrorMessage(err));
+      markPipelineBlocked(pipeline.sprintId, `Lacuna sprint crashed: ${getErrorMessage(err)}`);
     });
 
     logger.info('[SELF-IMPROVE] lacuna sprint triggered sprint=%s candidates=%d score=%.1f', pipeline.sprintId, candidates.length, totalScore);
     return { triggered: true, sprintId: pipeline.sprintId };
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] lacuna sprint trigger failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] lacuna sprint trigger failed: %s', getErrorMessage(error));
     return { triggered: false };
   }
 };
@@ -201,14 +202,14 @@ export const checkWeeklyPatternsForBugfixTrigger = async (): Promise<{ triggered
       triggeredAt: new Date().toISOString(), objective,
     });
     runFullSprintPipeline(pipeline.sprintId).catch((err) => {
-      logger.error('[SELF-IMPROVE] bugfix sprint failed sprint=%s: %s', pipeline.sprintId, err);
-      markPipelineBlocked(pipeline.sprintId, `Bugfix sprint crashed: ${err instanceof Error ? err.message : String(err)}`);
+      logger.error('[SELF-IMPROVE] bugfix sprint failed sprint=%s: %s', pipeline.sprintId, getErrorMessage(err));
+      markPipelineBlocked(pipeline.sprintId, `Bugfix sprint crashed: ${getErrorMessage(err)}`);
     });
 
     logger.info('[SELF-IMPROVE] bugfix sprint triggered sprint=%s high=%d worsened=%d', pipeline.sprintId, highCount, worsened.length);
     return { triggered: true, sprintId: pipeline.sprintId };
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] weekly bugfix check failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] weekly bugfix check failed: %s', getErrorMessage(error));
     return { triggered: false };
   }
 };
@@ -276,14 +277,14 @@ export const checkBenchRegressionAndTrigger = async (): Promise<{ triggered: boo
       triggeredAt: new Date().toISOString(), objective,
     });
     runFullSprintPipeline(pipeline.sprintId).catch((err) => {
-      logger.error('[SELF-IMPROVE] regression sprint failed sprint=%s: %s', pipeline.sprintId, err);
-      markPipelineBlocked(pipeline.sprintId, `Regression sprint crashed: ${err instanceof Error ? err.message : String(err)}`);
+      logger.error('[SELF-IMPROVE] regression sprint failed sprint=%s: %s', pipeline.sprintId, getErrorMessage(err));
+      markPipelineBlocked(pipeline.sprintId, `Regression sprint crashed: ${getErrorMessage(err)}`);
     });
 
     logger.info('[SELF-IMPROVE] regression sprint triggered sprint=%s decline=%.1f%% weeks=%d', pipeline.sprintId, decline, consecutiveDeclines);
     return { triggered: true, sprintId: pipeline.sprintId, trend: recent };
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] bench regression check failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] bench regression check failed: %s', getErrorMessage(error));
     return { triggered: false };
   }
 };
@@ -369,7 +370,7 @@ export const evaluateCrossLoopOutcomes = async (): Promise<{
     const total = origins.length;
     return { total, succeeded, failed, successRate: total > 0 ? succeeded / total : 0, outcomesByOrigin: byOrigin };
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] cross-loop eval failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] cross-loop eval failed: %s', getErrorMessage(error));
     return empty;
   }
 };
@@ -522,7 +523,7 @@ export const computeSystemGradient = async (): Promise<SystemGradient> => {
     }
     return { signals, topPriority: signals[0] || null, totalScore, computedAt: new Date().toISOString() };
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] gradient failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] gradient failed: %s', getErrorMessage(error));
     return emptyGradient;
   }
 };
@@ -686,7 +687,7 @@ export const computeConvergenceReport = async (): Promise<ConvergenceReport> => 
 
     return report;
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] convergence failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] convergence failed: %s', getErrorMessage(error));
     return empty;
   }
 };
@@ -701,6 +702,6 @@ export const runSelfImprovementChecks = async (): Promise<void> => {
     await computeSystemGradient();
     if (SELF_IMPROVEMENT_CONVERGENCE_ENABLED) await computeConvergenceReport();
   } catch (error) {
-    logger.warn('[SELF-IMPROVE] scheduled checks failed: %s', error instanceof Error ? error.message : String(error));
+    logger.warn('[SELF-IMPROVE] scheduled checks failed: %s', getErrorMessage(error));
   }
 };

@@ -6,18 +6,18 @@
  *
  * Re-exported from config.ts for backward compatibility.
  */
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from './utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseStringEnv } from './utils/env';
 
 // Primary provider selection
-export const AI_PROVIDER = (process.env.AI_PROVIDER || '').trim().toLowerCase();
+export const AI_PROVIDER = parseStringEnv(process.env.AI_PROVIDER, '').toLowerCase();
 
 // Core timeouts & retry
-export const LLM_API_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.LLM_API_TIMEOUT_MS, 15000));
+export const LLM_API_TIMEOUT_MS = parseMinIntEnv(process.env.LLM_API_TIMEOUT_MS, 15000, 1000);
 export const LLM_API_TIMEOUT_LARGE_MS = Math.max(LLM_API_TIMEOUT_MS, parseIntegerEnv(process.env.LLM_API_TIMEOUT_LARGE_MS, 90_000));
-export const LLM_PROVIDER_TOTAL_TIMEOUT_MS = Math.max(1_000, parseIntegerEnv(process.env.LLM_PROVIDER_TOTAL_TIMEOUT_MS, 25_000));
-export const LLM_PROVIDER_MAX_ATTEMPTS = Math.max(1, Math.min(6, parseIntegerEnv(process.env.LLM_PROVIDER_MAX_ATTEMPTS, 3)));
+export const LLM_PROVIDER_TOTAL_TIMEOUT_MS = parseMinIntEnv(process.env.LLM_PROVIDER_TOTAL_TIMEOUT_MS, 25_000, 1_000);
+export const LLM_PROVIDER_MAX_ATTEMPTS = parseBoundedNumberEnv(process.env.LLM_PROVIDER_MAX_ATTEMPTS, 3, 1, 6);
 export const LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED = parseBooleanEnv(process.env.LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED, true);
-export const LLM_HEDGE_DELAY_MS = Math.max(0, parseIntegerEnv(process.env.LLM_HEDGE_DELAY_MS, 3000));
+export const LLM_HEDGE_DELAY_MS = parseMinIntEnv(process.env.LLM_HEDGE_DELAY_MS, 3000, 0);
 
 // Call logging
 export const LLM_CALL_LOG_ENABLED = parseBooleanEnv(process.env.LLM_CALL_LOG_ENABLED, true);
@@ -26,18 +26,18 @@ export const LLM_CALL_LOG_TABLE = (process.env.LLM_CALL_LOG_TABLE || 'agent_llm_
 // A/B Experiment
 export const LLM_EXPERIMENT_ENABLED = parseBooleanEnv(process.env.LLM_EXPERIMENT_ENABLED, false);
 export const LLM_EXPERIMENT_NAME = (process.env.LLM_EXPERIMENT_NAME || 'hf_ab_v1').trim();
-export const LLM_EXPERIMENT_HF_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.LLM_EXPERIMENT_HF_PERCENT, 20)));
+export const LLM_EXPERIMENT_HF_PERCENT = parseBoundedNumberEnv(process.env.LLM_EXPERIMENT_HF_PERCENT, 20, 0, 100);
 export const LLM_EXPERIMENT_FAIL_OPEN = parseBooleanEnv(process.env.LLM_EXPERIMENT_FAIL_OPEN, true);
 export const LLM_EXPERIMENT_GUILD_ALLOWLIST_RAW = (process.env.LLM_EXPERIMENT_GUILD_ALLOWLIST || '').trim();
 
 // Cost estimation
-export const LLM_COST_INPUT_PER_1K_CHARS_USD = Math.max(0, parseNumberEnv(process.env.LLM_COST_INPUT_PER_1K_CHARS_USD, 0.0005));
-export const LLM_COST_OUTPUT_PER_1K_CHARS_USD = Math.max(0, parseNumberEnv(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD, 0.0015));
+export const LLM_COST_INPUT_PER_1K_CHARS_USD = parseMinNumberEnv(process.env.LLM_COST_INPUT_PER_1K_CHARS_USD, 0.0005, 0);
+export const LLM_COST_OUTPUT_PER_1K_CHARS_USD = parseMinNumberEnv(process.env.LLM_COST_OUTPUT_PER_1K_CHARS_USD, 0.0015, 0);
 
 // Response cache
 export const LLM_RESPONSE_CACHE_ENABLED = parseBooleanEnv(process.env.LLM_RESPONSE_CACHE_ENABLED, true);
-export const LLM_RESPONSE_CACHE_TTL_MS = Math.max(1_000, parseIntegerEnv(process.env.LLM_RESPONSE_CACHE_TTL_MS, 60_000));
-export const LLM_RESPONSE_CACHE_MAX_ENTRIES = Math.max(10, parseIntegerEnv(process.env.LLM_RESPONSE_CACHE_MAX_ENTRIES, 200));
+export const LLM_RESPONSE_CACHE_TTL_MS = parseMinIntEnv(process.env.LLM_RESPONSE_CACHE_TTL_MS, 60_000, 1_000);
+export const LLM_RESPONSE_CACHE_MAX_ENTRIES = parseMinIntEnv(process.env.LLM_RESPONSE_CACHE_MAX_ENTRIES, 200, 10);
 
 // Provider ordering (raw strings — parsed by routing layer)
 export const LLM_PROVIDER_BASE_ORDER_RAW = (process.env.LLM_PROVIDER_BASE_ORDER || '').trim();
@@ -70,7 +70,7 @@ export const OPENCLAW_API_KEY = (process.env.OPENCLAW_API_KEY || process.env.OPE
 export const OPENCLAW_BASE_URL = (process.env.OPENCLAW_BASE_URL || process.env.OPENCLAW_API_BASE_URL || process.env.OPENCLAW_URL || '').trim().replace(/\/+$/, '');
 export const OPENCLAW_MODEL = (process.env.OPENCLAW_MODEL || 'openclaw').trim();
 export const OPENCLAW_FALLBACK_MODELS_RAW = (process.env.OPENCLAW_FALLBACK_MODELS || 'muel-fast,muel-precise').trim();
-export const OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS = Math.max(1_000, parseIntegerEnv(process.env.OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS, 45_000));
+export const OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS = parseMinIntEnv(process.env.OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS, 45_000, 1_000);
 export const OPENCLAW_GATEWAY_URL = (process.env.OPENCLAW_GATEWAY_URL || '').trim().replace(/\/+$/, '');
 export const OPENCLAW_GATEWAY_TOKEN = (process.env.OPENCLAW_GATEWAY_TOKEN || '').trim();
 export const OPENCLAW_GATEWAY_ENABLED = parseBooleanEnv(process.env.OPENCLAW_GATEWAY_ENABLED, true);

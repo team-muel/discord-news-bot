@@ -17,6 +17,7 @@
 import { MCP_UPSTREAM_TOOL_CACHE_TTL_MS } from '../config';
 import { listUpstreams, findUpstreamByNamespace } from './proxyRegistry';
 import type { McpToolSpec, McpToolCallResult } from './types';
+import { getErrorMessage } from '../utils/errorMessage';
 
 // ──── Constants ────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
     console.error('[mcp-proxy] upstream %s: tools/list returned non-ok status', server.id);
     return [];
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = getErrorMessage(err);
     console.error('[mcp-proxy] upstream %s: failed to fetch tools — %s', server.id, reason);
     return [];
   } finally {
@@ -283,7 +284,7 @@ export const callProxiedTool = async (
 
     return { content, isError: result.isError === true };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = getErrorMessage(err);
     return {
       content: [{ type: 'text', text: `Upstream call failed: ${reason}` }],
       isError: true,

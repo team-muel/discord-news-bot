@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import logger from '../../logger';
-import { debugCatchError } from '../../utils/errorMessage';
+import { debugCatchError, getErrorMessage } from '../../utils/errorMessage';
+import { parseBoundedNumberEnv } from '../../utils/env';
 import { assessMemoryPoisonRisk, buildPoisonTags } from '../memory/memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { hasMemoryConsent } from './agentConsentService';
@@ -75,10 +76,10 @@ const ensureSupabase = () => {
 };
 
 const safeLike = (value: string): string => value.replace(/[%,_()."'\\]/g, ' ').trim();
-const MEMORY_RETRIEVE_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE || 0.35)));
-const MEMORY_HYBRID_MIN_SIMILARITY = Math.max(0, Math.min(1, Number(process.env.MEMORY_HYBRID_MIN_SIMILARITY || 0.08)));
-const MEMORY_CITATIONS_PER_ITEM = Math.max(1, Math.min(5, Number(process.env.MEMORY_CITATIONS_PER_ITEM || 3)));
-const MEMORY_CITATIONS_REFILL_CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.MEMORY_CITATIONS_REFILL_CONCURRENCY || 4)));
+const MEMORY_RETRIEVE_MIN_CONFIDENCE = parseBoundedNumberEnv(process.env.MEMORY_RETRIEVE_MIN_CONFIDENCE, 0.35, 0, 1);
+const MEMORY_HYBRID_MIN_SIMILARITY = parseBoundedNumberEnv(process.env.MEMORY_HYBRID_MIN_SIMILARITY, 0.08, 0, 1);
+const MEMORY_CITATIONS_PER_ITEM = parseBoundedNumberEnv(process.env.MEMORY_CITATIONS_PER_ITEM, 3, 1, 5);
+const MEMORY_CITATIONS_REFILL_CONCURRENCY = parseBoundedNumberEnv(process.env.MEMORY_CITATIONS_REFILL_CONCURRENCY, 4, 1, 8);
 
 const toMaybeUserId = (value: unknown): string | null => {
   const text = String(value || '').trim();
@@ -259,7 +260,7 @@ export const searchMemoryTiered = async (
         remaining--;
       }
     } catch (err) {
-      logger.debug('[MEMORY-TIERED] tier=%s search failed, continuing: %s', tier, err instanceof Error ? err.message : String(err));
+      logger.debug('[MEMORY-TIERED] tier=%s search failed, continuing: %s', tier, getErrorMessage(err));
     }
   }
 

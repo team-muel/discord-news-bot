@@ -8,6 +8,7 @@ import {
   getHypoPgCandidates,
   getSupabaseExtensionOpsSnapshot,
 } from '../infra/supabaseExtensionOpsService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type EfficiencyMode = 'idle-improvement' | 'balanced-flow' | 'queue-drain';
 
@@ -170,7 +171,7 @@ export const runEfficiencyQuickWins = async (params?: {
   try {
     extensionSnapshot = await getSupabaseExtensionOpsSnapshot({ includeTopQueries: true, topLimit: 10 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     actions.push({
       id: 'supabase-unavailable',
       ok: false,

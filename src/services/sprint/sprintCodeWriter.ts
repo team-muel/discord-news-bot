@@ -26,6 +26,7 @@ import {
   generateCodeViaSession,
   type OpenCodePatch,
 } from '../opencode/opencodeSdkClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const resolveProjectRoot = (): string => {
   const cwdRoot = path.resolve(process.cwd());
@@ -90,7 +91,7 @@ const writeProjectFile = async (relativePath: string, content: string): Promise<
     await atomicWriteFile(abs, content);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: getErrorMessage(err) };
   }
 };
 
@@ -282,7 +283,7 @@ export const generateAndApplyCodeChanges = async (params: {
       }
     } catch (sdkError) {
       logger.warn('[SPRINT-CODE-WRITER] SDK session failed: %s, falling through to LLM',
-        sdkError instanceof Error ? sdkError.message : String(sdkError));
+        getErrorMessage(sdkError));
     }
   }
 
@@ -297,7 +298,7 @@ export const generateAndApplyCodeChanges = async (params: {
       maxTokens: 4000,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     return { ok: false, changes: [], summary: `LLM code generation failed: ${msg}`, error: 'LLM_GENERATION_FAILED' };
   }
 
@@ -466,7 +467,7 @@ export const rollbackCodeChanges = async (changes: CodeChange[]): Promise<void> 
       await fs.writeFile(abs, change.originalContent, 'utf-8');
       logger.info('[SPRINT-CODE-WRITER] rolled back: %s', change.filePath);
     } catch (err) {
-      logger.warn('[SPRINT-CODE-WRITER] rollback failed for %s: %s', change.filePath, err instanceof Error ? err.message : String(err));
+      logger.warn('[SPRINT-CODE-WRITER] rollback failed for %s: %s', change.filePath, getErrorMessage(err));
     }
   }
 };

@@ -37,7 +37,7 @@ type NewsTickStats = {
   skippedNoCandidate: number;
 };
 
-const SIGNATURE_HISTORY_MAX_ITEMS = Math.max(5, Number(process.env.NEWS_SIGNATURE_HISTORY_MAX_ITEMS || 12));
+const SIGNATURE_HISTORY_MAX_ITEMS = parseMinIntEnv(process.env.NEWS_SIGNATURE_HISTORY_MAX_ITEMS, 12, 5);
 const SIGNATURE_HISTORY_DELIMITER = '||';
 
 let timer: NodeJS.Timeout | null = null;
@@ -56,17 +56,17 @@ let lastTickFailedSources = 0;
 let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 let newsHistoryTableUnavailableLogged = false;
 
-const INTERVAL_MS = Math.max(60_000, Number(process.env.NEWS_MONITOR_INTERVAL_MS || 10 * 60_000));
-const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.NEWS_MONITOR_LOCK_LEASE_MS || 120_000));
-const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_MONITOR_FETCH_TIMEOUT_MS || 15_000));
-const NEWS_CANDIDATE_LIMIT = Math.max(3, Number(process.env.NEWS_MONITOR_CANDIDATE_LIMIT || 12));
-const NEWS_HISTORY_LOOKBACK_HOURS = Math.max(1, Number(process.env.NEWS_DEDUP_LOOKBACK_HOURS || 24));
-const NEWS_HISTORY_MAX_ITEMS = Math.max(10, Number(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS || 60));
+const INTERVAL_MS = parseMinIntEnv(process.env.NEWS_MONITOR_INTERVAL_MS, 10 * 60_000, 60_000);
+const LOCK_LEASE_MS = parseMinIntEnv(process.env.NEWS_MONITOR_LOCK_LEASE_MS, 120_000, 30_000);
+const FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.NEWS_MONITOR_FETCH_TIMEOUT_MS, 15_000, 5_000);
+const NEWS_CANDIDATE_LIMIT = parseMinIntEnv(process.env.NEWS_MONITOR_CANDIDATE_LIMIT, 12, 3);
+const NEWS_HISTORY_LOOKBACK_HOURS = parseMinIntEnv(process.env.NEWS_DEDUP_LOOKBACK_HOURS, 24, 1);
+const NEWS_HISTORY_MAX_ITEMS = parseMinIntEnv(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS, 60, 10);
 const NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || process.env.NEWS_DEDUP_MODEL || undefined;
 const NEWS_SUMMARY_MODEL = process.env.OPENAI_NEWS_SUMMARY_MODEL || process.env.NEWS_SUMMARY_MODEL || undefined;
-const NEWS_AI_DEDUP_ENABLED = (process.env.NEWS_AI_DEDUP_ENABLED || 'true').toLowerCase() !== 'false';
-const NEWS_KR_SUMMARY_ENABLED = (process.env.NEWS_KR_SUMMARY_ENABLED || 'true').toLowerCase() !== 'false';
-const SUMMARY_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS || 12_000));
+const NEWS_AI_DEDUP_ENABLED = parseBooleanEnv(process.env.NEWS_AI_DEDUP_ENABLED, true);
+const NEWS_KR_SUMMARY_ENABLED = parseBooleanEnv(process.env.NEWS_KR_SUMMARY_ENABLED, true);
+const SUMMARY_FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS, 12_000, 5_000);
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 
 const isGoogleFinanceSourceRow = (row: NewsChannelRow): boolean => {
@@ -89,6 +89,8 @@ type NewsHistoryRow = {
 };
 
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
+import { getErrorMessage } from '../../utils/errorMessage';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 
 const isHistoryUnavailableError = (error: any): boolean => isSchemaUnavailableError(error, 'news_sentiment', 'event_signature', 'sentiment_score');
 
@@ -614,7 +616,7 @@ const runTick = async (sink: ChannelSink, guildId?: string): Promise<NewsTickSta
         });
       } catch (err) {
         stats.failed += 1;
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         await updateRowState(row.id, { last_check_status: 'error', last_check_error: msg });
         logger.warn('[NEWS-MONITOR] source=%s failed: %s', String(row.id), msg);
       } finally {
@@ -679,16 +681,16 @@ const executeTick = async (sink: ChannelSink, guildId?: string) => {
     lastTickProcessedSources = 0;
     lastTickFailedSources = 0;
     lastErrorAt = new Date().toISOString();
-    lastError = error instanceof Error ? error.message : String(error);
+    lastError = getErrorMessage(error);
     lastDurationMs = Date.now() - startMs;
-    logger.warn('[NEWS-MONITOR] tick failed: %o', error);
+    logger.warn('[NEWS-MONITOR] tick failed: %s', getErrorMessage(error));
     return { ok: false, message: lastError || 'News tick failed' as const };
   } finally {
     running = false;
   }
 };
 
-export const isNewsSentimentMonitorEnabled = () => (process.env.AUTOMATION_NEWS_ENABLED || 'false').toLowerCase() !== 'false';
+export const isNewsSentimentMonitorEnabled = () => parseBooleanEnv(process.env.AUTOMATION_NEWS_ENABLED, false);
 
 export const startNewsSentimentMonitor = (sink: ChannelSink) => {
   if (started || !isNewsSentimentMonitorEnabled()) {

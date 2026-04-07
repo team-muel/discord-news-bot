@@ -1,5 +1,4 @@
-import type { Client } from 'discord.js';
-import { ChannelType } from 'discord.js';
+import { type Client, ChannelType } from 'discord.js';
 import { isAutomationEnabled, startAutomationJobs, startAutomationModules } from '../automationBot';
 import type { ChannelSink, ChannelSinkSendOptions } from '../automation/types';
 import { startMemoryJobRunner } from '../memory/memoryJobRunner';
@@ -27,8 +26,6 @@ const runtimeState = {
 /** Check whether a Node.js loop should be skipped because pg_cron owns it. */
 const isPgCronOwned = (loopName: string): boolean =>
   PG_CRON_REPLACES_APP_LOOPS && runtimeState.pgCronReplacedLoops.has(loopName);
-
-
 
 const startSharedLoops = (source: 'server-process' | 'discord-ready') => {
   if (runtimeState.sharedLoopsStarted) {

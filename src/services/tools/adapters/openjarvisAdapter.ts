@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv } from '../../../utils/env';
+import { parseStringEnv } from '../../../utils/env';
 import {
   OPENJARVIS_ENABLED as CONFIG_OPENJARVIS_ENABLED,
   OPENJARVIS_DISABLED as CONFIG_OPENJARVIS_DISABLED,
@@ -10,6 +10,7 @@ import {
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 export type BenchResult = {
   benchScore: number | null;
@@ -57,8 +58,7 @@ const ENABLED = CONFIG_OPENJARVIS_ENABLED;
 const EXPLICITLY_DISABLED = CONFIG_OPENJARVIS_DISABLED;
 const SERVE_URL = CONFIG_OPENJARVIS_SERVE_URL;
 const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
-const SERVE_API_KEY = String(process.env.OPENJARVIS_API_KEY || '').trim();
-
+const SERVE_API_KEY = parseStringEnv(process.env.OPENJARVIS_API_KEY, '');
 
 /**
  * Lite mode: when jarvis CLI is not installed but LiteLLM proxy is available,
@@ -105,7 +105,7 @@ const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ 
     const data = await resp.json();
     return { ok: resp.ok, data };
   } catch (fetchErr) {
-    logger.debug('[OPENJARVIS] httpPost %s failed: %s', path, fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
+    logger.debug('[OPENJARVIS] httpPost %s failed: %s', path, getErrorMessage(fetchErr));
     return { ok: false, data: null };
   }
 };
@@ -406,7 +406,7 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           return makeResult(false, `Unknown action: ${action}`, [], 'UNKNOWN_ACTION');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       return makeResult(false, `openjarvis ${action} failed`, [message], 'EXECUTION_FAILED');
     }
   },

@@ -20,6 +20,7 @@ import { getSuperAgentCapabilities, recommendSuperAgent, startSuperAgentSessionF
 import { isOneOf, sanitizeRecord, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const ADVISORY_ACTION_WORKER_IDS: Record<string, 'coordinate' | 'architect' | 'review' | 'operate'> = {
   'local.orchestrator.all': 'coordinate',
@@ -85,8 +86,8 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.json({ ok: true, recommendation });
     } catch (error) {
-      logger.warn('[GOVERNANCE] recommend super agent failed: %s', error instanceof Error ? error.message : String(error));
-      return res.status(400).json({ ok: false, error: 'SUPER_AGENT_RECOMMEND_FAILED', message: error instanceof Error ? error.message : String(error) });
+      logger.warn('[GOVERNANCE] recommend super agent failed: %s', getErrorMessage(error));
+      return res.status(400).json({ ok: false, error: 'SUPER_AGENT_RECOMMEND_FAILED', message: getErrorMessage(error) });
     }
   });
 
@@ -177,8 +178,8 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       });
       return res.json({ ok: true, policy });
     } catch (error) {
-      logger.warn('[GOVERNANCE] policy update failed: %s', error instanceof Error ? error.message : String(error));
-      return res.status(500).json({ ok: false, error: 'ACTION_POLICY_UPDATE_FAILED', message: error instanceof Error ? error.message : String(error) });
+      logger.warn('[GOVERNANCE] policy update failed: %s', getErrorMessage(error));
+      return res.status(500).json({ ok: false, error: 'ACTION_POLICY_UPDATE_FAILED', message: getErrorMessage(error) });
     }
   });
 

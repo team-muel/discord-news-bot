@@ -15,8 +15,7 @@ import {
   SPRINT_SCOPE_GUARD_PROTECTED_FILES,
   SPRINT_NEW_FILE_CAP,
 } from '../../config';
-
-// ──── Types ───────────────────────────────────────────────────────────────────
+import { parseCsvList } from '../../utils/env';
 
 export type ScopeCheckResult = {
   allowed: boolean;
@@ -36,13 +35,9 @@ export type ScopeGuardSnapshot = {
 
 // ──── State ───────────────────────────────────────────────────────────────────
 
-const ALLOWED_DIRS = SPRINT_SCOPE_GUARD_ALLOWED_DIRS
-  .split(',').map((d) => d.trim()).filter(Boolean);
+const ALLOWED_DIRS = parseCsvList(SPRINT_SCOPE_GUARD_ALLOWED_DIRS);
 
-const PROTECTED_FILES = new Set(
-  SPRINT_SCOPE_GUARD_PROTECTED_FILES
-    .split(',').map((f) => f.trim()).filter(Boolean),
-);
+const PROTECTED_FILES = new Set(parseCsvList(SPRINT_SCOPE_GUARD_PROTECTED_FILES));
 
 // ──── Immutable self-protection ───────────────────────────────────────────────
 // Hardcoded list of safety-critical files that the autonomous pipeline must

@@ -25,21 +25,22 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv } from '../../utils/env';
+import { parseBooleanEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.PG_CRON_BOOTSTRAP_ENABLED, true);
-const CONSOLIDATION_SCHEDULE = String(process.env.PG_CRON_CONSOLIDATION_SCHEDULE || '0 */6 * * *').trim();
-const DEADLETTER_SCHEDULE = String(process.env.PG_CRON_DEADLETTER_SCHEDULE || '*/30 * * * *').trim();
-const SLO_CHECK_SCHEDULE = String(process.env.PG_CRON_SLO_CHECK_SCHEDULE || '*/15 * * * *').trim();
-const LOGIN_CLEANUP_SCHEDULE = String(process.env.PG_CRON_LOGIN_CLEANUP_SCHEDULE || '0 */1 * * *').trim();
-const OBSIDIAN_SYNC_SCHEDULE = String(process.env.PG_CRON_OBSIDIAN_SYNC_SCHEDULE || '0 */2 * * *').trim();
-const RETRIEVAL_EVAL_SCHEDULE = String(process.env.PG_CRON_RETRIEVAL_EVAL_SCHEDULE || '0 */24 * * *').trim();
-const REWARD_SIGNAL_SCHEDULE = String(process.env.PG_CRON_REWARD_SIGNAL_SCHEDULE || '0 */6 * * *').trim();
-const EVAL_AUTO_PROMOTE_SCHEDULE = String(process.env.PG_CRON_EVAL_AUTO_PROMOTE_SCHEDULE || '30 */6 * * *').trim();
-const RATE_LIMIT_CLEANUP_SCHEDULE = String(process.env.PG_CRON_RATE_LIMIT_CLEANUP_SCHEDULE || '0 */1 * * *').trim();
-const OBSERVATION_CLEANUP_SCHEDULE = String(process.env.PG_CRON_OBSERVATION_CLEANUP_SCHEDULE || '0 3 * * *').trim();
-const INTENT_EVAL_SCHEDULE = String(process.env.PG_CRON_INTENT_EVAL_SCHEDULE || '*/10 * * * *').trim();
+const CONSOLIDATION_SCHEDULE = parseStringEnv(process.env.PG_CRON_CONSOLIDATION_SCHEDULE, '0 */6 * * *');
+const DEADLETTER_SCHEDULE = parseStringEnv(process.env.PG_CRON_DEADLETTER_SCHEDULE, '*/30 * * * *');
+const SLO_CHECK_SCHEDULE = parseStringEnv(process.env.PG_CRON_SLO_CHECK_SCHEDULE, '*/15 * * * *');
+const LOGIN_CLEANUP_SCHEDULE = parseStringEnv(process.env.PG_CRON_LOGIN_CLEANUP_SCHEDULE, '0 */1 * * *');
+const OBSIDIAN_SYNC_SCHEDULE = parseStringEnv(process.env.PG_CRON_OBSIDIAN_SYNC_SCHEDULE, '0 */2 * * *');
+const RETRIEVAL_EVAL_SCHEDULE = parseStringEnv(process.env.PG_CRON_RETRIEVAL_EVAL_SCHEDULE, '0 */24 * * *');
+const REWARD_SIGNAL_SCHEDULE = parseStringEnv(process.env.PG_CRON_REWARD_SIGNAL_SCHEDULE, '0 */6 * * *');
+const EVAL_AUTO_PROMOTE_SCHEDULE = parseStringEnv(process.env.PG_CRON_EVAL_AUTO_PROMOTE_SCHEDULE, '30 */6 * * *');
+const RATE_LIMIT_CLEANUP_SCHEDULE = parseStringEnv(process.env.PG_CRON_RATE_LIMIT_CLEANUP_SCHEDULE, '0 */1 * * *');
+const OBSERVATION_CLEANUP_SCHEDULE = parseStringEnv(process.env.PG_CRON_OBSERVATION_CLEANUP_SCHEDULE, '0 3 * * *');
+const INTENT_EVAL_SCHEDULE = parseStringEnv(process.env.PG_CRON_INTENT_EVAL_SCHEDULE, '*/10 * * * *');
 
 /** Validate cron expression (basic 5-field check). */
 const isValidCron = (expr: string): boolean => /^[\d*/,-]+(\s+[\d*/,-]+){4}$/.test(expr.trim());
@@ -207,7 +208,7 @@ export const bootstrapPgCronJobs = async (): Promise<BootstrapResult> => {
         logger.info('[PG-CRON] job %s: %s', spec.jobName, status);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       results.jobs.push({ jobName: spec.jobName, status: 'error', message: msg });
       logger.warn('[PG-CRON] job %s error: %s', spec.jobName, msg);
     }

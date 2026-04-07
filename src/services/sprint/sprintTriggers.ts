@@ -16,8 +16,8 @@ import {
 } from './sprintOrchestrator';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { runSelfImprovementChecks } from './selfImprovementLoop';
-
-// ──── Error Detection Trigger ─────────────────────────────────────────────────
+import { getErrorMessage } from '../../utils/errorMessage';
+import { parseCsvList } from '../../utils/env';
 
 type ErrorAccumulator = {
   recentErrors: Array<{ message: string; at: string; code?: string }>;
@@ -70,15 +70,13 @@ export const recordRuntimeError = (error: { message: string; code?: string }): v
       guildId: 'system',
       objective: `Auto-triggered bugfix: ${errorAccumulator.recentErrors.length} errors detected in last 10 minutes.\n\nError patterns:\n${errorSummary}`,
       autonomyLevel: 'approve-impl',
-    }).catch((err) => logger.error('[SPRINT-TRIGGER] error-detection trigger failed: %s', err));
+    }).catch((err) => logger.error('[SPRINT-TRIGGER] error-detection trigger failed: %s', getErrorMessage(err)));
   }
 };
 
 // ──── CS Ticket Trigger ───────────────────────────────────────────────────────
 
-const CS_CHANNEL_IDS = new Set(
-  SPRINT_TRIGGER_CS_CHANNEL_IDS.split(',').map((s) => s.trim()).filter(Boolean),
-);
+const CS_CHANNEL_IDS = new Set(parseCsvList(SPRINT_TRIGGER_CS_CHANNEL_IDS));
 
 export type CsClassification = 'bug-report' | 'feature-request' | 'question' | 'noise';
 
@@ -202,8 +200,8 @@ const triggerSprint = async (params: {
 
   // Run pipeline asynchronously (don't block the trigger)
   runFullSprintPipeline(pipeline.sprintId).catch((error) => {
-    logger.error('[SPRINT-TRIGGER] pipeline run failed sprint=%s error=%s', pipeline.sprintId, error);
-    markPipelineBlocked(pipeline.sprintId, `Pipeline run crashed: ${error instanceof Error ? error.message : String(error)}`);
+    logger.error('[SPRINT-TRIGGER] pipeline run failed sprint=%s error=%s', pipeline.sprintId, getErrorMessage(error));
+    markPipelineBlocked(pipeline.sprintId, `Pipeline run crashed: ${getErrorMessage(error)}`);
   });
 
   return pipeline;
@@ -234,7 +232,7 @@ export const startSprintScheduledTriggers = (): void => {
   if (securityIntervalMs > 0 && !securityAuditTimer) {
     securityAuditTimer = setInterval(() => {
       triggerScheduledSecurityAudit('system').catch((e) =>
-        logger.error('[SPRINT-TRIGGER] scheduled security audit failed: %s', e),
+        logger.error('[SPRINT-TRIGGER] scheduled security audit failed: %s', getErrorMessage(e)),
       );
     }, securityIntervalMs);
     securityAuditTimer.unref();
@@ -245,7 +243,7 @@ export const startSprintScheduledTriggers = (): void => {
   if (improvementIntervalMs > 0 && !improvementTimer) {
     improvementTimer = setInterval(() => {
       triggerScheduledImprovement('system').catch((e) =>
-        logger.error('[SPRINT-TRIGGER] scheduled improvement failed: %s', e),
+        logger.error('[SPRINT-TRIGGER] scheduled improvement failed: %s', getErrorMessage(e)),
       );
     }, improvementIntervalMs);
     improvementTimer.unref();
@@ -257,7 +255,7 @@ export const startSprintScheduledTriggers = (): void => {
   if (!selfImprovementLoopTimer) {
     selfImprovementLoopTimer = setInterval(() => {
       runSelfImprovementChecks().catch((e) =>
-        logger.error('[SPRINT-TRIGGER] self-improvement loop failed: %s', e),
+        logger.error('[SPRINT-TRIGGER] self-improvement loop failed: %s', getErrorMessage(e)),
       );
     }, SELF_IMPROVE_INTERVAL_MS);
     selfImprovementLoopTimer.unref();

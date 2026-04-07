@@ -11,10 +11,11 @@
  * n8n handles external execution (RSS, API calls, SNS posting)
  * while the pipeline engine handles judgment (chaining, branching, replanning).
  */
-import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
 import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterResult, ExternalAdapterId } from '../externalAdapterTypes';
 import logger from '../../../logger';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -23,9 +24,9 @@ const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.N8N_DISABLED, false);
 const LEGACY_ENABLED_RAW = process.env.N8N_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
-const N8N_BASE_URL = String(process.env.N8N_BASE_URL || 'http://localhost:5678').trim().replace(/\/+$/, '');
-const N8N_API_KEY = String(process.env.N8N_API_KEY || '').trim();
-const N8N_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.N8N_TIMEOUT_MS, 30_000));
+const N8N_BASE_URL = parseStringEnv(process.env.N8N_BASE_URL, 'http://localhost:5678').replace(/\/+$/, '');
+const N8N_API_KEY = parseStringEnv(process.env.N8N_API_KEY, '');
+const N8N_TIMEOUT_MS = parseMinIntEnv(process.env.N8N_TIMEOUT_MS, 30_000, 5_000);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ export const n8nAdapter: ExternalToolAdapter = {
           logger.info('[N8N] workflow.execute ok: workflowId=%s durationMs=%d', workflowId, Date.now() - start);
           return makeResult(true, action, `Workflow ${workflowId} executed`, output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           logger.warn('[N8N] workflow.execute error: %s', msg);
           return makeResult(false, action, `workflow.execute failed: ${msg}`, [], start, 'EXECUTION_ERROR');
         }
@@ -165,7 +166,7 @@ export const n8nAdapter: ExternalToolAdapter = {
 
           return makeResult(true, action, 'Workflows listed', output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           return makeResult(false, action, `workflow.list failed: ${msg}`, [], start, 'LIST_ERROR');
         }
       }
@@ -210,7 +211,7 @@ export const n8nAdapter: ExternalToolAdapter = {
           logger.info('[N8N] workflow.trigger ok: path=%s durationMs=%d', sanitized, Date.now() - start);
           return makeResult(true, action, `Webhook ${sanitized} triggered`, output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           return makeResult(false, action, `workflow.trigger failed: ${msg}`, [], start, 'TRIGGER_ERROR');
         }
       }
@@ -237,7 +238,7 @@ export const n8nAdapter: ExternalToolAdapter = {
 
           return makeResult(true, action, `Execution ${executionId} status retrieved`, output, start);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getErrorMessage(err);
           return makeResult(false, action, `workflow.status failed: ${msg}`, [], start, 'STATUS_ERROR');
         }
       }

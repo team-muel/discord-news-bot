@@ -14,10 +14,10 @@ import {
   SPRINT_CROSS_MODEL_PHASES,
   SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED,
 } from '../../config';
+import { parseCsvList } from '../../utils/env';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
-
-// ──── Types ───────────────────────────────────────────────────────────────────
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type CrossModelResult = {
   enabled: boolean;
@@ -30,9 +30,7 @@ export type CrossModelResult = {
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────
 
-const ENABLED_PHASES = new Set(
-  SPRINT_CROSS_MODEL_PHASES.split(',').map((p) => p.trim()).filter(Boolean),
-);
+const ENABLED_PHASES = new Set(parseCsvList(SPRINT_CROSS_MODEL_PHASES));
 
 export const isCrossModelPhase = (phase: string): boolean =>
   SPRINT_CROSS_MODEL_ENABLED && ENABLED_PHASES.has(phase);
@@ -125,7 +123,7 @@ export const requestCrossModelReview = async (params: {
         }
         logger.info('[CROSS-MODEL] nemoclaw adapter unavailable or empty, falling through to LLM path');
       } catch (nemoclawErr) {
-        logger.warn('[CROSS-MODEL] nemoclaw sandbox failed (non-fatal): %s', nemoclawErr instanceof Error ? nemoclawErr.message : String(nemoclawErr));
+        logger.warn('[CROSS-MODEL] nemoclaw sandbox failed (non-fatal): %s', getErrorMessage(nemoclawErr));
       }
     }
 
@@ -161,7 +159,7 @@ export const requestCrossModelReview = async (params: {
   } catch (error) {
     logger.warn(
       '[CROSS-MODEL] review failed (non-fatal): %s',
-      error instanceof Error ? error.message : String(error),
+      getErrorMessage(error),
     );
     return null;
   }

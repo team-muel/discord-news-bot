@@ -9,7 +9,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_EVAL_AB_RUNS } from '../infra/tableRegistry';
@@ -20,12 +20,13 @@ import {
   persistRewardSnapshot,
   type RewardSnapshot,
 } from './rewardSignalService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_ENABLED, true);
-const MIN_SAMPLES = Math.max(3, parseIntegerEnv(process.env.EVAL_MIN_SAMPLES, 10));
+const MIN_SAMPLES = parseMinIntEnv(process.env.EVAL_MIN_SAMPLES, 10, 3);
 const PROMOTE_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_PROMOTE_DELTA, 0.05, 0.01, 0.5);
 const REJECT_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_REJECT_DELTA, -0.05, -0.5, -0.01);
-const EVAL_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.EVAL_ROLLOUT_PERCENT, 50)));
+const EVAL_ROLLOUT_PERCENT = parseBoundedNumberEnv(process.env.EVAL_ROLLOUT_PERCENT, 50, 0, 100);
 
 /** Stable bucket: deterministic 0-99 for a given key (SHA256-based, same as llmClient pattern) */
 const stableBucket = (key: string): number => {
@@ -103,7 +104,7 @@ export const createEvalRun = async (params: {
       promotedAt: null,
     };
   } catch (err) {
-    logger.debug('[EVAL-AB] register failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] register failed: %s', getErrorMessage(err));
     return null;
   }
 };
@@ -124,7 +125,7 @@ export const getPendingEvalRuns = async (guildId: string): Promise<EvalAbRun[]> 
 
     return (data as Record<string, unknown>[]).map(rowToEvalRun);
   } catch (err) {
-    logger.debug('[EVAL-AB] pending runs fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] pending runs fetch failed guild=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };
@@ -204,7 +205,7 @@ const collectEvalSampleWithSnapshot = async (
 
     return { baselineReward: avgBaseline, candidateReward: avgCandidate };
   } catch (err) {
-    logger.debug('[EVAL-AB] reward computation failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] reward computation failed: %s', getErrorMessage(err));
     return null;
   }
 };
@@ -263,7 +264,7 @@ const judgeEvalRun = async (evalRun: EvalAbRun): Promise<{
   } catch (err) {
     return {
       verdict: 'inconclusive',
-      reasoning: `LLM judge failed: ${err instanceof Error ? err.message : String(err)}`,
+      reasoning: `LLM judge failed: ${getErrorMessage(err)}`,
     };
   }
 };
@@ -331,7 +332,7 @@ export const runEvalPipeline = async (guildId: string): Promise<{
 
       await db.from(T_EVAL_AB_RUNS).update(updates).eq('id', run.id);
     } catch (err) {
-      logger.debug('[EVAL-AB] verdict persist failed run=%s: %s', run.id, err instanceof Error ? err.message : String(err));
+      logger.debug('[EVAL-AB] verdict persist failed run=%s: %s', run.id, getErrorMessage(err));
     }
   }
 
@@ -358,7 +359,7 @@ export const getRecentEvalRuns = async (
     if (error || !data) return [];
     return (data as Record<string, unknown>[]).map(rowToEvalRun);
   } catch (err) {
-    logger.debug('[EVAL-AB] recent results fetch failed guild=%s: %s', guildId, err instanceof Error ? err.message : String(err));
+    logger.debug('[EVAL-AB] recent results fetch failed guild=%s: %s', guildId, getErrorMessage(err));
     return [];
   }
 };

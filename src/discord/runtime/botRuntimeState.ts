@@ -154,7 +154,7 @@ export const clearLoginRateLimit = (): void => {
 };
 
 export const isDiscordLoginRateLimitedError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error || '');
+  const message = getErrorMessage(error);
   return /Discord login rate-limited; retry after/i.test(message);
 };
 
@@ -291,7 +291,7 @@ export const registerSlashCommands = async (client: Client): Promise<void> => {
       try {
         guild = await client.guilds.fetch(DISCORD_COMMAND_GUILD_ID);
       } catch (fetchError) {
-        logger.error('[BOT] Failed to fetch target guild %s for slash sync: %o', DISCORD_COMMAND_GUILD_ID, fetchError);
+        logger.error('[BOT] Failed to fetch target guild %s for slash sync: %s', DISCORD_COMMAND_GUILD_ID, getErrorMessage(fetchError));
       }
 
       if (guild) {
@@ -316,13 +316,13 @@ export const registerSlashCommands = async (client: Client): Promise<void> => {
           await guild.commands.set([]);
           cleared += 1;
         } catch (clearError) {
-          logger.warn('[BOT] Failed to clear guild-scoped commands for guild=%s: %o', guild.id, clearError);
+          logger.warn('[BOT] Failed to clear guild-scoped commands for guild=%s: %s', guild.id, getErrorMessage(clearError));
         }
       }
       logger.info('[BOT] Cleared stale guild-scoped commands for %d guild(s)', cleared);
     }
   } catch (error) {
-    logger.error('[BOT] Failed to sync slash commands: %o', error);
+    logger.error('[BOT] Failed to sync slash commands: %s', getErrorMessage(error));
   }
 };
 

@@ -13,15 +13,16 @@
  *   OLLAMA_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
-import { parseBooleanEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.OLLAMA_ADAPTER_DISABLED, false);
 const LEGACY_ENABLED_RAW = process.env.OLLAMA_ADAPTER_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
-const BASE_URL = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
+const BASE_URL = parseUrlEnv(process.env.OLLAMA_BASE_URL, 'http://127.0.0.1:11434');
 const TIMEOUT_MS = 15_000;
 
 const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({
@@ -59,7 +60,7 @@ const listModels = async (): Promise<ExternalAdapterResult> => {
     const names = models.map((m) => String(m.name || ''));
     return makeResult(true, 'model.list', `${names.length} models installed`, names, Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'model.list', 'Ollama unreachable', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'model.list', 'Ollama unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -75,7 +76,7 @@ const pullModel = async (name: string): Promise<ExternalAdapterResult> => {
     if (!ok) return makeResult(false, 'model.pull', 'Pull failed', [], Date.now() - start, 'PULL_FAILED');
     return makeResult(true, 'model.pull', `Pulled ${sanitized}`, [JSON.stringify(body)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'model.pull', 'Pull error', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'model.pull', 'Pull error', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -96,7 +97,7 @@ const modelInfo = async (name: string): Promise<ExternalAdapterResult> => {
       : sanitized;
     return makeResult(true, 'model.info', summary, [JSON.stringify(info)], Date.now() - start);
   } catch (err) {
-    return makeResult(false, 'model.info', 'Info error', [], Date.now() - start, err instanceof Error ? err.message : String(err));
+    return makeResult(false, 'model.info', 'Info error', [], Date.now() - start, getErrorMessage(err));
   }
 };
 

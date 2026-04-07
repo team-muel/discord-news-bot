@@ -15,6 +15,7 @@ import { isUserLearningEnabled, setUserLearningEnabled } from '../../services/us
 import { DISCORD_MESSAGES } from '../messages';
 import { buildAdminCard, buildSimpleEmbed, EMBED_ERROR, EMBED_INFO, EMBED_SUCCESS, EMBED_WARN } from '../ui';
 import { DISCORD_AGENT_RESULT_PREVIEW_LIMIT } from '../runtimePolicy';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export const formatAgentSessionLine = (session: AgentSession) => {
   const safeGoal = String(session.goal || '').replace(/\s+/g, ' ').slice(0, 48);
@@ -363,7 +364,7 @@ export const createAgentHandlers = (deps: AgentDeps) => {
         });
         await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titlePolicyAddDone, DISCORD_MESSAGES.agent.policyDomainAdded(result.domain), EMBED_SUCCESS));
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = getErrorMessage(error);
         await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titlePolicyAddFailed, DISCORD_MESSAGES.agent.errorPrefix(msg), EMBED_ERROR));
       }
       return;
@@ -380,7 +381,7 @@ export const createAgentHandlers = (deps: AgentDeps) => {
         });
         await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titlePolicyDeleteDone, DISCORD_MESSAGES.agent.policyDomainRemoved(result.domain), EMBED_WARN));
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = getErrorMessage(error);
         await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titlePolicyDeleteFailed, DISCORD_MESSAGES.agent.errorPrefix(msg), EMBED_ERROR));
       }
       return;

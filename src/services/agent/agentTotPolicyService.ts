@@ -1,6 +1,7 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export type AgentTotPolicySnapshot = {
   shadowEnabled: boolean;
@@ -28,11 +29,11 @@ export type AgentTotPolicySnapshot = {
   autoTuneMinSamples: number;
 };
 
-const AGENT_TOT_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_TOT_POLICY_CACHE_TTL_MS, 60_000));
-const AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const AGENT_TOT_POLICY_CACHE_TTL_MS = parseMinIntEnv(process.env.AGENT_TOT_POLICY_CACHE_TTL_MS, 60_000, 5_000);
+const AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 
 const parseBranchAnglesEnv = (): string[] => {
-  const jsonRaw = String(process.env.TOT_SHADOW_BRANCH_ANGLES_JSON || '').trim();
+  const jsonRaw = parseStringEnv(process.env.TOT_SHADOW_BRANCH_ANGLES_JSON, '');
   if (jsonRaw) {
     try {
       const parsed = JSON.parse(jsonRaw);
@@ -47,7 +48,7 @@ const parseBranchAnglesEnv = (): string[] => {
     }
   }
 
-  const csvRaw = String(process.env.TOT_SHADOW_BRANCH_ANGLES || '').trim();
+  const csvRaw = parseStringEnv(process.env.TOT_SHADOW_BRANCH_ANGLES, '');
   if (!csvRaw) {
     return [];
   }
@@ -60,28 +61,28 @@ const parseBranchAnglesEnv = (): string[] => {
 
 const DEFAULT_POLICY: AgentTotPolicySnapshot = {
   shadowEnabled: parseBooleanEnv(process.env.TOT_SHADOW_ENABLED, false),
-  strategy: String(process.env.TOT_SHADOW_STRATEGY || 'bfs').trim().toLowerCase() === 'dfs' ? 'dfs' : 'bfs',
+  strategy: parseStringEnv(process.env.TOT_SHADOW_STRATEGY, 'bfs').toLowerCase() === 'dfs' ? 'dfs' : 'bfs',
   branchAngles: parseBranchAnglesEnv(),
   adaptiveSamplingEnabled: parseBooleanEnv(process.env.TOT_ADAPTIVE_SAMPLING_ENABLED, true),
-  samplingTempMin: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_SAMPLING_TEMP_MIN, 0.12))),
-  samplingTempMax: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_SAMPLING_TEMP_MAX, 0.45))),
-  samplingTopPMin: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_SAMPLING_TOP_P_MIN, 0.82))),
-  samplingTopPMax: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_SAMPLING_TOP_P_MAX, 0.98))),
+  samplingTempMin: parseBoundedNumberEnv(process.env.TOT_SAMPLING_TEMP_MIN, 0.12, 0, 1),
+  samplingTempMax: parseBoundedNumberEnv(process.env.TOT_SAMPLING_TEMP_MAX, 0.45, 0, 1),
+  samplingTopPMin: parseBoundedNumberEnv(process.env.TOT_SAMPLING_TOP_P_MIN, 0.82, 0, 1),
+  samplingTopPMax: parseBoundedNumberEnv(process.env.TOT_SAMPLING_TOP_P_MAX, 0.98, 0, 1),
   localSearchEnabled: parseBooleanEnv(process.env.TOT_LOCAL_SEARCH_ENABLED, true),
-  localSearchMutations: Math.max(0, Math.min(3, parseIntegerEnv(process.env.TOT_LOCAL_SEARCH_MUTATIONS, 1))),
+  localSearchMutations: parseBoundedNumberEnv(process.env.TOT_LOCAL_SEARCH_MUTATIONS, 1, 0, 3),
   replayEnabled: parseBooleanEnv(process.env.TOT_REPLAY_ENABLED, true),
-  replayTopK: Math.max(0, Math.min(5, parseIntegerEnv(process.env.TOT_REPLAY_TOP_K, 2))),
-  maxBranches: Math.max(2, Math.min(6, parseIntegerEnv(process.env.TOT_SHADOW_MAX_BRANCHES, 3))),
-  keepTop: Math.max(1, Math.min(3, parseIntegerEnv(process.env.TOT_SHADOW_KEEP_TOP, 1))),
+  replayTopK: parseBoundedNumberEnv(process.env.TOT_REPLAY_TOP_K, 2, 0, 5),
+  maxBranches: parseBoundedNumberEnv(process.env.TOT_SHADOW_MAX_BRANCHES, 3, 2, 6),
+  keepTop: parseBoundedNumberEnv(process.env.TOT_SHADOW_KEEP_TOP, 1, 1, 3),
   activeEnabled: parseBooleanEnv(process.env.TOT_ACTIVE_ENABLED, false),
   activeAllowFast: parseBooleanEnv(process.env.TOT_ACTIVE_ALLOW_FAST, false),
-  activeMinGoalLength: Math.max(20, parseIntegerEnv(process.env.TOT_ACTIVE_MIN_GOAL_LENGTH, 60)),
-  activeMinScoreGain: Math.max(0, Math.min(30, parseIntegerEnv(process.env.TOT_ACTIVE_MIN_SCORE_GAIN, 4))),
-  activeMinBeamGain: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_ACTIVE_MIN_BEAM_GAIN, 0.03))),
+  activeMinGoalLength: parseMinIntEnv(process.env.TOT_ACTIVE_MIN_GOAL_LENGTH, 60, 20),
+  activeMinScoreGain: parseBoundedNumberEnv(process.env.TOT_ACTIVE_MIN_SCORE_GAIN, 4, 0, 30),
+  activeMinBeamGain: parseBoundedNumberEnv(process.env.TOT_ACTIVE_MIN_BEAM_GAIN, 0.03, 0, 1),
   activeRequireNonPass: parseBooleanEnv(process.env.TOT_ACTIVE_REQUIRE_NON_PASS, false),
   autoTuneEnabled: parseBooleanEnv(process.env.TOT_AUTO_TUNE_ENABLED, true),
-  autoTuneIntervalHours: Math.max(1, Math.min(168, parseIntegerEnv(process.env.TOT_AUTO_TUNE_INTERVAL_HOURS, 24))),
-  autoTuneMinSamples: Math.max(10, parseIntegerEnv(process.env.TOT_AUTO_TUNE_MIN_SAMPLES, 40)),
+  autoTuneIntervalHours: parseBoundedNumberEnv(process.env.TOT_AUTO_TUNE_INTERVAL_HOURS, 24, 1, 168),
+  autoTuneMinSamples: parseMinIntEnv(process.env.TOT_AUTO_TUNE_MIN_SAMPLES, 40, 10),
 };
 
 type TotPolicyCacheRow = AgentTotPolicySnapshot;
@@ -209,7 +210,7 @@ export const primeAgentTotPolicyCache = (): void => {
       const now = Date.now();
       if (now - lastPolicyCacheErrorLogAt >= AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS) {
         lastPolicyCacheErrorLogAt = now;
-        logger.warn('[AGENT-TOT-POLICY] cache refresh failed (throttled): %s', error instanceof Error ? error.message : String(error));
+        logger.warn('[AGENT-TOT-POLICY] cache refresh failed (throttled): %s', getErrorMessage(error));
       }
     })
     .finally(() => {
