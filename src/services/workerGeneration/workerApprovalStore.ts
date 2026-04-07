@@ -52,7 +52,7 @@ export type WorkerApprovalStoreSnapshot = {
 
 const MAX_APPROVALS = 200;
 const store = new Map<string, PendingWorkerApproval>();
-const APPROVAL_STORE_PATH = String(process.env.WORKER_APPROVAL_STORE_PATH || path.join(process.cwd(), '.runtime', 'worker-approvals.json')).trim();
+const APPROVAL_STORE_PATH = parseStringEnv(process.env.WORKER_APPROVAL_STORE_PATH, path.join(process.cwd(), '.runtime', 'worker-approvals.json'));
 const APPROVAL_STORE_MODE_RAW = parseStringEnv(process.env.WORKER_APPROVAL_STORE_MODE, 'auto').toLowerCase();
 const APPROVAL_STORE_MODE = APPROVAL_STORE_MODE_RAW === 'supabase' || APPROVAL_STORE_MODE_RAW === 'file'
   ? APPROVAL_STORE_MODE_RAW

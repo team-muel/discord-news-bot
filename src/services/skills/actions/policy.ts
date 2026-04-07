@@ -1,14 +1,5 @@
 import { parseBoundedNumberEnv, parseCsvList, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 
-const toSet = (raw: string): Set<string> => {
-  return new Set(
-    String(raw || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  );
-};
-
 const normalizeHost = (value: string): string => value.trim().toLowerCase();
 
 const normalizeHostRule = (value: string): string => {
@@ -26,13 +17,13 @@ const normalizeHostRule = (value: string): string => {
 const RUNNER_MODE_RAW = parseStringEnv(process.env.ACTION_RUNNER_MODE, 'execute').toLowerCase();
 const RUNNER_MODE = RUNNER_MODE_RAW === 'dry-run' ? 'dry-run' : 'execute';
 const ALLOWED_ACTIONS_RAW = parseStringEnv(process.env.ACTION_ALLOWED_ACTIONS, '*');
-const ALLOWED_ACTIONS = toSet(ALLOWED_ACTIONS_RAW);
+const ALLOWED_ACTIONS = new Set(parseCsvList(ALLOWED_ACTIONS_RAW));
 const WEB_ALLOWED_HOSTS = new Set(
   parseCsvList(process.env.ACTION_WEB_FETCH_ALLOWED_HOSTS)
     .map((item) => normalizeHostRule(item))
     .filter(Boolean),
 );
-const DB_ALLOWED_TABLES = toSet(process.env.ACTION_DB_READ_ALLOWED_TABLES || 'guild_lore_docs,memory_items');
+const DB_ALLOWED_TABLES = new Set(parseCsvList(process.env.ACTION_DB_READ_ALLOWED_TABLES || 'guild_lore_docs,memory_items'));
 
 export const ACTION_MAX_READ_LIMIT = parseBoundedNumberEnv(process.env.ACTION_DB_READ_MAX_ROWS, 5, 1, 50);
 

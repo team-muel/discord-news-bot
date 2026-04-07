@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 const CIRCUIT_FAILURE_THRESHOLD = parseMinIntEnv(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD, 3, 2);
 const CIRCUIT_OPEN_MS = parseMinIntEnv(process.env.DYNAMIC_CIRCUIT_OPEN_MS, 120_000, 10_000);
-const DYNAMIC_WORKER_RUNTIME_DIR = String(process.env.DYNAMIC_WORKER_RUNTIME_DIR || path.join(process.cwd(), '.runtime', 'dynamic-workers')).trim();
+const DYNAMIC_WORKER_RUNTIME_DIR = parseStringEnv(process.env.DYNAMIC_WORKER_RUNTIME_DIR, path.join(process.cwd(), '.runtime', 'dynamic-workers'));
 
 type DynamicEntry = {
   definition: ActionDefinition;
