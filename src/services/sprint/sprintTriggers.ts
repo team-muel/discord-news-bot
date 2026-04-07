@@ -71,7 +71,7 @@ export const recordRuntimeError = (error: { message: string; code?: string }): v
       guildId: 'system',
       objective: `Auto-triggered bugfix: ${errorAccumulator.recentErrors.length} errors detected in last 10 minutes.\n\nError patterns:\n${errorSummary}`,
       autonomyLevel: 'approve-impl',
-    }).catch((err) => logger.error('[SPRINT-TRIGGER] error-detection trigger failed: %s', err));
+    }).catch((err) => logger.error('[SPRINT-TRIGGER] error-detection trigger failed: %s', getErrorMessage(err)));
   }
 };
 
@@ -203,7 +203,7 @@ const triggerSprint = async (params: {
 
   // Run pipeline asynchronously (don't block the trigger)
   runFullSprintPipeline(pipeline.sprintId).catch((error) => {
-    logger.error('[SPRINT-TRIGGER] pipeline run failed sprint=%s error=%s', pipeline.sprintId, error);
+    logger.error('[SPRINT-TRIGGER] pipeline run failed sprint=%s error=%s', pipeline.sprintId, getErrorMessage(error));
     markPipelineBlocked(pipeline.sprintId, `Pipeline run crashed: ${getErrorMessage(error)}`);
   });
 

@@ -1,13 +1,12 @@
 import crypto from 'crypto';
 import logger from '../../logger';
-import { debugCatchError } from '../../utils/errorMessage';
+import { debugCatchError, getErrorMessage } from '../../utils/errorMessage';
 import { assessMemoryPoisonRisk, buildPoisonTags } from '../memory/memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { hasMemoryConsent } from './agentConsentService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { runWithConcurrency } from '../../utils/async';
 import { generateQueryEmbedding, generateEmbedding, storeMemoryEmbedding, isEmbeddingEnabled } from '../memory/memoryEmbeddingService';
-import { getErrorMessage } from '../../utils/errorMessage';
 
 const MEMORY_TYPES = ['episode', 'semantic', 'policy', 'preference'] as const;
 const FEEDBACK_ACTIONS = ['pin', 'unpin', 'edit', 'deprecate', 'restore', 'approve', 'reject'] as const;

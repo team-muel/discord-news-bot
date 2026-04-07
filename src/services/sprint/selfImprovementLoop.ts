@@ -132,7 +132,7 @@ export const triggerLacunaSprintIfNeeded = async (
       triggeredAt: new Date().toISOString(), objective,
     });
     runFullSprintPipeline(pipeline.sprintId).catch((err) => {
-      logger.error('[SELF-IMPROVE] lacuna sprint failed sprint=%s: %s', pipeline.sprintId, err);
+      logger.error('[SELF-IMPROVE] lacuna sprint failed sprint=%s: %s', pipeline.sprintId, getErrorMessage(err));
       markPipelineBlocked(pipeline.sprintId, `Lacuna sprint crashed: ${getErrorMessage(err)}`);
     });
 
@@ -202,7 +202,7 @@ export const checkWeeklyPatternsForBugfixTrigger = async (): Promise<{ triggered
       triggeredAt: new Date().toISOString(), objective,
     });
     runFullSprintPipeline(pipeline.sprintId).catch((err) => {
-      logger.error('[SELF-IMPROVE] bugfix sprint failed sprint=%s: %s', pipeline.sprintId, err);
+      logger.error('[SELF-IMPROVE] bugfix sprint failed sprint=%s: %s', pipeline.sprintId, getErrorMessage(err));
       markPipelineBlocked(pipeline.sprintId, `Bugfix sprint crashed: ${getErrorMessage(err)}`);
     });
 
@@ -277,7 +277,7 @@ export const checkBenchRegressionAndTrigger = async (): Promise<{ triggered: boo
       triggeredAt: new Date().toISOString(), objective,
     });
     runFullSprintPipeline(pipeline.sprintId).catch((err) => {
-      logger.error('[SELF-IMPROVE] regression sprint failed sprint=%s: %s', pipeline.sprintId, err);
+      logger.error('[SELF-IMPROVE] regression sprint failed sprint=%s: %s', pipeline.sprintId, getErrorMessage(err));
       markPipelineBlocked(pipeline.sprintId, `Regression sprint crashed: ${getErrorMessage(err)}`);
     });
 

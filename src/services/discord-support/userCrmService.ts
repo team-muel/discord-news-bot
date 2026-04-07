@@ -12,8 +12,7 @@ import { getClient, fromTable } from '../infra/baseRepository';
 import { T_USER_PROFILES, T_GUILD_MEMBERSHIPS } from '../infra/tableRegistry';
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
-import { logCatchError } from '../../utils/errorMessage';
-import { getErrorMessage } from '../../utils/errorMessage';
+import { logCatchError, getErrorMessage } from '../../utils/errorMessage';
 
 // ---------------------------------------------------------------------------
 // Types

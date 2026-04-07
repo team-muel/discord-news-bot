@@ -64,8 +64,7 @@ import {
   shadowPipelineCancelled,
   shadowPipelineBlocked,
 } from './eventSourcing/bridge';
-import { logCatchError, debugCatchError } from '../../utils/errorMessage';
-import { getErrorMessage } from '../../utils/errorMessage';
+import { logCatchError, debugCatchError, getErrorMessage } from '../../utils/errorMessage';
 
 const catchPersist = logCatchError(logger, '[SPRINT] persistPipeline');
 const catchShadow = debugCatchError(logger, '[VENTYD] shadow');

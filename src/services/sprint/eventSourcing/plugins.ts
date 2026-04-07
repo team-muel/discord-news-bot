@@ -7,8 +7,7 @@
 import type { Plugin, InferEventFromSchema, InferStateFromSchema } from 'ventyd';
 import logger from '../../../logger';
 import { sprintPipelineSchema } from './sprintPipelineEntity';
-import { logCatchError } from '../../../utils/errorMessage';
-import { getErrorMessage } from '../../../utils/errorMessage';
+import { logCatchError, getErrorMessage } from '../../../utils/errorMessage';
 
 export type SprintPlugin = Plugin<typeof sprintPipelineSchema>;
 type SprintEvent = InferEventFromSchema<typeof sprintPipelineSchema>;

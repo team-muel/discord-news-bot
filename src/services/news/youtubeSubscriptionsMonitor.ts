@@ -320,7 +320,7 @@ const executeTick = async (sink: ChannelSink, guildId?: string, options?: TickOp
     lastErrorAt = new Date().toISOString();
     lastError = getErrorMessage(err);
     lastDurationMs = Date.now() - startMs;
-    logger.warn('[YT-MONITOR] tick failed: %o', err);
+    logger.warn('[YT-MONITOR] tick failed: %s', getErrorMessage(err));
     return { ok: false, message: lastError || 'Tick failed' as const };
   } finally {
     running = false;
