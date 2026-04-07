@@ -469,7 +469,7 @@ export const AGENT_CONVERSATION_THREAD_IDLE_MS = parseMinIntEnv(process.env.AGEN
 
 // ── Super Agent Service ──
 export const SUPER_AGENT_PAYLOAD_CLIP_CHARS = parseMinIntEnv(process.env.SUPER_AGENT_PAYLOAD_CLIP_CHARS, 2_000, 400);
-export const SUPER_AGENT_REVIEW_APPROVAL_ACTION = parseStringEnv(process.env.SUPER_AGENT_REVIEW_APPROVAL_ACTION, 'super.inference.review') || 'super.inference.review';
+export const SUPER_AGENT_REVIEW_APPROVAL_ACTION = parseStringEnv(process.env.SUPER_AGENT_REVIEW_APPROVAL_ACTION, 'super.inference.review');
 
 // ── Supabase Fetch ──
 export const SUPABASE_FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.SUPABASE_FETCH_TIMEOUT_MS, 12_000, 1_000);

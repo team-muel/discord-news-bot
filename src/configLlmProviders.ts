@@ -52,7 +52,6 @@ export const OPENAI_API_KEY = parseStringEnv(process.env.OPENAI_API_KEY, '');
 export const OPENAI_ANALYSIS_MODEL = parseStringEnv(process.env.OPENAI_ANALYSIS_MODEL, 'gpt-4o-mini');
 
 // ── Gemini ──
-// ── Gemini ──
 // Note: GEMINI_API_KEY and GOOGLE_API_KEY are accepted aliases.
 export const GEMINI_API_KEY = parseStringEnv(process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY, '');
 export const GEMINI_MODEL = parseStringEnv(process.env.GEMINI_MODEL, 'gemini-2.5-flash');

@@ -83,7 +83,7 @@ export const parseCsvList = (value: string | undefined): string[] =>
  *
  * Use for values that must be shell-safe identifiers (sandbox names, hostnames).
  *
- * @param stripPattern - Regex of characters to REMOVE (typically /[^allowed]/g)
+ * @param {RegExp} stripPattern - Regex of characters to REMOVE (typically /[^allowed]/g)
  */
 export const parseSanitizedStringEnv = (
   value: string | undefined,
