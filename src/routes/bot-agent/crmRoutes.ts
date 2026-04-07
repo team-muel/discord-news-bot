@@ -5,6 +5,7 @@ import {
   getUserCrmSnapshot,
   getGuildLeaderboard,
   updateUserProfileMeta,
+  type ActivityCounter,
 } from '../../services/discord-support/userCrmService';
 import { toStringParam } from '../../utils/validation';
 import { BotAgentRouteDeps } from './types';
@@ -75,7 +76,7 @@ export function registerBotAgentCrmRoutes(deps: BotAgentRouteDeps): void {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
     }
 
-    const counter = (toStringParam(req.query?.counter) || 'message_count') as any;
+    const counter = (toStringParam(req.query?.counter) || 'message_count') as ActivityCounter;
     const validCounters = ['message_count', 'command_count', 'reaction_given_count', 'reaction_received_count', 'session_count'];
     if (!validCounters.includes(counter)) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: `counter must be one of: ${validCounters.join(', ')}` });
@@ -109,7 +110,7 @@ export function registerBotAgentCrmRoutes(deps: BotAgentRouteDeps): void {
     }
 
     try {
-      const ok = await updateUserProfileMeta(userId, updates as any);
+      const ok = await updateUserProfileMeta(userId, updates);
       return res.json({ ok });
     } catch {
       return res.status(500).json({ ok: false, error: 'INTERNAL', message: 'Failed to update profile meta' });

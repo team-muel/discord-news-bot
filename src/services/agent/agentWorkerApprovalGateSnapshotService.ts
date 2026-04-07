@@ -477,8 +477,9 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
 
   const actionPolicyDefaultEnabled = ACTION_POLICY_DEFAULT_ENABLED;
   const actionPolicyDefaultRunModeRaw = ACTION_POLICY_DEFAULT_RUN_MODE;
-  const actionPolicyDefaultRunMode = (['auto', 'approval_required', 'disabled'] as const).includes(
-    actionPolicyDefaultRunModeRaw as any,
+  // Cast to `readonly string[]` so `.includes()` accepts the runtime string; the ternary enforces the fallback.
+  const actionPolicyDefaultRunMode = (['auto', 'approval_required', 'disabled'] as readonly string[]).includes(
+    actionPolicyDefaultRunModeRaw,
   )
     ? actionPolicyDefaultRunModeRaw
     : 'approval_required';

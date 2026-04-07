@@ -264,8 +264,9 @@ export const VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS = Math.max(60_000, parseInteg
 // ── Action Governance Policy ──
 export const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
 const _actionPolicyDefaultRunModeRaw = (process.env.ACTION_POLICY_DEFAULT_RUN_MODE || 'approval_required').trim();
-export const ACTION_POLICY_DEFAULT_RUN_MODE = (['auto', 'approval_required', 'disabled'] as const).includes(
-  _actionPolicyDefaultRunModeRaw as any,
+// Cast to `readonly string[]` so `.includes()` accepts the runtime string; the ternary below enforces the fallback.
+export const ACTION_POLICY_DEFAULT_RUN_MODE = (['auto', 'approval_required', 'disabled'] as readonly string[]).includes(
+  _actionPolicyDefaultRunModeRaw,
 ) ? _actionPolicyDefaultRunModeRaw : 'approval_required';
 export const ACTION_POLICY_FAIL_OPEN_ON_ERROR = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);
 export const ACTION_ALLOWED_ACTIONS = (process.env.ACTION_ALLOWED_ACTIONS || '*').trim();

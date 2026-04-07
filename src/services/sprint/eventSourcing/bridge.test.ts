@@ -10,7 +10,7 @@ import {
   resetEventSourcingRepo,
 } from './bridge';
 
-import type { SprintPipeline } from '../sprintOrchestrator';
+import type { SprintPipeline, SprintPhase } from '../sprintOrchestrator';
 
 // ── Mock supabaseClient so bridge falls back to in-memory adapter ─────────────
 
@@ -151,7 +151,7 @@ describe('EventSourcing Bridge (in-memory)', () => {
     await shadowPipelineCreated(pipeline);
 
     // Walk through happy path phases
-    const phases = ['plan', 'implement', 'review', 'qa', 'ops-validate', 'ship', 'retro'];
+    const phases: SprintPhase[] = ['plan', 'implement', 'review', 'qa', 'ops-validate', 'ship', 'retro'];
     for (const phase of phases) {
       await shadowPhaseCompleted(pipeline.sprintId, {
         phase,

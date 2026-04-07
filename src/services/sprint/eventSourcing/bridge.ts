@@ -20,7 +20,7 @@ import { createRepository } from 'ventyd';
 import { isSupabaseConfigured, getSupabaseClient } from '../../supabaseClient';
 import { SPRINT_DRY_RUN, VENTYD_EVENTS_TABLE, VENTYD_ENABLED } from '../../../config';
 
-import type { SprintPipeline, SprintPhase } from '../sprintOrchestrator';
+import type { SprintPipeline, SprintPhase, PhaseResult } from '../sprintOrchestrator';
 
 // ──── In-memory adapter (fallback when Supabase unavailable) ──────────────────
 
@@ -126,8 +126,8 @@ export async function shadowPipelineCreated(pipeline: SprintPipeline): Promise<v
  * Call after recording phaseResult in the orchestrator.
  */
 export async function shadowPhaseCompleted(sprintId: string, params: {
-  phase: string;
-  status: string;
+  phase: SprintPhase;
+  status: PhaseResult['status'];
   output: string;
   artifacts: string[];
   startedAt: string;
@@ -140,8 +140,8 @@ export async function shadowPhaseCompleted(sprintId: string, params: {
     if (!entity) return;
 
     entity.completePhase({
-      phase: params.phase as any,
-      status: params.status as any,
+      phase: params.phase,
+      status: params.status,
       output: params.output.slice(0, 5000), // cap to avoid oversized events
       artifacts: params.artifacts,
       startedAt: params.startedAt,

@@ -88,7 +88,7 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
   logger.warn('[BOT] Manual reconnect requested: %s', reason);
 
   try {
-    await Promise.resolve((client as any).destroy());
+    await client.destroy();
   } catch (error) {
     logger.warn('[BOT] client.destroy() during manual reconnect failed: %o', error);
   }
@@ -281,7 +281,7 @@ export async function startBot(token: string): Promise<void> {
       botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
       botRuntimeState.lastAlertReason = botRuntimeState.lastLoginError;
       try {
-        await Promise.resolve((client as any).destroy());
+        await client.destroy();
       } catch (e) {
         logger.debug('[BOT] Error during client.destroy(): %o', e);
       }

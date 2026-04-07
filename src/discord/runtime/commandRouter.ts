@@ -62,6 +62,7 @@ import {
 import {
   getAutomationRuntimeSnapshot,
   triggerAutomationJob,
+  type AutomationJobName,
 } from '../../services/automationBot';
 import { trackUserActivity } from '../../services/discord-support/userCrmService';
 import { recordReactionRewardSignal } from '../../services/discord-support/discordReactionRewardService';
@@ -120,7 +121,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     getUsageSummaryLine: () => getUsageSummaryLine(client),
     getGuildUsageSummaryLine,
     forceRegisterSlashCommands: deps.forceRegisterSlashCommands,
-    triggerAutomationJob: (jobName, options) => triggerAutomationJob(jobName as any, options),
+    triggerAutomationJob: (jobName, options) => triggerAutomationJob(jobName as AutomationJobName, options),
     getManualReconnectCooldownRemainingSec,
     hasActiveToken: () => Boolean(deps.getActiveToken()),
     requestManualReconnect: deps.runManualReconnect,
@@ -182,7 +183,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     if (!WORKER_APPROVAL_CHANNEL_ID) return;
     try {
       const ch = await client.channels.fetch(WORKER_APPROVAL_CHANNEL_ID);
-      if (ch && 'send' in ch) await (ch as any).send(message);
+      if (ch?.isSendable()) await ch.send(message);
     } catch (error) {
       logger.debug('[BOT] dynamic worker admin notify skipped: %s', getErrorMessage(error));
     }
