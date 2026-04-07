@@ -1,4 +1,4 @@
-import { parseBooleanEnv } from '../../utils/env';
+import { parseBooleanEnv, parseCsvList } from '../../utils/env';
 import logger from '../../logger';
 import { headlessCliObsidianAdapter } from './adapters/headlessCliAdapter.ts';
 import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
@@ -25,12 +25,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 
 const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli', 'local-fs'];
 
-const parseAdapterOrder = (value: string | undefined): string[] => String(value || '')
-  .split(',')
-  .map((v) => v.trim())
-  .filter(Boolean);
-
-const ADAPTER_ORDER = parseAdapterOrder(process.env.OBSIDIAN_ADAPTER_ORDER || DEFAULT_ORDER.join(','));
+const ADAPTER_ORDER = parseCsvList(process.env.OBSIDIAN_ADAPTER_ORDER || DEFAULT_ORDER.join(','));
 
 const ORDER_ENV_BY_CAPABILITY: Record<ObsidianCapability, string | undefined> = {
   read_lore: process.env.OBSIDIAN_ADAPTER_ORDER_READ_LORE,
@@ -61,7 +56,7 @@ const registry: Record<string, ObsidianVaultAdapter> = {
 const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'];
 
 const getAdapterOrderForCapability = (capability: ObsidianCapability): string[] => {
-  const capabilityOrder = parseAdapterOrder(ORDER_ENV_BY_CAPABILITY[capability]);
+  const capabilityOrder = parseCsvList(ORDER_ENV_BY_CAPABILITY[capability]);
   if (capabilityOrder.length > 0) {
     return capabilityOrder;
   }
