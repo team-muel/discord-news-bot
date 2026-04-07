@@ -26,7 +26,7 @@ const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.DEEPWIKI_ADAPTER_DISABLE
 const LEGACY_ENABLED_RAW = process.env.DEEPWIKI_ADAPTER_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
-const BASE_URL = String(process.env.DEEPWIKI_BASE_URL || 'https://api.deepwiki.com').trim().replace(/\/+$/, '');
+const BASE_URL = parseUrlEnv(process.env.DEEPWIKI_BASE_URL, 'https://api.deepwiki.com');
 const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.DEEPWIKI_TIMEOUT_MS, 30_000));
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────

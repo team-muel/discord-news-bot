@@ -31,7 +31,7 @@ import { getErrorMessage } from '../../../utils/errorMessage';
 
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.RENDER_ADAPTER_DISABLED, false);
 const API_KEY = (process.env.RENDER_API_KEY || '').trim();
-const BASE_URL = String(process.env.RENDER_API_BASE_URL || 'https://api.render.com/v1').trim().replace(/\/+$/, '');
+const BASE_URL = parseUrlEnv(process.env.RENDER_API_BASE_URL, 'https://api.render.com/v1');
 const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.RENDER_TIMEOUT_MS, 15_000));
 const DEFAULT_WORKSPACE = (process.env.RENDER_WORKSPACE_ID || '').trim();
 

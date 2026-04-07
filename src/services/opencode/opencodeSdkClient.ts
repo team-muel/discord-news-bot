@@ -23,7 +23,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 // ──── Config ──────────────────────────────────────────────────────────────────
 
 const ENABLED = parseBooleanEnv(process.env.OPENCODE_SDK_ENABLED, false);
-const BASE_URL = String(process.env.OPENCODE_SDK_BASE_URL || '').trim().replace(/\/+$/, '');
+const BASE_URL = parseUrlEnv(process.env.OPENCODE_SDK_BASE_URL, '');
 const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000));
 const AUTH_TOKEN = (process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
 

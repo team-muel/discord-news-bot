@@ -11,6 +11,7 @@ import {
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import type { ActionExecutionResult, AgentRoleName } from './types';
+import { parseStringEnv } from '../../../utils/env';
 
 export const MAX_ARTIFACT_CHARS = 3200;
 export const MAX_PROMPT_CODE_CHARS = 1800;
@@ -191,7 +192,7 @@ export const tryParseDelegatedActionResult = (blocks: string[]): ActionExecution
   }
 };
 
-const getActiveWorkerRole = (): string => String(process.env.AGENT_ROLE_WORKER_ROLE || '').trim().toLowerCase();
+const getActiveWorkerRole = (): string => parseStringEnv(process.env.AGENT_ROLE_WORKER_ROLE, '').toLowerCase();
 
 export const maybeDelegateAgentAction = async (params: {
   actionName: string;

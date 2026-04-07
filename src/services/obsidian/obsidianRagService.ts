@@ -32,7 +32,7 @@ import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
 const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000));
@@ -166,12 +166,12 @@ export interface RAGQueryResult {
 type GuildScopeMode = 'off' | 'prefer' | 'strict';
 
 const DEFAULT_CONTEXT_MODE: 'full' | 'metadata_first' =
-  String(process.env.OBSIDIAN_RAG_CONTEXT_MODE || 'metadata_first').trim().toLowerCase() === 'full'
+  parseStringEnv(process.env.OBSIDIAN_RAG_CONTEXT_MODE, 'metadata_first').toLowerCase() === 'full'
     ? 'full'
     : 'metadata_first';
 
 const DEFAULT_GUILD_SCOPE_MODE: GuildScopeMode = (() => {
-  const raw = String(process.env.OBSIDIAN_RAG_GUILD_SCOPE_MODE || 'prefer').trim().toLowerCase();
+  const raw = parseStringEnv(process.env.OBSIDIAN_RAG_GUILD_SCOPE_MODE, 'prefer').toLowerCase();
   if (raw === 'off' || raw === 'strict') {
     return raw;
   }

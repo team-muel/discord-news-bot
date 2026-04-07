@@ -206,7 +206,7 @@ const probeLitellm = async (): Promise<ExternalToolStatus> => {
   const hasNimKey = Boolean(process.env.NVIDIA_NIM_API_KEY);
   const { existsSync } = await import('node:fs');
   const configExists = existsSync('litellm.config.yaml');
-  const baseUrl = String(process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000').trim().replace(/\/+$/, '');
+  const baseUrl = parseUrlEnv(process.env.LITELLM_BASE_URL, 'http://127.0.0.1:4000');
   const apiReachable = configExists ? await probeHttp(`${baseUrl}/health/liveliness`) : null;
   return {
     id: 'litellm',

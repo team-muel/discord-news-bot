@@ -22,7 +22,7 @@ const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.OLLAMA_ADAPTER_DISABLED,
 const LEGACY_ENABLED_RAW = process.env.OLLAMA_ADAPTER_ENABLED;
 const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
 
-const BASE_URL = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
+const BASE_URL = parseUrlEnv(process.env.OLLAMA_BASE_URL, 'http://127.0.0.1:11434');
 const TIMEOUT_MS = 15_000;
 
 const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({
