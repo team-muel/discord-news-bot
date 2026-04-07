@@ -161,6 +161,7 @@ export const OBSERVER_PERF_DRIFT_THRESHOLD_PCT = parseMinNumberEnv(process.env.O
 export const OBSERVER_CODE_HEALTH_ENABLED = parseBooleanEnv(process.env.OBSERVER_CODE_HEALTH_ENABLED, false);
 export const OBSERVER_CONVERGENCE_DIGEST_ENABLED = parseBooleanEnv(process.env.OBSERVER_CONVERGENCE_DIGEST_ENABLED, true);
 export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, true);
+export const OBSERVER_HARNESS_GATE_ENABLED = parseBooleanEnv(process.env.OBSERVER_HARNESS_GATE_ENABLED, true);
 
 // ──── Community Voice — bot proactively speaks to Discord channels ──────────
 export const COMMUNITY_VOICE_ENABLED = parseBooleanEnv(process.env.COMMUNITY_VOICE_ENABLED, true);
