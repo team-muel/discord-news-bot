@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+import { parseStringEnv } from './env';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
@@ -21,7 +22,7 @@ const deriveKey = (secret: string, salt: Buffer): Buffer =>
  * (still secure as long as the secret is strong and unique per environment).
  */
 const getEncryptionSecret = (): string => {
-  const key = process.env.TOKEN_ENCRYPTION_KEY || process.env.JWT_SECRET || process.env.SESSION_SECRET || '';
+  const key = parseStringEnv(process.env.TOKEN_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? process.env.SESSION_SECRET, '');
   if (!key) {
     throw new Error('TOKEN_ENCRYPTION_KEY (or JWT_SECRET) must be set for token encryption');
   }

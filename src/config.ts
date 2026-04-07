@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseNumberEnv } from './utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseNumberEnv, parseStringEnv, parseUrlEnv } from './utils/env';
 
 const parsePositiveNumberEnv = (raw: string | undefined, fallback: number): number => {
   const numeric = Number(raw);
@@ -6,18 +6,17 @@ const parsePositiveNumberEnv = (raw: string | undefined, fallback: number): numb
 };
 
 export const PORT = parseIntegerEnv(process.env.PORT, 3000);
-export const FRONTEND_ORIGIN = process.env.CORS_ALLOWLIST || process.env.FRONTEND_ORIGIN || process.env.OAUTH_REDIRECT_ALLOWLIST || '';
-export const NODE_ENV = process.env.NODE_ENV || 'development';
-export const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '2mb';
-export const PUBLIC_BASE_URL =
-  (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || process.env.RENDER_PUBLIC_URL || '').replace(/\/+$/, '');
+export const FRONTEND_ORIGIN = parseStringEnv(process.env.CORS_ALLOWLIST ?? process.env.FRONTEND_ORIGIN ?? process.env.OAUTH_REDIRECT_ALLOWLIST, '');
+export const NODE_ENV = parseStringEnv(process.env.NODE_ENV, 'development');
+export const JSON_BODY_LIMIT = parseStringEnv(process.env.JSON_BODY_LIMIT, '2mb');
+export const PUBLIC_BASE_URL = parseUrlEnv(process.env.PUBLIC_BASE_URL ?? process.env.RENDER_EXTERNAL_URL ?? process.env.RENDER_PUBLIC_URL, '');
 
 export const DISCORD_READY_TIMEOUT_MS = parseIntegerEnv(
   process.env.DISCORD_READY_TIMEOUT_MS || process.env.DISCORD_LOGIN_TIMEOUT_MS,
   45000,
 );
 export const DISCORD_START_RETRIES = parseIntegerEnv(process.env.DISCORD_START_RETRIES, 3);
-export const DISCORD_COMMAND_GUILD_ID = process.env.DISCORD_COMMAND_GUILD_ID || '';
+export const DISCORD_COMMAND_GUILD_ID = parseStringEnv(process.env.DISCORD_COMMAND_GUILD_ID, '');
 export const DISCORD_MESSAGE_CONTENT_INTENT_ENABLED = parseBooleanEnv(
   process.env.DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
   true,
@@ -28,7 +27,7 @@ export const BOT_START_FAILURE_EXIT_ENABLED = parseBooleanEnv(
   process.env.BOT_START_FAILURE_EXIT_ENABLED,
   NODE_ENV === 'production',
 );
-export const DISCORD_BOT_TOKEN = (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+export const DISCORD_BOT_TOKEN = parseStringEnv(process.env.DISCORD_TOKEN ?? process.env.DISCORD_BOT_TOKEN, '');
 export const BOT_MANUAL_RECONNECT_COOLDOWN_MS = parseIntegerEnv(
   process.env.BOT_MANUAL_RECONNECT_COOLDOWN_MS || process.env.DISCORD_MANUAL_RECONNECT_COOLDOWN_MS,
   30_000,
@@ -36,43 +35,43 @@ export const BOT_MANUAL_RECONNECT_COOLDOWN_MS = parseIntegerEnv(
 export const DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS, 5 * 60_000, 0);
 export const DYNAMIC_WORKER_RESTORE_ON_BOOT = parseBooleanEnv(process.env.DYNAMIC_WORKER_RESTORE_ON_BOOT, true);
 const JWT_SECRET_FALLBACK = 'dev-jwt-secret-change-in-production';
-const JWT_SECRET_FROM_ENV = process.env.JWT_SECRET || process.env.SESSION_SECRET || '';
+const JWT_SECRET_FROM_ENV = parseStringEnv(process.env.JWT_SECRET ?? process.env.SESSION_SECRET, '');
 if (NODE_ENV === 'production' && (!JWT_SECRET_FROM_ENV || JWT_SECRET_FROM_ENV === JWT_SECRET_FALLBACK)) {
   throw new Error('JWT_SECRET (or SESSION_SECRET) must be set to a non-default value in production');
 }
 export const JWT_SECRET = JWT_SECRET_FROM_ENV || JWT_SECRET_FALLBACK;
-export const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'muel_session';
-export const AUTH_CSRF_COOKIE_NAME = process.env.AUTH_CSRF_COOKIE_NAME || 'muel_csrf';
-export const AUTH_CSRF_HEADER_NAME = process.env.AUTH_CSRF_HEADER_NAME || 'x-csrf-token';
+export const AUTH_COOKIE_NAME = parseStringEnv(process.env.AUTH_COOKIE_NAME, 'muel_session');
+export const AUTH_CSRF_COOKIE_NAME = parseStringEnv(process.env.AUTH_CSRF_COOKIE_NAME, 'muel_csrf');
+export const AUTH_CSRF_HEADER_NAME = parseStringEnv(process.env.AUTH_CSRF_HEADER_NAME, 'x-csrf-token');
 export const DEV_AUTH_ENABLED = parseBooleanEnv(process.env.DEV_AUTH_ENABLED, NODE_ENV !== 'production');
-export const DISCORD_OAUTH_CLIENT_ID = process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || '';
-export const DISCORD_OAUTH_CLIENT_SECRET = process.env.DISCORD_OAUTH_CLIENT_SECRET || process.env.DISCORD_CLIENT_SECRET || '';
+export const DISCORD_OAUTH_CLIENT_ID = parseStringEnv(process.env.DISCORD_OAUTH_CLIENT_ID ?? process.env.DISCORD_CLIENT_ID, '');
+export const DISCORD_OAUTH_CLIENT_SECRET = parseStringEnv(process.env.DISCORD_OAUTH_CLIENT_SECRET ?? process.env.DISCORD_CLIENT_SECRET, '');
 export const DISCORD_OAUTH_REDIRECT_URI = process.env.DISCORD_OAUTH_REDIRECT_URI
   || (PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}/api/auth/callback` : '');
-export const DISCORD_OAUTH_SCOPE = process.env.DISCORD_OAUTH_SCOPE || 'identify';
-export const DISCORD_OAUTH_API_BASE = process.env.DISCORD_OAUTH_API_BASE || 'https://discord.com/api';
-export const DISCORD_INVITE_PERMISSIONS = process.env.DISCORD_INVITE_PERMISSIONS || '377957238784';
-export const DISCORD_INVITE_SCOPES = process.env.DISCORD_INVITE_SCOPES || 'bot applications.commands';
-export const DISCORD_OAUTH_STATE_COOKIE_NAME = process.env.DISCORD_OAUTH_STATE_COOKIE_NAME || 'muel_oauth_state';
+export const DISCORD_OAUTH_SCOPE = parseStringEnv(process.env.DISCORD_OAUTH_SCOPE, 'identify');
+export const DISCORD_OAUTH_API_BASE = parseUrlEnv(process.env.DISCORD_OAUTH_API_BASE, 'https://discord.com/api');
+export const DISCORD_INVITE_PERMISSIONS = parseStringEnv(process.env.DISCORD_INVITE_PERMISSIONS, '377957238784');
+export const DISCORD_INVITE_SCOPES = parseStringEnv(process.env.DISCORD_INVITE_SCOPES, 'bot applications.commands');
+export const DISCORD_OAUTH_STATE_COOKIE_NAME = parseStringEnv(process.env.DISCORD_OAUTH_STATE_COOKIE_NAME, 'muel_oauth_state');
 export const DISCORD_OAUTH_STATE_TTL_SEC = parseIntegerEnv(process.env.DISCORD_OAUTH_STATE_TTL_SEC, 600);
-export const RESEARCH_PRESET_ADMIN_USER_IDS = process.env.RESEARCH_PRESET_ADMIN_USER_IDS || '';
-export const ADMIN_ALLOWLIST_TABLE = process.env.ADMIN_ALLOWLIST_TABLE || 'user_roles';
-export const ADMIN_ALLOWLIST_ROLE_VALUE = process.env.ADMIN_ALLOWLIST_ROLE_VALUE || 'admin';
+export const RESEARCH_PRESET_ADMIN_USER_IDS = parseStringEnv(process.env.RESEARCH_PRESET_ADMIN_USER_IDS, '');
+export const ADMIN_ALLOWLIST_TABLE = parseStringEnv(process.env.ADMIN_ALLOWLIST_TABLE, 'user_roles');
+export const ADMIN_ALLOWLIST_ROLE_VALUE = parseStringEnv(process.env.ADMIN_ALLOWLIST_ROLE_VALUE, 'admin');
 export const ADMIN_ALLOWLIST_CACHE_TTL_MS = parseIntegerEnv(process.env.ADMIN_ALLOWLIST_CACHE_TTL_MS, 300000);
-export const SUPABASE_URL = process.env.SUPABASE_URL || '';
-export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
-export const SUPABASE_TRADES_TABLE = process.env.SUPABASE_TRADES_TABLE || 'trades';
+export const SUPABASE_URL = parseStringEnv(process.env.SUPABASE_URL, '');
+export const SUPABASE_SERVICE_ROLE_KEY = parseStringEnv(process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_KEY, '');
+export const SUPABASE_TRADES_TABLE = parseStringEnv(process.env.SUPABASE_TRADES_TABLE, 'trades');
 
-export const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+export const LOG_LEVEL = parseStringEnv(process.env.LOG_LEVEL, 'info');
 export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, 60000);
 
 // ──── Obsidian Headless CLI (RAG Integration) ────
 export const OBSIDIAN_HEADLESS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);
 export const OBSIDIAN_LOCAL_FS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_LOCAL_FS_ENABLED, false);
-export const OBSIDIAN_VAULT_PATH = (process.env.OBSIDIAN_VAULT_PATH || '').trim();
-export const OBSIDIAN_EMAIL = process.env.OBSIDIAN_EMAIL || '';
-export const OBSIDIAN_PASSWORD = process.env.OBSIDIAN_PASSWORD || '';
-export const OBSIDIAN_VAULT_NAME = process.env.OBSIDIAN_VAULT_NAME || 'docs';
+export const OBSIDIAN_VAULT_PATH = parseStringEnv(process.env.OBSIDIAN_VAULT_PATH, '');
+export const OBSIDIAN_EMAIL = parseStringEnv(process.env.OBSIDIAN_EMAIL, '');
+export const OBSIDIAN_PASSWORD = parseStringEnv(process.env.OBSIDIAN_PASSWORD, '');
+export const OBSIDIAN_VAULT_NAME = parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 export const OBSIDIAN_RAG_CACHE_TTL_MS = parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3600000);
 export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MAX_DOCS, 10);
 export const OBSIDIAN_RAG_CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_RAG_CACHE_ENABLED, true);
@@ -80,53 +79,53 @@ export const OBSIDIAN_RAG_CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_R
 // ──── Sprint Pipeline (Autonomous Agent) ────
 export const SPRINT_ENABLED = parseBooleanEnv(process.env.SPRINT_ENABLED, true);
 export type AutonomyLevelConfig = 'full-auto' | 'approve-ship' | 'approve-impl' | 'manual';
-export const SPRINT_AUTONOMY_LEVEL = (process.env.SPRINT_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
-export const SPRINT_BUGFIX_AUTONOMY_LEVEL = (process.env.SPRINT_BUGFIX_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
+export const SPRINT_AUTONOMY_LEVEL = parseStringEnv(process.env.SPRINT_AUTONOMY_LEVEL, 'approve-ship') as AutonomyLevelConfig;
+export const SPRINT_BUGFIX_AUTONOMY_LEVEL = parseStringEnv(process.env.SPRINT_BUGFIX_AUTONOMY_LEVEL, 'approve-ship') as AutonomyLevelConfig;
 export const SPRINT_MAX_IMPL_REVIEW_LOOPS = parseIntegerEnv(process.env.SPRINT_MAX_IMPL_REVIEW_LOOPS, 3);
 export const SPRINT_MAX_TOTAL_PHASES = parseIntegerEnv(process.env.SPRINT_MAX_TOTAL_PHASES, 12);
 export const SPRINT_CHANGED_FILE_CAP = parseIntegerEnv(process.env.SPRINT_CHANGED_FILE_CAP, 10);
 export const SPRINT_NEW_FILE_CAP = parseIntegerEnv(process.env.SPRINT_NEW_FILE_CAP, 3);
 export const SPRINT_PHASE_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_PHASE_TIMEOUT_MS, 120_000);
 export const SPRINT_TRIGGER_ERROR_THRESHOLD = parseIntegerEnv(process.env.SPRINT_TRIGGER_ERROR_THRESHOLD, 5);
-export const SPRINT_TRIGGER_CS_CHANNEL_IDS = process.env.SPRINT_TRIGGER_CS_CHANNEL_IDS || '';
-export const SPRINT_TRIGGER_CRON_SECURITY_AUDIT = process.env.SPRINT_TRIGGER_CRON_SECURITY_AUDIT || '';
-export const SPRINT_TRIGGER_CRON_IMPROVEMENT = process.env.SPRINT_TRIGGER_CRON_IMPROVEMENT || '';
+export const SPRINT_TRIGGER_CS_CHANNEL_IDS = parseStringEnv(process.env.SPRINT_TRIGGER_CS_CHANNEL_IDS, '');
+export const SPRINT_TRIGGER_CRON_SECURITY_AUDIT = parseStringEnv(process.env.SPRINT_TRIGGER_CRON_SECURITY_AUDIT, '');
+export const SPRINT_TRIGGER_CRON_IMPROVEMENT = parseStringEnv(process.env.SPRINT_TRIGGER_CRON_IMPROVEMENT, '');
 export const SPRINT_GIT_ENABLED = parseBooleanEnv(process.env.SPRINT_GIT_ENABLED, false);
-export const SPRINT_GITHUB_TOKEN = process.env.SPRINT_GITHUB_TOKEN || '';
-export const SPRINT_GITHUB_OWNER = process.env.SPRINT_GITHUB_OWNER || '';
-export const SPRINT_GITHUB_REPO = process.env.SPRINT_GITHUB_REPO || '';
-export const SPRINT_PIPELINES_TABLE = process.env.SPRINT_PIPELINES_TABLE || 'sprint_pipelines';
-export const VENTYD_EVENTS_TABLE = process.env.VENTYD_EVENTS_TABLE || 'ventyd_events';
+export const SPRINT_GITHUB_TOKEN = parseStringEnv(process.env.SPRINT_GITHUB_TOKEN, '');
+export const SPRINT_GITHUB_OWNER = parseStringEnv(process.env.SPRINT_GITHUB_OWNER, '');
+export const SPRINT_GITHUB_REPO = parseStringEnv(process.env.SPRINT_GITHUB_REPO, '');
+export const SPRINT_PIPELINES_TABLE = parseStringEnv(process.env.SPRINT_PIPELINES_TABLE, 'sprint_pipelines');
+export const VENTYD_EVENTS_TABLE = parseStringEnv(process.env.VENTYD_EVENTS_TABLE, 'ventyd_events');
 export const VENTYD_ENABLED = parseBooleanEnv(process.env.VENTYD_ENABLED, true);
 export const SPRINT_DRY_RUN = parseBooleanEnv(process.env.SPRINT_DRY_RUN, false);
 export const SPRINT_FAST_PATH_ENABLED = parseBooleanEnv(process.env.SPRINT_FAST_PATH_ENABLED, true);
 export const SPRINT_FAST_PATH_VITEST_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_VITEST_TIMEOUT_MS, 60_000);
 export const SPRINT_FAST_PATH_TSC_TIMEOUT_MS = parseIntegerEnv(process.env.SPRINT_FAST_PATH_TSC_TIMEOUT_MS, 30_000);
 export const SPRINT_FAST_PATH_SANDBOX_ENABLED = parseBooleanEnv(process.env.SPRINT_FAST_PATH_SANDBOX_ENABLED, false);
-export const SPRINT_FAST_PATH_SANDBOX_ID = process.env.SPRINT_FAST_PATH_SANDBOX_ID || '';
+export const SPRINT_FAST_PATH_SANDBOX_ID = parseStringEnv(process.env.SPRINT_FAST_PATH_SANDBOX_ID, '');
 
 // ──── Cross-Model Outside Voice ────
 export const SPRINT_CROSS_MODEL_ENABLED = parseBooleanEnv(process.env.SPRINT_CROSS_MODEL_ENABLED, false);
-export const SPRINT_CROSS_MODEL_PROVIDER = process.env.SPRINT_CROSS_MODEL_PROVIDER || '';
-export const SPRINT_CROSS_MODEL_PHASES = process.env.SPRINT_CROSS_MODEL_PHASES || 'review,security-audit';
+export const SPRINT_CROSS_MODEL_PROVIDER = parseStringEnv(process.env.SPRINT_CROSS_MODEL_PROVIDER, '');
+export const SPRINT_CROSS_MODEL_PHASES = parseStringEnv(process.env.SPRINT_CROSS_MODEL_PHASES, 'review,security-audit');
 export const SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED = parseBooleanEnv(process.env.SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED, false);
 
 // ──── Scope Guard (freeze/guard) ────
 export const SPRINT_SCOPE_GUARD_ENABLED = parseBooleanEnv(process.env.SPRINT_SCOPE_GUARD_ENABLED, true);
-export const SPRINT_SCOPE_GUARD_ALLOWED_DIRS = process.env.SPRINT_SCOPE_GUARD_ALLOWED_DIRS || 'src,scripts,tests,.github/skills';
-export const SPRINT_SCOPE_GUARD_PROTECTED_FILES = process.env.SPRINT_SCOPE_GUARD_PROTECTED_FILES || 'package.json,.env,ecosystem.config.cjs,render.yaml';
+export const SPRINT_SCOPE_GUARD_ALLOWED_DIRS = parseStringEnv(process.env.SPRINT_SCOPE_GUARD_ALLOWED_DIRS, 'src,scripts,tests,.github/skills');
+export const SPRINT_SCOPE_GUARD_PROTECTED_FILES = parseStringEnv(process.env.SPRINT_SCOPE_GUARD_PROTECTED_FILES, 'package.json,.env,ecosystem.config.cjs,render.yaml');
 
 // ──── LLM-as-Judge (Tier 3 eval) ────
 export const SPRINT_LLM_JUDGE_ENABLED = parseBooleanEnv(process.env.SPRINT_LLM_JUDGE_ENABLED, false);
-export const SPRINT_LLM_JUDGE_PHASES = process.env.SPRINT_LLM_JUDGE_PHASES || 'review,retro';
+export const SPRINT_LLM_JUDGE_PHASES = parseStringEnv(process.env.SPRINT_LLM_JUDGE_PHASES, 'review,retro');
 
 // ──── Autoplan Sub-Pipeline ────
 export const SPRINT_AUTOPLAN_ENABLED = parseBooleanEnv(process.env.SPRINT_AUTOPLAN_ENABLED, false);
-export const SPRINT_AUTOPLAN_LENSES = process.env.SPRINT_AUTOPLAN_LENSES || 'ceo,engineering,security';
+export const SPRINT_AUTOPLAN_LENSES = parseStringEnv(process.env.SPRINT_AUTOPLAN_LENSES, 'ceo,engineering,security');
 
 // ──── Sprint Learning Journal ────
 export const SPRINT_LEARNING_JOURNAL_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_ENABLED, true);
-export const SPRINT_LEARNING_JOURNAL_GUILD_ID = process.env.SPRINT_LEARNING_JOURNAL_GUILD_ID || 'system';
+export const SPRINT_LEARNING_JOURNAL_GUILD_ID = parseStringEnv(process.env.SPRINT_LEARNING_JOURNAL_GUILD_ID, 'system');
 export const SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW = parseMinIntEnv(process.env.SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW, 10, 3);
 export const SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_LLM_RECONFIG_ENABLED, true);
 export const SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED = parseBooleanEnv(process.env.SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED, false);
@@ -171,7 +170,7 @@ export const INTENT_DAILY_BUDGET_TOKENS = parseIntegerEnv(process.env.INTENT_DAI
 
 // ──── Progressive Trust Engine (Phase H) ────
 export const TRUST_ENGINE_ENABLED = parseBooleanEnv(process.env.TRUST_ENGINE_ENABLED, false);
-export const TRUST_MAX_AUTONOMY_LEVEL = (process.env.TRUST_MAX_AUTONOMY_LEVEL || 'approve-ship') as AutonomyLevelConfig;
+export const TRUST_MAX_AUTONOMY_LEVEL = parseStringEnv(process.env.TRUST_MAX_AUTONOMY_LEVEL, 'approve-ship') as AutonomyLevelConfig;
 export const TRUST_BUGFIX_THRESHOLD = parseNumberEnv(process.env.TRUST_BUGFIX_THRESHOLD, 0.7);
 export const TRUST_FEATURE_THRESHOLD = parseNumberEnv(process.env.TRUST_FEATURE_THRESHOLD, 0.85);
 export const TRUST_DEFAULT_SCORE = parseNumberEnv(process.env.TRUST_DEFAULT_SCORE, 0.35);
@@ -187,7 +186,7 @@ export const MEMORY_CONSOLIDATION_CONCEPT_MIN_DENSITY = parseNumberEnv(process.e
 
 // ──── Traffic Routing (LangGraph Phase 2 Cutover) ────
 export const TRAFFIC_ROUTING_ENABLED = parseBooleanEnv(process.env.TRAFFIC_ROUTING_ENABLED, false);
-export const TRAFFIC_ROUTING_MODE = (process.env.TRAFFIC_ROUTING_MODE || 'shadow') as 'main' | 'shadow' | 'langgraph';
+export const TRAFFIC_ROUTING_MODE = parseStringEnv(process.env.TRAFFIC_ROUTING_MODE, 'shadow') as 'main' | 'shadow' | 'langgraph';
 export const TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD = parseNumberEnv(process.env.TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD, 0.3);
 export const TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD = parseNumberEnv(process.env.TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD, -0.2);
 export const TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES = parseIntegerEnv(process.env.TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES, 50);
@@ -206,8 +205,8 @@ export const memoryConfig = {
   consolidationRawAgeHours: parseMinIntEnv(process.env.MEMORY_CONSOLIDATION_RAW_AGE_HOURS, 6, 1),
   evolutionEnabled: parseBooleanEnv(process.env.MEMORY_EVOLUTION_ENABLED, true),
   evolutionMaxLinks: parseBoundedNumberEnv(process.env.MEMORY_EVOLUTION_MAX_LINKS, 5, 1, 10),
-  evolutionMinSimilarity: Math.max(0, Math.min(1, Number(process.env.MEMORY_EVOLUTION_MIN_SIMILARITY || 0.25))),
-  evolutionConfidenceBoost: Math.max(0, Math.min(0.1, Number(process.env.MEMORY_EVOLUTION_CONFIDENCE_BOOST || 0.03))),
+  evolutionMinSimilarity: parseBoundedNumberEnv(process.env.MEMORY_EVOLUTION_MIN_SIMILARITY, 0.25, 0, 1),
+  evolutionConfidenceBoost: parseBoundedNumberEnv(process.env.MEMORY_EVOLUTION_CONFIDENCE_BOOST, 0.03, 0, 0.1),
   evolutionLlmClassify: parseBooleanEnv(process.env.MEMORY_EVOLUTION_LLM_CLASSIFY, false),
   embeddingEnabled: MEMORY_EMBEDDING_ENABLED,
   userEmbeddingEnabled: parseBooleanEnv(process.env.USER_EMBEDDING_ENABLED, true),
@@ -263,38 +262,38 @@ export const VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS = parseMinIntEnv(process.env.
 
 // ── Action Governance Policy ──
 export const ACTION_POLICY_DEFAULT_ENABLED = parseBooleanEnv(process.env.ACTION_POLICY_DEFAULT_ENABLED, true);
-const _actionPolicyDefaultRunModeRaw = (process.env.ACTION_POLICY_DEFAULT_RUN_MODE || 'approval_required').trim();
+const _actionPolicyDefaultRunModeRaw = parseStringEnv(process.env.ACTION_POLICY_DEFAULT_RUN_MODE, 'approval_required');
 // Cast to `readonly string[]` so `.includes()` accepts the runtime string; the ternary below enforces the fallback.
 export const ACTION_POLICY_DEFAULT_RUN_MODE = (['auto', 'approval_required', 'disabled'] as readonly string[]).includes(
   _actionPolicyDefaultRunModeRaw,
 ) ? _actionPolicyDefaultRunModeRaw : 'approval_required';
 export const ACTION_POLICY_FAIL_OPEN_ON_ERROR = parseBooleanEnv(process.env.ACTION_POLICY_FAIL_OPEN_ON_ERROR, false);
-export const ACTION_ALLOWED_ACTIONS = (process.env.ACTION_ALLOWED_ACTIONS || '*').trim();
+export const ACTION_ALLOWED_ACTIONS = parseStringEnv(process.env.ACTION_ALLOWED_ACTIONS, '*');
 
 // ── FinOps Budget & Cost ──
 export const FINOPS_ENABLED = parseBooleanEnv(process.env.FINOPS_ENABLED, true);
-export const FINOPS_ACTION_BASE_COST_USD = Math.max(0, Number(process.env.FINOPS_ACTION_BASE_COST_USD || 0.002));
-export const FINOPS_ACTION_RETRY_COST_USD = Math.max(0, Number(process.env.FINOPS_ACTION_RETRY_COST_USD || 0.0008));
-export const FINOPS_ACTION_DURATION_MS_COST_USD = Math.max(0, Number(process.env.FINOPS_ACTION_DURATION_MS_COST_USD || 0.0000015));
-export const FINOPS_ACTION_FAILURE_PENALTY_USD = Math.max(0, Number(process.env.FINOPS_ACTION_FAILURE_PENALTY_USD || 0.0007));
-export const FINOPS_RETRIEVAL_QUERY_COST_USD = Math.max(0, Number(process.env.FINOPS_RETRIEVAL_QUERY_COST_USD || 0.0006));
-export const FINOPS_MEMORY_JOB_COST_USD = Math.max(0, Number(process.env.FINOPS_MEMORY_JOB_COST_USD || 0.0012));
-export const FINOPS_DAILY_BUDGET_USD = Math.max(0.01, Number(process.env.FINOPS_DAILY_BUDGET_USD || 5));
-export const FINOPS_MONTHLY_BUDGET_USD = Math.max(0.1, Number(process.env.FINOPS_MONTHLY_BUDGET_USD || 100));
-export const FINOPS_DEGRADE_THRESHOLD_PCT = Math.max(0.1, Math.min(2, Number(process.env.FINOPS_DEGRADE_THRESHOLD_PCT || 0.9)));
-export const FINOPS_HARD_BLOCK_THRESHOLD_PCT = Math.max(FINOPS_DEGRADE_THRESHOLD_PCT, Math.min(3, Number(process.env.FINOPS_HARD_BLOCK_THRESHOLD_PCT || 1.0)));
-export const FINOPS_DEGRADE_ALLOWED_ACTIONS_RAW = (process.env.FINOPS_DEGRADE_ALLOWED_ACTIONS || '').trim();
-export const FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW = (process.env.FINOPS_HARD_BLOCK_EXEMPT_ACTIONS || '').trim();
+export const FINOPS_ACTION_BASE_COST_USD = parseMinNumberEnv(process.env.FINOPS_ACTION_BASE_COST_USD, 0.002, 0);
+export const FINOPS_ACTION_RETRY_COST_USD = parseMinNumberEnv(process.env.FINOPS_ACTION_RETRY_COST_USD, 0.0008, 0);
+export const FINOPS_ACTION_DURATION_MS_COST_USD = parseMinNumberEnv(process.env.FINOPS_ACTION_DURATION_MS_COST_USD, 0.0000015, 0);
+export const FINOPS_ACTION_FAILURE_PENALTY_USD = parseMinNumberEnv(process.env.FINOPS_ACTION_FAILURE_PENALTY_USD, 0.0007, 0);
+export const FINOPS_RETRIEVAL_QUERY_COST_USD = parseMinNumberEnv(process.env.FINOPS_RETRIEVAL_QUERY_COST_USD, 0.0006, 0);
+export const FINOPS_MEMORY_JOB_COST_USD = parseMinNumberEnv(process.env.FINOPS_MEMORY_JOB_COST_USD, 0.0012, 0);
+export const FINOPS_DAILY_BUDGET_USD = parseMinNumberEnv(process.env.FINOPS_DAILY_BUDGET_USD, 5, 0.01);
+export const FINOPS_MONTHLY_BUDGET_USD = parseMinNumberEnv(process.env.FINOPS_MONTHLY_BUDGET_USD, 100, 0.1);
+export const FINOPS_DEGRADE_THRESHOLD_PCT = parseBoundedNumberEnv(process.env.FINOPS_DEGRADE_THRESHOLD_PCT, 0.9, 0.1, 2);
+export const FINOPS_HARD_BLOCK_THRESHOLD_PCT = Math.max(FINOPS_DEGRADE_THRESHOLD_PCT, parseBoundedNumberEnv(process.env.FINOPS_HARD_BLOCK_THRESHOLD_PCT, 1.0, 0.1, 3));
+export const FINOPS_DEGRADE_ALLOWED_ACTIONS_RAW = parseStringEnv(process.env.FINOPS_DEGRADE_ALLOWED_ACTIONS, '');
+export const FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW = parseStringEnv(process.env.FINOPS_HARD_BLOCK_EXEMPT_ACTIONS, '');
 export const FINOPS_CACHE_TTL_MS = parseMinIntEnv(process.env.FINOPS_CACHE_TTL_MS, 60_000, 10_000);
 
 // ── MCP Worker ──
-export const MCP_WORKER_AUTH_TOKEN = (
+export const MCP_WORKER_AUTH_TOKEN = parseStringEnv(
   process.env.MCP_WORKER_AUTH_TOKEN
-  || process.env.AGENT_ROLE_WORKER_AUTH_TOKEN
-  || process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN
-  || ''
-).trim();
-export const MCP_OPENCODE_WORKER_URL = (process.env.MCP_OPENCODE_WORKER_URL || '').trim();
+  ?? process.env.AGENT_ROLE_WORKER_AUTH_TOKEN
+  ?? process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN,
+  '',
+);
+export const MCP_OPENCODE_WORKER_URL = parseUrlEnv(process.env.MCP_OPENCODE_WORKER_URL, '');
 export const OPENJARVIS_REQUIRE_OPENCODE_WORKER = parseBooleanEnv(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
 export const UNATTENDED_WORKER_HEALTH_TIMEOUT_MS = parseBoundedNumberEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000, 1000, 30_000);
 export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);
@@ -302,18 +301,18 @@ export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN = parseBooleanEnv(proce
 
 // ── OpenCode SDK (headless server) ──
 export const OPENCODE_SDK_ENABLED = parseBooleanEnv(process.env.OPENCODE_SDK_ENABLED, false);
-export const OPENCODE_SDK_BASE_URL = (process.env.OPENCODE_SDK_BASE_URL || '').trim().replace(/\/+$/, '');
+export const OPENCODE_SDK_BASE_URL = parseUrlEnv(process.env.OPENCODE_SDK_BASE_URL, '');
 export const OPENCODE_SDK_TIMEOUT_MS = parseMinIntEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000, 5_000);
-export const OPENCODE_SDK_AUTH_TOKEN = (process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
+export const OPENCODE_SDK_AUTH_TOKEN = parseStringEnv(process.env.OPENCODE_SDK_AUTH_TOKEN, '');
 
 // ── API Idempotency ──
-export const API_IDEMPOTENCY_TABLE = (process.env.API_IDEMPOTENCY_TABLE || 'api_idempotency_keys').trim();
+export const API_IDEMPOTENCY_TABLE = parseStringEnv(process.env.API_IDEMPOTENCY_TABLE, 'api_idempotency_keys');
 export const API_IDEMPOTENCY_TTL_SEC = parseMinIntEnv(process.env.API_IDEMPOTENCY_TTL_SEC, 86_400, 60);
 export const API_IDEMPOTENCY_REQUIRE_HEADER = parseBooleanEnv(process.env.API_IDEMPOTENCY_REQUIRE_HEADER, false);
 
 // ── Discord Runtime Policy ──
-export const DISCORD_CODING_INTENT_PATTERN_RAW = (process.env.DISCORD_CODING_INTENT_PATTERN || '').trim();
-export const DISCORD_AUTOMATION_INTENT_PATTERN_RAW = (process.env.DISCORD_AUTOMATION_INTENT_PATTERN || '').trim();
+export const DISCORD_CODING_INTENT_PATTERN_RAW = parseStringEnv(process.env.DISCORD_CODING_INTENT_PATTERN, '');
+export const DISCORD_AUTOMATION_INTENT_PATTERN_RAW = parseStringEnv(process.env.DISCORD_AUTOMATION_INTENT_PATTERN, '');
 export const DISCORD_EMBED_DESCRIPTION_LIMIT_RAW = parseIntegerEnv(process.env.DISCORD_EMBED_DESCRIPTION_LIMIT, 3900);
 export const DISCORD_ADMIN_SUMMARY_LIMIT_RAW = parseIntegerEnv(process.env.DISCORD_ADMIN_SUMMARY_LIMIT, 2000);
 export const DISCORD_ADMIN_DETAILS_LIMIT_RAW = parseIntegerEnv(process.env.DISCORD_ADMIN_DETAILS_LIMIT, 1000);
@@ -327,7 +326,7 @@ export const DISCORD_MARKET_ANALYSIS_LIMIT_RAW = parseIntegerEnv(process.env.DIS
 export const DISCORD_AGENT_RESULT_PREVIEW_LIMIT_RAW = parseIntegerEnv(process.env.DISCORD_AGENT_RESULT_PREVIEW_LIMIT, 1200);
 export const DISCORD_VIBE_WORKER_REQUEST_CLIP_RAW = parseIntegerEnv(process.env.DISCORD_VIBE_WORKER_REQUEST_CLIP, 200);
 export const DISCORD_VIBE_DEDUP_MAX_ENTRIES_RAW = parseIntegerEnv(process.env.DISCORD_VIBE_DEDUP_MAX_ENTRIES, 500);
-export const DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW = (process.env.DISCORD_SIMPLE_COMMAND_ALLOWLIST || '').trim();
+export const DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW = parseStringEnv(process.env.DISCORD_SIMPLE_COMMAND_ALLOWLIST, '');
 export const DISCORD_SESSION_PROGRESS_TIMEOUT_MS_RAW = parseIntegerEnv(process.env.DISCORD_SESSION_PROGRESS_TIMEOUT_MS, 3 * 60 * 1000);
 export const DISCORD_SESSION_PROGRESS_INTERVAL_MS_RAW = parseIntegerEnv(process.env.DISCORD_SESSION_PROGRESS_INTERVAL_MS, 2200);
 export const DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS_RAW = parseIntegerEnv(process.env.DISCORD_SESSION_PROGRESS_UPDATE_BUCKET_MS, 10_000);
@@ -341,22 +340,22 @@ export const DISCORD_CO_PRESENCE_MAX_TARGETS_RAW = parseIntegerEnv(process.env.D
 export const DISCORD_PASSIVE_MEMORY_CONTENT_LIMIT_RAW = parseIntegerEnv(process.env.DISCORD_PASSIVE_MEMORY_CONTENT_LIMIT, 2000);
 export const DISCORD_PASSIVE_MEMORY_EXCERPT_LIMIT_RAW = parseIntegerEnv(process.env.DISCORD_PASSIVE_MEMORY_EXCERPT_LIMIT, 300);
 export const DISCORD_FEEDBACK_REACTION_SEED_ENABLED_RAW = parseBooleanEnv(process.env.DISCORD_FEEDBACK_REACTION_SEED_ENABLED, true);
-export const DISCORD_FEEDBACK_REACTION_SEED_UP_RAW = (process.env.DISCORD_FEEDBACK_REACTION_SEED_UP || '👍').trim();
-export const DISCORD_FEEDBACK_REACTION_SEED_DOWN_RAW = (process.env.DISCORD_FEEDBACK_REACTION_SEED_DOWN || '👎').trim();
+export const DISCORD_FEEDBACK_REACTION_SEED_UP_RAW = parseStringEnv(process.env.DISCORD_FEEDBACK_REACTION_SEED_UP, '👍');
+export const DISCORD_FEEDBACK_REACTION_SEED_DOWN_RAW = parseStringEnv(process.env.DISCORD_FEEDBACK_REACTION_SEED_DOWN, '👎');
 export const DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES_RAW = parseIntegerEnv(process.env.DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES, 500);
 
 // ── Discord Auth / Session ──
 export const DISCORD_LOGIN_SESSION_TTL_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_SESSION_TTL_MS, 24 * 60 * 60 * 1000, 300_000);
 export const DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS, 2 * 60 * 60 * 1000, 60_000);
 export const DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS = parseMinIntEnv(process.env.DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS, 30 * 60 * 1000, 60_000);
-export const DISCORD_LOGIN_SESSION_CLEANUP_OWNER = (process.env.DISCORD_LOGIN_SESSION_CLEANUP_OWNER || 'db').trim().toLowerCase() === 'app' ? 'app' as const : 'db' as const;
+export const DISCORD_LOGIN_SESSION_CLEANUP_OWNER = parseStringEnv(process.env.DISCORD_LOGIN_SESSION_CLEANUP_OWNER, 'db').toLowerCase() === 'app' ? 'app' as const : 'db' as const;
 export const DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND = parseBooleanEnv(process.env.DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND, true);
 export const DISCORD_SIMPLE_COMMANDS_ENABLED = parseBooleanEnv(process.env.DISCORD_SIMPLE_COMMANDS_ENABLED, true);
 export const CODE_THREAD_ENABLED = parseBooleanEnv(process.env.CODE_THREAD_ENABLED, true);
-export const WORKER_APPROVAL_CHANNEL_ID = (process.env.WORKER_APPROVAL_CHANNEL_ID || '').trim();
+export const WORKER_APPROVAL_CHANNEL_ID = parseStringEnv(process.env.WORKER_APPROVAL_CHANNEL_ID, '');
 export const DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC = parseBooleanEnv(process.env.DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC, false);
 export const DISCORD_ENABLE_FEEDBACK_PROMPT = parseBooleanEnv(process.env.DISCORD_ENABLE_FEEDBACK_PROMPT, true);
-export const DISCORD_FEEDBACK_PROMPT_LINE = (process.env.DISCORD_FEEDBACK_PROMPT_LINE || '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.').trim();
+export const DISCORD_FEEDBACK_PROMPT_LINE = parseStringEnv(process.env.DISCORD_FEEDBACK_PROMPT_LINE, '-# 이 응답이 마음에 드셨나요? 반응으로 알려주세요.');
 
 // ── Agent Reasoning Strategies ──
 export const AGENT_SESSION_TIMEOUT_MS = parseMinIntEnv(process.env.AGENT_SESSION_TIMEOUT_MS, 120_000, 20_000);
@@ -422,12 +421,9 @@ export const MCP_HEALTH_TTL_MS = parseMinIntEnv(process.env.MCP_HEALTH_TTL_MS, 6
 
 // ── MCP Upstream Proxy ──
 /** JSON array of UpstreamMcpServerConfig objects — parsed by proxyRegistry.ts */
-export const MCP_UPSTREAM_SERVERS_RAW = (process.env.MCP_UPSTREAM_SERVERS || '').trim();
+export const MCP_UPSTREAM_SERVERS_RAW = parseStringEnv(process.env.MCP_UPSTREAM_SERVERS, '');
 /** TTL in ms for upstream server tool catalog cache (default 5 minutes) */
-export const MCP_UPSTREAM_TOOL_CACHE_TTL_MS = Math.max(
-  10_000,
-  parseIntegerEnv(process.env.MCP_UPSTREAM_TOOL_CACHE_TTL_MS, 5 * 60_000),
-);
+export const MCP_UPSTREAM_TOOL_CACHE_TTL_MS = parseMinIntEnv(process.env.MCP_UPSTREAM_TOOL_CACHE_TTL_MS, 5 * 60_000, 10_000);
 
 // ── Semantic Answer Cache ──
 export const SEMANTIC_ANSWER_CACHE_ENABLED = parseBooleanEnv(process.env.SEMANTIC_ANSWER_CACHE_ENABLED, true);
@@ -447,15 +443,15 @@ export const OBSIDIAN_FILE_LOCK_RETRY_MS = parseMinIntEnv(process.env.OBSIDIAN_F
 
 // ── Privacy (Forget) ──
 export const FORGET_OBSIDIAN_ENABLED = parseBooleanEnv(process.env.FORGET_OBSIDIAN_ENABLED, true);
-export const OBSIDIAN_SYNC_GUILD_MAP_JSON = (process.env.OBSIDIAN_SYNC_GUILD_MAP_JSON || '').trim();
-export const OBSIDIAN_SYNC_GUILD_MAP_FILE = (process.env.OBSIDIAN_SYNC_GUILD_MAP_FILE || '').trim();
+export const OBSIDIAN_SYNC_GUILD_MAP_JSON = parseStringEnv(process.env.OBSIDIAN_SYNC_GUILD_MAP_JSON, '');
+export const OBSIDIAN_SYNC_GUILD_MAP_FILE = parseStringEnv(process.env.OBSIDIAN_SYNC_GUILD_MAP_FILE, '');
 
 // ── Structured Error Logging ──
 export const ERROR_LOG_DB_ENABLED = parseBooleanEnv(process.env.ERROR_LOG_DB_ENABLED, true);
-export const ERROR_LOG_TABLE = (process.env.ERROR_LOG_TABLE || 'system_error_events').trim();
+export const ERROR_LOG_TABLE = parseStringEnv(process.env.ERROR_LOG_TABLE, 'system_error_events');
 
 // ── Local State Cache ──
-export const LOCAL_CACHE_DIR = (process.env.LOCAL_CACHE_DIR || '').trim();
+export const LOCAL_CACHE_DIR = parseStringEnv(process.env.LOCAL_CACHE_DIR, '');
 export const LOCAL_CACHE_MAX_ENTRIES = parseMinIntEnv(process.env.LOCAL_CACHE_MAX_ENTRIES, 200, 10);
 
 // ── Task Routing ──
@@ -466,14 +462,14 @@ export const TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE = parseBoundedNumberEnv(p
 export const SOCIAL_RECENCY_HALF_LIFE_DAYS = parseMinIntEnv(process.env.SOCIAL_RECENCY_HALF_LIFE_DAYS, 21, 3);
 
 // ── Obsidian Vault Path ──
-export const OBSIDIAN_SYNC_VAULT_PATH = (process.env.OBSIDIAN_SYNC_VAULT_PATH || process.env.OBSIDIAN_VAULT_PATH || '').trim();
+export const OBSIDIAN_SYNC_VAULT_PATH = parseStringEnv(process.env.OBSIDIAN_SYNC_VAULT_PATH ?? process.env.OBSIDIAN_VAULT_PATH, '');
 
 // ── Conversation Turn Service ──
 export const AGENT_CONVERSATION_THREAD_IDLE_MS = parseMinIntEnv(process.env.AGENT_CONVERSATION_THREAD_IDLE_MS, 6 * 60 * 60_000, 300_000);
 
 // ── Super Agent Service ──
 export const SUPER_AGENT_PAYLOAD_CLIP_CHARS = parseMinIntEnv(process.env.SUPER_AGENT_PAYLOAD_CLIP_CHARS, 2_000, 400);
-export const SUPER_AGENT_REVIEW_APPROVAL_ACTION = (process.env.SUPER_AGENT_REVIEW_APPROVAL_ACTION || 'super.inference.review').trim() || 'super.inference.review';
+export const SUPER_AGENT_REVIEW_APPROVAL_ACTION = parseStringEnv(process.env.SUPER_AGENT_REVIEW_APPROVAL_ACTION, 'super.inference.review') || 'super.inference.review';
 
 // ── Supabase Fetch ──
 export const SUPABASE_FETCH_TIMEOUT_MS = parseMinIntEnv(process.env.SUPABASE_FETCH_TIMEOUT_MS, 12_000, 1_000);
