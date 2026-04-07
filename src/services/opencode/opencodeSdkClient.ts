@@ -16,7 +16,7 @@
  */
 
 import { fetchWithTimeout } from '../../utils/network';
-import { parseBooleanEnv, parseIntegerEnv, parseUrlEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseStringEnv, parseUrlEnv } from '../../utils/env';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 
@@ -25,7 +25,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 const ENABLED = parseBooleanEnv(process.env.OPENCODE_SDK_ENABLED, false);
 const BASE_URL = parseUrlEnv(process.env.OPENCODE_SDK_BASE_URL, '');
 const TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.OPENCODE_SDK_TIMEOUT_MS, 90_000));
-const AUTH_TOKEN = (process.env.OPENCODE_SDK_AUTH_TOKEN || '').trim();
+const AUTH_TOKEN = parseStringEnv(process.env.OPENCODE_SDK_AUTH_TOKEN, '');
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 

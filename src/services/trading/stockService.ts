@@ -7,9 +7,11 @@ export type StockQuote = {
   prevClose: string;
 };
 
+import { parseStringEnv } from '../../utils/env';
+
 const ALPHA_VANTAGE_BASE = 'https://www.alphavantage.co/query';
 
-const getAlphaVantageKey = (): string => (process.env.ALPHA_VANTAGE_KEY || '').trim();
+const getAlphaVantageKey = (): string => parseStringEnv(process.env.ALPHA_VANTAGE_KEY, '');
 
 const buildUrl = (params: Record<string, string>) => {
   const u = new URL(ALPHA_VANTAGE_BASE);

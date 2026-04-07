@@ -7,7 +7,7 @@ import { T_SOURCES } from '../infra/tableRegistry';
 import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 import type { ChannelSink } from '../automation/types';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv } from '../../utils/env';
+import { parseIntegerEnv, parseStringEnv } from '../../utils/env';
 
 type SubscriptionRow = {
   id: number;
@@ -88,9 +88,9 @@ const isYouTubeSourceRow = (row: SubscriptionRow): boolean => {
   return url.includes('youtube.com/') || url.includes('youtu.be/');
 };
 
-const COMMUNITY_INITIAL_TITLE_PREFIX = process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX || '🔔 Muel 구독 시작';
-const COMMUNITY_NEW_POST_TITLE_TEMPLATE = process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE || '{author}님의 새 커뮤니티 게시글';
-const COMMUNITY_THREAD_REASON = process.env.YT_COMMUNITY_THREAD_REASON || 'YouTube community post subscription update';
+const COMMUNITY_INITIAL_TITLE_PREFIX = parseStringEnv(process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX, '🔔 Muel 구독 시작');
+const COMMUNITY_NEW_POST_TITLE_TEMPLATE = parseStringEnv(process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE, '{author}님의 새 커뮤니티 게시글');
+const COMMUNITY_THREAD_REASON = parseStringEnv(process.env.YT_COMMUNITY_THREAD_REASON, 'YouTube community post subscription update');
 const COMMUNITY_AUTO_ARCHIVE_MIN = Math.max(60, parseIntegerEnv(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN, 60));
 
 const buildCommunityStarterTitle = (latest: FeedEntry, isFirstNotification: boolean) => {
