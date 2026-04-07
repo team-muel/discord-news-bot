@@ -2,15 +2,13 @@ import crypto from 'crypto';
 // Cross-domain imports via barrel exports (domain boundary contracts)
 import { buildNewsFingerprint, isNewsFingerprinted, recordNewsFingerprint } from '../news';
 import { getDynamicAction } from '../workerGeneration';
-import { createMemoryItem } from '../agent';
-import { buildWorkerApprovalGateSnapshot } from '../agent';
+import { createMemoryItem, buildWorkerApprovalGateSnapshot } from '../agent';
 import { compilePromptGoal } from '../infra';
 // Root-level service imports (no barrel available)
 import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
-import { setGateProviderProfileOverride } from '../llmClient';
-import type { LlmProviderProfile } from '../llmClient';
+import { setGateProviderProfileOverride, type LlmProviderProfile } from '../llmClient';
 // Within-domain imports
 import { getAction } from './actions/registry';
 import { planActions } from './actions/planner';

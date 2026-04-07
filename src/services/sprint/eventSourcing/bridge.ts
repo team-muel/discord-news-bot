@@ -12,11 +12,10 @@
  *   Phase C (final):   remove legacy persistence, Entity becomes source of truth
  */
 import logger from '../../../logger';
-import type { Adapter } from 'ventyd';
+import { type Adapter, createRepository } from 'ventyd';
 import { SprintPipelineEntity, createSprintPipelineRepository } from './sprintPipelineEntity';
 import { createSupabaseAdapter } from './supabaseAdapter';
 import { auditLogPlugin, type SprintPlugin } from './plugins';
-import { createRepository } from 'ventyd';
 import { isSupabaseConfigured, getSupabaseClient } from '../../supabaseClient';
 import { SPRINT_DRY_RUN, VENTYD_EVENTS_TABLE, VENTYD_ENABLED } from '../../../config';
 

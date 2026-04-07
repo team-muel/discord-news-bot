@@ -2,8 +2,7 @@
  * Session progress rendering + streaming helpers.
  * Extracted from bot.ts to keep the rendering logic isolated.
  */
-import type { AgentSession } from '../services/multiAgentService';
-import { cancelAgentSession, getAgentSession, startAgentSession } from '../services/multiAgentService';
+import { type AgentSession, cancelAgentSession, getAgentSession, startAgentSession } from '../services/multiAgentService';
 import { buildReasoningGoalForGuild } from '../services/taskRoutingService';
 import { recordTaskRoutingMetric } from '../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from './messages';

@@ -1,5 +1,4 @@
-import type { Client } from 'discord.js';
-import { ChannelType } from 'discord.js';
+import { type Client, ChannelType } from 'discord.js';
 import { isAutomationEnabled, startAutomationJobs, startAutomationModules } from '../automationBot';
 import type { ChannelSink, ChannelSinkSendOptions } from '../automation/types';
 import { startMemoryJobRunner } from '../memory/memoryJobRunner';

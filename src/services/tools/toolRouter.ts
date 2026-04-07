@@ -1,6 +1,5 @@
 import { executeRegisteredCliTool } from './toolExecutor';
-import { probeAllExternalTools, getExternalToolById } from './externalToolProbe';
-import type { ExternalToolId, ExternalToolProbeResult, ExternalToolStatus } from './externalToolProbe';
+import { probeAllExternalTools, getExternalToolById, type ExternalToolId, type ExternalToolProbeResult, type ExternalToolStatus } from './externalToolProbe';
 import { executeExternalAction, getExternalAdapterStatus, getExternalAdapter } from './externalAdapterRegistry';
 import type { ExternalAdapterId, ExternalAdapterResult, ExternalToolAdapter } from './externalAdapterTypes';
 import { getCliToolRegistryStatus } from './toolRegistry';

@@ -12,8 +12,7 @@
  * - Observable: every step transition is recorded via workflowPersistenceService
  */
 import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
-import { inferAgentRoleByActionName } from './actions/types';
-import type { ActionExecutionResult, ActionPlan, AgentRoleName } from './actions/types';
+import { inferAgentRoleByActionName, type ActionExecutionResult, type ActionPlan, type AgentRoleName } from './actions/types';
 import logger from '../../logger';
 
 // ─── Configuration ────────────────────────────────────────────────────────────

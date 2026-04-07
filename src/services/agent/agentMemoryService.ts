@@ -4,8 +4,7 @@ import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { TtlCache } from '../../utils/ttlCache';
 // Cross-domain imports via barrel exports (domain boundary contracts)
 import { assessMemoryPoisonRisk, batchCountMemoryLinks, getUserEmbedding, isUserEmbeddingEnabled } from '../memory';
-import { queryObsidianLoreHints, readObsidianLoreWithAdapter } from '../obsidian';
-import type { LoreHint } from '../obsidian';
+import { queryObsidianLoreHints, readObsidianLoreWithAdapter, type LoreHint } from '../obsidian';
 // Root-level service imports (no barrel available)
 import { buildSocialContextHints, getRelationshipStrengths } from '../communityGraphService';
 import { loadSelfNotes } from '../entityNervousSystem';

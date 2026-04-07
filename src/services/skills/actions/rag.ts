@@ -1,5 +1,4 @@
-import { isMemoryType, searchGuildMemory } from '../../agent/agentMemoryStore';
-import type { MemoryType } from '../../agent/agentMemoryStore';
+import { isMemoryType, searchGuildMemory, type MemoryType } from '../../agent/agentMemoryStore';
 import { buildAgentMemoryHints } from '../../agent/agentMemoryService';
 import type { ActionDefinition } from './types';
 

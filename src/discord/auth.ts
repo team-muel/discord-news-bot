@@ -2,8 +2,7 @@
  * Login-session cache + feature-access gate.
  * Wraps Supabase-backed session persistence with an in-process TTL map.
  */
-import type { ChatInputCommandInteraction } from 'discord.js';
-import { PermissionFlagsBits } from 'discord.js';
+import { type ChatInputCommandInteraction, PermissionFlagsBits } from 'discord.js';
 import { isUserAdmin } from '../services/adminAllowlistService';
 import {
   getDiscordLoginSessionExpiryMs,

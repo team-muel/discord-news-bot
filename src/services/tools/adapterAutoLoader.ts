@@ -12,9 +12,8 @@
  */
 
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 import { registerExternalAdapter, getExternalAdapter } from './externalAdapterRegistry';
 import { KNOWN_ADAPTER_IDS, type ExternalToolAdapter } from './externalAdapterTypes';
 import logger from '../../logger';

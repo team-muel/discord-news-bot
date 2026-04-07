@@ -45,10 +45,8 @@ import {
   traceShadowNode,
 } from './langgraph/runtimeSupport/runtimeSessionState';
 import { enqueueTelemetryTask } from './agent/agentTelemetryQueue';
-import { getTotReplayCandidates } from './agent/agentTotPolicyService';
-import type { AgentTotPolicySnapshot } from './agent/agentTotPolicyService';
-import { resolveGotBudgetForPriority } from './agent/agentGotPolicyService';
-import type { AgentGotPolicySnapshot } from './agent/agentGotPolicyService';
+import { getTotReplayCandidates, type AgentTotPolicySnapshot } from './agent/agentTotPolicyService';
+import { resolveGotBudgetForPriority, type AgentGotPolicySnapshot } from './agent/agentGotPolicyService';
 import type { AgentPriority } from './agent/agentRuntimeTypes';
 import type { AgentSession, AgentStep, BeamEvaluation } from './multiAgentTypes';
 

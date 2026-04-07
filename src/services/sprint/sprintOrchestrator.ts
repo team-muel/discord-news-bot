@@ -20,10 +20,9 @@ import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, t
 import { parseBenchResult } from '../tools/adapters/openjarvisAdapter';
 import { writeLocalCache, readLocalCache } from '../localStateCache';
 import { executeHooks } from './sprintHooks';
-import { ingestRetroInsights, precipitateSessionToMemory } from '../entityNervousSystem';
+import { ingestRetroInsights, precipitateSessionToMemory, adjustBehaviorFromReward } from '../entityNervousSystem';
 import { isCrossModelPhase, requestCrossModelReview, formatCrossModelAppendix } from './crossModelVoice';
 import { checkFilesScope } from './scopeGuard';
-import { adjustBehaviorFromReward } from '../entityNervousSystem';
 import { isJudgePhase, judgePhaseOutput, formatJudgeAppendix } from './llmJudge';
 import { runAutoplan, formatAutoplanAppendix } from './autoplan';
 import { getAction } from '../skills/actions/registry';
