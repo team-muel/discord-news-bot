@@ -3,7 +3,7 @@ import { getActionTermIndex, listActions } from './registry';
 import { getActionUtilityScore } from '../actionRunner';
 import type { ActionChainPlan, ActionPlan } from './types';
 import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../../utils/env';
 import { runExternalAction } from '../../tools/toolRouter';
 import type { ExternalAdapterId } from '../../tools/externalAdapterTypes';
 
@@ -19,11 +19,11 @@ const PLANNER_CONFIG = {
     adaptiveSamplesEnabled: parseBooleanEnv(process.env.PLANNER_ADAPTIVE_SAMPLES_ENABLED, true),
   },
   rulesFirstEnabled: parseBooleanEnv(process.env.PLANNER_RULES_FIRST_ENABLED, true),
-  catalogMaxActions: Math.max(5, parseIntegerEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12)),
+  catalogMaxActions: parseMinIntEnv(process.env.PLANNER_CATALOG_MAX_ACTIONS, 12, 5),
   patternCache: {
     enabled: parseBooleanEnv(process.env.PLANNER_PATTERN_CACHE_ENABLED, true),
-    ttlMs: Math.max(60_000, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_TTL_MS, 30 * 60_000)),
-    maxSize: Math.max(10, parseIntegerEnv(process.env.PLANNER_PATTERN_CACHE_MAX_SIZE, 100)),
+    ttlMs: parseMinIntEnv(process.env.PLANNER_PATTERN_CACHE_TTL_MS, 30 * 60_000, 60_000),
+    maxSize: parseMinIntEnv(process.env.PLANNER_PATTERN_CACHE_MAX_SIZE, 100, 10),
     minSimilarity: parseBoundedNumberEnv(process.env.PLANNER_PATTERN_CACHE_MIN_SIMILARITY, 0.75, 0.5, 1),
   },
 } as const;
@@ -142,7 +142,7 @@ const buildPrunedCatalog = (goal: string, maxActions = PLANNER_CONFIG.catalogMax
 
 // ──── Dynamic n8n workflow catalog ─────────────────────────────────────────────
 
-const N8N_CATALOG_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.N8N_CATALOG_CACHE_TTL_MS, 5 * 60_000));
+const N8N_CATALOG_CACHE_TTL_MS = parseMinIntEnv(process.env.N8N_CATALOG_CACHE_TTL_MS, 5 * 60_000, 30_000);
 
 let n8nCatalogCache: { lines: string[]; fetchedAt: number } | null = null;
 

@@ -9,7 +9,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_COMMUNITY_INTERACTION_EVENTS, T_AGENT_SESSIONS, T_MEMORY_RETRIEVAL_LOGS, T_AGENT_LLM_CALL_LOGS, T_REWARD_SIGNAL_SNAPSHOTS } from '../infra/tableRegistry';
@@ -25,7 +25,7 @@ const W_CITATION   = parseBoundedNumberEnv(process.env.REWARD_W_CITATION, 0.25, 
 const W_LATENCY    = parseBoundedNumberEnv(process.env.REWARD_W_LATENCY, 0.20, 0, 1);
 
 // Latency normalization: score = clamp(1 - latency/TARGET, 0, 1)
-const LATENCY_TARGET_MS = Math.max(500, parseIntegerEnv(process.env.REWARD_LATENCY_TARGET_MS, 10_000));
+const LATENCY_TARGET_MS = parseMinIntEnv(process.env.REWARD_LATENCY_TARGET_MS, 10_000, 500);
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 

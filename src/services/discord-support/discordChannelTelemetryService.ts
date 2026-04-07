@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { doc } from '../obsidian/obsidianDocBuilder';
@@ -16,9 +16,9 @@ type GuildBucket = {
 };
 
 const ENABLED = parseBooleanEnv(process.env.DISCORD_CHANNEL_TELEMETRY_ENABLED, true);
-const FLUSH_EVERY_EVENTS = Math.max(5, parseIntegerEnv(process.env.DISCORD_CHANNEL_TELEMETRY_FLUSH_EVERY_EVENTS, 40));
-const MAX_CHANNEL_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_CHANNEL_TELEMETRY_MAX_CHANNELS, 30));
-const MAX_USER_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_CHANNEL_TELEMETRY_MAX_USERS, 30));
+const FLUSH_EVERY_EVENTS = parseMinIntEnv(process.env.DISCORD_CHANNEL_TELEMETRY_FLUSH_EVERY_EVENTS, 40, 5);
+const MAX_CHANNEL_LINES = parseMinIntEnv(process.env.DISCORD_CHANNEL_TELEMETRY_MAX_CHANNELS, 30, 5);
+const MAX_USER_LINES = parseMinIntEnv(process.env.DISCORD_CHANNEL_TELEMETRY_MAX_USERS, 30, 5);
 
 const logSignal = (guildId: string, outcome: OutcomeSignal, detail: string) => {
   logOutcomeSignal({

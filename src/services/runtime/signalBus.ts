@@ -14,14 +14,14 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Config ──────────────────────────────────────────────────────────────────
 
 const SIGNAL_BUS_ENABLED = parseBooleanEnv(process.env.SIGNAL_BUS_ENABLED, true);
-const SIGNAL_COOLDOWN_MS = Math.max(5_000, parseIntegerEnv(process.env.SIGNAL_BUS_COOLDOWN_MS, 60_000));
-const SIGNAL_HISTORY_MAX = Math.max(10, parseIntegerEnv(process.env.SIGNAL_BUS_HISTORY_MAX, 200));
+const SIGNAL_COOLDOWN_MS = parseMinIntEnv(process.env.SIGNAL_BUS_COOLDOWN_MS, 60_000, 5_000);
+const SIGNAL_HISTORY_MAX = parseMinIntEnv(process.env.SIGNAL_BUS_HISTORY_MAX, 200, 10);
 
 // ──── Signal Types ────────────────────────────────────────────────────────────
 

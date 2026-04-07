@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { acquireDistributedLease, releaseDistributedLease } from '../infra/distributedLockService';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -59,10 +59,10 @@ const CHANGE_REQUEST_TABLE = parseStringEnv(process.env.OPENCODE_CHANGE_REQUEST_
 const PUBLISH_QUEUE_TABLE = parseStringEnv(process.env.OPENCODE_PUBLISH_QUEUE_TABLE, 'agent_opencode_publish_queue');
 
 const WORKER_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_WORKER_ENABLED, false);
-const WORKER_INTERVAL_MS = Math.max(2000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_WORKER_INTERVAL_MS, 5000));
+const WORKER_INTERVAL_MS = parseMinIntEnv(process.env.OPENCODE_PUBLISH_WORKER_INTERVAL_MS, 5000, 2000);
 const WORKER_BATCH_SIZE = Math.max(1, Math.min(10, parseIntegerEnv(process.env.OPENCODE_PUBLISH_WORKER_BATCH_SIZE, 2)));
 const WORKER_MAX_ATTEMPTS = Math.max(1, Math.min(10, parseIntegerEnv(process.env.OPENCODE_PUBLISH_MAX_ATTEMPTS, 3)));
-const WORKER_STALE_RUNNING_MS = Math.max(60_000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_STALE_RUNNING_MS, 900_000));
+const WORKER_STALE_RUNNING_MS = parseMinIntEnv(process.env.OPENCODE_PUBLISH_STALE_RUNNING_MS, 900_000, 60_000);
 const WORKER_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);
 const WORKER_LOCK_FAIL_OPEN = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN, false);
 const WORKER_LOCK_LEASE_MS = Math.max(

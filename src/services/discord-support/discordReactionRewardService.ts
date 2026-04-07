@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { doc } from '../obsidian/obsidianDocBuilder';
@@ -22,9 +22,9 @@ type RewardBucket = {
 };
 
 const ENABLED = parseBooleanEnv(process.env.DISCORD_REACTION_REWARD_ENABLED, true);
-const FLUSH_EVERY_EVENTS = Math.max(2, parseIntegerEnv(process.env.DISCORD_REACTION_REWARD_FLUSH_EVERY_EVENTS, 10));
-const MAX_MESSAGE_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_REACTION_REWARD_MAX_MESSAGES, 40));
-const MAX_USER_LINES = Math.max(5, parseIntegerEnv(process.env.DISCORD_REACTION_REWARD_MAX_USERS, 40));
+const FLUSH_EVERY_EVENTS = parseMinIntEnv(process.env.DISCORD_REACTION_REWARD_FLUSH_EVERY_EVENTS, 10, 2);
+const MAX_MESSAGE_LINES = parseMinIntEnv(process.env.DISCORD_REACTION_REWARD_MAX_MESSAGES, 40, 5);
+const MAX_USER_LINES = parseMinIntEnv(process.env.DISCORD_REACTION_REWARD_MAX_USERS, 40, 5);
 
 const logSignal = (guildId: string, outcome: OutcomeSignal, detail: string) => {
   logOutcomeSignal({

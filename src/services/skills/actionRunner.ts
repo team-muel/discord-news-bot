@@ -15,7 +15,7 @@ import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
-import { parseBooleanEnv, parseCsvList, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseCsvList, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
 import logger from '../../logger';
@@ -75,7 +75,7 @@ export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: bo
 
 /** Gate verdict enforcement: block execution when latest gate-run overall = 'no-go'. */
 const GATE_VERDICT_ENFORCEMENT_ENABLED = parseBooleanEnv(process.env.GATE_VERDICT_ENFORCEMENT_ENABLED, false);
-const GATE_VERDICT_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000));
+const GATE_VERDICT_CACHE_TTL_MS = parseMinIntEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000, 30_000);
 let cachedGateVerdict: Map<string, { overall: string; providerProfileTarget: string | null; fetchedAt: number }> = new Map();
 
 const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string | null; providerProfileTarget: string | null }> => {
@@ -110,17 +110,17 @@ type GoalActionInput = {
 };
 
 const ACTION_RUNNER_ENABLED = parseBooleanEnv(process.env.ACTION_RUNNER_ENABLED, true);
-const ACTION_RETRY_MAX = Math.max(0, parseIntegerEnv(process.env.ACTION_RETRY_MAX, 2));
-const ACTION_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_TIMEOUT_MS, 15_000));
+const ACTION_RETRY_MAX = parseMinIntEnv(process.env.ACTION_RETRY_MAX, 2, 0);
+const ACTION_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_TIMEOUT_MS, 15_000, 1000);
 const ACTION_CIRCUIT_BREAKER_ENABLED = parseBooleanEnv(process.env.ACTION_CIRCUIT_BREAKER_ENABLED, true);
-const ACTION_CIRCUIT_FAILURE_THRESHOLD = Math.max(1, parseIntegerEnv(process.env.ACTION_CIRCUIT_FAILURE_THRESHOLD, 3));
-const ACTION_CIRCUIT_OPEN_MS = Math.max(5_000, parseIntegerEnv(process.env.ACTION_CIRCUIT_OPEN_MS, 60_000));
-const ACTION_FINOPS_DEGRADED_RETRY_MAX = Math.max(0, parseIntegerEnv(process.env.ACTION_FINOPS_DEGRADED_RETRY_MAX, 1));
-const ACTION_FINOPS_DEGRADED_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_FINOPS_DEGRADED_TIMEOUT_MS, 8_000));
+const ACTION_CIRCUIT_FAILURE_THRESHOLD = parseMinIntEnv(process.env.ACTION_CIRCUIT_FAILURE_THRESHOLD, 3, 1);
+const ACTION_CIRCUIT_OPEN_MS = parseMinIntEnv(process.env.ACTION_CIRCUIT_OPEN_MS, 60_000, 5_000);
+const ACTION_FINOPS_DEGRADED_RETRY_MAX = parseMinIntEnv(process.env.ACTION_FINOPS_DEGRADED_RETRY_MAX, 1, 0);
+const ACTION_FINOPS_DEGRADED_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_FINOPS_DEGRADED_TIMEOUT_MS, 8_000, 1000);
 const ACTION_RUNNER_MODE = getActionRunnerMode();
 const ACTION_CACHE_ENABLED = parseBooleanEnv(process.env.ACTION_CACHE_ENABLED, true);
-const ACTION_CACHE_TTL_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000));
-const ACTION_CACHE_MAX_ENTRIES = Math.max(50, parseIntegerEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000));
+const ACTION_CACHE_TTL_MS = parseMinIntEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000, 1000);
+const ACTION_CACHE_MAX_ENTRIES = parseMinIntEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000, 50);
 const ACTION_GOVERNANCE_FAST_PATH_ENABLED = parseBooleanEnv(process.env.ACTION_GOVERNANCE_FAST_PATH_ENABLED, true);
 
 /** Read-only actions that skip guild policy + FinOps + gate-verdict governance. */
@@ -147,12 +147,12 @@ const isGovernanceFastPathEligible = (actionName: string): boolean => {
 };
 
 const ACTION_NEWS_CAPTURE_ENABLED = parseBooleanEnv(process.env.ACTION_NEWS_CAPTURE_ENABLED, true);
-const ACTION_NEWS_CAPTURE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000));
+const ACTION_NEWS_CAPTURE_TTL_MS = parseMinIntEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000, 60_000);
 const ACTION_NEWS_CAPTURE_MIN_ITEMS = Math.max(1, Math.min(5, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2)));
 const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = Math.max(6, Math.min(24 * 30, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72)));
 const ACTION_NEWS_CAPTURE_MAX_ITEMS = Math.max(1, Math.min(20, parseIntegerEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5)));
 const ACTION_NEWS_CAPTURE_SOURCE = parseStringEnv(process.env.ACTION_NEWS_CAPTURE_SOURCE, 'google_news_rss') || 'google_news_rss';
-const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000));
+const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = parseMinIntEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 const DEFAULT_CACHEABLE_ACTIONS = [
   'code.generate',
   'rag.retrieve',

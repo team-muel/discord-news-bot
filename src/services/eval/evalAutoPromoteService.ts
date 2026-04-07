@@ -9,7 +9,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_EVAL_AB_RUNS } from '../infra/tableRegistry';
@@ -23,7 +23,7 @@ import {
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_ENABLED, true);
-const MIN_SAMPLES = Math.max(3, parseIntegerEnv(process.env.EVAL_MIN_SAMPLES, 10));
+const MIN_SAMPLES = parseMinIntEnv(process.env.EVAL_MIN_SAMPLES, 10, 3);
 const PROMOTE_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_PROMOTE_DELTA, 0.05, 0.01, 0.5);
 const REJECT_DELTA_THRESHOLD = parseBoundedNumberEnv(process.env.EVAL_REJECT_DELTA, -0.05, -0.5, -0.01);
 const EVAL_ROLLOUT_PERCENT = Math.max(0, Math.min(100, parseIntegerEnv(process.env.EVAL_ROLLOUT_PERCENT, 50)));

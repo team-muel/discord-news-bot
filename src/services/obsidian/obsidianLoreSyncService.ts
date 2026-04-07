@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const OBSIDIAN_SYNC_LOOP_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_SYNC_LOOP_ENABLED, false);
-const OBSIDIAN_SYNC_LOOP_INTERVAL_MIN = Math.max(5, parseIntegerEnv(process.env.OBSIDIAN_SYNC_LOOP_INTERVAL_MIN, 60));
+const OBSIDIAN_SYNC_LOOP_INTERVAL_MIN = parseMinIntEnv(process.env.OBSIDIAN_SYNC_LOOP_INTERVAL_MIN, 60, 5);
 const OBSIDIAN_SYNC_LOOP_RUN_ON_START = parseBooleanEnv(process.env.OBSIDIAN_SYNC_LOOP_RUN_ON_START, true);
-const OBSIDIAN_SYNC_LOOP_TIMEOUT_MS = Math.max(30_000, parseIntegerEnv(process.env.OBSIDIAN_SYNC_LOOP_TIMEOUT_MS, 10 * 60_000));
+const OBSIDIAN_SYNC_LOOP_TIMEOUT_MS = parseMinIntEnv(process.env.OBSIDIAN_SYNC_LOOP_TIMEOUT_MS, 10 * 60_000, 30_000);
 export type LoopOwner = 'app' | 'db';
 const OBSIDIAN_SYNC_LOOP_OWNER: LoopOwner =
   parseStringEnv(process.env.OBSIDIAN_SYNC_LOOP_OWNER, 'app').toLowerCase() === 'db' ? 'db' : 'app';

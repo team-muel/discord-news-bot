@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { TtlCache } from '../../utils/ttlCache';
 // Cross-domain imports via barrel exports (domain boundary contracts)
@@ -13,7 +13,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { searchMemoryHybrid, searchMemoryTiered } from './agentMemoryStore';
 import { cosineSimilarity } from '../../utils/vectorMath';
 
-const MEMORY_HINT_CACHE_TTL_MS = Math.max(2_000, parseIntegerEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000));
+const MEMORY_HINT_CACHE_TTL_MS = parseMinIntEnv(process.env.MEMORY_HINT_CACHE_TTL_MS, 30_000, 2_000);
 const memoryHintCache = new TtlCache<string[]>(200);
 const userEmbeddingCache = new TtlCache<number[] | null>(50);
 const USER_EMBEDDING_CACHE_TTL_MS = 5 * 60_000; // 5min — user embeddings refresh every 24h
@@ -21,7 +21,7 @@ const USER_EMBEDDING_CACHE_TTL_MS = 5 * 60_000; // 5min — user embeddings refr
 const OBSIDIAN_VAULT_PATH = getObsidianVaultRoot();
 const OBSIDIAN_INPUT_MAX_LENGTH = Math.max(40, Math.min(1200, parseIntegerEnv(process.env.OBSIDIAN_INPUT_MAX_LENGTH, 320)));
 const MEMORY_HINT_MIN_CONFIDENCE = parseBoundedNumberEnv(process.env.MEMORY_HINT_MIN_CONFIDENCE, 0.35, 0, 1);
-const MEMORY_HINT_RECENCY_HALF_LIFE_DAYS = Math.max(3, parseIntegerEnv(process.env.MEMORY_HINT_RECENCY_HALF_LIFE_DAYS, 30));
+const MEMORY_HINT_RECENCY_HALF_LIFE_DAYS = parseMinIntEnv(process.env.MEMORY_HINT_RECENCY_HALF_LIFE_DAYS, 30, 3);
 const MEMORY_TIERED_SEARCH_ENABLED = parseBooleanEnv(process.env.MEMORY_TIERED_SEARCH_ENABLED, true);
 
 type MemoryHintCandidate = {

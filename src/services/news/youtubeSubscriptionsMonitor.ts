@@ -7,7 +7,7 @@ import { T_SOURCES } from '../infra/tableRegistry';
 import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 import type { ChannelSink } from '../automation/types';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 type SubscriptionRow = {
   id: number;
@@ -59,9 +59,9 @@ let lastTickProcessedSources = 0;
 let lastTickFailedSources = 0;
 let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 
-const MONITOR_INTERVAL_MS = Math.max(60_000, parseIntegerEnv(process.env.YOUTUBE_MONITOR_INTERVAL_MS, 5 * 60_000));
-const MONITOR_CONCURRENCY = Math.max(1, parseIntegerEnv(process.env.YOUTUBE_MONITOR_CONCURRENCY, 5));
-const LOCK_LEASE_MS = Math.max(30_000, parseIntegerEnv(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS, 120_000));
+const MONITOR_INTERVAL_MS = parseMinIntEnv(process.env.YOUTUBE_MONITOR_INTERVAL_MS, 5 * 60_000, 60_000);
+const MONITOR_CONCURRENCY = parseMinIntEnv(process.env.YOUTUBE_MONITOR_CONCURRENCY, 5, 1);
+const LOCK_LEASE_MS = parseMinIntEnv(process.env.YOUTUBE_MONITOR_LOCK_LEASE_MS, 120_000, 30_000);
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 
 const parseMode = (row: SubscriptionRow): 'videos' | 'posts' => {
@@ -91,7 +91,7 @@ const isYouTubeSourceRow = (row: SubscriptionRow): boolean => {
 const COMMUNITY_INITIAL_TITLE_PREFIX = parseStringEnv(process.env.YT_COMMUNITY_INITIAL_TITLE_PREFIX, '🔔 Muel 구독 시작');
 const COMMUNITY_NEW_POST_TITLE_TEMPLATE = parseStringEnv(process.env.YT_COMMUNITY_NEW_POST_TITLE_TEMPLATE, '{author}님의 새 커뮤니티 게시글');
 const COMMUNITY_THREAD_REASON = parseStringEnv(process.env.YT_COMMUNITY_THREAD_REASON, 'YouTube community post subscription update');
-const COMMUNITY_AUTO_ARCHIVE_MIN = Math.max(60, parseIntegerEnv(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN, 60));
+const COMMUNITY_AUTO_ARCHIVE_MIN = parseMinIntEnv(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN, 60, 60);
 
 const buildCommunityStarterTitle = (latest: FeedEntry, isFirstNotification: boolean) => {
   if (isFirstNotification) {

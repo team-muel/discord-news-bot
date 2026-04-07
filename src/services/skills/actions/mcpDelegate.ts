@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../../utils/env';
 import { callMcpTool, parseMcpTextBlocks as parseMcpTextBlocksShared, type McpCallPayload } from '../../mcpWorkerClient';
 
 export type McpCallResponse = McpCallPayload;
@@ -8,7 +8,7 @@ export type McpWorkerKind = 'youtube' | 'news' | 'community' | 'web' | 'opencode
 
 const ACTION_MCP_DELEGATION_ENABLED = parseBooleanEnv(process.env.ACTION_MCP_DELEGATION_ENABLED, true);
 const ACTION_MCP_STRICT_ROUTING = parseBooleanEnv(process.env.ACTION_MCP_STRICT_ROUTING, false);
-const ACTION_MCP_TIMEOUT_MS = Math.max(1000, parseIntegerEnv(process.env.ACTION_MCP_TIMEOUT_MS, 8000));
+const ACTION_MCP_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_MCP_TIMEOUT_MS, 8000, 1000);
 
 const toBaseUrl = (raw: string | undefined): string => String(raw || '').trim().replace(/\/+$/, '');
 

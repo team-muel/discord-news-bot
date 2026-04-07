@@ -1,14 +1,14 @@
-import { parseIntegerEnv } from '../../utils/env';
+import { parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import type { SkillId } from '../skills/types';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { listSkills } from '../skills/registry';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 
-const AGENT_MAX_CONCURRENT_SESSIONS = Math.max(1, parseIntegerEnv(process.env.AGENT_MAX_CONCURRENT_SESSIONS, 4));
-const AGENT_MAX_GOAL_LENGTH = Math.max(40, parseIntegerEnv(process.env.AGENT_MAX_GOAL_LENGTH, 1200));
-const AGENT_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_POLICY_CACHE_TTL_MS, 60_000));
-const AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const AGENT_MAX_CONCURRENT_SESSIONS = parseMinIntEnv(process.env.AGENT_MAX_CONCURRENT_SESSIONS, 4, 1);
+const AGENT_MAX_GOAL_LENGTH = parseMinIntEnv(process.env.AGENT_MAX_GOAL_LENGTH, 1200, 40);
+const AGENT_POLICY_CACHE_TTL_MS = parseMinIntEnv(process.env.AGENT_POLICY_CACHE_TTL_MS, 60_000, 5_000);
+const AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 
 type AgentPolicyCacheRow = {
   maxConcurrentSessions: number;

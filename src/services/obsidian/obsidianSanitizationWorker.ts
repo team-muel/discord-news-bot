@@ -1,9 +1,9 @@
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 
 const SANITIZER_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_SANITIZER_ENABLED, true);
-const SANITIZER_MAX_TEXT_LEN = Math.max(80, parseIntegerEnv(process.env.OBSIDIAN_SANITIZER_MAX_TEXT_LEN, 12_000));
-const SANITIZER_MIN_TEXT_LEN = Math.max(8, parseIntegerEnv(process.env.OBSIDIAN_SANITIZER_MIN_TEXT_LEN, 20));
-const SANITIZER_MAX_LINKS = Math.max(1, parseIntegerEnv(process.env.OBSIDIAN_SANITIZER_MAX_LINKS, 8));
+const SANITIZER_MAX_TEXT_LEN = parseMinIntEnv(process.env.OBSIDIAN_SANITIZER_MAX_TEXT_LEN, 12_000, 80);
+const SANITIZER_MIN_TEXT_LEN = parseMinIntEnv(process.env.OBSIDIAN_SANITIZER_MIN_TEXT_LEN, 20, 8);
+const SANITIZER_MAX_LINKS = parseMinIntEnv(process.env.OBSIDIAN_SANITIZER_MAX_LINKS, 8, 1);
 
 const INJECTION_PATTERNS: RegExp[] = [
   /ignore\s+previous\s+instructions/i,

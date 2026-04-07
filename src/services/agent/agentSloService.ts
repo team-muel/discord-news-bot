@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { runWithConcurrency } from '../../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from '../goNoGoService';
@@ -64,7 +64,7 @@ const SLO_POLICY_TABLE = parseStringEnv(process.env.AGENT_SLO_POLICY_TABLE, 'age
 const SLO_ALERT_TABLE = parseStringEnv(process.env.AGENT_SLO_ALERT_TABLE, 'agent_slo_alert_events');
 
 const SLO_LOOP_ENABLED = parseBooleanEnv(process.env.AGENT_SLO_ALERT_LOOP_ENABLED, true);
-const SLO_LOOP_INTERVAL_MIN = Math.max(1, parseIntegerEnv(process.env.AGENT_SLO_ALERT_LOOP_INTERVAL_MIN, 15));
+const SLO_LOOP_INTERVAL_MIN = parseMinIntEnv(process.env.AGENT_SLO_ALERT_LOOP_INTERVAL_MIN, 15, 1);
 export type SloLoopOwner = 'app' | 'db';
 const SLO_LOOP_OWNER: SloLoopOwner =
   parseStringEnv(process.env.AGENT_SLO_ALERT_LOOP_OWNER, 'app').toLowerCase() === 'db' ? 'db' : 'app';
@@ -73,19 +73,19 @@ const SLO_LOOP_CONCURRENCY = Math.max(1, Math.min(20, parseIntegerEnv(process.en
 
 const DEFAULT_THRESHOLDS: SloThresholds = {
   intelligenceMaxLlmErrorRate: parseBoundedNumberEnv(process.env.AGENT_SLO_INTELLIGENCE_MAX_LLM_ERROR_RATE, 0.08, 0, 1),
-  intelligenceMaxP95LatencyMs: Math.max(100, parseIntegerEnv(process.env.AGENT_SLO_INTELLIGENCE_MAX_P95_LATENCY_MS, 6000)),
+  intelligenceMaxP95LatencyMs: parseMinIntEnv(process.env.AGENT_SLO_INTELLIGENCE_MAX_P95_LATENCY_MS, 6000, 100),
   engineMaxTelemetryDropRate: parseBoundedNumberEnv(process.env.AGENT_SLO_ENGINE_MAX_TELEMETRY_DROP_RATE, 0.02, 0, 1),
   agentsMaxActionFailureRate: parseBoundedNumberEnv(process.env.AGENT_SLO_AGENTS_MAX_ACTION_FAILURE_RATE, 0.35, 0, 1),
-  agentsMaxHighRiskMissingEvidence: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_AGENTS_MAX_HIGH_RISK_MISSING_EVIDENCE, 0)),
+  agentsMaxHighRiskMissingEvidence: parseMinIntEnv(process.env.AGENT_SLO_AGENTS_MAX_HIGH_RISK_MISSING_EVIDENCE, 0, 0),
   toolsMemoryMinCitationRate: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MIN_CITATION_RATE, 0.95, 0, 1),
   toolsMemoryMinRecallAt5: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MIN_RECALL_AT_5, 0.60, 0, 1),
   toolsMemoryMaxJobFailureRate: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_JOB_FAILURE_RATE, 0.10, 0, 1),
-  toolsMemoryMaxQueueLagP95Sec: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_QUEUE_LAG_P95_SEC, 120)),
+  toolsMemoryMaxQueueLagP95Sec: parseMinIntEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_QUEUE_LAG_P95_SEC, 120, 0),
   toolsMemoryMaxRetryRatePct: parseBoundedNumberEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_RETRY_RATE_PCT, 40, 0, 100),
-  toolsMemoryMaxDeadletterPending: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_DEADLETTER_PENDING, 0)),
-  toolsMemoryMaxDeadletterIgnored: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_DEADLETTER_IGNORED, 0)),
-  learningMinCandidates24h: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_LEARNING_MIN_CANDIDATES_24H, 1)),
-  learningMinActiveRules: Math.max(0, parseIntegerEnv(process.env.AGENT_SLO_LEARNING_MIN_ACTIVE_RULES, 1)),
+  toolsMemoryMaxDeadletterPending: parseMinIntEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_DEADLETTER_PENDING, 0, 0),
+  toolsMemoryMaxDeadletterIgnored: parseMinIntEnv(process.env.AGENT_SLO_TOOLS_MEMORY_MAX_DEADLETTER_IGNORED, 0, 0),
+  learningMinCandidates24h: parseMinIntEnv(process.env.AGENT_SLO_LEARNING_MIN_CANDIDATES_24H, 1, 0),
+  learningMinActiveRules: parseMinIntEnv(process.env.AGENT_SLO_LEARNING_MIN_ACTIVE_RULES, 1, 0),
 };
 
 let sloLoopTimer: NodeJS.Timeout | null = null;

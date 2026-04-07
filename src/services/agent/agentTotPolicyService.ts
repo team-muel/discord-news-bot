@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getErrorMessage } from '../../utils/errorMessage';
 
@@ -29,8 +29,8 @@ export type AgentTotPolicySnapshot = {
   autoTuneMinSamples: number;
 };
 
-const AGENT_TOT_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_TOT_POLICY_CACHE_TTL_MS, 60_000));
-const AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
+const AGENT_TOT_POLICY_CACHE_TTL_MS = parseMinIntEnv(process.env.AGENT_TOT_POLICY_CACHE_TTL_MS, 60_000, 5_000);
+const AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_TOT_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 
 const parseBranchAnglesEnv = (): string[] => {
   const jsonRaw = parseStringEnv(process.env.TOT_SHADOW_BRANCH_ANGLES_JSON, '');
@@ -76,13 +76,13 @@ const DEFAULT_POLICY: AgentTotPolicySnapshot = {
   keepTop: Math.max(1, Math.min(3, parseIntegerEnv(process.env.TOT_SHADOW_KEEP_TOP, 1))),
   activeEnabled: parseBooleanEnv(process.env.TOT_ACTIVE_ENABLED, false),
   activeAllowFast: parseBooleanEnv(process.env.TOT_ACTIVE_ALLOW_FAST, false),
-  activeMinGoalLength: Math.max(20, parseIntegerEnv(process.env.TOT_ACTIVE_MIN_GOAL_LENGTH, 60)),
+  activeMinGoalLength: parseMinIntEnv(process.env.TOT_ACTIVE_MIN_GOAL_LENGTH, 60, 20),
   activeMinScoreGain: Math.max(0, Math.min(30, parseIntegerEnv(process.env.TOT_ACTIVE_MIN_SCORE_GAIN, 4))),
   activeMinBeamGain: Math.max(0, Math.min(1, parseNumberEnv(process.env.TOT_ACTIVE_MIN_BEAM_GAIN, 0.03))),
   activeRequireNonPass: parseBooleanEnv(process.env.TOT_ACTIVE_REQUIRE_NON_PASS, false),
   autoTuneEnabled: parseBooleanEnv(process.env.TOT_AUTO_TUNE_ENABLED, true),
   autoTuneIntervalHours: Math.max(1, Math.min(168, parseIntegerEnv(process.env.TOT_AUTO_TUNE_INTERVAL_HOURS, 24))),
-  autoTuneMinSamples: Math.max(10, parseIntegerEnv(process.env.TOT_AUTO_TUNE_MIN_SAMPLES, 40)),
+  autoTuneMinSamples: parseMinIntEnv(process.env.TOT_AUTO_TUNE_MIN_SAMPLES, 40, 10),
 };
 
 type TotPolicyCacheRow = AgentTotPolicySnapshot;

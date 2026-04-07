@@ -17,7 +17,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';
@@ -30,9 +30,9 @@ export const TRAFFIC_ROUTING_ENABLED = parseBooleanEnv(process.env.TRAFFIC_ROUTI
 const TRAFFIC_ROUTING_MODE = parseStringEnv(process.env.TRAFFIC_ROUTING_MODE, 'shadow') as TrafficRoute;
 const TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD = Math.max(0, Math.min(1, parseNumberEnv(process.env.TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD, 0.3)));
 const TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD = Math.max(-1, Math.min(0, parseNumberEnv(process.env.TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD, -0.2)));
-const TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES = Math.max(10, parseIntegerEnv(process.env.TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES, 50));
-const TRAFFIC_ROUTING_STATS_WINDOW_HOURS = Math.max(1, parseIntegerEnv(process.env.TRAFFIC_ROUTING_STATS_WINDOW_HOURS, 72));
-const TRAFFIC_ROUTING_STATS_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.TRAFFIC_ROUTING_STATS_CACHE_TTL_MS, 60_000));
+const TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES = parseMinIntEnv(process.env.TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES, 50, 10);
+const TRAFFIC_ROUTING_STATS_WINDOW_HOURS = parseMinIntEnv(process.env.TRAFFIC_ROUTING_STATS_WINDOW_HOURS, 72, 1);
+const TRAFFIC_ROUTING_STATS_CACHE_TTL_MS = parseMinIntEnv(process.env.TRAFFIC_ROUTING_STATS_CACHE_TTL_MS, 60_000, 5_000);
 
 // ──── Types ──────────────────────────────────────────────────────────────────
 

@@ -1,9 +1,9 @@
-import { parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 const ACTION_APPROVAL_TABLE = parseStringEnv(process.env.ACTION_APPROVAL_TABLE, 'agent_action_approval_requests');
 const OPENCODE_ACTION_NAME = 'opencode.execute';
-const SUMMARY_DEFAULT_DAYS = Math.max(1, parseIntegerEnv(process.env.OPENCODE_SUMMARY_DEFAULT_DAYS, 7));
+const SUMMARY_DEFAULT_DAYS = parseMinIntEnv(process.env.OPENCODE_SUMMARY_DEFAULT_DAYS, 7, 1);
 
 const toDays = (value: unknown): number => {
   const parsed = Number(value);

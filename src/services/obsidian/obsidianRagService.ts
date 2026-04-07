@@ -32,10 +32,10 @@ import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
-const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000));
+const GRAPH_META_CACHE_TTL_MS = parseMinIntEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000, 30_000);
 const graphMetaCache = new TtlCache<Record<string, any>>(4);
 const GRAPH_META_CACHE_KEY = 'graph_metadata';
 
@@ -75,7 +75,7 @@ const INTENT_ROUTES: Record<string, {
 // ── Dynamic intent enrichment from vault tag distribution ──────
 
 const DYNAMIC_INTENT_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_ROUTING, true);
-const DYNAMIC_INTENT_MIN_TAG_COUNT = Math.max(2, parseIntegerEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_MIN_TAG_COUNT, 3));
+const DYNAMIC_INTENT_MIN_TAG_COUNT = parseMinIntEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_MIN_TAG_COUNT, 3, 2);
 
 let _dynamicIntentEnriched = false;
 
@@ -657,7 +657,7 @@ export async function writeRetroToVault(params: {
 const REACTIVE_LEARNING_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_REACTIVE_LEARNING, true);
 const REACTIVE_MIN_DOCS = 2; // Only record insights when >= N docs found (skip trivial queries)
 let _insightCounter = 0;
-const INSIGHT_WRITE_INTERVAL = Math.max(1, parseIntegerEnv(process.env.OBSIDIAN_REACTIVE_WRITE_INTERVAL, 5)); // Write every N-th query
+const INSIGHT_WRITE_INTERVAL = parseMinIntEnv(process.env.OBSIDIAN_REACTIVE_WRITE_INTERVAL, 5, 1); // Write every N-th query
 
 async function writeQueryInsight(params: {
   question: string;
@@ -730,7 +730,7 @@ interface KnowledgeGapEntry {
 
 const _knowledgeGaps: KnowledgeGapEntry[] = [];
 const KNOWLEDGE_GAP_MAX_BUFFER = 50;
-const KNOWLEDGE_GAP_FLUSH_THRESHOLD = Math.max(3, parseIntegerEnv(process.env.OBSIDIAN_GAP_FLUSH_THRESHOLD, 10));
+const KNOWLEDGE_GAP_FLUSH_THRESHOLD = parseMinIntEnv(process.env.OBSIDIAN_GAP_FLUSH_THRESHOLD, 10, 3);
 
 function recordKnowledgeGap(question: string, intent: IntentCategory, guildId?: string): void {
   _knowledgeGaps.push({

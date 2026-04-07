@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 
 export type PromptCompileResult = {
   originalGoal: string;
@@ -11,7 +11,7 @@ export type PromptCompileResult = {
 };
 
 const PROMPT_COMPILER_ENABLED = parseBooleanEnv(process.env.PROMPT_COMPILER_ENABLED, true);
-const PROMPT_COMPILER_MAX_LENGTH = Math.max(120, parseIntegerEnv(process.env.PROMPT_COMPILER_MAX_LENGTH, 1200));
+const PROMPT_COMPILER_MAX_LENGTH = parseMinIntEnv(process.env.PROMPT_COMPILER_MAX_LENGTH, 1200, 120);
 
 const NOISE_PREFIXES = [
   /^요청\s*결과\s*[:：]?/i,

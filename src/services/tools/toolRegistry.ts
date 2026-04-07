@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import type { CliToolRegistryStatus, RegisteredCliTool } from './types';
 
 const CLI_TOOL_ENABLED = parseBooleanEnv(process.env.LOCAL_CLI_TOOL_ENABLED, false);
@@ -6,7 +6,7 @@ const CLI_TOOL_NAME = parseStringEnv(process.env.LOCAL_CLI_TOOL_NAME, 'local.cli
 const CLI_TOOL_DESCRIPTION = parseStringEnv(process.env.LOCAL_CLI_TOOL_DESCRIPTION, 'Configured local CLI tool') || 'Configured local CLI tool';
 const CLI_TOOL_COMMAND = parseStringEnv(process.env.LOCAL_CLI_TOOL_COMMAND, '');
 const CLI_TOOL_ARGS_JSON = parseStringEnv(process.env.LOCAL_CLI_TOOL_ARGS_JSON, '');
-const CLI_TOOL_TIMEOUT_MS = Math.max(500, parseIntegerEnv(process.env.LOCAL_CLI_TOOL_TIMEOUT_MS, 15_000));
+const CLI_TOOL_TIMEOUT_MS = parseMinIntEnv(process.env.LOCAL_CLI_TOOL_TIMEOUT_MS, 15_000, 500);
 const CLI_TOOL_MAX_OUTPUT_CHARS = Math.max(200, Math.min(8_000, parseIntegerEnv(process.env.LOCAL_CLI_TOOL_MAX_OUTPUT_CHARS, 2_000)));
 
 const DEFAULT_ARGS_TEMPLATE = ['{goal}'];

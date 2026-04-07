@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { assessMemoryPoisonRisk, buildPoisonTags } from './memoryPoisonGuard';
 import { sanitizeForObsidianWrite } from '../obsidian/obsidianSanitizationWorker';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
@@ -10,15 +10,15 @@ import { evolveMemoryLinks } from './memoryEvolutionService';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const MEMORY_JOBS_ENABLED = parseBooleanEnv(process.env.MEMORY_JOBS_ENABLED, true);
-const MEMORY_JOBS_POLL_INTERVAL_MS = Math.max(5_000, parseIntegerEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 8_000));
+const MEMORY_JOBS_POLL_INTERVAL_MS = parseMinIntEnv(process.env.MEMORY_JOBS_POLL_INTERVAL_MS, 8_000, 5_000);
 const MEMORY_JOBS_CONCURRENCY = Math.max(1, Math.min(8, parseIntegerEnv(process.env.MEMORY_JOBS_CONCURRENCY, 4)));
-const MEMORY_JOBS_MAX_RETRIES = Math.max(1, parseIntegerEnv(process.env.MEMORY_JOBS_MAX_RETRIES, 3));
-const MEMORY_JOBS_BACKOFF_BASE_MS = Math.max(1_000, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_BASE_MS, 15_000));
+const MEMORY_JOBS_MAX_RETRIES = parseMinIntEnv(process.env.MEMORY_JOBS_MAX_RETRIES, 3, 1);
+const MEMORY_JOBS_BACKOFF_BASE_MS = parseMinIntEnv(process.env.MEMORY_JOBS_BACKOFF_BASE_MS, 15_000, 1_000);
 const MEMORY_JOBS_BACKOFF_MAX_MS = Math.max(MEMORY_JOBS_BACKOFF_BASE_MS, parseIntegerEnv(process.env.MEMORY_JOBS_BACKOFF_MAX_MS, 30 * 60_000));
 const MEMORY_DEADLETTER_AUTO_RECOVERY_ENABLED = parseBooleanEnv(process.env.MEMORY_DEADLETTER_AUTO_RECOVERY_ENABLED, true);
-const MEMORY_DEADLETTER_RECOVERY_INTERVAL_MS = Math.max(15_000, parseIntegerEnv(process.env.MEMORY_DEADLETTER_RECOVERY_INTERVAL_MS, 120_000));
-const MEMORY_DEADLETTER_RECOVERY_BATCH_SIZE = Math.max(1, parseIntegerEnv(process.env.MEMORY_DEADLETTER_RECOVERY_BATCH_SIZE, 3));
-const MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS = Math.max(1, parseIntegerEnv(process.env.MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS, 3));
+const MEMORY_DEADLETTER_RECOVERY_INTERVAL_MS = parseMinIntEnv(process.env.MEMORY_DEADLETTER_RECOVERY_INTERVAL_MS, 120_000, 15_000);
+const MEMORY_DEADLETTER_RECOVERY_BATCH_SIZE = parseMinIntEnv(process.env.MEMORY_DEADLETTER_RECOVERY_BATCH_SIZE, 3, 1);
+const MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS = parseMinIntEnv(process.env.MEMORY_DEADLETTER_MAX_RECOVERY_ATTEMPTS, 3, 1);
 
 let pollTimer: NodeJS.Timeout | null = null;
 let recoveryTimer: NodeJS.Timeout | null = null;

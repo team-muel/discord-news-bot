@@ -7,16 +7,16 @@
 
 import type { Client } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runEvalPipeline } from './evalAutoPromoteService';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const EVAL_LOOP_ENABLED = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_ENABLED, true);
-const EVAL_LOOP_INTERVAL_HOURS = Math.max(1, parseIntegerEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_INTERVAL_HOURS, 6));
+const EVAL_LOOP_INTERVAL_HOURS = parseMinIntEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_INTERVAL_HOURS, 6, 1);
 const EVAL_LOOP_RUN_ON_START = parseBooleanEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_RUN_ON_START, false);
-const EVAL_LOOP_MAX_GUILDS = Math.max(1, parseIntegerEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_MAX_GUILDS, 30));
-const EVAL_LOOP_CONCURRENCY = Math.max(1, parseIntegerEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_CONCURRENCY, 4));
+const EVAL_LOOP_MAX_GUILDS = parseMinIntEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_MAX_GUILDS, 30, 1);
+const EVAL_LOOP_CONCURRENCY = parseMinIntEnv(process.env.EVAL_AUTO_PROMOTE_LOOP_CONCURRENCY, 4, 1);
 
 let running = false;
 let lastRunAt: string | null = null;

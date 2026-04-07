@@ -37,6 +37,20 @@ export const parseBoundedNumberEnv = (
 };
 
 /**
+ * Parse an integer env var and enforce a lower bound.
+ * Equivalent to Math.max(min, parseIntegerEnv(value, fallback)).
+ */
+export const parseMinIntEnv = (value: string | undefined, fallback: number, min: number): number =>
+  Math.max(min, parseIntegerEnv(value, fallback));
+
+/**
+ * Parse a number env var and enforce a lower bound.
+ * Equivalent to Math.max(min, parseNumberEnv(value, fallback)).
+ */
+export const parseMinNumberEnv = (value: string | undefined, fallback: number, min: number): number =>
+  Math.max(min, parseNumberEnv(value, fallback));
+
+/**
  * Return a trimmed string env var, or the fallback when the var is absent or blank.
  */
 export const parseStringEnv = (value: string | undefined, fallback: string): string => {
