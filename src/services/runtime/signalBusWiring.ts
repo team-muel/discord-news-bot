@@ -258,6 +258,27 @@ export const wireSignalBusConsumers = (): void => {
     }
   });
 
+  // ── Consumer 9: Any observation → community voice (proactive channel message) ──
+  onSignal('observation.new', async (signal: Signal) => {
+    try {
+      const { COMMUNITY_VOICE_ENABLED } = await import('../../config');
+      if (!COMMUNITY_VOICE_ENABLED) return;
+
+      const guildId = signal.guildId ?? 'default';
+      const { getRecentObservations } = await import('../observer/observationStore');
+      const { speakObservation } = await import('../observer/communityVoiceService');
+
+      const recent = await getRecentObservations({ guildId, limit: 3 });
+      for (const obs of recent) {
+        void speakObservation(obs).catch((err: unknown) => {
+          logger.debug('[SIGNAL-WIRING] communityVoice.speak failed: %s', getErrorMessage(err));
+        });
+      }
+    } catch (err) {
+      logger.debug('[SIGNAL-WIRING] observation.new → communityVoice skipped: %s', getErrorMessage(err));
+    }
+  });
+
   logger.info('[SIGNAL-WIRING] all consumers wired');
 };
 

@@ -92,7 +92,7 @@ describe('openclawAdapter.execute', () => {
     expect(result.error).toBe('UNKNOWN_ACTION');
   });
 
-  it('returns EXECUTION_FAILED on CLI error', async () => {
+  it('returns NO_TRANSPORT when CLI errors and no LLM configured', async () => {
     mockExecFile.mockImplementation(((_cmd: string, _args: unknown, _opts: unknown, cb?: (err: Error | null, res: unknown) => void) => {
       const callback = typeof _opts === 'function' ? _opts : cb;
       if (callback) callback(new Error('CLI crashed'), null);
@@ -100,8 +100,8 @@ describe('openclawAdapter.execute', () => {
     }) as never);
     const result = await openclawAdapter.execute('agent.chat', { message: 'hi' });
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('EXECUTION_FAILED');
-    expect(result.output[0]).toContain('CLI crashed');
+    // CLI error falls through to lite mode; without LLM configured → NO_TRANSPORT
+    expect(result.error).toBe('NO_TRANSPORT');
   });
 
   it('message is truncated to 2000 for agent.chat', async () => {

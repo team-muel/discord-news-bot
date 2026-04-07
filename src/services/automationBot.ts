@@ -101,6 +101,9 @@ export const stopAutomationModules = (): void => {
   activeSink = null;
 };
 
+/** Returns the active ChannelSink if available (for proactive messaging). */
+export const getActiveSink = (): ChannelSink | null => activeSink;
+
 export const triggerAutomationJob = async (jobName: AutomationJobName, context?: AutomationTriggerContext) => {
   const state = jobStates[jobName];
   if (!state) {

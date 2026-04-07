@@ -160,10 +160,16 @@ export const OBSERVER_PERF_DRIFT_ENABLED = parseBooleanEnv(process.env.OBSERVER_
 export const OBSERVER_PERF_DRIFT_THRESHOLD_PCT = parseMinNumberEnv(process.env.OBSERVER_PERF_DRIFT_THRESHOLD_PCT, 20, 1);
 export const OBSERVER_CODE_HEALTH_ENABLED = parseBooleanEnv(process.env.OBSERVER_CODE_HEALTH_ENABLED, false);
 export const OBSERVER_CONVERGENCE_DIGEST_ENABLED = parseBooleanEnv(process.env.OBSERVER_CONVERGENCE_DIGEST_ENABLED, true);
-export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, false);
+export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, true);
+
+// ──── Community Voice — bot proactively speaks to Discord channels ──────────
+export const COMMUNITY_VOICE_ENABLED = parseBooleanEnv(process.env.COMMUNITY_VOICE_ENABLED, true);
+export const COMMUNITY_VOICE_CHANNEL_ID = parseStringEnv(process.env.COMMUNITY_VOICE_CHANNEL_ID, '');
+export const COMMUNITY_VOICE_COOLDOWN_MS = parseMinIntEnv(process.env.COMMUNITY_VOICE_COOLDOWN_MS, 10 * 60_000, 60_000);
+export const COMMUNITY_VOICE_UNANSWERED_THRESHOLD_MINUTES = parseMinIntEnv(process.env.COMMUNITY_VOICE_UNANSWERED_THRESHOLD_MINUTES, 120, 10);
 
 // ──── Intent Formation (Phase G: Autonomous Agent Evolution) ────
-export const INTENT_FORMATION_ENABLED = parseBooleanEnv(process.env.INTENT_FORMATION_ENABLED, false);
+export const INTENT_FORMATION_ENABLED = parseBooleanEnv(process.env.INTENT_FORMATION_ENABLED, true);
 export const INTENT_MAX_PENDING = parseIntegerEnv(process.env.INTENT_MAX_PENDING, 10);
 export const INTENT_COOLDOWN_MS = parseIntegerEnv(process.env.INTENT_COOLDOWN_MS, 30 * 60_000);
 export const INTENT_DAILY_BUDGET_TOKENS = parseIntegerEnv(process.env.INTENT_DAILY_BUDGET_TOKENS, 100_000);
