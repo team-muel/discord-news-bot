@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-04-06T19:19:50.033Z
+- generated_at: 2026-04-07T03:31:03.152Z
 - total_runs: 38
 - go: 11
 - no_go: 15
@@ -85,7 +85,6 @@
 
 | Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | Sandbox Delegation | File |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
 | gate-20260319-173500 | A | trading-isolation:w4-01-w4-03 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-173500.md |
 | gate-post-fallback-1773928500597 | A | weekly:auto:post-fallback | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-post-fallback-1773928500597.md |
 | gate-20260321-083944 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-083944.md |
@@ -99,4 +98,5 @@
 | gate-post-fallback-1774082910559 | A | weekly:auto:post-fallback | no-go | true | stage | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-post-fallback-1774082910559.md |
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
+| WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
 | gate-20260319-103500 | A | control-plane:w3-01-w3-03 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-103500.md |
