@@ -1,7 +1,6 @@
 import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv, parseUrlEnv } from '../../utils/env';
-import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME } from '../../config';
+import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME, OLLAMA_BASE_URL, OPENJARVIS_ENABLED, OPENJARVIS_SERVE_URL, LITELLM_BASE_URL } from '../../config';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -100,7 +99,7 @@ const probeHttp = async (url: string): Promise<boolean> => {
 
 const probeOllama = async (): Promise<ExternalToolStatus> => {
   const cmd = await probeCommand('ollama', ['--version']);
-  const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+  const baseUrl = OLLAMA_BASE_URL;
   const apiOk = cmd.ok ? await probeHttp(`${baseUrl}/api/tags`) : null;
   const details: string[] = [];
 
@@ -173,9 +172,9 @@ const probeOpenClaw = async (): Promise<ExternalToolStatus> => {
 };
 
 const probeOpenJarvis = async (): Promise<ExternalToolStatus> => {
-  const enabled = parseBooleanEnv(process.env.OPENJARVIS_ENABLED, false);
+  const enabled = OPENJARVIS_ENABLED;
   const cmd = await probeCommand('jarvis', ['--version']);
-  const jarvisUrl = process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000';
+  const jarvisUrl = OPENJARVIS_SERVE_URL;
   const apiOk = cmd.ok ? await probeHttp(`${jarvisUrl}/health`) : null;
   return {
     id: 'openjarvis',
@@ -206,7 +205,7 @@ const probeLitellm = async (): Promise<ExternalToolStatus> => {
   const hasNimKey = Boolean(process.env.NVIDIA_NIM_API_KEY);
   const { existsSync } = await import('node:fs');
   const configExists = existsSync('litellm.config.yaml');
-  const baseUrl = parseUrlEnv(process.env.LITELLM_BASE_URL, 'http://127.0.0.1:4000');
+  const baseUrl = LITELLM_BASE_URL;
   const apiReachable = configExists ? await probeHttp(`${baseUrl}/health/liveliness`) : null;
   return {
     id: 'litellm',
