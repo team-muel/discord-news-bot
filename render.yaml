@@ -126,9 +126,9 @@ services:
         value: muel-platform
       # LLM-Wiki PR pipeline — vault GitHub target (set in Render dashboard)
       - key: OBSIDIAN_VAULT_GITHUB_OWNER
-        sync: false
+        value: team-muel
       - key: OBSIDIAN_VAULT_GITHUB_REPO
-        sync: false
+        value: discord-news-bot
       # Self-improvement loop (approve-ship gate protects production)
       - key: SELF_IMPROVEMENT_CONVERGENCE_ENABLED
         value: "true"

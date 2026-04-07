@@ -84,6 +84,14 @@ const git = async (cwd: string, ...args: string[]): Promise<string> => {
   return stdout.trim();
 };
 
+const getGitRoot = async (vaultResolved: string): Promise<string> => {
+  try {
+    return await git(vaultResolved, 'rev-parse', '--show-toplevel');
+  } catch {
+    return vaultResolved;
+  }
+};
+
 const ensureVaultDir = async (vaultPath: string): Promise<string> => {
   const trimmed = vaultPath.trim();
   if (!trimmed) {
@@ -153,10 +161,14 @@ const main = async (): Promise<void> => {
   }
 
   const resolved = await ensureVaultDir(vaultPath);
-  console.log(`[wiki-pr] vault=${resolved} branch=${branch} base=${base} dryRun=${String(dryRun)}`);
+  const gitRoot = await getGitRoot(resolved);
+  const isSubdir = gitRoot !== resolved;
+  // When vault is a subdirectory of a git repo, only stage the vault path
+  const addTarget = isSubdir ? path.relative(gitRoot, resolved) : '.';
+  console.log(`[wiki-pr] vault=${resolved} gitRoot=${gitRoot} branch=${branch} base=${base} dryRun=${String(dryRun)}`);
 
   // ── 1. Check for changes ────────────────────────────────────────────────────
-  const status = await git(resolved, 'status', '--porcelain');
+  const status = await git(gitRoot, 'status', '--porcelain', resolved);
   if (!status) {
     console.log('[wiki-pr] no changes in vault — nothing to PR');
     return;
@@ -175,21 +187,23 @@ const main = async (): Promise<void> => {
 
   // ── 2. Create local branch ──────────────────────────────────────────────────
   try {
-    await git(resolved, 'checkout', '-b', branch);
+    await git(gitRoot, 'checkout', '-b', branch);
   } catch {
     // Branch already exists locally — reuse it
-    await git(resolved, 'checkout', branch);
+    await git(gitRoot, 'checkout', branch);
   }
   console.log(`[wiki-pr] checked out: ${branch}`);
 
   // ── 3. Stage and commit ─────────────────────────────────────────────────────
-  await git(resolved, 'add', '--all');
-  const commitOut = await git(resolved, 'commit', '--message', commitMsg);
+  await git(gitRoot, 'add', addTarget);
+  const commitOut = await git(gitRoot, 'commit', '--message', commitMsg);
   console.log(`[wiki-pr] committed: ${commitOut.split('\n')[0] ?? ''}`);
 
   // ── 4. Push ─────────────────────────────────────────────────────────────────
-  await git(resolved, 'push', '--set-upstream', 'origin', branch);
+  await git(gitRoot, 'push', '--set-upstream', 'origin', branch);
   console.log(`[wiki-pr] pushed: ${branch}`);
+  console.log(`[wiki-pr] note: if vault is a subdir, push target repo = ${VAULT_GITHUB_OWNER}/${VAULT_GITHUB_REPO}`);
+  console.log(`[wiki-pr] tip: set OBSIDIAN_VAULT_GITHUB_OWNER/REPO to the containing repo when using subdir mode`);
 
   // ── 5. Create PR ────────────────────────────────────────────────────────────
   const pr = await createPullRequest({

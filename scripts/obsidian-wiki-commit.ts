@@ -60,6 +60,14 @@ const git = async (cwd: string, ...args: string[]): Promise<string> => {
   return stdout.trim();
 };
 
+const getGitRoot = async (vaultResolved: string): Promise<string> => {
+  try {
+    return await git(vaultResolved, 'rev-parse', '--show-toplevel');
+  } catch {
+    return vaultResolved;
+  }
+};
+
 const ensureVaultDir = async (vaultPath: string): Promise<string> => {
   const trimmed = vaultPath.trim();
   if (!trimmed) {
@@ -77,11 +85,15 @@ const main = async (): Promise<void> => {
   const { vaultPath, message, dryRun } = parseArgs();
 
   const resolved = await ensureVaultDir(vaultPath);
-  console.log(`[wiki-commit] vault=${resolved} dryRun=${String(dryRun)}`);
+  const gitRoot = await getGitRoot(resolved);
+  const isSubdir = gitRoot !== resolved;
+  // When vault is a subdirectory of a git repo, only stage the vault path
+  const addTarget = isSubdir ? path.relative(gitRoot, resolved) : '.';
+  console.log(`[wiki-commit] vault=${resolved} gitRoot=${gitRoot} dryRun=${String(dryRun)}`);
 
-  const status = await git(resolved, 'status', '--porcelain');
+  const status = await git(gitRoot, 'status', '--porcelain', resolved);
   if (!status) {
-    console.log('[wiki-commit] no changes to commit');
+    console.log('[wiki-commit] no changes to commit in vault');
     return;
   }
 
@@ -94,8 +106,8 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  await git(resolved, 'add', '--all');
-  const result = await git(resolved, 'commit', '--message', message);
+  await git(gitRoot, 'add', addTarget);
+  const result = await git(gitRoot, 'commit', '--message', message);
   console.log(`[wiki-commit] committed: ${result.split('\n')[0] ?? ''}`);
 };
 
