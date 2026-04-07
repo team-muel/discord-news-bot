@@ -698,7 +698,7 @@ const processQueuedJob = async (): Promise<boolean> => {
       .eq('status', 'running');
 
     if (failError) {
-      logger.error('[MEMORY-JOBS] failed to update job failure state: %o', failError);
+      logger.error('[MEMORY-JOBS] failed to update job failure state: %s', getErrorMessage(failError));
     }
 
     if (shouldFail) {
@@ -716,7 +716,7 @@ const processQueuedJob = async (): Promise<boolean> => {
         });
 
       if (deadletterError) {
-        logger.error('[MEMORY-JOBS] failed to insert deadletter: %o', deadletterError);
+        logger.error('[MEMORY-JOBS] failed to insert deadletter: %s', getErrorMessage(deadletterError));
       }
     }
 
@@ -744,7 +744,7 @@ const tick = async () => {
     });
     await Promise.all(workers);
   } catch (error) {
-    logger.error('[MEMORY-JOBS] tick error: %o', error);
+    logger.error('[MEMORY-JOBS] tick error: %s', getErrorMessage(error));
   } finally {
     inFlight = false;
   }
@@ -1188,7 +1188,7 @@ const recoveryTick = async () => {
     runnerStats.recoveryFailures += 1;
     runnerStats.lastRecoveryErrorAt = nowIso();
     runnerStats.lastRecoveryErrorMessage = toErrorMessage(error);
-    logger.error('[MEMORY-JOBS] recovery tick error: %o', error);
+    logger.error('[MEMORY-JOBS] recovery tick error: %s', getErrorMessage(error));
   } finally {
     recoveryInFlight = false;
     currentPhase = 'idle';

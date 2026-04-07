@@ -90,7 +90,7 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
   try {
     await client.destroy();
   } catch (error) {
-    logger.warn('[BOT] client.destroy() during manual reconnect failed: %o', error);
+    logger.warn('[BOT] client.destroy() during manual reconnect failed: %s', getErrorMessage(error));
   }
 
   try {
@@ -116,7 +116,7 @@ const runManualReconnect = async (reason: string): Promise<ManualReconnectReques
       message: '봇 재연결 요청이 전송되었습니다.',
     };
   } catch (error) {
-    logger.error('[BOT] Manual reconnect failed: %o', error);
+    logger.error('[BOT] Manual reconnect failed: %s', getErrorMessage(error));
     botRuntimeState.lastLoginErrorAt = new Date().toISOString();
     botRuntimeState.lastLoginError = getErrorMessage(error);
     botRuntimeState.lastAlertAt = botRuntimeState.lastLoginErrorAt;
@@ -274,7 +274,7 @@ export async function startBot(token: string): Promise<void> {
       if (isDiscordLoginRateLimitedError(err)) {
         logger.warn('[BOT] Login attempt %d deferred by Discord rate limit: %s', attempt, getErrorMessage(err));
       } else {
-        logger.error('[BOT] Login attempt %d failed: %o', attempt, err);
+        logger.error('[BOT] Login attempt %d failed: %s', attempt, getErrorMessage(err));
       }
       botRuntimeState.lastLoginErrorAt = new Date().toISOString();
       botRuntimeState.lastLoginError = getErrorMessage(err);
@@ -283,7 +283,7 @@ export async function startBot(token: string): Promise<void> {
       try {
         await client.destroy();
       } catch (e) {
-        logger.debug('[BOT] Error during client.destroy(): %o', e);
+        logger.debug('[BOT] Error during client.destroy(): %s', getErrorMessage(e));
       }
 
       const rateLimitRemainingSec = getLoginRateLimitRemainingSec();

@@ -205,7 +205,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         streamSessionProgress,
       });
     } catch (error) {
-      logger.error('[BOT] button interaction handler failed: %o', error);
+      logger.error('[BOT] button interaction handler failed: %s', getErrorMessage(error));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
       }
@@ -224,7 +224,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         await personaHandlers.handleUserContextCommand(interaction);
       }
     } catch (error) {
-      logger.error('[BOT] user context interaction handler failed: %o', error);
+      logger.error('[BOT] user context interaction handler failed: %s', getErrorMessage(error));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
       }
@@ -243,7 +243,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         await personaHandlers.handleUserNoteModal(interaction);
       }
     } catch (error) {
-      logger.error('[BOT] modal interaction handler failed: %o', error);
+      logger.error('[BOT] modal interaction handler failed: %s', getErrorMessage(error));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ ...buildSimpleEmbed('실행 실패', DISCORD_MESSAGES.bot.executionFailedBody, EMBED_ERROR), ephemeral: true }).catch(() => {});
       }
@@ -406,7 +406,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         }
       }
     } catch (error) {
-      logger.error('[BOT] interaction handler failed: %o', error);
+      logger.error('[BOT] interaction handler failed: %s', getErrorMessage(error));
       recordRuntimeError({ message: getErrorMessage(error), code: 'INTERACTION_HANDLER' });
       const errorBody = DISCORD_MESSAGES.bot.executionFailedBody;
       if (interaction.deferred || interaction.replied) {
@@ -444,7 +444,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
       try {
         await vibeHandlers.handleVibeMessage(message);
       } catch (error) {
-        logger.warn('[BOT] vibe message handling failed: %o', error);
+        logger.warn('[BOT] vibe message handling failed: %s', getErrorMessage(error));
       }
 
       // Skip passive memory (including Discord API fetch) when guild learning is disabled
@@ -462,7 +462,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         logger.debug('[BOT] CS channel message handler skipped: %s', getErrorMessage(error));
       });
     } catch (error) {
-      logger.warn('[BOT] messageCreate handler failed: %o', error);
+      logger.warn('[BOT] messageCreate handler failed: %s', getErrorMessage(error));
       recordRuntimeError({ message: getErrorMessage(error), code: 'MESSAGE_CREATE_HANDLER' });
     }
   });
@@ -642,11 +642,11 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
   });
 
   client.on('shardError', (error) => {
-    logger.error('[BOT] shardError: %o', error);
+    logger.error('[BOT] shardError: %s', getErrorMessage(error));
   });
 
   client.on('error', (error) => {
-    logger.error('[BOT] client error: %o', error);
+    logger.error('[BOT] client error: %s', getErrorMessage(error));
   });
 
   client.on('warn', (info) => {

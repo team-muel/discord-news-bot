@@ -148,13 +148,13 @@ export const startBotAutoRecovery = (loadBotModule: () => Promise<BotModuleLike>
   state.bootedAtMs = Date.now();
   void runScan(loadBotModule).catch((error) => {
     state.lastAttemptResult = `scan_error:${getErrorMessage(error)}`;
-    logger.warn('[BOT-AUTO-RECOVERY] initial scan failed: %o', error);
+    logger.warn('[BOT-AUTO-RECOVERY] initial scan failed: %s', getErrorMessage(error));
   });
 
   state.timer = setInterval(() => {
     void runScan(loadBotModule).catch((error) => {
       state.lastAttemptResult = `scan_error:${getErrorMessage(error)}`;
-      logger.warn('[BOT-AUTO-RECOVERY] scan failed: %o', error);
+      logger.warn('[BOT-AUTO-RECOVERY] scan failed: %s', getErrorMessage(error));
     });
   }, BOT_AUTO_RECOVERY_SCAN_INTERVAL_MS);
   state.timer.unref();

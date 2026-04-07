@@ -682,7 +682,7 @@ const executeTick = async (sink: ChannelSink, guildId?: string) => {
     lastErrorAt = new Date().toISOString();
     lastError = getErrorMessage(error);
     lastDurationMs = Date.now() - startMs;
-    logger.warn('[NEWS-MONITOR] tick failed: %o', error);
+    logger.warn('[NEWS-MONITOR] tick failed: %s', getErrorMessage(error));
     return { ok: false, message: lastError || 'News tick failed' as const };
   } finally {
     running = false;

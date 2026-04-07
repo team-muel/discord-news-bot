@@ -8,6 +8,7 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 import { parseIntegerEnv } from '../../utils/env';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const CACHE_TTL_MS = Math.max(60_000, parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3_600_000));
 const CACHE_ENABLED = process.env.OBSIDIAN_RAG_CACHE_ENABLED !== 'false';
@@ -106,7 +107,7 @@ export async function initObsidianCache(): Promise<boolean> {
     logger.info('[OBSIDIAN-CACHE] Initialized');
     return true;
   } catch (error) {
-    logger.error('[OBSIDIAN-CACHE] Initialization failed: %o', error);
+    logger.error('[OBSIDIAN-CACHE] Initialization failed: %s', getErrorMessage(error));
     return false;
   }
 }
@@ -151,7 +152,7 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
       hitCount: (data.hit_count || 0) + 1,
     };
   } catch (error) {
-    logger.warn('[OBSIDIAN-CACHE] Get failed for %s: %o', filePath, error);
+    logger.warn('[OBSIDIAN-CACHE] Get failed for %s: %s', filePath, getErrorMessage(error));
     return null;
   }
 }
@@ -200,7 +201,7 @@ export async function getCachedDocumentsBatch(filePaths: string[]): Promise<Map<
     logger.debug('[OBSIDIAN-CACHE] BATCH HIT %d/%d', result.size, filePaths.length);
     return result;
   } catch (error) {
-    logger.warn('[OBSIDIAN-CACHE] Batch get failed: %o', error);
+    logger.warn('[OBSIDIAN-CACHE] Batch get failed: %s', getErrorMessage(error));
     return result;
   }
 }
@@ -232,14 +233,14 @@ export async function cacheDocument(
     );
 
     if (error) {
-      logger.warn('[OBSIDIAN-CACHE] Cache failed for %s: %o', filePath, error);
+      logger.warn('[OBSIDIAN-CACHE] Cache failed for %s: %s', filePath, getErrorMessage(error));
       return false;
     }
 
     logger.debug('[OBSIDIAN-CACHE] Cached %s (%d bytes)', filePath, content.length);
     return true;
   } catch (error) {
-    logger.warn('[OBSIDIAN-CACHE] Upsert failed: %o', error);
+    logger.warn('[OBSIDIAN-CACHE] Upsert failed: %s', getErrorMessage(error));
     return false;
   }
 }
@@ -288,7 +289,7 @@ export async function loadDocumentsWithCache(
             await cacheDocument(path, content, {});
           }
         } catch (error) {
-          logger.warn('[OBSIDIAN-CACHE] Load failed for %s: %o', path, error);
+          logger.warn('[OBSIDIAN-CACHE] Load failed for %s: %s', path, getErrorMessage(error));
         }
       })
     );
@@ -332,7 +333,7 @@ export async function getCacheStats(): Promise<{
       averageHitsPerDoc: data.length > 0 ? totalHits / data.length : 0,
     };
   } catch (error) {
-    logger.warn('[OBSIDIAN-CACHE] Stats fetch failed: %o', error);
+    logger.warn('[OBSIDIAN-CACHE] Stats fetch failed: %s', getErrorMessage(error));
     return null;
   }
 }
@@ -356,7 +357,7 @@ export async function clearExpiredCache(): Promise<number> {
       .select('file_path');
 
     if (error) {
-      logger.warn('[OBSIDIAN-CACHE] Expiration clear failed: %o', error);
+      logger.warn('[OBSIDIAN-CACHE] Expiration clear failed: %s', getErrorMessage(error));
       return 0;
     }
 
@@ -364,7 +365,7 @@ export async function clearExpiredCache(): Promise<number> {
     logger.info('[OBSIDIAN-CACHE] Cleared %d expired documents', count);
     return count;
   } catch (error) {
-    logger.error('[OBSIDIAN-CACHE] Clear failed: %o', error);
+    logger.error('[OBSIDIAN-CACHE] Clear failed: %s', getErrorMessage(error));
     return 0;
   }
 }

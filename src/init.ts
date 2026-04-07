@@ -1,5 +1,6 @@
 import logger from './logger';
 import * as Sentry from '@sentry/node';
+import { getErrorMessage } from './utils/errorMessage';
 
 export function initMonitoring(): void {
   const sentryDsn = process.env.SENTRY_DSN;
@@ -11,7 +12,7 @@ export function initMonitoring(): void {
       logger.info('Sentry initialized');
     }
   } catch (err) {
-    logger.error('Sentry initialization failed: %o', err);
+    logger.error('Sentry initialization failed: %s', getErrorMessage(err));
     // Do not throw — monitoring must not block application start
   }
 }

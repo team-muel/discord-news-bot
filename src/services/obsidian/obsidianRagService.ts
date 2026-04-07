@@ -204,7 +204,7 @@ export async function initObsidianRAG(): Promise<boolean> {
     // Periodic cache cleanup (every hour)
     const cacheCleanupTimer = setInterval(() => {
       clearExpiredCache().catch(error =>
-        logger.warn('[OBSIDIAN-RAG] Cache cleanup failed: %o', error)
+        logger.warn('[OBSIDIAN-RAG] Cache cleanup failed: %s', getErrorMessage(error))
       );
     }, 3600000);
     cacheCleanupTimer.unref();
@@ -212,7 +212,7 @@ export async function initObsidianRAG(): Promise<boolean> {
     initialized = true;
     return true;
   } catch (error) {
-    logger.error('[OBSIDIAN-RAG] Initialization failed: %o', error);
+    logger.error('[OBSIDIAN-RAG] Initialization failed: %s', getErrorMessage(error));
     return false;
   }
 }
@@ -319,7 +319,7 @@ export async function queryObsidianRAG(
 
     return result;
   } catch (error) {
-    logger.error('[OBSIDIAN-RAG] Query failed: %o', error);
+    logger.error('[OBSIDIAN-RAG] Query failed: %s', getErrorMessage(error));
     return {
       sourceFiles: [],
       documentContext: 'RAG query failed. Please try again later.',
@@ -455,7 +455,7 @@ async function findRelatedDocuments(
     logger.debug('[OBSIDIAN-RAG] Found %d documents (incl. 2-hop) for intent, returning %d', scoredResults.size, paths.length);
     return paths;
   } catch (error) {
-    logger.warn('[OBSIDIAN-RAG] Document search failed: %o', error);
+    logger.warn('[OBSIDIAN-RAG] Document search failed: %s', getErrorMessage(error));
     return [];
   }
 }
