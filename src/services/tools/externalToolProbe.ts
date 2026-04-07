@@ -1,6 +1,7 @@
 import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME, OLLAMA_BASE_URL, OPENJARVIS_ENABLED, OPENJARVIS_SERVE_URL, LITELLM_BASE_URL } from '../../config';
+import { parseStringEnv } from '../../utils/env';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -141,7 +142,7 @@ const probeOpenShell = async (): Promise<ExternalToolStatus> => {
 
 const probeNemoClaw = async (): Promise<ExternalToolStatus> => {
   const cmd = await probeWslCommand('nemoclaw', ['help']);
-  const hasKey = Boolean(process.env.NVIDIA_API_KEY);
+  const hasKey = parseStringEnv(process.env.NVIDIA_API_KEY, '') !== '';
   const sandboxName = NEMOCLAW_SANDBOX_NAME;
   const sandbox = cmd.ok ? await probeWslCommand('nemoclaw', ['list']) : { ok: false, output: '', fullOutput: '' };
   const hasSandbox = sandbox.ok && (sandbox.fullOutput ?? sandbox.output).includes(sandboxName);
@@ -202,7 +203,7 @@ const probeUv = async (): Promise<ExternalToolStatus> => {
 };
 
 const probeLitellm = async (): Promise<ExternalToolStatus> => {
-  const hasNimKey = Boolean(process.env.NVIDIA_NIM_API_KEY);
+  const hasNimKey = parseStringEnv(process.env.NVIDIA_NIM_API_KEY, '') !== '';
   const { existsSync } = await import('node:fs');
   const configExists = existsSync('litellm.config.yaml');
   const baseUrl = LITELLM_BASE_URL;
