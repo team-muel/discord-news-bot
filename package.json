@@ -77,7 +77,9 @@
     "docs:check": "npm run docs:build && git diff --exit-code -- docs/ROUTES_INVENTORY.md docs/DEPENDENCY_GRAPH.md docs/SCHEMA_SERVICE_MAP.md",
     "openjarvis:autonomy:run": "node scripts/run-openjarvis-unattended.mjs --strict=true",
     "tools:probe": "tsx scripts/probe-external-tools.ts",
-    "tools:onboarding": "node scripts/generate-onboarding-checklist.mjs"
+    "tools:onboarding": "node scripts/generate-onboarding-checklist.mjs",
+    "wiki:commit": "tsx scripts/obsidian-wiki-commit.ts",
+    "wiki:pr": "tsx scripts/obsidian-wiki-pr.ts"
   },
   "dependencies": {
     "@sentry/node": "^7.59.0",
@@ -110,5 +112,8 @@
   },
   "overrides": {
     "undici": "^6.24.0"
+  },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.27.4"
   }
 }
