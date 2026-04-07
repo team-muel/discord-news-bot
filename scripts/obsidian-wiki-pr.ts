@@ -114,24 +114,26 @@ type PrPayload = {
 };
 
 const createPullRequest = async (payload: PrPayload): Promise<{ number: number; html_url: string }> => {
-  const url = `https://api.github.com/repos/${VAULT_GITHUB_OWNER}/${VAULT_GITHUB_REPO}/pulls`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GITHUB_TOKEN}`,
-      'Accept': 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-    body: JSON.stringify(payload),
+  const { createGitHubClient } = await import('../src/utils/githubApi');
+  const client = createGitHubClient({
+    token: GITHUB_TOKEN,
+    owner: VAULT_GITHUB_OWNER,
+    repo: VAULT_GITHUB_REPO,
+    userAgent: 'muel-wiki-pr',
+  });
+  const result = await client.createPullRequest({
+    title: payload.title,
+    body: payload.body,
+    head: payload.head,
+    base: payload.base,
+    draft: payload.draft,
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`GitHub API ${String(res.status)}: ${text.slice(0, 300)}`);
+  if (!result.ok) {
+    throw new Error(`GitHub API error: ${result.error}`);
   }
 
-  return res.json() as Promise<{ number: number; html_url: string }>;
+  return result.data!;
 };
 
 const buildPrBody = (today: string, branch: string): string =>
