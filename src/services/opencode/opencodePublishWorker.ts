@@ -1,5 +1,5 @@
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseBoundedNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { acquireDistributedLease, releaseDistributedLease } from '../infra/distributedLockService';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -76,9 +76,7 @@ const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || '').trim();
 const DEFAULT_REPO_OWNER = String(process.env.OPENCODE_TARGET_REPO_OWNER || '').trim();
 const DEFAULT_REPO_NAME = String(process.env.OPENCODE_TARGET_REPO_NAME || '').trim();
 const REQUIRE_EVIDENCE_FOR_HIGH_RISK = parseBooleanEnv(process.env.OPENCODE_PUBLISH_REQUIRE_EVIDENCE_FOR_HIGH_RISK, true);
-const MIN_SCORE_CARD_TOTAL = Number.isFinite(Number(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL))
-  ? Math.max(0, Math.min(100, Number(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL)))
-  : 0;
+const MIN_SCORE_CARD_TOTAL = parseBoundedNumberEnv(process.env.OPENCODE_PUBLISH_MIN_SCORE_CARD_TOTAL, 0, 0, 100);
 const PATCH_MAX_FILES = Math.max(1, Math.min(500, parseIntegerEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_FILES, 120)));
 const PATCH_MAX_LINES = Math.max(10, Math.min(20_000, parseIntegerEnv(process.env.OPENCODE_PUBLISH_PATCH_MAX_LINES, 4000)));
 

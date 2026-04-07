@@ -278,7 +278,6 @@ export function createBotRouter(): Router {
     return res.status(202).json({ ok: true, message: result.message });
   });
 
-
   registerBotAgentRoutes({
     router,
     adminActionRateLimiter,

@@ -5,9 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { parseIntegerEnv } from '../../utils/env';
 
-const CIRCUIT_FAILURE_THRESHOLD = Math.max(2, Number(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD || 3));
-const CIRCUIT_OPEN_MS = Math.max(10_000, Number(process.env.DYNAMIC_CIRCUIT_OPEN_MS || 120_000));
+const CIRCUIT_FAILURE_THRESHOLD = Math.max(2, parseIntegerEnv(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD, 3));
+const CIRCUIT_OPEN_MS = Math.max(10_000, parseIntegerEnv(process.env.DYNAMIC_CIRCUIT_OPEN_MS, 120_000));
 const DYNAMIC_WORKER_RUNTIME_DIR = String(process.env.DYNAMIC_WORKER_RUNTIME_DIR || path.join(process.cwd(), '.runtime', 'dynamic-workers')).trim();
 
 type DynamicEntry = {

@@ -167,7 +167,6 @@ export const getRecentSessionOutcomes = (guildId: string): SessionOutcomeEntry[]
   return recentSessionOutcomes.get(guildId) || [];
 };
 
-
 registerTelemetryTaskHandler(GOT_SHADOW_RECORD_TASK, async (payload) => {
   await recordGotShadowRun(payload as Parameters<typeof recordGotShadowRun>[0]);
 });

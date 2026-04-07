@@ -1,4 +1,5 @@
 import { getErrorMessage } from '../../utils/errorMessage';
+import { parseIntegerEnv } from '../../utils/env';
 /**
  * Agent Role Worker Service
  *
@@ -171,7 +172,7 @@ export const probeAgentRoleWorkerHealth = async (spec: AgentRoleWorkerSpec, time
   };
 };
 
-export const getAgentRoleWorkersHealthSnapshot = async (timeoutMs = Math.max(1000, Number(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS || 5000))) => {
+export const getAgentRoleWorkersHealthSnapshot = async (timeoutMs = Math.max(1000, parseIntegerEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000))) => {
   const entries = await Promise.all(listAgentRoleWorkerSpecs().map(async (spec) => [
     spec.id,
     await probeAgentRoleWorkerHealth(spec, timeoutMs),

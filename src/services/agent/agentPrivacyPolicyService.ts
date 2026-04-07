@@ -1,4 +1,4 @@
-import { parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -29,11 +29,11 @@ export type AgentPrivacyPolicySnapshot = {
 const AGENT_PRIVACY_POLICY_CACHE_TTL_MS = Math.max(5_000, parseIntegerEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_TTL_MS, 60_000));
 const AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = Math.max(30_000, parseIntegerEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000));
 
-const DEFAULT_MODE: AgentPrivacyMode = !/^(0|false|off|no)$/i.test(String(process.env.AGENT_PRIVACY_GUARDED_DEFAULT || 'true').trim())
+const DEFAULT_MODE: AgentPrivacyMode = parseBooleanEnv(process.env.AGENT_PRIVACY_GUARDED_DEFAULT, true)
   ? 'guarded'
   : 'direct';
-const DEFAULT_REVIEW_SCORE = Math.max(0, Math.min(100, Number(process.env.AGENT_PRIVACY_REVIEW_SCORE || 60)));
-const DEFAULT_BLOCK_SCORE = Math.max(DEFAULT_REVIEW_SCORE + 1, Math.min(100, Number(process.env.AGENT_PRIVACY_BLOCK_SCORE || 80)));
+const DEFAULT_REVIEW_SCORE = parseBoundedNumberEnv(process.env.AGENT_PRIVACY_REVIEW_SCORE, 60, 0, 100);
+const DEFAULT_BLOCK_SCORE = Math.max(DEFAULT_REVIEW_SCORE + 1, parseBoundedNumberEnv(process.env.AGENT_PRIVACY_BLOCK_SCORE, 80, 0, 100));
 
 const DEFAULT_REVIEW_RULES: AgentPrivacyRuleInput[] = [
   { pattern: '(이메일|전화번호|연락처|주소|주민등록|신분증|여권|계좌|카드번호|토큰|비밀번호|api key)', score: 28, reason: 'personal_or_secret_identifier' },

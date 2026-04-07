@@ -37,7 +37,7 @@ type NewsTickStats = {
   skippedNoCandidate: number;
 };
 
-const SIGNATURE_HISTORY_MAX_ITEMS = Math.max(5, Number(process.env.NEWS_SIGNATURE_HISTORY_MAX_ITEMS || 12));
+const SIGNATURE_HISTORY_MAX_ITEMS = Math.max(5, parseIntegerEnv(process.env.NEWS_SIGNATURE_HISTORY_MAX_ITEMS, 12));
 const SIGNATURE_HISTORY_DELIMITER = '||';
 
 let timer: NodeJS.Timeout | null = null;
@@ -56,17 +56,17 @@ let lastTickFailedSources = 0;
 let lastTickStatus: 'success' | 'partial_failure' | 'failed' | null = null;
 let newsHistoryTableUnavailableLogged = false;
 
-const INTERVAL_MS = Math.max(60_000, Number(process.env.NEWS_MONITOR_INTERVAL_MS || 10 * 60_000));
-const LOCK_LEASE_MS = Math.max(30_000, Number(process.env.NEWS_MONITOR_LOCK_LEASE_MS || 120_000));
-const FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_MONITOR_FETCH_TIMEOUT_MS || 15_000));
-const NEWS_CANDIDATE_LIMIT = Math.max(3, Number(process.env.NEWS_MONITOR_CANDIDATE_LIMIT || 12));
-const NEWS_HISTORY_LOOKBACK_HOURS = Math.max(1, Number(process.env.NEWS_DEDUP_LOOKBACK_HOURS || 24));
-const NEWS_HISTORY_MAX_ITEMS = Math.max(10, Number(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS || 60));
+const INTERVAL_MS = Math.max(60_000, parseIntegerEnv(process.env.NEWS_MONITOR_INTERVAL_MS, 10 * 60_000));
+const LOCK_LEASE_MS = Math.max(30_000, parseIntegerEnv(process.env.NEWS_MONITOR_LOCK_LEASE_MS, 120_000));
+const FETCH_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.NEWS_MONITOR_FETCH_TIMEOUT_MS, 15_000));
+const NEWS_CANDIDATE_LIMIT = Math.max(3, parseIntegerEnv(process.env.NEWS_MONITOR_CANDIDATE_LIMIT, 12));
+const NEWS_HISTORY_LOOKBACK_HOURS = Math.max(1, parseIntegerEnv(process.env.NEWS_DEDUP_LOOKBACK_HOURS, 24));
+const NEWS_HISTORY_MAX_ITEMS = Math.max(10, parseIntegerEnv(process.env.NEWS_DEDUP_HISTORY_MAX_ITEMS, 60));
 const NEWS_DEDUP_MODEL = process.env.OPENAI_NEWS_DEDUP_MODEL || process.env.NEWS_DEDUP_MODEL || undefined;
 const NEWS_SUMMARY_MODEL = process.env.OPENAI_NEWS_SUMMARY_MODEL || process.env.NEWS_SUMMARY_MODEL || undefined;
-const NEWS_AI_DEDUP_ENABLED = (process.env.NEWS_AI_DEDUP_ENABLED || 'true').toLowerCase() !== 'false';
-const NEWS_KR_SUMMARY_ENABLED = (process.env.NEWS_KR_SUMMARY_ENABLED || 'true').toLowerCase() !== 'false';
-const SUMMARY_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS || 12_000));
+const NEWS_AI_DEDUP_ENABLED = parseBooleanEnv(process.env.NEWS_AI_DEDUP_ENABLED, true);
+const NEWS_KR_SUMMARY_ENABLED = parseBooleanEnv(process.env.NEWS_KR_SUMMARY_ENABLED, true);
+const SUMMARY_FETCH_TIMEOUT_MS = Math.max(5_000, parseIntegerEnv(process.env.NEWS_SUMMARY_FETCH_TIMEOUT_MS, 12_000));
 const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || process.env.RENDER_SERVICE_ID || process.env.HOSTNAME || `local-${process.pid}`;
 
 const isGoogleFinanceSourceRow = (row: NewsChannelRow): boolean => {
@@ -90,6 +90,7 @@ type NewsHistoryRow = {
 
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 
 const isHistoryUnavailableError = (error: any): boolean => isSchemaUnavailableError(error, 'news_sentiment', 'event_signature', 'sentiment_score');
 
@@ -689,7 +690,7 @@ const executeTick = async (sink: ChannelSink, guildId?: string) => {
   }
 };
 
-export const isNewsSentimentMonitorEnabled = () => (process.env.AUTOMATION_NEWS_ENABLED || 'false').toLowerCase() !== 'false';
+export const isNewsSentimentMonitorEnabled = () => parseBooleanEnv(process.env.AUTOMATION_NEWS_ENABLED, false);
 
 export const startNewsSentimentMonitor = (sink: ChannelSink) => {
   if (started || !isNewsSentimentMonitorEnabled()) {

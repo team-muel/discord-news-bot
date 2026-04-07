@@ -105,7 +105,6 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     return res.json({ policy: getAgentPolicy(), ops: getAgentOpsSnapshot() });
   });
 
-
   router.post('/agent/onboarding/run', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
     if (!guildId) {

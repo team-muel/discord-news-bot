@@ -27,8 +27,6 @@ const runtimeState = {
 const isPgCronOwned = (loopName: string): boolean =>
   PG_CRON_REPLACES_APP_LOOPS && runtimeState.pgCronReplacedLoops.has(loopName);
 
-
-
 const startSharedLoops = (source: 'server-process' | 'discord-ready') => {
   if (runtimeState.sharedLoopsStarted) {
     return;

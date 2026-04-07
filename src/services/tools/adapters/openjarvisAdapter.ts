@@ -60,7 +60,6 @@ const SERVE_URL = CONFIG_OPENJARVIS_SERVE_URL;
 const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
 const SERVE_API_KEY = String(process.env.OPENJARVIS_API_KEY || '').trim();
 
-
 /**
  * Lite mode: when jarvis CLI is not installed but LiteLLM proxy is available,
  * jarvis.ask can still function via LiteLLM HTTP fallback.
