@@ -4,7 +4,7 @@ import { listApprovals } from './workerApprovalStore';
 import { runWorkerGenerationPipeline } from './workerGenerationPipeline';
 import { recordWorkerGenerationResult, getWorkerProposalMetricsSnapshot } from './workerProposalMetrics';
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { triggerLacunaSprintIfNeeded, type LacunaCandidate } from '../sprint/selfImprovementLoop';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from '../skills/actionGovernanceStore';
 import { runWithConcurrency } from '../../utils/async';

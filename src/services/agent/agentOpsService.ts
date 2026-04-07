@@ -1,6 +1,6 @@
 import type { Client, Guild } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { queueMemoryJob } from './agentMemoryStore';
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { listGuildAgentSessions, startAgentSession } from '../multiAgentService';

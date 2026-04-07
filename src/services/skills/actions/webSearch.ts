@@ -10,7 +10,7 @@
 import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { compactText, extractQuery } from './queryUtils';
-import { parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
+import { parseBoundedNumberEnv, parseStringEnv } from '../../../utils/env';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 const SERPER_API_KEY = parseStringEnv(process.env.SERPER_API_KEY, '');

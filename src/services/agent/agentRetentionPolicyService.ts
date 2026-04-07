@@ -1,4 +1,4 @@
-import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type AgentRetentionPolicySnapshot = {

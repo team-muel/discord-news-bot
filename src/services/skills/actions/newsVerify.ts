@@ -14,7 +14,7 @@ import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { compactText, extractQuery } from './queryUtils';
 import logger from '../../../logger';
-import { parseBoundedNumberEnv, parseIntegerEnv } from '../../../utils/env';
+import { parseBoundedNumberEnv } from '../../../utils/env';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 const FETCH_TIMEOUT_MS = 7_000;

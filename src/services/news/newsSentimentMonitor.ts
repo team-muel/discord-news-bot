@@ -90,7 +90,7 @@ type NewsHistoryRow = {
 
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 
 const isHistoryUnavailableError = (error: any): boolean => isSchemaUnavailableError(error, 'news_sentiment', 'event_signature', 'sentiment_score');
 

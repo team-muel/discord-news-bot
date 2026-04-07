@@ -11,7 +11,7 @@
  * - Composable: each step produces typed output that feeds into the next
  * - Observable: every step transition is recorded via workflowPersistenceService
  */
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 import { inferAgentRoleByActionName, type ActionExecutionResult, type ActionPlan, type AgentRoleName } from './actions/types';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';

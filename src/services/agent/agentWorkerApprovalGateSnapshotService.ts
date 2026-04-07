@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseBooleanEnv, parseCsvList } from '../../utils/env';
+import { parseCsvList } from '../../utils/env';
 import {
   LLM_PROVIDER_FALLBACK_CHAIN_RAW,
   LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER_RAW,

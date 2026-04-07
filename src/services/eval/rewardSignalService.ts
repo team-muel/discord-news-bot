@@ -9,7 +9,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient, fromTable } from '../infra/baseRepository';
 import { T_COMMUNITY_INTERACTION_EVENTS, T_AGENT_SESSIONS, T_MEMORY_RETRIEVAL_LOGS, T_AGENT_LLM_CALL_LOGS, T_REWARD_SIGNAL_SNAPSHOTS } from '../infra/tableRegistry';

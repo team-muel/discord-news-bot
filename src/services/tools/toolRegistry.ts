@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import type { CliToolRegistryStatus, RegisteredCliTool } from './types';
 
 const CLI_TOOL_ENABLED = parseBooleanEnv(process.env.LOCAL_CLI_TOOL_ENABLED, false);

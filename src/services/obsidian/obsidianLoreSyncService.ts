@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const OBSIDIAN_SYNC_LOOP_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_SYNC_LOOP_ENABLED, false);

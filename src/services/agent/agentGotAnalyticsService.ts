@@ -1,4 +1,4 @@
-import { parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseNumberEnv } from '../../utils/env';
+import { parseBoundedNumberEnv, parseMinIntEnv, parseNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 type DashboardParams = {

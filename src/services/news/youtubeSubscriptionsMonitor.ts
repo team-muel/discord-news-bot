@@ -7,7 +7,7 @@ import { T_SOURCES } from '../infra/tableRegistry';
 import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 import type { ChannelSink } from '../automation/types';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 type SubscriptionRow = {
   id: number;

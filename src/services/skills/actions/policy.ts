@@ -1,4 +1,4 @@
-import { parseBoundedNumberEnv, parseCsvList, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
+import { parseBoundedNumberEnv, parseCsvList, parseStringEnv } from '../../../utils/env';
 
 const normalizeHost = (value: string): string => value.trim().toLowerCase();
 

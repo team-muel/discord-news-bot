@@ -16,7 +16,7 @@
  */
 
 import { fetchWithTimeout } from '../../utils/network';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../utils/env';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 

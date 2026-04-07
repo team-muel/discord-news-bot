@@ -2,7 +2,7 @@ import { getActionRunnerDiagnosticsSnapshot } from '../skills/actionRunner';
 import { getWorkerProposalMetricsSnapshot } from '../workerGeneration/workerProposalMetrics';
 import { buildGoNoGoReport } from '../goNoGoService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
 
 type ReadinessStatus = 'pass' | 'fail' | 'warn';

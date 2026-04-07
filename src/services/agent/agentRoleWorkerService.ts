@@ -1,5 +1,5 @@
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseMinIntEnv } from '../../utils/env';
 /**
  * Agent Role Worker Service
  *

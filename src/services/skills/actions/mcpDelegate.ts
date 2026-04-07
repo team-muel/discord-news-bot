@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../../utils/env';
 import { callMcpTool, parseMcpTextBlocks as parseMcpTextBlocksShared, type McpCallPayload } from '../../mcpWorkerClient';
 
 export type McpCallResponse = McpCallPayload;

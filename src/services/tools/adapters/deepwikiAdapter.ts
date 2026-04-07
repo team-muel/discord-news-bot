@@ -17,7 +17,7 @@
  *   DEEPWIKI_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseUrlEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 

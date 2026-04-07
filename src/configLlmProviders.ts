@@ -6,7 +6,7 @@
  *
  * Re-exported from config.ts for backward compatibility.
  */
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseNumberEnv, parseStringEnv } from './utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseStringEnv } from './utils/env';
 
 // Primary provider selection
 export const AI_PROVIDER = parseStringEnv(process.env.AI_PROVIDER, '').toLowerCase();

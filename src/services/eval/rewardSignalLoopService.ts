@@ -7,7 +7,7 @@
 
 import type { Client } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { computeRewardSnapshot, persistRewardSnapshot } from './rewardSignalService';
 import { getErrorMessage } from '../../utils/errorMessage';

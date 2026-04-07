@@ -25,7 +25,7 @@
  */
 
 import logger from '../../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 

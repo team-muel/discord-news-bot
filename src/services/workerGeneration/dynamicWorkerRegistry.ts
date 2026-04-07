@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 const CIRCUIT_FAILURE_THRESHOLD = parseMinIntEnv(process.env.DYNAMIC_CIRCUIT_FAILURE_THRESHOLD, 3, 2);
 const CIRCUIT_OPEN_MS = parseMinIntEnv(process.env.DYNAMIC_CIRCUIT_OPEN_MS, 120_000, 10_000);

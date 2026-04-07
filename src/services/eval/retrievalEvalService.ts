@@ -3,7 +3,7 @@ import { searchObsidianVaultWithAdapter } from '../obsidian/router';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
 import { T_RETRIEVAL_EVAL_SETS, T_RETRIEVAL_EVAL_CASES, T_RETRIEVAL_EVAL_TARGETS, T_RETRIEVAL_EVAL_RUNS, T_RETRIEVAL_EVAL_RESULTS, T_RETRIEVAL_RANKER_EXPERIMENTS, T_RETRIEVAL_RANKER_ACTIVE_PROFILES } from '../infra/tableRegistry';
-import { parseBoundedNumberEnv, parseCsvList, parseIntegerEnv, parseMinIntEnv, parseMinNumberEnv, parseNumberEnv } from '../../utils/env';
+import { parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseMinNumberEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const RETRIEVAL_EVAL_DEFAULT_TOP_K = parseBoundedNumberEnv(process.env.RETRIEVAL_EVAL_DEFAULT_TOP_K, 5, 1, 20);

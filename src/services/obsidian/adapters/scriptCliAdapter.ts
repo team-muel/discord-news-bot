@@ -1,7 +1,7 @@
 import path from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
 import type { ObsidianLoreQuery, ObsidianVaultAdapter } from '../types';
 
 const execFileAsync = promisify(execFile);

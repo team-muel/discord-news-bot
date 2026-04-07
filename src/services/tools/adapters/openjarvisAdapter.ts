@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv, parseStringEnv } from '../../../utils/env';
+import { parseStringEnv } from '../../../utils/env';
 import {
   OPENJARVIS_ENABLED as CONFIG_OPENJARVIS_ENABLED,
   OPENJARVIS_DISABLED as CONFIG_OPENJARVIS_DISABLED,

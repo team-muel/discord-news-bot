@@ -17,7 +17,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv, parseNumberEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';

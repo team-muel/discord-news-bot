@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 
 export type PromptCompileResult = {
   originalGoal: string;

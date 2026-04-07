@@ -3,7 +3,7 @@ import { getActionTermIndex, listActions } from './registry';
 import { getActionUtilityScore } from '../actionRunner';
 import type { ActionChainPlan, ActionPlan } from './types';
 import { buildFallbackPlan, isRagIntentGoal } from './plannerRules';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../../utils/env';
 import { runExternalAction } from '../../tools/toolRouter';
 import type { ExternalAdapterId } from '../../tools/externalAdapterTypes';
 

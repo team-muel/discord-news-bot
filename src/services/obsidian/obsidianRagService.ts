@@ -32,7 +32,7 @@ import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
 const GRAPH_META_CACHE_TTL_MS = parseMinIntEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000, 30_000);

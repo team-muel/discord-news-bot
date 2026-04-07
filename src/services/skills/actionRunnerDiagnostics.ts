@@ -2,7 +2,7 @@
  * Action runner diagnostics — failure tracking, trend analysis, and snapshot export.
  * Extracted from actionRunner to reduce file size.
  */
-import { parseBoundedNumberEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBoundedNumberEnv } from '../../utils/env';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 

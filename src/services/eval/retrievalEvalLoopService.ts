@@ -1,6 +1,6 @@
 import type { Client } from 'discord.js';
 import logger from '../../logger';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { BackgroundLoop } from '../../utils/backgroundLoop';
 import { runRetrievalAutoTuning, runRetrievalEval } from './retrievalEvalService';
 import { getErrorMessage } from '../../utils/errorMessage';

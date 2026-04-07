@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 
 const SANITIZER_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_SANITIZER_ENABLED, true);
 const SANITIZER_MAX_TEXT_LEN = parseMinIntEnv(process.env.OBSIDIAN_SANITIZER_MAX_TEXT_LEN, 12_000, 80);

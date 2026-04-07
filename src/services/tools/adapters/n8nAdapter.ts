@@ -11,7 +11,7 @@
  * n8n handles external execution (RSS, API calls, SNS posting)
  * while the pipeline engine handles judgment (chaining, branching, replanning).
  */
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
 import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterResult, ExternalAdapterId } from '../externalAdapterTypes';
 import logger from '../../../logger';

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
-import { parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 
 export type WorkerApprovalStatus = 'pending' | 'approved' | 'rejected' | 'refactor_requested';
 

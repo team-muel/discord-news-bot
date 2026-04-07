@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 export type GuildKnowledgeManifest = {

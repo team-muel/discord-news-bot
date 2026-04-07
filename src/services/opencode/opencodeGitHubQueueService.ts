@@ -1,4 +1,4 @@
-import { parseBoundedNumberEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { parseBoundedNumberEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 
 export type OpencodeChangeRequestStatus =

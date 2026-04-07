@@ -14,7 +14,7 @@
  */
 
 import logger from '../../logger';
-import { parseBooleanEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Config ──────────────────────────────────────────────────────────────────

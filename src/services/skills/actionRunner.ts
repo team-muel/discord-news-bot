@@ -15,7 +15,7 @@ import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseCsvList, parseIntegerEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { TtlCache } from '../../utils/ttlCache';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
 import logger from '../../logger';

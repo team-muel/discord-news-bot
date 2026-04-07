@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { buildGotPerformanceDashboard } from './agentGotAnalyticsService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';

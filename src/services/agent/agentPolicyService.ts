@@ -1,4 +1,4 @@
-import { parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseMinIntEnv } from '../../utils/env';
 import type { SkillId } from '../skills/types';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { listSkills } from '../skills/registry';

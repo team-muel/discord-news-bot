@@ -1,4 +1,4 @@
-import { parseIntegerEnv, parseMinIntEnv } from '../../utils/env';
+import { parseMinIntEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
