@@ -13,7 +13,7 @@
  *   OLLAMA_ADAPTER_ENABLED — legacy flag (false = disabled, for backward compat)
  */
 
-import { parseBooleanEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseUrlEnv } from '../../../utils/env';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 

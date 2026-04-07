@@ -32,7 +32,7 @@ import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
 const GRAPH_META_CACHE_TTL_MS = Math.max(30_000, parseIntegerEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000));
@@ -74,7 +74,7 @@ const INTENT_ROUTES: Record<string, {
 
 // ── Dynamic intent enrichment from vault tag distribution ──────
 
-const DYNAMIC_INTENT_ENABLED = String(process.env.OBSIDIAN_DYNAMIC_INTENT_ROUTING ?? 'true').trim() === 'true';
+const DYNAMIC_INTENT_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_ROUTING, true);
 const DYNAMIC_INTENT_MIN_TAG_COUNT = Math.max(2, parseIntegerEnv(process.env.OBSIDIAN_DYNAMIC_INTENT_MIN_TAG_COUNT, 3));
 
 let _dynamicIntentEnriched = false;
@@ -582,7 +582,7 @@ export async function writeRetroToVault(params: {
   /** Vault-relative path to the previous retro for the follows chain. */
   prevRetroPath?: string;
 }): Promise<{ path: string } | null> {
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const fileName = `${dateStr}_retro_${params.sprintId}.md`;
@@ -654,10 +654,10 @@ export async function writeRetroToVault(params: {
 
 // ── Reactive Learning Loop ─────────────────────────────────────
 
-const REACTIVE_LEARNING_ENABLED = String(process.env.OBSIDIAN_REACTIVE_LEARNING ?? 'true').trim() === 'true';
+const REACTIVE_LEARNING_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_REACTIVE_LEARNING, true);
 const REACTIVE_MIN_DOCS = 2; // Only record insights when >= N docs found (skip trivial queries)
 let _insightCounter = 0;
-const INSIGHT_WRITE_INTERVAL = Math.max(1, Number(process.env.OBSIDIAN_REACTIVE_WRITE_INTERVAL || 5)); // Write every N-th query
+const INSIGHT_WRITE_INTERVAL = Math.max(1, parseIntegerEnv(process.env.OBSIDIAN_REACTIVE_WRITE_INTERVAL, 5)); // Write every N-th query
 
 async function writeQueryInsight(params: {
   question: string;
@@ -673,7 +673,7 @@ async function writeQueryInsight(params: {
   _insightCounter++;
   if (_insightCounter % INSIGHT_WRITE_INTERVAL !== 0) return;
 
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
   const dateStr = new Date().toISOString().slice(0, 10);
   const timeTag = new Date().toISOString().slice(11, 16).replace(':', '');
   const fileName = `insights/${dateStr}_query_${timeTag}.md`;
@@ -754,7 +754,7 @@ function recordKnowledgeGap(question: string, intent: IntentCategory, guildId?: 
 export async function flushKnowledgeGaps(): Promise<{ path: string } | null> {
   if (_knowledgeGaps.length === 0) return null;
 
-  const vaultPath = String(process.env.OBSIDIAN_VAULT_PATH || process.env.OBSIDIAN_SYNC_VAULT_PATH || '').trim();
+  const vaultPath = getObsidianVaultRoot();
   const dateStr = new Date().toISOString().slice(0, 10);
   const fileName = `gaps/${dateStr}_knowledge_gaps.md`;
 

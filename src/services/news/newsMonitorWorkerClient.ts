@@ -1,4 +1,4 @@
-import { parseBooleanEnv, parseIntegerEnv } from '../../utils/env';
+import { parseBooleanEnv, parseIntegerEnv, parseUrlEnv } from '../../utils/env';
 import { callMcpTool, parseMcpTextBlocks } from '../mcpWorkerClient';
 import { delegateNewsMonitorCandidates, shouldDelegate } from '../automation/n8nDelegationService';
 
@@ -12,7 +12,7 @@ export type WorkerNewsItem = {
   lexicalSignature: string;
 };
 
-const WORKER_URL = String(process.env.NEWS_MONITOR_MCP_WORKER_URL || process.env.MCP_NEWS_WORKER_URL || '').trim().replace(/\/+$/, '');
+const WORKER_URL = parseUrlEnv(process.env.NEWS_MONITOR_MCP_WORKER_URL ?? process.env.MCP_NEWS_WORKER_URL, '');
 const WORKER_TIMEOUT_MS = Math.max(2_000, parseIntegerEnv(process.env.NEWS_MONITOR_MCP_TIMEOUT_MS, 12_000));
 const WORKER_STRICT = parseBooleanEnv(process.env.NEWS_MONITOR_MCP_STRICT, true);
 

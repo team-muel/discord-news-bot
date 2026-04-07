@@ -1,4 +1,4 @@
-import { parseIntegerEnv, parseStringEnv } from '../../../utils/env';
+import { parseCsvList, parseIntegerEnv, parseStringEnv } from '../../../utils/env';
 
 const toSet = (raw: string): Set<string> => {
   return new Set(
@@ -28,12 +28,11 @@ const RUNNER_MODE = RUNNER_MODE_RAW === 'dry-run' ? 'dry-run' : 'execute';
 const ALLOWED_ACTIONS_RAW = parseStringEnv(process.env.ACTION_ALLOWED_ACTIONS, '*');
 const ALLOWED_ACTIONS = toSet(ALLOWED_ACTIONS_RAW);
 const WEB_ALLOWED_HOSTS = new Set(
-  String(process.env.ACTION_WEB_FETCH_ALLOWED_HOSTS || '')
-    .split(',')
+  parseCsvList(process.env.ACTION_WEB_FETCH_ALLOWED_HOSTS)
     .map((item) => normalizeHostRule(item))
     .filter(Boolean),
 );
-const DB_ALLOWED_TABLES = toSet(String(process.env.ACTION_DB_READ_ALLOWED_TABLES || 'guild_lore_docs,memory_items'));
+const DB_ALLOWED_TABLES = toSet(process.env.ACTION_DB_READ_ALLOWED_TABLES || 'guild_lore_docs,memory_items');
 
 export const ACTION_MAX_READ_LIMIT = Math.max(1, Math.min(50, parseIntegerEnv(process.env.ACTION_DB_READ_MAX_ROWS, 5)));
 

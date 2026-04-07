@@ -167,10 +167,7 @@ const DEFAULT_CACHEABLE_ACTIONS = [
   'db.supabase.read',
 ];
 const ACTION_CACHEABLE_ACTION_SET = new Set(
-  String(process.env.ACTION_CACHEABLE_ACTIONS || '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean),
+  parseCsvList(process.env.ACTION_CACHEABLE_ACTIONS),
 );
 if (ACTION_CACHEABLE_ACTION_SET.size === 0) {
   for (const actionName of DEFAULT_CACHEABLE_ACTIONS) {

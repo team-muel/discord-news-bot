@@ -45,6 +45,15 @@ export const parseStringEnv = (value: string | undefined, fallback: string): str
 };
 
 /**
+ * Return a base URL env var trimmed and stripped of trailing slashes,
+ * or the fallback when the var is absent or blank.
+ */
+export const parseUrlEnv = (value: string | undefined, fallback: string): string => {
+  const trimmed = (value ?? '').trim().replace(/\/+$/, '');
+  return trimmed || fallback;
+};
+
+/**
  * Split a comma-separated string into a trimmed, non-empty string array.
  * Handles undefined/empty input gracefully (returns []).
  */

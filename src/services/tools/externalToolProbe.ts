@@ -1,6 +1,6 @@
 import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseBooleanEnv } from '../../utils/env';
+import { parseBooleanEnv, parseUrlEnv } from '../../utils/env';
 import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME } from '../../config';
 
 const execFileAsync = promisify(execFile);
