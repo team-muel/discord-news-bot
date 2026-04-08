@@ -1,7 +1,7 @@
 import { parseBooleanEnv, parseMinIntEnv, parseUrlEnv } from '../../utils/env';
 import { callMcpTool, parseMcpTextBlocks } from '../mcpWorkerClient';
 import { fetchWithTimeout } from '../../utils/network';
-import { scrapeLatestCommunityPostByUrl } from './youtubeCommunityScraper';
+import { scrapeLatestCommunityPostByUrl, scrapeLatestCommunityPostByInnerTube } from './youtubeCommunityScraper';
 import { delegateYoutubeCommunityScrape, delegateYoutubeFeedFetch, shouldDelegate } from '../automation/n8nDelegationService';
 
 export type YouTubeMonitorMode = 'videos' | 'posts';
@@ -187,9 +187,55 @@ const fetchYouTubeLatestLocally = async (params: {
     return { found: false, channelId: null };
   }
 
-  const feedUrl = params.mode === 'videos'
-    ? `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
-    : `https://www.youtube.com/feeds/posts.xml?channel_id=${channelId}`;
+  // Posts mode: InnerTube API → HTML scraper fallback (no Atom feed exists for community posts)
+  if (params.mode === 'posts') {
+    // 1. InnerTube API (same endpoint yt-dlp uses)
+    try {
+      const innerTubeResult = await scrapeLatestCommunityPostByInnerTube(channelId, LOCAL_TIMEOUT_MS);
+      if (innerTubeResult) {
+        return {
+          found: true,
+          channelId,
+          entry: {
+            id: innerTubeResult.id,
+            title: innerTubeResult.title,
+            content: innerTubeResult.content,
+            link: innerTubeResult.link,
+            published: innerTubeResult.published,
+            author: innerTubeResult.author,
+          },
+        };
+      }
+    } catch {
+      // fall through to HTML scraper
+    }
+
+    // 2. HTML scraper fallback (legacy method)
+    try {
+      const scraped = await scrapeLatestCommunityPostByUrl(params.sourceUrl, LOCAL_TIMEOUT_MS);
+      if (scraped) {
+        return {
+          found: true,
+          channelId,
+          entry: {
+            id: scraped.id,
+            title: scraped.title,
+            content: scraped.content,
+            link: scraped.link,
+            published: scraped.published,
+            author: scraped.author,
+          },
+        };
+      }
+    } catch {
+      // no fallback left
+    }
+
+    return { found: false, channelId };
+  }
+
+  // Videos mode: Atom feed
+  const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
 
   try {
     const response = await fetchWithTimeout(
@@ -212,25 +258,7 @@ const fetchYouTubeLatestLocally = async (params: {
       }
     }
   } catch {
-    // try fallback below for posts mode
-  }
-
-  if (params.mode === 'posts' && params.aggressiveProbe) {
-    const scraped = await scrapeLatestCommunityPostByUrl(params.sourceUrl, LOCAL_TIMEOUT_MS);
-    if (scraped) {
-      return {
-        found: true,
-        channelId,
-        entry: {
-          id: scraped.id,
-          title: scraped.title,
-          content: scraped.content,
-          link: scraped.link,
-          published: scraped.published,
-          author: scraped.author,
-        },
-      };
-    }
+    // no fallback for videos
   }
 
   return { found: false, channelId };

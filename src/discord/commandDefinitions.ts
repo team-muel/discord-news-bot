@@ -5,7 +5,6 @@
  */
 import {
   ApplicationCommandType,
-  ChannelType,
   ContextMenuCommandBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
@@ -69,7 +68,7 @@ const ALL_COMMANDS = [
     ),
   new SlashCommandBuilder()
     .setName('구독')
-    .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다')
+    .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다 (현재 채널에 등록)')
     .addStringOption((o) =>
       o.setName('동작').setDescription('무엇을 할지 선택').setRequired(false)
         .addChoices(
@@ -88,18 +87,6 @@ const ALL_COMMANDS = [
     )
     .addStringOption((o) =>
       o.setName('링크').setDescription('영상/게시글일 때 YouTube 채널 링크 또는 UC... 채널 ID').setRequired(false),
-    )
-    .addChannelOption((o) =>
-      o.setName('디스코드채널')
-        .setDescription('추가/해제 대상 Discord 채널 (목록은 생략 가능)')
-        .addChannelTypes(
-          ChannelType.GuildText,
-          ChannelType.GuildAnnouncement,
-          ChannelType.PublicThread,
-          ChannelType.PrivateThread,
-          ChannelType.AnnouncementThread,
-        )
-        .setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName('뮤엘')

@@ -85,8 +85,7 @@ const handleSubscribeYouTubeCommand = async (
     interaction.options.getString('유튜브채널') ||
     ''
   ).trim();
-  const selectedChannel = interaction.options.getChannel('디스코드채널', false);
-  const targetChannel = selectedChannel || interaction.channel;
+  const targetChannel = interaction.channel;
 
   if (!channelInput) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '영상/게시글 구독은 유튜브채널을 입력해주세요.', EMBED_WARN), ephemeral: true });
@@ -135,8 +134,7 @@ const handleSubscribeNewsCommand = async (
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
     return;
   }
-  const selectedChannel = interaction.options.getChannel('디스코드채널', false);
-  const targetChannel = selectedChannel || interaction.channel;
+  const targetChannel = interaction.channel;
   if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
     await interaction.reply({ ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 등록할 수 있습니다.', EMBED_WARN), ephemeral: true });
     return;
@@ -250,15 +248,8 @@ const handleUnsubscribeCommand = async (
     interaction.options.getString('유튜브채널') ||
     ''
   ).trim();
-  const targetChannel = interaction.options.getChannel('디스코드채널');
-  if (!targetChannel) {
-    await interaction.reply({
-      ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleInputError, '해제 동작에는 디스코드채널이 필요합니다.', EMBED_WARN),
-      ephemeral: true,
-    });
-    return;
-  }
-  if (!isValidSubscribeChannelType(targetChannel.type)) {
+  const targetChannel = interaction.channel;
+  if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
     await interaction.reply({
       ...buildSimpleEmbed(DISCORD_MESSAGES.subscribe.titleChannelTypeError, '텍스트/공지/포럼 스레드 채널만 해제 대상으로 지정할 수 있습니다.', EMBED_WARN),
       ephemeral: true,
@@ -325,15 +316,14 @@ export const handleGroupedSubscribeCommand = async (
     interaction.options.getString('유튜브채널') ||
     ''
   ).trim();
-  const hasTargetChannel = Boolean(interaction.options.getChannel('디스코드채널'));
 
   const action =
     explicitAction ||
-    (hasTargetChannel || channelInput ? 'add' : 'list');
+    (channelInput ? 'add' : 'list');
 
   const kind =
     explicitKind ||
-    (channelInput ? 'videos' : hasTargetChannel ? 'news' : '');
+    (channelInput ? 'videos' : '');
 
   if (action === 'list') { await handleSubscriptionListCommand(interaction); return; }
 

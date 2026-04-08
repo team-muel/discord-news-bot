@@ -1,6 +1,6 @@
 import { fetchWithTimeout } from '../../utils/network';
 
-type ScrapedCommunityPost = {
+export type ScrapedCommunityPost = {
   id: string;
   title: string;
   content: string;
@@ -266,4 +266,144 @@ export const scrapeLatestCommunityPostByUrl = async (
     published,
     author: author || 'YouTube Channel',
   };
+};
+
+// ─── InnerTube API (yt-dlp compatible) ────────────────────────────────────────
+
+const INNERTUBE_BROWSE_URL = 'https://www.youtube.com/youtubei/v1/browse';
+
+const buildInnerTubeContext = () => ({
+  client: {
+    clientName: 'WEB',
+    clientVersion: '2.20260401.00.00',
+    hl: 'ko',
+    gl: 'KR',
+  },
+});
+
+const INNERTUBE_HEADERS = {
+  'Content-Type': 'application/json',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'X-YouTube-Client-Name': '1',
+  'X-YouTube-Client-Version': '2.20260401.00.00',
+};
+
+/**
+ * Step 1: Browse channel to discover community/posts tab params dynamically.
+ * YouTube renamed "Community" to "Posts" in the UI and changed internal params.
+ * Hardcoding params is fragile — extract them live from the tab endpoint.
+ */
+const resolveCommunityTabParams = async (
+  channelId: string,
+  timeoutMs: number,
+): Promise<string | null> => {
+  const response = await fetchWithTimeout(
+    `${INNERTUBE_BROWSE_URL}?prettyPrint=false`,
+    {
+      method: 'POST',
+      headers: INNERTUBE_HEADERS,
+      body: JSON.stringify({
+        context: buildInnerTubeContext(),
+        browseId: channelId,
+      }),
+    },
+    timeoutMs,
+  );
+
+  if (!response.ok) return null;
+
+  const data = await response.json() as Record<string, unknown>;
+  const tabs = getNested(data, ['contents', 'twoColumnBrowseResultsRenderer', 'tabs']);
+  if (!Array.isArray(tabs)) return null;
+
+  for (const tab of tabs) {
+    const tabRenderer = getNested(tab, ['tabRenderer']) as Record<string, unknown> | undefined;
+    if (!tabRenderer) continue;
+    const url = getNested(tabRenderer, ['endpoint', 'commandMetadata', 'webCommandMetadata', 'url']);
+    if (typeof url === 'string' && (url.includes('/posts') || url.includes('/community'))) {
+      const params = getNested(tabRenderer, ['endpoint', 'browseEndpoint', 'params']);
+      return typeof params === 'string' ? params : null;
+    }
+  }
+
+  return null; // channel has no community/posts tab
+};
+
+const extractPostFromTabData = (data: Record<string, unknown>): ScrapedCommunityPost | null => {
+  // The selected tab in this response is the community/posts tab.
+  // Find the first backstage/shared post renderer anywhere in the tree.
+  const tabs = getNested(data, ['contents', 'twoColumnBrowseResultsRenderer', 'tabs']);
+  if (!Array.isArray(tabs)) return null;
+
+  for (const tab of tabs) {
+    const tabRenderer = getNested(tab, ['tabRenderer']) as Record<string, unknown> | undefined;
+    if (!tabRenderer?.content) continue;
+    const selected = tabRenderer.selected;
+    if (!selected) continue;
+
+    const renderer = findFirstPostRenderer(tabRenderer.content);
+    if (!renderer) continue;
+
+    const postId = getNested(renderer, ['postId']);
+    if (typeof postId !== 'string' || !postId.trim()) continue;
+
+    const rawContent = getRunsText(getNested(renderer, ['contentText']));
+    const content = decodeHtml(rawContent || '');
+    const title = truncate(content || '새 커뮤니티 게시글', 180);
+    const author = decodeHtml(getRunsText(getNested(renderer, ['authorText'])) || 'YouTube Channel');
+    const published = decodeHtml(getRunsText(getNested(renderer, ['publishedTimeText'])));
+
+    return {
+      id: postId.trim(),
+      title: title || '새 커뮤니티 게시글',
+      content,
+      link: `https://www.youtube.com/post/${postId.trim()}`,
+      published,
+      author: author || 'YouTube Channel',
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Fetch latest community post via YouTube InnerTube API (2-step).
+ *
+ * Step 1: Browse channel page → discover community/posts tab params dynamically.
+ *         YouTube changed internal params ("community" → "posts" protobuf key),
+ *         so hardcoding them breaks silently. We extract live from the tab endpoint.
+ * Step 2: Browse with the extracted params → fetch actual community tab content.
+ *
+ * Same API endpoints yt-dlp uses internally — no binary required.
+ */
+export const scrapeLatestCommunityPostByInnerTube = async (
+  channelId: string,
+  timeoutMs: number,
+): Promise<ScrapedCommunityPost | null> => {
+  if (!channelId || !channelId.startsWith('UC')) return null;
+
+  // Step 1: discover community tab params
+  const stepTimeoutMs = Math.floor(timeoutMs / 2);
+  const communityParams = await resolveCommunityTabParams(channelId, stepTimeoutMs);
+  if (!communityParams) return null; // no community tab on this channel
+
+  // Step 2: fetch community tab content
+  const response = await fetchWithTimeout(
+    `${INNERTUBE_BROWSE_URL}?prettyPrint=false`,
+    {
+      method: 'POST',
+      headers: INNERTUBE_HEADERS,
+      body: JSON.stringify({
+        context: buildInnerTubeContext(),
+        browseId: channelId,
+        params: decodeURIComponent(communityParams),
+      }),
+    },
+    stepTimeoutMs,
+  );
+
+  if (!response.ok) return null;
+
+  const data = await response.json() as Record<string, unknown>;
+  return extractPostFromTabData(data);
 };
