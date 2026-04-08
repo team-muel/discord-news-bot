@@ -70,7 +70,7 @@ const ALL_COMMANDS = [
     .setName('구독')
     .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다 (현재 채널에 등록)')
     .addStringOption((o) =>
-      o.setName('동작').setDescription('무엇을 할지 선택').setRequired(false)
+      o.setName('동작').setDescription('조회 / 추가 / 제거').setRequired(false)
         .addChoices(
           { name: '추가', value: 'add' },
           { name: '해제', value: 'remove' },
@@ -78,7 +78,7 @@ const ALL_COMMANDS = [
         ),
     )
     .addStringOption((o) =>
-      o.setName('종류').setDescription('구독 종류 선택').setRequired(false)
+      o.setName('종류').setDescription('선택!').setRequired(false)
         .addChoices(
           { name: '영상', value: 'videos' },
           { name: '게시글', value: 'posts' },
