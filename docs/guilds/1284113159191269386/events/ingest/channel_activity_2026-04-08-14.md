@@ -1,0 +1,1 @@
+# Discord Channel Activity Snapshot ## Metadata - guild_id: 1284113159191269386 - hour_bucket_utc: 2026-04-08-14 - captured_at: 2026-04-08T15:01:26.582Z - total_messages: 13 ## Top Channels - #1292121716629176412 (라운지 MK.2): 13 ## Top Threads - none ## Top Users - @634145463662280710 : 13
