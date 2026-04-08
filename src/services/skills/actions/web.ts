@@ -14,11 +14,11 @@ const toTextPreview = (html: string, maxLength = 600): string => {
   ).slice(0, maxLength);
 };
 
-const isDiscourseTopicUrl = (url: URL): boolean => /^\/t\/.+/i.test(url.pathname);
+const matchesDiscourseTopicPath = (url: URL): boolean => /^\/t\/.+/i.test(url.pathname);
 
 const buildDiscourseTopicJsonUrl = (url: URL): string => {
   const normalizedPath = url.pathname.replace(/\/+$/, '');
-  // Discourse topic URLs are typically `/t/id`, `/t/slug/id`, or the same with a trailing `/postNumber`.
+  // Matches Discourse topic paths like `/t/123`, `/t/slug/123`, and `/t/slug/123/456`.
   const topicPath = normalizedPath.match(/^(\/t\/(?:[^/]+\/)?\d+)(?:\/\d+)?$/i)?.[1] || normalizedPath;
   const jsonUrl = new URL(url.toString());
   jsonUrl.pathname = topicPath.endsWith('.json') ? topicPath : `${topicPath}.json`;
@@ -26,21 +26,21 @@ const buildDiscourseTopicJsonUrl = (url: URL): string => {
   return jsonUrl.toString();
 };
 
-const getRecord = (value: unknown): Record<string, unknown> | null =>
+const asRecord = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
 
 const getDiscourseTopicPreview = (payload: unknown): string => {
-  const data = getRecord(payload);
+  const data = asRecord(payload);
   if (!data) {
     return '';
   }
 
   const title = typeof data.title === 'string' ? compactText(data.title) : '';
-  const postStream = getRecord(data.post_stream);
+  const postStream = asRecord(data.post_stream);
   const posts = Array.isArray(postStream?.posts) ? postStream.posts : [];
-  const firstPost = posts.map((item) => getRecord(item)).find(Boolean) || null;
+  const firstPost = posts.map((item) => asRecord(item)).find(Boolean) || null;
   const cooked = typeof firstPost?.cooked === 'string' ? firstPost.cooked : '';
   const excerpt = typeof data.excerpt === 'string' ? data.excerpt : '';
   const body = toTextPreview(cooked || excerpt, 520);
@@ -118,7 +118,7 @@ export const webFetchAction: ActionDefinition = {
       return delegated;
     }
 
-    if (isDiscourseTopicUrl(parsed)) {
+    if (matchesDiscourseTopicPath(parsed)) {
       try {
         const discourseRes = await fetch(buildDiscourseTopicJsonUrl(parsed), {
           headers: {
