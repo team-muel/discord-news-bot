@@ -1,18 +1,18 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 367
+- Nodes: 372
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
+| src/utils/errorMessage.ts | 131 |
 | src/logger.ts | 130 |
-| src/utils/errorMessage.ts | 127 |
 | src/utils/env.ts | 102 |
 | src/services/supabaseClient.ts | 89 |
-| src/config.ts | 84 |
-| src/services/llmClient.ts | 34 |
+| src/config.ts | 88 |
+| src/services/llmClient.ts | 35 |
 | src/services/skills/actions/types.ts | 34 |
 | src/services/infra/baseRepository.ts | 25 |
 | src/services/infra/tableRegistry.ts | 24 |
@@ -64,6 +64,7 @@ graph LR
   "src/app.ts" --> "src/routes/dashboard.ts"
   "src/app.ts" --> "src/routes/fred.ts"
   "src/app.ts" --> "src/routes/health.ts"
+  "src/app.ts" --> "src/routes/mcp.ts"
   "src/app.ts" --> "src/routes/research.ts"
   "src/bot.ts" --> "src/config.ts"
   "src/bot.ts" --> "src/discord/runtime/botRuntimeState.ts"
@@ -250,7 +251,27 @@ graph LR
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/obsidianRagService.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/router.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/utils/obsidianEnv.ts"
+  "src/mcp/proxyAdapter.ts" --> "src/config.ts"
+  "src/mcp/proxyAdapter.ts" --> "src/mcp/proxyRegistry.ts"
+  "src/mcp/proxyAdapter.ts" --> "src/mcp/types.ts"
+  "src/mcp/proxyAdapter.ts" --> "src/utils/errorMessage.ts"
+  "src/mcp/proxyAdapter.ts" --> "src/utils/network.ts"
+  "src/mcp/proxyRegistry.ts" --> "src/config.ts"
+  "src/mcp/proxyRegistry.ts" --> "src/utils/errorMessage.ts"
+  "src/mcp/toolAdapter.ts" --> "src/config.ts"
+  "src/mcp/toolAdapter.ts" --> "src/mcp/types.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/llmClient.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/skills/actionRunner.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/skills/actions/registry.ts"
+  "src/mcp/toolAdapter.ts" --> "src/utils/errorMessage.ts"
   "src/mcp/types.ts":::file
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/indexingToolAdapter.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/obsidianToolAdapter.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/proxyAdapter.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/proxyRegistry.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/toolAdapter.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/types.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/middleware/auth.ts" --> "src/config.ts"
   "src/middleware/auth.ts" --> "src/services/adminAllowlistService.ts"
   "src/middleware/auth.ts" --> "src/services/authService.ts"
@@ -430,6 +451,10 @@ graph LR
   "src/routes/health.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/routes/health.ts" --> "src/utils/migrationRegistry.ts"
   "src/routes/health.ts" --> "src/utils/obsidianEnv.ts"
+  "src/routes/mcp.ts" --> "src/config.ts"
+  "src/routes/mcp.ts" --> "src/mcp/types.ts"
+  "src/routes/mcp.ts" --> "src/mcp/unifiedToolAdapter.ts"
+  "src/routes/mcp.ts" --> "src/utils/errorMessage.ts"
   "src/routes/research.ts" --> "src/contracts/researchPreset.ts"
   "src/routes/research.ts" --> "src/middleware/auth.ts"
   "src/routes/research.ts" --> "src/services/researchPresetStore.ts"
