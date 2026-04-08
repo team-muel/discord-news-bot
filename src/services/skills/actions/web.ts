@@ -16,7 +16,12 @@ const isDiscourseTopicUrl = (url: URL): boolean => /^\/t\/.+/i.test(url.pathname
 
 const buildDiscourseTopicJsonUrl = (url: URL): string => {
   const normalizedPath = url.pathname.replace(/\/+$/, '');
-  const topicPath = normalizedPath.match(/^(\/t\/(?:[^/]+\/)?\d+)(?:\/\d+)?$/i)?.[1] || normalizedPath;
+  const segments = normalizedPath.split('/').filter(Boolean);
+  const hasSlug = segments.length >= 3 && !/^\d+$/.test(segments[1] || '');
+  const topicSegmentCount = hasSlug ? 3 : 2;
+  const topicPath = segments[0] === 't'
+    ? `/${segments.slice(0, Math.min(topicSegmentCount, segments.length)).join('/')}`
+    : normalizedPath;
   const jsonUrl = new URL(url.toString());
   jsonUrl.pathname = topicPath.endsWith('.json') ? topicPath : `${topicPath}.json`;
   jsonUrl.hash = '';
@@ -34,7 +39,7 @@ const getDiscourseTopicPreview = (payload: unknown): string => {
     return '';
   }
 
-  const title = compactText(data.title);
+  const title = typeof data.title === 'string' ? compactText(data.title) : '';
   const postStream = getRecord(data.post_stream);
   const posts = Array.isArray(postStream?.posts) ? postStream.posts : [];
   const firstPost = posts.map((item) => getRecord(item)).find(Boolean) || null;
