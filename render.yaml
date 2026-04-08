@@ -242,7 +242,7 @@ services:
     autoDeploy: true
     dockerfilePath: ./Dockerfile.litellm
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /health/liveliness
     envVars:
       - key: LITELLM_MASTER_KEY
         sync: false
