@@ -2,6 +2,8 @@ import type { ActionDefinition } from './types';
 import { isWebHostAllowed } from './policy';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { compactText, extractFirstUrl } from './queryUtils';
+import logger from '../../../logger';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 const toTextPreview = (html: string, maxLength = 600): string => {
   return compactText(
@@ -16,12 +18,8 @@ const isDiscourseTopicUrl = (url: URL): boolean => /^\/t\/.+/i.test(url.pathname
 
 const buildDiscourseTopicJsonUrl = (url: URL): string => {
   const normalizedPath = url.pathname.replace(/\/+$/, '');
-  const segments = normalizedPath.split('/').filter(Boolean);
-  const hasSlug = segments.length >= 3 && !/^\d+$/.test(segments[1] || '');
-  const topicSegmentCount = hasSlug ? 3 : 2;
-  const topicPath = segments[0] === 't'
-    ? `/${segments.slice(0, Math.min(topicSegmentCount, segments.length)).join('/')}`
-    : normalizedPath;
+  // Discourse topic URLs are typically `/t/id`, `/t/slug/id`, or the same with a trailing `/postNumber`.
+  const topicPath = normalizedPath.match(/^(\/t\/(?:[^/]+\/)?\d+)(?:\/\d+)?$/i)?.[1] || normalizedPath;
   const jsonUrl = new URL(url.toString());
   jsonUrl.pathname = topicPath.endsWith('.json') ? topicPath : `${topicPath}.json`;
   jsonUrl.hash = '';
@@ -141,8 +139,8 @@ export const webFetchAction: ActionDefinition = {
             };
           }
         }
-      } catch {
-        // Fall through to the generic HTML fetch path.
+      } catch (error) {
+        logger.debug('[ACTION][web.fetch] discourse JSON fallback url=%s: %s', parsed.toString(), getErrorMessage(error));
       }
     }
 
