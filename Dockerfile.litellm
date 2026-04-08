@@ -2,12 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install litellm with proxy extras + Prisma for DB support
-RUN pip install --no-cache-dir "litellm[proxy]==1.82.2" prisma
-
-# Generate Prisma client from litellm's bundled schema
-RUN SCHEMA=$(python -c "import litellm, os; print(os.path.join(litellm.__path__[0], 'proxy', 'schema.prisma'))") && \
-    prisma generate --schema="$SCHEMA"
+RUN pip install --no-cache-dir "litellm[proxy]==1.82.2"
 
 COPY litellm.config.yaml /app/litellm.config.yaml
 
