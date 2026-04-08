@@ -31,9 +31,11 @@ model_list:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
   disable_spend_logs: true
   disable_spend_updates: true
   enforce_user_param: false
+  store_model_in_db: false
 
 litellm_settings:
   fallbacks:
