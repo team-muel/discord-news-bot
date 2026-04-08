@@ -11,6 +11,7 @@ import { createBotRouter } from './routes/bot';
 import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
 import { createDashboardRouter } from './routes/dashboard';
+import { createMcpRouter } from './routes/mcp';
 import { createResearchRouter } from './routes/research';
 
 const buildCorsOrigins = () =>
@@ -60,6 +61,7 @@ export function createApp(): Express {
   app.use('/api/fred', createFredRouter());
   app.use('/api/bot', createBotRouter());
   app.use('/api/benchmark', createBenchmarkRouter());
+  app.use('/api/mcp', createMcpRouter());
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'NOT_FOUND' });
