@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-04-08T14:02:44.133Z
+- generated_at: 2026-04-08T19:40:39.813Z
 - total_runs: 38
 - go: 11
 - no_go: 15
@@ -85,6 +85,7 @@
 
 | Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | Sandbox Delegation | File |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gate-20260321-085933 | A | weekly:auto | pending | false | none | complete | complete | verified | docs/planning/gate-runs/2026-03-21_gate-20260321-085933.md |
 | gate-20260321-091717 | A | weekly:auto | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-091717.md |
 | gate-20260321-092102 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-20260321-092102.md |
 | gate-post-fallback-1774082881983 | A | weekly:auto:post-fallback | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-03-21_gate-post-fallback-1774082881983.md |
@@ -92,11 +93,10 @@
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
-| gate-20260318-081523 | A | guild:demo | pending | unknown | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081523.md |
-| gate-20260318-081925 | B | guild:demo | no-go | true | queue | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-081925.md |
-| gate-20260318-082348 | A | guild:demo | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-082348.md |
-| gate-20260318-144107 | A | contracts:w1-03 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-144107.md |
-| gate-20260318-144228 | A | contracts:w1-04-w1-05 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-144228.md |
-| gate-20260318-144522 | A | contracts:w1-06 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-144522.md |
-| gate-20260318-161222 | A | memory-queue:w2-01-w2-03 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-161222.md |
-| gate-20260318-162647 | A | memory-queue:w2-04-w2-06 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-18_gate-20260318-162647.md |
+| gate-20260319-112731 | A | weekly:auto:profile-hint | pending | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-112731.md |
+| gate-20260319-112800 | A | weekly:auto:profile-hint-pass | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-112800.md |
+| gate-20260319-112914 | A | weekly:auto | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-112914.md |
+| gate-20260319-134426 | A | weekly:auto | pending | false | none | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-134426.md |
+| gate-20260319-135316 | A | weekly:auto | pending | false | none | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135316.md |
+| gate-20260319-135437 | A | weekly:auto:post-fallback | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135437.md |
+| gate-20260319-135500 | A | weekly:auto | no-go | true | stage | missing | incomplete | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-135500.md |
