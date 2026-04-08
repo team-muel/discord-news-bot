@@ -3,13 +3,46 @@ import { isWebHostAllowed } from './policy';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { compactText, extractFirstUrl } from './queryUtils';
 
-const toTextPreview = (html: string): string => {
+const toTextPreview = (html: string, maxLength = 600): string => {
   return compactText(
     String(html || '')
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<[^>]+>/g, ' '),
-  ).slice(0, 600);
+  ).slice(0, maxLength);
+};
+
+const isDiscourseTopicUrl = (url: URL): boolean => /^\/t\/.+/i.test(url.pathname);
+
+const buildDiscourseTopicJsonUrl = (url: URL): string => {
+  const normalizedPath = url.pathname.replace(/\/+$/, '');
+  const topicPath = normalizedPath.match(/^(\/t\/(?:[^/]+\/)?\d+)(?:\/\d+)?$/i)?.[1] || normalizedPath;
+  const jsonUrl = new URL(url.toString());
+  jsonUrl.pathname = topicPath.endsWith('.json') ? topicPath : `${topicPath}.json`;
+  jsonUrl.hash = '';
+  return jsonUrl.toString();
+};
+
+const getRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+
+const getDiscourseTopicPreview = (payload: unknown): string => {
+  const data = getRecord(payload);
+  if (!data) {
+    return '';
+  }
+
+  const title = compactText(data.title);
+  const postStream = getRecord(data.post_stream);
+  const posts = Array.isArray(postStream?.posts) ? postStream.posts : [];
+  const firstPost = posts.map((item) => getRecord(item)).find(Boolean) || null;
+  const cooked = typeof firstPost?.cooked === 'string' ? firstPost.cooked : '';
+  const excerpt = typeof data.excerpt === 'string' ? data.excerpt : '';
+  const body = toTextPreview(cooked || excerpt, 520);
+
+  return compactText([title, body].filter(Boolean).join(' — ')).slice(0, 600);
 };
 
 export const webFetchAction: ActionDefinition = {
@@ -80,6 +113,32 @@ export const webFetchAction: ActionDefinition = {
     });
     if (delegated) {
       return delegated;
+    }
+
+    if (isDiscourseTopicUrl(parsed)) {
+      try {
+        const discourseRes = await fetch(buildDiscourseTopicJsonUrl(parsed), {
+          headers: {
+            'user-agent': 'muel-action-runner/1.0',
+            accept: 'application/json,text/plain;q=0.9,*/*;q=0.8',
+          },
+        });
+
+        if (discourseRes.ok) {
+          const discoursePreview = getDiscourseTopicPreview(await discourseRes.json());
+          if (discoursePreview) {
+            return {
+              ok: true,
+              name: 'web.fetch',
+              summary: '웹 페이지 조회 성공',
+              artifacts: [parsed.toString(), discoursePreview],
+              verification: ['HTTP 2xx', 'Discourse topic JSON 추출'],
+            };
+          }
+        }
+      } catch {
+        // Fall through to the generic HTML fetch path.
+      }
     }
 
     const res = await fetch(parsed.toString(), {
