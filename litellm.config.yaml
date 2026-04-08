@@ -30,8 +30,6 @@ model_list:
       api_key: os.environ/NVIDIA_NIM_API_KEY
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY
-  disable_key_management: true
   disable_spend_logs: true
   disable_spend_updates: true
   enforce_user_param: false
