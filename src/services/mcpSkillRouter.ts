@@ -295,3 +295,39 @@ export const getRouterSnapshot = (): RouterSnapshot => ({
   })),
   capabilityCount: capabilityIndex.size,
 });
+
+/**
+ * Register a worker directly with a known capability list.
+ * Skips /tools/discover probe — for cases where the endpoint shape differs
+ * (e.g. local Express MCP proxy uses /api/mcp/tools instead of /tools/discover).
+ */
+export const registerWorkerDirect = (id: string, url: string, capabilities: string[]): void => {
+  const base = String(url || '').trim().replace(/\/+$/, '');
+  if (!base || capabilities.length === 0) return;
+  if (workers.size >= MAX_WORKERS && !workers.has(id)) return;
+
+  const existing = workers.get(id);
+  if (existing) {
+    for (const oldCap of existing.capabilities) {
+      capabilityIndex.get(oldCap)?.delete(id);
+    }
+  }
+
+  const worker: RegisteredWorker = {
+    id,
+    url: base,
+    capabilities,
+    healthy: true,
+    lastLatencyMs: 0,
+    lastCheckedAt: Date.now(),
+    consecutiveFailures: 0,
+  };
+
+  workers.set(id, worker);
+  for (const cap of capabilities) {
+    if (!capabilityIndex.has(cap)) capabilityIndex.set(cap, new Set());
+    capabilityIndex.get(cap)!.add(id);
+  }
+
+  logger.info('[MCP-ROUTER] Direct-registered worker id=%s url=%s caps=%d', id, base, capabilities.length);
+};

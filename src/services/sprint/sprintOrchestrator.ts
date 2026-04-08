@@ -14,7 +14,7 @@ import {
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble, storeLearningInsight, getLearningInsightCount, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
+import { buildSprintPreamble, buildLiveStateSection, storeLearningInsight, getLearningInsightCount, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
 import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, type LoopState } from '../skills/loopDetection';
 import { parseBenchResult } from '../tools/adapters/openjarvisAdapter';
@@ -576,6 +576,20 @@ const executePhaseAction = async (
       }
     } catch (err) {
       logger.debug('[SPRINT] phase enrichment failed phase=%s: %s', phase, getErrorMessage(err));
+    }
+
+    // ── Layer 3: Inject live system state (observations + intents) — plan/implement/review only ──
+    try {
+      const liveState = await raceWithTimeout(
+        buildLiveStateSection(pipeline.guildId, phase),
+        5_000,
+        'LIVE_STATE_TIMEOUT',
+      );
+      if (liveState) {
+        enrichedGoal = `${enrichedGoal}\n\n${liveState}`;
+      }
+    } catch (err) {
+      logger.debug('[SPRINT] live state injection failed phase=%s: %s', phase, getErrorMessage(err));
     }
 
     const goalWithLoopWarning = loopWarning ? `${enrichedGoal}\n\n${loopWarning}` : enrichedGoal;

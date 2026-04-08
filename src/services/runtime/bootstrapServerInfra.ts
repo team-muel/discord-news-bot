@@ -40,9 +40,17 @@ export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => b
   startSprintScheduledTriggers();
 
   // Initialize MCP skill router with health-aware worker discovery
-  void initMcpSkillRouter().catch((error) => {
-    logger.debug('[MCP-ROUTER] init skipped: %s', getErrorMessage(error));
-  });
+  void initMcpSkillRouter()
+    .then(async () => {
+      // Register self (local Express MCP proxy) as a worker so sprint actions
+      // can use the 162+ tools exposed at /api/mcp/rpc (native + upstream).
+      const { PORT } = await import('../../config');
+      const { registerLocalMcpProxy } = await import('../mcpLocalProxyWorker');
+      await registerLocalMcpProxy(PORT);
+    })
+    .catch((error) => {
+      logger.debug('[MCP-ROUTER] init skipped: %s', getErrorMessage(error));
+    });
 
   // Validate sprint git config at startup
   checkGitConfigHealth();
@@ -84,6 +92,13 @@ export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => b
       logger.debug('[OBSERVER] startup skipped: %s', getErrorMessage(error));
     });
   }
+
+  // Emit VAULT_SCHEMA.md at startup for agent navigation
+  void import('../obsidian/authoring').then(({ emitVaultSchema }) => {
+    return emitVaultSchema();
+  }).catch((error) => {
+    logger.debug('[VAULT-SCHEMA] emit skipped: %s', getErrorMessage(error));
+  });
 
   // Phase G: Intent Formation Engine — observation → intent → sprint
   void import('../../config').then(({ INTENT_FORMATION_ENABLED }) => {

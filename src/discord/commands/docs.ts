@@ -346,5 +346,56 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     );
   };
 
-  return { handleAskCommand, handleDocsCommand };
+  /**
+   * /변경사항 [개수] — Obsidian vault에서 #changelog/#릴리즈 태그 노트를 검색해 표시
+   */
+  const handleChangelogCommand = async (interaction: ChatInputCommandInteraction) => {
+    const count = Math.min(interaction.options.getInteger('개수') ?? 3, 5);
+    await interaction.deferReply({ ephemeral: true });
+
+    const guildId = interaction.guildId ?? undefined;
+
+    // Obsidian vault에서 #changelog 또는 #릴리즈 태그 노트 검색
+    const result = await deps.queryObsidianRAG('#changelog #릴리즈', {
+      maxDocs: count + 2,
+      contextMode: 'metadata_first',
+      guildId,
+    });
+
+    if (result.documentCount === 0 || result.sourceFiles.length === 0) {
+      await interaction.editReply(
+        buildUserCard(
+          '📋 변경사항',
+          'Obsidian vault에 `#changelog` 또는 `#릴리즈` 태그가 달린 노트가 없습니다.\n\n노트에 태그를 추가하면 여기서 확인할 수 있습니다.',
+          EMBED_INFO,
+        ),
+      );
+      return;
+    }
+
+    // sourceFiles → 파일명만 표시, documentContext에서 내용 발췌
+    const fileNames = result.sourceFiles.slice(0, count).map((f) => {
+      const name = f.split('/').pop()?.replace(/\.md$/, '') ?? f;
+      return `• **${name}**`;
+    });
+
+    // documentContext에서 사용자에게 보여줄 요약 추출 (첫 1500자)
+    const contextPreview = result.documentContext
+      .split('\n')
+      .filter((l) => l.trim() && !l.startsWith('---') && !l.startsWith('vaultPath') && !l.startsWith('filePath'))
+      .slice(0, 20)
+      .join('\n')
+      .slice(0, 1500);
+
+    const body = [
+      `**조회된 노트 (${result.sourceFiles.length}개)**`,
+      fileNames.join('\n'),
+      '',
+      contextPreview || '(내용 없음)',
+    ].join('\n').slice(0, 3800);
+
+    await interaction.editReply(buildUserCard('📋 변경사항', body, EMBED_INFO));
+  };
+
+  return { handleAskCommand, handleDocsCommand, handleChangelogCommand };
 };

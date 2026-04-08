@@ -366,9 +366,154 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
     await interaction.reply({ ...buildUserCard('유저', '알 수 없는 서브커맨드입니다.', EMBED_WARN), ephemeral: true });
   };
 
+  /** /프로필 [@유저] — 유저 생략 시 자신 */
+  const handleProfileCommand = async (interaction: ChatInputCommandInteraction) => {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
+      await interaction.reply({ ...buildUserCard('프로필', '길드에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      return;
+    }
+    if (!access.ok) {
+      await interaction.reply({ ...buildUserCard('프로필', '먼저 `/유저`로 진단을 실행해주세요.', EMBED_WARN), ephemeral: true });
+      return;
+    }
+
+    const target = interaction.options.getUser('유저', false) ?? interaction.user;
+    const shared = deps.getReplyVisibility(interaction) === 'public';
+    await interaction.deferReply({ ephemeral: !shared });
+
+    if (!interaction.guildId) {
+      await interaction.editReply(buildUserCard('프로필', '길드 정보가 없어 조회할 수 없습니다.', EMBED_WARN));
+      return;
+    }
+
+    const isAdmin = await deps.hasAdminPermission(interaction);
+    if (!isAdmin && target.id !== interaction.user.id) {
+      await interaction.editReply(buildUserCard('프로필', '다른 유저 프로필 조회는 관리자만 가능합니다.', EMBED_WARN));
+      return;
+    }
+
+    try {
+      const snapshot = await getUserPersonaSnapshot({
+        guildId: interaction.guildId,
+        targetUserId: target.id,
+        requesterUserId: interaction.user.id,
+        isAdmin,
+        relationLimit: 4,
+        noteLimit: 4,
+      });
+
+      const profile = snapshot.profile;
+      const outbound = snapshot.relations.outbound.slice(0, 3)
+        .map((row, idx) => `${idx + 1}. <@${row.userId}> aff=${row.affinity.toFixed(2)} trust=${row.trust.toFixed(2)} (${row.interactions}회)`);
+      const inbound = snapshot.relations.inbound.slice(0, 3)
+        .map((row, idx) => `${idx + 1}. <@${row.userId}> aff=${row.affinity.toFixed(2)} trust=${row.trust.toFixed(2)} (${row.interactions}회)`);
+      const notes = snapshot.notes.slice(0, 3)
+        .map((row, idx) => `${idx + 1}. ${row.summary.slice(0, 100)} (conf=${row.confidence.toFixed(2)})`);
+
+      const lines = [
+        `대상: <@${target.id}>`,
+        profile?.summary ? `요약: ${profile.summary}` : '요약: 기록 없음',
+        profile?.communicationStyle ? `스타일: ${profile.communicationStyle}` : '',
+        profile?.preferredTopics?.length ? `선호 토픽: ${profile.preferredTopics.slice(0, 4).join(', ')}` : '',
+        profile?.roleTags?.length ? `역할 태그: ${profile.roleTags.slice(0, 4).join(', ')}` : '',
+        '',
+        '[관계(아웃바운드)]',
+        outbound.length > 0 ? outbound.join('\n') : '기록 없음',
+        '',
+        '[관계(인바운드)]',
+        inbound.length > 0 ? inbound.join('\n') : '기록 없음',
+        '',
+        '[메모]',
+        notes.length > 0 ? notes.join('\n') : '저장된 메모 없음',
+        snapshot.noteVisibility.hidden > 0 ? `숨김 메모: ${snapshot.noteVisibility.hidden}개` : '',
+      ].filter(Boolean).join('\n');
+
+      await interaction.editReply(buildUserCard('프로필', lines, EMBED_INFO));
+    } catch (error) {
+      await interaction.editReply(buildUserCard('프로필', deps.getErrorMessage(error), EMBED_ERROR));
+    }
+  };
+
+  /** /메모 <@유저> [내용] — 내용 있으면 추가, 없으면 조회 */
+  const handleMemoCommand = async (interaction: ChatInputCommandInteraction) => {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
+      await interaction.reply({ ...buildUserCard('메모', '길드에서만 사용할 수 있습니다.', EMBED_WARN), ephemeral: true });
+      return;
+    }
+    if (!access.ok) {
+      await interaction.reply({ ...buildUserCard('메모', '먼저 `/유저`로 진단을 실행해주세요.', EMBED_WARN), ephemeral: true });
+      return;
+    }
+
+    const target = interaction.options.getUser('유저', true);
+    const content = (interaction.options.getString('내용', false) || '').trim();
+    const shared = deps.getReplyVisibility(interaction) === 'public';
+    await interaction.deferReply({ ephemeral: !shared });
+
+    if (!interaction.guildId) {
+      await interaction.editReply(buildUserCard('메모', '길드 정보가 없어 처리할 수 없습니다.', EMBED_WARN));
+      return;
+    }
+
+    const isAdmin = await deps.hasAdminPermission(interaction);
+
+    // 조회 모드
+    if (!content) {
+      if (!isAdmin && target.id !== interaction.user.id) {
+        await interaction.editReply(buildUserCard('메모', '다른 유저 메모 조회는 관리자만 가능합니다.', EMBED_WARN));
+        return;
+      }
+      try {
+        const snapshot = await getUserPersonaSnapshot({
+          guildId: interaction.guildId,
+          targetUserId: target.id,
+          requesterUserId: interaction.user.id,
+          isAdmin,
+          noteLimit: 6,
+          relationLimit: 0,
+        });
+        const lines = snapshot.notes.length > 0
+          ? snapshot.notes.map((row, idx) => `${idx + 1}. ${row.summary.slice(0, 140)}`)
+          : ['저장된 메모가 없습니다.'];
+        await interaction.editReply(buildUserCard('메모 조회', [`대상: <@${target.id}>`, '', ...lines].join('\n'), EMBED_INFO));
+      } catch (error) {
+        await interaction.editReply(buildUserCard('메모', deps.getErrorMessage(error), EMBED_ERROR));
+      }
+      return;
+    }
+
+    // 추가 모드
+    if (!isAdmin && target.id !== interaction.user.id) {
+      await interaction.editReply(buildUserCard('메모', '다른 유저 메모는 관리자만 작성할 수 있습니다.', EMBED_WARN));
+      return;
+    }
+    const visibility = String(interaction.options.getString('공개범위') || 'private') === 'public' ? 'guild' : 'private';
+    try {
+      const saved = await createUserPersonalComment({
+        guildId: interaction.guildId,
+        targetUserId: target.id,
+        authorUserId: interaction.user.id,
+        channelId: interaction.channelId,
+        content,
+        visibility,
+      });
+      await interaction.editReply(buildUserCard('메모 저장', [`대상: <@${target.id}>`, `ID: ${saved.id || 'n/a'}`, `내용: ${content.slice(0, 180)}`].join('\n'), EMBED_SUCCESS));
+    } catch (error) {
+      const msg = deps.getErrorMessage(error);
+      const friendly = msg.includes('SENSITIVE_COMMENT_BLOCKED')
+        ? '민감 정보로 보이는 내용은 저장할 수 없습니다.'
+        : msg;
+      await interaction.editReply(buildUserCard('메모', friendly, EMBED_ERROR));
+    }
+  };
+
   return {
     handleUserCommand,
     handleUserContextCommand,
     handleUserNoteModal,
+    handleProfileCommand,
+    handleMemoCommand,
   };
 };

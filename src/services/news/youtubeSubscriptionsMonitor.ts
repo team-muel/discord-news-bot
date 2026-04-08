@@ -1,6 +1,6 @@
 import logger from '../../logger';
 import { runWithConcurrency } from '../../utils/async';
-import { claimSourceLock, releaseSourceLock, updateSourceState } from './sourceMonitorStore';
+import { claimSourceLock, releaseSourceLock, updateSourceState, fetchFreshSourceRow } from './sourceMonitorStore';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { fromTable } from '../infra/baseRepository';
 import { T_SOURCES } from '../infra/tableRegistry';
@@ -165,6 +165,13 @@ const processRow = async (sink: ChannelSink, row: SubscriptionRow, options?: Tic
   if (!row.channel_id) {
     await updateRowState(row.id, { last_check_status: 'error', last_check_error: 'Invalid subscription URL/channel' });
     return 'error';
+  }
+
+  // Re-fetch fresh state after lock to prevent stale-data race condition
+  const freshRow = await fetchFreshSourceRow(row.id);
+  if (freshRow) {
+    row.last_post_id = freshRow.last_post_id;
+    row.last_post_signature = freshRow.last_post_signature;
   }
 
   const latest = await fetchLatestWithOptions(row, mode, options);

@@ -318,7 +318,85 @@ export const buildSprintPreamble = (sprintId: string, phase: string): string => 
   return sections.join('\n');
 };
 
-// ──── Async preamble enrichment (Obsidian journal) ────────────────────────────
+// ──── Live System State Injection ─────────────────────────────────────────────
+
+/**
+ * Query live observations + intents and build a system-state context section.
+ * Injected into plan/implement phases so the agent knows what's currently
+ * broken, what was already tried, and what patterns are recurring.
+ *
+ * Never throws — all queries are best-effort.
+ */
+export const buildLiveStateSection = async (
+  guildId: string,
+  phase: string,
+): Promise<string> => {
+  // Only inject for decision-making phases
+  if (!['plan', 'implement', 'review'].includes(phase)) return '';
+
+  const sections: string[] = [];
+
+  try {
+    const { getRecentObservations } = await import('../observer/observationStore');
+    const observations = await getRecentObservations({
+      guildId,
+      unconsumedOnly: true,
+      limit: 10,
+    });
+    if (observations.length > 0) {
+      const obsLines = observations.map(
+        (o) => `- [${o.severity}] ${o.channel}: ${o.title}`,
+      );
+      sections.push(
+        '### Active Observations',
+        `${observations.length} unconsumed observations detected:`,
+        ...obsLines,
+      );
+    }
+  } catch { /* best-effort */ }
+
+  try {
+    const { getIntents } = await import('../intent/intentStore');
+
+    // Recent rejected intents (avoid repeating what failed)
+    const failed = await getIntents({ guildId, status: 'rejected', limit: 5 });
+    if (failed.length > 0) {
+      const failLines = failed.map(
+        (i) => `- [${i.ruleId}] ${i.objective} (priority: ${i.priorityScore.toFixed(2)})`,
+      );
+      sections.push(
+        '### Recently Failed Intents',
+        'These objectives were attempted and failed — avoid repeating the same approach:',
+        ...failLines,
+      );
+    }
+
+    // Pending intents (know what's queued)
+    const pending = await getIntents({ guildId, status: 'pending', limit: 5 });
+    if (pending.length > 0) {
+      const pendLines = pending.map(
+        (i) => `- [${i.ruleId}] ${i.objective} (priority: ${i.priorityScore.toFixed(2)})`,
+      );
+      sections.push(
+        '### Pending Intents',
+        'These objectives are queued for execution:',
+        ...pendLines,
+      );
+    }
+  } catch { /* best-effort */ }
+
+  if (sections.length === 0) return '';
+
+  return [
+    '## Live System State',
+    `Current system state for guild ${guildId} at ${new Date().toISOString()}:`,
+    '',
+    ...sections,
+    '',
+    'Factor this context into your decisions. Do not duplicate pending work or repeat failed approaches.',
+    '',
+  ].join('\n');
+};
 
 /**
  * Load workflow reconfiguration hints from Obsidian journal.

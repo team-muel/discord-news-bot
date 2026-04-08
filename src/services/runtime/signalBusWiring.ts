@@ -279,6 +279,24 @@ export const wireSignalBusConsumers = (): void => {
     }
   });
 
+  // ── Consumer 10: Observation → memory bridge (knowledge graph accumulation) ──
+  onSignal('observation.new', async (signal: Signal) => {
+    try {
+      const guildId = signal.guildId ?? 'default';
+      const { getRecentObservations } = await import('../observer/observationStore');
+      const { bridgeObservationsToMemory } = await import('../observer/observationMemoryBridge');
+
+      const recent = await getRecentObservations({ guildId, unconsumedOnly: true, limit: 20 });
+      if (recent.length > 0) {
+        void bridgeObservationsToMemory(recent).catch((err: unknown) => {
+          logger.debug('[SIGNAL-WIRING] obs→memory bridge failed: %s', getErrorMessage(err));
+        });
+      }
+    } catch (err) {
+      logger.debug('[SIGNAL-WIRING] observation.new → memoryBridge skipped: %s', getErrorMessage(err));
+    }
+  });
+
   logger.info('[SIGNAL-WIRING] all consumers wired');
 };
 

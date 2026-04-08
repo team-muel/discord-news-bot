@@ -28,6 +28,7 @@ import {
 import { cleanupSandbox } from '../../services/workerGeneration/workerSandbox';
 import { runArchitectReleaseGate } from '../../services/workerGeneration/workerExecutors';
 import { evaluateWorkerActivationGate } from '../../services/agent/agentRuntimeReadinessService';
+import { setUserLearningEnabled } from '../../services/userLearningPrefsService';
 import logger from '../../logger';
 import { DISCORD_MESSAGES } from '../messages';
 import {
@@ -44,6 +45,7 @@ import {
 const CODE_BUTTON_ACTIONS = new Set(['code_regen', 'code_refactor', 'code_test', 'code_history']);
 const WORKER_BUTTON_ACTIONS = new Set(['worker_propose', 'worker_approve', 'worker_reject', 'worker_refactor']);
 const FORGET_BUTTON_ACTIONS = new Set(['forget_confirm_user', 'forget_confirm_guild', 'forget_cancel']);
+const LEARNING_BUTTON_ACTIONS = new Set(['learning_toggle']);
 
 const toErrorMessage = (error: unknown): string => {
   let msg: string;
@@ -87,12 +89,34 @@ export const handleButtonInteraction = async (params: {
   if (!CODE_BUTTON_ACTIONS.has(action)
     && !WORKER_BUTTON_ACTIONS.has(action)
     && !SESSION_BUTTON_ACTIONS.has(action)
-    && !FORGET_BUTTON_ACTIONS.has(action)) {
+    && !FORGET_BUTTON_ACTIONS.has(action)
+    && !LEARNING_BUTTON_ACTIONS.has(action)) {
     return false;
   }
 
   if (!interaction.guildId) {
     await interaction.reply({ content: DISCORD_MESSAGES.bot.guildOnly, ephemeral: true });
+    return true;
+  }
+
+  if (LEARNING_BUTTON_ACTIONS.has(action)) {
+    // customId format: learning_toggle:{on|off}:{userId}:{guildId}
+    const parts = parentSessionId.split(':');
+    const mode = parts[0]; // 'on' or 'off'
+    const ownerId = parts[1] || '';
+    const targetGuildId = parts[2] || interaction.guildId;
+    if (ownerId && ownerId !== interaction.user.id) {
+      await interaction.reply({ content: '본인의 학습 설정만 변경할 수 있습니다.', ephemeral: true });
+      return true;
+    }
+    const enable = mode === 'on';
+    const ok = await setUserLearningEnabled(interaction.user.id, targetGuildId || '', enable, interaction.user.id);
+    await interaction.reply({
+      content: ok
+        ? (enable ? '🟢 학습 메모리가 활성화되었습니다.' : '⚫ 학습 메모리가 비활성화되었습니다.')
+        : '설정 변경 중 오류가 발생했습니다.',
+      ephemeral: true,
+    });
     return true;
   }
 

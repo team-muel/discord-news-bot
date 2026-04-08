@@ -175,6 +175,10 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
   const crmHandlers = createCrmHandlers({
     getReplyVisibility,
     hasAdminPermission,
+    markUserLoggedIn,
+    simpleCommandsEnabled: SIMPLE_COMMANDS_ENABLED,
+    loginSessionTtlMs: LOGIN_SESSION_TTL_MS,
+    loginSessionRefreshWindowMs: LOGIN_SESSION_REFRESH_WINDOW_MS,
   });
 
   // ── Wire dynamic worker admin notifier ────────────────────────────────────
@@ -268,24 +272,8 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
 
     try {
       switch (interaction.commandName) {
-        case 'ping': {
-          await interaction.reply({
-            ...buildSimpleEmbed(DISCORD_MESSAGES.bot.titlePong, DISCORD_MESSAGES.bot.pongBody(client.ws.status, client.ws.ping), EMBED_INFO),
-            ephemeral: true,
-          });
-          return;
-        }
-        case 'help':
         case '도움말': {
           await adminHandlers.handleHelpCommand(interaction);
-          return;
-        }
-        case '설정': {
-          await adminHandlers.handleSettingsCommand(interaction);
-          return;
-        }
-        case '로그인': {
-          await adminHandlers.handleLoginCommand(interaction);
           return;
         }
         case '주가': {
@@ -304,44 +292,35 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
           await handleGroupedSubscribeCommand(interaction);
           return;
         }
-        case '세션': {
-          await agentHandlers.handleSessionCommand(interaction);
-          return;
-        }
-        case '해줘': {
-          await vibeHandlers.handleVibeCommand(interaction);
-          return;
-        }
         case '만들어줘': {
           await vibeHandlers.handleMakeCommand(interaction);
           return;
         }
-        case '물어봐': {
+        case '뮤엘': {
           await docsHandlers.handleAskCommand(interaction);
           return;
         }
-        case '문서': {
-          await docsHandlers.handleDocsCommand(interaction);
+        case '변경사항': {
+          await docsHandlers.handleChangelogCommand(interaction);
           return;
         }
-        case '할일': {
-          const sub = interaction.options.getSubcommand();
-          if (sub === '목록') {
-            await tasksHandlers.handleTasksListCommand(interaction);
-          } else if (sub === '완료') {
-            await tasksHandlers.handleTasksToggleCommand(interaction);
-          }
+        case '프로필': {
+          await personaHandlers.handleProfileCommand(interaction);
           return;
         }
-        case '유저': {
-          await personaHandlers.handleUserCommand(interaction);
+        case '메모': {
+          await personaHandlers.handleMemoCommand(interaction);
           return;
         }
         case '관리자': {
-          await adminHandlers.handleAdminCommand(interaction, {
-            handleChannelIdCommand,
-            handleForumIdCommand,
-          });
+          if (interaction.options.getSubcommand() === '세션이력') {
+            await agentHandlers.handleSessionCommand(interaction);
+          } else {
+            await adminHandlers.handleAdminCommand(interaction, {
+              handleChannelIdCommand,
+              handleForumIdCommand,
+            });
+          }
           return;
         }
         case '관리설정': {
@@ -372,19 +351,15 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
           await agentHandlers.handleAgentCommand(interaction, '온보딩');
           return;
         }
-        case '학습': {
-          await agentHandlers.handleUserLearningCommand(interaction);
-          return;
-        }
         case '중지': {
           await agentHandlers.handleAgentCommand(interaction, '중지');
           return;
         }
-        case '내정보': {
+        case '유저': {
           await crmHandlers.handleMyInfoCommand(interaction);
           return;
         }
-        case '유저정보': {
+        case '통계': {
           await crmHandlers.handleUserInfoCommand(interaction);
           return;
         }
@@ -393,7 +368,6 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
           try {
             const snapshot = await generateMetricReviewSnapshot();
             const content = formatMetricReviewForDiscord(snapshot);
-            // Discord message limit is 2000 chars
             const trimmed = content.length > 1900 ? content.slice(0, 1900) + '\n\n_(잘림)_' : content;
             await interaction.editReply({ content: trimmed });
           } catch (err) {

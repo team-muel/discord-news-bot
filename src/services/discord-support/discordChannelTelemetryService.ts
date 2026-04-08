@@ -69,6 +69,13 @@ const renderBucketMarkdown = (guildId: string, bucket: GuildBucket): string => {
   builder.section('Top Threads').bullets(topThreads.length > 0 ? topThreads : ['none']);
   builder.section('Top Users').bullets(topUsers.length > 0 ? topUsers : ['none']);
 
+  builder
+    .section('Related')
+    .bullets([
+      '[[Guild_Lore]] — guild context',
+      '[[Server_History]] — server event timeline',
+    ]);
+
   return builder.build().markdown;
 };
 

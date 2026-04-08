@@ -148,6 +148,9 @@ export const runObserverScan = async (guildId: string): Promise<ObserverScanResu
     );
   }
 
+  // Emit state snapshot for IDE agent consumption (best-effort, fire-and-forget)
+  void import('./stateSnapshotEmitter').then((m) => m.emitStateSnapshot(guildId)).catch(() => {});
+
   return result;
 };
 

@@ -225,7 +225,10 @@ const writeNote = async (
     throw new Error('writeNote: fileName is required');
   }
 
-  const guildPrefix = params.guildId ? `guilds/${sanitizeArg(params.guildId, 40)}/` : '';
+  // If fileName already contains the guild-relative path (added by toGuildRelativePath()),
+  // do not add the guild prefix again. Otherwise, add it for direct/MCP-tool callers.
+  const alreadyGuildPrefixed = safeName.startsWith('guilds/');
+  const guildPrefix = (!alreadyGuildPrefixed && params.guildId) ? `guilds/${sanitizeArg(params.guildId, 40)}/` : '';
   const targetPath = `${guildPrefix}${safeName}`;
 
   const output = await runNativeCli([

@@ -9,7 +9,10 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { OBSIDIAN_LOCAL_FS_ENABLED, OBSIDIAN_VAULT_PATH } from '../../../config';
+import { parseBooleanEnv } from '../../../utils/env';
 import { atomicWriteFile } from '../../../utils/atomicWrite';
 import type {
   ObsidianLoreQuery,
@@ -22,6 +25,49 @@ import type {
 } from '../types';
 
 const isAvailable = (): boolean => OBSIDIAN_LOCAL_FS_ENABLED && OBSIDIAN_VAULT_PATH.length > 0;
+
+// ── Git auto-push after write ────────────────────────────────────────────────
+
+const VAULT_GIT_AUTOPUSH_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_VAULT_GIT_AUTOPUSH, false);
+const VAULT_GIT_AUTOPUSH_DEBOUNCE_MS = parseInt(process.env.OBSIDIAN_VAULT_GIT_AUTOPUSH_DEBOUNCE_MS || '30000', 10);
+
+const execFileAsync = promisify(execFile);
+let _gitPushTimer: ReturnType<typeof setTimeout> | null = null;
+
+const VAULT_GIT_SSH_KEY = process.env.OBSIDIAN_VAULT_GIT_SSH_KEY || '';
+
+const scheduleGitPush = (vaultDir: string): void => {
+  if (!VAULT_GIT_AUTOPUSH_ENABLED) return;
+  if (_gitPushTimer) clearTimeout(_gitPushTimer);
+  _gitPushTimer = setTimeout(() => {
+    _gitPushTimer = null;
+    const repoRoot = path.resolve(vaultDir, '..');
+    const env = { ...process.env };
+    if (VAULT_GIT_SSH_KEY) {
+      env.GIT_SSH_COMMAND = `ssh -i ${VAULT_GIT_SSH_KEY} -o StrictHostKeyChecking=no`;
+    }
+    const opts = { cwd: repoRoot, env };
+    execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], opts)
+      .then(({ stdout: branchOut }) => {
+        const branch = branchOut.trim() || 'main';
+        // Only add vault data dirs that actually exist
+        return execFileAsync('git', ['add', '--', 'docs/guilds/'], opts)
+          .then(() => execFileAsync('git', ['diff', '--cached', '--quiet'], opts).catch(() => 'HAS_CHANGES'))
+          .then((result) => {
+            if (result === 'HAS_CHANGES') {
+              return execFileAsync('git', ['commit', '-m', `chore: vault sync ${new Date().toISOString()}`], opts);
+            }
+          })
+          .then(() => execFileAsync('git', ['push', 'origin', branch], opts));
+      })
+      .then(() => {
+        console.error('[local-fs] git push completed');
+      })
+      .catch((err: Error) => {
+        console.error('[local-fs] git push failed (non-fatal):', err.message);
+      });
+  }, VAULT_GIT_AUTOPUSH_DEBOUNCE_MS);
+};
 
 const resolveVaultPath = (vaultPath: string): string => {
   const resolved = path.resolve(vaultPath || OBSIDIAN_VAULT_PATH || '.');
@@ -135,6 +181,7 @@ const writeNote = async (params: ObsidianNoteWriteInput): Promise<{ path: string
 
   await fs.mkdir(dir, { recursive: true });
   await atomicWriteFile(filePath, params.content);
+  scheduleGitPush(vaultDir);
 
   return { path: params.fileName };
 };

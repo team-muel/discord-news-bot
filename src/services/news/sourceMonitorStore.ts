@@ -105,3 +105,16 @@ export const releaseSourceLock = async (params: {
     logger.warn('%s lock release failed source=%s: %s', params.logPrefix, String(params.id), error.message);
   }
 };
+
+export const fetchFreshSourceRow = async (id: number): Promise<{ last_post_id: string | null; last_post_signature: string | null } | null> => {
+  const db = getClient();
+  const { data, error } = await db
+    .from(T_SOURCES)
+    .select('last_post_id,last_post_signature')
+    .eq('id', id)
+    .limit(1)
+    .single();
+
+  if (error || !data) return null;
+  return data as { last_post_id: string | null; last_post_signature: string | null };
+};

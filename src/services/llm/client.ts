@@ -231,16 +231,18 @@ export const generateTextWithMeta = async (
 
     if (canHedge) {
       const [primary, secondary] = providerChain;
-      const hedged = await new Promise<{ response: LlmTextWithMetaResponse; provider: LlmProvider }>((resolve, reject) => {
+      const hedgeResult = await new Promise<{ response: LlmTextWithMetaResponse; provider: LlmProvider } | null>((resolve) => {
         let settled = false;
         let failures = 0;
+        let hedgeError: unknown = null;
         const settle = (res: LlmTextWithMetaResponse, p: LlmProvider) => {
           if (!settled) { settled = true; resolve({ response: res, provider: p }); }
         };
         const fail = (err: unknown) => {
           failures += 1;
+          hedgeError = err;
           if (failures >= 2 || (failures >= 1 && !hedgeTimer)) {
-            reject(err instanceof Error ? err : new Error('LLM_REQUEST_FAILED'));
+            if (!settled) { settled = true; resolve(null); }
           }
         };
 
@@ -254,12 +256,31 @@ export const generateTextWithMeta = async (
         }, LLM_HEDGE_DELAY_MS);
 
         setTimeout(() => {
-          if (!settled) { settled = true; reject(new Error('LLM_PROVIDER_CHAIN_TIMEOUT')); }
+          if (!settled) { settled = true; resolve(null); }
         }, Math.max(0, providerChainDeadlineMs - Date.now()));
       });
 
-      response = hedged.response;
-      finalProvider = hedged.provider;
+      if (hedgeResult) {
+        response = hedgeResult.response;
+        finalProvider = hedgeResult.provider;
+      } else {
+        // Hedge failed — continue with remaining providers sequentially
+        const remainingProviders = providerChain.slice(2);
+        for (const targetProvider of remainingProviders) {
+          if (Date.now() > providerChainDeadlineMs) {
+            lastError = new Error('LLM_PROVIDER_CHAIN_TIMEOUT');
+            break;
+          }
+          try {
+            response = await callProvider(targetProvider);
+            finalProvider = targetProvider;
+            break;
+          } catch (error) {
+            lastError = error;
+            finalProvider = targetProvider;
+          }
+        }
+      }
     } else {
       for (const targetProvider of providerChain) {
         if (Date.now() > providerChainDeadlineMs) {

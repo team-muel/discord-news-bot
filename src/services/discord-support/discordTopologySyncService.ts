@@ -114,6 +114,10 @@ const renderTopologyMarkdown = (guild: Guild, reason: string): string => {
   builder.section('Channel Type Summary').bullets(typeSummaryLines.length > 0 ? typeSummaryLines : ['none']);
   builder.section('Channels').bullets(channelLines.length > 0 ? channelLines : ['none']);
   builder.section('Threads').bullets(threadLines.length > 0 ? threadLines : ['none']);
+  builder.section('Related').bullets([
+    '[[Guild_Lore]]',
+    '[[Server_History]]',
+  ]);
 
   return builder.build().markdown;
 };

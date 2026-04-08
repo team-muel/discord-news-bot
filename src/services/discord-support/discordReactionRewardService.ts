@@ -82,6 +82,13 @@ const renderBucketMarkdown = (guildId: string, bucket: RewardBucket): string => 
   builder.section('Top Message Scores').bullets(sortedMessages.length > 0 ? sortedMessages : ['none']);
   builder.section('Top Feedback Users').bullets(sortedUsers.length > 0 ? sortedUsers : ['none']);
 
+  builder
+    .section('Related')
+    .bullets([
+      '[[Guild_Lore]] — guild context',
+      '[[Server_History]] — server event timeline',
+    ]);
+
   return builder.build().markdown;
 };
 

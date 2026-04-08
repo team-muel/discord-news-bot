@@ -689,7 +689,15 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
       return 'failed';
     }
 
-    markSessionTerminal(session, 'failed', { error: getErrorMessage(error) });
+    const rawMsg = getErrorMessage(error);
+    const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|socket hang up/i.test(rawMsg)
+      || rawMsg === 'LLM_REQUEST_FAILED'
+      || rawMsg === 'LLM_PROVIDER_CHAIN_TIMEOUT'
+      || rawMsg === 'LLM_PROVIDER_NOT_CONFIGURED';
+    const userError = isNetworkError
+      ? 'AI 서비스에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'
+      : rawMsg;
+    markSessionTerminal(session, 'failed', { error: userError });
     return 'failed';
   }
 };

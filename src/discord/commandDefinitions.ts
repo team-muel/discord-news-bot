@@ -32,21 +32,8 @@ export const CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC = CFG_CLEAR_GUILD_COMMAN
 
 const ALL_COMMANDS = [
   new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('봇 응답 속도를 확인합니다'),
-  new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('사용 가능한 명령어를 한눈에 안내합니다'),
-  new SlashCommandBuilder()
     .setName('도움말')
     .setDescription('사용 가능한 명령어를 한눈에 안내합니다'),
-  new SlashCommandBuilder()
-    .setName('설정')
-    .setDescription('뮤엘 대시보드로 이동합니다'),
-  new SlashCommandBuilder()
-    .setName('로그인')
-    .setDescription('내 계정 권한과 기능 사용 가능 여부를 확인합니다')
-    .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('주가')
     .setDescription('주식 현재 가격을 조회합니다')
@@ -115,35 +102,11 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('물어봐')
-    .setDescription('Obsidian 문서 기반으로 질문에 답해드립니다')
+    .setName('뮤엘')
+    .setDescription('뮤엘에게 질문합니다 — 문서·메모·지식 기반으로 답변합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
       o.setName('질문').setDescription('예: 트레이딩 전략이 어떻게 구성되어 있나요?').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName('문서')
-    .setDescription('Obsidian vault에서 관련 문서를 검색합니다')
-    .setDMPermission(false)
-    .addStringOption((o) =>
-      o.setName('검색어').setDescription('예: 아키텍처, 트레이딩, 온보딩').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName('해줘')
-    .setDescription('실행형 요청을 능동적으로 처리합니다')
-    .setDMPermission(false)
-    .addStringOption((o) =>
-      o.setName('요청').setDescription('예: 고양이 영상 찾아줘, 이번주 애플 주가 요약해줘').setRequired(true),
     )
     .addStringOption((o) =>
       o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
@@ -162,20 +125,7 @@ const ALL_COMMANDS = [
         .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
         .setRequired(false),
     ),
-  new SlashCommandBuilder()
-    .setName('세션')
-    .setDescription('현재 서버 세션 조회/제거를 수행합니다')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub.setName('조회').setDescription('현재 서버에서 작동 중인 세션 조회'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('이력').setDescription('최근 완료된 세션 산출물 이력 조회'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('제거').setDescription('현재 서버에서 작동 중인 세션 제거'),
-    ),
+
   new SlashCommandBuilder()
     .setName('상태')
     .setDescription('봇과 자동화 런타임 상태를 확인합니다')
@@ -244,55 +194,31 @@ const ALL_COMMANDS = [
       o.setName('확인문구').setDescription('실행 시: FORGET_USER / FORGET_USER_ADMIN / FORGET_GUILD').setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('학습')
-    .setDescription('내 학습 자동 메모리 저장 설정을 조회하거나 변경합니다')
+    .setName('프로필')
+    .setDescription('유저의 관계/기억 기반 프로필 스냅샷을 조회합니다')
     .setDMPermission(false)
-    .addSubcommand((sub) =>
-      sub.setName('조회').setDescription('내 학습 저장 활성화 여부 확인'),
+    .addUserOption((o) =>
+      o.setName('유저').setDescription('조회할 유저 (생략 시 내 프로필)').setRequired(false),
     )
-    .addSubcommand((sub) =>
-      sub.setName('활성화').setDescription('내 대화 내용을 학습 메모리에 자동 저장합니다'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('비활성화').setDescription('내 대화 내용을 학습 메모리에 저장하지 않습니다 (임시 옵트아웃)'),
+    .addStringOption((o) =>
+      o.setName('공개범위').setDescription('응답 공개 범위')
+        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+        .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('유저')
-    .setDescription('유저 프로필 조회와 개인화 메모를 관리합니다')
+    .setName('메모')
+    .setDescription('유저 메모를 추가하거나 조회합니다')
     .setDMPermission(false)
-    .addSubcommand((sub) =>
-      sub.setName('프로필')
-        .setDescription('특정 유저의 관계/기억 기반 프로필 스냅샷을 조회합니다')
-        .addUserOption((o) =>
-          o.setName('유저').setDescription('조회할 대상 유저').setRequired(true),
-        )
-        .addStringOption((o) =>
-          o.setName('공개범위').setDescription('응답 공개 범위')
-            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-            .setRequired(false),
-        ),
+    .addUserOption((o) =>
+      o.setName('유저').setDescription('대상 유저').setRequired(true),
     )
-    .addSubcommand((sub) =>
-      sub.setName('메모추가')
-        .setDescription('유저 개인화 코멘트를 추가합니다')
-        .addUserOption((o) => o.setName('유저').setDescription('대상 유저').setRequired(true))
-        .addStringOption((o) => o.setName('코멘트').setDescription('저장할 개인화 코멘트').setRequired(true).setMaxLength(1200))
-        .addStringOption((o) =>
-          o.setName('공개범위').setDescription('코멘트 가시성')
-            .addChoices({ name: '나만 보기', value: 'private' }, { name: '서버 공용 맥락', value: 'public' })
-            .setRequired(false),
-        ),
+    .addStringOption((o) =>
+      o.setName('내용').setDescription('메모 내용 (생략 시 기존 메모 조회)').setRequired(false).setMaxLength(1200),
     )
-    .addSubcommand((sub) =>
-      sub.setName('메모조회')
-        .setDescription('유저 개인화 코멘트를 조회합니다')
-        .addUserOption((o) => o.setName('유저').setDescription('대상 유저').setRequired(true))
-        .addIntegerOption((o) => o.setName('개수').setDescription('최대 조회 개수(1~8)').setMinValue(1).setMaxValue(8).setRequired(false))
-        .addStringOption((o) =>
-          o.setName('공개범위').setDescription('응답 공개 범위')
-            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-            .setRequired(false),
-        ),
+    .addStringOption((o) =>
+      o.setName('공개범위').setDescription('메모 가시성')
+        .addChoices({ name: '나만 보기', value: 'private' }, { name: '서버 공용 맥락', value: 'public' })
+        .setRequired(false),
     ),
   new ContextMenuCommandBuilder()
     .setName('유저 프로필 보기')
@@ -301,22 +227,11 @@ const ALL_COMMANDS = [
     .setName('유저 메모 추가')
     .setType(ApplicationCommandType.User),
   new SlashCommandBuilder()
-    .setName('할일')
-    .setDescription('Obsidian 할일 목록을 조회하거나 완료 처리합니다')
+    .setName('변경사항')
+    .setDescription('뮤엘 최근 업데이트 내역을 확인합니다')
     .setDMPermission(false)
-    .addSubcommand((sub) =>
-      sub.setName('목록').setDescription('미완료 및 최근 할일 목록을 조회합니다')
-        .addStringOption((o) =>
-          o.setName('공개범위').setDescription('응답 공개 범위')
-            .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('완료').setDescription('할일을 완료 처리합니다')
-        .addIntegerOption((o) =>
-          o.setName('번호').setDescription('할일 번호 (목록의 번호)').setMinValue(1).setMaxValue(100).setRequired(true),
-        ),
+    .addIntegerOption((o) =>
+      o.setName('개수').setDescription('표시할 항목 수 (기본 3, 최대 5)').setMinValue(1).setMaxValue(5).setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName('관리자')
@@ -355,13 +270,16 @@ const ALL_COMMANDS = [
     )
     .addSubcommand((sub) =>
       sub.setName('동기화').setDescription('슬래시 커맨드 강제 동기화'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('세션이력').setDescription('최근 완료된 AI 세션 산출물 이력 조회'),
     ),
   new SlashCommandBuilder()
-    .setName('내정보')
+    .setName('유저')
     .setDescription('내 프로필과 활동 통계를 확인합니다')
     .setDMPermission(false),
   new SlashCommandBuilder()
-    .setName('유저정보')
+    .setName('통계')
     .setDescription('관리자: 특정 유저의 CRM 프로필과 활동 정보를 조회합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)

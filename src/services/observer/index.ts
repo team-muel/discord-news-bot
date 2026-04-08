@@ -10,6 +10,9 @@ export {
   getRecentObservations,
   markObservationsConsumed,
 } from './observationStore';
+export { bridgeObservationsToMemory } from './observationMemoryBridge';
+export { emitStateSnapshot } from './stateSnapshotEmitter';
+export type { SystemSnapshot } from './stateSnapshotEmitter';
 export type {
   Observation,
   ObservationChannel,
