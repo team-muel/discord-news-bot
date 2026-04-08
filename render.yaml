@@ -244,8 +244,6 @@ services:
     dockerContext: .
     healthCheckPath: /health/liveliness
     envVars:
-      - key: LITELLM_MASTER_KEY
-        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -258,13 +256,3 @@ services:
         sync: false
       - key: NVIDIA_NIM_API_KEY
         sync: false
-      - key: DATABASE_URL
-        fromDatabase:
-          name: litellm-db
-          property: connectionString
-
-databases:
-  - name: litellm-db
-    plan: free
-    databaseName: litellm
-    user: litellm_user
