@@ -53,12 +53,9 @@ const loadMemoryRunnerStats = async () => {
 
 const loadMemoryDeadletterCount = async (guildId: string) => {
   try {
-    const { listMemoryJobDeadletters } = await import('../memory/memoryJobRunner');
-    const list = await listMemoryJobDeadletters({ guildId, limit: 1 });
-    // listMemoryJobDeadletters returns the full deadletter list; we need the total count.
-    // Since this is a Supabase query we can't get count cheaply here —
-    // use the runner stats instead which tracks total failed jobs.
-    return (list as unknown[]).length;
+    const { getMemoryJobQueueStats } = await import('../memory/memoryJobRunner');
+    const queueStats = await getMemoryJobQueueStats(guildId);
+    return (queueStats as { deadlettered?: number }).deadlettered ?? 0;
   } catch {
     return 0;
   }

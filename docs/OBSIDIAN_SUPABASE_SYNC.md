@@ -259,20 +259,21 @@ npm run obsidian:ops-loop -- --guild 123456789012345678 --interval-sec 300 --max
 
 - CLI 전용 작업이 서버 배치 경로에 포함되지 않았는지 확인
 
-## 9.1) 권장 확정 프로파일 (Headless-first + write fallback)
+## 9.1) 권장 확정 프로파일 (Remote-MCP-first + write fallback)
 
-아래 프로파일을 기준으로 운영하면, 읽기/검색/그래프 조회는 Headless를 우선 사용하고, 쓰기는 local-fs 경로를 유지해 리스크를 낮출 수 있습니다.
+아래 프로파일을 기준으로 운영하면, 모든 vault 작업은 GCP VM의 MCP HTTP 서버를 통해 수행됩니다.
 
 ```bash
-OBSIDIAN_HEADLESS_ENABLED=true
-OBSIDIAN_HEADLESS_COMMAND=ob
+OBSIDIAN_REMOTE_MCP_ENABLED=true
+OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
 
-OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=local-fs,script-cli
+OBSIDIAN_ADAPTER_ORDER=remote-mcp,native-cli,script-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,native-cli,script-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=remote-mcp,native-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp,native-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp,native-cli,local-fs
+OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,native-cli,local-fs
 
 OBSIDIAN_ADAPTER_STRICT=false
 ```
@@ -280,17 +281,17 @@ OBSIDIAN_ADAPTER_STRICT=false
 검증 절차:
 
 - `GET /api/bot/agent/obsidian/runtime`
-- 응답에서 `selectedByCapability.read_lore|search_vault|read_file|graph_metadata`가 `headless-cli`인지 확인
-- 응답에서 `selectedByCapability.write_note`가 `local-fs`인지 확인
+- 응답에서 `selectedByCapability.read_lore|search_vault|read_file|graph_metadata`가 `remote-mcp`인지 확인
+- 응답에서 `selectedByCapability.write_note`가 `remote-mcp`인지 확인
 
 ## 9.2) 무인 운영 프로파일 (로컬 PC 오프 전제)
 
-목표: 개인 PC가 꺼져 있어도 Render + Discord Bot + LiteLLM 프록시 + Headless로 지속 운영.
+목표: 개인 PC가 꺼져 있어도 Render + Discord Bot + LiteLLM 프록시 + GCP VM MCP 서버로 지속 운영.
 
 원칙:
 
-- 읽기/검색/그래프는 Headless 경로 고정
-- 쓰기는 Obsidian 파일 직접 쓰기보다 Supabase 메모리 테이블(memory_items, guild_lore_docs) 우선
+- 모든 vault 작업은 remote-mcp 경로(GCP VM MCP HTTP 서버)를 통해 수행
+- GCP VM에서 headless Obsidian + MCP Unified HTTP 서버가 항시 가동
 - 모델 라우팅은 LiteLLM 프록시 단일 엔드포인트로 고정
 
 권장 env 프로파일:
@@ -300,29 +301,30 @@ AI_PROVIDER=openclaw
 OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>
 OPENCLAW_API_KEY=<secret>
 
-OBSIDIAN_HEADLESS_ENABLED=true
-OBSIDIAN_HEADLESS_COMMAND=ob
+OBSIDIAN_REMOTE_MCP_ENABLED=true
+OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
 OBSIDIAN_VAULT_NAME=<vault-name>
 
-OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli,local-fs
-OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=local-fs,script-cli
+OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli
+OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,script-cli
+OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=remote-mcp
+OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp
+OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp
+OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,script-cli
 OBSIDIAN_ADAPTER_STRICT=false
 ```
 
 운영 체크:
 
-- `GET /api/bot/agent/obsidian/runtime`에서 read/search/read_file/graph가 `headless-cli`인지 확인
+- `GET /api/bot/agent/obsidian/runtime`에서 모든 capability가 `remote-mcp`인지 확인
 - `GET /ready`에서 provider 미구성/adapter 미가용 경고가 없는지 확인
 - memory retrieval 로그(`memory_retrieval_logs`)와 ToT 후보 로그(`agent_tot_candidate_pairs`)가 지속 누적되는지 확인
 
 주의:
 
-- 현재 headless adapter는 읽기 중심(capability: read_lore/search_vault/read_file/graph_metadata)이며 write_note는 직접 제공하지 않습니다.
-- 따라서 문서 업데이트 자동화는 Supabase 메모리-파이프라인을 주 경로로 두고, 파일 쓰기는 보조 경로로 운영하는 것이 안전합니다.
+- remote-mcp adapter는 모든 vault 작업을 지원합니다 (read, search, write, graph).
+- GCP VM의 MCP 서버가 다운되면 script-cli로 fallback됩니다.
 
 ## 10) Sourcetrail 스타일 코드 조망 (함수/클래스 + 백링크)
 

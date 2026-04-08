@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../obsidian/authoring', () => ({
   upsertObsidianGuildDocument: vi.fn(),
+  stripMarkdownExtension: (name: string) => String(name || '').replace(/\.md$/i, '').trim(),
 }));
 
 vi.mock('../../../utils/obsidianEnv', () => ({

@@ -65,6 +65,12 @@ describe('opencodeSdkClient', () => {
       const result = await getDiagnostics('test-session', []);
       expect(result).toEqual([]);
     });
+
+    it('returns empty array when SDK is not available', async () => {
+      const { getDiagnostics } = await import('./opencodeSdkClient');
+      const result = await getDiagnostics('test-session', ['file.ts']);
+      expect(result).toEqual([]);
+    });
   });
 
   describe('generateCodeViaSession', () => {

@@ -23,25 +23,20 @@
 import { parseBooleanEnv } from '../../../utils/env';
 import { callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from '../../../mcp/obsidianToolAdapter';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { makeAdapterResult, isAdapterEnabled } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.MCP_OBSIDIAN_ADAPTER_DISABLED, false);
 const LEGACY_ENABLED_RAW = process.env.MCP_OBSIDIAN_ADAPTER_ENABLED;
-const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+const isNotDisabled = (): boolean => isAdapterEnabled(EXPLICITLY_DISABLED, LEGACY_ENABLED_RAW);
 
 const ALL_CAPABILITIES = [...OBSIDIAN_TOOL_NAMES];
 const LITE_CAPABILITIES = ['obsidian.search', 'obsidian.rag', 'obsidian.sync.status', 'obsidian.adapter.status'];
 
-const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({
-  ok,
-  adapterId: 'obsidian' as ExternalAdapterId,
-  action,
-  summary,
-  output,
-  durationMs,
-  ...(error ? { error } : {}),
-});
+const ADAPTER_ID = 'obsidian' as ExternalAdapterId;
+const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult =>
+  makeAdapterResult(ADAPTER_ID, ok, action, summary, output, durationMs, error);
 
 const callTool = async (action: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
   const start = Date.now();

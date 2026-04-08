@@ -14,7 +14,7 @@ const sanitizeFileName = (value: unknown): string => {
   return candidate || 'Untitled';
 };
 
-const stripMarkdownExtension = (value: string): string => {
+export const stripMarkdownExtension = (value: string): string => {
   return String(value || '').trim().replace(/\.md$/i, '');
 };
 

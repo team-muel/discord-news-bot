@@ -24,11 +24,11 @@ Copy this block for each change:
 ## 2026-04-06 - Render Adapter + Platform Dashboard + Obsidian Headless Sync
 
 - Why: 에이전트가 Render 인프라를 자율적으로 관리하고, 모든 플랫폼 상태를 시각적으로 모니터링하며, Obsidian Cloud와 서버 vault를 양방향 동기화한다.
-- Scope: 12 files — `renderAdapter.ts` (new, 9 caps), `renderAdapter.test.ts` (new, 20 tests), `dashboard.ts` (new, visual HTML), `obsidian-headless-startup.sh` (new, startup sync), `app.ts`, `health.ts`, `bot.ts` (contracts), `externalAdapterRegistry.ts`, `externalAdapterTypes.ts`, `externalToolProbe.test.ts`, `render.yaml`, `.env.example`
+- Scope: 11 files — `renderAdapter.ts` (new, 9 caps), `renderAdapter.test.ts` (new, 20 tests), `dashboard.ts` (new, visual HTML), `app.ts`, `health.ts`, `bot.ts` (contracts), `externalAdapterRegistry.ts`, `externalAdapterTypes.ts`, `externalToolProbe.test.ts`, `render.yaml`, `.env.example`
 - Impacted Routes: `GET /dashboard` (visual platform status page)
-- Impacted Services: Render adapter (service/deploy/events/env management), Obsidian headless sync pipeline, health endpoint (vault readiness), dashboard (adapter chain + capability routing)
+- Impacted Services: Render adapter (service/deploy/events/env management), health endpoint (vault readiness), dashboard (adapter chain + capability routing)
 - Impacted Tables/RPC: N/A
-- Risk/Regression Notes: Render adapter read-only by default (env.update requires explicit call). Headless sync gracefully degrades if `ob` CLI unavailable. Dashboard is public (no auth) — shows only operational metadata, no secrets.
+- Risk/Regression Notes: Render adapter read-only by default (env.update requires explicit call). Dashboard is public (no auth) — shows only operational metadata, no secrets.
 - Validation: 36/36 tests passed, tsc clean, live API verified (7/7 Render capabilities).
 
 ## 2026-04-06 - M-15 Pluggable Adapter Framework

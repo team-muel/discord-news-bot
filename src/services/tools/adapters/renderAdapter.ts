@@ -26,7 +26,9 @@
 
 import logger from '../../../logger';
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
+import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { makeAdapterResult } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.RENDER_ADAPTER_DISABLED, false);
@@ -39,22 +41,8 @@ const DEFAULT_WORKSPACE = parseStringEnv(process.env.RENDER_WORKSPACE_ID, '');
 
 const ADAPTER_ID = 'render' as ExternalAdapterId;
 
-const makeResult = (
-  ok: boolean,
-  action: string,
-  summary: string,
-  output: string[],
-  durationMs: number,
-  error?: string,
-): ExternalAdapterResult => ({
-  ok,
-  adapterId: ADAPTER_ID,
-  action,
-  summary,
-  output,
-  durationMs,
-  ...(error ? { error } : {}),
-});
+const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult =>
+  makeAdapterResult(ADAPTER_ID, ok, action, summary, output, durationMs, error);
 
 /** Validate Render resource IDs to prevent path injection. */
 const RENDER_ID_PATTERN = /^[a-zA-Z0-9-]{1,100}$/;
@@ -73,24 +61,17 @@ const fetchRender = async (
   path: string,
   options?: RequestInit,
 ): Promise<{ ok: boolean; status: number; body: unknown }> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${API_KEY}`,
-        ...options?.headers,
-      },
-    });
-    const body = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, body };
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchWithTimeout(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${API_KEY}`,
+      ...options?.headers,
+    },
+  }, TIMEOUT_MS);
+  const body = await res.json().catch(() => null);
+  return { ok: res.ok, status: res.status, body };
 };
 
 // ──── Actions ─────────────────────────────────────────────────────────────────
@@ -170,26 +151,33 @@ const queryLogs = async (serviceId: string, filters?: Record<string, unknown>): 
   const id = validateId(serviceId, 'serviceId');
   if (!id) return makeResult(false, 'log.query', 'Invalid service ID', [], 0, 'INVALID_ID');
 
-  // Render API v1 exposes service events (not raw logs). Use /events endpoint.
+  // Render API v1 logs endpoint: GET /logs with resource[] filter and ownerId.
+  // See: https://api-docs.render.com/reference/list-logs
   const params = new URLSearchParams();
   const limit = Math.min(Math.max(1, Number(filters?.limit) || 20), 100);
   params.set('limit', String(limit));
+  params.append('resource', id);
+  params.set('direction', 'backward');
+  if (DEFAULT_WORKSPACE) params.set('ownerId', DEFAULT_WORKSPACE);
 
   try {
     const qs = params.toString();
-    const { ok, body, status } = await fetchRender(`/services/${id}/events${qs ? `?${qs}` : ''}`);
+    const { ok, body, status } = await fetchRender(`/logs?${qs}`);
     if (!ok) return makeResult(false, 'log.query', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
 
-    const events = Array.isArray(body) ? body : [];
-    const lines = events.slice(0, 100).map((e: Record<string, unknown>) => {
-      const evt = (e as Record<string, unknown>).event as Record<string, unknown> | undefined ?? e;
-      const details = evt.details as Record<string, unknown> | undefined;
-      const deployStatus = details?.deployStatus || details?.status || '';
-      const reason = details?.reason ? JSON.stringify(details.reason) : '';
-      return `[${evt.timestamp || ''}] ${evt.type || 'event'}: deploy=${details?.deployId || '?'} status=${deployStatus}${reason && reason !== '{}' ? ` reason=${reason}` : ''}`;
+    const data = body as Record<string, unknown> | null;
+    const logs = Array.isArray(data?.logs) ? data.logs : [];
+    const lines = logs.slice(0, 100).map((entry: Record<string, unknown>) => {
+      const msg = String(entry.message || '');
+      const ts = String(entry.timestamp || '');
+      const labels = Array.isArray(entry.labels) ? entry.labels as Array<{ name?: string; value?: string }> : [];
+      const level = labels.find((l) => l.name === 'level')?.value || '';
+      const type = labels.find((l) => l.name === 'type')?.value || '';
+      return `[${ts}]${level ? ` ${level}` : ''}${type ? ` (${type})` : ''} ${msg}`;
     });
+    const hasMore = (data as Record<string, unknown>)?.hasMore === true;
 
-    return makeResult(true, 'log.query', `${lines.length} events`, lines, Date.now() - start);
+    return makeResult(true, 'log.query', `${lines.length} log entries${hasMore ? ' (more available)' : ''}`, lines, Date.now() - start);
   } catch (err) {
     return makeResult(false, 'log.query', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
@@ -200,29 +188,29 @@ const getMetrics = async (serviceId: string, _args: Record<string, unknown>): Pr
   const id = validateId(serviceId, 'serviceId');
   if (!id) return makeResult(false, 'metrics.get', 'Invalid service ID', [], 0, 'INVALID_ID');
 
-  // Render starter plan has no metrics API. Derive deploy health from events.
+  // Derive deploy health from the deploys endpoint (GET /services/{id}/deploys).
+  // Render REST API v1 does not expose per-service events; use deploy status instead.
   try {
-    const { ok, body, status } = await fetchRender(`/services/${id}/events?limit=50`);
+    const { ok, body, status } = await fetchRender(`/services/${id}/deploys?limit=50`);
     if (!ok) return makeResult(false, 'metrics.get', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
 
-    const events = Array.isArray(body) ? body : [];
+    const deploys = Array.isArray(body) ? body : [];
     let succeeded = 0;
     let failed = 0;
     let total = 0;
-    for (const e of events) {
-      const evt = (e as Record<string, unknown>).event as Record<string, unknown> | undefined ?? e;
-      const details = evt.details as Record<string, unknown> | undefined;
-      const deployStatus = String(details?.deployStatus || '');
+    for (const d of deploys) {
+      const dep = (d as Record<string, unknown>).deploy as Record<string, unknown> | undefined ?? d;
+      const deployStatus = String(dep?.status || '');
       if (deployStatus) {
         total++;
-        if (deployStatus === 'succeeded' || deployStatus === 'live') succeeded++;
+        if (deployStatus === 'live' || deployStatus === 'deactivated') succeeded++;
         else if (deployStatus === 'build_failed' || deployStatus === 'update_failed') failed++;
       }
     }
     const successRate = total > 0 ? Math.round((succeeded / total) * 100) : 'N/A';
 
     const output = [
-      `Deploy health (last ${events.length} events):`,
+      `Deploy health (last ${deploys.length} deploys):`,
       `  Total deploys: ${total}`,
       `  Succeeded: ${succeeded}`,
       `  Failed: ${failed}`,
@@ -293,36 +281,47 @@ const updateEnvVars = async (serviceId: string, vars: unknown): Promise<External
   }
 };
 
+/**
+ * Retrieve Postgres connection info via Render API.
+ * The Render REST API does NOT support executing SQL queries.
+ * postgres.query returns the connection info so operators can connect directly.
+ * See: https://api-docs.render.com/reference/retrieve-postgres-connection-info
+ */
 const queryPostgres = async (databaseId: string, sql: string): Promise<ExternalAdapterResult> => {
   const start = Date.now();
   const id = validateId(databaseId, 'databaseId');
   if (!id) return makeResult(false, 'postgres.query', 'Invalid database ID', [], 0, 'INVALID_ID');
 
   const sanitizedSql = String(sql || '').trim().slice(0, 10_000);
-  if (!sanitizedSql) {
-    return makeResult(false, 'postgres.query', 'Empty SQL query', [], 0, 'EMPTY_SQL');
-  }
+  if (!sanitizedSql) return makeResult(false, 'postgres.query', 'Empty SQL', [], 0, 'EMPTY_SQL');
 
-  // Safety: only allow SELECT / WITH / EXPLAIN (read-only)
-  const firstWord = sanitizedSql.split(/\s+/)[0]?.toUpperCase() || '';
-  if (!['SELECT', 'WITH', 'EXPLAIN'].includes(firstWord)) {
-    return makeResult(false, 'postgres.query', 'Only read-only queries (SELECT/WITH/EXPLAIN) allowed', [], 0, 'WRITE_BLOCKED');
+  // Block write operations (defense-in-depth — even though Render API can't execute SQL,
+  // reject dangerous queries before they appear in output or any future execution path).
+  const firstToken = sanitizedSql.split(/\s+/)[0].toUpperCase();
+  if (['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'TRUNCATE', 'CREATE'].includes(firstToken)) {
+    return makeResult(false, 'postgres.query', 'Write operations blocked', [], 0, 'WRITE_BLOCKED');
   }
 
   try {
-    const { ok, body, status } = await fetchRender(`/postgres/${id}/query`, {
-      method: 'POST',
-      body: JSON.stringify({ sql: sanitizedSql }),
-    });
+    // Render API only supports connection info retrieval, not direct SQL queries.
+    const { ok, body, status } = await fetchRender(`/postgres/${id}/connection-info`);
     if (!ok) return makeResult(false, 'postgres.query', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
 
-    const result = body as Record<string, unknown> | null;
-    const rows = Array.isArray(result?.rows) ? result.rows : [];
-    const output = rows.length > 0
-      ? [JSON.stringify(rows.slice(0, 100), null, 2).slice(0, 8000)]
-      : ['No rows returned'];
+    const info = body as Record<string, unknown> | null;
+    const output = [
+      'NOTE: Render REST API does not support direct SQL queries.',
+      'Use the connection info below to connect via psql or a database client.',
+      '',
+      `  Host: ${info?.host || 'N/A'}`,
+      `  Port: ${info?.port || 'N/A'}`,
+      `  Database: ${info?.databaseName || info?.database || 'N/A'}`,
+      `  User: ${info?.databaseUser || info?.user || 'N/A'}`,
+    ];
+    if (sanitizedSql) {
+      output.push('', `Requested query (run manually): ${sanitizedSql.slice(0, 200)}`);
+    }
 
-    return makeResult(true, 'postgres.query', `${rows.length} rows`, output, Date.now() - start);
+    return makeResult(true, 'postgres.query', `Connection info for ${id}`, output, Date.now() - start);
   } catch (err) {
     return makeResult(false, 'postgres.query', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
@@ -354,17 +353,10 @@ export const renderAdapter: ExternalToolAdapter = {
   isAvailable: async () => {
     if (EXPLICITLY_DISABLED || !API_KEY) return false;
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5_000);
-      try {
-        const res = await fetch(`${BASE_URL}/services?limit=1`, {
-          signal: controller.signal,
-          headers: { Authorization: `Bearer ${API_KEY}`, Accept: 'application/json' },
-        });
-        return res.status < 500;
-      } finally {
-        clearTimeout(timer);
-      }
+      const res = await fetchWithTimeout(`${BASE_URL}/services?limit=1`, {
+        headers: { Authorization: `Bearer ${API_KEY}`, Accept: 'application/json' },
+      }, 5_000);
+      return res.status < 500;
     } catch {
       return false;
     }

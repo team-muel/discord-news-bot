@@ -29,7 +29,12 @@ import { createSprintBranch, commitSprintChanges, createSprintPr } from './auton
 import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import type { SprintPhase } from './sprintOrchestrator';
 import type { ActionExecutionResult } from '../skills/actions/types';
-import { isOpenCodeSdkAvailable, getDiagnostics as getSdkDiagnostics } from '../opencode/opencodeSdkClient';
+import {
+  isOpenCodeSdkAvailable,
+  getDiagnostics as getSdkDiagnostics,
+  createSession as createSdkSession,
+  closeSession as closeSdkSession,
+} from '../opencode/opencodeSdkClient';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Subprocess helper ───────────────────────────────────────────────────────
@@ -129,20 +134,28 @@ const executeQaFastPath = async (
   objective: string,
   changedFiles: string[],
 ): Promise<ActionExecutionResult> => {
-  // ── Pre-flight: OpenCode SDK LSP diagnostics (best-effort, non-blocking) ──
+  // ── Pre-flight: OpenCode SDK tsc diagnostics (best-effort, non-blocking) ──
   let sdkDiagSection = '';
   if (isOpenCodeSdkAvailable() && changedFiles.length > 0) {
+    let sdkSession: { sessionId: string } | null = null;
     try {
-      const diagnostics = await getSdkDiagnostics('qa-fast-path', changedFiles);
-      const errors = diagnostics.filter((d) => d.severity === 'error');
-      if (errors.length > 0) {
-        sdkDiagSection = `\n## SDK LSP Diagnostics (${errors.length} errors)\n` +
-          errors.slice(0, 10).map((d) => `- ${d.file}:${d.line} ${d.message}`).join('\n');
-        logger.info('[FAST-PATH] qa: SDK LSP found %d errors in %d files', errors.length, changedFiles.length);
+      sdkSession = await createSdkSession('qa-fast-path');
+      if (sdkSession) {
+        const diagnostics = await getSdkDiagnostics(sdkSession.sessionId, changedFiles);
+        const errors = diagnostics.filter((d) => d.severity === 'error');
+        if (errors.length > 0) {
+          sdkDiagSection = `\n## SDK tsc Diagnostics (${errors.length} errors)\n` +
+            errors.slice(0, 10).map((d) => `- ${d.file}:${d.line} ${d.message}`).join('\n');
+          logger.info('[FAST-PATH] qa: SDK tsc found %d errors in %d files', errors.length, changedFiles.length);
+        }
       }
     } catch (sdkErr) {
       logger.debug('[FAST-PATH] qa: SDK diagnostics failed (non-blocking): %s',
         getErrorMessage(sdkErr));
+    } finally {
+      if (sdkSession) {
+        await closeSdkSession(sdkSession.sessionId).catch(() => {});
+      }
     }
   }
 

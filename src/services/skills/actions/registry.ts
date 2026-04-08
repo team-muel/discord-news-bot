@@ -10,8 +10,8 @@ import {
   jarvisMemorySearchAction,
   jarvisEvalAction,
   jarvisTelemetryAction,
-  jarvisSchedulerRunAction,
-  jarvisSkillDiscoverAction,
+  jarvisSchedulerListAction,
+  jarvisSkillSearchAction,
   qaTestAction,
   csoAuditAction,
   releaseShipAction,
@@ -91,7 +91,7 @@ registerAlias('operate.ops', 'Neutral alias for openjarvis.ops.', openjarvisOpsA
 registerActions(
   jarvisResearchAction, jarvisDigestAction, jarvisMemoryIndexAction,
   jarvisMemorySearchAction, jarvisEvalAction, jarvisTelemetryAction,
-  jarvisSchedulerRunAction, jarvisSkillDiscoverAction,
+  jarvisSchedulerListAction, jarvisSkillSearchAction,
 );
 
 // Code / content / data

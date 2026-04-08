@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getBotRuntimeSnapshot } from '../bot';
-import { START_BOT, OBSIDIAN_HEADLESS_ENABLED } from '../config';
+import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
@@ -52,7 +52,6 @@ const getVaultStats = () => {
   return {
     vaultPath,
     vaultReady: vaultExists && fileCount > 0,
-    headlessEnabled: OBSIDIAN_HEADLESS_ENABLED,
     fileCount,
   };
 };
@@ -204,10 +203,8 @@ export function createDashboardRouter(): Router {
       ${vault ? `
         <div class="kv"><span class="k">Path</span><span class="v" style="font-size:11px">${esc(vault.vaultPath)}</span></div>
         <div class="kv"><span class="k">Vault Ready</span><span class="v">${badge(vault.vaultReady ? 'Yes' : 'No', vault.vaultReady)}</span></div>
-        <div class="kv"><span class="k">Sync Mode</span><span class="v">${vault.headlessEnabled
-          ? badge('Headless (ob sync)', true)
-          : vault.vaultReady
-            ? '<span class="badge bg-blue">Desktop App Sync</span>'
+        <div class="kv"><span class="k">Sync Mode</span><span class="v">${vault.vaultReady
+            ? '<span class="badge bg-blue">Remote MCP</span>'
             : badge('Not Syncing', false)
         }</span></div>
         <div class="kv"><span class="k">Markdown Files</span><span class="v">${vault.fileCount.toLocaleString()}</span></div>

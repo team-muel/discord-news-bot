@@ -974,26 +974,19 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     }
   }
 
-  // ── Self-learning loop: feed retro results to OpenJarvis for trace + optimize ──
+  // ── Self-learning loop: feed retro results to OpenJarvis for feedback + optimize ──
   if (currentPhase === 'retro' && phaseResult.status === 'success') {
     const learningAppendix: string[] = [];
 
-    // 1. Store trace data
-    const traceResult = await executeExternalAction('openjarvis', 'jarvis.trace', {
-      trace: {
-        run_id: pipeline.sprintId,
-        phase: 'retro',
-        objective: pipeline.objective,
-        output: phaseResult.output.slice(0, 3000),
-        changed_files: pipeline.changedFiles,
-        total_phases: pipeline.totalPhasesExecuted,
-        timestamp: new Date().toISOString(),
-      },
+    // 1. Record feedback for the sprint run trace
+    const traceResult = await executeExternalAction('openjarvis', 'jarvis.feedback', {
+      trace_id: pipeline.sprintId,
+      score: 1.0,
     });
     if (traceResult.ok) {
-      learningAppendix.push(`[TRACE] stored (run_id=${pipeline.sprintId})`);
+      learningAppendix.push(`[FEEDBACK] recorded (trace_id=${pipeline.sprintId})`);
     } else {
-      logger.warn('[SPRINT] self-learning trace failed for sprint=%s: %s', sprintId, traceResult.output.join('; ') || 'unknown');
+      logger.warn('[SPRINT] self-learning feedback failed for sprint=%s: %s', sprintId, traceResult.output.join('; ') || 'unknown');
     }
 
     // 2. Trigger optimization only after enough traces have accumulated (min 3)
@@ -1037,11 +1030,11 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       });
     }
 
-    // 4. Skill discovery: detect missing skills from trace patterns
-    const skillDiscoveryResult = await executeExternalAction('openjarvis', 'jarvis.skill.discover', { limit: 5 });
-    if (skillDiscoveryResult.ok && skillDiscoveryResult.output.length > 0) {
-      learningAppendix.push(`[SKILL-DISCOVER] ${skillDiscoveryResult.output.slice(0, 3).join('; ')}`);
-      logger.info('[SPRINT] skill discovery found candidates for sprint=%s', sprintId);
+    // 4. Skill search: find available skills from catalog
+    const skillSearchResult = await executeExternalAction('openjarvis', 'jarvis.skill.search', {});
+    if (skillSearchResult.ok && skillSearchResult.output.length > 0) {
+      learningAppendix.push(`[SKILL-SEARCH] ${skillSearchResult.output.slice(0, 3).join('; ')}`);
+      logger.info('[SPRINT] skill search found candidates for sprint=%s', sprintId);
     }
 
     // 5. Telemetry snapshot: capture energy/latency metrics post-sprint

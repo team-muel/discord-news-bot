@@ -65,12 +65,9 @@ export const SUPABASE_TRADES_TABLE = parseStringEnv(process.env.SUPABASE_TRADES_
 export const LOG_LEVEL = parseStringEnv(process.env.LOG_LEVEL, 'info');
 export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, 60000);
 
-// ──── Obsidian Headless CLI (RAG Integration) ────
-export const OBSIDIAN_HEADLESS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);
+// ──── Obsidian Vault (RAG Integration) ────
 export const OBSIDIAN_LOCAL_FS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_LOCAL_FS_ENABLED, false);
 export const OBSIDIAN_VAULT_PATH = parseStringEnv(process.env.OBSIDIAN_VAULT_PATH, '');
-export const OBSIDIAN_EMAIL = parseStringEnv(process.env.OBSIDIAN_EMAIL, '');
-export const OBSIDIAN_PASSWORD = parseStringEnv(process.env.OBSIDIAN_PASSWORD, '');
 export const OBSIDIAN_VAULT_NAME = parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 export const OBSIDIAN_RAG_CACHE_TTL_MS = parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3600000);
 export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MAX_DOCS, 10);

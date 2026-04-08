@@ -534,9 +534,9 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     },
     {
       adapterId: 'openjarvis',
-      action: 'jarvis.skill.discover',
-      args: () => ({ limit: 5 }),
-      label: 'Missing skill candidates',
+      action: 'jarvis.skill.search',
+      args: () => ({}),
+      label: 'Available skill candidates',
     },
     {
       adapterId: 'openjarvis',

@@ -213,6 +213,10 @@ const runCommand = async ({ task, cwd, mode }) => {
  * Proxy a task to the OpenCode headless server via session API.
  * Returns null if the SDK is unreachable or the task is not applicable.
  * Safety guards (DANGEROUS_COMMAND_PATTERN etc.) still apply before this is called.
+ *
+ * API: POST /session → { id }
+ *      POST /session/:id/message → { info, parts }
+ *      DELETE /session/:id
  */
 const runViaSdk = async (task, mode) => {
   if (!task) return null;
@@ -248,21 +252,28 @@ const runViaSdk = async (task, mode) => {
     });
     if (!sessRes.ok) return null;
     const sessData = await sessRes.json();
-    const sessionId = sessData?.sessionId || sessData?.id;
+    const sessionId = sessData?.id;
     if (!sessionId) return null;
 
     try {
-      // Chat with task
-      const chatRes = await fetch(`${SDK_BASE_URL}/session/${encodeURIComponent(sessionId)}/chat`, {
+      // Send message (official API: POST /session/:id/message with parts)
+      const msgRes = await fetch(`${SDK_BASE_URL}/session/${encodeURIComponent(sessionId)}/message`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message: task }),
+        body: JSON.stringify({
+          parts: [{ type: 'text', text: task }],
+        }),
         signal: controller.signal,
       });
-      if (!chatRes.ok) return null;
-      const chatData = await chatRes.json();
+      if (!msgRes.ok) return null;
+      const msgData = await msgRes.json();
 
-      const text = chatData?.message || chatData?.content || JSON.stringify(chatData);
+      // Extract text from response parts
+      const textParts = (msgData?.parts || [])
+        .filter((p) => p.type === 'text' && typeof p.text === 'string')
+        .map((p) => p.text);
+      const text = textParts.join('\n') || msgData?.message || msgData?.content || JSON.stringify(msgData);
+
       return {
         content: [{ type: 'text', text: `exit_code=0\nduration_ms=0\n[SDK]\nstdout:\n${text}` }],
         isError: false,

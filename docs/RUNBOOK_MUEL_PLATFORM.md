@@ -204,18 +204,19 @@ Sync rule:
 - `OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>`
 - `OPENCLAW_API_KEY=<secret>`
 
-1. Obsidian headless 기반 remote-only 경로 활성화:
+1. Obsidian remote-mcp 기반 경로 활성화:
 
-- `OBSIDIAN_HEADLESS_ENABLED=true`
-- `OBSIDIAN_HEADLESS_COMMAND=ob`
+- `OBSIDIAN_REMOTE_MCP_ENABLED=true`
+- `OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850`
+- `OBSIDIAN_REMOTE_MCP_TOKEN=<secret>`
 - `OBSIDIAN_VAULT_NAME=<vault-name>`
 - `OBSIDIAN_ADAPTER_STRICT=true`
-- `OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli`
-- `OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli`
-- `OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli`
-- `OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli`
-- `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli`
-- `OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=script-cli`
+- `OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli`
+- `OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,script-cli`
+- `OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=remote-mcp`
+- `OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp`
+- `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp`
+- `OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,script-cli`
 
 1. OpenJarvis 원격 실행 강제:
 

@@ -14,41 +14,31 @@
  */
 
 import { parseBooleanEnv, parseStringEnv } from '../../../utils/env';
+import { fetchWithTimeout } from '../../../utils/network';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { makeAdapterResult, isAdapterEnabled } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.LITELLM_ADMIN_ADAPTER_DISABLED, false);
 const LEGACY_ENABLED_RAW = process.env.LITELLM_ADMIN_ADAPTER_ENABLED;
-const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+const isNotDisabled = (): boolean => isAdapterEnabled(EXPLICITLY_DISABLED, LEGACY_ENABLED_RAW);
 
 const BASE_URL = parseStringEnv(process.env.LITELLM_BASE_URL, '').replace(/\/+$/, '');
 const MASTER_KEY = parseStringEnv(process.env.LITELLM_MASTER_KEY, '');
 const TIMEOUT_MS = 10_000;
 
-const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({
-  ok,
-  adapterId: 'litellm-admin' as ExternalAdapterId,
-  action,
-  summary,
-  output,
-  durationMs,
-  ...(error ? { error } : {}),
-});
+const ADAPTER_ID = 'litellm-admin' as ExternalAdapterId;
+const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult =>
+  makeAdapterResult(ADAPTER_ID, ok, action, summary, output, durationMs, error);
 
 const fetchProxy = async (path: string): Promise<{ ok: boolean; status: number; body: unknown }> => {
   if (!BASE_URL) throw new Error('LITELLM_BASE_URL not configured');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (MASTER_KEY) headers['Authorization'] = `Bearer ${MASTER_KEY}`;
-    const res = await fetch(`${BASE_URL}${path}`, { signal: controller.signal, headers });
-    const body = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, body };
-  } finally {
-    clearTimeout(timer);
-  }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (MASTER_KEY) headers['Authorization'] = `Bearer ${MASTER_KEY}`;
+  const res = await fetchWithTimeout(`${BASE_URL}${path}`, { headers }, TIMEOUT_MS);
+  const body = await res.json().catch(() => null);
+  return { ok: res.ok, status: res.status, body };
 };
 
 const checkHealth = async (): Promise<ExternalAdapterResult> => {

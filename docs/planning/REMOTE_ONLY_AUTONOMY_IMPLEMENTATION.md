@@ -52,25 +52,25 @@ Status note:
 
 원칙:
 
-- read/search/graph는 headless-cli 우선
-- write는 script-cli 또는 DB 경로만 사용
+- read/search/graph/write 모두 remote-mcp 우선
+- write는 remote-mcp 또는 script-cli fallback
 - local-fs는 adapter order에서 제거
 
 권장값:
 
-- OBSIDIAN_HEADLESS_ENABLED=true
-- OBSIDIAN_HEADLESS_COMMAND=ob
+- OBSIDIAN_REMOTE_MCP_ENABLED=true
+- OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
 - OBSIDIAN_ADAPTER_STRICT=true
-- OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli
-- OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli
-- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli
-- OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli
-- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli
-- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=script-cli
+- OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli
+- OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,script-cli
+- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=remote-mcp
+- OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp
+- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp
+- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,script-cli
 
 주의:
 
-- headless write capability가 불충분하면 write는 DB 적재 후 비동기 동기화로 처리한다.
+- GCP VM MCP 서버가 다운되면 script-cli로 fallback됩니다.
 
 ## 4) 실행 순서 (D1-D7)
 

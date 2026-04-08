@@ -1,0 +1,10 @@
+[Unit]
+Description=Obsidian Lore Sync Timer (every 60 min)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=60min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

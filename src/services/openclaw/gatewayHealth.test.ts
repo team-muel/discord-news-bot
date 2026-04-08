@@ -133,7 +133,7 @@ describe('gatewayHealth', () => {
       // First: force health check to pass
       mockFetch.mockResolvedValueOnce(okResponse()); // healthz
       vi.advanceTimersByTime(20_000);
-      mockFetch.mockResolvedValueOnce(okResponse({ response: 'Hello world' })); // /agent/chat
+      mockFetch.mockResolvedValueOnce(okResponse({ choices: [{ message: { content: 'Hello world' } }] })); // /v1/chat/completions
 
       const result = await sendGatewayChat({ user: 'hi', system: 'test' });
       expect(result).toBe('Hello world');
@@ -149,7 +149,7 @@ describe('gatewayHealth', () => {
     it('returns null on empty response', async () => {
       mockFetch.mockResolvedValueOnce(okResponse()); // healthz
       vi.advanceTimersByTime(20_000);
-      mockFetch.mockResolvedValueOnce(okResponse({ response: '' })); // /agent/chat
+      mockFetch.mockResolvedValueOnce(okResponse({ choices: [{ message: { content: '' } }] })); // /v1/chat/completions
 
       const result = await sendGatewayChat({ user: 'hi', system: 'test' });
       expect(result).toBeNull();
@@ -158,7 +158,7 @@ describe('gatewayHealth', () => {
     it('marks gateway unhealthy on fetch error', async () => {
       mockFetch.mockResolvedValueOnce(okResponse()); // healthz
       vi.advanceTimersByTime(20_000);
-      mockFetch.mockRejectedValueOnce(new Error('timeout')); // /agent/chat
+      mockFetch.mockRejectedValueOnce(new Error('timeout')); // /v1/chat/completions
 
       const result = await sendGatewayChat({ user: 'hi', system: 'test' });
       expect(result).toBeNull();

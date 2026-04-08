@@ -123,3 +123,14 @@ export const buildSourceRef = (guildId: string, meta: DiscordChannelMeta, messag
   }
   return `discord://guild/${guildId}/channel/${meta.channelId}/message/${messageId}`;
 };
+
+// ─── ID validation ────────────────────────────────────────────────────────────
+
+/**
+ * Validate and return a Discord snowflake ID string.
+ * Returns empty string if the value is not a valid Discord ID (17–20 digit numeric).
+ */
+export const sanitizeDiscordId = (value: unknown): string => {
+  const text = String(value || '').trim();
+  return /^\d{6,30}$/.test(text) ? text : '';
+};

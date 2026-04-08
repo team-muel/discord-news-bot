@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { HealthResponse } from '../contracts/bot';
 import { getBotRuntimeSnapshot } from '../bot';
-import { START_BOT, OBSIDIAN_HEADLESS_ENABLED } from '../config';
+import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
@@ -154,7 +154,6 @@ export function createHealthRouter(): Router {
       obsidianStatus = {
         vaultPath,
         vaultReady: vaultExists && fileCount > 0,
-        headlessEnabled: OBSIDIAN_HEADLESS_ENABLED,
         fileCount,
       };
     }

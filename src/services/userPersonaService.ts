@@ -1,5 +1,6 @@
 import { createMemoryItem } from './agent/agentMemoryStore';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { sanitizeDiscordId } from '../utils/discordChannelMeta';
 
 type PersonaSnapshotParams = {
   guildId: string;
@@ -17,11 +18,6 @@ type PersonalCommentParams = {
   content: string;
   channelId?: string;
   visibility?: 'private' | 'guild';
-};
-
-const sanitizeDiscordId = (value: unknown): string => {
-  const text = String(value || '').trim();
-  return /^\d{6,30}$/.test(text) ? text : '';
 };
 
 const cleanText = (value: unknown, max = 1000): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);

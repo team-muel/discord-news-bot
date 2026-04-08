@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseStringEnv } from '../../../utils/env';
+import { fetchWithTimeout } from '../../../utils/network';
 import {
   OPENJARVIS_ENABLED as CONFIG_OPENJARVIS_ENABLED,
   OPENJARVIS_DISABLED as CONFIG_OPENJARVIS_DISABLED,
@@ -91,17 +92,13 @@ const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string 
 
 const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ ok: boolean; data: unknown }> => {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (SERVE_API_KEY) headers.Authorization = `Bearer ${SERVE_API_KEY}`;
-    const resp = await fetch(`${SERVE_URL}${path}`, {
+    const resp = await fetchWithTimeout(`${SERVE_URL}${path}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    }, TIMEOUT_MS);
     const data = await resp.json();
     return { ok: resp.ok, data };
   } catch (fetchErr) {
@@ -110,12 +107,28 @@ const httpPost = async (path: string, body: Record<string, unknown>): Promise<{ 
   }
 };
 
+const httpGet = async (path: string): Promise<{ ok: boolean; data: unknown }> => {
+  try {
+    const headers: Record<string, string> = {};
+    if (SERVE_API_KEY) headers.Authorization = `Bearer ${SERVE_API_KEY}`;
+    const resp = await fetchWithTimeout(`${SERVE_URL}${path}`, {
+      method: 'GET',
+      headers,
+    }, TIMEOUT_MS);
+    const data = await resp.json();
+    return { ok: resp.ok, data };
+  } catch (fetchErr) {
+    logger.debug('[OPENJARVIS] httpGet %s failed: %s', path, getErrorMessage(fetchErr));
+    return { ok: false, data: null };
+  }
+};
+
 export const openjarvisAdapter: ExternalToolAdapter = {
   id: 'openjarvis',
   capabilities: [
-    'jarvis.ask', 'jarvis.serve', 'jarvis.optimize', 'jarvis.bench', 'jarvis.trace',
+    'jarvis.ask', 'jarvis.serve', 'jarvis.optimize', 'jarvis.bench', 'jarvis.feedback',
     'jarvis.research', 'jarvis.digest', 'jarvis.memory.index', 'jarvis.memory.search',
-    'jarvis.eval', 'jarvis.telemetry', 'jarvis.scheduler.run', 'jarvis.skill.discover',
+    'jarvis.eval', 'jarvis.telemetry', 'jarvis.scheduler.list', 'jarvis.skill.search',
   ],
   liteCapabilities: ['jarvis.ask'],
 
@@ -167,7 +180,7 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           // Fallback to CLI
           if (cliAvailable !== false) {
             try {
-              const { stdout } = await runCli(['ask', stripShellMeta(question), '--quiet']);
+              const { stdout } = await runCli(['ask', stripShellMeta(question), '--no-stream']);
               return makeResult(true, 'Response via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
             } catch {
               // CLI failed — try LiteLLM fallback below
@@ -205,88 +218,93 @@ export const openjarvisAdapter: ExternalToolAdapter = {
 
         case 'jarvis.optimize': {
           if (cliAvailable === false) return makeResult(false, 'jarvis optimize requires CLI', [], 'CLI_REQUIRED');
-          const { stdout } = await runCli(['optimize', '--json']);
+          const optimizeArgs = ['optimize', 'run'];
+          if (args.benchmark) optimizeArgs.push('--benchmark', stripShellMeta(String(args.benchmark)));
+          const { stdout } = await runCli(optimizeArgs);
           return makeResult(true, 'Optimization completed', stdout.trim().split('\n').slice(0, 20));
         }
 
         case 'jarvis.bench': {
           if (cliAvailable === false) return makeResult(false, 'jarvis bench requires CLI', [], 'CLI_REQUIRED');
-          const { stdout } = await runCli(['bench', '--json']);
+          const { stdout } = await runCli(['bench', 'run', '--json']);
           return makeResult(true, 'Benchmark completed', stdout.trim().split('\n').slice(0, 20));
         }
 
-        case 'jarvis.trace': {
-          const tracePayload = args.trace as Record<string, unknown> | undefined;
-          if (!tracePayload || typeof tracePayload !== 'object') {
-            return makeResult(false, 'Trace payload required', [], 'MISSING_TRACE');
+        case 'jarvis.feedback': {
+          const traceId = String(args.trace_id || args.traceId || '').trim();
+          const score = Number(args.score);
+          if (!traceId) {
+            return makeResult(false, 'trace_id required', [], 'MISSING_TRACE_ID');
+          }
+          if (!Number.isFinite(score) || score < 0 || score > 1) {
+            return makeResult(false, 'score must be a number between 0 and 1', [], 'INVALID_SCORE');
           }
 
           // Prefer HTTP POST if serve is running
           const serveOk = await checkServeHealth();
           if (serveOk) {
-            const { ok } = await httpPost('/v1/traces', tracePayload);
+            const { ok } = await httpPost('/v1/feedback', { trace_id: traceId, score });
             if (ok) {
-              return makeResult(true, 'Trace stored via jarvis serve', [`run_id=${String(tracePayload.run_id || 'unknown')}`]);
+              return makeResult(true, 'Feedback recorded via jarvis serve', [`trace_id=${traceId}`, `score=${score}`]);
             }
           }
 
-          // Fallback: write trace via CLI stdin pipe
+          // Fallback: record feedback via CLI
           if (cliAvailable === false) {
-            return makeResult(false, 'jarvis trace requires CLI or serve endpoint', [], 'CLI_REQUIRED');
+            return makeResult(false, 'jarvis feedback requires CLI or serve endpoint', [], 'CLI_REQUIRED');
           }
-          const traceJson = JSON.stringify(tracePayload);
-          const { stdout } = await runCli(['trace', 'store', '--json', traceJson]);
-          return makeResult(true, 'Trace stored via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
+          const { stdout } = await runCli(['feedback', 'score', traceId, '-s', String(score)]);
+          return makeResult(true, 'Feedback recorded via jarvis CLI', stdout.trim().split('\n').slice(0, 20));
         }
 
         // ── Deep Research Agent ──
         case 'jarvis.research': {
           const query = String(args.query || '').slice(0, 4000);
           if (!query) return makeResult(false, 'Research query required', [], 'MISSING_QUERY');
+          const researchAgentId = String(args.agentId || 'deep_research');
 
-          // Prefer HTTP serve agent endpoint
+          // Prefer HTTP serve agent endpoint: POST /v1/agents/{agent_id}/message
           const serveOk = await checkServeHealth();
           if (serveOk) {
-            const { ok, data } = await httpPost('/v1/agents/run', {
-              agent: 'deep_research',
+            const { ok, data } = await httpPost(`/v1/agents/${encodeURIComponent(researchAgentId)}/message`, {
               input: query,
-              ...(args.sources ? { config: { sources: args.sources } } : {}),
             });
             if (ok && data) {
-              const resp = data as { output?: string; citations?: string[] };
-              const lines = (resp.output || '').split('\n').slice(0, 30);
+              const resp = data as { output?: string; content?: string; citations?: string[] };
+              const text = resp.output || resp.content || '';
+              const lines = text.split('\n').slice(0, 30);
               if (resp.citations?.length) lines.push('', `Citations: ${resp.citations.length}`);
               return makeResult(true, 'Deep research completed via serve', lines);
             }
           }
 
-          // CLI fallback
+          // CLI fallback: jarvis agents ask <agent_id> <message>
           if (cliAvailable === false) return makeResult(false, 'jarvis research requires CLI or serve', [], 'CLI_REQUIRED');
-          const { stdout: researchOut } = await runCli(['ask', stripShellMeta(query), '--agent', 'deep_research', '--quiet']);
+          const { stdout: researchOut } = await runCli(['agents', 'ask', researchAgentId, stripShellMeta(query)]);
           return makeResult(true, 'Deep research completed via CLI', researchOut.trim().split('\n').slice(0, 30));
         }
 
         // ── Morning Digest ──
         case 'jarvis.digest': {
-          // Prefer HTTP serve
+          const digestAgentId = String(args.agentId || 'morning_digest');
+          const digestTopic = String(args.topic || 'daily briefing');
+
+          // Prefer HTTP serve: POST /v1/agents/{agent_id}/message
           const serveOk = await checkServeHealth();
           if (serveOk) {
-            const { ok, data } = await httpPost('/v1/agents/run', {
-              agent: 'morning_digest',
-              input: String(args.topic || 'daily briefing'),
-              ...(args.sources ? { config: { sources: args.sources } } : {}),
+            const { ok, data } = await httpPost(`/v1/agents/${encodeURIComponent(digestAgentId)}/message`, {
+              input: digestTopic,
             });
             if (ok && data) {
-              const resp = data as { output?: string };
-              return makeResult(true, 'Digest generated via serve', (resp.output || '').split('\n').slice(0, 30));
+              const resp = data as { output?: string; content?: string };
+              const text = resp.output || resp.content || '';
+              return makeResult(true, 'Digest generated via serve', text.split('\n').slice(0, 30));
             }
           }
 
-          // CLI fallback
+          // CLI fallback: jarvis agents ask <agent_id> <message>
           if (cliAvailable === false) return makeResult(false, 'jarvis digest requires CLI or serve', [], 'CLI_REQUIRED');
-          const digestArgs = ['digest', '--fresh'];
-          if (args.json) digestArgs.push('--json');
-          const { stdout: digestOut } = await runCli(digestArgs);
+          const { stdout: digestOut } = await runCli(['agents', 'ask', digestAgentId, stripShellMeta(digestTopic)]);
           return makeResult(true, 'Digest generated via CLI', digestOut.trim().split('\n').slice(0, 30));
         }
 
@@ -328,78 +346,64 @@ export const openjarvisAdapter: ExternalToolAdapter = {
         // ── Eval: Run evaluation benchmarks ──
         case 'jarvis.eval': {
           if (cliAvailable === false) return makeResult(false, 'jarvis eval requires CLI', [], 'CLI_REQUIRED');
-          const dataset = String(args.dataset || 'ipw_mixed').trim();
-          const evalArgs = ['eval', '--dataset', stripShellMeta(dataset), '--json'];
-          if (args.limit) evalArgs.push('--limit', String(Math.min(100, Number(args.limit) || 10)));
+          const benchmark = String(args.benchmark || args.dataset || 'supergpqa').trim();
+          const evalArgs = ['eval', 'run', '--benchmark', stripShellMeta(benchmark), '--json'];
+          if (args.limit || args.maxSamples) evalArgs.push('--max-samples', String(Math.min(100, Number(args.limit || args.maxSamples) || 10)));
           const { stdout: evalOut } = await runCli(evalArgs);
-          return makeResult(true, `Eval completed: ${dataset}`, evalOut.trim().split('\n').slice(0, 20));
+          return makeResult(true, `Eval completed: ${benchmark}`, evalOut.trim().split('\n').slice(0, 20));
         }
 
-        // ── Telemetry: Energy/latency/throughput metrics ──
+        // ── Telemetry: Aggregated statistics ──
         case 'jarvis.telemetry': {
-          // Prefer HTTP serve telemetry endpoint
+          // Prefer HTTP serve telemetry endpoint: GET /v1/telemetry/stats
           const serveOk = await checkServeHealth();
           if (serveOk) {
-            const { ok, data } = await httpPost('/v1/telemetry/summary', {
-              window: String(args.window || '1h'),
-            });
+            const { ok, data } = await httpGet('/v1/telemetry/stats');
             if (ok && data) {
               const resp = data as Record<string, unknown>;
               const lines = Object.entries(resp).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).slice(0, 20);
-              return makeResult(true, 'Telemetry summary retrieved', lines);
+              return makeResult(true, 'Telemetry stats retrieved', lines);
             }
           }
 
-          // CLI fallback
+          // CLI fallback: jarvis telemetry stats
           if (cliAvailable === false) return makeResult(false, 'jarvis telemetry requires CLI or serve', [], 'CLI_REQUIRED');
-          const { stdout: telOut } = await runCli(['telemetry', 'summary', '--json']);
-          return makeResult(true, 'Telemetry summary via CLI', telOut.trim().split('\n').slice(0, 20));
+          const { stdout: telOut } = await runCli(['telemetry', 'stats']);
+          return makeResult(true, 'Telemetry stats via CLI', telOut.trim().split('\n').slice(0, 20));
         }
 
-        // ── Scheduler: Run a scheduled task ──
-        case 'jarvis.scheduler.run': {
-          const taskName = String(args.task || '').trim();
-          if (!taskName) return makeResult(false, 'Task name required', [], 'MISSING_TASK');
+        // ── Scheduler: List scheduled tasks ──
+        case 'jarvis.scheduler.list': {
+          // CLI only: jarvis scheduler list
+          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler requires CLI', [], 'CLI_REQUIRED');
+          const { stdout: schedOut } = await runCli(['scheduler', 'list']);
+          return makeResult(true, 'Scheduler tasks listed', schedOut.trim().split('\n').slice(0, 20));
+        }
 
-          // Prefer HTTP serve
+        // ── Skill Search: search available skills ──
+        case 'jarvis.skill.search': {
+          const skillQuery = String(args.query || '').slice(0, 200);
+
+          // Prefer HTTP serve: GET /v1/skills
           const serveOk = await checkServeHealth();
           if (serveOk) {
-            const { ok, data } = await httpPost('/v1/scheduler/run', { task: taskName });
+            const { ok, data } = await httpGet('/v1/skills');
             if (ok && data) {
-              const resp = data as { status?: string; output?: string };
-              return makeResult(true, `Scheduler task '${taskName}' triggered`, [
-                `status: ${resp.status || 'unknown'}`,
-                ...(resp.output || '').split('\n').slice(0, 15),
-              ]);
+              const skills = Array.isArray(data) ? data : ((data as Record<string, unknown>).skills as unknown[]) || [];
+              const lines = skills.slice(0, 20).map((s, i) => {
+                const skill = s as Record<string, unknown>;
+                return `[${i + 1}] ${skill.name || 'unnamed'} — ${(String(skill.description || '')).slice(0, 150)}`;
+              });
+              return makeResult(true, `Found ${lines.length} skills`, lines);
             }
           }
 
-          // CLI fallback
-          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler requires CLI or serve', [], 'CLI_REQUIRED');
-          const { stdout: schedOut } = await runCli(['scheduler', 'run', stripShellMeta(taskName)]);
-          return makeResult(true, `Scheduler task '${taskName}' completed`, schedOut.trim().split('\n').slice(0, 20));
-        }
-
-        // ── Skill Discovery: detect missing skills from traces ──
-        case 'jarvis.skill.discover': {
-          // Prefer HTTP serve
-          const serveOk = await checkServeHealth();
-          if (serveOk) {
-            const { ok, data } = await httpPost('/v1/learning/skills/discover', {
-              limit: Math.min(20, Math.max(1, Number(args.limit) || 5)),
-            });
-            if (ok && data) {
-              const resp = data as { skills?: Array<{ name?: string; confidence?: number; description?: string }> };
-              const lines = (resp.skills || []).map((s, i) =>
-                `[${i + 1}] ${s.name || 'unnamed'} (confidence=${s.confidence?.toFixed(2) ?? '?'}) — ${(s.description || '').slice(0, 150)}`);
-              return makeResult(true, `Discovered ${lines.length} skill candidates`, lines);
-            }
-          }
-
-          // CLI fallback
-          if (cliAvailable === false) return makeResult(false, 'jarvis skill discover requires CLI or serve', [], 'CLI_REQUIRED');
-          const { stdout: skillOut } = await runCli(['skill', 'discover', '--json']);
-          return makeResult(true, 'Skill discovery completed', skillOut.trim().split('\n').slice(0, 20));
+          // CLI fallback: jarvis skill search [query]
+          if (cliAvailable === false) return makeResult(false, 'jarvis skill search requires CLI or serve', [], 'CLI_REQUIRED');
+          const skillArgs = ['skill', 'search'];
+          if (skillQuery) skillArgs.push(stripShellMeta(skillQuery));
+          const { stdout: skillOut } = await runCli(skillArgs);
+          return makeResult(true, 'Skill search completed', skillOut.trim().split('\n').slice(0, 20));
         }
 
         default:

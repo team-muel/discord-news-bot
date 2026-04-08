@@ -83,10 +83,10 @@
 
 - `src/services/obsidian/router.ts`
 - `src/services/obsidian/types.ts`
+- `src/services/obsidian/adapters/remoteMcpAdapter.ts`
 - `src/services/obsidian/adapters/scriptCliAdapter.ts`
-- `src/services/obsidian/adapters/headlessCliAdapter.ts`
 
-이 계층은 capability 기반 어댑터 선택, 실행 가능 여부 확인, CLI wrapper 패턴을 이미 보여준다.
+이 계층은 capability 기반 어댑터 선택, 실행 가능 여부 확인, CLI wrapper / HTTP 패턴을 이미 보여준다.
 
 ## Missing Layer
 

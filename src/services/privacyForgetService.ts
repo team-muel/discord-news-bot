@@ -5,6 +5,7 @@ import logger from '../logger';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { withObsidianFileLock } from '../utils/obsidianFileLock';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { sanitizeDiscordId } from '../utils/discordChannelMeta';
 
 type ForgetTableCounts = Record<string, number>;
 
@@ -55,14 +56,6 @@ const FORGET_GUILD_TABLES = [
   'agent_action_policies',
   'agent_action_approval_requests',
 ] as const;
-
-const sanitizeDiscordId = (value: unknown): string => {
-  const text = String(value || '').trim();
-  if (!/^\d{6,30}$/.test(text)) {
-    return '';
-  }
-  return text;
-};
 
 const resolveInsideVault = (...segments: string[]): string | null => {
   if (!OBSIDIAN_VAULT_ROOT) {
