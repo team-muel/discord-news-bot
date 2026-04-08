@@ -144,19 +144,29 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     let answer: string = DISCORD_MESSAGES.docs.llmNotConfigured;
     if (deps.isAnyLlmConfigured() && ragResult.documentContext) {
       try {
+        const toolHintBlock = ragPlan.toolHints && ragPlan.toolHints.length > 0
+          ? [
+              '',
+              '=== 사용 가능한 도구 목록 ===',
+              ragPlan.toolHints.map((t) => `- ${t.id}: ${t.description} (capabilities: ${t.capabilities.slice(0, 4).join(', ')})`).join('\n'),
+            ].join('\n')
+          : '';
+
         const system = [
           '당신은 한국어로 답변하는 전문 AI 어시스턴트입니다.',
           '아래 제공된 문서 컨텍스트를 기반으로 사용자의 질문에 정확하고 명확하게 답변하세요.',
           '컨텍스트에 없는 정보는 추론하지 마세요. 없으면 "관련 정보가 문서에 없습니다"라고 솔직하게 답하세요.',
+          toolHintBlock ? '도구 목록이 제공된 경우, 실행 관련 요청에 어떤 도구를 활용할 수 있는지 언급할 수 있습니다.' : '',
           `답변은 ${DISCORD_DOCS_ANSWER_TARGET_CHARS}자 내외로 간결하게 작성하세요.`,
-        ].join('\n');
+        ].filter(Boolean).join('\n');
 
         const user = [
           `질문: ${question}`,
           '',
           '=== 참고 문서 컨텍스트 ===',
           ragResult.documentContext.slice(0, DISCORD_DOCS_CONTEXT_LIMIT),
-        ].join('\n');
+          toolHintBlock,
+        ].filter(Boolean).join('\n');
 
         answer = await deps.generateText({ system, user, maxTokens: DISCORD_DOCS_LLM_MAX_TOKENS, actionName: 'docs.qa' });
       } catch {

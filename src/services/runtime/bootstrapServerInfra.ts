@@ -94,8 +94,8 @@ export const bootstrapServerInfrastructure = (isPgCronOwned: (name: string) => b
   }
 
   // Emit VAULT_SCHEMA.md at startup for agent navigation
-  void import('../obsidian/authoring').then(({ emitVaultSchema }) => {
-    return emitVaultSchema();
+  void import('../obsidian/authoring').then(({ emitVaultSchema, emitToolCatalog }) => {
+    return Promise.all([emitVaultSchema(), emitToolCatalog()]);
   }).catch((error) => {
     logger.debug('[VAULT-SCHEMA] emit skipped: %s', getErrorMessage(error));
   });

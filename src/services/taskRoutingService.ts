@@ -7,8 +7,15 @@ export type TaskRouteDecision = {
   overrideUsed?: boolean;
 };
 
+export type ToolHint = {
+  id: string;
+  description: string;
+  capabilities: readonly string[];
+};
+
 import { TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS, TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE } from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getToolCatalog } from './tools/externalAdapterRegistry';
 
 const KNOWLEDGE_PATTERN = /(무엇|정의|설명|원인|비교|차이|왜|근거|문서|스키마|정책|알려줘|요약|정리|what|why|explain|summary|schema|policy|docs?)/i;
 const EXECUTION_PATTERN = /(구현|만들|작성|수정|적용|배포|설정|연동|실행|자동화|고쳐|리팩터|코드|build|implement|create|fix|patch|deploy|configure|integrat|automate)/i;
@@ -281,8 +288,17 @@ export const buildRagQueryPlanForGuild = async (input: string, guildId?: string)
   overrideUsed: boolean;
   maxDocs: number;
   contextMode: 'full' | 'metadata_first';
+  toolHints?: ToolHint[];
 }> => {
   const decision = await detectTaskRouteForGuild(input, guildId);
+
+  // Fetch available tool hints for execution/mixed routes so callers can
+  // include them in LLM context for grounded, non-hallucinated tool usage.
+  let toolHints: ToolHint[] | undefined;
+  if (decision.route === 'execution' || decision.route === 'mixed') {
+    toolHints = await getToolCatalog().catch(() => undefined);
+  }
+
   if (decision.route === 'execution') {
     return {
       route: decision.route,
@@ -291,6 +307,7 @@ export const buildRagQueryPlanForGuild = async (input: string, guildId?: string)
       overrideUsed: Boolean(decision.overrideUsed),
       maxDocs: 6,
       contextMode: 'metadata_first',
+      toolHints,
     };
   }
 
@@ -302,6 +319,7 @@ export const buildRagQueryPlanForGuild = async (input: string, guildId?: string)
       overrideUsed: Boolean(decision.overrideUsed),
       maxDocs: 8,
       contextMode: 'full',
+      toolHints,
     };
   }
 
