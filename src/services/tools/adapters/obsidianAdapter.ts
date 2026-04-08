@@ -59,6 +59,7 @@ const callTool = async (action: string, args: Record<string, unknown>): Promise<
 
 export const obsidianExternalAdapter: ExternalToolAdapter = {
   id: 'obsidian' as ExternalAdapterId,
+  description: 'Obsidian vault — graph-first knowledge search (RAG), note read/write, link graph traversal, sync status, and quality audit.',
   capabilities: ALL_CAPABILITIES,
   liteCapabilities: LITE_CAPABILITIES,
 

@@ -73,6 +73,8 @@ export type ExternalAdapterResult = {
 
 export type ExternalToolAdapter = {
   id: ExternalAdapterId;
+  /** Human-readable description of what this adapter does (for agent reasoning and tool catalog). */
+  description?: string;
   capabilities: readonly string[];
   /** Capabilities available in lite mode (no CLI, LiteLLM proxy only). Undefined means all or none. */
   liteCapabilities?: readonly string[];

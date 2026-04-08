@@ -73,6 +73,7 @@ const safeJson = async (resp: Response): Promise<unknown> => {
 
 export const n8nAdapter: ExternalToolAdapter = {
   id: ADAPTER_ID,
+  description: 'n8n workflow automation — execute, list, trigger, and monitor automation workflows for data pipeline orchestration.',
   capabilities: [
     'workflow.execute',
     'workflow.list',

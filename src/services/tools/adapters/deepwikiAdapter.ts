@@ -249,6 +249,7 @@ const searchWiki = async (query: string): Promise<ExternalAdapterResult> => {
 
 export const deepwikiAdapter: ExternalToolAdapter = {
   id: 'deepwiki' as ExternalAdapterId,
+  description: 'DeepWiki — AI-powered documentation for GitHub repositories. Read wiki pages, ask questions, and search project documentation.',
   capabilities: ['wiki.read', 'wiki.ask', 'wiki.search'],
   liteCapabilities: ['wiki.read', 'wiki.search'],
 

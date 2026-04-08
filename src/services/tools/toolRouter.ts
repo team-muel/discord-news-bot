@@ -1,6 +1,6 @@
 import { executeRegisteredCliTool } from './toolExecutor';
 import { probeAllExternalTools, getExternalToolById, type ExternalToolId, type ExternalToolProbeResult, type ExternalToolStatus } from './externalToolProbe';
-import { executeExternalAction, getExternalAdapterStatus, getExternalAdapter } from './externalAdapterRegistry';
+import { executeExternalAction, getExternalAdapterStatus, getExternalAdapter, getToolCatalog } from './externalAdapterRegistry';
 import type { ExternalAdapterId, ExternalAdapterResult, ExternalToolAdapter } from './externalAdapterTypes';
 import { getCliToolRegistryStatus } from './toolRegistry';
 import type { CliToolRegistryStatus, ExecuteCliToolInput, ExecuteCliToolResult } from './types';
@@ -36,5 +36,7 @@ export const getExternalAdaptersStatus = async () => {
 export const getExternalAdapterById = (id: ExternalAdapterId): ExternalToolAdapter | undefined => {
   return getExternalAdapter(id);
 };
+
+export { getToolCatalog };
 
 export type { ExternalToolId, ExternalToolProbeResult, ExternalToolStatus, ExternalAdapterId, ExternalAdapterResult, ExternalToolAdapter };

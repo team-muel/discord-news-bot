@@ -80,6 +80,7 @@ const getUsage = async (): Promise<ExternalAdapterResult> => {
 
 export const litellmAdminAdapter: ExternalToolAdapter = {
   id: 'litellm-admin' as ExternalAdapterId,
+  description: 'LiteLLM proxy admin — health monitoring, available model listing, and usage statistics for the LLM routing proxy.',
   capabilities: ['proxy.health', 'proxy.models', 'proxy.usage'],
   liteCapabilities: ['proxy.health', 'proxy.models'],
 

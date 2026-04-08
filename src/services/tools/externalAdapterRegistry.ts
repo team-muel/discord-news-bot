@@ -100,7 +100,7 @@ export const executeExternalAction = async (
 };
 
 export const getExternalAdapterStatus = async (): Promise<
-  Array<{ id: ExternalAdapterId; available: boolean; capabilities: readonly string[]; liteMode?: boolean; liteCapabilities?: readonly string[] }>
+  Array<{ id: ExternalAdapterId; available: boolean; description?: string; capabilities: readonly string[]; liteMode?: boolean; liteCapabilities?: readonly string[] }>
 > => {
   const adapters = [...adapterMap.values()];
   const results = await Promise.all(
@@ -110,10 +110,28 @@ export const getExternalAdapterStatus = async (): Promise<
       return {
         id: a.id,
         available,
+        ...(a.description ? { description: a.description } : {}),
         capabilities: a.capabilities,
         ...(liteMode !== undefined ? { liteMode, liteCapabilities: a.liteCapabilities } : {}),
       };
     }),
   );
   return results;
+};
+
+/**
+ * Returns a structured tool catalog for agent reasoning.
+ * Only includes currently available adapters with their descriptions and capabilities.
+ */
+export const getToolCatalog = async (): Promise<
+  Array<{ id: string; description: string; capabilities: readonly string[] }>
+> => {
+  const statuses = await getExternalAdapterStatus();
+  return statuses
+    .filter((s) => s.available && s.description)
+    .map((s) => ({
+      id: s.id,
+      description: s.description!,
+      capabilities: s.liteMode ? (s.liteCapabilities ?? s.capabilities) : s.capabilities,
+    }));
 };

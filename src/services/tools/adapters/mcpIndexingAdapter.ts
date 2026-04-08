@@ -62,6 +62,7 @@ const callTool = async (action: string, args: Record<string, unknown>): Promise<
 
 export const mcpIndexingAdapter: ExternalToolAdapter = {
   id: 'mcp-indexing' as ExternalAdapterId,
+  description: 'Code index server — symbol search, definition lookup, reference tracing, file outlines, and context bundling across the codebase.',
   capabilities: Object.keys(ACTION_TO_TOOL),
   liteCapabilities: ['index.search', 'index.outline'],
 

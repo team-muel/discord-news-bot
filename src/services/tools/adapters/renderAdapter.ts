@@ -331,6 +331,7 @@ const queryPostgres = async (databaseId: string, sql: string): Promise<ExternalA
 
 export const renderAdapter: ExternalToolAdapter = {
   id: ADAPTER_ID,
+  description: 'Render cloud platform — service management, deploy history, log querying, metrics, environment variables, and Postgres queries.',
   capabilities: [
     'service.list',
     'service.details',

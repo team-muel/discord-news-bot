@@ -58,6 +58,7 @@ const runSandboxCmd = async (name: string, cmd: string[]): Promise<{ stdout: str
 
 export const nemoclawAdapter: ExternalToolAdapter = {
   id: 'nemoclaw',
+  description: 'NVIDIA NemoClaw — reference stack for running OpenClaw inside OpenShell. Agent onboarding, status monitoring, and automated code review.',
   capabilities: ['agent.onboard', 'agent.status', 'agent.connect', 'code.review'],
   liteCapabilities: ['code.review'],
 

@@ -125,6 +125,7 @@ const httpGet = async (path: string): Promise<{ ok: boolean; data: unknown }> =>
 
 export const openjarvisAdapter: ExternalToolAdapter = {
   id: 'openjarvis',
+  description: 'Stanford OpenJarvis — local-first personal AI framework. Q&A, optimization, benchmarks, memory indexing/search, evaluation, and telemetry.',
   capabilities: [
     'jarvis.ask', 'jarvis.serve', 'jarvis.optimize', 'jarvis.bench', 'jarvis.feedback',
     'jarvis.research', 'jarvis.digest', 'jarvis.memory.index', 'jarvis.memory.search',

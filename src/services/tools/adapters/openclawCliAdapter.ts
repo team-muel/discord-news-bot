@@ -51,6 +51,7 @@ const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string 
 
 export const openclawAdapter: ExternalToolAdapter = {
   id: 'openclaw',
+  description: 'OpenClaw — always-on personal AI assistant. Conversation, reasoning, skill creation, and multi-channel session relay.',
   capabilities: ['agent.chat', 'agent.skill.create', 'agent.session.relay', 'agent.health'],
   liteCapabilities: ['agent.chat', 'agent.health'],
 

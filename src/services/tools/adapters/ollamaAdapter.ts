@@ -122,6 +122,7 @@ const inferenceGenerate = async (name: string, prompt: string, options?: Record<
 
 export const ollamaAdapter: ExternalToolAdapter = {
   id: 'ollama' as ExternalAdapterId,
+  description: 'Ollama local LLM — list/pull/inspect models and run local inference for text generation.',
   capabilities: ['model.list', 'model.pull', 'model.info', 'inference.generate'],
   liteCapabilities: ['model.list', 'model.info'],
 

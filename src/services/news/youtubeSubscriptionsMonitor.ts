@@ -8,6 +8,7 @@ import { fetchYouTubeLatestByWorker } from './youtubeMonitorWorkerClient';
 import type { ChannelSink } from '../automation/types';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { writeSubscriptionNote } from './subscriptionNoteWriter';
 
 type SubscriptionRow = {
   id: number;
@@ -205,6 +206,9 @@ const processRow = async (sink: ChannelSink, row: SubscriptionRow, options?: Tic
       last_check_error: null,
       last_post_id: latest.id,
     });
+    writeSubscriptionNote({ row, mode, latest }).catch((err) =>
+      logger.warn('[YT-MONITOR] obsidian note write failed source=%s: %s', String(row.id), getErrorMessage(err)),
+    );
     return 'sent';
   }
 
@@ -216,6 +220,9 @@ const processRow = async (sink: ChannelSink, row: SubscriptionRow, options?: Tic
     last_check_error: null,
     last_post_signature: latest.id,
   });
+  writeSubscriptionNote({ row, mode, latest }).catch((err) =>
+    logger.warn('[YT-MONITOR] obsidian note write failed source=%s: %s', String(row.id), getErrorMessage(err)),
+  );
   return 'sent';
   } finally {
     await releaseRowLock(row.id);

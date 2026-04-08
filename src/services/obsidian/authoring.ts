@@ -2,6 +2,7 @@ import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { doc } from './obsidianDocBuilder';
 import { writeObsidianNoteWithAdapter } from './router';
+import { getToolCatalog } from '../tools/externalAdapterRegistry';
 
 const sanitizeGuildId = (value: unknown): string => {
   const candidate = String(value || '').trim();
@@ -161,7 +162,9 @@ const VAULT_PATH_REGISTRY = [
   { pattern: 'guilds/{guildId}/sprint-journal/{date}_{slug}.md', writer: 'sprintLearningJournal', description: 'Sprint learning entries' },
   { pattern: 'guilds/{guildId}/retros/{date}_retro_{slug}.md', writer: 'obsidianRagService', description: 'Sprint retrospectives' },
   { pattern: 'guilds/{guildId}/memory/{slug}.md', writer: 'memoryConsolidationService', description: 'Consolidated memory notes' },
+  { pattern: 'guilds/{guildId}/events/subscriptions/{date}_{mode}_{slug}.md', writer: 'subscriptionNoteWriter', description: 'YouTube subscription content snapshots' },
   { pattern: 'ops/VAULT_SCHEMA.md', writer: 'authoring (system)', description: 'This schema document (auto-generated)' },
+  { pattern: 'ops/TOOL_CATALOG.md', writer: 'authoring (system)', description: 'Available tool adapter catalog (auto-generated)' },
 ] as const;
 
 export const emitVaultSchema = async (): Promise<{ ok: boolean; reason?: string }> => {
@@ -214,6 +217,65 @@ export const emitVaultSchema = async (): Promise<{ ok: boolean; reason?: string 
       schema: 'muel-note/v1',
       source: 'vault-schema-emitter',
       generated_at: new Date().toISOString(),
+    },
+  });
+};
+
+/**
+ * Emit a tool catalog note to the Obsidian vault.
+ * Lists all available adapters with descriptions and capabilities
+ * so agents can discover tools via graph-first retrieval.
+ */
+export const emitToolCatalog = async (): Promise<{ ok: boolean; reason?: string }> => {
+  const vaultPath = getObsidianVaultRoot();
+  if (!vaultPath) {
+    return { ok: false, reason: 'VAULT_PATH_MISSING' };
+  }
+
+  const catalog = await getToolCatalog();
+
+  const builder = doc()
+    .title('Tool Catalog')
+    .tag('tool-catalog', 'auto-generated', 'navigation', 'adapter')
+    .property('schema', 'muel-note/v1')
+    .property('source', 'tool-catalog-emitter')
+    .property('generated_at', new Date().toISOString())
+    .property('adapter_count', catalog.length);
+
+  builder.section('Overview')
+    .line('Auto-generated catalog of all available external tool adapters.')
+    .line('Agents use this to discover tool capabilities and determine which adapter to route actions to.')
+    .line('');
+
+  builder.section('Available Adapters')
+    .table(
+      ['Adapter', 'Description', 'Capabilities'],
+      catalog.map((entry) => [
+        `\`${entry.id}\``,
+        entry.description,
+        entry.capabilities.join(', '),
+      ]),
+    );
+
+  for (const entry of catalog) {
+    builder.section(entry.id, 3)
+      .line(entry.description)
+      .line('')
+      .bullets(entry.capabilities.map((c) => `\`${c}\``));
+  }
+
+  const { markdown } = builder.buildWithFrontmatter();
+
+  return upsertObsidianSystemDocument({
+    vaultPath,
+    fileName: 'ops/TOOL_CATALOG',
+    content: markdown,
+    tags: ['tool-catalog', 'auto-generated', 'navigation', 'adapter'],
+    properties: {
+      schema: 'muel-note/v1',
+      source: 'tool-catalog-emitter',
+      generated_at: new Date().toISOString(),
+      adapter_count: catalog.length,
     },
   });
 };

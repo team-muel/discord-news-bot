@@ -30,6 +30,7 @@ const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string 
 
 export const openshellAdapter: ExternalToolAdapter = {
   id: 'openshell',
+  description: 'NVIDIA OpenShell — safe sandbox runtime for autonomous agents. Create/manage K3s containers with YAML policy enforcement.',
   capabilities: ['sandbox.create', 'sandbox.list', 'sandbox.exec', 'sandbox.destroy', 'policy.set'],
 
   isAvailable: async () => {
