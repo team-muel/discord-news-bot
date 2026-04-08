@@ -1,18 +1,18 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 372
+- Nodes: 375
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/utils/errorMessage.ts | 131 |
-| src/logger.ts | 130 |
-| src/utils/env.ts | 102 |
-| src/services/supabaseClient.ts | 89 |
+| src/utils/errorMessage.ts | 134 |
+| src/logger.ts | 133 |
+| src/utils/env.ts | 103 |
+| src/services/supabaseClient.ts | 90 |
 | src/config.ts | 88 |
-| src/services/llmClient.ts | 35 |
+| src/services/llmClient.ts | 36 |
 | src/services/skills/actions/types.ts | 34 |
 | src/services/infra/baseRepository.ts | 25 |
 | src/services/infra/tableRegistry.ts | 24 |
@@ -108,6 +108,10 @@ graph LR
   "src/discord/commands/crm.ts" --> "src/discord/auth.ts"
   "src/discord/commands/crm.ts" --> "src/discord/ui.ts"
   "src/discord/commands/crm.ts" --> "src/services/discord-support/userCrmService.ts"
+  "src/discord/commands/crm.ts" --> "src/services/llmClient.ts"
+  "src/discord/commands/crm.ts" --> "src/services/supabaseClient.ts"
+  "src/discord/commands/crm.ts" --> "src/services/trading/stockService.ts"
+  "src/discord/commands/crm.ts" --> "src/services/userLearningPrefsService.ts"
   "src/discord/commands/docs.ts" --> "src/discord/auth.ts"
   "src/discord/commands/docs.ts" --> "src/discord/messages.ts"
   "src/discord/commands/docs.ts" --> "src/discord/runtimePolicy.ts"
@@ -160,6 +164,7 @@ graph LR
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/agent/agentRuntimeReadinessService.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/multiAgentService.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/privacyForgetService.ts"
+  "src/discord/runtime/buttonInteractions.ts" --> "src/services/userLearningPrefsService.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerApprovalStore.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerExecutors.ts"
@@ -827,6 +832,9 @@ graph LR
   "src/services/localStateCache.ts" --> "src/logger.ts"
   "src/services/localStateCache.ts" --> "src/utils/atomicWrite.ts"
   "src/services/localStateCache.ts" --> "src/utils/errorMessage.ts"
+  "src/services/mcpLocalProxyWorker.ts" --> "src/logger.ts"
+  "src/services/mcpLocalProxyWorker.ts" --> "src/services/mcpSkillRouter.ts"
+  "src/services/mcpLocalProxyWorker.ts" --> "src/utils/errorMessage.ts"
   "src/services/mcpSkillRouter.ts" --> "src/config.ts"
   "src/services/mcpSkillRouter.ts" --> "src/logger.ts"
   "src/services/mcpSkillRouter.ts" --> "src/utils/errorMessage.ts"
@@ -1038,6 +1046,12 @@ graph LR
   "src/services/observer/memoryGapChannel.ts" --> "src/services/infra/tableRegistry.ts"
   "src/services/observer/memoryGapChannel.ts" --> "src/services/observer/observerTypes.ts"
   "src/services/observer/memoryGapChannel.ts" --> "src/services/supabaseClient.ts"
+  "src/services/observer/observationMemoryBridge.ts" --> "src/logger.ts"
+  "src/services/observer/observationMemoryBridge.ts" --> "src/services/agent/agentMemoryStore.ts"
+  "src/services/observer/observationMemoryBridge.ts" --> "src/services/observer/observationStore.ts"
+  "src/services/observer/observationMemoryBridge.ts" --> "src/services/observer/observerTypes.ts"
+  "src/services/observer/observationMemoryBridge.ts" --> "src/services/obsidian/obsidianRagService.ts"
+  "src/services/observer/observationMemoryBridge.ts" --> "src/utils/errorMessage.ts"
   "src/services/observer/observationStore.ts" --> "src/logger.ts"
   "src/services/observer/observationStore.ts" --> "src/services/infra/baseRepository.ts"
   "src/services/observer/observationStore.ts" --> "src/services/infra/tableRegistry.ts"
@@ -1055,6 +1069,7 @@ graph LR
   "src/services/observer/observerOrchestrator.ts" --> "src/services/observer/observationStore.ts"
   "src/services/observer/observerOrchestrator.ts" --> "src/services/observer/observerTypes.ts"
   "src/services/observer/observerOrchestrator.ts" --> "src/services/observer/perfDriftChannel.ts"
+  "src/services/observer/observerOrchestrator.ts" --> "src/services/observer/stateSnapshotEmitter.ts"
   "src/services/observer/observerOrchestrator.ts" --> "src/services/runtime/signalBus.ts"
   "src/services/observer/observerOrchestrator.ts" --> "src/utils/errorMessage.ts"
   "src/services/observer/observerTypes.ts":::file
@@ -1063,9 +1078,15 @@ graph LR
   "src/services/observer/perfDriftChannel.ts" --> "src/services/infra/tableRegistry.ts"
   "src/services/observer/perfDriftChannel.ts" --> "src/services/observer/observerTypes.ts"
   "src/services/observer/perfDriftChannel.ts" --> "src/services/supabaseClient.ts"
+  "src/services/observer/stateSnapshotEmitter.ts" --> "src/logger.ts"
+  "src/services/observer/stateSnapshotEmitter.ts" --> "src/services/intent/intentStore.ts"
+  "src/services/observer/stateSnapshotEmitter.ts" --> "src/services/observer/observationStore.ts"
+  "src/services/observer/stateSnapshotEmitter.ts" --> "src/services/observer/observerOrchestrator.ts"
+  "src/services/observer/stateSnapshotEmitter.ts" --> "src/utils/errorMessage.ts"
   "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/config.ts"
   "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/utils/atomicWrite.ts"
+  "src/services/obsidian/adapters/localFsAdapter.ts" --> "src/utils/env.ts"
   "src/services/obsidian/adapters/nativeCliAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/nativeCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/obsidian/adapters/nativeCliAdapter.ts" --> "src/utils/errorMessage.ts"
@@ -1076,7 +1097,9 @@ graph LR
   "src/services/obsidian/adapters/scriptCliAdapter.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/adapters/scriptCliAdapter.ts" --> "src/utils/env.ts"
   "src/services/obsidian/authoring.ts" --> "src/logger.ts"
+  "src/services/obsidian/authoring.ts" --> "src/services/obsidian/obsidianDocBuilder.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/router.ts"
+  "src/services/obsidian/authoring.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/obsidian/index.ts" --> "src/services/obsidian/authoring.ts"
   "src/services/obsidian/index.ts" --> "src/services/obsidian/obsidianBootstrapService.ts"
   "src/services/obsidian/index.ts" --> "src/services/obsidian/obsidianCacheService.ts"
@@ -1171,9 +1194,11 @@ graph LR
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/utils/errorMessage.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/config.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/logger.ts"
+  "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/mcpLocalProxyWorker.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/mcpSkillRouter.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/multiAgentService.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/observer/observerOrchestrator.ts"
+  "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/obsidian/authoring.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/runtime/signalBusWiring.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/skills/actionRunner.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/services/sprint/autonomousGit.ts"
@@ -1236,6 +1261,7 @@ graph LR
   "src/services/runtime/signalBusWiring.ts" --> "src/services/entityNervousSystem.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/intent/intentFormationEngine.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/observer/communityVoiceService.ts"
+  "src/services/runtime/signalBusWiring.ts" --> "src/services/observer/observationMemoryBridge.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/observer/observationStore.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/runtime/signalBus.ts"
   "src/services/runtime/signalBusWiring.ts" --> "src/services/sprint/selfImprovementLoop.ts"
@@ -1584,6 +1610,8 @@ graph LR
   "src/services/sprint/sprintOrchestrator.ts" --> "src/utils/errorMessage.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/config.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/logger.ts"
+  "src/services/sprint/sprintPreamble.ts" --> "src/services/intent/intentStore.ts"
+  "src/services/sprint/sprintPreamble.ts" --> "src/services/observer/observationStore.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/services/skills/actions/registry.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/services/skills/actions/types.ts"
   "src/services/sprint/sprintPreamble.ts" --> "src/services/sprint/sprintLearningJournal.ts"
