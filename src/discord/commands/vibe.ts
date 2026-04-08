@@ -6,6 +6,7 @@ import { ensureFeatureAccess } from '../auth';
 import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP, DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES } from '../runtimePolicy';
 import { seedFeedbackReactions } from '../session';
 import logger from '../../logger';
+import { acquireDistributedLease } from '../../services/infra/distributedLockService';
 import {
   VIBE_MESSAGE_DEDUP_TTL_MS,
   VIBE_AUTO_WORKER_PROPOSAL_ENABLED,
@@ -41,6 +42,7 @@ const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_
 const VIBE_MESSAGE_PREFIX_PATTERN = /^뮤엘(?:아)?(?:(?:\s*:\s*)|\s+|$)/;
 const PROCESSED_MESSAGE_TTL_MS = VIBE_MESSAGE_DEDUP_TTL_MS;
 const processedMessageUntilMs = new Map<string, number>();
+const VIBE_INSTANCE_ID = Math.random().toString(36).slice(2);
 const AUTO_WORKER_PROPOSAL_ENABLED = VIBE_AUTO_WORKER_PROPOSAL_ENABLED;
 const AUTO_WORKER_PROPOSAL_COOLDOWN_MS = VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS;
 const autoWorkerProposalUntilMs = new Map<string, number>();
@@ -388,6 +390,18 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     if (!message.guildId || message.author.bot || !message.client.user) return;
 
     if (!shouldProcessMessage(message.id)) {
+      return;
+    }
+
+    // Distributed dedup: prevents multiple Render instances from handling the same message.
+    // Falls back to in-memory dedup gracefully if Supabase is unavailable.
+    const distLock = await acquireDistributedLease({
+      name: `vibe:msg:${message.id}`,
+      owner: VIBE_INSTANCE_ID,
+      leaseMs: PROCESSED_MESSAGE_TTL_MS,
+    });
+    if (!distLock.ok && distLock.reason === 'LOCK_HELD') {
+      processedMessageUntilMs.delete(message.id);
       return;
     }
 
