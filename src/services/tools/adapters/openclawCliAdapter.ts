@@ -8,6 +8,7 @@ import {
   OPENCLAW_GATEWAY_URL as GATEWAY_URL,
 } from '../../../config';
 import { checkOpenClawGatewayHealth, getGatewayHeaders } from '../../openclaw/gatewayHealth';
+import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 const execFileAsync = promisify(execFile);
@@ -72,8 +73,14 @@ export const openclawAdapter: ExternalToolAdapter = {
     } catch {
       transport = null;
       cliAvailable = false;
-      return false;
     }
+
+    // Lite mode: no gateway or CLI, but central LLM is configured → agent.chat still works
+    if (isAnyLlmConfigured()) {
+      return true;
+    }
+
+    return false;
   },
 
   execute: async (action, args) => {
@@ -94,6 +101,7 @@ export const openclawAdapter: ExternalToolAdapter = {
           const gatewayOk = await checkOpenClawGatewayHealth();
           if (gatewayOk) return makeResult(true, 'Gateway healthy', [`url=${GATEWAY_URL}`, 'transport=gateway']);
           if (transport === 'cli') return makeResult(true, 'CLI available', ['transport=cli']);
+          if (isAnyLlmConfigured()) return makeResult(true, 'LLM lite mode active', ['transport=llm-lite']);
           return makeResult(false, 'No transport available', [], 'NO_TRANSPORT');
         }
 
@@ -101,25 +109,23 @@ export const openclawAdapter: ExternalToolAdapter = {
           const message = String(args.message || '').slice(0, 2000);
           if (!message) return makeResult(false, 'Message required', [], 'MISSING_MESSAGE');
 
-          // Gateway HTTP: use agent --message equivalent via sessions API
+          // Gateway HTTP: use OpenAI-compatible /v1/chat/completions
           if (transport === 'gateway') {
             const model = typeof args.model === 'string' ? args.model : undefined;
-            const thinking = typeof args.thinking === 'string' ? args.thinking : undefined;
-            // GAP-010: Use sprint-scoped session ID when provided, fall back to 'main'
-            const sessionId = typeof args.sessionId === 'string' && args.sessionId ? args.sessionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100) : 'main';
-            const body: Record<string, unknown> = { message };
+            const body: Record<string, unknown> = {
+              messages: [{ role: 'user', content: message }],
+            };
             if (model) body.model = model;
-            if (thinking) body.thinkingLevel = thinking;
-            const { ok, data } = await gatewayPost(`/api/sessions/${sessionId}/message`, body);
+            const { ok, data } = await gatewayPost('/v1/chat/completions', body);
             if (ok && data) {
-              const resp = data as { response?: string; content?: string; text?: string };
-              const content = resp.response || resp.content || resp.text || JSON.stringify(data);
+              const resp = data as { choices?: Array<{ message?: { content?: string } }> };
+              const content = resp.choices?.[0]?.message?.content || JSON.stringify(data);
               const lines = content.split('\n');
               // GAP-014: Log truncation so operators know output was clipped
               if (lines.length > 40) {
                 logger.debug('[OPENCLAW] agent.chat output truncated: kept 40/%d lines', lines.length);
               }
-              return makeResult(true, `Chat response via Gateway (session=${sessionId})`, lines.slice(0, 40));
+              return makeResult(true, 'Chat response via Gateway', lines.slice(0, 40));
             }
             // Gateway returned error — don't fall through to CLI if CLI not available
             if (!cliAvailable) {
@@ -127,22 +133,44 @@ export const openclawAdapter: ExternalToolAdapter = {
             }
           }
 
-          // CLI fallback
-          const { stdout } = await runCli(['agent', '--message', stripShellMeta(message)]);
-          return makeResult(true, 'Chat response via CLI', stdout.trim().split('\n'));
+          // CLI fallback: openclaw agent --agent main --local -m <message>
+          if (cliAvailable !== false) {
+            try {
+              const { stdout } = await runCli(['agent', '--agent', 'main', '--local', '-m', stripShellMeta(message)]);
+              return makeResult(true, 'Chat response via CLI', stdout.trim().split('\n'));
+            } catch {
+              // CLI failed — fall through to LLM lite mode
+            }
+          }
+
+          // Lite mode: central LLM pipeline when gateway and CLI are both unavailable
+          if (isAnyLlmConfigured()) {
+            try {
+              const content = await generateText({
+                system: 'You are a helpful always-on AI assistant (OpenClaw lite mode).',
+                user: message,
+                actionName: 'agent.chat',
+              });
+              if (content) {
+                logger.debug('[OPENCLAW] agent.chat served via LLM lite mode');
+                return makeResult(true, 'Chat response via LLM (lite mode)', content.split('\n').slice(0, 40));
+              }
+            } catch (liteErr) {
+              logger.debug('[OPENCLAW] LLM lite mode failed: %s', getErrorMessage(liteErr));
+            }
+          }
+
+          return makeResult(false, 'No transport available for agent.chat', [], 'NO_TRANSPORT');
         }
 
         case 'agent.skill.create': {
           const skillName = String(args.name || '').slice(0, 100).replace(/[^a-zA-Z0-9_-]/g, '');
           if (!skillName) return makeResult(false, 'Skill name required', [], 'MISSING_NAME');
 
-          if (transport === 'gateway') {
-            const { ok, data } = await gatewayPost('/api/skills', { name: skillName });
-            if (ok) return makeResult(true, `Skill ${skillName} created via Gateway`, [JSON.stringify(data)]);
-            if (!cliAvailable) return makeResult(false, 'Gateway skill create failed', [], 'GATEWAY_REQUEST_FAILED');
+          // CLI only — the OpenClaw Gateway does not expose a REST API for skill creation
+          if (cliAvailable === false) {
+            return makeResult(false, 'Skill create requires OpenClaw CLI', [], 'CLI_REQUIRED');
           }
-
-          // CLI fallback
           const { stdout } = await runCli(['skill', 'create', skillName]);
           return makeResult(true, `Skill ${skillName} created`, stdout.trim().split('\n'));
         }
@@ -151,19 +179,12 @@ export const openclawAdapter: ExternalToolAdapter = {
           const message = String(args.message || '').slice(0, 4000);
           if (!message) return makeResult(false, 'Message required for relay', [], 'MISSING_MESSAGE');
           const channel = String(args.channel || 'discord').slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '');
-          const relaySessionId = String(args.sessionId || '').slice(0, 100).replace(/[^a-zA-Z0-9_-]/g, '') || 'main';
 
-          if (transport === 'gateway') {
-            const body: Record<string, unknown> = { message, channel };
-            if (relaySessionId !== 'main') body.sessionId = relaySessionId;
-            const { ok } = await gatewayPost(`/api/sessions/${relaySessionId}/send`, body);
-            if (ok) return makeResult(true, `Message relayed via ${channel} (Gateway)`, []);
-            if (!cliAvailable) return makeResult(false, 'Gateway relay failed', [], 'GATEWAY_REQUEST_FAILED');
+          // CLI only — the OpenClaw Gateway does not expose a REST API for message relay
+          if (cliAvailable === false) {
+            return makeResult(false, 'Message relay requires OpenClaw CLI', [], 'CLI_REQUIRED');
           }
-
-          // CLI fallback
           const cliArgs = ['message', 'send', '--channel', channel];
-          if (relaySessionId !== 'main') cliArgs.push('--session', relaySessionId);
           cliArgs.push(stripShellMeta(message));
           const { stdout } = await runCli(cliArgs);
           return makeResult(true, `Message relayed via ${channel}`, stdout.trim().split('\n'));
@@ -238,7 +259,7 @@ export const bootstrapOpenClawSession = async (sessionId: string): Promise<{ ok:
       return { ok: true, toolCount: 0 };
     }
 
-    // Send tool catalog as a system bootstrap message
+    // Send tool catalog as a system bootstrap message via /v1/chat/completions
     const bootstrapMessage = [
       'SYSTEM: You have access to the following external tools via the MCP bridge.',
       'To use a tool, include a tool call in your response with the tool name and arguments.',
@@ -251,9 +272,10 @@ export const bootstrapOpenClawSession = async (sessionId: string): Promise<{ ok:
       'When reviewing, use jarvis.memory.search to find related patterns in the knowledge base.',
     ].join('\n');
 
-    const { ok } = await gatewayPost(`/api/sessions/${sessionId}/message`, {
-      message: bootstrapMessage,
-      role: 'system',
+    const { ok } = await gatewayPost('/v1/chat/completions', {
+      messages: [
+        { role: 'system', content: bootstrapMessage },
+      ],
     });
 
     if (ok) {

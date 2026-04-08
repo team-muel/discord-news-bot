@@ -162,49 +162,40 @@ export const jarvisTelemetryAction: ActionDefinition = {
   },
 };
 
-export const jarvisSchedulerRunAction: ActionDefinition = {
-  name: 'jarvis.scheduler.run',
-  description: 'OpenJarvis 스케줄러 태스크를 실행합니다.',
+export const jarvisSchedulerListAction: ActionDefinition = {
+  name: 'jarvis.scheduler.list',
+  description: 'OpenJarvis 스케줄러 태스크 목록을 조회합니다.',
   category: 'agent',
-  parameters: [
-    { name: 'task', description: 'Scheduler task name', required: true },
-  ],
-  execute: async ({ args }) => {
-    const taskName = compact(args?.task);
-    if (!taskName) {
-      return withRouting({
-        ok: false, name: 'jarvis.scheduler.run', summary: '태스크 이름이 비어 있습니다.',
-        artifacts: [], verification: ['task required'], error: 'TASK_EMPTY', agentRole: 'operate',
-      }, 'operate', 'task validation failed');
-    }
-    const result = await runExternalAction('openjarvis', 'jarvis.scheduler.run', { task: taskName });
+  parameters: [],
+  execute: async () => {
+    const result = await runExternalAction('openjarvis', 'jarvis.scheduler.list', {});
     return withRouting({
-      ok: result.ok, name: 'jarvis.scheduler.run',
-      summary: result.ok ? `스케줄러 태스크 '${taskName}' 실행 완료` : (result.error || '실행 실패'),
+      ok: result.ok, name: 'jarvis.scheduler.list',
+      summary: result.ok ? '스케줄러 태스크 목록 조회 완료' : (result.error || '조회 실패'),
       artifacts: result.output.length > 0 ? [result.output.join('\n')] : [],
       verification: [`adapter ok=${result.ok}`, `duration=${result.durationMs}ms`],
       agentRole: 'operate',
-    }, 'operate', result.ok ? 'scheduler task completed' : 'scheduler task failed');
+    }, 'operate', result.ok ? 'scheduler list completed' : 'scheduler list failed');
   },
 };
 
-export const jarvisSkillDiscoverAction: ActionDefinition = {
-  name: 'jarvis.skill.discover',
-  description: 'OpenJarvis Learning 프리미티브를 이용해 누락된 스킬 후보를 탐색합니다.',
+export const jarvisSkillSearchAction: ActionDefinition = {
+  name: 'jarvis.skill.search',
+  description: 'OpenJarvis에서 사용 가능한 스킬을 검색합니다.',
   category: 'agent',
   parameters: [
-    { name: 'limit', description: 'Max skill candidates (default: 5)', required: false },
+    { name: 'query', description: 'Search query (optional)', required: false },
   ],
   execute: async ({ args }) => {
-    const result = await runExternalAction('openjarvis', 'jarvis.skill.discover', {
-      ...(args?.limit ? { limit: Number(args.limit) } : {}),
+    const result = await runExternalAction('openjarvis', 'jarvis.skill.search', {
+      ...(args?.query ? { query: String(args.query) } : {}),
     });
     return withRouting({
-      ok: result.ok, name: 'jarvis.skill.discover',
-      summary: result.ok ? 'Skill discovery 완료' : (result.error || 'Discovery 실패'),
+      ok: result.ok, name: 'jarvis.skill.search',
+      summary: result.ok ? 'Skill search 완료' : (result.error || 'Search 실패'),
       artifacts: result.output.length > 0 ? [result.output.join('\n')] : [],
       verification: [`adapter ok=${result.ok}`, `duration=${result.durationMs}ms`],
       agentRole: 'operate',
-    }, 'operate', result.ok ? 'skill discovery completed' : 'skill discovery failed');
+    }, 'operate', result.ok ? 'skill search completed' : 'skill search failed');
   },
 };

@@ -14,7 +14,8 @@ export type ObservationChannelKind =
   | 'perf-drift'
   | 'code-health'
   | 'convergence-digest'
-  | 'discord-pulse';
+  | 'discord-pulse'
+  | 'harness-gate';
 
 export type ObservationSeverity = 'info' | 'warning' | 'critical';
 
@@ -81,6 +82,15 @@ export type DiscordPulsePayload = {
   unansweredQuestions: number;
   avgResponseTimeMinutes: number | null;
   sentimentScore?: number | null;
+};
+
+export type HarnessGatePayload = {
+  /** Which gate check fired (e.g. 'agent-deadletters', 'memory-deadletters', 'session-failure-rate', 'queue-depth') */
+  gate: string;
+  metric: string;
+  current: number;
+  threshold: number;
+  details?: string[];
 };
 
 // ──── Observation Channel Interface ───────────────────────────────────────────

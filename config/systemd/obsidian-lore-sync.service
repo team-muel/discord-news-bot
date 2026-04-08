@@ -1,0 +1,14 @@
+[Unit]
+Description=Obsidian Lore Sync to Supabase (periodic)
+After=network.target unified-mcp-http.service
+Requires=unified-mcp-http.service
+
+[Service]
+Type=oneshot
+User=fancy
+WorkingDirectory=/home/fancy/discord-news-bot
+EnvironmentFile=-/home/fancy/discord-news-bot/.env
+ExecStart=/usr/bin/node --import tsx scripts/sync-obsidian-lore.ts
+
+[Install]
+WantedBy=multi-user.target

@@ -12,6 +12,13 @@ import {
   VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS,
 } from '../../config';
 
+// ── Quick-intent patterns: intercept simple conversational queries before Sprint ──
+// These bypass the full Sprint pipeline and go directly to generateText().
+const QUICK_INTENT_PATTERN = /^(안녕|하이|ㅎㅇ|반가|뭐해|뭐하고|오늘.*날씨|날씨.*어때|지금.*몇시|몇 시|시간.*알려|오늘.*뭐|봇.*살아|살아.*있어|테스트|ping|hello|hi\b)/i;
+// Short messages (≤30 chars) that are clearly just casual chat also qualify
+const isQuickConversation = (text: string): boolean =>
+  QUICK_INTENT_PATTERN.test(text) || (text.length <= 30 && /[?!？！]$/.test(text) && !/스프린트|분석|구현|만들|작성|검색|정리|요약/.test(text));
+
 type VibeDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
   startVibeSession: (guildId: string, userId: string, request: string) => Promise<AgentSession>;
@@ -403,6 +410,29 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     if (channelMode === 'ai_utility' && !UTILITY_TASK_HINT_PATTERN.test(request)) {
       await message.reply(DISCORD_MESSAGES.vibe.utilityOnlyPrompt);
       return;
+    }
+
+    // ── Quick-intent router: simple conversation handled directly via LLM ──
+    // Bypasses the full Sprint pipeline for casual chat to reduce latency.
+    if (isQuickConversation(request)) {
+      try {
+        const { generateText, isAnyLlmConfigured } = await import('../../services/llm/client');
+        if (isAnyLlmConfigured()) {
+          const reply = await generateText({
+            system: '당신은 디스코드 커뮤니티의 Muel 봇입니다. 짧고 자연스럽게 한국어로 대답하세요(2문장 이하).',
+            user: request,
+            maxTokens: 150,
+            temperature: 0.8,
+          });
+          const replyText = String(reply || '').trim();
+          if (replyText) {
+            await message.reply(replyText);
+            return;
+          }
+        }
+      } catch (err) {
+        logger.debug('[VIBE] quick-intent LLM failed, falling through to Sprint: %s', deps.getErrorMessage(err));
+      }
     }
 
     const progressMessage = await message.reply(DISCORD_MESSAGES.vibe.acceptedNoSessionLines(request).join('\n'));

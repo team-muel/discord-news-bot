@@ -21,7 +21,7 @@ const makeAdapter = (
 });
 
 const nativeMock = makeAdapter('native-cli', ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'task_management', 'daily_note'], true);
-const headlessMock = makeAdapter('headless-cli', ['read_lore', 'search_vault', 'read_file', 'graph_metadata'], true);
+const remoteMcpMock = makeAdapter('remote-mcp', ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'], false);
 const scriptMock = makeAdapter('script-cli', ['read_lore'], true, {
   searchVault: undefined,
   readFile: undefined,
@@ -33,8 +33,8 @@ const localFsMock = makeAdapter('local-fs', ['read_lore', 'search_vault', 'read_
 vi.mock('./adapters/nativeCliAdapter.ts', () => ({
   nativeCliObsidianAdapter: nativeMock,
 }));
-vi.mock('./adapters/headlessCliAdapter.ts', () => ({
-  headlessCliObsidianAdapter: headlessMock,
+vi.mock('./adapters/remoteMcpAdapter.ts', () => ({
+  remoteMcpObsidianAdapter: remoteMcpMock,
 }));
 vi.mock('./adapters/scriptCliAdapter.ts', () => ({
   scriptCliObsidianAdapter: scriptMock,
@@ -55,8 +55,8 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-// Default adapter order: native → headless → script → local
-vi.stubEnv('OBSIDIAN_ADAPTER_ORDER', 'native-cli,headless-cli,script-cli,local-fs');
+// Default adapter order: remote-mcp → native → script → local
+vi.stubEnv('OBSIDIAN_ADAPTER_ORDER', 'remote-mcp,native-cli,script-cli,local-fs');
 vi.stubEnv('OBSIDIAN_ADAPTER_STRICT', '');
 
 const router = await import('./router');
@@ -66,7 +66,6 @@ describe('Obsidian Router', () => {
     vi.clearAllMocks();
     // Reset adapter availability
     nativeMock.isAvailable = () => true;
-    headlessMock.isAvailable = () => true;
     scriptMock.isAvailable = () => true;
     localFsMock.isAvailable = () => true;
   });
@@ -84,7 +83,6 @@ describe('Obsidian Router', () => {
 
     it('returns false when no adapter supports capability', () => {
       nativeMock.isAvailable = () => false;
-      headlessMock.isAvailable = () => false;
       scriptMock.isAvailable = () => false;
       localFsMock.isAvailable = () => false;
       expect(router.isObsidianCapabilityAvailable('read_lore')).toBe(false);
@@ -102,8 +100,8 @@ describe('Obsidian Router', () => {
     it('shows correct fallback when primary unavailable', () => {
       nativeMock.isAvailable = () => false;
       const status = router.getObsidianAdapterRuntimeStatus();
-      expect(status.selectedByCapability.read_lore).toBe('headless-cli');
-      expect(status.selectedByCapability.search_vault).toBe('headless-cli');
+      expect(status.selectedByCapability.read_lore).toBe('script-cli');
+      expect(status.selectedByCapability.search_vault).toBe('local-fs');
     });
   });
 
@@ -117,10 +115,9 @@ describe('Obsidian Router', () => {
 
       expect(hints).toEqual(['[native-cli] hint']);
       expect(nativeMock.readLore).toHaveBeenCalledTimes(1);
-      expect(headlessMock.readLore).not.toHaveBeenCalled();
     });
 
-    it('falls back to headless when native returns empty', async () => {
+    it('falls back to script-cli when native returns empty', async () => {
       (nativeMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
 
       const hints = await router.readObsidianLoreWithAdapter({
@@ -130,13 +127,12 @@ describe('Obsidian Router', () => {
       });
 
       expect(nativeMock.readLore).toHaveBeenCalledTimes(1);
-      expect(headlessMock.readLore).toHaveBeenCalledTimes(1);
-      expect(hints).toEqual(['[headless-cli] hint']);
+      expect(scriptMock.readLore).toHaveBeenCalledTimes(1);
+      expect(hints).toEqual(['[script-cli] hint']);
     });
 
-    it('falls back to local-fs when native + headless + script all return empty', async () => {
+    it('falls back to local-fs when native + script all return empty', async () => {
       (nativeMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
-      (headlessMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
       (scriptMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
 
       const hints = await router.readObsidianLoreWithAdapter({
@@ -151,7 +147,6 @@ describe('Obsidian Router', () => {
 
     it('returns empty when all adapters return empty', async () => {
       (nativeMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
-      (headlessMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
       (scriptMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
       (localFsMock.readLore as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
 
@@ -166,7 +161,6 @@ describe('Obsidian Router', () => {
 
     it('skips unavailable adapters in fallback chain', async () => {
       nativeMock.isAvailable = () => false;
-      headlessMock.isAvailable = () => false;
 
       const hints = await router.readObsidianLoreWithAdapter({
         guildId: 'g1',
@@ -175,7 +169,6 @@ describe('Obsidian Router', () => {
       });
 
       expect(nativeMock.readLore).not.toHaveBeenCalled();
-      expect(headlessMock.readLore).not.toHaveBeenCalled();
       // script-cli only supports read_lore so it should be picked
       expect(scriptMock.readLore).toHaveBeenCalledTimes(1);
     });
@@ -202,8 +195,8 @@ describe('Obsidian Router', () => {
         limit: 5,
       });
 
-      expect(headlessMock.searchVault).toHaveBeenCalledTimes(1);
-      expect(results[0].filePath).toContain('headless-cli');
+      expect(localFsMock.searchVault).toHaveBeenCalledTimes(1);
+      expect(results[0].filePath).toContain('local-fs');
     });
 
     it('catches primary exception and falls back to next adapter', async () => {
@@ -215,8 +208,8 @@ describe('Obsidian Router', () => {
         limit: 5,
       });
 
-      expect(headlessMock.searchVault).toHaveBeenCalledTimes(1);
-      expect(results[0].filePath).toContain('headless-cli');
+      expect(localFsMock.searchVault).toHaveBeenCalledTimes(1);
+      expect(results[0].filePath).toContain('local-fs');
     });
   });
 
@@ -230,7 +223,7 @@ describe('Obsidian Router', () => {
         vaultPath: '/vault',
       });
 
-      expect(hints).toEqual(['[headless-cli] hint']);
+      expect(hints).toEqual(['[script-cli] hint']);
     });
   });
 
@@ -252,7 +245,7 @@ describe('Obsidian Router', () => {
         filePath: 'test.md',
       });
 
-      expect(content).toBe('content from headless-cli');
+      expect(content).toBe('content from local-fs');
     });
 
     it('catches exception and falls back to next adapter', async () => {
@@ -263,8 +256,8 @@ describe('Obsidian Router', () => {
         filePath: 'test.md',
       });
 
-      expect(headlessMock.readFile).toHaveBeenCalledTimes(1);
-      expect(content).toBe('content from headless-cli');
+      expect(localFsMock.readFile).toHaveBeenCalledTimes(1);
+      expect(content).toBe('content from local-fs');
     });
   });
 
@@ -279,15 +272,15 @@ describe('Obsidian Router', () => {
       (nativeMock.getGraphMetadata as ReturnType<typeof vi.fn>).mockResolvedValueOnce({});
 
       const metadata = await router.getObsidianGraphMetadataWithAdapter({ vaultPath: '/vault' });
-      expect(metadata['headless-cli/node.md']).toBeDefined();
+      expect(metadata['local-fs/node.md']).toBeDefined();
     });
 
     it('catches exception and falls back to next adapter', async () => {
       (nativeMock.getGraphMetadata as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
 
       const metadata = await router.getObsidianGraphMetadataWithAdapter({ vaultPath: '/vault' });
-      expect(headlessMock.getGraphMetadata).toHaveBeenCalledTimes(1);
-      expect(metadata['headless-cli/node.md']).toBeDefined();
+      expect(localFsMock.getGraphMetadata).toHaveBeenCalledTimes(1);
+      expect(metadata['local-fs/node.md']).toBeDefined();
     });
   });
 
@@ -313,7 +306,7 @@ describe('Obsidian Router', () => {
         content: 'This is valid content for the fallback adapter write test.',
       });
 
-      // headless doesn't support write_note, should fallback to local-fs
+      // script-cli doesn't support write_note, should fallback to local-fs
       expect(result).toEqual({ path: 'local-fs/written.md' });
     });
 
@@ -335,7 +328,6 @@ describe('Obsidian Router', () => {
   describe('complete adapter outage', () => {
     it('all router functions return safe defaults when all adapters down', async () => {
       nativeMock.isAvailable = () => false;
-      headlessMock.isAvailable = () => false;
       scriptMock.isAvailable = () => false;
       localFsMock.isAvailable = () => false;
 

@@ -228,6 +228,13 @@ const loadAndRegisterChannels = async (): Promise<void> => {
   } catch (err) {
     logger.debug('[OBSERVER] discordPulseChannel unavailable: %s', getErrorMessage(err));
   }
+
+  try {
+    const { default: harnessGate } = await import('./harnessGateChannel');
+    registerChannel(harnessGate);
+  } catch (err) {
+    logger.debug('[OBSERVER] harnessGateChannel unavailable: %s', getErrorMessage(err));
+  }
 };
 
 /** Test-only reset */

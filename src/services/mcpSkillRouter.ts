@@ -22,6 +22,7 @@ import {
 import logger from '../logger';
 import { TtlCache } from '../utils/ttlCache';
 import { getErrorMessage } from '../utils/errorMessage';
+import { fetchWithTimeout } from '../utils/network';
 
 // ──── Config ────────────────────────────────────────────────────────────────────
 
@@ -147,11 +148,8 @@ export const resolveWorkerByKind = (kind: string): RouteResult => {
 
 const probeWorkerCapabilities = async (baseUrl: string): Promise<string[]> => {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
     const start = Date.now();
-    const res = await fetch(`${baseUrl}/tools/discover`, { signal: controller.signal });
-    clearTimeout(timer);
+    const res = await fetchWithTimeout(`${baseUrl}/tools/discover`, {}, PROBE_TIMEOUT_MS);
 
     if (!res.ok) return [];
     const data = await res.json() as { tools?: Array<{ name?: string; available?: boolean }> };
@@ -167,10 +165,7 @@ const probeWorkerCapabilities = async (baseUrl: string): Promise<string[]> => {
 const probeWorkerHealth = async (worker: RegisteredWorker): Promise<void> => {
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-    const res = await fetch(`${worker.url}/health`, { signal: controller.signal });
-    clearTimeout(timer);
+    const res = await fetchWithTimeout(`${worker.url}/health`, {}, PROBE_TIMEOUT_MS);
 
     const latency = Date.now() - start;
     worker.lastLatencyMs = latency;
@@ -216,6 +211,7 @@ const ENV_WORKER_MAP: Array<{ id: string; envKeys: string[] }> = [
   { id: 'operate', envKeys: ['MCP_OPERATE_WORKER_URL', 'MCP_OPENJARVIS_WORKER_URL'] },
   { id: 'coordinate', envKeys: ['MCP_COORDINATE_WORKER_URL', 'MCP_LOCAL_ORCHESTRATOR_WORKER_URL'] },
   { id: 'implement', envKeys: ['MCP_IMPLEMENT_WORKER_URL', 'MCP_OPENCODE_WORKER_URL'] },
+  { id: 'github', envKeys: ['MCP_GITHUB_WORKER_URL'] },
   { id: 'youtube', envKeys: ['MCP_YOUTUBE_WORKER_URL'] },
   { id: 'news', envKeys: ['MCP_NEWS_WORKER_URL'] },
   { id: 'community', envKeys: ['MCP_COMMUNITY_WORKER_URL'] },

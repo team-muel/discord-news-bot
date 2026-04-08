@@ -12,10 +12,10 @@ import type {
   Observation,
   DiscordPulsePayload,
 } from './observerTypes';
-import { OBSERVER_DISCORD_PULSE_ENABLED } from '../../config';
+import { OBSERVER_DISCORD_PULSE_ENABLED, COMMUNITY_VOICE_UNANSWERED_THRESHOLD_MINUTES } from '../../config';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
-import { T_USER_ACTIVITY } from '../infra/tableRegistry';
+import { T_USER_ACTIVITY, T_COMMUNITY_INTERACTION_EVENTS } from '../infra/tableRegistry';
 
 const channel: ObservationChannel = {
   kind: 'discord-pulse',
@@ -68,6 +68,54 @@ const channel: ObservationChannel = {
           severity: cur === 0 ? 'critical' : 'warning',
           title: `Activity drop: ${cur} events (was ${prev} yesterday)`,
           payload,
+          detectedAt: new Date().toISOString(),
+        });
+      }
+
+      // Detect unanswered questions — member messages received no 'reply' event
+      // within the threshold window.
+      const thresholdMinutes = COMMUNITY_VOICE_UNANSWERED_THRESHOLD_MINUTES;
+      const windowStart = new Date(Date.now() - thresholdMinutes * 60_000).toISOString();
+
+      // Count unique source_message_ids that have NO reply event
+      const { data: replyData } = await sb
+        .from(T_COMMUNITY_INTERACTION_EVENTS)
+        .select('source_message_id', { count: 'exact' })
+        .eq('guild_id', guildId)
+        .eq('event_type', 'reply')
+        .gte('event_ts', windowStart);
+
+      const repliedMessageIds = new Set(
+        (replyData ?? []).map((r: { source_message_id: string | null }) => r.source_message_id).filter(Boolean),
+      );
+
+      // Count co_presence or mention events in the same window (proxy for messages sent)
+      const { data: sentData } = await sb
+        .from(T_COMMUNITY_INTERACTION_EVENTS)
+        .select('source_message_id', { count: 'exact' })
+        .eq('guild_id', guildId)
+        .in('event_type', ['mention', 'co_presence'])
+        .gte('event_ts', windowStart);
+
+      const sentMessageIds = new Set(
+        (sentData ?? []).map((r: { source_message_id: string | null }) => r.source_message_id).filter(Boolean),
+      );
+
+      const unansweredCount = [...sentMessageIds].filter((id) => id && !repliedMessageIds.has(id)).length;
+
+      if (unansweredCount >= 3) {
+        const unansweredPayload: DiscordPulsePayload = {
+          channelId: 'guild-wide',
+          messageVolume24h: cur,
+          unansweredQuestions: unansweredCount,
+          avgResponseTimeMinutes: null,
+        };
+        observations.push({
+          guildId,
+          channel: 'discord-pulse',
+          severity: unansweredCount >= 10 ? 'warning' : 'info',
+          title: `${unansweredCount}개의 메시지가 ${thresholdMinutes}분 동안 답변 없이 대기 중입니다`,
+          payload: unansweredPayload,
           detectedAt: new Date().toISOString(),
         });
       }

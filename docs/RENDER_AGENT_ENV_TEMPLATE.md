@@ -127,17 +127,16 @@ Provider fallback controls:
 - AGENT_WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS=300000 (optional, workflow cache refresh warn log throttle)
 - AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS=300000 (optional, skill catalog refresh warn log throttle)
 - WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS=300000 (optional, approval store save warn log throttle)
-- OBSIDIAN_HEADLESS_ENABLED=true (optional, 권장: read/search/graph headless 우선)
-- OBSIDIAN_HEADLESS_COMMAND=ob (optional)
-- OBSIDIAN_VAULT_NAME=[vault-name] (optional, headless 대상 vault 식별자)
-- OBSIDIAN_HEADLESS_LORE_MAX_HINTS=6 (optional, headless lore 힌트 수)
-- OBSIDIAN_HEADLESS_LORE_MAX_CHARS=220 (optional, 힌트 1개당 최대 문자)
-- OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli,local-fs (optional)
-- OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli,local-fs (optional)
-- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli,local-fs (optional)
-- OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli,local-fs (optional)
-- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli,local-fs (optional)
-- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=local-fs,script-cli (optional, write fallback 보장)
+- OBSIDIAN_REMOTE_MCP_ENABLED=true (optional, 권장: GCP VM의 MCP 서버를 통한 vault 접근)
+- OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850 (optional, MCP HTTP 서버 주소)
+- OBSIDIAN_REMOTE_MCP_TOKEN=<secret> (optional, Bearer auth 토큰)
+- OBSIDIAN_VAULT_NAME=[vault-name] (optional, vault 식별자)
+- OBSIDIAN_ADAPTER_ORDER=remote-mcp,native-cli,script-cli,local-fs (optional)
+- OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,native-cli,script-cli,local-fs (optional)
+- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=remote-mcp,native-cli,local-fs (optional)
+- OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp,native-cli,local-fs (optional)
+- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp,native-cli,local-fs (optional)
+- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,native-cli,local-fs (optional)
 - OBSIDIAN_ADAPTER_STRICT=false (optional, true면 fallback 없이 1차 adapter 결과만 사용)
 - ACTION_CACHE_ENABLED=true (optional)
 - ACTION_CACHE_TTL_MS=600000 (optional, 10 minutes)
@@ -361,8 +360,8 @@ Provider fallback controls:
 - `DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS` controls periodic cleanup of expired persisted sessions.
 - Persistent login across bot restarts requires the `discord_login_sessions` table from `docs/SUPABASE_SCHEMA.sql`.
 - If `OBSIDIAN_CLI_COMMAND` is set, the backend executes it at runtime to fetch memory hints and falls back to direct markdown reads only when CLI output is unavailable.
-- 로컬 PC가 꺼져도 무인 운영하려면 read/search/graph는 `headless-cli` 우선, 쓰기는 Supabase(memory_items/guild_lore_docs) 경로를 기본으로 설계하세요.
-- 현재 `headless-cli` adapter는 `read_lore/search_vault/read_file/graph_metadata` 중심이며, `write_note`는 local-fs/script-cli fallback 경로를 사용합니다.
+- 로컬 PC가 꺼져도 무인 운영하려면 `remote-mcp` adapter(GCP VM MCP HTTP 서버)를 1순위로 설정하세요. 모든 vault 작업(read/search/write/graph)을 원격 처리합니다.
+- GCP VM이 다운되면 `script-cli` 또는 `native-cli`로 자동 fallback됩니다.
 - LiteLLM 프록시를 사용하려면 `AI_PROVIDER=openclaw` + `OPENCLAW_BASE_URL=[litellm-endpoint]` 조합으로 서버 측 provider 경로를 고정하세요.
 - HF canary A/B를 운영하려면 `LLM_EXPERIMENT_ENABLED=true`, `LLM_EXPERIMENT_HF_PERCENT`, `LLM_EXPERIMENT_GUILD_ALLOWLIST`를 함께 설정하고 `/api/bot/agent/llm/experiments/summary`로 arm별 성공률/지연/비용을 확인하세요.
 - 확장 유틸리티 점검: `/api/bot/agent/runtime/supabase/extensions`, `/api/bot/agent/runtime/supabase/cron-jobs`, `/api/bot/agent/runtime/supabase/hypopg/candidates`.
@@ -383,15 +382,16 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 - ACTION_MCP_STRICT_ROUTING=true
 - ACTION_POLICY_FAIL_OPEN_ON_ERROR=false
 - AGENT_READINESS_FAIL_OPEN=false
-- OBSIDIAN_HEADLESS_ENABLED=true
-- OBSIDIAN_HEADLESS_COMMAND=ob
+- OBSIDIAN_REMOTE_MCP_ENABLED=true
+- OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+- OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
 - OBSIDIAN_ADAPTER_STRICT=true
-- OBSIDIAN_ADAPTER_ORDER=headless-cli,script-cli
-- OBSIDIAN_ADAPTER_ORDER_READ_LORE=headless-cli,script-cli
-- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=headless-cli
-- OBSIDIAN_ADAPTER_ORDER_READ_FILE=headless-cli
-- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=headless-cli
-- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=script-cli
+- OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli
+- OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,script-cli
+- OBSIDIAN_ADAPTER_ORDER_SEARCH_VAULT=remote-mcp
+- OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp
+- OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp
+- OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,script-cli
 
 운영 규칙:
 

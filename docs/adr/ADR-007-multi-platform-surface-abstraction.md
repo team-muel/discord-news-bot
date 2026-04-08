@@ -70,8 +70,8 @@ The Obsidian integration followed the same strategy successfully:
 
 1. Defined `ObsidianVaultAdapter` interface during Obsidian CLI open beta
 2. Built a capability-based router (`pickAdapter`) with fallback chains
-3. Implemented adapters (`native-cli`, `headless-cli`, `script-cli`, `local-fs`)
-4. When Obsidian CLI shipped GA (2026-04-03), the bot plugged in with minimal
+3. Implemented adapters (`remote-mcp`, `native-cli`, `script-cli`, `local-fs`)
+4. When remote MCP adapter was added (2026-04-07), the bot plugged in with minimal
    friction because the abstraction boundary was already in place
 
 The same pattern applies here: build the abstraction boundary now while Chat SDK

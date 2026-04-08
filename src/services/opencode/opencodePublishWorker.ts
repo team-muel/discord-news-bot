@@ -288,34 +288,31 @@ const githubRequest = async <T>(params: {
     throw new PublishWorkerError('GITHUB_AUTH', 'GITHUB_TOKEN is required', false);
   }
 
-  const response = await fetch(`https://api.github.com${params.path}`, {
-    method: params.method,
-    headers: {
-      Authorization: `Bearer ${GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'muel-opencode-publish-worker',
-      ...(params.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: params.body ? JSON.stringify(params.body) : undefined,
+  // Re-use shared client for consistent auth/headers handling
+  const { createGitHubClient } = await import('../../utils/githubApi');
+  // Path format: /repos/{owner}/{repo}/... — extract owner/repo from path
+  const pathMatch = params.path.match(/^\/repos\/([^/]+)\/([^/]+)\/(.+)$/);
+  if (!pathMatch) {
+    throw new PublishWorkerError('GITHUB_BAD_PATH', `Unexpected GitHub API path: ${params.path}`, false);
+  }
+  const [, pathOwner, pathRepo, subPath] = pathMatch;
+  const client = createGitHubClient({ token: GITHUB_TOKEN, owner: pathOwner, repo: pathRepo, userAgent: 'muel-opencode-publish-worker' });
+  const result = await client.request<T>({
+    method: params.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: `/${subPath}`,
+    body: params.body,
+    expectedStatus: params.expectedStatus,
   });
 
-  const expected = params.expectedStatus || [200, 201];
-  if (!expected.includes(response.status)) {
-    const bodyText = await response.text();
-    const retryable = response.status >= 500 || response.status === 429;
-    logger.warn('[OPENCODE-PUBLISH] GitHub API %s %s failed (%d): %s', params.method, params.path, response.status, bodyText.slice(0, 500));
+  if (!result.ok) {
     throw new PublishWorkerError(
       'GITHUB_HTTP_ERROR',
-      `GitHub API ${params.method} ${params.path} failed (${response.status})`,
-      retryable,
+      `GitHub API ${params.method} ${params.path} failed (${result.status})`,
+      result.retryable,
     );
   }
 
-  if (response.status === 204) {
-    return {} as T;
-  }
-
-  return response.json() as Promise<T>;
+  return result.data as T;
 };
 
 const getRepoTarget = (payload: Record<string, unknown>): { owner: string; repo: string } => {
@@ -363,34 +360,11 @@ const getFile = async (owner: string, repo: string, path: string, ref: string): 
     return null;
   }
 
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'muel-opencode-publish-worker',
-    },
-  });
-
-  if (response.status === 404) {
-    return null;
-  }
-  if (response.status >= 500 || response.status === 429) {
-    const bodyText = await response.text();
-    throw new PublishWorkerError('GITHUB_HTTP_ERROR', `GET file failed (${response.status}): ${bodyText.slice(0, 500)}`, true);
-  }
-  if (!response.ok) {
-    const bodyText = await response.text();
-    throw new PublishWorkerError('GITHUB_HTTP_ERROR', `GET file failed (${response.status}): ${bodyText.slice(0, 500)}`, false);
-  }
-
-  const payload = await response.json() as { sha?: string; content?: string; encoding?: string };
-  const encoded = String(payload.content || '').replace(/\n/g, '');
-  const decoded = payload.encoding === 'base64' ? Buffer.from(encoded, 'base64').toString('utf8') : '';
-  return {
-    sha: String(payload.sha || '').trim(),
-    content: decoded,
-  };
+  const { createGitHubClient } = await import('../../utils/githubApi');
+  const client = createGitHubClient({ token: GITHUB_TOKEN, owner, repo, userAgent: 'muel-opencode-publish-worker' });
+  const result = await client.getFileContents(path, ref);
+  if (!result) return null;
+  return { sha: result.sha, content: result.content };
 };
 
 const putFile = async (params: {

@@ -18,6 +18,7 @@ import { MCP_UPSTREAM_TOOL_CACHE_TTL_MS } from '../config';
 import { listUpstreams, findUpstreamByNamespace } from './proxyRegistry';
 import type { McpToolSpec, McpToolCallResult } from './types';
 import { getErrorMessage } from '../utils/errorMessage';
+import { fetchWithTimeout } from '../utils/network';
 
 // ──── Constants ────────────────────────────────────────────────────────────────
 
@@ -66,10 +67,13 @@ export const invalidateServerCache = (serverId: string): void => {
   toolCache.delete(serverId);
 };
 
-/** Invalidate all cached tool lists. */
+/** Invalidate all cached tool lists (name map preserved for callProxiedTool). */
 export const invalidateAllServerCaches = (): void => {
   toolCache.clear();
-  originalUpstreamNames.clear();
+  // originalUpstreamNames is intentionally NOT cleared here — it is a stable
+  // translation table that only changes when fetchServerTools re-parses the
+  // upstream catalog.  Keeping it lets callProxiedTool resolve the correct
+  // original name between cache invalidation and the next listProxiedTools call.
 };
 
 // ──── Upstream HTTP helpers ────────────────────────────────────────────────────
@@ -92,20 +96,16 @@ const makeAuthHeaders = (token?: string): Record<string, string> => {
  * Returns empty array on any failure (non-blocking).
  */
 const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[]> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
   try {
     // Primary: JSON-RPC tools/list over /mcp/rpc
-    const rpcRes = await fetch(`${server.url}/mcp/rpc`, {
+    const rpcRes = await fetchWithTimeout(`${server.url}/mcp/rpc`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         ...makeAuthHeaders(server.token),
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
-      signal: controller.signal,
-    });
+    }, FETCH_TIMEOUT_MS);
 
     if (rpcRes.ok) {
       const rpcData = await rpcRes.json() as { result?: { tools?: unknown[] }; tools?: unknown[] };
@@ -116,12 +116,11 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
     }
 
     // Fallback: REST /tools/list
-    const restRes = await fetch(`${server.url}/tools/list`, {
+    const restRes = await fetchWithTimeout(`${server.url}/tools/list`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...makeAuthHeaders(server.token) },
       body: JSON.stringify({}),
-      signal: controller.signal,
-    });
+    }, FETCH_TIMEOUT_MS);
 
     if (restRes.ok) {
       const restData = await restRes.json() as { tools?: unknown[] };
@@ -137,8 +136,6 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
     const reason = getErrorMessage(err);
     console.error('[mcp-proxy] upstream %s: failed to fetch tools — %s', server.id, reason);
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 };
 
@@ -224,7 +221,10 @@ export const callProxiedTool = async (
   // "list-tables" would be called as "list_tables" → 404/method-not-found.
   const mapLookup = originalUpstreamNames.get(internalName);
   if (!mapLookup) {
-    console.warn('[mcp-proxy] originalUpstreamNames miss for %s — cache may have been cleared; falling back to sanitized segment', internalName);
+    // The original upstream name is unknown — likely the tool catalog hasn't been
+    // fetched yet, or the server is newly registered.  Fall back to the sanitized
+    // name segment.  A subsequent listProxiedTools() call will populate the map.
+    console.warn('[mcp-proxy] originalUpstreamNames miss for %s — using sanitized fallback', internalName);
   }
   const originalName = mapLookup ?? withoutPrefix.slice(dotIdx + 1);
 
@@ -236,11 +236,8 @@ export const callProxiedTool = async (
     };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
   try {
-    const res = await fetch(`${server.url}/mcp/rpc`, {
+    const res = await fetchWithTimeout(`${server.url}/mcp/rpc`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -252,8 +249,7 @@ export const callProxiedTool = async (
         method: 'tools/call',
         params: { name: originalName, arguments: args },
       }),
-      signal: controller.signal,
-    });
+    }, FETCH_TIMEOUT_MS);
 
     if (!res.ok) {
       return {
@@ -289,8 +285,6 @@ export const callProxiedTool = async (
       content: [{ type: 'text', text: `Upstream call failed: ${reason}` }],
       isError: true,
     };
-  } finally {
-    clearTimeout(timer);
   }
 };
 

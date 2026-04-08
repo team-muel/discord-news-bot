@@ -135,6 +135,9 @@ export const storeLearningInsight = (insight: LearningInsight): void => {
   }
 };
 
+/** Number of accumulated learning insights (used to gate optimize calls). */
+export const getLearningInsightCount = (): number => learningStore.length;
+
 /** Get recent learning insights for injection into plan phase. */
 export const getRecentLearningContext = (maxEntries = 5): string => {
   if (learningStore.length === 0) return '';
@@ -531,9 +534,9 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     },
     {
       adapterId: 'openjarvis',
-      action: 'jarvis.skill.discover',
-      args: () => ({ limit: 5 }),
-      label: 'Missing skill candidates',
+      action: 'jarvis.skill.search',
+      args: () => ({}),
+      label: 'Available skill candidates',
     },
     {
       adapterId: 'openjarvis',

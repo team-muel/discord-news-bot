@@ -46,15 +46,15 @@ export type ExternalAdapterCapability =
   | 'jarvis.serve'
   | 'jarvis.optimize'
   | 'jarvis.bench'
-  | 'jarvis.trace'
+  | 'jarvis.feedback'
   | 'jarvis.research'
   | 'jarvis.digest'
   | 'jarvis.memory.index'
   | 'jarvis.memory.search'
   | 'jarvis.eval'
   | 'jarvis.telemetry'
-  | 'jarvis.scheduler.run'
-  | 'jarvis.skill.discover'
+  | 'jarvis.scheduler.list'
+  | 'jarvis.skill.search'
   | 'workflow.execute'
   | 'workflow.list'
   | 'workflow.trigger'
@@ -79,3 +79,40 @@ export type ExternalToolAdapter = {
   isAvailable: () => Promise<boolean>;
   execute: (action: string, args: Record<string, unknown>) => Promise<ExternalAdapterResult>;
 };
+
+// ──── Shared adapter helpers ──────────────────────────────────────────────────
+
+/**
+ * Build a standardized ExternalAdapterResult.
+ * Omits `error` key entirely when not provided (keeps serialized output clean).
+ */
+export const makeAdapterResult = (
+  adapterId: ExternalAdapterId,
+  ok: boolean,
+  action: string,
+  summary: string,
+  output: string[],
+  durationMs: number,
+  error?: string,
+): ExternalAdapterResult => ({
+  ok,
+  adapterId,
+  action,
+  summary,
+  output,
+  durationMs,
+  ...(error ? { error } : {}),
+});
+
+/**
+ * Evaluate the standard opt-out / legacy enable flag pair used by all adapters.
+ *
+ * Pattern:
+ *   DISABLED env = true  → disabled (opt-out wins)
+ *   ENABLED env  = false → disabled (legacy compat)
+ *   Otherwise           → enabled
+ */
+export const isAdapterEnabled = (
+  explicitlyDisabled: boolean,
+  legacyEnabledRaw: string | undefined,
+): boolean => !explicitlyDisabled && legacyEnabledRaw !== 'false';

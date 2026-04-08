@@ -4,8 +4,8 @@ services:
     runtime: node
     plan: starter
     autoDeploy: true
-    buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build; npm install -g obsidian-headless
-    startCommand: bash scripts/obsidian-headless-startup.sh
+    buildCommand: npm ci --no-audit --no-fund; npm rebuild esbuild; npm run build
+    startCommand: node --import tsx server.ts
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
@@ -124,6 +124,14 @@ services:
         value: muel-s
       - key: SPRINT_GITHUB_REPO
         value: muel-platform
+      # LLM-Wiki PR pipeline — vault GitHub target (set in Render dashboard)
+      - key: OBSIDIAN_VAULT_GITHUB_OWNER
+        value: team-muel
+      - key: OBSIDIAN_VAULT_GITHUB_REPO
+        value: discord-news-bot
+      # GitHub MCP worker (optional — enables runtime GitHub operations via MCP protocol)
+      - key: MCP_GITHUB_WORKER_URL
+        sync: false
       # Self-improvement loop (approve-ship gate protects production)
       - key: SELF_IMPROVEMENT_CONVERGENCE_ENABLED
         value: "true"
@@ -190,33 +198,21 @@ services:
         value: "true"
       - key: PLANNER_PATTERN_CACHE_TTL_MS
         value: "1800000"
-      # Obsidian Headless Sync (ephemeral vault on /tmp)
-      - key: OBSIDIAN_VAULT_PATH
-        value: /tmp/vault
+      # Obsidian — all vault ops routed through GCP VM via remote-mcp adapter
       - key: OBSIDIAN_VAULT_NAME
         value: docs
-      - key: OBSIDIAN_HEADLESS_ENABLED
+      - key: OBSIDIAN_REMOTE_MCP_ENABLED
         value: "true"
-      - key: OBSIDIAN_SYNC_MODE
-        value: bidirectional
-      - key: OBSIDIAN_SYNC_CONFLICT
-        value: merge
-      - key: OBSIDIAN_EMAIL
+      - key: OBSIDIAN_REMOTE_MCP_URL
+        value: http://34.56.232.61:8850
+      - key: OBSIDIAN_REMOTE_MCP_TOKEN
         sync: false
-      - key: OBSIDIAN_PASSWORD
-        sync: false
-      - key: OBSIDIAN_E2EE_PASSWORD
-        sync: false
-      - key: OBSIDIAN_LOCAL_FS_ENABLED
-        value: "true"
-      - key: OBSIDIAN_SYNC_VAULT_PATH
-        value: /tmp/vault
+      - key: OBSIDIAN_ADAPTER_ORDER
+        value: "remote-mcp,local-fs"
+      - key: OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE
+        value: "remote-mcp"
       - key: OBSIDIAN_SYNC_LOOP_ENABLED
-        value: "true"
-      - key: OBSIDIAN_SYNC_LOOP_INTERVAL_MIN
-        value: "60"
-      - key: OBSIDIAN_SYNC_LOOP_OWNER
-        value: "app"
+        value: "false"
       - key: AGENT_SLO_ALERT_LOOP_OWNER
         value: "app"
       # Render API adapter (self-management)
@@ -234,10 +230,8 @@ services:
     autoDeploy: true
     dockerfilePath: ./Dockerfile.litellm
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /health/liveliness
     envVars:
-      - key: LITELLM_MASTER_KEY
-        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -247,4 +241,6 @@ services:
       - key: HF_TOKEN
         sync: false
       - key: OLLAMA_BASE_URL
+        sync: false
+      - key: NVIDIA_NIM_API_KEY
         sync: false

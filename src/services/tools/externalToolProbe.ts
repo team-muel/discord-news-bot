@@ -2,6 +2,7 @@ import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME, OLLAMA_BASE_URL, OPENJARVIS_ENABLED, OPENJARVIS_SERVE_URL, LITELLM_BASE_URL } from '../../config';
 import { parseStringEnv } from '../../utils/env';
+import { fetchWithTimeout } from '../../utils/network';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -88,10 +89,7 @@ const probeWslCommand = async (
 
 const probeHttp = async (url: string): Promise<boolean> => {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-    const resp = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
+    const resp = await fetchWithTimeout(url, {}, PROBE_TIMEOUT_MS);
     return resp.ok;
   } catch {
     return false;

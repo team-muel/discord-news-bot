@@ -1,4 +1,4 @@
-import { upsertObsidianGuildDocument } from '../../obsidian/authoring';
+import { upsertObsidianGuildDocument, stripMarkdownExtension } from '../../obsidian/authoring';
 import { generateText, isAnyLlmConfigured } from '../../llmClient';
 import { getObsidianVaultRoot } from '../../../utils/obsidianEnv';
 import {
@@ -11,10 +11,6 @@ import type { ActionDefinition } from './types';
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
 const toIsoNow = (): string => new Date().toISOString();
-
-const stripMarkdownExtension = (name: string): string => {
-  return String(name || '').replace(/\.md$/i, '').trim();
-};
 
 const inferCategory = (goal: string, content: string, fileName: string): string => {
   const text = `${goal}\n${content}\n${fileName}`.toLowerCase();

@@ -1,0 +1,95 @@
+name: obsidian-wiki-review
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggered on PRs whose branch starts with wiki/ (e.g. wiki/2026-04-08-ingest)
+# Runs the Obsidian graph audit and posts the result as a PR comment.
+#
+# NOTE: for vault-only repos, copy this file to:
+#   {vault-repo}/.github/workflows/obsidian-wiki-review.yml
+#   and set OBSIDIAN_SYNC_VAULT_PATH to '.'
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'wiki/**'
+      - '**.md'
+  workflow_dispatch:
+    inputs:
+      vault_path:
+        description: 'Relative path to the vault within the workspace (default: .)'
+        required: false
+        default: '.'
+
+concurrency:
+  group: obsidian-wiki-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Obsidian Graph Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run graph audit
+        id: audit
+        env:
+          OBSIDIAN_SYNC_VAULT_PATH: ${{ inputs.vault_path || '.' }}
+          OBSIDIAN_VAULT_PATH: ${{ inputs.vault_path || '.' }}
+        run: |
+          set +e
+          npm run obsidian:audit -- --vault "${OBSIDIAN_SYNC_VAULT_PATH}" 2>&1 | tee /tmp/audit-output.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post audit result as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.existsSync('/tmp/audit-output.txt')
+              ? fs.readFileSync('/tmp/audit-output.txt', 'utf8').slice(0, 3000)
+              : '(no output)';
+            const exitCode = '${{ steps.audit.outputs.exit_code }}';
+            const icon = exitCode === '0' ? '✅' : '❌';
+            const status = exitCode === '0' ? 'PASS' : 'FAIL';
+            const body = [
+              `## ${icon} Obsidian Graph Audit — ${status}`,
+              '',
+              '```',
+              raw,
+              '```',
+              '',
+              `> Branch: \`${{ github.head_ref }}\` | Commit: \`${{ github.sha }}\``,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Fail job on audit error
+        if: steps.audit.outputs.exit_code != '0'
+        run: |
+          echo "Audit failed — see PR comment above for details"
+          exit 1

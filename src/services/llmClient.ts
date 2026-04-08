@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Barrel re-export for backward compatibility.
  * The LLM client is now split into:
  *   - llm/providers.ts  (HTTP implementations)

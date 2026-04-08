@@ -1,9 +1,9 @@
 import { parseBooleanEnv, parseCsvList } from '../../utils/env';
 import logger from '../../logger';
-import { headlessCliObsidianAdapter } from './adapters/headlessCliAdapter.ts';
 import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
 import { scriptCliObsidianAdapter } from './adapters/scriptCliAdapter.ts';
 import { localFsObsidianAdapter } from './adapters/localFsAdapter.ts';
+import { remoteMcpObsidianAdapter } from './adapters/remoteMcpAdapter.ts';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import type {
@@ -23,7 +23,7 @@ import type {
 import { supportsCapability } from './types';
 import { getErrorMessage } from '../../utils/errorMessage';
 
-const DEFAULT_ORDER = ['native-cli', 'headless-cli', 'script-cli', 'local-fs'];
+const DEFAULT_ORDER = ['remote-mcp', 'native-cli', 'script-cli', 'local-fs'];
 
 const ADAPTER_ORDER = parseCsvList(process.env.OBSIDIAN_ADAPTER_ORDER || DEFAULT_ORDER.join(','));
 
@@ -47,8 +47,8 @@ const ORDER_ENV_BY_CAPABILITY: Record<ObsidianCapability, string | undefined> = 
 const OBSIDIAN_ADAPTER_STRICT = parseBooleanEnv(process.env.OBSIDIAN_ADAPTER_STRICT, false);
 
 const registry: Record<string, ObsidianVaultAdapter> = {
+  [remoteMcpObsidianAdapter.id]: remoteMcpObsidianAdapter,
   [nativeCliObsidianAdapter.id]: nativeCliObsidianAdapter,
-  [headlessCliObsidianAdapter.id]: headlessCliObsidianAdapter,
   [scriptCliObsidianAdapter.id]: scriptCliObsidianAdapter,
   [localFsObsidianAdapter.id]: localFsObsidianAdapter,
 };
@@ -97,7 +97,7 @@ const getOrderedAdapters = (capability?: ObsidianCapability): ObsidianVaultAdapt
     return ordered;
   }
 
-  return [nativeCliObsidianAdapter, headlessCliObsidianAdapter, scriptCliObsidianAdapter];
+  return [remoteMcpObsidianAdapter, nativeCliObsidianAdapter, scriptCliObsidianAdapter];
 };
 
 const pickAdapter = (capability: ObsidianCapability): ObsidianVaultAdapter | null => {

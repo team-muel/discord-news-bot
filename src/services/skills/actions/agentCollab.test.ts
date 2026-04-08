@@ -43,8 +43,8 @@ import {
   jarvisMemorySearchAction,
   jarvisEvalAction,
   jarvisTelemetryAction,
-  jarvisSchedulerRunAction,
-  jarvisSkillDiscoverAction,
+  jarvisSchedulerListAction,
+  jarvisSkillSearchAction,
   qaTestAction,
   csoAuditAction,
   releaseShipAction,
@@ -423,33 +423,27 @@ describe('jarvis extended actions', () => {
     });
   });
 
-  describe('jarvis.scheduler.run', () => {
-    it('returns TASK_EMPTY on empty task', async () => {
-      const result = await jarvisSchedulerRunAction.execute({ goal: '', args: {}, guildId: 'g1' });
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('TASK_EMPTY');
-    });
-
-    it('delegates to adapter with task name', async () => {
-      const result = await jarvisSchedulerRunAction.execute({ goal: '', args: { task: 'daily-digest' }, guildId: 'g1' });
+  describe('jarvis.scheduler.list', () => {
+    it('delegates to adapter', async () => {
+      const result = await jarvisSchedulerListAction.execute({ goal: '', args: {}, guildId: 'g1' });
       expect(result.ok).toBe(true);
-      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.scheduler.run', { task: 'daily-digest' });
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.scheduler.list', {});
     });
 
     it('is registered in the action registry', () => {
-      expect(getAction('jarvis.scheduler.run')).not.toBeNull();
+      expect(getAction('jarvis.scheduler.list')).not.toBeNull();
     });
   });
 
-  describe('jarvis.skill.discover', () => {
+  describe('jarvis.skill.search', () => {
     it('delegates to adapter', async () => {
-      const result = await jarvisSkillDiscoverAction.execute({ goal: '', guildId: 'g1' });
+      const result = await jarvisSkillSearchAction.execute({ goal: '', guildId: 'g1' });
       expect(result.ok).toBe(true);
-      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.skill.discover', {});
+      expect(executeExternalActionMock).toHaveBeenCalledWith('openjarvis', 'jarvis.skill.search', {});
     });
 
     it('is registered in the action registry', () => {
-      expect(getAction('jarvis.skill.discover')).not.toBeNull();
+      expect(getAction('jarvis.skill.search')).not.toBeNull();
     });
   });
 });

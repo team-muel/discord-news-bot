@@ -197,7 +197,6 @@ export type HealthResponse = {
   obsidian?: {
     vaultPath: string;
     vaultReady: boolean;
-    headlessEnabled: boolean;
     fileCount: number;
   };
   migrations?: {

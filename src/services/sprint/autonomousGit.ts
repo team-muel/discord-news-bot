@@ -7,6 +7,7 @@ import {
   SPRINT_DRY_RUN,
 } from '../../config';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { createGitHubClient } from '../../utils/githubApi';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,20 +25,19 @@ const PROTECTED_BRANCHES = new Set(['main', 'master', 'production', 'release']);
 const sanitizeBranchName = (raw: string): string =>
   raw.replace(/[^a-zA-Z0-9\-_/.]/g, '-').replace(/-{2,}/g, '-').slice(0, 100);
 
-// ──── GitHub API helpers ──────────────────────────────────────────────────────
+// ──── Shared GitHub client (lazy init — avoids read at module load when unconfigured) ──
 
-const githubApi = async (path: string, options: RequestInit = {}): Promise<Response> => {
-  const url = `https://api.github.com/repos/${SPRINT_GITHUB_OWNER}/${SPRINT_GITHUB_REPO}${path}`;
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${SPRINT_GITHUB_TOKEN}`,
-    'Accept': 'application/vnd.github.v3+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    ...((options.headers as Record<string, string>) || {}),
-  };
-  if (options.body) {
-    headers['Content-Type'] = 'application/json';
+let _ghClient: ReturnType<typeof createGitHubClient> | null = null;
+const gh = () => {
+  if (!_ghClient) {
+    _ghClient = createGitHubClient({
+      token: SPRINT_GITHUB_TOKEN,
+      owner: SPRINT_GITHUB_OWNER,
+      repo: SPRINT_GITHUB_REPO,
+      userAgent: 'muel-sprint-git',
+    });
   }
-  return fetch(url, { ...options, headers });
+  return _ghClient;
 };
 
 // ──── Branch operations ───────────────────────────────────────────────────────
@@ -60,26 +60,14 @@ export const createSprintBranch = async (sprintId: string, baseBranch = 'main'):
   }
 
   try {
-    // Get base branch SHA
-    const baseRef = await githubApi(`/git/ref/heads/${safeBase}`);
-    if (!baseRef.ok) {
+    const baseSha = await gh().getBranchSha(safeBase);
+    if (!baseSha) {
       return { ok: false, branchName, error: `Base branch ${safeBase} not found` };
     }
-    const baseData = await baseRef.json() as { object: { sha: string } };
-    const baseSha = baseData.object.sha;
 
-    // Create new branch
-    const createRes = await githubApi('/git/refs', {
-      method: 'POST',
-      body: JSON.stringify({
-        ref: `refs/heads/${branchName}`,
-        sha: baseSha,
-      }),
-    });
-
+    const createRes = await gh().createBranch(branchName, baseSha);
     if (!createRes.ok) {
-      const errBody = await createRes.text();
-      return { ok: false, branchName, error: `Branch creation failed: ${errBody.slice(0, 200)}` };
+      return { ok: false, branchName, error: `Branch creation failed: ${createRes.error}` };
     }
 
     logger.info('[SPRINT-GIT] branch created: %s from %s', branchName, safeBase);
@@ -111,69 +99,40 @@ export const commitSprintChanges = async (params: {
 
   try {
     // Get current branch HEAD
-    const refRes = await githubApi(`/git/ref/heads/${params.branchName}`);
-    if (!refRes.ok) return { ok: false, error: 'Branch not found' };
-    const refData = await refRes.json() as { object: { sha: string } };
-    const parentSha = refData.object.sha;
+    const parentSha = await gh().getBranchSha(params.branchName);
+    if (!parentSha) return { ok: false, error: 'Branch not found' };
 
     // Get base tree
-    const commitRes = await githubApi(`/git/commits/${parentSha}`);
-    if (!commitRes.ok) return { ok: false, error: 'Parent commit not found' };
-    const commitData = await commitRes.json() as { tree: { sha: string } };
-    const baseTreeSha = commitData.tree.sha;
+    const baseTreeSha = await gh().getCommitTree(parentSha);
+    if (!baseTreeSha) return { ok: false, error: 'Parent commit not found' };
 
     // Create blobs for each file
     const treeItems = [];
     for (const file of params.files) {
-      const blobRes = await githubApi('/git/blobs', {
-        method: 'POST',
-        body: JSON.stringify({
-          content: file.content,
-          encoding: 'utf-8',
-        }),
-      });
+      const blobRes = await gh().createBlob(file.content);
       if (!blobRes.ok) return { ok: false, error: `Blob creation failed for ${file.path}` };
-      const blobData = await blobRes.json() as { sha: string };
       treeItems.push({
         path: file.path,
-        mode: '100644' as const,
-        type: 'blob' as const,
-        sha: blobData.sha,
+        mode: '100644',
+        type: 'blob',
+        sha: blobRes.data!.sha,
       });
     }
 
     // Create tree
-    const treeRes = await githubApi('/git/trees', {
-      method: 'POST',
-      body: JSON.stringify({
-        base_tree: baseTreeSha,
-        tree: treeItems,
-      }),
-    });
+    const treeRes = await gh().createTree(baseTreeSha, treeItems);
     if (!treeRes.ok) return { ok: false, error: 'Tree creation failed' };
-    const treeData = await treeRes.json() as { sha: string };
 
     // Create commit
-    const newCommitRes = await githubApi('/git/commits', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: params.message,
-        tree: treeData.sha,
-        parents: [parentSha],
-      }),
-    });
-    if (!newCommitRes.ok) return { ok: false, error: 'Commit creation failed' };
-    const newCommitData = await newCommitRes.json() as { sha: string };
+    const commitRes = await gh().createCommit(params.message, treeRes.data!.sha, [parentSha]);
+    if (!commitRes.ok) return { ok: false, error: 'Commit creation failed' };
 
     // Update branch ref
-    const updateRefRes = await githubApi(`/git/refs/heads/${params.branchName}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ sha: newCommitData.sha }),
-    });
-    if (!updateRefRes.ok) return { ok: false, error: 'Branch ref update failed' };
+    const updateRes = await gh().updateBranchRef(params.branchName, commitRes.data!.sha);
+    if (!updateRes.ok) return { ok: false, error: 'Branch ref update failed' };
 
-    logger.info('[SPRINT-GIT] committed %d files to %s sha=%s', params.files.length, params.branchName, newCommitData.sha.slice(0, 8));
-    return { ok: true, sha: newCommitData.sha };
+    logger.info('[SPRINT-GIT] committed %d files to %s sha=%s', params.files.length, params.branchName, commitRes.data!.sha.slice(0, 8));
+    return { ok: true, sha: commitRes.data!.sha };
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) };
   }
@@ -197,24 +156,19 @@ export const createSprintPr = async (params: {
   }
 
   try {
-    const res = await githubApi('/pulls', {
-      method: 'POST',
-      body: JSON.stringify({
-        title: params.title,
-        body: params.body.slice(0, 65535),
-        head: params.branchName,
-        base: params.baseBranch || 'main',
-      }),
+    const res = await gh().createPullRequest({
+      title: params.title,
+      body: params.body,
+      head: params.branchName,
+      base: params.baseBranch || 'main',
     });
 
     if (!res.ok) {
-      const errBody = await res.text();
-      return { ok: false, error: `PR creation failed: ${errBody.slice(0, 200)}` };
+      return { ok: false, error: `PR creation failed: ${res.error}` };
     }
 
-    const prData = await res.json() as { html_url: string; number: number };
-    logger.info('[SPRINT-GIT] PR created: %s', prData.html_url);
-    return { ok: true, prUrl: prData.html_url, prNumber: prData.number };
+    logger.info('[SPRINT-GIT] PR created: %s', res.data!.html_url);
+    return { ok: true, prUrl: res.data!.html_url, prNumber: res.data!.number };
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) };
   }

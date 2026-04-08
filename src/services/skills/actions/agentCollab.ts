@@ -42,6 +42,6 @@ export {
   jarvisMemorySearchAction,
   jarvisEvalAction,
   jarvisTelemetryAction,
-  jarvisSchedulerRunAction,
-  jarvisSkillDiscoverAction,
+  jarvisSchedulerListAction,
+  jarvisSkillSearchAction,
 } from './agentCollabJarvis';

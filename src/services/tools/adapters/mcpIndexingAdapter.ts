@@ -19,22 +19,17 @@
 import { parseBooleanEnv } from '../../../utils/env';
 import { callIndexingMcpTool } from '../../../mcp/indexingToolAdapter';
 import type { ExternalToolAdapter, ExternalAdapterId, ExternalAdapterResult } from '../externalAdapterTypes';
+import { makeAdapterResult, isAdapterEnabled } from '../externalAdapterTypes';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 /** Opt-out: disabled only when explicitly turned off. */
 const EXPLICITLY_DISABLED = parseBooleanEnv(process.env.MCP_INDEXING_ADAPTER_DISABLED, false);
 const LEGACY_ENABLED_RAW = process.env.MCP_INDEXING_ADAPTER_ENABLED;
-const isNotDisabled = (): boolean => !EXPLICITLY_DISABLED && LEGACY_ENABLED_RAW !== 'false';
+const isNotDisabled = (): boolean => isAdapterEnabled(EXPLICITLY_DISABLED, LEGACY_ENABLED_RAW);
 
-const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult => ({
-  ok,
-  adapterId: 'mcp-indexing' as ExternalAdapterId,
-  action,
-  summary,
-  output,
-  durationMs,
-  ...(error ? { error } : {}),
-});
+const ADAPTER_ID = 'mcp-indexing' as ExternalAdapterId;
+const makeResult = (ok: boolean, action: string, summary: string, output: string[], durationMs: number, error?: string): ExternalAdapterResult =>
+  makeAdapterResult(ADAPTER_ID, ok, action, summary, output, durationMs, error);
 
 const ACTION_TO_TOOL: Record<string, string> = {
   'index.search': 'code.index.symbol_search',

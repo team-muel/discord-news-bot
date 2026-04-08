@@ -85,7 +85,7 @@ export type GatewayChatParams = {
 };
 
 /**
- * Send a session-aware chat request via the OpenClaw Gateway's /agent/chat endpoint.
+ * Send a session-aware chat request via the OpenClaw Gateway's OpenAI-compatible endpoint.
  * Returns null if the gateway is unavailable or returns an error.
  */
 export const sendGatewayChat = async (params: GatewayChatParams): Promise<string | null> => {
@@ -95,15 +95,15 @@ export const sendGatewayChat = async (params: GatewayChatParams): Promise<string
   const headers = getGatewayHeaders();
 
   try {
-    const resp = await fetchWithTimeout(`${OPENCLAW_GATEWAY_URL}/agent/chat`, {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (params.system) messages.push({ role: 'system', content: params.system });
+    messages.push({ role: 'user', content: params.user });
+
+    const resp = await fetchWithTimeout(`${OPENCLAW_GATEWAY_URL}/v1/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        message: params.user,
-        system: params.system,
-        session_id: params.sessionId || undefined,
-        guild_id: params.guildId || undefined,
-        action_name: params.actionName || undefined,
+        messages,
         temperature: params.temperature ?? 0.2,
         max_tokens: params.maxTokens ?? 1000,
       }),
@@ -111,7 +111,7 @@ export const sendGatewayChat = async (params: GatewayChatParams): Promise<string
 
     if (!resp.ok) return null;
     const data = (await resp.json()) as Record<string, any>;
-    const text = String(data?.response || data?.choices?.[0]?.message?.content || '').trim();
+    const text = String(data?.choices?.[0]?.message?.content || data?.response || '').trim();
     return text.length > 0 ? text : null;
   } catch {
     markGatewayUnhealthy();

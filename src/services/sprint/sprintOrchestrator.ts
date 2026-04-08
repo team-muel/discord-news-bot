@@ -14,7 +14,7 @@ import {
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble, storeLearningInsight, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
+import { buildSprintPreamble, storeLearningInsight, getLearningInsightCount, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
 import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, type LoopState } from '../skills/loopDetection';
 import { parseBenchResult } from '../tools/adapters/openjarvisAdapter';
@@ -974,34 +974,36 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
     }
   }
 
-  // ── Self-learning loop: feed retro results to OpenJarvis for trace + optimize ──
+  // ── Self-learning loop: feed retro results to OpenJarvis for feedback + optimize ──
   if (currentPhase === 'retro' && phaseResult.status === 'success') {
     const learningAppendix: string[] = [];
 
-    // 1. Store trace data
-    const traceResult = await executeExternalAction('openjarvis', 'jarvis.trace', {
-      trace: {
-        run_id: pipeline.sprintId,
-        phase: 'retro',
-        objective: pipeline.objective,
-        output: phaseResult.output.slice(0, 3000),
-        changed_files: pipeline.changedFiles,
-        total_phases: pipeline.totalPhasesExecuted,
-        timestamp: new Date().toISOString(),
-      },
+    // 1. Record feedback for the sprint run trace
+    const traceResult = await executeExternalAction('openjarvis', 'jarvis.feedback', {
+      trace_id: pipeline.sprintId,
+      score: 1.0,
     });
     if (traceResult.ok) {
-      learningAppendix.push(`[TRACE] stored (run_id=${pipeline.sprintId})`);
+      learningAppendix.push(`[FEEDBACK] recorded (trace_id=${pipeline.sprintId})`);
     } else {
-      logger.warn('[SPRINT] self-learning trace failed for sprint=%s: %s', sprintId, traceResult.output.join('; ') || 'unknown');
+      logger.warn('[SPRINT] self-learning feedback failed for sprint=%s: %s', sprintId, traceResult.output.join('; ') || 'unknown');
     }
 
-    // 2. Trigger optimization if enough traces have accumulated
-    const optimizeResult = await executeExternalAction('openjarvis', 'jarvis.optimize', {});
-    if (optimizeResult.ok && optimizeResult.output.length > 0) {
-      learningAppendix.push(`[OPTIMIZE] ${optimizeResult.output.slice(0, 5).join('; ')}`);
-    } else if (!optimizeResult.ok) {
-      logger.warn('[SPRINT] self-learning optimize failed for sprint=%s: %s', sprintId, optimizeResult.output.join('; ') || 'unknown');
+    // 2. Trigger optimization only after enough traces have accumulated (min 3)
+    // Running optimize on first trace is wasteful — the model needs signal to improve.
+    const MIN_TRACES_FOR_OPTIMIZE = 3;
+    const traceCount = getLearningInsightCount();
+    let optimizeResult: Awaited<ReturnType<typeof executeExternalAction>> | null = null;
+    if (traceCount >= MIN_TRACES_FOR_OPTIMIZE) {
+      optimizeResult = await executeExternalAction('openjarvis', 'jarvis.optimize', {});
+      if (optimizeResult.ok && optimizeResult.output.length > 0) {
+        learningAppendix.push(`[OPTIMIZE] ${optimizeResult.output.slice(0, 5).join('; ')}`);
+      } else if (!optimizeResult.ok) {
+        logger.warn('[SPRINT] self-learning optimize failed for sprint=%s: %s', sprintId, optimizeResult.output.join('; ') || 'unknown');
+      }
+    } else {
+      learningAppendix.push(`[OPTIMIZE] deferred (traces=${traceCount}/${MIN_TRACES_FOR_OPTIMIZE} needed)`);
+      logger.info('[SPRINT] optimize deferred for sprint=%s: %d/%d traces accumulated', sprintId, traceCount, MIN_TRACES_FOR_OPTIMIZE);
     }
 
     // 3. Run benchmark for before/after comparison
@@ -1022,17 +1024,17 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       storeLearningInsight({
         sprintId: pipeline.sprintId,
         storedAt: new Date().toISOString(),
-        optimizeHints: optimizeResult.ok ? optimizeResult.output.slice(0, 5) : [],
+        optimizeHints: optimizeResult?.ok ? optimizeResult.output.slice(0, 5) : [],
         benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
         benchScore: benchParsed?.benchScore ?? null,
       });
     }
 
-    // 4. Skill discovery: detect missing skills from trace patterns
-    const skillDiscoveryResult = await executeExternalAction('openjarvis', 'jarvis.skill.discover', { limit: 5 });
-    if (skillDiscoveryResult.ok && skillDiscoveryResult.output.length > 0) {
-      learningAppendix.push(`[SKILL-DISCOVER] ${skillDiscoveryResult.output.slice(0, 3).join('; ')}`);
-      logger.info('[SPRINT] skill discovery found candidates for sprint=%s', sprintId);
+    // 4. Skill search: find available skills from catalog
+    const skillSearchResult = await executeExternalAction('openjarvis', 'jarvis.skill.search', {});
+    if (skillSearchResult.ok && skillSearchResult.output.length > 0) {
+      learningAppendix.push(`[SKILL-SEARCH] ${skillSearchResult.output.slice(0, 3).join('; ')}`);
+      logger.info('[SPRINT] skill search found candidates for sprint=%s', sprintId);
     }
 
     // 5. Telemetry snapshot: capture energy/latency metrics post-sprint
@@ -1064,7 +1066,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       implementReviewLoops: pipeline.implementReviewLoopCount,
       changedFiles: pipeline.changedFiles,
       retroOutput: phaseResult.output.slice(0, 3000),
-      optimizeHints: optimizeResult.ok ? optimizeResult.output.slice(0, 5) : [],
+      optimizeHints: optimizeResult?.ok ? optimizeResult.output.slice(0, 5) : [],
       benchResults: benchResult.ok ? benchResult.output.slice(0, 5) : [],
       benchScore: benchParsed?.benchScore ?? null,
       phaseTimings,
@@ -1122,6 +1124,21 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
       requestedBy: 'sprint-pipeline',
     }).catch((err) =>
       logger.debug('[SPRINT] memory precipitation failed: %s', getErrorMessage(err)),
+    );
+
+    // Layer 4 Bridge: relay sprint summary to OpenClaw for persistent identity memory
+    // This keeps OpenClaw's always-on session aware of what the Sprint pipeline accomplished.
+    const retroSummary = [
+      `Sprint ${pipeline.sprintId} completed: "${pipeline.objective.slice(0, 200)}"`,
+      `Phases: ${pipeline.totalPhasesExecuted} | Changed files: ${(pipeline.changedFiles ?? []).length}`,
+      ...(learningAppendix.length > 0 ? [`Learning: ${learningAppendix.slice(0, 3).join(' | ')}`] : []),
+    ].join('\n');
+    void executeExternalAction('openclaw', 'agent.session.relay', {
+      message: retroSummary,
+      channel: 'discord',
+      sessionId: `sprint-${pipeline.guildId}`,
+    }).catch((err) =>
+      logger.debug('[SPRINT] openclaw relay failed (non-critical): %s', getErrorMessage(err)),
     );
   }
 

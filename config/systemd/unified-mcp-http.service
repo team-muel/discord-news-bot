@@ -1,0 +1,19 @@
+[Unit]
+Description=MCP Unified HTTP Server (Obsidian vault tools)
+After=network.target obsidian-headless.service
+Wants=obsidian-headless.service
+
+[Service]
+Type=simple
+User=fancy
+WorkingDirectory=/home/fancy/discord-news-bot
+Environment=NODE_ENV=production
+Environment=MCP_HTTP_PORT=8850
+EnvironmentFile=-/home/fancy/discord-news-bot/.env
+ExecStart=/usr/bin/node --import tsx scripts/unified-mcp-http.ts
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

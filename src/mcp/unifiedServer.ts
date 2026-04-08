@@ -343,11 +343,12 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
  * Start a standalone HTTP MCP server.
  * Can be used alongside the main Express server or independently.
  */
-export const startMcpHttpServer = (port: number, options?: { authToken?: string }): http.Server => {
+export const startMcpHttpServer = (port: number, options?: { authToken?: string; host?: string }): http.Server => {
   const handler = createMcpHttpHandler(options);
   const server = http.createServer(handler);
-  server.listen(port, '127.0.0.1', () => {
-    console.error(`[muel-unified-mcp] HTTP server ready on 127.0.0.1:${port}`);
+  const host = options?.host || process.env.MCP_HTTP_HOST || '127.0.0.1';
+  server.listen(port, host, () => {
+    console.error(`[muel-unified-mcp] HTTP server ready on ${host}:${port}`);
   });
   return server;
 };

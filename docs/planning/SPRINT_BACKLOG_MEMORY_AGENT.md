@@ -278,11 +278,11 @@
 - 검증 명령
 - `npm run lint`
 
-### R-007 Obsidian CLI/Headless 역할 분리 점검표 게이트 연동
+### R-007 Obsidian Adapter 라우팅 정책 검증 게이트 연동
 
-- 문제: 역할 분리 원칙이 배포 승인 게이트와 완전히 연결되지 않음
+- 문제: adapter 라우팅 정책이 배포 승인 게이트와 완전히 연결되지 않음
 - 작업
-- CLI 전용/Headless 전용 작업 분류표 작성
+- remote-mcp / native-cli / script-cli / local-fs 라우팅 정책 검증
 - 배포 전 체크 항목으로 강제
 - 완료 기준
 - 점검표 미통과 시 no-go 처리 절차 문서화

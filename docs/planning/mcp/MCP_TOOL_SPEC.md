@@ -2,7 +2,7 @@
 
 This document defines the MCP tool contract for Muel's multi-server architecture.
 
-> **Status: Live (2026-04-05)** — All servers operational. GCP unified surface is the canonical full-catalog access point.
+> **Status: Live (2026-04-08)** — All servers operational. GCP unified surface is the canonical full-catalog access point. GitHub MCP added as cross-repo coordination layer.
 
 ## Scope
 
@@ -11,15 +11,91 @@ Methods: `initialize`, `tools/list`, `tools/call`
 
 ## Server Inventory
 
-| Server ID | Location | Transport | Tool Count |
-|-----------|----------|-----------|------------|
-| `muelIndexing` | Local / `.vscode/mcp.json` | stdio | 7 |
-| `muelUnified` | Local / `.vscode/mcp.json` | stdio | 40+ |
-| `gcpCompute` | GCP VM → SSH stdio | stdio (SSH) | 40+ (unified) |
-| `supabase` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | DB |
-| `deepwiki` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | — |
+| Server ID | Location | Transport | Tool Count | Primary Role |
+|-----------|----------|-----------|------------|-------------|
+| `github` | Remote / `.vscode/mcp.json` | HTTP (Copilot OAuth) | 40+ | Cross-repo GitHub operations |
+| `muelIndexing` | Local / `.vscode/mcp.json` | stdio | 7 | Code indexing & symbol search |
+| `muelUnified` | Local / `.vscode/mcp.json` | stdio | 40+ | Local hub (Obsidian, actions, ext adapters) |
+| `gcpCompute` | GCP VM → SSH stdio | stdio (SSH) | 40+ (unified) | Remote heavy compute |
+| `supabase` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | DB | Data persistence |
+| `deepwiki` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | — | External repo wiki |
 
-Configuration file: `.vscode/mcp.json` (stdio servers); `MCP_UPSTREAM_SERVERS` env var (HTTP upstream servers)
+Configuration file: `.vscode/mcp.json` (stdio + HTTP servers); `MCP_UPSTREAM_SERVERS` env var (runtime upstream servers)
+
+## Routing Decision Table
+
+Use this table to decide which MCP server to call for a given task category.
+
+| Task Category | Primary Server | Fallback | Examples |
+|---------------|---------------|----------|----------|
+| **Cross-repo GitHub ops** | `github` | `autonomousGit.ts` (runtime) | PR CRUD, issue triage, repo search, branch mgmt, actions status |
+| **Code analysis** | `muelIndexing` | — | Symbol search, references, scope read, context bundle |
+| **Obsidian vault read** | `muelUnified` | `gcpCompute` | Search, RAG query, graph metadata, file read |
+| **Obsidian vault write** | `gcpCompute` | `muelUnified` | Note write, sync, daily append (prefer remote for CLI) |
+| **Sprint pipeline** | `muelUnified` | — | action-execute-direct, action-catalog |
+| **External tool ops** | `gcpCompute` | `muelUnified` | OpenClaw, NemoClaw, OpenJarvis, OpenShell |
+| **n8n workflows** | `muelUnified` or `gcpCompute` | — | Trigger, status, delegate |
+| **News/YouTube crawl** | `muelUnified` | crawler-worker | news.google.search, youtube.search |
+| **DB queries** | `supabase` (upstream) | direct Supabase client | Schema queries, data reads |
+| **LLM diagnostics** | `muelUnified` | — | diag.llm |
+
+### Overlap Resolution Rules
+
+1. **GitHub PR/Issue/Branch**: Use `github` MCP for IDE agent work. Runtime server uses `autonomousGit.ts` (direct GitHub REST API). Do NOT mix — `github` MCP is IDE-only.
+2. **Code indexing**: `muelIndexing` tools also appear in `muelUnified`/`gcpCompute`. Use `muelIndexing` for IDE context — it reads local files. Use `gcpCompute` code-index tools only when analyzing remote server state.
+3. **Obsidian**: `muelUnified` and `gcpCompute` both expose Obsidian tools. Local adapter reads the local vault; GCP adapter reads the GCP vault (`/opt/muel/discord-news-bot/docs`). Pick based on which vault you need.
+4. **GitKraken / GH PR Extension**: Remain as IDE UI helpers for visual PR review. For programmatic multi-step GitHub operations, prefer `github` MCP.
+
+---
+
+## GitHub MCP Server (github/github-mcp-server)
+
+Entry: `.vscode/mcp.json` → `https://api.githubcopilot.com/mcp/` (remote HTTP, Copilot OAuth)  
+Scope: IDE agent-mode only (not available in runtime server)
+
+Default toolsets: `context`, `repos`, `issues`, `pull_requests`, `users`
+
+### Key Tools (default toolsets)
+
+| Tool | Purpose |
+|------|---------|
+| `create_or_update_file` | Create/update a file in any accessible repo |
+| `push_files` | Multi-file commit in one push |
+| `create_pull_request` | Create PR across any org repo |
+| `merge_pull_request` | Merge PR (squash/rebase/merge) |
+| `create_pull_request_review` | APPROVE / REQUEST_CHANGES / COMMENT |
+| `get_pull_request_files` | List changed files in a PR |
+| `get_pull_request_status` | CI/CD status checks |
+| `create_issue` / `update_issue` | Issue CRUD |
+| `add_issue_comment` | Comment on issues |
+| `search_code` | Cross-repo code search |
+| `search_issues` | Cross-repo issue/PR search |
+| `create_branch` | Branch creation across repos |
+| `list_commits` | Commit history |
+| `get_file_contents` | Read file from any repo |
+
+### Optional Toolsets (enable via `GITHUB_TOOLSETS` env var)
+
+| Toolset | Purpose |
+|---------|---------|
+| `actions` | GitHub Actions workflow monitoring |
+| `code_security` | Code scanning alerts |
+| `dependabot` | Dependabot alerts and PRs |
+| `discussions` | GitHub Discussions |
+| `notifications` | Bell notifications |
+| `orgs` | Organization management |
+| `projects` | GitHub Projects boards |
+| `secret_protection` | Secret scanning |
+
+### Cross-Repo Use Cases for team-muel
+
+| Use Case | Tools Used |
+|----------|-----------|
+| Search code across all team-muel repos | `search_code` with `org:team-muel` |
+| Create issue in ai-gods-project from discord-news-bot context | `create_issue` with owner=team-muel, repo=ai-gods-project |
+| PR from feat branch to main across repos | `create_pull_request` |
+| Monitor CI status before ship phase | `get_pull_request_status` |
+| Cross-repo code review | `get_pull_request_files` + `create_pull_request_review` |
 
 ---
 
@@ -226,6 +302,7 @@ Handled by `scripts/crawler-worker.ts`:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v5 | 2026-04-08 | Added `github` MCP server (remote HTTP, Copilot OAuth); added Routing Decision Table and Overlap Resolution Rules; documented cross-repo use cases for team-muel org |
 | v4 | 2026-04-06 | Removed `muelCore` from `.vscode/mcp.json` (consolidated into `muelUnified`); moved `deepwiki`/`supabase` HTTP entries to `MCP_UPSTREAM_SERVERS` |
 | v3 | 2026-04-06 | Added `upstream.*` proxy namespace; `proxyRegistry.ts` + `proxyAdapter.ts`; `MCP_UPSTREAM_SERVERS` env var |
 | v2 | 2026-04-05 | Full multi-server inventory; added `diag.llm`, Obsidian tools, ext.* adapter table |

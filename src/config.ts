@@ -65,12 +65,9 @@ export const SUPABASE_TRADES_TABLE = parseStringEnv(process.env.SUPABASE_TRADES_
 export const LOG_LEVEL = parseStringEnv(process.env.LOG_LEVEL, 'info');
 export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env.BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS, 60000);
 
-// ──── Obsidian Headless CLI (RAG Integration) ────
-export const OBSIDIAN_HEADLESS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_HEADLESS_ENABLED, false);
+// ──── Obsidian Vault (RAG Integration) ────
 export const OBSIDIAN_LOCAL_FS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_LOCAL_FS_ENABLED, false);
 export const OBSIDIAN_VAULT_PATH = parseStringEnv(process.env.OBSIDIAN_VAULT_PATH, '');
-export const OBSIDIAN_EMAIL = parseStringEnv(process.env.OBSIDIAN_EMAIL, '');
-export const OBSIDIAN_PASSWORD = parseStringEnv(process.env.OBSIDIAN_PASSWORD, '');
 export const OBSIDIAN_VAULT_NAME = parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 export const OBSIDIAN_RAG_CACHE_TTL_MS = parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3600000);
 export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MAX_DOCS, 10);
@@ -160,10 +157,17 @@ export const OBSERVER_PERF_DRIFT_ENABLED = parseBooleanEnv(process.env.OBSERVER_
 export const OBSERVER_PERF_DRIFT_THRESHOLD_PCT = parseMinNumberEnv(process.env.OBSERVER_PERF_DRIFT_THRESHOLD_PCT, 20, 1);
 export const OBSERVER_CODE_HEALTH_ENABLED = parseBooleanEnv(process.env.OBSERVER_CODE_HEALTH_ENABLED, false);
 export const OBSERVER_CONVERGENCE_DIGEST_ENABLED = parseBooleanEnv(process.env.OBSERVER_CONVERGENCE_DIGEST_ENABLED, true);
-export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, false);
+export const OBSERVER_DISCORD_PULSE_ENABLED = parseBooleanEnv(process.env.OBSERVER_DISCORD_PULSE_ENABLED, true);
+export const OBSERVER_HARNESS_GATE_ENABLED = parseBooleanEnv(process.env.OBSERVER_HARNESS_GATE_ENABLED, true);
+
+// ──── Community Voice — bot proactively speaks to Discord channels ──────────
+export const COMMUNITY_VOICE_ENABLED = parseBooleanEnv(process.env.COMMUNITY_VOICE_ENABLED, true);
+export const COMMUNITY_VOICE_CHANNEL_ID = parseStringEnv(process.env.COMMUNITY_VOICE_CHANNEL_ID, '');
+export const COMMUNITY_VOICE_COOLDOWN_MS = parseMinIntEnv(process.env.COMMUNITY_VOICE_COOLDOWN_MS, 10 * 60_000, 60_000);
+export const COMMUNITY_VOICE_UNANSWERED_THRESHOLD_MINUTES = parseMinIntEnv(process.env.COMMUNITY_VOICE_UNANSWERED_THRESHOLD_MINUTES, 120, 10);
 
 // ──── Intent Formation (Phase G: Autonomous Agent Evolution) ────
-export const INTENT_FORMATION_ENABLED = parseBooleanEnv(process.env.INTENT_FORMATION_ENABLED, false);
+export const INTENT_FORMATION_ENABLED = parseBooleanEnv(process.env.INTENT_FORMATION_ENABLED, true);
 export const INTENT_MAX_PENDING = parseIntegerEnv(process.env.INTENT_MAX_PENDING, 10);
 export const INTENT_COOLDOWN_MS = parseIntegerEnv(process.env.INTENT_COOLDOWN_MS, 30 * 60_000);
 export const INTENT_DAILY_BUDGET_TOKENS = parseIntegerEnv(process.env.INTENT_DAILY_BUDGET_TOKENS, 100_000);

@@ -143,6 +143,17 @@ const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs?: nu
   }
 };
 
+const throwProviderError = async (source: string, provider: string, response: Response): Promise<never> => {
+  const body = await response.text();
+  await logStructuredError({
+    code: 'LLM_REQUEST_FAILED',
+    source,
+    message: `${provider.toUpperCase()}_REQUEST_FAILED status=${response.status}`,
+    meta: { provider: provider.toLowerCase(), status: response.status, bodyPreview: body.slice(0, 300) },
+  });
+  throw new Error(`${provider.toUpperCase()}_REQUEST_FAILED: ${body.slice(0, 300)}`);
+};
+
 // ──── OpenClaw State ─────────────────────────────────────────────────────────
 
 let openclawResolvedPathSuffix: string | null = null;
@@ -182,14 +193,7 @@ export const requestOpenAiWithMeta = async (
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: 'llmClient.requestOpenAi',
-      message: `OPENAI_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'openai', status: response.status, bodyPreview: body.slice(0, 300) },
-    });
-    throw new Error(`OPENAI_REQUEST_FAILED: ${body.slice(0, 300)}`);
+    await throwProviderError('llmClient.requestOpenAi', 'openai', response);
   }
 
   const data = (await response.json()) as Record<string, any>;
@@ -229,14 +233,7 @@ export const requestGemini = async (params: LlmTextRequest): Promise<string> => 
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: 'llmClient.requestGemini',
-      message: `GEMINI_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'gemini', status: response.status, bodyPreview: body.slice(0, 300) },
-    });
-    throw new Error(`GEMINI_REQUEST_FAILED: ${body.slice(0, 300)}`);
+    await throwProviderError('llmClient.requestGemini', 'gemini', response);
   }
 
   const data = (await response.json()) as Record<string, any>;
@@ -267,14 +264,7 @@ export const requestAnthropic = async (params: LlmTextRequest): Promise<string> 
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: 'llmClient.requestAnthropic',
-      message: `ANTHROPIC_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'anthropic', status: response.status, bodyPreview: body.slice(0, 300) },
-    });
-    throw new Error(`ANTHROPIC_REQUEST_FAILED: ${body.slice(0, 300)}`);
+    await throwProviderError('llmClient.requestAnthropic', 'anthropic', response);
   }
 
   const data = (await response.json()) as Record<string, any>;
@@ -311,14 +301,7 @@ export const requestHuggingFace = async (params: LlmTextRequest): Promise<string
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: 'llmClient.requestHuggingFace',
-      message: `HUGGINGFACE_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'huggingface', status: response.status, bodyPreview: body.slice(0, 300) },
-    });
-    throw new Error(`HUGGINGFACE_REQUEST_FAILED: ${body.slice(0, 300)}`);
+    await throwProviderError('llmClient.requestHuggingFace', 'huggingface', response);
   }
 
   const data = (await response.json()) as Record<string, any>;
@@ -326,10 +309,9 @@ export const requestHuggingFace = async (params: LlmTextRequest): Promise<string
 };
 
 /**
- * Try the OpenClaw Gateway's session-aware /agent/chat endpoint.
- * This is a higher-level interface than completions — it supports session_id,
- * guild_id, and action_name context. Only attempted when the Gateway is healthy
- * and session/action context is present.
+ * Try the OpenClaw Gateway's OpenAI-compatible /v1/chat/completions endpoint.
+ * This routes through the Gateway with session context. Only attempted when
+ * the Gateway is healthy and session/action context is present.
  *
  * Returns null if the gateway is unavailable, unhealthy, or returns an error,
  * allowing the caller to fall through to the standard completions API.
@@ -351,7 +333,7 @@ export const tryOpenClawGateway = async (params: LlmTextRequest): Promise<string
 
 /**
  * OpenClaw LLM provider — standard /v1/chat/completions interface.
- * When session/action context is present, tries the Gateway /agent/chat first.
+ * When session/action context is present, tries the Gateway /v1/chat/completions first.
  * Falls back to direct completions API with model cooldown and quota retry.
  */
 export const requestOpenClaw = async (params: LlmTextRequest): Promise<string> => {
@@ -493,14 +475,7 @@ export const requestOllama = async (params: LlmTextRequest): Promise<string> => 
   }, LLM_API_TIMEOUT_LARGE_MS);
 
   if (!response.ok) {
-    const body = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: 'llmClient.requestOllama',
-      message: `OLLAMA_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: 'ollama', status: response.status, bodyPreview: body.slice(0, 300) },
-    });
-    throw new Error(`OLLAMA_REQUEST_FAILED: ${body.slice(0, 300)}`);
+    await throwProviderError('llmClient.requestOllama', 'ollama', response);
   }
 
   const data = (await response.json()) as Record<string, any>;
@@ -533,14 +508,7 @@ const requestOpenAiCompatible = async (
   }, LLM_API_TIMEOUT_LARGE_MS);
 
   if (!response.ok) {
-    const respBody = await response.text();
-    await logStructuredError({
-      code: 'LLM_REQUEST_FAILED',
-      source: `llmClient.request${providerName}`,
-      message: `${providerName.toUpperCase()}_REQUEST_FAILED status=${response.status}`,
-      meta: { provider: providerName.toLowerCase(), status: response.status, bodyPreview: respBody.slice(0, 300) },
-    });
-    throw new Error(`${providerName.toUpperCase()}_REQUEST_FAILED: ${respBody.slice(0, 300)}`);
+    await throwProviderError(`llmClient.request${providerName}`, providerName, response);
   }
 
   const data = (await response.json()) as Record<string, any>;

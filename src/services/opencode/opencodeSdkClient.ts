@@ -2,11 +2,13 @@
  * OpenCode SDK Client — session-based HTTP client for the OpenCode headless server.
  *
  * Wraps the OpenCode `serve` HTTP API (port 4096) to provide:
- *   - Session lifecycle: create → chat → patches → close
+ *   - Session lifecycle: create → prompt → patches → close
  *   - Structured code modification via session conversations
- *   - LSP diagnostic retrieval for QA enrichment
+ *   - LSP diagnostic retrieval for QA enrichment (via shell tsc)
  *
  * Falls back gracefully when the headless server is unreachable.
+ *
+ * API reference: https://opencode.ai/docs/server/
  *
  * Environment:
  *   OPENCODE_SDK_ENABLED — feature flag (default: false)
@@ -116,39 +118,52 @@ const request = async <T>(
 /** Check if the OpenCode SDK integration is enabled and configured. */
 export const isOpenCodeSdkAvailable = (): boolean => ENABLED && BASE_URL.length > 0;
 
-/** Health check the headless server. */
+/**
+ * Health check the headless server.
+ * Official endpoint: GET /global/health → { healthy, version }
+ */
 export const checkHealth = async (): Promise<OpenCodeHealthStatus> => {
   if (!isOpenCodeSdkAvailable()) return { ok: false };
 
-  const { ok, data } = await request<{ version?: string; uptime?: number }>('GET', '/health');
-  if (!ok || !data) return { ok: false };
-  return { ok: true, version: data.version, uptime: data.uptime };
-};
-
-/** Create a new coding session. */
-export const createSession = async (): Promise<OpenCodeSession | null> => {
-  if (!isOpenCodeSdkAvailable()) return null;
-
-  const { ok, data } = await request<{ id?: string; sessionId?: string; createdAt?: string }>(
-    'POST',
-    '/session',
-    {},
+  const { ok, data } = await request<{ healthy?: boolean; version?: string; uptime?: number }>(
+    'GET',
+    '/global/health',
   );
-  if (!ok || !data) return null;
-
-  const sessionId = data.sessionId || data.id || '';
-  if (!sessionId) return null;
-
-  return { sessionId, createdAt: data.createdAt || new Date().toISOString() };
+  if (!ok || !data) return { ok: false };
+  return { ok: data.healthy !== false, version: data.version, uptime: data.uptime };
 };
 
 /**
- * Send a coding objective to an existing session and retrieve patches.
+ * Create a new coding session.
+ * Official endpoint: POST /session → { id, ... }
+ */
+export const createSession = async (title?: string): Promise<OpenCodeSession | null> => {
+  if (!isOpenCodeSdkAvailable()) return null;
+
+  const body: Record<string, unknown> = {};
+  if (title) body.title = title;
+
+  const { ok, data } = await request<{ id?: string; created?: string }>(
+    'POST',
+    '/session',
+    body,
+  );
+  if (!ok || !data) return null;
+
+  const sessionId = data.id || '';
+  if (!sessionId) return null;
+
+  return { sessionId, createdAt: data.created || new Date().toISOString() };
+};
+
+/**
+ * Send a coding objective to an existing session and retrieve the response.
  *
- * The message includes:
- *   - The sprint objective
- *   - Context files (path + content)
- *   - Optional previous phase output
+ * Official endpoint: POST /session/:id/message
+ * Body: { parts: [{ type: "text", text }], model?, agent?, noReply? }
+ * Returns: { info: Message, parts: Part[] }
+ *
+ * Patches are extracted from tool-use parts in the response.
  */
 export const chatSession = async (
   sessionId: string,
@@ -162,22 +177,63 @@ export const chatSession = async (
   if (!sessionId) return fail('Session ID required');
 
   const { ok, data } = await request<{
+    info?: { id?: string };
+    parts?: Array<{
+      type?: string;
+      text?: string;
+      // tool-use parts may contain file modifications
+      toolName?: string;
+      input?: Record<string, unknown>;
+      content?: string;
+      path?: string;
+      operation?: string;
+    }>;
+    // Legacy fields (for backward compat with older servers)
     message?: string;
     content?: string;
     patches?: Array<{ path?: string; content?: string; operation?: string }>;
     diagnostics?: Array<{ file?: string; line?: number; severity?: string; message?: string }>;
-  }>('POST', `/session/${encodeURIComponent(sessionId)}/chat`, { message });
+  }>('POST', `/session/${encodeURIComponent(sessionId)}/message`, {
+    parts: [{ type: 'text', text: message }],
+  });
 
-  if (!ok || !data) return fail('Chat request failed');
+  if (!ok || !data) return fail('Message request failed');
 
-  const patches: OpenCodePatch[] = (data.patches || [])
-    .filter((p) => typeof p.path === 'string' && p.path.length > 0)
-    .map((p) => ({
-      path: p.path!,
-      content: typeof p.content === 'string' ? p.content : '',
-      operation: typeof p.operation === 'string' ? p.operation : 'modify',
-    }));
+  // Extract text from response parts
+  const textParts = (data.parts || [])
+    .filter((p) => p.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text!)
+    .join('\n');
 
+  // Extract patches from response: check both legacy .patches and tool-use parts
+  const patches: OpenCodePatch[] = [];
+
+  // Legacy patches field (for backward compat with custom servers)
+  if (data.patches && Array.isArray(data.patches)) {
+    for (const p of data.patches) {
+      if (typeof p.path === 'string' && p.path.length > 0) {
+        patches.push({
+          path: p.path,
+          content: typeof p.content === 'string' ? p.content : '',
+          operation: typeof p.operation === 'string' ? p.operation : 'modify',
+        });
+      }
+    }
+  }
+
+  // Tool-use parts that write files (e.g. write_file, create_file from the agent)
+  for (const part of (data.parts || [])) {
+    if (part.type === 'tool-use' || part.type === 'tool_use') {
+      const input = part.input || {};
+      const filePath = typeof input.path === 'string' ? input.path : (typeof input.file_path === 'string' ? input.file_path : '');
+      const fileContent = typeof input.content === 'string' ? input.content : '';
+      if (filePath && fileContent) {
+        patches.push({ path: filePath, content: fileContent, operation: 'modify' });
+      }
+    }
+  }
+
+  // Legacy diagnostics field
   const diagnostics: OpenCodeDiagnostic[] = (data.diagnostics || [])
     .filter((d) => typeof d.file === 'string')
     .map((d) => ({
@@ -189,7 +245,7 @@ export const chatSession = async (
 
   return {
     ok: true,
-    message: data.message || data.content || '',
+    message: textParts || data.message || data.content || '',
     patches,
     diagnostics,
   };
@@ -202,8 +258,13 @@ export const closeSession = async (sessionId: string): Promise<void> => {
 };
 
 /**
- * Request LSP diagnostics for changed files from an existing session.
- * Returns diagnostics sorted by severity (errors first).
+ * Run a shell command in the OpenCode session and parse tsc diagnostics.
+ *
+ * Official endpoint: POST /session/:id/shell
+ * Body: { agent: "default", command: string }
+ * Returns: { info: Message, parts: Part[] }
+ *
+ * Falls back gracefully if the endpoint is unavailable.
  */
 export const getDiagnostics = async (
   sessionId: string,
@@ -212,22 +273,43 @@ export const getDiagnostics = async (
   if (!isOpenCodeSdkAvailable() || !sessionId) return [];
   if (files.length === 0) return [];
 
+  // Use the shell endpoint to run tsc --noEmit on the project
+  const fileArgs = files.slice(0, 20).join(' ');
+  const command = files.length <= 20
+    ? `npx tsc --noEmit ${fileArgs} 2>&1 | head -50`
+    : 'npx tsc --noEmit 2>&1 | head -50';
+
   const { ok, data } = await request<{
-    diagnostics?: Array<{ file?: string; line?: number; severity?: string; message?: string }>;
-  }>('POST', `/session/${encodeURIComponent(sessionId)}/diagnostics`, { files });
+    info?: Record<string, unknown>;
+    parts?: Array<{ type?: string; text?: string }>;
+  }>('POST', `/session/${encodeURIComponent(sessionId)}/shell`, {
+    agent: 'default',
+    command,
+  });
 
   if (!ok || !data) return [];
 
+  // Parse tsc output from response parts
+  const output = (data.parts || [])
+    .filter((p) => p.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text!)
+    .join('\n');
+
+  // Parse TypeScript diagnostic lines: "src/file.ts(10,5): error TS1234: message"
+  const tscPattern = /^(.+?)\((\d+),\d+\):\s*(error|warning)\s+TS\d+:\s*(.+)$/gm;
+  const diagnostics: OpenCodeDiagnostic[] = [];
+  let match;
+  while ((match = tscPattern.exec(output)) !== null) {
+    diagnostics.push({
+      file: match[1],
+      line: parseInt(match[2], 10),
+      severity: match[3] === 'error' ? 'error' : 'warning',
+      message: match[4].trim(),
+    });
+  }
+
   const severityOrder = { error: 0, warning: 1, info: 2 };
-  return (data.diagnostics || [])
-    .filter((d) => typeof d.file === 'string')
-    .map((d) => ({
-      file: d.file!,
-      line: typeof d.line === 'number' ? d.line : 0,
-      severity: (['error', 'warning', 'info'].includes(d.severity || '') ? d.severity : 'info') as OpenCodeDiagnostic['severity'],
-      message: typeof d.message === 'string' ? d.message : '',
-    }))
-    .sort((a, b) => (severityOrder[a.severity] ?? 2) - (severityOrder[b.severity] ?? 2));
+  return diagnostics.sort((a, b) => (severityOrder[a.severity] ?? 2) - (severityOrder[b.severity] ?? 2));
 };
 
 /**
