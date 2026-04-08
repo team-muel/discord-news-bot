@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('./supabaseClient', () => ({
+vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: () => false,
   getSupabaseClient: () => { throw new Error('supabase not configured'); },
 }));

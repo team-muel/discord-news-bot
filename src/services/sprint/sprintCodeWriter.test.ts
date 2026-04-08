@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rollbackCodeChanges, type CodeChange } from './sprintCodeWriter';
 
+vi.mock('../llmClient', () => ({
+  isAnyLlmConfigured: vi.fn(() => false),
+  generateText: vi.fn(async () => ''),
+}));
+
 // In test env SPRINT_DRY_RUN=false and LLM is not configured,
 // so generateAndApplyCodeChanges returns LLM_NOT_CONFIGURED after passing the dry-run guard.
 

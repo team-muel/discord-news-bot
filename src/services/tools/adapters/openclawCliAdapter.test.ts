@@ -17,6 +17,11 @@ vi.mock('../../../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
 
+vi.mock('../../llmClient', () => ({
+  isAnyLlmConfigured: vi.fn(() => false),
+  generateText: vi.fn(async () => 'mocked llm response'),
+}));
+
 const { openclawAdapter } = await import('./openclawCliAdapter');
 
 const { execFile } = await import('node:child_process');

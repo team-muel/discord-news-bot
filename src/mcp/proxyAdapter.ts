@@ -83,6 +83,7 @@ type UpstreamServerCfg = {
   url: string;
   namespace: string;
   token?: string;
+  protocol?: 'simple' | 'streamable';
 };
 
 const makeAuthHeaders = (token?: string): Record<string, string> => {
@@ -90,13 +91,130 @@ const makeAuthHeaders = (token?: string): Record<string, string> => {
   return { Authorization: `Bearer ${token}` };
 };
 
+// ──── Streamable HTTP session management ───────────────────────────────────────
+
+type StreamableSession = {
+  sessionId: string;
+  expiresAt: number;
+};
+
+/** Active Streamable HTTP sessions keyed by server id. */
+const streamableSessions = new Map<string, StreamableSession>();
+
+const STREAMABLE_SESSION_TTL_MS = 10 * 60_000; // 10 minutes
+
+/**
+ * Obtain (or reuse) a Streamable HTTP session for a server.
+ * Performs the JSON-RPC `initialize` + `notifications/initialized` handshake.
+ */
+const getStreamableSession = async (server: UpstreamServerCfg): Promise<string | null> => {
+  const cached = streamableSessions.get(server.id);
+  if (cached && Date.now() < cached.expiresAt) return cached.sessionId;
+
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'accept': 'application/json, text/event-stream',
+    ...makeAuthHeaders(server.token),
+  };
+
+  try {
+    const initRes = await fetchWithTimeout(server.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'muel-bot-proxy', version: '1.0.0' },
+        },
+      }),
+    }, FETCH_TIMEOUT_MS);
+
+    const sessionId = initRes.headers.get('mcp-session-id');
+    if (!sessionId) {
+      console.error('[mcp-proxy] streamable init for %s: no session ID returned', server.id);
+      return null;
+    }
+
+    // Send initialized notification (fire and forget)
+    fetchWithTimeout(server.url, {
+      method: 'POST',
+      headers: { ...headers, 'mcp-session-id': sessionId },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    }, FETCH_TIMEOUT_MS).catch(() => { /* best-effort */ });
+
+    streamableSessions.set(server.id, { sessionId, expiresAt: Date.now() + STREAMABLE_SESSION_TTL_MS });
+    console.error('[mcp-proxy] streamable session established for %s', server.id);
+    return sessionId;
+  } catch (err) {
+    console.error('[mcp-proxy] streamable init for %s failed: %s', server.id, getErrorMessage(err));
+    return null;
+  }
+};
+
+/** Invalidate a streamable session (e.g. on 400/session-expired). */
+const invalidateStreamableSession = (serverId: string): void => {
+  streamableSessions.delete(serverId);
+};
+
+/**
+ * Send a JSON-RPC request over MCP Streamable HTTP transport.
+ * Handles session lifecycle: auto-reinitializes on session expiry (one retry).
+ */
+const streamableJsonRpc = async (
+  server: UpstreamServerCfg,
+  method: string,
+  params: Record<string, unknown>,
+  rpcId: number = 1,
+): Promise<unknown> => {
+  const attempt = async (retried: boolean): Promise<unknown> => {
+    const sessionId = await getStreamableSession(server);
+    if (!sessionId) throw new Error('Failed to establish streamable session');
+
+    const res = await fetchWithTimeout(server.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'accept': 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+        ...makeAuthHeaders(server.token),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: rpcId, method, params }),
+    }, FETCH_TIMEOUT_MS);
+
+    if (res.status === 400 && !retried) {
+      // Session likely expired — reinitialize once
+      invalidateStreamableSession(server.id);
+      return attempt(true);
+    }
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  };
+
+  return attempt(false);
+};
+
 /**
  * Fetch the tool catalog from an upstream MCP server.
- * Tries JSON-RPC /mcp/rpc first (standard MCP); falls back to REST /tools/list.
+ * Supports both 'simple' protocol (JSON-RPC /mcp/rpc + REST /tools/list)
+ * and 'streamable' protocol (MCP Streamable HTTP with session management).
  * Returns empty array on any failure (non-blocking).
  */
 const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[]> => {
   try {
+    // ── Streamable HTTP protocol (e.g. Supabase MCP) ──
+    if (server.protocol === 'streamable') {
+      const data = await streamableJsonRpc(server, 'tools/list', {}) as {
+        result?: { tools?: unknown[] };
+      };
+      const rawTools = data?.result?.tools ?? [];
+      if (Array.isArray(rawTools)) return parseToolSpecs(rawTools, server.namespace);
+      return [];
+    }
+
+    // ── Simple protocol: JSON-RPC /mcp/rpc then REST /tools/list ──
     // Primary: JSON-RPC tools/list over /mcp/rpc
     const rpcRes = await fetchWithTimeout(`${server.url}/mcp/rpc`, {
       method: 'POST',
@@ -237,6 +355,30 @@ export const callProxiedTool = async (
   }
 
   try {
+    // ── Streamable HTTP protocol ──
+    if (server.protocol === 'streamable') {
+      const body = await streamableJsonRpc(server, 'tools/call', { name: originalName, arguments: args }) as {
+        result?: { content?: unknown[]; isError?: boolean };
+        error?: { message?: string };
+      };
+
+      if (body.error) {
+        return {
+          content: [{ type: 'text', text: `Upstream error: ${body.error.message ?? JSON.stringify(body.error)}` }],
+          isError: true,
+        };
+      }
+      const result = body.result ?? {};
+      const content = Array.isArray(result.content)
+        ? (result.content as Array<{ type?: string; text?: string }>).map((c) => ({
+            type: 'text' as const,
+            text: String(c?.text ?? JSON.stringify(c)),
+          }))
+        : [{ type: 'text' as const, text: JSON.stringify(result) }];
+      return { content, isError: result.isError === true };
+    }
+
+    // ── Simple protocol ──
     const res = await fetchWithTimeout(`${server.url}/mcp/rpc`, {
       method: 'POST',
       headers: {

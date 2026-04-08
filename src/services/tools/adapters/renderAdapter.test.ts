@@ -37,8 +37,10 @@ describe('renderAdapter', () => {
 
   describe('isAvailable', () => {
     it('returns false when RENDER_API_KEY is not set', async () => {
-      // In test env, RENDER_API_KEY is not set → should return false
+      // Explicitly clear the key so isAvailable() sees no key and returns early
+      vi.stubEnv('RENDER_API_KEY', '');
       const available = await renderAdapter.isAvailable();
+      vi.unstubAllEnvs();
       expect(available).toBe(false);
     });
   });

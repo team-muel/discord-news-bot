@@ -351,10 +351,11 @@ export const renderAdapter: ExternalToolAdapter = {
   ],
 
   isAvailable: async () => {
-    if (EXPLICITLY_DISABLED || !API_KEY) return false;
+    const apiKey = parseStringEnv(process.env.RENDER_API_KEY, '');
+    if (EXPLICITLY_DISABLED || !apiKey) return false;
     try {
       const res = await fetchWithTimeout(`${BASE_URL}/services?limit=1`, {
-        headers: { Authorization: `Bearer ${API_KEY}`, Accept: 'application/json' },
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
       }, 5_000);
       return res.status < 500;
     } catch {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('./supabaseClient', () => ({
+vi.mock('../supabaseClient', () => ({
   isSupabaseConfigured: vi.fn(() => false),
   getSupabaseClient: vi.fn(() => { throw new Error('SUPABASE_NOT_CONFIGURED'); }),
 }));

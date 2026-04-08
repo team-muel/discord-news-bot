@@ -28,6 +28,12 @@ export type UpstreamMcpServerConfig = {
   namespace: string;
   /** Optional Bearer token for authenticating to the upstream server. */
   token?: string;
+  /**
+   * MCP transport protocol:
+   * - 'simple'     — POST /tools/list, POST /tools/call  (default, for custom servers)
+   * - 'streamable' — MCP Streamable HTTP: initialize → session → JSON-RPC
+   */
+  protocol?: 'simple' | 'streamable';
   /** When false the server is ignored during tool listing and routing. Default true. */
   enabled?: boolean;
 };
