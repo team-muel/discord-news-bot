@@ -1,14 +1,14 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 375
+- Nodes: 376
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/utils/errorMessage.ts | 134 |
-| src/logger.ts | 133 |
+| src/utils/errorMessage.ts | 135 |
+| src/logger.ts | 134 |
 | src/utils/env.ts | 103 |
 | src/services/supabaseClient.ts | 90 |
 | src/config.ts | 88 |
@@ -996,6 +996,11 @@ graph LR
   "src/services/news/sourceMonitorStore.ts" --> "src/logger.ts"
   "src/services/news/sourceMonitorStore.ts" --> "src/services/infra/baseRepository.ts"
   "src/services/news/sourceMonitorStore.ts" --> "src/services/infra/tableRegistry.ts"
+  "src/services/news/subscriptionNoteWriter.ts" --> "src/logger.ts"
+  "src/services/news/subscriptionNoteWriter.ts" --> "src/services/obsidian/authoring.ts"
+  "src/services/news/subscriptionNoteWriter.ts" --> "src/services/obsidian/obsidianDocBuilder.ts"
+  "src/services/news/subscriptionNoteWriter.ts" --> "src/utils/errorMessage.ts"
+  "src/services/news/subscriptionNoteWriter.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/news/youtubeCommunityScraper.ts" --> "src/utils/network.ts"
   "src/services/news/youtubeMonitorWorkerClient.ts" --> "src/services/automation/n8nDelegationService.ts"
   "src/services/news/youtubeMonitorWorkerClient.ts" --> "src/services/mcpWorkerClient.ts"
@@ -1010,6 +1015,7 @@ graph LR
   "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/services/infra/baseRepository.ts"
   "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/services/infra/tableRegistry.ts"
   "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/services/news/sourceMonitorStore.ts"
+  "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/services/news/subscriptionNoteWriter.ts"
   "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/services/news/youtubeMonitorWorkerClient.ts"
   "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/services/supabaseClient.ts"
   "src/services/news/youtubeSubscriptionsMonitor.ts" --> "src/utils/async.ts"
@@ -1099,6 +1105,7 @@ graph LR
   "src/services/obsidian/authoring.ts" --> "src/logger.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/obsidianDocBuilder.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/router.ts"
+  "src/services/obsidian/authoring.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/services/obsidian/authoring.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/obsidian/index.ts" --> "src/services/obsidian/authoring.ts"
   "src/services/obsidian/index.ts" --> "src/services/obsidian/obsidianBootstrapService.ts"
@@ -1655,6 +1662,7 @@ graph LR
   "src/services/taskRoutingMetricsService.ts" --> "src/utils/errorMessage.ts"
   "src/services/taskRoutingService.ts" --> "src/config.ts"
   "src/services/taskRoutingService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/taskRoutingService.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/services/toolLearningService.ts" --> "src/services/supabaseClient.ts"
   "src/services/tools/adapterAutoLoader.ts" --> "src/logger.ts"
   "src/services/tools/adapterAutoLoader.ts" --> "src/services/tools/externalAdapterRegistry.ts"
