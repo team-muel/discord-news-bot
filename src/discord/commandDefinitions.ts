@@ -80,9 +80,9 @@ const ALL_COMMANDS = [
     .addStringOption((o) =>
       o.setName('종류').setDescription('구독 종류 선택').setRequired(false)
         .addChoices(
-          { name: '영상 + 링크', value: 'videos' },
-          { name: '게시글 + 링크', value: 'posts' },
-          { name: '뉴스 (구글 금융 고정)', value: 'news' },
+          { name: '영상', value: 'videos' },
+          { name: '게시글', value: 'posts' },
+          { name: '뉴스', value: 'news' },
         ),
     )
     .addStringOption((o) =>
