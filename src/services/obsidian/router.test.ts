@@ -35,6 +35,46 @@ vi.mock('./adapters/nativeCliAdapter.ts', () => ({
 }));
 vi.mock('./adapters/remoteMcpAdapter.ts', () => ({
   remoteMcpObsidianAdapter: remoteMcpMock,
+  getRemoteMcpAdapterDiagnostics: vi.fn().mockReturnValue({
+    enabled: false,
+    configured: false,
+    baseUrl: null,
+    authConfigured: false,
+    lastToolName: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    consecutiveFailures: 0,
+    lastProbeAt: null,
+    lastProbe: {
+      reachable: null,
+      authValid: null,
+      toolDiscoveryOk: null,
+      remoteObsidianStatusOk: null,
+      error: null,
+    },
+    remoteAdapterRuntime: null,
+  }),
+  probeRemoteMcpAdapter: vi.fn().mockResolvedValue({
+    enabled: false,
+    configured: false,
+    baseUrl: null,
+    authConfigured: false,
+    lastToolName: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    consecutiveFailures: 0,
+    lastProbeAt: null,
+    lastProbe: {
+      reachable: null,
+      authValid: null,
+      toolDiscoveryOk: null,
+      remoteObsidianStatusOk: null,
+      error: null,
+    },
+    remoteAdapterRuntime: null,
+  }),
 }));
 vi.mock('./adapters/scriptCliAdapter.ts', () => ({
   scriptCliObsidianAdapter: scriptMock,
@@ -95,6 +135,7 @@ describe('Obsidian Router', () => {
       expect(status.adapters).toHaveLength(4);
       expect(status.selectedByCapability.read_lore).toBe('native-cli');
       expect(status.selectedByCapability.search_vault).toBe('native-cli');
+      expect(status.remoteMcp.enabled).toBe(false);
     });
 
     it('shows correct fallback when primary unavailable', () => {
@@ -412,6 +453,21 @@ describe('Obsidian Router', () => {
       expect(passedParams.content).not.toContain('\x00');
       expect(passedParams.content).not.toContain('\x01');
       expect(passedParams.content).not.toContain('\x1f');
+    });
+
+    it('preserves markdown structure for frontmatter-style notes', async () => {
+      const result = await router.writeObsidianNoteWithAdapter({
+        guildId: 'g1',
+        vaultPath: '/vault',
+        fileName: 'structured.md',
+        content: ['---', 'title: Inbox', 'tags: [chat, inbox]', '---', '', '## Request', '', '> Need a local-first reply'].join('\n'),
+      });
+
+      expect(result).not.toBeNull();
+      const passedParams = (nativeMock.writeNote as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(passedParams.content).toContain('---\ntitle: Inbox');
+      expect(passedParams.content).toContain('## Request');
+      expect(passedParams.content).toContain('> Need a local-first reply');
     });
   });
 });

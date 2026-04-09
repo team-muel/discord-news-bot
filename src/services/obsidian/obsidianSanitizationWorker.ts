@@ -25,12 +25,23 @@ const SPAM_PATTERNS: RegExp[] = [
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
-const sanitizeText = (value: unknown, maxLen = SANITIZER_MAX_TEXT_LEN): string => {
+const sanitizeInlineText = (value: unknown, maxLen = SANITIZER_MAX_TEXT_LEN): string => {
   return String(value || '')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\r?\n/g, ' ')
     .replace(/[|&;$`<>]/g, ' ')
     .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+};
+
+const sanitizeMarkdownText = (value: unknown, maxLen = SANITIZER_MAX_TEXT_LEN): string => {
+  return String(value || '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[&;$`<]/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
     .slice(0, maxLen);
 };
@@ -69,11 +80,11 @@ export const sanitizeForObsidianWrite = (params: {
   trustedSource?: boolean;
 }): ObsidianSanitizeResult => {
   const cleaned = {
-    title: params.title == null ? null : sanitizeText(params.title, 160),
-    summary: params.summary == null ? null : sanitizeText(params.summary, 400),
-    content: sanitizeText(params.content, SANITIZER_MAX_TEXT_LEN),
-    sourceRef: params.sourceRef == null ? null : sanitizeText(params.sourceRef, 300),
-    excerpt: params.excerpt == null ? null : sanitizeText(params.excerpt, 600),
+    title: params.title == null ? null : sanitizeInlineText(params.title, 160),
+    summary: params.summary == null ? null : sanitizeInlineText(params.summary, 400),
+    content: sanitizeMarkdownText(params.content, SANITIZER_MAX_TEXT_LEN),
+    sourceRef: params.sourceRef == null ? null : sanitizeInlineText(params.sourceRef, 300),
+    excerpt: params.excerpt == null ? null : sanitizeInlineText(params.excerpt, 600),
   };
 
   if (!SANITIZER_ENABLED) {

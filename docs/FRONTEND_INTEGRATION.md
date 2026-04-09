@@ -118,6 +118,19 @@
 - `POST /api/benchmark/events` (auth required)
 - `GET /api/benchmark/summary` (auth required)
 
+### Local-first Chat Inbox
+
+- `GET /api/chat/status` (session auth or bearer token)
+  - Returns vault readiness, selected Obsidian adapters, the current local-first/hybrid mode, and the configured LLM hint.
+- `POST /api/chat/inbox` (session auth or bearer token)
+  - Input: `{ message, title?, guildId?, maxDocs?, contextMode?, persist?, replyToPath?, threadRootPath? }`
+  - Behavior: writes the incoming request into an Obsidian inbox-style note, optionally links it to a prior note via `replyToPath`, runs graph-first vault retrieval, then generates an answer with `providerProfile=cost-optimized` so local providers are prioritized.
+  - Persistence: when `persist !== false`, the route also writes a dedicated answer note under `chat/answers/...` and updates the original inbox note with an answer link/summary so backlinks are visible inside Obsidian.
+  - Response: `{ answer, inbox, answerNote, thread, retrieval, warnings, localFirst }`
+- Machine-to-machine usage:
+  - Send `Authorization: Bearer <MCP_WORKER_AUTH_TOKEN>` when calling from an external client without browser session cookies.
+  - The bearer token is shared with `/api/mcp/*`; keep it private and rotate it if the endpoint is exposed publicly.
+
 ### Trades (Supabase)
 
 - `GET /api/trades?symbol=BTCUSDT&status=open&limit=50` (auth required)
@@ -162,6 +175,11 @@
 
 - API-only deployment: `START_BOT=false`
 - Unified deployment (API + bot): `START_BOT=true` and provide `DISCORD_TOKEN`
+- Local-first Obsidian + Ollama profile:
+  - Enable `OBSIDIAN_LOCAL_FS_ENABLED=true`
+  - Point `OBSIDIAN_VAULT_PATH` (or `OBSIDIAN_SYNC_VAULT_PATH`) at the local vault
+  - Prefer `OBSIDIAN_ADAPTER_ORDER=local-fs,native-cli,script-cli,remote-mcp`
+  - Use `AI_PROVIDER=ollama` or keep the chat route on `providerProfile=cost-optimized`
 - Single-Render default mode: `AI_TRADING_MODE=local` with `BINANCE_API_KEY`, `BINANCE_API_SECRET`
 - Optional external delegation mode: `AI_TRADING_MODE=proxy` with `AI_TRADING_BASE_URL`, `AI_TRADING_INTERNAL_TOKEN`
 - Full in-process strategy mode: `START_TRADING_BOT=true` with `TRADING_*` params and Supabase candles table

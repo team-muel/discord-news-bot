@@ -74,6 +74,104 @@ const resolveVaultPath = (vaultPath: string): string => {
   return resolved;
 };
 
+type VaultEntry = {
+  filePath: string;
+  title: string;
+  content: string;
+  tags: string[];
+  links: string[];
+};
+
+const normalizeRelativePath = (value: string): string => value.replace(/\\/g, '/');
+
+const extractTitle = (content: string, filePath: string): string => {
+  const heading = content.split('\n').find((line) => line.startsWith('#'));
+  return heading?.replace(/^#+\s*/, '').trim() || path.basename(filePath, '.md');
+};
+
+const extractTags = (content: string): string[] => {
+  const tags = new Set<string>();
+
+  for (const match of content.matchAll(/(^|\s)#([a-zA-Z0-9_-]+)/g)) {
+    const value = String(match[2] || '').trim().toLowerCase();
+    if (value) tags.add(value);
+  }
+
+  const frontmatterBracket = content.match(/^---[\s\S]*?^tags:\s*\[([^\]]*)\]/m);
+  if (frontmatterBracket?.[1]) {
+    for (const token of frontmatterBracket[1].split(',')) {
+      const value = token.trim().replace(/^#/, '').toLowerCase();
+      if (value) tags.add(value);
+    }
+  }
+
+  const frontmatterList = content.match(/^---[\s\S]*?^tags:\s*\n([\s\S]*?)(?:^\w|^---)/m);
+  if (frontmatterList?.[1]) {
+    for (const match of frontmatterList[1].matchAll(/^\s*-\s*(.+)$/gm)) {
+      const value = String(match[1] || '').trim().replace(/^#/, '').toLowerCase();
+      if (value) tags.add(value);
+    }
+  }
+
+  return [...tags];
+};
+
+const extractLinks = (content: string): string[] => {
+  return Array.from(content.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g))
+    .map((match) => String(match[1] || '').trim())
+    .filter(Boolean);
+};
+
+const collectMarkdownFiles = async (vaultDir: string, relativeDir = ''): Promise<string[]> => {
+  const currentDir = path.join(vaultDir, relativeDir);
+  const entries = await fs.readdir(currentDir, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const relativePath = relativeDir ? path.join(relativeDir, entry.name) : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...await collectMarkdownFiles(vaultDir, relativePath));
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      files.push(normalizeRelativePath(relativePath));
+    }
+  }
+
+  return files;
+};
+
+const loadVaultEntries = async (vaultDir: string): Promise<VaultEntry[]> => {
+  const files = await collectMarkdownFiles(vaultDir);
+  const entries: VaultEntry[] = [];
+
+  for (const filePath of files) {
+    try {
+      const content = await fs.readFile(path.join(vaultDir, filePath), 'utf-8');
+      entries.push({
+        filePath,
+        title: extractTitle(content, filePath),
+        content,
+        tags: extractTags(content),
+        links: extractLinks(content),
+      });
+    } catch {
+      // Skip unreadable files.
+    }
+  }
+
+  return entries;
+};
+
+const resolveLinkTarget = (rawTarget: string, aliases: Map<string, string>): string | null => {
+  const normalized = normalizeRelativePath(String(rawTarget || '').trim())
+    .replace(/\.md$/i, '')
+    .toLowerCase();
+  if (!normalized) return null;
+  return aliases.get(normalized) || aliases.get(path.posix.basename(normalized)) || null;
+};
+
 const readLore = async (params: ObsidianLoreQuery): Promise<string[]> => {
   const vaultDir = resolveVaultPath(params.vaultPath);
   try {
@@ -82,23 +180,14 @@ const readLore = async (params: ObsidianLoreQuery): Promise<string[]> => {
     return [];
   }
 
-  // Simple keyword search through markdown files in the vault root
   const hints: string[] = [];
   try {
-    const files = await fs.readdir(vaultDir);
-    const mdFiles = files.filter((f) => f.endsWith('.md')).slice(0, 50);
-
+    const entries = await loadVaultEntries(vaultDir);
     const goal = (params.goal || '').toLowerCase();
-    for (const file of mdFiles) {
+    for (const entry of entries) {
       if (hints.length >= 8) break;
-      try {
-        const content = await fs.readFile(path.join(vaultDir, file), 'utf-8');
-        if (content.toLowerCase().includes(goal)) {
-          const firstLine = content.split('\n').find((l) => l.trim().length > 0) || file;
-          hints.push(`[local-fs] ${firstLine.replace(/^#+\s*/, '').trim()}`);
-        }
-      } catch {
-        // Skip unreadable files
+      if (entry.content.toLowerCase().includes(goal) || entry.title.toLowerCase().includes(goal)) {
+        hints.push(`[local-fs] ${entry.title}`);
       }
     }
   } catch {
@@ -112,27 +201,31 @@ const searchVault = async (params: ObsidianSearchQuery): Promise<ObsidianSearchR
   const results: ObsidianSearchResult[] = [];
   const limit = Math.min(params.limit || 10, 50);
   const query = (params.query || '').toLowerCase();
+  const tagQuery = query.startsWith('tag:') ? query.slice(4).replace(/^#/, '').trim() : '';
 
   try {
-    const files = await fs.readdir(vaultDir);
-    const mdFiles = files.filter((f) => f.endsWith('.md'));
+    const entries = await loadVaultEntries(vaultDir);
 
-    for (const file of mdFiles) {
+    for (const entry of entries) {
       if (results.length >= limit) break;
-      try {
-        const content = await fs.readFile(path.join(vaultDir, file), 'utf-8');
-        if (content.toLowerCase().includes(query)) {
-          const title = content.split('\n').find((l) => l.startsWith('#'))?.replace(/^#+\s*/, '').trim() || file.replace('.md', '');
-          results.push({ filePath: file, title, score: 0.5 });
-        }
-      } catch {
-        // Skip unreadable files
+      let score = 0;
+
+      if (tagQuery) {
+        if (entry.tags.includes(tagQuery)) score += 3;
+      } else {
+        if (entry.title.toLowerCase().includes(query)) score += 1.2;
+        if (entry.filePath.toLowerCase().includes(query)) score += 0.8;
+        if (entry.content.toLowerCase().includes(query)) score += 1;
+      }
+
+      if (score > 0) {
+        results.push({ filePath: entry.filePath, title: entry.title, score });
       }
     }
   } catch {
     // Vault not readable
   }
-  return results;
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
 };
 
 const readFile = async (params: ObsidianReadFileQuery): Promise<string | null> => {
@@ -149,23 +242,32 @@ const getGraphMetadata = async (params: { vaultPath: string }): Promise<Record<s
   const graph: Record<string, ObsidianNode> = {};
 
   try {
-    const files = await fs.readdir(vaultDir);
-    const mdFiles = files.filter((f) => f.endsWith('.md'));
+    const entries = await loadVaultEntries(vaultDir);
+    const aliases = new Map<string, string>();
 
-    for (const file of mdFiles) {
-      try {
-        const content = await fs.readFile(path.join(vaultDir, file), 'utf-8');
-        const tags = Array.from(content.matchAll(/#([a-zA-Z0-9_-]+)/g)).map((m) => m[1]);
-        const links = Array.from(content.matchAll(/\[\[([^\]]+)\]\]/g)).map((m) => m[1]);
-        graph[file] = {
-          filePath: file,
-          title: file.replace('.md', ''),
-          tags,
-          backlinks: [],
-          links,
-        };
-      } catch {
-        // Skip
+    for (const entry of entries) {
+      const fileStem = entry.filePath.replace(/\.md$/i, '').toLowerCase();
+      aliases.set(fileStem, entry.filePath);
+      aliases.set(path.posix.basename(fileStem), entry.filePath);
+    }
+
+    for (const entry of entries) {
+      graph[entry.filePath] = {
+        filePath: entry.filePath,
+        title: entry.title,
+        tags: entry.tags,
+        backlinks: [],
+        links: entry.links
+          .map((link) => resolveLinkTarget(link, aliases) || normalizeRelativePath(link))
+          .filter(Boolean),
+      };
+    }
+
+    for (const [sourcePath, node] of Object.entries(graph)) {
+      for (const targetPath of node.links) {
+        if (graph[targetPath] && !graph[targetPath].backlinks.includes(sourcePath)) {
+          graph[targetPath].backlinks.push(sourcePath);
+        }
       }
     }
   } catch {

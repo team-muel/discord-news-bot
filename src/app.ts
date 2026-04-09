@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { createAuthRouter } from './routes/auth';
 import { createBenchmarkRouter } from './routes/benchmark';
 import { createBotRouter } from './routes/bot';
+import { createChatRouter } from './routes/chat';
 import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
 import { createDashboardRouter } from './routes/dashboard';
@@ -60,6 +61,7 @@ export function createApp(): Express {
   app.use('/api/research', createResearchRouter());
   app.use('/api/fred', createFredRouter());
   app.use('/api/bot', createBotRouter());
+  app.use('/api/chat', createChatRouter());
   app.use('/api/benchmark', createBenchmarkRouter());
   app.use('/api/mcp', createMcpRouter());
 

@@ -296,6 +296,10 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
           await vibeHandlers.handleMakeCommand(interaction);
           return;
         }
+        case '해줘': {
+          await docsHandlers.handleAskCommand(interaction);
+          return;
+        }
         case '뮤엘': {
           await docsHandlers.handleAskCommand(interaction);
           return;

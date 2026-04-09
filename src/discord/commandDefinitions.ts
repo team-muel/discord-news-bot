@@ -89,8 +89,8 @@ const ALL_COMMANDS = [
       o.setName('링크').setDescription('영상/게시글일 때 YouTube 채널 링크 또는 UC... 채널 ID').setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('뮤엘')
-    .setDescription('뮤엘에게 질문합니다 — 문서·메모·지식 기반으로 답변합니다')
+    .setName('해줘')
+    .setDescription('뮤엘에게 작업을 요청합니다 — 문서·메모·지식 기반으로 답변합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
       o.setName('질문').setDescription('예: 트레이딩 전략이 어떻게 구성되어 있나요?').setRequired(true),
