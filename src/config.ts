@@ -297,7 +297,11 @@ export const MCP_WORKER_AUTH_TOKEN = parseStringEnv(
   ?? process.env.MCP_OPENCODE_WORKER_AUTH_TOKEN,
   '',
 );
-export const MCP_OPENCODE_WORKER_URL = parseUrlEnv(process.env.MCP_OPENCODE_WORKER_URL, '');
+export const MCP_IMPLEMENT_WORKER_URL = parseUrlEnv(
+  process.env.MCP_IMPLEMENT_WORKER_URL ?? process.env.MCP_OPENCODE_WORKER_URL,
+  '',
+);
+export const MCP_OPENCODE_WORKER_URL = MCP_IMPLEMENT_WORKER_URL;
 export const OPENJARVIS_REQUIRE_OPENCODE_WORKER = parseBooleanEnv(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
 export const UNATTENDED_WORKER_HEALTH_TIMEOUT_MS = parseBoundedNumberEnv(process.env.UNATTENDED_WORKER_HEALTH_TIMEOUT_MS, 5000, 1000, 30_000);
 export const OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED = parseBooleanEnv(process.env.OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED, true);

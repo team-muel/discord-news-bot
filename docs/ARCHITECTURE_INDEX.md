@@ -199,15 +199,19 @@ Fallback chain composition:
 
 1. selected provider
 2. action policy matches (`LLM_PROVIDER_POLICY_ACTIONS`)
-3. `LLM_PROVIDER_FALLBACK_CHAIN`
-4. base resolver provider
-5. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openclaw`, `openai`, `anthropic`, `gemini`, `huggingface`, `ollama`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
+3. workflow model binding/profile defaults (`LLM_WORKFLOW_MODEL_BINDINGS`, `LLM_WORKFLOW_PROFILE_DEFAULTS`) for action-scoped provider/model and quality posture
+4. `LLM_PROVIDER_FALLBACK_CHAIN`
+5. base resolver provider
+6. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openclaw`, `openai`, `anthropic`, `gemini`, `huggingface`, `ollama`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
+7. capability-aware reorder derived from `actionName` (chat/code/memory/review/ops). `operations` lanes now prioritize OpenJarvis ahead of raw inference providers when available.
+8. runtime readiness pruning for probeable local providers (`ollama`, `litellm`, `openjarvis`) before live call attempts
 
 Guardrails:
 
 - keep only configured providers
 - dedupe chain
 - cap attempts by `LLM_PROVIDER_MAX_ATTEMPTS`
+- recent provider failures enter short cooldown and are skipped while the cooldown is active
 - for HF experiment arm, `LLM_EXPERIMENT_FAIL_OPEN=false` disables non-HF fallback
 
 ## Bootstrap Profiles and Startup DAG

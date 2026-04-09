@@ -80,6 +80,54 @@ describe('youtubeCommunityScraper', () => {
       expect(result).not.toBeNull();
       expect(result!.id).toBe('UgkxABC123');
       expect(result!.content).toContain('Hello community!');
+      expect(result!.title).toBe('Hello community!');
+    });
+
+    it('uses the first bracket headline as the post title', async () => {
+      const ytData = {
+        contents: {
+          twoColumnBrowseResultsRenderer: {
+            tabs: [{
+              tabRenderer: {
+                content: {
+                  sectionListRenderer: {
+                    contents: [{
+                      itemSectionRenderer: {
+                        contents: [{
+                          backstagePostThreadRenderer: {
+                            post: {
+                              backstagePostRenderer: {
+                                postId: 'UgkxHeadline123',
+                                contentText: {
+                                  runs: [{ text: '【미국 증시 요약 ｜2026년 04월 08일 (수)】\n\n상세 본문입니다.' }],
+                                },
+                                publishedTimeText: { runs: [{ text: '1 hour ago' }] },
+                                authorText: { runs: [{ text: 'TestChannel' }] },
+                              },
+                            },
+                          },
+                        }],
+                      },
+                    }],
+                  },
+                },
+              },
+            }],
+          },
+        },
+      };
+
+      const html = `<html><body><script>var ytInitialData = ${JSON.stringify(ytData)};</script></body></html>`;
+      mockFetchWithTimeout.mockResolvedValueOnce({
+        ok: true,
+        text: async () => html,
+      });
+
+      const { scrapeLatestCommunityPostByChannelId } = await import('./youtubeCommunityScraper');
+      const result = await scrapeLatestCommunityPostByChannelId('UCsXVk37bltHxD1rDPwtNM8Q', 5000);
+
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe('【미국 증시 요약 ｜2026년 04월 08일 (수)】');
     });
   });
 
@@ -225,6 +273,7 @@ describe('youtubeCommunityScraper', () => {
       expect(result).not.toBeNull();
       expect(result!.id).toBe('UgkxInnerTube123');
       expect(result!.content).toContain('InnerTube로 가져온 포스트입니다!');
+      expect(result!.title).toBe('InnerTube로 가져온 포스트입니다!');
       expect(result!.author).toBe('테스트채널');
       expect(result!.link).toBe('https://www.youtube.com/post/UgkxInnerTube123');
     });

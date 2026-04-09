@@ -94,20 +94,78 @@ const COMMUNITY_NEW_POST_TITLE_TEMPLATE = parseStringEnv(process.env.YT_COMMUNIT
 const COMMUNITY_THREAD_REASON = parseStringEnv(process.env.YT_COMMUNITY_THREAD_REASON, 'YouTube community post subscription update');
 const COMMUNITY_AUTO_ARCHIVE_MIN = parseMinIntEnv(process.env.YT_COMMUNITY_THREAD_AUTO_ARCHIVE_MIN, 60, 60);
 
-const buildCommunityStarterTitle = (latest: FeedEntry, isFirstNotification: boolean) => {
-  if (isFirstNotification) {
-    return `${COMMUNITY_INITIAL_TITLE_PREFIX}: ${latest.author}`;
+const COMMUNITY_EMBED_COLOR = 0x2f80ed;
+const COMMUNITY_EMBED_TITLE_LIMIT = 240;
+const COMMUNITY_EMBED_DESCRIPTION_LIMIT = 3800;
+const COMMUNITY_THREAD_TITLE_LIMIT = 90;
+
+const truncateText = (value: string, maxLength: number): string => {
+  const normalized = String(value || '').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
   }
 
-  return COMMUNITY_NEW_POST_TITLE_TEMPLATE.replace('{author}', latest.author);
+  return `${normalized.slice(0, Math.max(1, maxLength - 1))}...`;
+};
+
+const normalizeCommunityBody = (latest: FeedEntry): string =>
+  String(latest.content || '')
+    .replace(/\r/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const stripLeadingTitle = (title: string, body: string): string => {
+  const normalizedTitle = String(title || '').trim();
+  const normalizedBody = String(body || '').trim();
+  if (!normalizedTitle || !normalizedBody) {
+    return normalizedBody;
+  }
+
+  if (normalizedBody === normalizedTitle) {
+    return '';
+  }
+
+  if (normalizedBody.startsWith(`${normalizedTitle}\n`)) {
+    return normalizedBody.slice(normalizedTitle.length).trim();
+  }
+
+  return normalizedBody;
+};
+
+const buildCommunityEmbedTitle = (latest: FeedEntry): string => {
+  const fallbackTitle = COMMUNITY_NEW_POST_TITLE_TEMPLATE.replace('{author}', latest.author || 'YouTube 채널');
+  return truncateText(latest.title || fallbackTitle, COMMUNITY_EMBED_TITLE_LIMIT) || fallbackTitle;
+};
+
+const buildCommunityEmbedDescription = (latest: FeedEntry): string => {
+  const title = buildCommunityEmbedTitle(latest);
+  const body = stripLeadingTitle(title, normalizeCommunityBody(latest));
+  const linkBlock = latest.link ? `\n\n${latest.link}` : '';
+  const bodyLimit = Math.max(200, COMMUNITY_EMBED_DESCRIPTION_LIMIT - linkBlock.length);
+  const clippedBody = truncateText(body || '본문을 불러오지 못했습니다.', bodyLimit);
+  return `${clippedBody}${linkBlock}`.trim();
+};
+
+const buildCommunityFooterText = (latest: FeedEntry, isFirstNotification: boolean): string => {
+  const prefix = isFirstNotification
+    ? COMMUNITY_INITIAL_TITLE_PREFIX
+    : COMMUNITY_NEW_POST_TITLE_TEMPLATE.replace('{author}', latest.author || 'YouTube 채널');
+
+  return [prefix, latest.author || null, latest.published || null].filter(Boolean).join(' · ');
 };
 
 const sendCommunityPostWithThread = async (sink: ChannelSink, channelId: string, latest: FeedEntry, isFirstNotification: boolean) => {
-  const content = buildCommunityStarterTitle(latest, isFirstNotification);
-  const threadName = (latest.title || latest.author).slice(0, 90);
+  const threadName = truncateText(buildCommunityEmbedTitle(latest) || latest.author || '새 커뮤니티 게시글', COMMUNITY_THREAD_TITLE_LIMIT);
 
   await sink.sendToChannel(channelId, {
-    content,
+    embeds: [
+      {
+        title: buildCommunityEmbedTitle(latest),
+        description: buildCommunityEmbedDescription(latest),
+        color: COMMUNITY_EMBED_COLOR,
+        footer: { text: buildCommunityFooterText(latest, isFirstNotification) },
+      },
+    ],
     thread: {
       name: threadName,
       autoArchiveDuration: COMMUNITY_AUTO_ARCHIVE_MIN,

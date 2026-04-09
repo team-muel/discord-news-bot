@@ -16,6 +16,11 @@ export type LegacyAgentRole = (typeof LEGACY_AGENT_ROLES)[number];
 /** Union of canonical + legacy names — use for input acceptance only. */
 export type AgentRole = AgentRoleName | LegacyAgentRole;
 
+export const EXECUTOR_ACTION_CANONICAL_NAME = 'implement.execute' as const;
+export const EXECUTOR_ACTION_LEGACY_NAME = 'opencode.execute' as const;
+export const EXECUTOR_ACTION_ALIASES = [EXECUTOR_ACTION_CANONICAL_NAME, EXECUTOR_ACTION_LEGACY_NAME] as const;
+export type ExecutorActionName = (typeof EXECUTOR_ACTION_ALIASES)[number];
+
 const LEGACY_TO_NEUTRAL_ROLE: Record<LegacyAgentRole, AgentRoleName> = {
   openjarvis: 'operate',
   opencode: 'implement',
@@ -36,6 +41,47 @@ export const normalizeAgentRole = (value: unknown, fallback: AgentRoleName = 'op
     return LEGACY_TO_NEUTRAL_ROLE[role as LegacyAgentRole];
   }
   return fallback;
+};
+
+export const isExecutorActionName = (value: unknown): value is ExecutorActionName => {
+  const actionName = String(value || '').trim().toLowerCase();
+  return (EXECUTOR_ACTION_ALIASES as readonly string[]).includes(actionName);
+};
+
+export const canonicalizeActionName = (value: unknown): string => {
+  const actionName = String(value || '').trim();
+  if (!actionName) {
+    return '';
+  }
+  return isExecutorActionName(actionName)
+    ? EXECUTOR_ACTION_CANONICAL_NAME
+    : actionName;
+};
+
+export const expandActionNameAliases = (value: unknown): string[] => {
+  const actionName = String(value || '').trim();
+  if (!actionName) {
+    return [];
+  }
+  return isExecutorActionName(actionName)
+    ? [...EXECUTOR_ACTION_ALIASES]
+    : [actionName];
+};
+
+export const normalizeActionNameList = (values: Iterable<unknown>): string[] => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const value of values) {
+    const actionName = canonicalizeActionName(value);
+    if (!actionName || seen.has(actionName)) {
+      continue;
+    }
+    seen.add(actionName);
+    normalized.push(actionName);
+  }
+
+  return normalized;
 };
 
 export function inferAgentRoleByActionName(actionName: string): AgentRoleName {

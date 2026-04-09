@@ -25,6 +25,14 @@ type DocsDeps = {
   getErrorMessage: (error: unknown) => string;
 };
 
+const formatMetadataSignalsLine = (signals?: RAGQueryResult['metadataSignals']): string => {
+  if (!signals) {
+    return '';
+  }
+
+  return `메타데이터 판단: active ${signals.activeDocs}, invalid ${signals.invalidDocs}, superseded ${signals.supersededDocs}, sourced ${signals.sourcedDocs}`;
+};
+
 export const createDocsHandlers = (deps: DocsDeps) => {
   /**
    * /물어봐 <질문> — RAG 검색 후 LLM이 문서 기반으로 답변
@@ -191,6 +199,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       '',
       `라우팅: ${ragPlan.route}`,
       DISCORD_MESSAGES.docs.summaryLine(ragResult.intent, ragResult.executionTimeMs, ragResult.cacheStatus.hits),
+      formatMetadataSignalsLine(ragResult.metadataSignals),
       ragResult.graphDensity
         ? DISCORD_MESSAGES.docs.graphDensityLine(ragResult.graphDensity.avgBacklinks, ragResult.graphDensity.maxBacklinks, ragResult.graphDensity.connectedRatio)
         : '',
@@ -343,6 +352,10 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
     lines.push('');
     lines.push(DISCORD_MESSAGES.docs.cacheLine(ragResult.cacheStatus.hits, ragResult.cacheStatus.misses));
+    const metadataLine = formatMetadataSignalsLine(ragResult.metadataSignals);
+    if (metadataLine) {
+      lines.push(metadataLine);
+    }
     if (ragResult.graphDensity) {
       lines.push(DISCORD_MESSAGES.docs.graphDensityLine(ragResult.graphDensity.avgBacklinks, ragResult.graphDensity.maxBacklinks, ragResult.graphDensity.connectedRatio));
     }

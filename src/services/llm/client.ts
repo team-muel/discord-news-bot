@@ -26,9 +26,13 @@ import {
 } from '../../config';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import {
+  getLlmRuntimeReadinessSnapshot,
   type LlmProvider,
   type LlmTextRequest,
   type LlmTextWithMetaResponse,
+  preflightProviderChain,
+  recordProviderCallFailure,
+  recordProviderCallSuccess,
   requestOpenAiWithMeta,
   requestGemini,
   requestAnthropic,
@@ -41,10 +45,14 @@ import {
 } from './providers';
 import {
   type LlmExperimentDecision,
+  getActionPolicyProviders,
+  getGateProviderProfileOverride,
   resolveProviderWithExperiment,
   resolveProviderChain,
-  resolveWorkflowModelBinding,
+  resolveRoutingCapability,
   resolveLlmProvider,
+  resolveWorkflowModelBinding,
+  resolveWorkflowProfile,
 } from './routing';
 import { getErrorMessage } from '../../utils/errorMessage';
 
@@ -171,6 +179,62 @@ export const generateText = async (params: LlmTextRequest): Promise<string> => {
   return response.text;
 };
 
+export const getLlmRuntimeSnapshot = async (params?: {
+  actionName?: string;
+  guildId?: string;
+}): Promise<{
+  selectedProvider: LlmProvider | null;
+  actionName: string | null;
+  routingCapability: ReturnType<typeof resolveRoutingCapability>;
+  actionPolicyProviders: LlmProvider[];
+  workflowBinding: ReturnType<typeof resolveWorkflowModelBinding>;
+  workflowProfile: ReturnType<typeof resolveWorkflowProfile> | null;
+  effectiveProviderProfile: ReturnType<typeof resolveWorkflowProfile> | null;
+  configuredProviders: LlmProvider[];
+  resolvedChain: LlmProvider[];
+  readyChain: LlmProvider[];
+  providers: Awaited<ReturnType<typeof getLlmRuntimeReadinessSnapshot>>;
+}> => {
+  const actionName = String(params?.actionName || '').trim() || null;
+  const selectedProvider = resolveLlmProvider();
+  const routingCapability = resolveRoutingCapability(actionName || undefined);
+  const actionPolicyProviders = getActionPolicyProviders(actionName || undefined);
+  const workflowBinding = resolveWorkflowModelBinding(actionName || undefined);
+  const workflowProfile = resolveWorkflowProfile(actionName || undefined) || null;
+  const gateProviderProfile = getGateProviderProfileOverride(params?.guildId) || null;
+  const effectiveProviderProfile = gateProviderProfile || workflowProfile;
+  const providers = await getLlmRuntimeReadinessSnapshot();
+  const configuredProviders = providers.filter((provider) => provider.configured).map((provider) => provider.provider);
+
+  const resolvedChain = selectedProvider
+    ? resolveProviderChain(
+      {
+        system: '',
+        user: '',
+        actionName: actionName || undefined,
+        guildId: params?.guildId,
+      },
+      selectedProvider,
+      { provider: selectedProvider, experiment: null },
+    )
+    : [];
+  const readyChain = await preflightProviderChain(resolvedChain);
+
+  return {
+    selectedProvider,
+    actionName,
+    routingCapability,
+    actionPolicyProviders,
+    workflowBinding,
+    workflowProfile,
+    effectiveProviderProfile,
+    configuredProviders,
+    resolvedChain,
+    readyChain,
+    providers,
+  };
+};
+
 export const generateTextWithMeta = async (
   params: LlmTextRequest & { includeLogprobs?: boolean },
 ): Promise<LlmTextWithMetaResponse> => {
@@ -186,7 +250,8 @@ export const generateTextWithMeta = async (
 
   const startedAt = Date.now();
   const requestInputChars = String(params.system || '').length + String(params.user || '').length;
-  const providerChain = resolveProviderChain(params, provider, selection);
+  const resolvedProviderChain = resolveProviderChain(params, provider, selection);
+  const providerChain = await preflightProviderChain(resolvedProviderChain);
   const providerChainDeadlineMs = startedAt + LLM_PROVIDER_TOTAL_TIMEOUT_MS;
 
   const cachedWorkflowBinding = resolveWorkflowModelBinding(params.actionName);
@@ -206,18 +271,34 @@ export const generateTextWithMeta = async (
   };
 
   const callProvider = async (targetProvider: LlmProvider): Promise<LlmTextWithMetaResponse> => {
-    if (targetProvider === 'openai') {
-      const response = await requestOpenAiWithMeta(params, Boolean(params.includeLogprobs));
-      return { ...response, model: resolveModel(targetProvider) };
+    try {
+      let response: LlmTextWithMetaResponse;
+      if (targetProvider === 'openai') {
+        response = { ...(await requestOpenAiWithMeta(params, Boolean(params.includeLogprobs))), model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'anthropic') {
+        response = { text: await requestAnthropic(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'huggingface') {
+        response = { text: await requestHuggingFace(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'openclaw') {
+        response = { text: await requestOpenClaw(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'ollama') {
+        response = { text: await requestOllama(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'openjarvis') {
+        response = { text: await requestOpenJarvis(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'litellm') {
+        response = { text: await requestLiteLLM(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else if (targetProvider === 'kimi') {
+        response = { text: await requestKimi(params), provider: targetProvider, model: resolveModel(targetProvider) };
+      } else {
+        response = { text: await requestGemini(params), provider: 'gemini', model: resolveModel('gemini') };
+      }
+
+      recordProviderCallSuccess(targetProvider);
+      return response;
+    } catch (error) {
+      recordProviderCallFailure(targetProvider, error);
+      throw error;
     }
-    if (targetProvider === 'anthropic') return { text: await requestAnthropic(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    if (targetProvider === 'huggingface') return { text: await requestHuggingFace(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    if (targetProvider === 'openclaw') return { text: await requestOpenClaw(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    if (targetProvider === 'ollama') return { text: await requestOllama(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    if (targetProvider === 'openjarvis') return { text: await requestOpenJarvis(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    if (targetProvider === 'litellm') return { text: await requestLiteLLM(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    if (targetProvider === 'kimi') return { text: await requestKimi(params), provider: targetProvider, model: resolveModel(targetProvider) };
-    return { text: await requestGemini(params), provider: 'gemini', model: resolveModel('gemini') };
   };
 
   try {

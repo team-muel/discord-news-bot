@@ -294,16 +294,17 @@ async function main() {
   });
   const sessionPath = sessionState.sessionPath;
 
-  if (requireOpencodeWorker && !String(process.env.MCP_OPENCODE_WORKER_URL || '').trim()) {
+  const implementWorkerUrl = String(process.env.MCP_IMPLEMENT_WORKER_URL || process.env.MCP_OPENCODE_WORKER_URL || '').trim();
+  if (requireOpencodeWorker && !implementWorkerUrl) {
     transitionWorkflow(sessionPath, {
       toState: 'failed',
       eventType: 'state.failed',
       handoffFrom: 'openjarvis',
       handoffTo: 'openjarvis',
       reason: 'opencode worker URL is required but not configured',
-      evidenceId: 'env:MCP_OPENCODE_WORKER_URL',
+      evidenceId: 'env:MCP_IMPLEMENT_WORKER_URL',
     });
-    throw new Error('MCP_OPENCODE_WORKER_URL is required by OPENJARVIS_REQUIRE_OPENCODE_WORKER');
+    throw new Error('MCP_IMPLEMENT_WORKER_URL is required by OPENJARVIS_REQUIRE_OPENCODE_WORKER (legacy alias MCP_OPENCODE_WORKER_URL is also accepted)');
   }
 
   transitionWorkflow(sessionPath, {

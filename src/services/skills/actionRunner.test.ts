@@ -94,6 +94,15 @@ describe('isActionAllowed', () => {
   it('빈 문자열 액션은 거부된다', () => {
     expect(isActionAllowed('')).toBe(false);
   });
+
+  it('legacy allowlist도 canonical executor action을 허용한다', async () => {
+    vi.resetModules();
+    vi.stubEnv('ACTION_ALLOWED_ACTIONS', 'opencode.execute,rag.retrieve');
+
+    const { isActionAllowed: isActionAllowedWithLegacyEnv } = await import('./actions/policy');
+    expect(isActionAllowedWithLegacyEnv('implement.execute')).toBe(true);
+    expect(isActionAllowedWithLegacyEnv('opencode.execute')).toBe(true);
+  });
 });
 
 describe('isWebHostAllowed', () => {
@@ -134,19 +143,18 @@ describe('getActionRunnerMode', () => {
 
 describe('syncHighRiskActionsToSandboxPolicy', () => {
   it('calls openshell policy.set with YAML containing high-risk actions', async () => {
-    // Dynamic import matches how the function itself imports
-    const mockExecute = vi.fn().mockResolvedValue({ ok: true, summary: 'policy set' });
-    vi.doMock('../tools/externalAdapterRegistry', () => ({
-      executeExternalAction: mockExecute,
+    const mockRunExternalAction = vi.fn().mockResolvedValue({ ok: true, summary: 'policy set' });
+    vi.doMock('../tools/toolRouter', () => ({
+      runExternalAction: mockRunExternalAction,
     }));
 
     // Re-import to pick up the mock
     const { syncHighRiskActionsToSandboxPolicy } = await import('./actionRunner');
     const result = await syncHighRiskActionsToSandboxPolicy();
 
-    // The function should have attempted to sync (assuming default HIGH_RISK_APPROVAL_ACTIONS includes opencode.execute)
+    // The function should have attempted to sync (assuming default HIGH_RISK_APPROVAL_ACTIONS includes implement.execute)
     if (result.synced) {
-      expect(mockExecute).toHaveBeenCalledWith('openshell', 'policy.set', expect.objectContaining({
+      expect(mockRunExternalAction).toHaveBeenCalledWith('openshell', 'policy.set', expect.objectContaining({
         policy: expect.stringContaining('network:'),
       }));
       expect(result.actions.length).toBeGreaterThan(0);
@@ -155,12 +163,12 @@ describe('syncHighRiskActionsToSandboxPolicy', () => {
       expect(typeof result.error).toBe('string');
     }
 
-    vi.doUnmock('../tools/externalAdapterRegistry');
+    vi.doUnmock('../tools/toolRouter');
   });
 
   it('returns synced: false gracefully when openshell is unavailable', async () => {
-    vi.doMock('../tools/externalAdapterRegistry', () => ({
-      executeExternalAction: vi.fn().mockRejectedValue(new Error('adapter not available')),
+    vi.doMock('../tools/toolRouter', () => ({
+      runExternalAction: vi.fn().mockRejectedValue(new Error('adapter not available')),
     }));
 
     const { syncHighRiskActionsToSandboxPolicy } = await import('./actionRunner');
@@ -169,6 +177,6 @@ describe('syncHighRiskActionsToSandboxPolicy', () => {
     expect(typeof result.error).toBe('string');
     expect(result.error!.length).toBeGreaterThan(0);
 
-    vi.doUnmock('../tools/externalAdapterRegistry');
+    vi.doUnmock('../tools/toolRouter');
   });
 });

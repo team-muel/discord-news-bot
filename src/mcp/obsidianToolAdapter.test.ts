@@ -17,6 +17,17 @@ vi.mock('../services/obsidian/router', () => ({
     adapters: [{ id: 'local-fs', available: true, capabilities: ['read_lore', 'search_vault'] }],
     selectedByCapability: { read_lore: 'local-fs', search_vault: 'local-fs' },
   }),
+  getObsidianVaultLiveHealthStatus: vi.fn().mockResolvedValue({
+    healthy: true,
+    issues: [],
+    vaultPathConfigured: true,
+    writeCapable: true,
+    readCapable: true,
+    searchCapable: true,
+    remoteMcp: {
+      lastProbe: { reachable: true },
+    },
+  }),
 }));
 
 vi.mock('../services/obsidian/obsidianRagService', () => ({
@@ -24,13 +35,48 @@ vi.mock('../services/obsidian/obsidianRagService', () => ({
     answer: 'The architecture uses graph-first retrieval.',
     documents: [{ filePath: 'docs/architecture.md', score: 0.9 }],
     intent: 'architecture',
+    metadataSignals: {
+      activeDocs: 1,
+      invalidDocs: 0,
+      supersededDocs: 0,
+      sourcedDocs: 1,
+    },
+  }),
+  getObsidianRetrievalBoundarySnapshot: vi.fn().mockResolvedValue({
+    metadataOnly: {
+      available: true,
+      requiresVault: true,
+      signals: ['status', 'valid_at'],
+      responsibilities: ['semantic truth'],
+    },
+    supabaseBacked: {
+      configured: true,
+      cacheAvailable: true,
+      cacheStats: {
+        enabled: true,
+        supabaseConfigured: true,
+        ttlMs: 3600000,
+        pendingHitEntries: 0,
+        totalDocs: 42,
+        activeDocs: 40,
+        staleDocs: 2,
+        totalHits: 150,
+        averageHitsPerDoc: 3.57,
+      },
+      responsibilities: ['cache'],
+    },
   }),
 }));
 
 vi.mock('../services/obsidian/obsidianCacheService', () => ({
   getCacheStats: vi.fn().mockResolvedValue({
+    enabled: true,
+    supabaseConfigured: true,
+    ttlMs: 3600000,
+    pendingHitEntries: 0,
     totalDocs: 42,
-    activeDocs: 42,
+    activeDocs: 40,
+    staleDocs: 2,
     totalHits: 150,
     averageHitsPerDoc: 3.57,
   }),
@@ -57,6 +103,42 @@ vi.mock('../services/obsidian/obsidianQualityService', () => ({
   }),
 }));
 
+vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
+  getObsidianKnowledgeControlSurface: vi.fn().mockReturnValue({
+    compiler: {
+      enabled: true,
+      runs: 3,
+      skipped: 1,
+      failures: 0,
+      lastTriggeredAt: '2026-04-09T00:00:00.000Z',
+      lastCompiledAt: '2026-04-09T00:00:01.000Z',
+      lastNotePath: 'chat/answers/2026-04-09/current.md',
+      lastReason: null,
+      lastArtifacts: ['ops/knowledge-control/INDEX.md'],
+      lastTopics: ['development'],
+      lastEntityKey: 'chat/thread-1',
+      lastIndexedNotes: 10,
+      lastLintSummary: {
+        generatedAt: '2026-04-09T00:00:01.000Z',
+        issueCount: 1,
+        missingSourceRefs: 1,
+        staleActiveNotes: 0,
+        invalidLifecycleNotes: 0,
+        canonicalCollisions: 0,
+        issues: [{
+          kind: 'missing_source_refs',
+          severity: 'warning',
+          message: 'missing source refs',
+          entityKey: 'chat/thread-1',
+          filePaths: ['chat/answers/2026-04-09/current.md'],
+        }],
+      },
+    },
+    artifactPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LINT.md'],
+  }),
+  resolveObsidianKnowledgeArtifactPath: vi.fn((artifact: string) => artifact === 'lint' ? 'ops/knowledge-control/LINT.md' : null),
+}));
+
 vi.mock('../utils/obsidianEnv', () => ({
   getObsidianVaultRoot: vi.fn().mockReturnValue('/test-vault'),
 }));
@@ -71,7 +153,7 @@ describe('obsidianToolAdapter', () => {
   describe('listObsidianMcpTools', () => {
     it('returns all obsidian tools with valid specs', () => {
       const tools = listObsidianMcpTools();
-      expect(tools.length).toBe(20);
+      expect(tools.length).toBe(21);
 
       const names = tools.map((t) => t.name);
       expect(names).toContain('obsidian.search');
@@ -83,6 +165,7 @@ describe('obsidianToolAdapter', () => {
       expect(names).toContain('obsidian.cache.stats');
       expect(names).toContain('obsidian.quality.audit');
       expect(names).toContain('obsidian.adapter.status');
+      expect(names).toContain('obsidian.knowledge.control');
       expect(names).toContain('obsidian.outline');
       expect(names).toContain('obsidian.search.context');
       expect(names).toContain('obsidian.property.read');
@@ -113,9 +196,10 @@ describe('obsidianToolAdapter', () => {
 
   describe('OBSIDIAN_TOOL_NAMES', () => {
     it('contains all tool names', () => {
-      expect(OBSIDIAN_TOOL_NAMES.size).toBe(20);
+      expect(OBSIDIAN_TOOL_NAMES.size).toBe(21);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.search')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.write')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('obsidian.knowledge.control')).toBe(true);
     });
   });
 
@@ -257,6 +341,8 @@ describe('obsidianToolAdapter', () => {
       expect(result.isError).toBeFalsy();
       const data = JSON.parse(result.content[0]?.text || '{}');
       expect(data.totalDocs).toBe(42);
+      expect(data.staleDocs).toBe(2);
+      expect(data.ttlMs).toBe(3600000);
     });
 
     // ── obsidian.quality.audit ───────────────────────────────────────────
@@ -275,6 +361,29 @@ describe('obsidianToolAdapter', () => {
       const data = JSON.parse(result.content[0]?.text || '{}');
       expect(data.strictMode).toBe(false);
       expect(data.adapters).toHaveLength(1);
+      expect(data.vaultHealth.healthy).toBe(true);
+      expect(data.retrievalBoundary.metadataOnly.available).toBe(true);
+      expect(data.cacheStats.activeDocs).toBe(40);
+    });
+
+    it('obsidian.knowledge.control returns compiler summary', async () => {
+      const result = await callObsidianMcpTool({ name: 'obsidian.knowledge.control' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.compiler.runs).toBe(3);
+      expect(data.compiler.lastLintSummary.issueCount).toBe(1);
+      expect(data.artifactPaths).toContain('ops/knowledge-control/LINT.md');
+    });
+
+    it('obsidian.knowledge.control returns requested artifact content', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'obsidian.knowledge.control',
+        arguments: { artifact: 'lint' },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.artifact.path).toBe('ops/knowledge-control/LINT.md');
+      expect(data.artifact.content).toContain('Test Note');
     });
   });
 });

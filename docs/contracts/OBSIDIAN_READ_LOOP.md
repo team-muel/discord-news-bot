@@ -4,8 +4,8 @@
 
 ## Boundary
 
-- **Source**: Obsidian vault (local filesystem or Supabase mirror)
-- **Sink**: `src/services/obsidian/obsidianRagService.ts`, Discord command responses
+- **Source**: Obsidian vault exposed through the adapter chain, with `remote-mcp` as the primary production path
+- **Sink**: `src/services/obsidian/obsidianRagService.ts`, Discord command responses, and any service consuming shared memory hints
 - **Strategy**: Graph-first retrieval (link graph → semantic search → chunk fallback)
 
 ## Retrieval Architecture
@@ -14,7 +14,7 @@
 
 Retrieval MUST prefer Obsidian's link graph over chunk-based RAG:
 
-```
+```text
 1. Resolve query → identify seed notes via tag/title match
 2. Traverse backlinks and outgoing links (1-2 hops)
 3. Score by link density + recency + semantic similarity
@@ -26,11 +26,26 @@ Retrieval MUST prefer Obsidian's link graph over chunk-based RAG:
 ### 2. Search Tiers (from memoryEvolutionService)
 
 | Tier | Trigger | Method |
-|---|---|---|
+| --- | --- | --- |
 | Graph-first | Default | Obsidian link graph traversal + tag filtering |
 | Hybrid | Graph results < 3 | Graph results + vector similarity merge |
 | Semantic-only | No vault configured | pgvector cosine similarity via Supabase |
 | Cache hit | Recent identical query | `obsidianCacheService.ts` result |
+
+### 2.5 Metadata-Only vs Supabase Boundary
+
+The read loop now distinguishes between two layers:
+
+- **Metadata-only layer (Obsidian-native)**
+  - Source of truth: frontmatter + tags + backlinks + wikilinks
+  - Used for: `status`, `valid_at`, `invalid_at`, `supersedes`, `source_refs`, `canonical_key`
+  - Purpose: rank active notes above invalid/superseded ones, prefer grounded notes, preserve graph-first retrieval
+- **Supabase-backed layer (operational acceleration)**
+  - Source of truth: `obsidian_cache` TTL cache and hit counters
+  - Used for: cross-process cache reuse, cache hit tracking, faster repeated reads
+  - Not used as the semantic authority for note validity or supersession
+
+This means note lifecycle and meaning should be encoded in Obsidian metadata first. Supabase improves speed and observability, but it does not replace the vault as the canonical semantic store.
 
 ### 3. Cache Layer
 
@@ -46,19 +61,23 @@ Retrieval MUST prefer Obsidian's link graph over chunk-based RAG:
 
 ## Data Flow
 
-```
+```text
 Discord command / agent query
   → obsidianRagService.search(query, guildId, options)
   → [check cache] obsidianCacheService.get(cacheKey)
   → [if miss] graph traversal via adapter
+  → frontmatter-aware reranking (`invalid_at`, `supersedes`, `source_refs`, `status`)
   → [if insufficient] hybrid: merge with vector search
   → rank and filter results
   → return to caller for response formatting
 ```
 
+In production this usually means Render or another service calling the shared GCP vault service over `remote-mcp`, not direct local disk access.
+
 ## Response Formatting Rules
 
 When Obsidian content surfaces in Discord responses:
+
 - Strip internal wikilinks `[[note]]` → plain text
 - Truncate to Discord embed limits (4096 chars for embed description)
 - Attribute source note in footer
@@ -66,7 +85,7 @@ When Obsidian content surfaces in Discord responses:
 
 ## Current Limitation
 
-> **CRITICAL**: The read loop is functional but starved — write paths are mostly no-ops (see [MEMORY_TO_OBSIDIAN.md](./MEMORY_TO_OBSIDIAN.md)), so the vault has minimal content to retrieve from. Graph-first retrieval is architecturally correct but practically idle.
+> **CRITICAL**: the read loop can appear healthy while returning empty results if the remote MCP server is reachable but the remote vault is locked, unauthenticated, or otherwise unavailable. Operators should inspect the live runtime probe, not just adapter selection.
 
 ## Test References
 

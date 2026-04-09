@@ -10,6 +10,7 @@ import { stopLoginSessionCleanupLoop } from './src/discord/auth';
 import { stopUserEmbeddingLoop } from './src/services/memory/userEmbeddingService';
 import { stopConsolidationLoop } from './src/services/memory/memoryConsolidationService';
 import { stopMemoryJobRunner } from './src/services/memory/memoryJobRunner';
+import { stopObsidianInboxChatLoop } from './src/services/obsidian/obsidianInboxChatLoopService';
 import { stopObsidianLoreSyncLoop } from './src/services/obsidian/obsidianLoreSyncService';
 import { stopRetrievalEvalLoop } from './src/services/eval/retrievalEvalLoopService';
 import { stopEvalAutoPromoteLoop } from './src/services/eval/evalAutoPromoteLoopService';
@@ -114,6 +115,7 @@ const shutdownServer = (signal: NodeJS.Signals) => {
     ['userEmbedding', stopUserEmbeddingLoop],
     ['memoryConsolidation', stopConsolidationLoop],
     ['memoryJobRunner', stopMemoryJobRunner],
+    ['obsidianInboxChat', stopObsidianInboxChatLoop],
     ['obsidianLoreSync', stopObsidianLoreSyncLoop],
     ['retrievalEval', stopRetrievalEvalLoop],
     ['evalAutoPromote', stopEvalAutoPromoteLoop],

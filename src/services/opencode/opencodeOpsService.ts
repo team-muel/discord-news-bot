@@ -1,8 +1,15 @@
 import { parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import {
+  EXECUTOR_ACTION_CANONICAL_NAME,
+  EXECUTOR_ACTION_LEGACY_NAME,
+  expandActionNameAliases,
+} from '../skills/actions/types';
 
 const ACTION_APPROVAL_TABLE = parseStringEnv(process.env.ACTION_APPROVAL_TABLE, 'agent_action_approval_requests');
-const OPENCODE_ACTION_NAME = 'opencode.execute';
+const IMPLEMENT_ACTION_NAME = EXECUTOR_ACTION_CANONICAL_NAME;
+const OPENCODE_ACTION_NAME = EXECUTOR_ACTION_LEGACY_NAME;
+const EXECUTOR_ACTION_NAMES = expandActionNameAliases(IMPLEMENT_ACTION_NAME);
 const SUMMARY_DEFAULT_DAYS = parseMinIntEnv(process.env.OPENCODE_SUMMARY_DEFAULT_DAYS, 7, 1);
 
 const toDays = (value: unknown): number => {
@@ -38,6 +45,11 @@ export const getOpencodeExecutionSummary = async (params: {
       guildId,
       windowDays: days,
       since: sinceIso,
+      contract: {
+        canonicalActionName: IMPLEMENT_ACTION_NAME,
+        persistedActionName: OPENCODE_ACTION_NAME,
+        legacyActionName: OPENCODE_ACTION_NAME,
+      },
       executions: {
         total: 0,
         success: 0,
@@ -62,7 +74,7 @@ export const getOpencodeExecutionSummary = async (params: {
       .from('agent_action_logs')
       .select('status, error, duration_ms, created_at')
       .eq('guild_id', guildId)
-      .eq('action_name', OPENCODE_ACTION_NAME)
+      .in('action_name', EXECUTOR_ACTION_NAMES)
       .gte('created_at', sinceIso)
       .order('created_at', { ascending: false })
       .limit(5000),
@@ -70,27 +82,27 @@ export const getOpencodeExecutionSummary = async (params: {
       .from(ACTION_APPROVAL_TABLE)
       .select('id', { count: 'exact', head: true })
       .eq('guild_id', guildId)
-      .eq('action_name', OPENCODE_ACTION_NAME)
+      .in('action_name', EXECUTOR_ACTION_NAMES)
       .eq('status', 'pending'),
     client
       .from(ACTION_APPROVAL_TABLE)
       .select('id', { count: 'exact', head: true })
       .eq('guild_id', guildId)
-      .eq('action_name', OPENCODE_ACTION_NAME)
+      .in('action_name', EXECUTOR_ACTION_NAMES)
       .eq('status', 'approved')
       .gte('created_at', sinceIso),
     client
       .from(ACTION_APPROVAL_TABLE)
       .select('id', { count: 'exact', head: true })
       .eq('guild_id', guildId)
-      .eq('action_name', OPENCODE_ACTION_NAME)
+      .in('action_name', EXECUTOR_ACTION_NAMES)
       .eq('status', 'rejected')
       .gte('created_at', sinceIso),
     client
       .from(ACTION_APPROVAL_TABLE)
       .select('id', { count: 'exact', head: true })
       .eq('guild_id', guildId)
-      .eq('action_name', OPENCODE_ACTION_NAME)
+      .in('action_name', EXECUTOR_ACTION_NAMES)
       .eq('status', 'expired')
       .gte('created_at', sinceIso),
   ]);
@@ -133,6 +145,11 @@ export const getOpencodeExecutionSummary = async (params: {
     guildId,
     windowDays: days,
     since: sinceIso,
+    contract: {
+      canonicalActionName: IMPLEMENT_ACTION_NAME,
+      persistedActionName: OPENCODE_ACTION_NAME,
+      legacyActionName: OPENCODE_ACTION_NAME,
+    },
     executions: {
       total,
       success,

@@ -21,6 +21,56 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-10 - Obsidian Knowledge Control Plane + Compatibility Surface Hardening
+
+- Why: shared-vault metadata, knowledge compiler artifacts, unattended inbox answering, and the restored Discord ask alias all became real runtime surfaces, but operators still lacked a single documented control-plane view and rollback toggles for them.
+- Scope: obsidian runtime/control-plane routes, inbox chat loop observability, env template/example alignment, runbook/changelog synchronization
+- Impacted Routes: `GET /api/bot/agent/runtime/loops`, `GET /api/bot/agent/runtime/knowledge-control-plane`, `GET /api/bot/agent/obsidian/runtime`, `GET /api/bot/agent/obsidian/knowledge-control`, Discord `/뮤엘`, `/해줘`, `/구독`
+- Impacted Services: obsidian inbox chat loop stats, knowledge compiler runtime surfaces, news monitor candidate-source fallback wiring, operator docs for remote-mcp/inbox/news rollout
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: `obsidianInboxChatLoop` is now exposed as a first-class runtime loop for rollout/rollback decisions. `/해줘` remains a compatibility alias while `/뮤엘` is the preferred ask surface. News candidate collection can legitimately succeed via n8n, MCP worker, or local fallback, so operators should check the surfaced source before triage.
+- Validation: `npx vitest run src/routes/botAgentObsidianRuntime.test.ts`, `npx tsc --noEmit`
+
+## 2026-04-10 - Canonical Executor Contract Alignment
+
+- Why: executor runtime는 이미 neutral naming (`implement.execute`, `MCP_IMPLEMENT_WORKER_URL`) 방향을 갖고 있었지만 일부 운영 surface와 env/template가 여전히 legacy `opencode.*` 명칭에 고정돼 있었다. canonical contract를 노출하고 legacy persistence는 유지해 drift를 줄인다.
+- Scope: config/runtime/governance/env validator, env profiles, executor docs/runbook/template alignment
+- Impacted Routes: `GET /api/bot/agent/runtime/unattended-health`, `GET /api/bot/agent/self-growth/policy`, `POST /api/bot/agent/opencode/bootstrap-policy`
+- Impacted Services: config alias resolution (`MCP_IMPLEMENT_WORKER_URL`), executor contract metadata in runtime/governance snapshots, env validation warnings for legacy-only env usage
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: persisted governance/log action key remains `opencode.execute` for backward compatibility. Canonical action/worker naming is additive and does not require data migration in this slice.
+- Validation: `npx vitest run src/routes/botAgentObsidianRuntime.test.ts`, `npm run env:check`, `npm run env:check:local-hybrid`, `npx tsc --noEmit`
+
+## 2026-04-10 - OpenJarvis Upper-Lane Workflow Binding
+
+- Why: local-first 모드에서 OpenJarvis를 일반 fallback provider처럼 다루면 Ollama 중심 빠른 추론과 운영 orchestration 계층이 섞인다. operations/eval/worker 계열 action은 OpenJarvis binding/profile로 분리해 역할을 명시한다.
+- Scope: 10 files — `src/services/llm/routing.ts`, `src/services/llm/client.ts`, `src/services/llmClient.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `scripts/validate-env.mjs`, `.env`, `config/env/local-first-hybrid.profile.env`, `docs/ARCHITECTURE_INDEX.md`, `docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md`, `docs/RENDER_AGENT_ENV_TEMPLATE.md`
+- Impacted Routes: `GET /api/bot/agent/runtime/unattended-health`
+- Impacted Services: operations capability ordering, workflow binding/profile runtime snapshot, env validator binding/profile lint, local-first hybrid env defaults
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: `operate.ops`/`openjarvis.ops`/`eval.*`/`worker.*` 는 OpenJarvis가 enabled 되면 먼저 시도된다. OpenJarvis health probe가 실패하면 readiness pruning 으로 Ollama/OpenClaw/LiteLLM 경로로 즉시 내려간다.
+- Validation: `npx vitest run src/services/llmClient.test.ts src/routes/botAgentObsidianRuntime.test.ts`, `npm run env:check`, `npm run env:check:local-hybrid`, `npx tsc --noEmit`
+
+## 2026-04-10 - Runtime LLM Snapshot + Env Profile Command Recovery
+
+- Why: 운영 문서는 env profile 명령과 local-hybrid readiness check를 가정했지만 package.json 에 실제 스크립트가 없었고, control-plane 에서는 LLM provider readiness/chain 상태를 직접 볼 수 없었다.
+- Scope: 7 files — `src/services/llm/providers.ts`, `src/services/llm/client.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `scripts/validate-env.mjs`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+- Impacted Routes: `GET /api/bot/agent/runtime/unattended-health`
+- Impacted Services: LLM runtime snapshot helper, unattended health surface, env validator provider support (`litellm`, `openjarvis`, `kimi`), npm env profile wrappers
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: unattended-health 응답에 `llmRuntime` 블록이 추가된다. env profile 명령은 기존 `scripts/apply-env-profile.mjs` 와 archived local-hybrid checker를 감싸는 얇은 wrapper이므로 런타임 동작 변경은 없다.
+- Validation: `npm run env:profile:local-first-hybrid:dry`, `npm run env:check:local-hybrid`, `npx vitest run src/routes/botAgentObsidianRuntime.test.ts src/services/llmClient.test.ts`, `npx tsc --noEmit`
+
+## 2026-04-09 - LLM Capability Routing + Health-Aware Provider Pruning
+
+- Why: env상 enabled 된 provider가 실제로 죽어 있어도 chain 후보에 남아 지연과 실패를 유발했다. action별로 provider를 직접 고정하는 대신 capability 중심 우선순위와 runtime readiness pruning을 도입해 local-first 경로를 더 안정적으로 만든다.
+- Scope: 5 files — `src/services/llm/providers.ts`, `src/services/llm/routing.ts`, `src/services/llm/client.ts`, `src/services/llmClient.test.ts`, `docs/ARCHITECTURE_INDEX.md`
+- Impacted Routes: N/A
+- Impacted Services: LLM provider runtime state/cooldown cache, probeable local provider preflight (`ollama`, `litellm`, `openjarvis`), actionName→capability reorder (`chat/code/memory/review/operations`), broker loop success/failure feedback
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: explicit `provider` 지정 요청은 그대로 단일 provider 호출을 유지한다. probe 불가능한 provider는 기존처럼 unknown 상태로 호출 후보에 남는다. local HTTP health endpoint 실패 시 짧은 cooldown 동안 chain에서 제외된다.
+- Validation: `npx tsc --noEmit`, `npx vitest run src/services/llmClient.test.ts`
+
 ## 2026-04-06 - Render Adapter + Platform Dashboard + Obsidian Headless Sync
 
 - Why: 에이전트가 Render 인프라를 자율적으로 관리하고, 모든 플랫폼 상태를 시각적으로 모니터링하며, Obsidian Cloud와 서버 vault를 양방향 동기화한다.

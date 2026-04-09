@@ -5,7 +5,8 @@ import { MCP_WORKER_AUTH_TOKEN } from '../config';
 import { generateText, isAnyLlmConfigured, resolveLlmProvider } from '../services/llmClient';
 import { doc } from '../services/obsidian/obsidianDocBuilder';
 import { queryObsidianRAG, type RAGQueryResult } from '../services/obsidian/obsidianRagService';
-import { getObsidianAdapterRuntimeStatus, readObsidianFileWithAdapter, writeObsidianNoteWithAdapter } from '../services/obsidian/router';
+import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus, readObsidianFileWithAdapter, writeObsidianNoteWithAdapter } from '../services/obsidian/router';
+import type { ObsidianFrontmatterValue } from '../services/obsidian/types';
 import { getErrorMessage } from '../utils/errorMessage';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { isOneOf, toBoundedInt, toStringParam } from '../utils/validation';
@@ -19,9 +20,11 @@ const PARENT_NOTE_CONTEXT_LIMIT = 3_000;
 const ANSWER_SUMMARY_LIMIT = 240;
 const MAX_TOKENS = 700;
 const LOCAL_ADAPTERS = new Set(['local-fs', 'native-cli']);
+const NON_FILESYSTEM_ADAPTERS = new Set(['remote-mcp', 'native-cli', 'script-cli']);
 
-type ChatContextMode = 'metadata_first' | 'full';
+export type ChatContextMode = 'metadata_first' | 'full';
 type ChatStatusMode = 'unavailable' | 'local-first' | 'hybrid' | 'remote-first';
+export type InboxChatRequesterKind = 'session' | 'bearer';
 
 export type InboxChatStatus = {
   reachable: boolean;
@@ -35,7 +38,7 @@ type InboxNoteParams = {
   title: string;
   guildId: string;
   requesterId: string;
-  requesterKind: 'session' | 'bearer';
+  requesterKind: InboxChatRequesterKind;
   now: Date;
   replyToPath?: string | null;
   threadRootPath?: string | null;
@@ -47,12 +50,49 @@ type AnswerNoteParams = {
   answer: string;
   guildId: string;
   requesterId: string;
-  requesterKind: 'session' | 'bearer';
+  requesterKind: InboxChatRequesterKind;
   now: Date;
   requestNotePath: string | null;
   replyToPath?: string | null;
   threadRootPath?: string | null;
   ragResult: RAGQueryResult | null;
+};
+
+export type ProcessInboxChatNoteParams = {
+  message: string;
+  title: string;
+  guildId: string;
+  requesterId: string;
+  requesterKind: InboxChatRequesterKind;
+  noteContent: string;
+  notePath: string | null;
+  persist: boolean;
+  maxDocs: number;
+  contextMode: ChatContextMode;
+  replyToPath?: string | null;
+  threadRootPath?: string | null;
+  noteTags?: string[];
+  noteProperties?: Record<string, ObsidianFrontmatterValue>;
+};
+
+export type ProcessInboxChatNoteResult = {
+  answer: string;
+  answerNote: {
+    persisted: boolean;
+    path: string | null;
+  };
+  thread: {
+    replyToPath: string | null;
+    threadRootPath: string;
+  };
+  retrieval: {
+    intent: string | null;
+    documentCount: number;
+    executionTimeMs: number;
+    sourceFiles: string[];
+  };
+  localFirst: InboxChatStatus;
+  warnings: string[];
 };
 
 const validateBearer = (req: Request): boolean => {
@@ -103,13 +143,14 @@ const toObsidianWikilink = (value: string, alias?: string): string => {
   return alias ? `[[${target}|${alias}]]` : `[[${target}]]`;
 };
 
-const readFrontmatterProperty = (markdown: string | null, key: string): string => {
+export const readFrontmatterProperty = (markdown: string | null, key: string): string => {
   const source = String(markdown || '');
   const match = source.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!match) return '';
   const property = key.replace(/[^a-zA-Z0-9_]/g, '_');
   const line = match[1].split('\n').find((entry) => entry.startsWith(`${property}:`));
-  return line ? line.slice(property.length + 1).trim() : '';
+  const rawValue = line ? line.slice(property.length + 1).trim() : '';
+  return rawValue.replace(/^"([\s\S]*)"$/, '$1').replace(/^'([\s\S]*)'$/, '$1');
 };
 
 const updateFrontmatterProperty = (markdown: string, key: string, value: string): string => {
@@ -188,7 +229,7 @@ export const buildInboxChatNote = (params: InboxNoteParams): {
   fileName: string;
   content: string;
   tags: string[];
-  properties: Record<string, string | number | boolean>;
+  properties: Record<string, ObsidianFrontmatterValue>;
 } => {
   const safeTitle = toStringParam(params.title).slice(0, MAX_TITLE_CHARS) || 'Inbox Chat';
   const fileName = buildInboxNotePath({
@@ -198,23 +239,32 @@ export const buildInboxChatNote = (params: InboxNoteParams): {
     now: params.now,
   });
   const threadRootPath = params.threadRootPath || fileName;
+  const observedAt = params.now.toISOString();
+  const sourceRefs = dedupeStrings([params.replyToPath, threadRootPath]);
 
   const builder = doc()
     .title(safeTitle)
     .tag('chat', 'inbox', 'external-query')
     .property('title', safeTitle)
     .property('schema', 'chat-inbox/v1')
-    .property('created', params.now.toISOString())
+    .property('created', observedAt)
+    .property('observed_at', observedAt)
+    .property('valid_at', observedAt)
     .property('source', 'api-chat')
     .property('guild_id', params.guildId || 'system')
     .property('requester_id', params.requesterId)
     .property('requester_kind', params.requesterKind)
     .property('thread_root', threadRootPath)
+    .property('canonical_key', stripMarkdownExtension(threadRootPath))
     .property('status', 'open')
     .section('Request')
     .line(params.message)
     .section('Handling')
     .line('This note was created by the external inbox chat route before retrieval and response generation.');
+
+  if (sourceRefs.length > 0) {
+    builder.property('source_refs', sourceRefs);
+  }
 
   if (params.replyToPath) {
     builder
@@ -237,7 +287,7 @@ export const buildAnswerChatNote = (params: AnswerNoteParams): {
   fileName: string;
   content: string;
   tags: string[];
-  properties: Record<string, string | number | boolean>;
+  properties: Record<string, ObsidianFrontmatterValue>;
 } => {
   const safeTitle = toStringParam(params.title).slice(0, MAX_TITLE_CHARS) || 'Inbox Chat';
   const fileName = buildAnswerNotePath({
@@ -248,23 +298,35 @@ export const buildAnswerChatNote = (params: AnswerNoteParams): {
   });
   const threadRootPath = params.threadRootPath || params.requestNotePath || params.replyToPath || fileName;
   const sourceFiles = dedupeStrings([params.requestNotePath, params.replyToPath, ...(params.ragResult?.sourceFiles || [])]).slice(0, 8);
+  const observedAt = params.now.toISOString();
 
   const builder = doc()
     .title(`${safeTitle} Answer`)
     .tag('chat', 'answer', 'external-query')
     .property('title', `${safeTitle} Answer`)
     .property('schema', 'chat-answer/v1')
-    .property('created', params.now.toISOString())
+    .property('created', observedAt)
+    .property('observed_at', observedAt)
+    .property('valid_at', observedAt)
     .property('source', 'api-chat')
     .property('guild_id', params.guildId || 'system')
     .property('requester_id', params.requesterId)
     .property('requester_kind', params.requesterKind)
     .property('thread_root', threadRootPath)
+    .property('canonical_key', stripMarkdownExtension(threadRootPath))
     .property('status', 'answered')
+    .property('source_count', sourceFiles.length)
     .section('Question')
     .line(params.question)
     .section('Answer')
     .line(params.answer);
+
+  if (sourceFiles.length > 0) {
+    builder.property('source_refs', sourceFiles);
+  }
+  if (params.ragResult?.intent) {
+    builder.property('retrieval_intent', params.ragResult.intent);
+  }
 
   if (params.requestNotePath) {
     builder.property('request_note', params.requestNotePath).derivedFrom(params.requestNotePath, 'Request Note');
@@ -287,16 +349,21 @@ export const buildAnswerChatNote = (params: AnswerNoteParams): {
 };
 
 export const evaluateInboxChatStatus = (params: {
-  vaultConfigured: boolean;
+  vaultPath: string;
   llmConfigured: boolean;
   searchAdapter: string | null;
   writeAdapter: string | null;
 }): InboxChatStatus => {
+  const searchReady = Boolean(params.searchAdapter)
+    && (NON_FILESYSTEM_ADAPTERS.has(String(params.searchAdapter)) || (Boolean(params.vaultPath) && existsSync(params.vaultPath)));
+  const writeReady = Boolean(params.writeAdapter)
+    && (NON_FILESYSTEM_ADAPTERS.has(String(params.writeAdapter)) || (Boolean(params.vaultPath) && existsSync(params.vaultPath)));
+
   const reasons: string[] = [];
-  if (!params.vaultConfigured) reasons.push('vault_not_ready');
   if (!params.llmConfigured) reasons.push('llm_not_configured');
-  if (!params.searchAdapter) reasons.push('search_adapter_missing');
-  if (!params.writeAdapter) reasons.push('write_adapter_missing');
+  if (!searchReady) reasons.push('search_adapter_missing');
+  if (!writeReady) reasons.push('write_adapter_missing');
+  if (!searchReady && !writeReady) reasons.push('vault_not_ready');
 
   const searchLocal = params.searchAdapter ? LOCAL_ADAPTERS.has(params.searchAdapter) : false;
   const writeLocal = params.writeAdapter ? LOCAL_ADAPTERS.has(params.writeAdapter) : false;
@@ -308,12 +375,170 @@ export const evaluateInboxChatStatus = (params: {
     else mode = 'remote-first';
   }
 
-  const reachable = params.vaultConfigured && params.llmConfigured;
+  const reachable = searchReady && params.llmConfigured;
   return {
     reachable,
-    localFirstReady: reachable && mode === 'local-first',
+    localFirstReady: reachable && writeReady && mode === 'local-first',
     mode,
     reasons,
+  };
+};
+
+export const processInboxChatNote = async (params: ProcessInboxChatNoteParams): Promise<ProcessInboxChatNoteResult> => {
+  const vaultPath = getObsidianVaultRoot() || '';
+  const adapterStatus = getObsidianAdapterRuntimeStatus();
+  const readiness = evaluateInboxChatStatus({
+    vaultPath,
+    llmConfigured: isAnyLlmConfigured(),
+    searchAdapter: adapterStatus.selectedByCapability.search_vault,
+    writeAdapter: adapterStatus.selectedByCapability.write_note,
+  });
+
+  if (!readiness.reachable) {
+    throw new Error('LOCAL_FIRST_CHAT_NOT_READY');
+  }
+
+  const warnings: string[] = [];
+  if (adapterStatus.routingState.remoteMcpCircuitOpen) {
+    warnings.push(`remote_mcp_deprioritized:${adapterStatus.routingState.remoteMcpCircuitReason || 'unknown'}`);
+  }
+  let replyToContent: string | null = null;
+  if (params.replyToPath) {
+    try {
+      replyToContent = await readObsidianFileWithAdapter({
+        vaultPath,
+        filePath: params.replyToPath,
+      });
+      if (!replyToContent) warnings.push('reply_to_note_missing');
+    } catch (error) {
+      warnings.push(`reply_to_read_failed:${getErrorMessage(error)}`);
+    }
+  }
+
+  const derivedThreadRootPath = params.threadRootPath
+    || readFrontmatterProperty(replyToContent, 'thread_root')
+    || params.replyToPath
+    || params.notePath;
+
+  let ragResult: RAGQueryResult | null = null;
+  try {
+    ragResult = await queryObsidianRAG(params.message, {
+      maxDocs: params.maxDocs,
+      contextMode: params.contextMode,
+      guildId: params.guildId || undefined,
+    });
+  } catch (error) {
+    warnings.push(`rag_query_failed:${getErrorMessage(error)}`);
+  }
+
+  const prompt = buildLlmPrompt({
+    message: params.message,
+    noteContent: params.noteContent,
+    notePath: params.notePath,
+    replyToPath: params.replyToPath || null,
+    replyToContent,
+    threadRootPath: derivedThreadRootPath || params.notePath,
+    ragResult,
+    contextMode: params.contextMode,
+  });
+
+  let answer = '';
+  try {
+    answer = await generateText({
+      system: prompt.system,
+      user: prompt.user,
+      maxTokens: MAX_TOKENS,
+      guildId: params.guildId || undefined,
+      requestedBy: params.requesterId,
+      actionName: 'chat.inbox',
+      providerProfile: 'cost-optimized',
+    });
+  } catch (error) {
+    warnings.push(`llm_generation_failed:${getErrorMessage(error)}`);
+    answer = buildFallbackAnswer({ message: params.message, notePath: params.notePath, ragResult });
+  }
+
+  const answeredAt = new Date();
+  const effectiveThreadRootPath = derivedThreadRootPath || params.notePath || 'chat/inbox';
+  let answerNotePath: string | null = null;
+
+  if (params.persist) {
+    const answerNote = buildAnswerChatNote({
+      question: params.message,
+      title: params.title,
+      answer,
+      guildId: params.guildId,
+      requesterId: params.requesterId,
+      requesterKind: params.requesterKind,
+      now: answeredAt,
+      requestNotePath: params.notePath,
+      replyToPath: params.replyToPath || undefined,
+      threadRootPath: effectiveThreadRootPath,
+      ragResult,
+    });
+
+    try {
+      const result = await writeObsidianNoteWithAdapter({
+        guildId: params.guildId,
+        vaultPath,
+        fileName: answerNote.fileName,
+        content: answerNote.content,
+        tags: answerNote.tags,
+        properties: answerNote.properties,
+      });
+      answerNotePath = result?.path || null;
+      if (!answerNotePath) warnings.push('answer_note_write_failed');
+    } catch (error) {
+      warnings.push(`answer_note_write_failed:${getErrorMessage(error)}`);
+    }
+
+    if (params.notePath) {
+      try {
+        const currentInboxNote = await readObsidianFileWithAdapter({
+          vaultPath,
+          filePath: params.notePath,
+        });
+        const updatedInboxNote = annotateInboxNoteWithAnswer({
+          markdown: currentInboxNote || params.noteContent,
+          answeredAt,
+          answerSummary: summarizeAnswer(answer),
+          answerNotePath,
+          replyToPath: params.replyToPath || null,
+          threadRootPath: effectiveThreadRootPath,
+        });
+        const rewrite = await writeObsidianNoteWithAdapter({
+          guildId: params.guildId,
+          vaultPath,
+          fileName: params.notePath,
+          content: updatedInboxNote,
+          tags: params.noteTags,
+          properties: params.noteProperties,
+        });
+        if (!rewrite?.path) warnings.push('inbox_note_update_failed');
+      } catch (error) {
+        warnings.push(`inbox_note_update_failed:${getErrorMessage(error)}`);
+      }
+    }
+  }
+
+  return {
+    answer,
+    answerNote: {
+      persisted: Boolean(answerNotePath),
+      path: answerNotePath,
+    },
+    thread: {
+      replyToPath: params.replyToPath || null,
+      threadRootPath: effectiveThreadRootPath,
+    },
+    retrieval: {
+      intent: ragResult?.intent ?? null,
+      documentCount: ragResult?.documentCount ?? 0,
+      executionTimeMs: ragResult?.executionTimeMs ?? 0,
+      sourceFiles: dedupeStrings([params.replyToPath, params.notePath, ...(ragResult?.sourceFiles || [])]),
+    },
+    localFirst: readiness,
+    warnings,
   };
 };
 
@@ -396,23 +621,24 @@ const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
 export const createChatRouter = (): Router => {
   const router = Router();
 
-  router.get('/status', (req, res) => {
+  router.get('/status', async (req, res) => {
     if (!requireRouteAuth(req, res)) return;
 
     const adapterStatus = getObsidianAdapterRuntimeStatus();
-    const vaultPath = getObsidianVaultRoot();
-    const vaultConfigured = Boolean(vaultPath) && existsSync(vaultPath);
+    const vaultPath = getObsidianVaultRoot() || '';
     const llmConfigured = isAnyLlmConfigured();
     const readiness = evaluateInboxChatStatus({
-      vaultConfigured,
+      vaultPath,
       llmConfigured,
       searchAdapter: adapterStatus.selectedByCapability.search_vault,
       writeAdapter: adapterStatus.selectedByCapability.write_note,
     });
+    const vaultHealth = await getObsidianVaultLiveHealthStatus();
 
     res.json({
       ok: true,
       readiness,
+      vaultHealth,
       auth: {
         session: true,
         bearerTokenConfigured: Boolean(MCP_WORKER_AUTH_TOKEN.trim()),
@@ -423,10 +649,13 @@ export const createChatRouter = (): Router => {
         routeProviderProfile: 'cost-optimized',
       },
       obsidian: {
-        vaultConfigured,
+        vaultConfigured: Boolean(vaultPath) && existsSync(vaultPath),
         selectedSearchAdapter: adapterStatus.selectedByCapability.search_vault,
         selectedWriteAdapter: adapterStatus.selectedByCapability.write_note,
         configuredOrder: adapterStatus.configuredOrder,
+        effectiveOrderByCapability: adapterStatus.effectiveOrderByCapability,
+        routingState: adapterStatus.routingState,
+        remoteMcp: adapterStatus.remoteMcp,
       },
     });
   });
@@ -449,16 +678,16 @@ export const createChatRouter = (): Router => {
     const replyToPath = sanitizeNotePath(req.body?.replyToPath) || null;
     const explicitThreadRootPath = sanitizeNotePath(req.body?.threadRootPath) || null;
 
-    const vaultPath = getObsidianVaultRoot();
+    const vaultPath = getObsidianVaultRoot() || '';
     const adapterStatus = getObsidianAdapterRuntimeStatus();
     const readiness = evaluateInboxChatStatus({
-      vaultConfigured: Boolean(vaultPath) && existsSync(vaultPath),
+      vaultPath,
       llmConfigured: isAnyLlmConfigured(),
       searchAdapter: adapterStatus.selectedByCapability.search_vault,
       writeAdapter: adapterStatus.selectedByCapability.write_note,
     });
 
-    if (!readiness.reachable || !vaultPath) {
+    if (!readiness.reachable) {
       return res.status(503).json({
         ok: false,
         error: 'LOCAL_FIRST_CHAT_NOT_READY',
@@ -485,7 +714,7 @@ export const createChatRouter = (): Router => {
       || replyToPath;
 
     const requesterId = req.user?.id || 'external';
-    const requesterKind: 'session' | 'bearer' = req.user ? 'session' : 'bearer';
+    const requesterKind: InboxChatRequesterKind = req.user ? 'session' : 'bearer';
     const note = buildInboxChatNote({
       message,
       title,
@@ -515,141 +744,35 @@ export const createChatRouter = (): Router => {
       }
     }
 
-    let ragResult: RAGQueryResult | null = null;
-    try {
-      ragResult = await queryObsidianRAG(message, {
-        maxDocs,
-        contextMode,
-        guildId: guildId || undefined,
-      });
-    } catch (error) {
-      warnings.push(`rag_query_failed:${getErrorMessage(error)}`);
-    }
-
-    const prompt = buildLlmPrompt({
+    const result = await processInboxChatNote({
       message,
+      title,
+      guildId,
+      requesterId,
+      requesterKind,
       noteContent: note.content,
       notePath: inboxNotePath,
-      replyToPath,
-      replyToContent,
-      threadRootPath: derivedThreadRootPath || inboxNotePath || note.fileName,
-      ragResult,
+      persist,
+      maxDocs,
       contextMode,
+      replyToPath,
+      threadRootPath: derivedThreadRootPath,
+      noteTags: note.tags,
+      noteProperties: note.properties,
     });
-
-    let answer = '';
-    try {
-      answer = await generateText({
-        system: prompt.system,
-        user: prompt.user,
-        maxTokens: MAX_TOKENS,
-        guildId: guildId || undefined,
-        requestedBy: req.user?.id || requesterId,
-        actionName: 'chat.inbox',
-        providerProfile: 'cost-optimized',
-      });
-    } catch (error) {
-      warnings.push(`llm_generation_failed:${getErrorMessage(error)}`);
-      answer = buildFallbackAnswer({ message, notePath: inboxNotePath, ragResult });
-    }
-
-    const answeredAt = new Date();
-    const effectiveThreadRootPath = derivedThreadRootPath || inboxNotePath || note.fileName;
-    let answerNotePath: string | null = null;
-
-    if (persist) {
-      const answerNote = buildAnswerChatNote({
-        question: message,
-        title,
-        answer,
-        guildId,
-        requesterId,
-        requesterKind,
-        now: answeredAt,
-        requestNotePath: inboxNotePath,
-        replyToPath,
-        threadRootPath: effectiveThreadRootPath,
-        ragResult,
-      });
-
-      try {
-        const result = await writeObsidianNoteWithAdapter({
-          guildId,
-          vaultPath,
-          fileName: answerNote.fileName,
-          content: answerNote.content,
-          tags: answerNote.tags,
-          properties: answerNote.properties,
-        });
-        answerNotePath = result?.path || null;
-        if (!answerNotePath) warnings.push('answer_note_write_failed');
-      } catch (error) {
-        warnings.push(`answer_note_write_failed:${getErrorMessage(error)}`);
-      }
-
-      if (inboxNotePath) {
-        try {
-          const currentInboxNote = await readObsidianFileWithAdapter({
-            vaultPath,
-            filePath: inboxNotePath,
-          });
-          if (!currentInboxNote) {
-            warnings.push('inbox_note_read_failed');
-          } else {
-            const updatedInboxNote = annotateInboxNoteWithAnswer({
-              markdown: currentInboxNote,
-              answeredAt,
-              answerSummary: summarizeAnswer(answer),
-              answerNotePath,
-              replyToPath,
-              threadRootPath: effectiveThreadRootPath,
-            });
-            const rewrite = await writeObsidianNoteWithAdapter({
-              guildId,
-              vaultPath,
-              fileName: inboxNotePath,
-              content: updatedInboxNote,
-              tags: note.tags,
-              properties: {
-                ...note.properties,
-                status: 'answered',
-                answered_at: answeredAt.toISOString(),
-                thread_root: effectiveThreadRootPath,
-                ...(replyToPath ? { in_reply_to: replyToPath } : {}),
-                ...(answerNotePath ? { answer_note: answerNotePath } : {}),
-              },
-            });
-            if (!rewrite?.path) warnings.push('inbox_note_update_failed');
-          }
-        } catch (error) {
-          warnings.push(`inbox_note_update_failed:${getErrorMessage(error)}`);
-        }
-      }
-    }
 
     return res.json({
       ok: true,
-      answer,
+      answer: result.answer,
       inbox: {
         persisted: Boolean(inboxNotePath),
         path: inboxNotePath,
       },
-      answerNote: {
-        persisted: Boolean(answerNotePath),
-        path: answerNotePath,
-      },
-      thread: {
-        replyToPath,
-        threadRootPath: effectiveThreadRootPath,
-      },
-      retrieval: {
-        intent: ragResult?.intent ?? null,
-        documentCount: ragResult?.documentCount ?? 0,
-        executionTimeMs: ragResult?.executionTimeMs ?? 0,
-        sourceFiles: dedupeStrings([replyToPath, inboxNotePath, ...(ragResult?.sourceFiles || [])]),
-      },
-      localFirst: readiness,
-      warnings,
+      answerNote: result.answerNote,
+      thread: result.thread,
+      retrieval: result.retrieval,
+      localFirst: result.localFirst,
+      warnings: dedupeStrings([...warnings, ...result.warnings]),
     });
   });
 

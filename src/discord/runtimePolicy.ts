@@ -88,9 +88,9 @@ const parseCommandAllowlist = (): ReadonlySet<string> => {
     return new Set(parseCsvList(DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW));
   }
   return new Set([
-    'ping', 'help', '도움말', '로그인', '구독', '해줘', '만들어줘',
+    'ping', 'help', '도움말', '로그인', '구독', '뮤엘', '해줘', '만들어줘',
     '주가', '차트', '상태', '설정', '정책', '세션', '관리설정',
-    '잊어줘', '학습', '유저', '유저 프로필 보기', '유저 메모 추가',
+    '잊어줘', '학습', '유저', '프로필', '메모', '유저 프로필 보기', '유저 메모 추가',
   ]);
 };
 export const SIMPLE_COMMAND_ALLOWLIST: ReadonlySet<string> = parseCommandAllowlist();

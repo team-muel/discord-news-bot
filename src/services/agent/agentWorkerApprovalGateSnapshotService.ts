@@ -14,6 +14,13 @@ import {
 } from '../../config';
 import { getOpencodeExecutionSummary } from '../opencode/opencodeOpsService';
 import { getGuildActionPolicy, listActionApprovalRequests, listGuildActionPolicies } from '../skills/actionGovernanceStore';
+import {
+  canonicalizeActionName,
+  EXECUTOR_ACTION_CANONICAL_NAME,
+  EXECUTOR_ACTION_LEGACY_NAME,
+  expandActionNameAliases,
+  normalizeActionNameList,
+} from '../skills/actions/types';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getWorkerApprovalStoreSnapshot, listApprovals } from '../workerGeneration/workerApprovalStore';
 
@@ -91,7 +98,8 @@ const GATE_RUNS_DIR = path.join(process.cwd(), 'docs', 'planning', 'gate-runs');
 const WEEKLY_SUMMARY_PATH = path.join(GATE_RUNS_DIR, 'WEEKLY_SUMMARY.md');
 const SANDBOX_EVIDENCE_WINDOW_DAYS = 14;
 const SANDBOX_EVIDENCE_MAX_ROWS = 2000;
-const OPENCODE_ACTION_NAME = 'opencode.execute';
+const OPENCODE_ACTION_NAME = EXECUTOR_ACTION_LEGACY_NAME;
+const IMPLEMENT_ACTION_NAME = EXECUTOR_ACTION_CANONICAL_NAME;
 
 const toMaskedRuntimePath = (value: string): string => {
   const relative = path.relative(process.cwd(), value).replace(/\\/g, '/');
@@ -280,7 +288,7 @@ const readSandboxDelegationEvidence = async (params: {
     .from('agent_action_logs')
     .select('action_name,status,verification,created_at')
     .eq('guild_id', params.guildId)
-    .eq('action_name', OPENCODE_ACTION_NAME)
+    .in('action_name', expandActionNameAliases(IMPLEMENT_ACTION_NAME))
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(SANDBOX_EVIDENCE_MAX_ROWS);
@@ -293,7 +301,7 @@ const readSandboxDelegationEvidence = async (params: {
   const parsedRows = rows.map((row) => {
     const markers = parseDelegationMarkers((row as Record<string, unknown>).verification);
     return {
-      actionName: String((row as Record<string, unknown>).action_name || '').trim() || OPENCODE_ACTION_NAME,
+      actionName: canonicalizeActionName((row as Record<string, unknown>).action_name) || IMPLEMENT_ACTION_NAME,
       status: String((row as Record<string, unknown>).status || '').trim() || 'unknown',
       createdAt: String((row as Record<string, unknown>).created_at || '').trim(),
       ...markers,
@@ -436,7 +444,7 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
   ] = await Promise.all([
     getWorkerApprovalStoreSnapshot(),
     listApprovals({ status: 'all' }),
-    getGuildActionPolicy(guildId, 'opencode.execute'),
+    getGuildActionPolicy(guildId, IMPLEMENT_ACTION_NAME),
     listGuildActionPolicies(guildId),
     listActionApprovalRequests({ guildId, limit: recentLimit }),
     getOpencodeExecutionSummary({ guildId, days: SANDBOX_EVIDENCE_WINDOW_DAYS }),
@@ -452,7 +460,7 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
     .slice(0, recentLimit)
     .map((entry) => ({
       id: entry.id,
-      actionName: entry.actionName,
+      actionName: canonicalizeActionName(entry.actionName),
       goal: entry.goal,
       status: entry.status,
       validationPassed: entry.validationPassed,
@@ -466,7 +474,7 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
 
   const recentActionApprovals = approvalRequests.slice(0, recentLimit).map((entry) => ({
     id: entry.id,
-    actionName: entry.actionName,
+    actionName: canonicalizeActionName(entry.actionName),
     status: entry.status,
     requestedBy: entry.requestedBy,
     approvedBy: entry.approvedBy,
@@ -500,10 +508,25 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
     successExecutions: Number(opencodeSummary.executions.success || 0),
     latestGateDecision,
   });
+  const executorPolicy = {
+    canonicalActionName: IMPLEMENT_ACTION_NAME,
+    actionName: canonicalizeActionName(opencodePolicy.actionName),
+    enabled: opencodePolicy.enabled,
+    runMode: opencodePolicy.runMode,
+    updatedAt: opencodePolicy.updatedAt,
+    updatedBy: opencodePolicy.updatedBy,
+  };
 
   return {
     guildId,
     generatedAt: new Date().toISOString(),
+    executorContract: {
+      canonicalActionName: IMPLEMENT_ACTION_NAME,
+      persistedActionName: OPENCODE_ACTION_NAME,
+      legacyActionName: OPENCODE_ACTION_NAME,
+      canonicalWorkerEnvKey: 'MCP_IMPLEMENT_WORKER_URL',
+      legacyWorkerEnvKey: 'MCP_OPENCODE_WORKER_URL',
+    },
     workerApprovals: {
       configuredMode: workerStore.configuredMode,
       activeBackend: workerStore.activeBackend,
@@ -526,16 +549,11 @@ export const buildWorkerApprovalGateSnapshot = async (params: {
       actionPolicyFailOpenOnError,
       actionAllowedActions: actionAllowedActionsRaw === '*'
         ? ['*']
-        : parseCsvList(actionAllowedActionsRaw),
-      opencodeExecutePolicy: {
-        actionName: opencodePolicy.actionName,
-        enabled: opencodePolicy.enabled,
-        runMode: opencodePolicy.runMode,
-        updatedAt: opencodePolicy.updatedAt,
-        updatedBy: opencodePolicy.updatedBy,
-      },
+        : normalizeActionNameList(parseCsvList(actionAllowedActionsRaw)),
+      executorPolicy,
+      opencodeExecutePolicy: { ...executorPolicy },
       guildPolicies: guildPolicies.slice(0, 20).map((policy) => ({
-        actionName: policy.actionName,
+        actionName: canonicalizeActionName(policy.actionName),
         enabled: policy.enabled,
         runMode: policy.runMode,
         updatedAt: policy.updatedAt,

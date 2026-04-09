@@ -4,11 +4,13 @@ import { DISCORD_MESSAGES } from './messages';
 import { hasVibeMessagePrefix, stripVibeMessagePrefix } from './commands/vibe';
 
 describe('Discord Muel entry surface', () => {
-  it('removes the redundant /뮤엘 slash command while keeping /해줘', () => {
+  it('keeps /뮤엘, preserves /해줘 compatibility, and exposes /메모 surface', () => {
     const commandNames = commandDefinitions.map((definition) => String((definition as { name?: string }).name || ''));
 
-    expect(commandNames).not.toContain('뮤엘');
+    expect(commandNames).toContain('뮤엘');
     expect(commandNames).toContain('해줘');
+    expect(commandNames).toContain('프로필');
+    expect(commandNames).toContain('메모');
     expect(commandNames).toContain('만들어줘');
   });
 
@@ -33,7 +35,10 @@ describe('Discord Muel entry surface', () => {
     const utilityOnlyPrompt = DISCORD_MESSAGES.vibe.utilityOnlyPrompt;
 
     expect(onboardingLines[1]).toContain('`뮤엘 ...`');
-    expect(onboardingLines[1]).not.toContain('`/뮤엘`');
+    expect(onboardingLines[1]).toContain('`/뮤엘`');
+    expect(onboardingLines[1]).not.toContain('`/해줘`');
+    expect(onboardingLines[2]).toContain('`/메모`');
+    expect(onboardingLines[2]).toContain('`/프로필`');
     expect(mentionPrompt).toContain('`뮤엘 오늘 뉴스 요약해줘`');
     expect(utilityOnlyPrompt).toContain('`뮤엘 뉴스 요약해줘`');
   });

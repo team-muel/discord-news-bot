@@ -42,6 +42,8 @@ export type ObsidianSearchQuery = {
   limit: number;
 };
 
+export type ObsidianFrontmatterValue = string | number | boolean | string[];
+
 export type ObsidianReadFileQuery = {
   vaultPath: string;
   filePath: string;
@@ -53,7 +55,7 @@ export type ObsidianNoteWriteInput = {
   fileName: string;
   content: string;
   tags?: string[];
-  properties?: Record<string, string | number | boolean | null>;
+  properties?: Record<string, ObsidianFrontmatterValue | null>;
 };
 
 export type ObsidianTask = {

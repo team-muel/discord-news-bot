@@ -39,8 +39,11 @@ describe('chat routes', () => {
     expect(note.fileName.startsWith('chat/inbox/2026-04-09/123456_')).toBe(true);
     expect(note.fileName.endsWith('.md')).toBe(true);
     expect(note.content).toContain('schema: chat-inbox/v1');
+    expect(note.content).toContain('observed_at: 2026-04-09T12:34:56.000Z');
+    expect(note.content).toContain('valid_at: 2026-04-09T12:34:56.000Z');
     expect(note.content).toContain('in_reply_to: chat/answers/2026-04-09/120000_prior-answer.md');
     expect(note.content).toContain('thread_root: chat/inbox/2026-04-09/115900_root.md');
+    expect(note.content).toContain('source_refs: [chat/answers/2026-04-09/120000_prior-answer.md, chat/inbox/2026-04-09/115900_root.md]');
     expect(note.content).toContain('## Request');
     expect(note.content).toContain('Need a local-first answer from my Obsidian inbox note.');
     expect(note.content).toContain('[[chat/answers/2026-04-09/120000_prior-answer]]');
@@ -58,36 +61,59 @@ describe('chat routes', () => {
       requestNotePath: 'chat/inbox/2026-04-09/134500_follow-up-check.md',
       replyToPath: 'chat/answers/2026-04-09/133000_prior-answer.md',
       threadRootPath: 'chat/inbox/2026-04-09/120000_root.md',
-      ragResult: null,
+      ragResult: {
+        answer: 'vault answer',
+        intent: 'development',
+        documentCount: 2,
+        executionTimeMs: 42,
+        sourceFiles: ['guilds/123/chat/context.md'],
+        documentContext: 'Context',
+        contextMode: 'metadata_first',
+        cacheStatus: { hits: 0, misses: 1 },
+      },
     });
 
     expect(note.fileName.startsWith('chat/answers/2026-04-09/134501_')).toBe(true);
     expect(note.content).toContain('schema: chat-answer/v1');
+    expect(note.content).toContain('observed_at: 2026-04-09T13:45:01.000Z');
     expect(note.content).toContain('request_note: chat/inbox/2026-04-09/134500_follow-up-check.md');
     expect(note.content).toContain('in_reply_to: chat/answers/2026-04-09/133000_prior-answer.md');
     expect(note.content).toContain('thread_root: chat/inbox/2026-04-09/120000_root.md');
+    expect(note.content).toContain('source_count: 3');
+    expect(note.content).toContain('retrieval_intent: development');
+    expect(note.content).toContain('source_refs: [chat/inbox/2026-04-09/134500_follow-up-check.md, chat/answers/2026-04-09/133000_prior-answer.md, guilds/123/chat/context.md]');
     expect(note.content).toContain('[[chat/inbox/2026-04-09/134500_follow-up-check|Request Note]]');
     expect(note.content).toContain('[[chat/answers/2026-04-09/133000_prior-answer]]');
   });
 
   it('reports local-first readiness only when both adapters are local', () => {
+    const existingVaultPath = process.cwd();
+
     const local = evaluateInboxChatStatus({
-      vaultConfigured: true,
+      vaultPath: existingVaultPath,
       llmConfigured: true,
       searchAdapter: 'local-fs',
       writeAdapter: 'native-cli',
     });
     const hybrid = evaluateInboxChatStatus({
-      vaultConfigured: true,
+      vaultPath: existingVaultPath,
       llmConfigured: true,
       searchAdapter: 'remote-mcp',
       writeAdapter: 'local-fs',
+    });
+    const remoteOnly = evaluateInboxChatStatus({
+      vaultPath: '',
+      llmConfigured: true,
+      searchAdapter: 'remote-mcp',
+      writeAdapter: 'remote-mcp',
     });
 
     expect(local.localFirstReady).toBe(true);
     expect(local.mode).toBe('local-first');
     expect(hybrid.localFirstReady).toBe(false);
     expect(hybrid.mode).toBe('hybrid');
+    expect(remoteOnly.reachable).toBe(true);
+    expect(remoteOnly.mode).toBe('remote-first');
   });
 
   it('registers the inbox chat endpoints', () => {

@@ -31,7 +31,7 @@ Status note:
 
 원격 유지 대상:
 
-- `opencode.execute`
+- `implement.execute` (legacy runtime id: `opencode.execute`)
 - OpenJarvis unattended autonomy
 - 승인/배포/rollback 경로
 
@@ -60,6 +60,7 @@ Status note:
 - `AI_PROVIDER=ollama`
 - `LLM_PROVIDER_BASE_ORDER=ollama,...`
 - skill/intent/TOT 관련 추론이 로컬 모델을 우선 사용
+- `operate.ops`, `openjarvis.ops`, `eval.*`, `worker.*` 는 `LLM_WORKFLOW_MODEL_BINDINGS` 와 `LLM_WORKFLOW_PROFILE_DEFAULTS` 를 통해 OpenJarvis 상위 orchestration lane으로 고정할 수 있다.
 
 로컬 Ollama가 중단되거나 사용할 수 없으면:
 
@@ -70,28 +71,31 @@ Status note:
 
 - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
 - `ACTION_MCP_STRICT_ROUTING=true`
-- `MCP_OPENCODE_WORKER_URL` 필수 (`local-first-hybrid` 기본값은 `http://127.0.0.1:8787`)
+- `MCP_IMPLEMENT_WORKER_URL` 필수 (`local-first-hybrid` 기본값은 `http://127.0.0.1:8787`; legacy alias `MCP_OPENCODE_WORKER_URL` 지원)
 
 ## 4) 권장 provider 구성
 
 최소 권장:
 
 - `AI_PROVIDER=ollama`
-- `OLLAMA_MODEL=mistral:latest` 또는 로컬에 실제 설치된 모델
+- `OLLAMA_MODEL=qwen2.5:7b-instruct` 또는 로컬에 실제 설치된 모델
 - `LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface`
 - `LLM_PROVIDER_FALLBACK_CHAIN=openclaw,anthropic,openai,gemini,huggingface`
-- `MCP_OPENCODE_WORKER_URL=http://127.0.0.1:8787`
+- `LLM_WORKFLOW_MODEL_BINDINGS=operate.ops=openjarvis:<model>;openjarvis.ops=openjarvis:<model>;eval.*=openjarvis:<model>;worker.*=openjarvis:<model>`
+- `LLM_WORKFLOW_PROFILE_DEFAULTS=operate.ops=quality-optimized;openjarvis.ops=quality-optimized;eval.*=quality-optimized;worker.*=quality-optimized;action.code.*=cost-optimized`
+- `MCP_IMPLEMENT_WORKER_URL=http://127.0.0.1:8787`
 
 권장 이유:
 
 - 로컬 응답이 가장 싸고 빠르다.
 - OpenClaw/LiteLLM 또는 상용 provider를 fallback으로 두면 로컬 장애 시 복원력이 높다.
+- OpenJarvis는 일반 채팅 기본 provider가 아니라 operations/eval/worker 계층으로 고정하는 편이 역할 분리가 명확하다.
 
 ## 5) 운영 가드레일
 
 필수:
 
-- `MCP_OPENCODE_WORKER_URL`
+- `MCP_IMPLEMENT_WORKER_URL`
 - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
 - `ACTION_MCP_STRICT_ROUTING=true`
 
@@ -129,7 +133,7 @@ Status note:
 
 원격 worker 장애:
 
-- `MCP_OPENCODE_WORKER_URL` health 확인
+- `MCP_IMPLEMENT_WORKER_URL` health 확인
 - strict routing 상태에서 fail-open 우회 금지
 - unattended rerun 전 workflow summary 확인
 

@@ -163,6 +163,11 @@ const VAULT_PATH_REGISTRY = [
   { pattern: 'guilds/{guildId}/retros/{date}_retro_{slug}.md', writer: 'obsidianRagService', description: 'Sprint retrospectives' },
   { pattern: 'guilds/{guildId}/memory/{slug}.md', writer: 'memoryConsolidationService', description: 'Consolidated memory notes' },
   { pattern: 'guilds/{guildId}/events/subscriptions/{date}_{mode}_{slug}.md', writer: 'subscriptionNoteWriter', description: 'YouTube subscription content snapshots' },
+  { pattern: 'ops/knowledge-control/INDEX.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge index' },
+  { pattern: 'ops/knowledge-control/LOG.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge event log' },
+  { pattern: 'ops/knowledge-control/LINT.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge lint summary' },
+  { pattern: 'ops/knowledge-control/topics/{topic}.md', writer: 'knowledgeCompilerService', description: 'Topic rollup pages' },
+  { pattern: 'ops/knowledge-control/entities/{entityKey}.md', writer: 'knowledgeCompilerService', description: 'Entity rollup pages' },
   { pattern: 'ops/VAULT_SCHEMA.md', writer: 'authoring (system)', description: 'This schema document (auto-generated)' },
   { pattern: 'ops/TOOL_CATALOG.md', writer: 'authoring (system)', description: 'Available tool adapter catalog (auto-generated)' },
 ] as const;
@@ -203,6 +208,7 @@ export const emitVaultSchema = async (): Promise<{ ok: boolean; reason?: string 
     .bullets([
       '**Raw** (`events/`) — immutable ingested data (telemetry, rewards, topology)',
       '**Wiki** (`sprint-journal/`, `retros/`, `memory/`) — synthesized knowledge from raw sources',
+      '**Compiler** (`ops/knowledge-control/`) — generated index/log/topic/entity surfaces over knowledge notes',
       '**Schema** (`ops/VAULT_SCHEMA.md`) — navigation index (this document)',
     ]);
 

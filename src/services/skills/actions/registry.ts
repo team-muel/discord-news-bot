@@ -32,7 +32,7 @@ import { ragRetrieveAction } from './rag';
 import { stockChartAction, stockQuoteAction } from './stock';
 import { n8nStatusAction, n8nWorkflowListAction, n8nWorkflowExecuteAction, n8nWorkflowTriggerAction, n8nDelegateNewsRssAction, n8nDelegateNewsSummarizeAction, n8nDelegateNewsMonitorAction, n8nDelegateYoutubeFeedAction, n8nDelegateYoutubeScrapAction, n8nDelegateAlertAction, n8nDelegateArticleContextAction } from './n8n';
 import { toolsRunCliAction } from './tools';
-import type { ActionDefinition, ActionCategory } from './types';
+import { EXECUTOR_ACTION_LEGACY_NAME, type ActionDefinition, type ActionCategory } from './types';
 import { webFetchAction } from './web';
 import { webSearchAction } from './webSearch';
 import { youtubeSearchFirstAction } from './youtube';
@@ -101,7 +101,7 @@ registerActions(
   privacyForgetUserAction, privacyForgetGuildAction, investmentAnalysisAction,
   newsGoogleSearchAction, newsVerifyAction, opencodeExecuteAction,
 );
-registerAlias('implement.execute', 'Neutral alias for opencode.execute.', opencodeExecuteAction);
+registerAlias(EXECUTOR_ACTION_LEGACY_NAME, 'Legacy alias for canonical implement.execute executor action.', opencodeExecuteAction);
 
 // Infrastructure / ops
 registerActions(

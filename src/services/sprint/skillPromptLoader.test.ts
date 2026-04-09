@@ -15,7 +15,7 @@ describe('skillPromptLoader', () => {
       expect(getPhaseActionName('plan')).toBe('architect.plan');
     });
 
-    it('implement → opencode.execute', () => {
+    it('implement → implement.execute', () => {
       expect(getPhaseActionName('implement')).toBe('implement.execute');
     });
 

@@ -37,6 +37,11 @@ const ADVISORY_ACTION_WORKER_IDS: Record<string, 'coordinate' | 'architect' | 'r
   'tools.run.cli': 'operate',
 };
 
+const EXECUTOR_ACTION_CANONICAL_NAME = 'implement.execute';
+const EXECUTOR_ACTION_PERSISTED_NAME = 'opencode.execute';
+const EXECUTOR_WORKER_ENV_CANONICAL_KEY = 'MCP_IMPLEMENT_WORKER_URL';
+const EXECUTOR_WORKER_ENV_LEGACY_KEY = 'MCP_OPENCODE_WORKER_URL';
+
 const inferActionRole = (actionName: string): 'operate' | 'implement' | 'review' | 'architect' => {
   const normalized = String(actionName || '').trim().toLowerCase();
   if (normalized.startsWith('opencode.') || normalized.startsWith('implement.')) {
@@ -66,6 +71,14 @@ const toCatalogEntry = (action: ReturnType<typeof listActions>[number], policy?:
 
 export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
+  const executorContract = {
+    canonicalActionName: EXECUTOR_ACTION_CANONICAL_NAME,
+    persistedActionName: EXECUTOR_ACTION_PERSISTED_NAME,
+    persistedPolicyActionName: EXECUTOR_ACTION_PERSISTED_NAME,
+    legacyActionName: EXECUTOR_ACTION_PERSISTED_NAME,
+    canonicalWorkerEnvKey: EXECUTOR_WORKER_ENV_CANONICAL_KEY,
+    legacyWorkerEnvKey: EXECUTOR_WORKER_ENV_LEGACY_KEY,
+  };
 
   router.get('/agent/super/capabilities', requireAdmin, async (_req, res, next) => {
     return res.json({ ok: true, capabilities: getSuperAgentCapabilities() });
@@ -293,20 +306,20 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     if (!isActionRunMode(runMode)) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'runMode must be auto|approval_required|disabled' });
     }
-    if (!listActions().some((action) => action.name === 'opencode.execute')) {
-      return res.status(500).json({ ok: false, error: 'CONFIG', message: 'opencode.execute action is not registered' });
+    if (!listActions().some((action) => action.name === EXECUTOR_ACTION_PERSISTED_NAME || action.name === EXECUTOR_ACTION_CANONICAL_NAME)) {
+      return res.status(500).json({ ok: false, error: 'CONFIG', message: 'implement.execute / opencode.execute action is not registered' });
     }
 
     try {
       const actorId = toStringParam(req.user?.id) || 'api';
       const policy = await upsertGuildActionPolicy({
         guildId,
-        actionName: 'opencode.execute',
+        actionName: EXECUTOR_ACTION_PERSISTED_NAME,
         enabled,
         runMode,
         actorId,
       });
-      return res.status(202).json({ ok: true, policy });
+      return res.status(202).json({ ok: true, contract: executorContract, policy });
     } catch (error) {
       next(error);
     }
@@ -319,7 +332,7 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     }
 
     const policies = await listGuildActionPolicies(guildId);
-    const opencodePolicy = policies.find((item) => item.actionName === 'opencode.execute') || null;
+    const opencodePolicy = policies.find((item) => item.actionName === EXECUTOR_ACTION_PERSISTED_NAME) || null;
     const effectiveRunMode = opencodePolicy?.runMode || 'approval_required';
     const profile = effectiveRunMode === 'auto'
       ? 'conditional_auto'
@@ -331,12 +344,14 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       ok: true,
       guildId,
       profile,
+      contract: executorContract,
       effective: {
-        actionName: 'opencode.execute',
+        actionName: EXECUTOR_ACTION_CANONICAL_NAME,
+        persistedActionName: EXECUTOR_ACTION_PERSISTED_NAME,
         runMode: effectiveRunMode,
         enabled: opencodePolicy?.enabled ?? true,
       },
-      note: 'self-growth profile currently controls opencode.execute governance mode',
+      note: 'self-growth profile exposes implement.execute as canonical executor action while persisting governance under opencode.execute for backward compatibility',
     });
   });
 
@@ -357,12 +372,12 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
       const actorId = toStringParam(req.user?.id) || 'api';
       const policy = await upsertGuildActionPolicy({
         guildId,
-        actionName: 'opencode.execute',
+        actionName: EXECUTOR_ACTION_PERSISTED_NAME,
         enabled: profile !== 'disabled',
         runMode,
         actorId,
       });
-      return res.status(202).json({ ok: true, guildId, profile, policy });
+      return res.status(202).json({ ok: true, guildId, profile, contract: executorContract, policy });
     } catch (error) {
       next(error);
     }

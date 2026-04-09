@@ -19,6 +19,7 @@ const startLoginSessionCleanupLoop = vi.fn();
 const bootstrapPgCronJobs = vi.fn(() => Promise.resolve({ enabled: true, jobs: [] }));
 const getPgCronReplacedLoops = vi.fn(() => new Set<string>());
 const startConsolidationLoop = vi.fn();
+const startObsidianInboxChatLoop = vi.fn();
 
 vi.mock('../automationBot', () => ({
   isAutomationEnabled,
@@ -27,6 +28,7 @@ vi.mock('../automationBot', () => ({
 }));
 vi.mock('../memory/memoryJobRunner', () => ({ startMemoryJobRunner }));
 vi.mock('../memory/memoryConsolidationService', () => ({ startConsolidationLoop }));
+vi.mock('../obsidian/obsidianInboxChatLoopService', () => ({ startObsidianInboxChatLoop }));
 vi.mock('../obsidian/obsidianLoreSyncService', () => ({ startObsidianLoreSyncLoop }));
 vi.mock('../eval/retrievalEvalLoopService', () => ({ startRetrievalEvalLoop }));
 vi.mock('../eval/rewardSignalLoopService', () => ({ startRewardSignalLoop }));
@@ -69,6 +71,7 @@ describe('runtimeBootstrap', () => {
     expect(startAutomationJobs).toHaveBeenCalledTimes(1);
     expect(startMemoryJobRunner).toHaveBeenCalledTimes(1);
     expect(startConsolidationLoop).toHaveBeenCalledTimes(1);
+    expect(startObsidianInboxChatLoop).toHaveBeenCalledTimes(1);
     expect(startOpencodePublishWorker).toHaveBeenCalledTimes(1);
     expect(startRuntimeAlerts).toHaveBeenCalledTimes(1);
     expect(startBotAutoRecovery).toHaveBeenCalledTimes(1);
@@ -105,6 +108,7 @@ describe('runtimeBootstrap', () => {
 
     // shared loop는 server runtime에서 이미 시작했으므로 추가 실행되지 않는다.
     expect(startMemoryJobRunner).toHaveBeenCalledTimes(1);
+    expect(startObsidianInboxChatLoop).toHaveBeenCalledTimes(1);
 
     expect(runtime.getRuntimeBootstrapState()).toMatchObject({
       serverStarted: true,
@@ -150,6 +154,7 @@ describe('runtimeBootstrap', () => {
 
     // pg_cron과 무관한 루프는 정상 실행
     expect(startMemoryJobRunner).toHaveBeenCalledTimes(1);
+    expect(startObsidianInboxChatLoop).toHaveBeenCalledTimes(1);
 
     expect(runtime.getRuntimeBootstrapState()).toMatchObject({
       serverStarted: true,

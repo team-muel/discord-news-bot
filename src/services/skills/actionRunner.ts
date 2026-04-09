@@ -13,6 +13,7 @@ import { setGateProviderProfileOverride, type LlmProviderProfile } from '../llmC
 import { getAction } from './actions/registry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
+import { EXECUTOR_ACTION_CANONICAL_NAME, normalizeActionNameList } from './actions/types';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseStringEnv } from '../../utils/env';
@@ -37,7 +38,7 @@ export type { SkillActionResult, FailureDiagnostics } from './actionRunnerDiagno
 
 /** Actions that require approval_required enforcement regardless of guild policy runMode. */
 const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
-  parseCsvList(process.env.HIGH_RISK_APPROVAL_ACTIONS || 'opencode.execute'),
+  normalizeActionNameList(parseCsvList(process.env.HIGH_RISK_APPROVAL_ACTIONS || EXECUTOR_ACTION_CANONICAL_NAME)),
 );
 
 /**

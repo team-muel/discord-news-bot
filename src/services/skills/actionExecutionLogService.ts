@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
-import { inferAgentRoleByActionName, normalizeAgentRole, type AgentRoleName } from './actions/types';
+import { canonicalizeActionName, inferAgentRoleByActionName, normalizeAgentRole, type AgentRoleName } from './actions/types';
 
 type AgentRole = AgentRoleName;
 
@@ -55,12 +55,16 @@ export const logActionExecutionEvent = async (event: ActionExecutionLogEvent) =>
 
   try {
     const client = getSupabaseClient();
-    const verification = appendRoutingVerification(event);
+    const actionName = canonicalizeActionName(event.actionName);
+    const verification = appendRoutingVerification({
+      ...event,
+      actionName,
+    });
     await client.from('agent_action_logs').insert({
       guild_id: event.guildId,
       requested_by: event.requestedBy,
       goal: String(event.goal || '').slice(0, 1200),
-      action_name: event.actionName,
+      action_name: actionName,
       status: event.ok ? 'success' : 'failed',
       summary: String(event.summary || '').slice(0, 1200),
       artifacts: event.artifacts,

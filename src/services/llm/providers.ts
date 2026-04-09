@@ -33,6 +33,7 @@ import {
   OPENJARVIS_MODEL,
   OPENJARVIS_SERVE_URL,
 } from '../../config';
+import { getErrorMessage } from '../../utils/errorMessage';
 import { parseCsvList } from '../../utils/env';
 import { fetchWithTimeout as baseFetchWithTimeout } from '../../utils/network';
 import { logStructuredError } from '../structuredErrorLogService';
@@ -41,6 +42,7 @@ import { sendGatewayChat, isModelOnCooldown, setModelCooldown, getModelCooldownU
 // ──── Shared Types ───────────────────────────────────────────────────────────
 
 export type LlmProvider = 'openai' | 'gemini' | 'anthropic' | 'openclaw' | 'ollama' | 'huggingface' | 'openjarvis' | 'litellm' | 'kimi';
+const ALL_LLM_PROVIDERS: readonly LlmProvider[] = ['openai', 'gemini', 'anthropic', 'openclaw', 'ollama', 'huggingface', 'openjarvis', 'litellm', 'kimi'];
 
 export type LlmProviderProfile = 'cost-optimized' | 'quality-optimized';
 
@@ -73,6 +75,18 @@ export type LlmTextWithMetaResponse = {
   } | null;
   avgLogprob?: number;
   normalizedQualityScore?: number;
+};
+
+export type LlmProviderRuntimeStatus = 'ready' | 'unknown' | 'cooldown' | 'unreachable';
+
+export type LlmProviderRuntimeReadiness = {
+  provider: LlmProvider;
+  configured: boolean;
+  status: LlmProviderRuntimeStatus;
+  checkedAt: number;
+  reason: string | null;
+  cooldownUntil: number | null;
+  consecutiveFailures: number;
 };
 
 // ──── Provider Configuration Helpers ─────────────────────────────────────────
@@ -111,6 +125,171 @@ export const isAnyLlmConfigured = (): boolean => Boolean(
     || OPENJARVIS_ENABLED
     || LITELLM_ENABLED,
 );
+
+type ProviderRuntimeState = {
+  checkedAt: number;
+  probeStatus: LlmProviderRuntimeStatus;
+  probeReason: string | null;
+  cooldownUntil: number;
+  consecutiveFailures: number;
+  lastSuccessAt: number;
+  lastFailureAt: number;
+};
+
+const providerRuntimeState = new Map<LlmProvider, ProviderRuntimeState>();
+const PROVIDER_READINESS_CACHE_TTL_MS = 15_000;
+const PROVIDER_READINESS_PROBE_TIMEOUT_MS = 3_500;
+const PROVIDER_FAILURE_COOLDOWN_MS = 45_000;
+
+const ensureProviderRuntimeState = (provider: LlmProvider): ProviderRuntimeState => {
+  const existing = providerRuntimeState.get(provider);
+  if (existing) return existing;
+  const created: ProviderRuntimeState = {
+    checkedAt: 0,
+    probeStatus: 'unknown',
+    probeReason: null,
+    cooldownUntil: 0,
+    consecutiveFailures: 0,
+    lastSuccessAt: 0,
+    lastFailureAt: 0,
+  };
+  providerRuntimeState.set(provider, created);
+  return created;
+};
+
+const joinHealthUrl = (baseUrl: string, suffix: string): string => `${baseUrl.replace(/\/+$/g, '')}${suffix}`;
+
+const getProviderProbeUrl = (provider: LlmProvider): string | null => {
+  if (provider === 'ollama') return joinHealthUrl(OLLAMA_BASE_URL, '/api/tags');
+  if (provider === 'openjarvis') return joinHealthUrl(OPENJARVIS_SERVE_URL, '/health');
+  if (provider === 'litellm') return joinHealthUrl(LITELLM_BASE_URL, '/health/liveliness');
+  return null;
+};
+
+const buildProviderReadiness = (provider: LlmProvider, now = Date.now()): LlmProviderRuntimeReadiness => {
+  const configured = isProviderConfigured(provider);
+  const state = ensureProviderRuntimeState(provider);
+
+  let status: LlmProviderRuntimeStatus = 'unknown';
+  if (!configured) {
+    status = 'unreachable';
+  } else if (state.cooldownUntil > now) {
+    status = 'cooldown';
+  } else if (state.probeStatus === 'ready' || state.lastSuccessAt > 0) {
+    status = 'ready';
+  } else if (state.probeStatus === 'unreachable') {
+    status = 'unreachable';
+  }
+
+  return {
+    provider,
+    configured,
+    status,
+    checkedAt: state.checkedAt,
+    reason: state.probeReason,
+    cooldownUntil: state.cooldownUntil > 0 ? state.cooldownUntil : null,
+    consecutiveFailures: state.consecutiveFailures,
+  };
+};
+
+export const resetProviderRuntimeReadiness = (): void => {
+  providerRuntimeState.clear();
+};
+
+export const recordProviderCallSuccess = (provider: LlmProvider): void => {
+  const state = ensureProviderRuntimeState(provider);
+  const now = Date.now();
+  state.checkedAt = now;
+  state.probeStatus = 'ready';
+  state.probeReason = null;
+  state.cooldownUntil = 0;
+  state.consecutiveFailures = 0;
+  state.lastSuccessAt = now;
+};
+
+export const recordProviderCallFailure = (provider: LlmProvider, error: unknown): void => {
+  const state = ensureProviderRuntimeState(provider);
+  const now = Date.now();
+  const failureMessage = getErrorMessage(error);
+  const cooldownMs = Math.min(PROVIDER_FAILURE_COOLDOWN_MS * Math.max(1, state.consecutiveFailures + 1), PROVIDER_FAILURE_COOLDOWN_MS * 4);
+
+  state.checkedAt = now;
+  state.probeStatus = 'unreachable';
+  state.probeReason = failureMessage;
+  state.cooldownUntil = now + cooldownMs;
+  state.consecutiveFailures += 1;
+  state.lastFailureAt = now;
+};
+
+export const getProviderRuntimeReadiness = async (provider: LlmProvider): Promise<LlmProviderRuntimeReadiness> => {
+  const now = Date.now();
+  const state = ensureProviderRuntimeState(provider);
+  const configured = isProviderConfigured(provider);
+
+  if (!configured) {
+    state.checkedAt = now;
+    state.probeStatus = 'unreachable';
+    state.probeReason = 'NOT_CONFIGURED';
+    state.cooldownUntil = 0;
+    state.consecutiveFailures = 0;
+    return buildProviderReadiness(provider, now);
+  }
+
+  if (state.cooldownUntil > now) {
+    return buildProviderReadiness(provider, now);
+  }
+
+  const probeUrl = getProviderProbeUrl(provider);
+  if (!probeUrl) {
+    return buildProviderReadiness(provider, now);
+  }
+
+  if (state.checkedAt > 0 && (now - state.checkedAt) < PROVIDER_READINESS_CACHE_TTL_MS) {
+    return buildProviderReadiness(provider, now);
+  }
+
+  try {
+    const response = await baseFetchWithTimeout(probeUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json, text/plain, */*' },
+    }, PROVIDER_READINESS_PROBE_TIMEOUT_MS);
+
+    state.checkedAt = now;
+    if (response.ok) {
+      state.probeStatus = 'ready';
+      state.probeReason = null;
+      return buildProviderReadiness(provider, now);
+    }
+
+    state.probeStatus = 'unreachable';
+    state.probeReason = `PROBE_HTTP_${response.status}`;
+    state.cooldownUntil = now + PROVIDER_READINESS_CACHE_TTL_MS;
+    return buildProviderReadiness(provider, now);
+  } catch (error) {
+    state.checkedAt = now;
+    state.probeStatus = 'unreachable';
+    state.probeReason = getErrorMessage(error);
+    state.cooldownUntil = now + PROVIDER_READINESS_CACHE_TTL_MS;
+    return buildProviderReadiness(provider, now);
+  }
+};
+
+export const preflightProviderChain = async (providers: LlmProvider[]): Promise<LlmProvider[]> => {
+  if (providers.length <= 1) return providers;
+
+  const readiness = await Promise.all(providers.map((provider) => getProviderRuntimeReadiness(provider)));
+  const preferred = readiness
+    .filter((entry) => entry.status === 'ready' || entry.status === 'unknown')
+    .map((entry) => entry.provider);
+
+  return preferred.length > 0 ? preferred : providers;
+};
+
+export const listLlmProviders = (): LlmProvider[] => [...ALL_LLM_PROVIDERS];
+
+export const getLlmRuntimeReadinessSnapshot = async (): Promise<LlmProviderRuntimeReadiness[]> => {
+  return Promise.all(listLlmProviders().map((provider) => getProviderRuntimeReadiness(provider)));
+};
 
 // ──── Fetch Helper ───────────────────────────────────────────────────────────
 

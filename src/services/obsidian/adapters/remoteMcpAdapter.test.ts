@@ -14,10 +14,13 @@ let baseUrl: string;
 let lastRequestBody: Record<string, unknown> | null = null;
 let lastRequestHeaders: http.IncomingHttpHeaders = {};
 let respondWith: { status: number; body: unknown } = { status: 200, body: {} };
+let responseQueue: Array<{ status: number; body: unknown }> = [];
+let requestPaths: string[] = [];
 
 const startServer = async (): Promise<void> => {
   return new Promise((resolve) => {
     server = http.createServer(async (req, res) => {
+      requestPaths.push(req.url || '');
       lastRequestHeaders = req.headers;
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
@@ -26,8 +29,9 @@ const startServer = async (): Promise<void> => {
       } catch {
         lastRequestBody = null;
       }
-      res.writeHead(respondWith.status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(respondWith.body));
+      const nextResponse = responseQueue.shift() || respondWith;
+      res.writeHead(nextResponse.status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(nextResponse.body));
     });
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
@@ -48,6 +52,8 @@ describe('remoteMcpObsidianAdapter', () => {
     lastRequestBody = null;
     lastRequestHeaders = {};
     respondWith = { status: 200, body: {} };
+    responseQueue = [];
+    requestPaths = [];
     await startServer();
   });
 
@@ -56,6 +62,11 @@ describe('remoteMcpObsidianAdapter', () => {
   });
 
   const loadAdapter = async () => {
+    const mod = await loadModule();
+    return mod.remoteMcpObsidianAdapter;
+  };
+
+  const loadModule = async () => {
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', baseUrl);
     // Re-import to pick up new env
     vi.resetModules();
@@ -63,8 +74,7 @@ describe('remoteMcpObsidianAdapter', () => {
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', baseUrl);
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_TOKEN', 'test-token');
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_TIMEOUT_MS', '5000');
-    const mod = await import('./remoteMcpAdapter');
-    return mod.remoteMcpObsidianAdapter;
+    return import('./remoteMcpAdapter');
   };
 
   describe('identity + availability', () => {
@@ -187,6 +197,63 @@ describe('remoteMcpObsidianAdapter', () => {
 
       await adapter.searchVault!({ query: 'x', vaultPath: '/v', limit: 5 });
       expect(lastRequestHeaders['authorization']).toBe('Bearer test-token');
+    });
+  });
+
+  describe('diagnostics', () => {
+    it('records the last remote error after a failed tool call', async () => {
+      const mod = await loadModule();
+      respondWith = { status: 500, body: { error: 'internal' } };
+
+      const results = await mod.remoteMcpObsidianAdapter.searchVault!({ query: 'test', vaultPath: '/v', limit: 5 });
+      const diagnostics = mod.getRemoteMcpAdapterDiagnostics();
+
+      expect(results).toEqual([]);
+      expect(diagnostics.lastToolName).toBe('obsidian.search');
+      expect(diagnostics.lastError).toContain('HTTP 500');
+      expect(diagnostics.consecutiveFailures).toBe(1);
+    });
+
+    it('probes remote health, auth, and remote obsidian status', async () => {
+      const mod = await loadModule();
+      responseQueue = [
+        { status: 200, body: { status: 'ok' } },
+        { status: 200, body: { tools: [{ name: 'obsidian.adapter.status', description: 'status', available: true }] } },
+        {
+          status: 200,
+          body: {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ selectedByCapability: { read_file: 'native-cli', write_note: 'native-cli' } }),
+            }],
+            isError: false,
+          },
+        },
+      ];
+
+      const diagnostics = await mod.probeRemoteMcpAdapter();
+
+      expect(requestPaths).toEqual(['/health', '/tools/discover', '/tools/call']);
+      expect(diagnostics.lastProbe.reachable).toBe(true);
+      expect(diagnostics.lastProbe.authValid).toBe(true);
+      expect(diagnostics.lastProbe.toolDiscoveryOk).toBe(true);
+      expect(diagnostics.lastProbe.remoteObsidianStatusOk).toBe(true);
+      expect(diagnostics.remoteAdapterRuntime?.selectedByCapability).toEqual({ read_file: 'native-cli', write_note: 'native-cli' });
+    });
+
+    it('marks auth failure when tools discovery returns 401', async () => {
+      const mod = await loadModule();
+      responseQueue = [
+        { status: 200, body: { status: 'ok' } },
+        { status: 401, body: { error: 'unauthorized' } },
+      ];
+
+      const diagnostics = await mod.probeRemoteMcpAdapter();
+
+      expect(diagnostics.lastProbe.reachable).toBe(true);
+      expect(diagnostics.lastProbe.authValid).toBe(false);
+      expect(diagnostics.lastProbe.toolDiscoveryOk).toBe(false);
+      expect(diagnostics.lastProbe.error).toBe('remote_mcp_auth_failed');
     });
   });
 });

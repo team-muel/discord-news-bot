@@ -1,12 +1,20 @@
+import path from 'node:path';
 import { parseBooleanEnv, parseCsvList } from '../../utils/env';
 import logger from '../../logger';
 import { nativeCliObsidianAdapter } from './adapters/nativeCliAdapter.ts';
 import { scriptCliObsidianAdapter } from './adapters/scriptCliAdapter.ts';
 import { localFsObsidianAdapter } from './adapters/localFsAdapter.ts';
-import { remoteMcpObsidianAdapter } from './adapters/remoteMcpAdapter.ts';
+import {
+  getRemoteMcpAdapterDiagnostics,
+  probeRemoteMcpAdapter,
+  remoteMcpObsidianAdapter,
+  type RemoteMcpAdapterDiagnostics,
+} from './adapters/remoteMcpAdapter.ts';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
+import { buildObsidianFrontmatter, hasObsidianFrontmatter } from './obsidianDocBuilder';
 import { sanitizeForObsidianWrite } from './obsidianSanitizationWorker';
 import type {
+  ObsidianFrontmatterValue,
   ObsidianCapability,
   ObsidianFileInfo,
   ObsidianLoreQuery,
@@ -24,6 +32,8 @@ import { supportsCapability } from './types';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const DEFAULT_ORDER = ['remote-mcp', 'native-cli', 'script-cli', 'local-fs'];
+const REMOTE_MCP_DEPRIORITIZE_AFTER_FAILURES = 2;
+const REMOTE_MCP_DEPRIORITIZE_WINDOW_MS = 90_000;
 
 const ADAPTER_ORDER = parseCsvList(process.env.OBSIDIAN_ADAPTER_ORDER || DEFAULT_ORDER.join(','));
 
@@ -54,6 +64,52 @@ const registry: Record<string, ObsidianVaultAdapter> = {
 };
 
 const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'];
+
+const parseIsoMs = (value: string | null): number => {
+  const timestamp = Date.parse(String(value || ''));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const getRemoteMcpRoutingState = (): { remoteMcpCircuitOpen: boolean; remoteMcpCircuitReason: string | null } => {
+  const diagnostics = getRemoteMcpAdapterDiagnostics();
+  const now = Date.now();
+  const lastErrorMs = parseIsoMs(diagnostics.lastErrorAt);
+  const lastSuccessMs = parseIsoMs(diagnostics.lastSuccessAt);
+  const lastProbeMs = parseIsoMs(diagnostics.lastProbeAt);
+
+  const recentToolFailures = diagnostics.consecutiveFailures >= REMOTE_MCP_DEPRIORITIZE_AFTER_FAILURES
+    && lastErrorMs > 0
+    && now - lastErrorMs <= REMOTE_MCP_DEPRIORITIZE_WINDOW_MS
+    && lastErrorMs >= lastSuccessMs;
+
+  if (recentToolFailures) {
+    return {
+      remoteMcpCircuitOpen: true,
+      remoteMcpCircuitReason: `recent_tool_failures:${diagnostics.consecutiveFailures}`,
+    };
+  }
+
+  const recentProbeFailure = lastProbeMs > 0
+    && now - lastProbeMs <= REMOTE_MCP_DEPRIORITIZE_WINDOW_MS
+    && (
+      diagnostics.lastProbe.reachable === false
+      || diagnostics.lastProbe.authValid === false
+      || diagnostics.lastProbe.toolDiscoveryOk === false
+      || diagnostics.lastProbe.remoteObsidianStatusOk === false
+    );
+
+  if (recentProbeFailure) {
+    return {
+      remoteMcpCircuitOpen: true,
+      remoteMcpCircuitReason: diagnostics.lastProbe.error || 'recent_probe_failure',
+    };
+  }
+
+  return {
+    remoteMcpCircuitOpen: false,
+    remoteMcpCircuitReason: null,
+  };
+};
 
 const getAdapterOrderForCapability = (capability: ObsidianCapability): string[] => {
   const capabilityOrder = parseCsvList(ORDER_ENV_BY_CAPABILITY[capability]);
@@ -93,6 +149,14 @@ const getOrderedAdapters = (capability?: ObsidianCapability): ObsidianVaultAdapt
     .map((id) => registry[id])
     .filter((adapter): adapter is ObsidianVaultAdapter => Boolean(adapter));
 
+  const routingState = getRemoteMcpRoutingState();
+  if (routingState.remoteMcpCircuitOpen && ordered.length > 1) {
+    const degraded = ordered.filter((adapter) => adapter.id === 'remote-mcp');
+    if (degraded.length > 0 && degraded.length < ordered.length) {
+      return [...ordered.filter((adapter) => adapter.id !== 'remote-mcp'), ...degraded];
+    }
+  }
+
   if (ordered.length > 0) {
     return ordered;
   }
@@ -121,13 +185,18 @@ export const getObsidianAdapterRuntimeStatus = (): {
   strictMode: boolean;
   configuredOrder: string[];
   configuredOrderByCapability: Record<string, string[]>;
-  adapters: Array<{ id: string; available: boolean; capabilities: ReadonlyArray<ObsidianCapability> }>;
+  effectiveOrderByCapability: Record<string, string[]>;
+  adapters: Array<{ id: string; available: boolean; capabilities: ReadonlyArray<ObsidianCapability>; deprioritized: boolean }>;
   selectedByCapability: Record<string, string | null>;
+  routingState: { remoteMcpCircuitOpen: boolean; remoteMcpCircuitReason: string | null };
+  remoteMcp: RemoteMcpAdapterDiagnostics;
 } => {
+  const routingState = getRemoteMcpRoutingState();
   const adapters = getOrderedAdapters().map((adapter) => ({
     id: adapter.id,
     available: adapter.isAvailable(),
     capabilities: adapter.capabilities,
+    deprioritized: routingState.remoteMcpCircuitOpen && adapter.id === 'remote-mcp',
   }));
 
   const selectedByCapability = Object.fromEntries(
@@ -136,14 +205,73 @@ export const getObsidianAdapterRuntimeStatus = (): {
   const configuredOrderByCapability = Object.fromEntries(
     CORE_CAPABILITIES.map((capability) => [capability, getAdapterOrderForCapability(capability)]),
   );
+  const effectiveOrderByCapability = Object.fromEntries(
+    CORE_CAPABILITIES.map((capability) => [
+      capability,
+      getOrderedAdapters(capability)
+        .filter((adapter) => adapter.isAvailable() && supportsCapability(adapter, capability))
+        .map((adapter) => adapter.id),
+    ]),
+  );
 
   return {
     strictMode: OBSIDIAN_ADAPTER_STRICT,
     configuredOrder: [...ADAPTER_ORDER],
     configuredOrderByCapability,
+    effectiveOrderByCapability,
     adapters,
     selectedByCapability,
+    routingState,
+    remoteMcp: getRemoteMcpAdapterDiagnostics(),
   };
+};
+
+const deriveFrontmatterTitle = (content: string, fileName: string): string => {
+  const heading = String(content || '')
+    .split('\n')
+    .find((line) => /^#\s+/.test(line));
+  if (heading) {
+    return heading.replace(/^#\s+/, '').trim();
+  }
+
+  const normalizedFileName = String(fileName || '').replace(/\\/g, '/');
+  return path.posix.basename(normalizedFileName, '.md') || 'Untitled';
+};
+
+const ensureObsidianWriteProperties = (params: ObsidianNoteWriteInput): Record<string, ObsidianFrontmatterValue> => {
+  const properties: Record<string, ObsidianFrontmatterValue> = {};
+  for (const [key, value] of Object.entries(params.properties || {})) {
+    if (value === null || value === undefined) continue;
+    properties[key] = value;
+  }
+
+  if (!String(properties.title || '').trim()) {
+    properties.title = deriveFrontmatterTitle(params.content, params.fileName);
+  }
+  if (!String(properties.created || '').trim()) {
+    properties.created = new Date().toISOString();
+  }
+  if (!String(properties.source || '').trim()) {
+    properties.source = 'obsidian-router';
+  }
+  if (!String(properties.guild_id || '').trim()) {
+    properties.guild_id = params.guildId || 'system';
+  }
+
+  return properties;
+};
+
+const ensureObsidianWriteFrontmatter = (params: ObsidianNoteWriteInput): string => {
+  const normalizedContent = String(params.content || '').trimEnd();
+  if (hasObsidianFrontmatter(normalizedContent)) {
+    return normalizedContent.endsWith('\n') ? normalizedContent : `${normalizedContent}\n`;
+  }
+
+  const frontmatter = buildObsidianFrontmatter({
+    properties: ensureObsidianWriteProperties(params),
+    tags: params.tags,
+  });
+  return `${frontmatter}\n\n${normalizedContent}\n`;
 };
 
 export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Promise<string[]> => {
@@ -197,14 +325,49 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
   return [];
 };
 
-export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput & { trustedSource?: boolean }): Promise<{ path: string } | null> => {
+const maybeCompileKnowledgeArtifacts = async (params: {
+  guildId: string;
+  vaultPath: string;
+  filePath: string;
+  content: string;
+  properties?: Record<string, ObsidianFrontmatterValue | null>;
+  skipKnowledgeCompilation?: boolean;
+}): Promise<void> => {
+  if (params.skipKnowledgeCompilation) {
+    return;
+  }
+
+  try {
+    const { runKnowledgeCompilationForNote } = await import('./knowledgeCompilerService.ts');
+    await runKnowledgeCompilationForNote({
+      guildId: params.guildId,
+      vaultPath: params.vaultPath,
+      filePath: params.filePath,
+      content: params.content,
+      properties: params.properties,
+    });
+  } catch (error) {
+    logger.warn('[OBSIDIAN-ADAPTER] knowledge compilation failed for %s: %s', params.filePath, getErrorMessage(error));
+  }
+};
+
+export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput & { trustedSource?: boolean; skipKnowledgeCompilation?: boolean }): Promise<{ path: string } | null> => {
   const sanitized = sanitizeForObsidianWrite({ content: params.content, trustedSource: params.trustedSource });
   if (sanitized.blocked) {
     logger.warn('[OBSIDIAN-ADAPTER] write_note blocked by sanitizer: %s (file: %s)', sanitized.reasons.join(', '), params.fileName);
     logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: null, detail: `sanitizer_blocked:${sanitized.reasons.join(',')}` });
     return null;
   }
-  const sanitizedParams: ObsidianNoteWriteInput = { ...params, content: sanitized.cleaned.content };
+  const ensuredProperties = ensureObsidianWriteProperties({ ...params, content: sanitized.cleaned.content });
+  const sanitizedParams: ObsidianNoteWriteInput = {
+    ...params,
+    content: ensureObsidianWriteFrontmatter({
+      ...params,
+      content: sanitized.cleaned.content,
+      properties: ensuredProperties,
+    }),
+    properties: ensuredProperties,
+  };
 
   const adapter = pickAdapter('write_note');
   if (!adapter || !adapter.writeNote) {
@@ -214,6 +377,14 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
 
   try {
     const primary = await adapter.writeNote(sanitizedParams);
+    await maybeCompileKnowledgeArtifacts({
+      guildId: sanitizedParams.guildId,
+      vaultPath: sanitizedParams.vaultPath,
+      filePath: primary.path || sanitizedParams.fileName,
+      content: sanitizedParams.content,
+      properties: sanitizedParams.properties,
+      skipKnowledgeCompilation: params.skipKnowledgeCompilation,
+    });
     logAdapterSignal({ capability: 'write_note', outcome: 'success', primary: adapter.id, detail: 'primary_write_ok' });
     return primary;
   } catch (error) {
@@ -232,6 +403,14 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
       }
       try {
         const fallbackResult = await fallback.writeNote(sanitizedParams);
+        await maybeCompileKnowledgeArtifacts({
+          guildId: sanitizedParams.guildId,
+          vaultPath: sanitizedParams.vaultPath,
+          filePath: fallbackResult.path || sanitizedParams.fileName,
+          content: sanitizedParams.content,
+          properties: sanitizedParams.properties,
+          skipKnowledgeCompilation: params.skipKnowledgeCompilation,
+        });
         logAdapterSignal({ capability: 'write_note', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_write_ok' });
         return fallbackResult;
       } catch (err) {
@@ -493,6 +672,7 @@ export type ObsidianVaultHealthStatus = {
   writeCapable: boolean;
   readCapable: boolean;
   searchCapable: boolean;
+  remoteMcp: RemoteMcpAdapterDiagnostics;
 };
 
 export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
@@ -525,6 +705,43 @@ export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
     writeCapable,
     readCapable,
     searchCapable,
+    remoteMcp: adapterStatus.remoteMcp,
+  };
+};
+
+export const getObsidianVaultLiveHealthStatus = async (): Promise<ObsidianVaultHealthStatus> => {
+  const base = getObsidianVaultHealthStatus();
+  const remoteSelected = Object.values(base.adapterStatus.selectedByCapability).includes('remote-mcp');
+  const remoteAvailable = base.adapterStatus.adapters.some((adapter) => adapter.id === 'remote-mcp' && adapter.available);
+
+  if (!remoteSelected && !remoteAvailable) {
+    return base;
+  }
+
+  const remoteMcp = await probeRemoteMcpAdapter();
+  const issues = new Set(base.issues);
+
+  if (remoteMcp.lastProbe.reachable === false) {
+    issues.add('Remote MCP server is unreachable — GCP vault path is currently disconnected');
+  }
+  if (remoteMcp.lastProbe.authValid === false) {
+    issues.add('Remote MCP auth failed — OBSIDIAN_REMOTE_MCP_TOKEN may not match MCP_WORKER_AUTH_TOKEN');
+  }
+  if (remoteMcp.lastProbe.toolDiscoveryOk === false) {
+    issues.add('Remote MCP is reachable but tool discovery failed — obsidian tools may not be exposed on the VM');
+  }
+  if (remoteMcp.lastProbe.remoteObsidianStatusOk === false) {
+    issues.add('Remote MCP is reachable but the remote obsidian adapter status probe failed — vault may be locked or unavailable');
+  }
+  if (remoteMcp.lastError) {
+    issues.add(`Recent remote MCP error: ${remoteMcp.lastError}`);
+  }
+
+  return {
+    ...base,
+    healthy: issues.size === 0,
+    issues: [...issues],
+    remoteMcp,
   };
 };
 

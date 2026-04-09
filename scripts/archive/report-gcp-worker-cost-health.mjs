@@ -185,7 +185,7 @@ const main = async () => {
   const instanceName = getArg('instance', read('GCP_WORKER_INSTANCE_NAME', 'instance-20260319-223412'));
   const zone = getArg('zone', read('GCP_WORKER_ZONE', 'us-central1-c'));
   const staticIpName = getArg('static-ip-name', read('GCP_WORKER_STATIC_IP_NAME', 'opencode-worker-ip'));
-  const workerUrl = getArg('worker-url', read('MCP_OPENCODE_WORKER_URL', ''));
+  const workerUrl = getArg('worker-url', read('MCP_IMPLEMENT_WORKER_URL', read('MCP_OPENCODE_WORKER_URL', '')));
   const budgetDisplayName = getArg('budget-display-name', read('GCP_BUDGET_DISPLAY_NAME', 'muel-worker-monthly-budget'));
 
   const failures = [];
@@ -243,7 +243,7 @@ const main = async () => {
       failures.push('Remote worker endpoint health probe failed (base URL and /health).');
     }
   } else {
-    failures.push('MCP_OPENCODE_WORKER_URL is empty; remote worker endpoint is not configured.');
+    failures.push('MCP_IMPLEMENT_WORKER_URL is empty; remote worker endpoint is not configured (legacy alias MCP_OPENCODE_WORKER_URL is also accepted).');
   }
 
   if (projectId) {

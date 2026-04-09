@@ -15,6 +15,90 @@ const CACHE_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_RAG_CACHE_ENABLED, tr
 const HIT_FLUSH_INTERVAL_MS = 30_000;
 const MAX_PENDING_HIT_ENTRIES = 500; // Prevent unbounded in-memory growth
 const MAX_PARALLEL_LOADS = 10; // Limit concurrent vault loads to prevent memory pressure
+const FRONTMATTER_PATTERN = /^---\n([\s\S]*?)\n---\n?/;
+
+const stripWrappingQuotes = (value: string): string => {
+  const trimmed = String(value || '').trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+};
+
+const parseFrontmatterScalar = (rawValue: string): string | number | boolean => {
+  const value = stripWrappingQuotes(rawValue);
+  if (/^(true|false)$/i.test(value)) {
+    return value.toLowerCase() === 'true';
+  }
+  const numeric = Number(value);
+  if (value !== '' && Number.isFinite(numeric)) {
+    return numeric;
+  }
+  return value;
+};
+
+const parseFrontmatterValue = (rawValue: string): string | number | boolean | string[] => {
+  const value = String(rawValue || '').trim();
+  if (value.startsWith('[') && value.endsWith(']')) {
+    const inner = value.slice(1, -1).trim();
+    if (!inner) {
+      return [];
+    }
+    return inner
+      .split(',')
+      .map((entry) => stripWrappingQuotes(entry))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return parseFrontmatterScalar(value);
+};
+
+export function parseObsidianFrontmatter(markdown: string): Record<string, any> {
+  const match = String(markdown || '').match(FRONTMATTER_PATTERN);
+  if (!match) {
+    return {};
+  }
+
+  const result: Record<string, any> = {};
+  const lines = match[1].split('\n');
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const propertyMatch = line.match(/^([a-zA-Z0-9_]+):\s*(.*)$/);
+    if (!propertyMatch) {
+      continue;
+    }
+
+    const [, key, inlineValue] = propertyMatch;
+    const trimmedInlineValue = String(inlineValue || '').trim();
+    if (trimmedInlineValue.length > 0) {
+      result[key] = parseFrontmatterValue(trimmedInlineValue);
+      continue;
+    }
+
+    const listValues: string[] = [];
+    let lookahead = index + 1;
+    while (lookahead < lines.length) {
+      const nextLine = lines[lookahead];
+      const listMatch = nextLine.match(/^\s*-\s*(.+)$/);
+      if (!listMatch) {
+        break;
+      }
+      listValues.push(stripWrappingQuotes(listMatch[1]));
+      lookahead += 1;
+    }
+
+    if (listValues.length > 0) {
+      result[key] = listValues;
+      index = lookahead - 1;
+      continue;
+    }
+
+    result[key] = '';
+  }
+
+  return result;
+}
 
 // Batched hit counter: accumulate in-memory, flush periodically
 const pendingHitCounts = new Map<string, number>();
@@ -82,6 +166,18 @@ export interface CachedDocument {
   hitCount: number;
 }
 
+export interface ObsidianCacheStats {
+  enabled: boolean;
+  supabaseConfigured: boolean;
+  ttlMs: number;
+  pendingHitEntries: number;
+  totalDocs: number;
+  activeDocs: number;
+  staleDocs: number;
+  totalHits: number;
+  averageHitsPerDoc: number;
+}
+
 /**
  * Initialize cache table (idempotent)
  */
@@ -144,10 +240,14 @@ export async function getCachedDocument(filePath: string): Promise<CachedDocumen
 
     logger.debug('[OBSIDIAN-CACHE] HIT %s', filePath);
 
+    const parsedFrontmatter = data.frontmatter && Object.keys(data.frontmatter).length > 0
+      ? data.frontmatter
+      : parseObsidianFrontmatter(data.content || '');
+
     return {
       filePath: data.file_path,
       content: data.content,
-      frontmatter: data.frontmatter || {},
+      frontmatter: parsedFrontmatter,
       cachedAt: data.cached_at,
       hitCount: (data.hit_count || 0) + 1,
     };
@@ -185,6 +285,10 @@ export async function getCachedDocumentsBatch(filePaths: string[]): Promise<Map<
       const fp = String(row.file_path || '');
       if (!fp) continue;
 
+      const parsedFrontmatter = row.frontmatter && Object.keys(row.frontmatter).length > 0
+        ? row.frontmatter
+        : parseObsidianFrontmatter(row.content || '');
+
       if (pendingHitCounts.size < MAX_PENDING_HIT_ENTRIES) {
         pendingHitCounts.set(fp, (pendingHitCounts.get(fp) || (row.hit_count || 0)) + 1);
       }
@@ -192,7 +296,7 @@ export async function getCachedDocumentsBatch(filePaths: string[]): Promise<Map<
       result.set(fp, {
         filePath: fp,
         content: row.content,
-        frontmatter: row.frontmatter || {},
+        frontmatter: parsedFrontmatter,
         cachedAt: row.cached_at,
         hitCount: (row.hit_count || 0) + 1,
       });
@@ -276,17 +380,18 @@ export async function loadDocumentsWithCache(
         try {
           const content = await loader(path);
           if (content) {
+            const frontmatter = parseObsidianFrontmatter(content);
             const doc: CachedDocument = {
               filePath: path,
               content,
-              frontmatter: {},
+              frontmatter,
               cachedAt: new Date().toISOString(),
               hitCount: 0,
             };
             docs.set(path, doc);
 
             // Cache for next time
-            await cacheDocument(path, content, {});
+            await cacheDocument(path, content, frontmatter);
           }
         } catch (error) {
           logger.warn('[OBSIDIAN-CACHE] Load failed for %s: %s', path, getErrorMessage(error));
@@ -301,12 +406,7 @@ export async function loadDocumentsWithCache(
 /**
  * Get cache statistics
  */
-export async function getCacheStats(): Promise<{
-  totalDocs: number;
-  activeDocs: number;
-  totalHits: number;
-  averageHitsPerDoc: number;
-} | null> {
+export async function getCacheStats(): Promise<ObsidianCacheStats | null> {
   if (!isSupabaseConfigured()) {
     return null;
   }
@@ -317,20 +417,26 @@ export async function getCacheStats(): Promise<{
 
     const { data, error } = await db
       .from('obsidian_cache')
-      .select('hit_count')
-      .gt('cached_at', cutoff);
+      .select('cached_at, hit_count');
 
     if (error || !data) {
       return null;
     }
 
+    const totalDocs = data.length;
+    const activeDocs = data.reduce((count, row) => count + (String(row.cached_at || '') > cutoff ? 1 : 0), 0);
     const totalHits = data.reduce((sum, row) => sum + (row.hit_count || 0), 0);
 
     return {
-      totalDocs: data.length,
-      activeDocs: data.length,
+      enabled: CACHE_ENABLED,
+      supabaseConfigured: true,
+      ttlMs: CACHE_TTL_MS,
+      pendingHitEntries: pendingHitCounts.size,
+      totalDocs,
+      activeDocs,
+      staleDocs: Math.max(0, totalDocs - activeDocs),
       totalHits,
-      averageHitsPerDoc: data.length > 0 ? totalHits / data.length : 0,
+      averageHitsPerDoc: totalDocs > 0 ? totalHits / totalDocs : 0,
     };
   } catch (error) {
     logger.warn('[OBSIDIAN-CACHE] Stats fetch failed: %s', getErrorMessage(error));

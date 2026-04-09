@@ -9,6 +9,19 @@ export type {
 export { supportsCapability } from './types';
 
 export { upsertObsidianGuildDocument } from './authoring';
+export {
+  getObsidianKnowledgeCompilationStats,
+  getObsidianKnowledgeControlSurface,
+  listObsidianKnowledgeArtifactPaths,
+  resolveObsidianKnowledgeArtifactPath,
+  runKnowledgeCompilationForNote,
+} from './knowledgeCompilerService';
+export type {
+  ObsidianKnowledgeCompilationResult,
+  ObsidianKnowledgeCompilationStats,
+  ObsidianKnowledgeLintIssue,
+  ObsidianKnowledgeLintSummary,
+} from './knowledgeCompilerService';
 
 export { bootstrapObsidianGuildKnowledgeTree, autoBootstrapGuildKnowledgeOnJoin, DEFAULT_GUILD_MANIFEST } from './obsidianBootstrapService';
 export type { GuildKnowledgeManifest, GuildBootstrapSummary } from './obsidianBootstrapService';

@@ -14,9 +14,10 @@ Status note:
 
 ## 1) 현재 반영된 구성요소
 
-- New action: `opencode.execute`
-- Delegation path: MCP worker (`MCP_OPENCODE_WORKER_URL` + `MCP_OPENCODE_TOOL_NAME`)
-- Planner fallback intent rule: 터미널/CLI/opencode 관련 요청 시 `opencode.execute` 후보화
+- Canonical action contract: `implement.execute`
+- Persisted legacy runtime id: `opencode.execute`
+- Delegation path: MCP worker (`MCP_IMPLEMENT_WORKER_URL` + `MCP_OPENCODE_TOOL_NAME`; legacy env `MCP_OPENCODE_WORKER_URL` 지원)
+- Planner fallback intent rule: 터미널/CLI/opencode 관련 요청 시 `implement.execute` 후보화
 - 기존 거버넌스 적용:
   - allowlist (`ACTION_ALLOWED_ACTIONS`)
   - tenant policy (`agent_action_policies`)
@@ -31,7 +32,7 @@ Status note:
 2. 승인 없는 자동 배포/파괴 명령 금지
 3. 위험 명령어 사전 차단
 
-`opencode.execute`는 아래 가드레일을 가진다.
+`implement.execute` / `opencode.execute` executor channel은 아래 가드레일을 가진다.
 
 - 빈 task 차단
 - task 길이 제한
@@ -45,7 +46,7 @@ Status note:
 
 필수/권장 env:
 
-- `MCP_OPENCODE_WORKER_URL` (required to delegate)
+- `MCP_IMPLEMENT_WORKER_URL` (required to delegate; legacy alias: `MCP_OPENCODE_WORKER_URL`)
 - `MCP_OPENCODE_TOOL_NAME` (default: `opencode.run`)
 - `ACTION_ALLOWED_ACTIONS` (권장: 필요한 액션만 명시)
 - `ACTION_POLICY_DEFAULT_RUN_MODE=approval_required` (권장)
@@ -53,19 +54,19 @@ Status note:
 
 권장 초기 allowlist 예:
 
-- `rag.retrieve,web.search,web.fetch,db.supabase.read,code.generate,opencode.execute`
+- `rag.retrieve,web.search,web.fetch,db.supabase.read,code.generate,implement.execute`
 
 ## 4) 롤아웃 단계
 
 1. Shadow
 
 - `ACTION_RUNNER_MODE=dry-run`
-- `opencode.execute` 요청/계획/정책 차단 로그 수집
+- `implement.execute` 요청/계획/정책 차단 로그 수집 (`opencode.execute` legacy id와 함께 관측)
 
 1. Guarded execution
 
 - `ACTION_RUNNER_MODE=execute`
-- `opencode.execute`는 `approval_required` 유지
+- executor channel은 `approval_required` 유지
 - 승인 큐 처리 + 실패 패턴 수집
 
 1. Controlled automation
@@ -75,7 +76,7 @@ Status note:
 
 ## 5) 운영 체크리스트
 
-- `GET /api/bot/agent/actions/policies?guildId=<id>`로 `opencode.execute` 정책 확인
+- `GET /api/bot/agent/actions/policies?guildId=<id>`로 executor 정책 확인 (persisted key는 현재 `opencode.execute`)
 - `PUT /api/bot/agent/actions/policies`로 runMode 조정
 - `GET /api/bot/agent/actions/approvals`로 승인 대기 모니터링
 - `agent_action_logs`에서 실패 코드/재시도/지연 관측
@@ -86,4 +87,4 @@ Status note:
 - 승인 없는 자가 배포
 - 동적 도구 즉시 영구 등록
 
-이번 단계는 "실행 capability를 안전하게 연결"하는 최소 통합이다.
+이번 단계는 "실행 capability를 안전하게 연결"하는 최소 통합이다. canonical naming은 `implement.execute`, persisted compatibility key는 `opencode.execute` 로 유지한다.

@@ -33,6 +33,7 @@ import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
+import { isSupabaseConfigured } from '../supabaseClient';
 
 // In-memory TTL cache for graph metadata (avoids reload every RAG query)
 const GRAPH_META_CACHE_TTL_MS = parseMinIntEnv(process.env.OBSIDIAN_GRAPH_META_CACHE_TTL_MS, 120_000, 30_000);
@@ -161,7 +162,33 @@ export interface RAGQueryResult {
   cacheStatus: { hits: number; misses: number };
   executionTimeMs: number;
   graphDensity?: { avgBacklinks: number; maxBacklinks: number; connectedRatio: number };
+  metadataSignals?: {
+    activeDocs: number;
+    invalidDocs: number;
+    supersededDocs: number;
+    sourcedDocs: number;
+  };
 }
+
+type RetrievedDocumentCandidate = {
+  filePath: string;
+  score: number;
+};
+
+export type ObsidianRetrievalBoundarySnapshot = {
+  metadataOnly: {
+    available: boolean;
+    requiresVault: boolean;
+    signals: string[];
+    responsibilities: string[];
+  };
+  supabaseBacked: {
+    configured: boolean;
+    cacheAvailable: boolean;
+    cacheStats: Awaited<ReturnType<typeof getCacheStats>>;
+    responsibilities: string[];
+  };
+};
 
 type GuildScopeMode = 'off' | 'prefer' | 'strict';
 
@@ -227,6 +254,7 @@ export async function queryObsidianRAG(
 ): Promise<RAGQueryResult> {
   const startTime = Date.now();
   const maxDocs = options?.maxDocs || 10;
+  const candidateLimit = Math.min(24, Math.max(maxDocs, maxDocs * 2));
   const contextMode = options?.contextMode || DEFAULT_CONTEXT_MODE;
   const cacheStatus = { hits: 0, misses: 0 };
 
@@ -237,7 +265,8 @@ export async function queryObsidianRAG(
 
     // 2. Route to relevant documents
     const routes = INTENT_ROUTES[intent];
-    const documentPaths = await findRelatedDocuments(question, routes, maxDocs, options?.guildId);
+    const documentCandidates = await findRelatedDocuments(question, routes, candidateLimit, options?.guildId);
+    const documentPaths = documentCandidates.map((candidate) => candidate.filePath);
 
     if (documentPaths.length === 0) {
       logger.warn('[OBSIDIAN-RAG] No relevant documents found for intent=%s', intent);
@@ -276,11 +305,20 @@ export async function queryObsidianRAG(
     // Dynamic intent enrichment: learn new tags from vault structure
     enrichIntentRoutesFromGraph(graphMetadata);
 
+    const metadataAssessment = assessRetrievalMetadata(documents);
+    const rankedDocuments = rankDocumentsForRetrieval({
+      documents,
+      candidates: documentCandidates,
+      graphMetadata,
+      metadataAdjustments: metadataAssessment.adjustments,
+      limit: maxDocs,
+    });
+
     // 5. Assemble context
-    const contextText = assembleContext(documents, graphMetadata, contextMode);
+    const contextText = assembleContext(rankedDocuments, graphMetadata, contextMode);
 
     // 6. Compute graph density metrics
-    const graphDensity = computeGraphDensity(Array.from(documents.keys()), graphMetadata);
+    const graphDensity = computeGraphDensity(Array.from(rankedDocuments.keys()), graphMetadata);
 
     // Log stats
     const stats = await getCacheStats();
@@ -298,14 +336,15 @@ export async function queryObsidianRAG(
     );
 
     const result: RAGQueryResult = {
-      sourceFiles: Array.from(documents.keys()),
+      sourceFiles: Array.from(rankedDocuments.keys()),
       documentContext: contextText,
       intent,
       contextMode,
-      documentCount: documents.size,
+      documentCount: rankedDocuments.size,
       cacheStatus,
       executionTimeMs: Date.now() - startTime,
       graphDensity,
+      metadataSignals: metadataAssessment.summary,
     };
 
     // Reactive learning: fire-and-forget write of query insight to vault
@@ -365,7 +404,7 @@ async function findRelatedDocuments(
   routes: typeof INTENT_ROUTES[IntentCategory],
   limit: number,
   guildId?: string,
-): Promise<string[]> {
+): Promise<RetrievedDocumentCandidate[]> {
   const scoredResults = new Map<string, number>();
 
   try {
@@ -448,10 +487,10 @@ async function findRelatedDocuments(
       }
     }
 
-    const rankedPaths = [...scoredResults.entries()]
+    const rankedCandidates = [...scoredResults.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([filePath]) => filePath);
-    const paths = applyGuildScopeRanking(rankedPaths, guildId, limit);
+      .map(([filePath, score]) => ({ filePath, score }));
+    const paths = applyGuildScopeRanking(rankedCandidates, guildId, limit);
     
     logger.debug('[OBSIDIAN-RAG] Found %d documents (incl. 2-hop) for intent, returning %d', scoredResults.size, paths.length);
     return paths;
@@ -465,6 +504,166 @@ function normalizeResultPath(filePath: unknown): string {
   return String(filePath || '').trim().replace(/\\/g, '/');
 }
 
+function normalizeMetadataReference(value: unknown): string {
+  return normalizeResultPath(value).replace(/\.md$/i, '').toLowerCase();
+}
+
+function stripFrontmatterBlock(content: string): string {
+  return String(content || '').replace(/^---\n[\s\S]*?\n---\n?/m, '').trim();
+}
+
+function readFrontmatterString(frontmatter: Record<string, any> | undefined, key: string): string {
+  return String(frontmatter?.[key] || '').trim();
+}
+
+function readFrontmatterStringArray(frontmatter: Record<string, any> | undefined, key: string): string[] {
+  const value = frontmatter?.[key];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  const single = String(value || '').trim();
+  if (!single) {
+    return [];
+  }
+  if (single.includes(',')) {
+    return single.split(',').map((entry) => entry.trim()).filter(Boolean);
+  }
+  return [single];
+}
+
+function readFrontmatterTimestamp(frontmatter: Record<string, any> | undefined, key: string): number | null {
+  const rawValue = readFrontmatterString(frontmatter, key);
+  if (!rawValue) {
+    return null;
+  }
+  const parsed = Date.parse(rawValue);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildDocumentIdentitySet(filePath: string, frontmatter: Record<string, any> | undefined): Set<string> {
+  const identities = new Set<string>([normalizeMetadataReference(filePath)]);
+  const canonicalKey = readFrontmatterString(frontmatter, 'canonical_key');
+  if (canonicalKey) {
+    identities.add(normalizeMetadataReference(canonicalKey));
+  }
+  return identities;
+}
+
+function assessRetrievalMetadata(
+  documents: Map<string, { content: string; frontmatter?: Record<string, any> }>,
+): {
+  adjustments: Map<string, number>;
+  summary: {
+    activeDocs: number;
+    invalidDocs: number;
+    supersededDocs: number;
+    sourcedDocs: number;
+  };
+} {
+  const now = Date.now();
+  const adjustments = new Map<string, number>();
+  const summary = {
+    activeDocs: 0,
+    invalidDocs: 0,
+    supersededDocs: 0,
+    sourcedDocs: 0,
+  };
+  const identities = new Map<string, Set<string>>();
+  const supersededPaths = new Set<string>();
+
+  for (const [filePath, document] of documents.entries()) {
+    identities.set(filePath, buildDocumentIdentitySet(filePath, document.frontmatter));
+  }
+
+  for (const [filePath, document] of documents.entries()) {
+    const supersedesRefs = readFrontmatterStringArray(document.frontmatter, 'supersedes')
+      .map((entry) => normalizeMetadataReference(entry))
+      .filter(Boolean);
+    if (supersedesRefs.length === 0) {
+      continue;
+    }
+
+    for (const [candidatePath, candidateIdentities] of identities.entries()) {
+      if (candidatePath === filePath) {
+        continue;
+      }
+      if (supersedesRefs.some((entry) => candidateIdentities.has(entry))) {
+        supersededPaths.add(candidatePath);
+      }
+    }
+  }
+
+  for (const [filePath, document] of documents.entries()) {
+    const frontmatter = document.frontmatter;
+    const status = readFrontmatterString(frontmatter, 'status').toLowerCase();
+    const invalidAt = readFrontmatterTimestamp(frontmatter, 'invalid_at');
+    const validAt = readFrontmatterTimestamp(frontmatter, 'valid_at');
+    const sourceRefs = readFrontmatterStringArray(frontmatter, 'source_refs');
+    const supersedesRefs = readFrontmatterStringArray(frontmatter, 'supersedes');
+    let adjustment = 0;
+
+    if (status === 'active' || status === 'open' || status === 'answered') {
+      adjustment += 0.08;
+      summary.activeDocs += 1;
+    }
+
+    if (status === 'invalid' || status === 'superseded' || status === 'archived') {
+      adjustment -= 0.9;
+    }
+
+    if (invalidAt && invalidAt <= now) {
+      adjustment -= 1.1;
+      summary.invalidDocs += 1;
+    }
+
+    if (validAt && validAt > now) {
+      adjustment -= 0.35;
+    }
+
+    if (sourceRefs.length > 0) {
+      adjustment += Math.min(0.18, Math.log2(1 + sourceRefs.length) * 0.08);
+      summary.sourcedDocs += 1;
+    }
+
+    if (supersedesRefs.length > 0) {
+      adjustment += 0.12;
+    }
+
+    if (supersededPaths.has(filePath)) {
+      adjustment -= 0.8;
+      summary.supersededDocs += 1;
+    }
+
+    adjustments.set(filePath, adjustment);
+  }
+
+  return { adjustments, summary };
+}
+
+function rankDocumentsForRetrieval(params: {
+  documents: Map<string, { content: string; frontmatter?: Record<string, any> }>;
+  candidates: RetrievedDocumentCandidate[];
+  graphMetadata: Record<string, any>;
+  metadataAdjustments: Map<string, number>;
+  limit: number;
+}): Map<string, { content: string; frontmatter?: Record<string, any> }> {
+  const candidateScores = new Map(params.candidates.map((candidate) => [candidate.filePath, candidate.score]));
+  const rankedEntries = [...params.documents.entries()]
+    .map(([filePath, document]) => {
+      const graphMeta = params.graphMetadata[filePath];
+      const backlinkCount = Array.isArray(graphMeta?.backlinks) ? graphMeta.backlinks.length : 0;
+      const linkCount = Array.isArray(graphMeta?.links) ? graphMeta.links.length : 0;
+      const connectivityBoost = Math.min(0.25, Math.log2(1 + backlinkCount + linkCount) * 0.04);
+      const orphanPenalty = backlinkCount === 0 && linkCount === 0 ? -0.12 : 0;
+      const score = (candidateScores.get(filePath) ?? 0) + connectivityBoost + orphanPenalty + (params.metadataAdjustments.get(filePath) ?? 0);
+      return { filePath, document, score };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, params.limit);
+
+  return new Map(rankedEntries.map((entry) => [entry.filePath, entry.document]));
+}
+
 function sanitizeGuildId(guildId: unknown): string {
   const value = String(guildId || '').trim();
   if (!/^\d{6,30}$/.test(value)) {
@@ -473,21 +672,42 @@ function sanitizeGuildId(guildId: unknown): string {
   return value;
 }
 
-function applyGuildScopeRanking(paths: string[], guildId: string | undefined, limit: number): string[] {
+function applyGuildScopeRanking(candidates: RetrievedDocumentCandidate[], guildId: string | undefined, limit: number): RetrievedDocumentCandidate[] {
   const safeGuildId = sanitizeGuildId(guildId);
   const mode = DEFAULT_GUILD_SCOPE_MODE;
   if (!safeGuildId || mode === 'off') {
-    return paths.slice(0, limit);
+    return candidates.slice(0, limit);
   }
 
   const guildPrefix = `guilds/${safeGuildId}/`;
-  const guildPaths = paths.filter((filePath) => filePath.startsWith(guildPrefix));
+  const guildPaths = candidates.filter((candidate) => candidate.filePath.startsWith(guildPrefix));
   if (mode === 'strict') {
     return guildPaths.slice(0, limit);
   }
 
-  const globalPaths = paths.filter((filePath) => !filePath.startsWith(guildPrefix));
+  const globalPaths = candidates.filter((candidate) => !candidate.filePath.startsWith(guildPrefix));
   return [...guildPaths, ...globalPaths].slice(0, limit);
+}
+
+function buildFrontmatterContextSummary(frontmatter?: Record<string, any>): string {
+  if (!frontmatter) {
+    return '';
+  }
+
+  const parts: string[] = [];
+  const status = readFrontmatterString(frontmatter, 'status');
+  const validAt = readFrontmatterString(frontmatter, 'valid_at');
+  const invalidAt = readFrontmatterString(frontmatter, 'invalid_at');
+  const sourceRefs = readFrontmatterStringArray(frontmatter, 'source_refs');
+  const supersedesRefs = readFrontmatterStringArray(frontmatter, 'supersedes');
+
+  if (status) parts.push(`status=${status}`);
+  if (validAt) parts.push(`valid_at=${validAt.slice(0, 19)}`);
+  if (invalidAt) parts.push(`invalid_at=${invalidAt.slice(0, 19)}`);
+  if (sourceRefs.length > 0) parts.push(`source_refs=${sourceRefs.length}`);
+  if (supersedesRefs.length > 0) parts.push(`supersedes=${supersedesRefs.length}`);
+
+  return parts.join(' | ');
 }
 
 /**
@@ -503,8 +723,10 @@ function assembleContext(
   let docIndex = 1;
   for (const [path, doc] of documents.entries()) {
     const meta = graphMetadata[path];
+    const frontmatterSummary = buildFrontmatterContextSummary(doc.frontmatter);
     const backlinkCount = Array.isArray(meta?.backlinks) ? meta.backlinks.length : 0;
     const linkCount = Array.isArray(meta?.links) ? meta.links.length : 0;
+    const contentBody = stripFrontmatterBlock(doc.content);
 
     // Header with metadata + connection density
     const header = [
@@ -521,14 +743,17 @@ function assembleContext(
       .join(' | ');
 
     parts.push(`## ${header}\n`);
+    if (frontmatterSummary) {
+      parts.push(`메타데이터: ${frontmatterSummary}`);
+    }
     if (contextMode === 'metadata_first') {
-      const snippet = String(doc.content || '')
+      const snippet = String(contentBody || '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 320);
       parts.push(`요약 스니펫: ${snippet}`);
     } else {
-      parts.push(doc.content);
+      parts.push(contentBody || doc.content);
     }
     parts.push('\n');
 
@@ -842,11 +1067,13 @@ export async function queryObsidianLoreHints(
   options?: { maxDocs?: number; guildId?: string },
 ): Promise<LoreHint[]> {
   const maxDocs = Math.max(1, Math.min(8, options?.maxDocs ?? 4));
+  const candidateLimit = Math.min(16, Math.max(maxDocs, maxDocs * 2));
 
   try {
     const intent = inferIntent(goal);
     const routes = INTENT_ROUTES[intent];
-    const documentPaths = await findRelatedDocuments(goal, routes, maxDocs, options?.guildId);
+    const documentCandidates = await findRelatedDocuments(goal, routes, candidateLimit, options?.guildId);
+    const documentPaths = documentCandidates.map((candidate) => candidate.filePath);
 
     if (documentPaths.length === 0) return [];
 
@@ -865,15 +1092,19 @@ export async function queryObsidianLoreHints(
         : null;
     });
 
+    const metadataAssessment = assessRetrievalMetadata(documents);
+    const candidateScores = new Map(documentCandidates.map((candidate) => [candidate.filePath, candidate.score]));
+
     const hints: LoreHint[] = [];
     for (const [filePath, doc] of documents) {
       const meta = graphMetadata[filePath];
       const backlinkCount = Array.isArray(meta?.backlinks) ? meta.backlinks.length : 0;
       const linkCount = Array.isArray(meta?.links) ? meta.links.length : 0;
       const connectivityScore = Math.min(0.3, Math.log2(1 + backlinkCount + linkCount) * 0.05);
+      const score = (candidateScores.get(filePath) ?? 0) + connectivityScore + (metadataAssessment.adjustments.get(filePath) ?? 0);
 
       const title = meta?.title || filePath.split('/').pop()?.replace(/\.md$/, '') || filePath;
-      const snippet = String(doc.content || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+      const snippet = stripFrontmatterBlock(doc.content).replace(/\s+/g, ' ').trim().slice(0, 220);
       const tags = Array.isArray(meta?.tags) ? meta.tags.slice(0, 5).join(', ') : '';
 
       const textParts = [
@@ -885,7 +1116,7 @@ export async function queryObsidianLoreHints(
       hints.push({
         text: textParts,
         filePath,
-        score: connectivityScore,
+        score,
         backlinks: backlinkCount,
       });
     }
@@ -897,6 +1128,27 @@ export async function queryObsidianLoreHints(
     logger.debug('[OBSIDIAN-RAG] Lore hints failed: %s', getErrorMessage(err));
     return [];
   }
+}
+
+export async function getObsidianRetrievalBoundarySnapshot(): Promise<ObsidianRetrievalBoundarySnapshot> {
+  const cacheStats = await getCacheStats();
+  const metadataOnlyAvailable = Boolean(getObsidianVaultRoot())
+    && (isObsidianCapabilityAvailable('search_vault') || isObsidianCapabilityAvailable('read_file'));
+
+  return {
+    metadataOnly: {
+      available: metadataOnlyAvailable,
+      requiresVault: true,
+      signals: ['tags', 'backlinks', 'links', 'status', 'valid_at', 'invalid_at', 'supersedes', 'source_refs', 'canonical_key'],
+      responsibilities: ['graph traversal', 'frontmatter-based validity checks', 'supersession ranking', 'source grounding weight'],
+    },
+    supabaseBacked: {
+      configured: isSupabaseConfigured(),
+      cacheAvailable: Boolean(cacheStats),
+      cacheStats,
+      responsibilities: ['obsidian_cache TTL reuse', 'cross-process cache persistence', 'hit counting and cache health'],
+    },
+  };
 }
 
 export async function appendToDailyNote(content: string): Promise<boolean> {

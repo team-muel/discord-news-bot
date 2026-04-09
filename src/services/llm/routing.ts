@@ -43,12 +43,15 @@ export type LlmExperimentDecision = {
   experiment: LlmTextWithMetaResponse['experiment'];
 };
 
+export type LlmRoutingCapability = 'general' | 'fast-chat' | 'deep-reasoning' | 'code' | 'memory' | 'review' | 'operations';
+
 type ProviderPolicyRule = {
   pattern: string;
   providers: LlmProvider[];
 };
 
 type WorkflowModelBinding = { pattern: string; provider: LlmProvider; model: string };
+type CapabilityRule = { pattern: string; capability: LlmRoutingCapability };
 
 // ──── Provider Alias / Parsing ───────────────────────────────────────────────
 
@@ -86,6 +89,35 @@ const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['litellm', 'openclaw', 'olla
 const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['litellm', 'openclaw', 'ollama', 'anthropic', 'openai', 'kimi', 'gemini', 'huggingface', 'openjarvis'];
 const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['ollama', 'litellm', 'openclaw', 'huggingface', 'openjarvis', 'kimi', 'gemini', 'anthropic', 'openai'];
 const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 'litellm', 'openclaw', 'kimi', 'gemini', 'openjarvis', 'huggingface', 'ollama'];
+const CAPABILITY_PROVIDER_ORDER: Record<LlmRoutingCapability, readonly LlmProvider[]> = {
+  general: DEFAULT_BASE_PROVIDER_ORDER,
+  'fast-chat': ['ollama', 'openclaw', 'litellm', 'huggingface', 'openjarvis', 'gemini', 'anthropic', 'openai', 'kimi'],
+  'deep-reasoning': ['anthropic', 'openai', 'openclaw', 'litellm', 'gemini', 'openjarvis', 'ollama', 'huggingface', 'kimi'],
+  code: ['ollama', 'openclaw', 'litellm', 'anthropic', 'openai', 'gemini', 'openjarvis', 'huggingface', 'kimi'],
+  memory: ['ollama', 'openclaw', 'litellm', 'huggingface', 'openjarvis', 'gemini', 'anthropic', 'openai', 'kimi'],
+  review: ['anthropic', 'openai', 'openclaw', 'litellm', 'gemini', 'ollama', 'openjarvis', 'huggingface', 'kimi'],
+  operations: ['openjarvis', 'ollama', 'openclaw', 'litellm', 'anthropic', 'openai', 'gemini', 'huggingface', 'kimi'],
+};
+const CAPABILITY_RULES: readonly CapabilityRule[] = [
+  { pattern: 'chat.*', capability: 'fast-chat' },
+  { pattern: 'intent.route', capability: 'fast-chat' },
+  { pattern: 'intent.clarify', capability: 'fast-chat' },
+  { pattern: 'planner.*', capability: 'code' },
+  { pattern: 'skill.*', capability: 'code' },
+  { pattern: 'action.code.*', capability: 'code' },
+  { pattern: 'docs.*', capability: 'code' },
+  { pattern: 'tot.*', capability: 'deep-reasoning' },
+  { pattern: 'compose.self_consistency_variant', capability: 'deep-reasoning' },
+  { pattern: 'security.*', capability: 'review' },
+  { pattern: 'sprint.llm-judge', capability: 'review' },
+  { pattern: 'memory.*', capability: 'memory' },
+  { pattern: 'ltm.*', capability: 'memory' },
+  { pattern: 'action.obsidian.*', capability: 'memory' },
+  { pattern: 'openjarvis.ops', capability: 'operations' },
+  { pattern: 'operate.ops', capability: 'operations' },
+  { pattern: 'worker.*', capability: 'operations' },
+  { pattern: 'eval.*', capability: 'operations' },
+];
 
 const getConfiguredBaseProviderOrder = (): LlmProvider[] => {
   const configured = parseProviderList(LLM_PROVIDER_BASE_ORDER_RAW);
@@ -142,7 +174,7 @@ const getActionPolicyRulesCached = (): ProviderPolicyRule[] => {
   return _cachedActionPolicyRules;
 };
 
-const getActionPolicyProviders = (actionName?: string): LlmProvider[] => {
+export const getActionPolicyProviders = (actionName?: string): LlmProvider[] => {
   const safeActionName = String(actionName || '').trim();
   const actionPolicyRules = getActionPolicyRulesCached();
   if (!safeActionName || actionPolicyRules.length === 0) return [];
@@ -227,13 +259,32 @@ const getWorkflowProfileDefaultsCached = (): Array<{ pattern: string; profile: L
   return _cachedWorkflowProfileDefaults;
 };
 
-const resolveWorkflowProfile = (actionName?: string): LlmProviderProfile | undefined => {
+export const resolveWorkflowProfile = (actionName?: string): LlmProviderProfile | undefined => {
   const safeAction = String(actionName || '').trim();
   if (!safeAction) return undefined;
   for (const rule of getWorkflowProfileDefaultsCached()) {
     if (matchActionPattern(rule.pattern, safeAction)) return rule.profile;
   }
   return undefined;
+};
+
+export const resolveRoutingCapability = (actionName?: string): LlmRoutingCapability => {
+  const safeAction = String(actionName || '').trim();
+  if (!safeAction) return 'general';
+  for (const rule of CAPABILITY_RULES) {
+    if (matchActionPattern(rule.pattern, safeAction)) return rule.capability;
+  }
+  return 'general';
+};
+
+export const resetLlmRoutingCaches = (): void => {
+  _cachedActionPolicyRules = null;
+  _cachedActionPolicyRulesAt = 0;
+  _cachedWorkflowModelBindings = null;
+  _cachedWorkflowModelBindingsAt = 0;
+  _cachedWorkflowProfileDefaults = null;
+  _cachedWorkflowProfileDefaultsAt = 0;
+  _gateOverrides.clear();
 };
 
 // ──── Gate Profile Override (guild-scoped) ───────────────────────────────────
@@ -278,6 +329,15 @@ export const dedupeProviders = (providers: Array<LlmProvider | null | undefined>
     out.push(provider);
   }
   return out;
+};
+
+const reorderByCapability = (chain: LlmProvider[], capability: LlmRoutingCapability): LlmProvider[] => {
+  const order = CAPABILITY_PROVIDER_ORDER[capability] || CAPABILITY_PROVIDER_ORDER.general;
+  return [...chain].sort((a, b) => {
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
 };
 
 const shortHash = (value: string): string =>
@@ -378,8 +438,9 @@ export const resolveProviderChain = (
     ...(LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED ? getAutomaticFallbackOrder() : []),
   ]).filter((provider) => isProviderConfigured(provider));
 
+  const capability = resolveRoutingCapability(params.actionName);
   const effectiveProfile = params.providerProfile || getGateProviderProfileOverride(params.guildId) || resolveWorkflowProfile(params.actionName);
-  const profiledChain = reorderByProfile(chain, effectiveProfile);
+  const profiledChain = reorderByCapability(reorderByProfile(chain, effectiveProfile), capability);
 
   const workflowBinding = resolveWorkflowModelBinding(params.actionName);
   const bindingPrioritized = workflowBinding && isProviderConfigured(workflowBinding.provider)

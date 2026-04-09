@@ -147,6 +147,18 @@ describe('ObsidianDocBuilder', () => {
     expect(result.properties).toEqual({ schema: 'retro/v1', count: 42, active: true });
   });
 
+  it('serializes array-valued frontmatter properties', () => {
+    const result = doc()
+      .title('Metadata')
+      .tag('chat')
+      .property('source_refs', ['chat/inbox/root.md', 'chat/answers/reply.md'])
+      .buildWithFrontmatter();
+
+    expect(result.properties).toEqual({ source_refs: ['chat/inbox/root.md', 'chat/answers/reply.md'] });
+    expect(result.markdown).toContain('source_refs: [chat/inbox/root.md, chat/answers/reply.md]');
+    expect(result.markdown).toContain('tags: [chat]');
+  });
+
   it('supports level 3 headings', () => {
     const result = doc().section('Sub', 3).line('detail').build();
     expect(result.markdown).toContain('### Sub');

@@ -27,6 +27,29 @@ const truncate = (input: string, maxLength: number): string => {
   return `${text.slice(0, Math.max(1, maxLength - 1))}...`;
 };
 
+const deriveCommunityPostTitle = (content: string, fallback: string): string => {
+  const normalized = String(content || '').replace(/\r/g, '').trim();
+  if (!normalized) {
+    return truncate(fallback || '새 커뮤니티 게시글', 180);
+  }
+
+  const bracketMatch = normalized.match(/【[^】]{4,180}】/);
+  if (bracketMatch?.[0]) {
+    return truncate(bracketMatch[0], 180);
+  }
+
+  const firstLine = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (firstLine) {
+    return truncate(firstLine, 180);
+  }
+
+  return truncate(normalized, 180);
+};
+
 const extractJsonObjectByBraceMatch = (text: string, startIndex: number): string | null => {
   const firstBrace = text.indexOf('{', startIndex);
   if (firstBrace < 0) {
@@ -254,7 +277,7 @@ export const scrapeLatestCommunityPostByUrl = async (
 
   const rawContent = getRunsText(getNested(renderer, ['contentText']));
   const content = decodeHtml(rawContent || '');
-  const title = truncate(content || '새 커뮤니티 게시글', 180);
+  const title = deriveCommunityPostTitle(content, '새 커뮤니티 게시글');
   const author = decodeHtml(getRunsText(getNested(renderer, ['authorText'])) || 'YouTube Channel');
   const published = decodeHtml(getRunsText(getNested(renderer, ['publishedTimeText'])));
 
@@ -349,7 +372,7 @@ const extractPostFromTabData = (data: Record<string, unknown>): ScrapedCommunity
 
     const rawContent = getRunsText(getNested(renderer, ['contentText']));
     const content = decodeHtml(rawContent || '');
-    const title = truncate(content || '새 커뮤니티 게시글', 180);
+    const title = deriveCommunityPostTitle(content, '새 커뮤니티 게시글');
     const author = decodeHtml(getRunsText(getNested(renderer, ['authorText'])) || 'YouTube Channel');
     const published = decodeHtml(getRunsText(getNested(renderer, ['publishedTimeText'])));
 

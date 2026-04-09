@@ -207,6 +207,7 @@ describe('buildWorkerApprovalGateSnapshot', () => {
     const mockLogsChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
       gte: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue({
@@ -286,8 +287,16 @@ describe('buildWorkerApprovalGateSnapshot', () => {
     expect(snapshot.workerApprovals.refactorRequestedApprovals).toBe(1);
     expect(snapshot.workerApprovals.filePath).toBeNull();
     expect(snapshot.workerApprovals.recentDecisions).toHaveLength(2);
+    expect(snapshot.executorContract).toMatchObject({
+      canonicalActionName: 'implement.execute',
+      persistedActionName: 'opencode.execute',
+      legacyActionName: 'opencode.execute',
+    });
+    expect(snapshot.policyBindings.executorPolicy.actionName).toBe('implement.execute');
+    expect(snapshot.policyBindings.executorPolicy.runMode).toBe('approval_required');
+    expect(snapshot.policyBindings.opencodeExecutePolicy.actionName).toBe('implement.execute');
     expect(snapshot.policyBindings.opencodeExecutePolicy.runMode).toBe('approval_required');
-    expect(snapshot.policyBindings.actionAllowedActions).toEqual(['opencode.execute', 'rag.retrieve']);
+    expect(snapshot.policyBindings.actionAllowedActions).toEqual(['implement.execute', 'rag.retrieve']);
     expect(snapshot.modelFallback.defaultProviderFallbackChain).toEqual(['openclaw', 'openai']);
     expect(snapshot.modelFallback.providerPolicyBindings).toEqual([
       { pattern: 'opencode.*', providers: ['openclaw', 'openai'] },
@@ -391,6 +400,8 @@ describe('buildWorkerApprovalGateSnapshot', () => {
     const snapshot = await buildWorkerApprovalGateSnapshot({ guildId: 'guild-1' });
 
     expect(snapshot.workerApprovals.filePath).toBe('.runtime/worker-approvals.json');
+    expect(snapshot.policyBindings.executorPolicy.actionName).toBe('implement.execute');
+    expect(snapshot.policyBindings.opencodeExecutePolicy.actionName).toBe('implement.execute');
     expect(snapshot.safetySignals.approvalRequiredCompliancePct).toBe(100);
     expect(snapshot.delegationEvidence.complete).toBeNull();
     expect(snapshot.globalArtifacts.latestGateDecision).toBeNull();

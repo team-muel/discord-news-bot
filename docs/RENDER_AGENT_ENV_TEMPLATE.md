@@ -68,11 +68,12 @@ Provider fallback controls:
 - ACTION_POLICY_DEFAULT_ENABLED=true (optional, no policy row fallback)
 - ACTION_POLICY_DEFAULT_RUN_MODE=approval_required (optional: auto|approval_required|disabled)
 - ACTION_POLICY_FAIL_OPEN_ON_ERROR=false (optional, keep false for fail-closed)
-- ACTION_ALLOWED_ACTIONS=rag.retrieve,web.search,web.fetch,db.supabase.read,code.generate,opencode.execute,tools.run.cli (optional, 운영에서는 \* 대신 명시 allowlist 권장)
+- ACTION_ALLOWED_ACTIONS=rag.retrieve,web.search,web.fetch,db.supabase.read,code.generate,implement.execute,tools.run.cli (optional, 운영에서는 \* 대신 명시 allowlist 권장; legacy opencode.execute 도 계속 지원)
 - ACTION_MCP_DELEGATION_ENABLED=true (optional)
 - ACTION_MCP_STRICT_ROUTING=false (optional, true면 워커 오류 시 로컬 fallback 금지)
 - ACTION_MCP_TIMEOUT_MS=8000 (optional)
-- MCP_OPENCODE_WORKER_URL= (optional, opencode worker base url)
+- MCP_IMPLEMENT_WORKER_URL= (optional, canonical implement worker base url)
+- MCP_OPENCODE_WORKER_URL= (optional, legacy alias for implement worker base url)
 - MCP_OPENCODE_TOOL_NAME=opencode.run (optional)
 - MCP_OPENDEV_WORKER_URL= (optional, OpenDev worker base url)
 - MCP_NEMOCLAW_WORKER_URL= (optional, NemoClaw worker base url)
@@ -129,7 +130,7 @@ Provider fallback controls:
 - WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS=300000 (optional, approval store save warn log throttle)
 - OBSIDIAN_REMOTE_MCP_ENABLED=true (optional, 권장: GCP VM의 MCP 서버를 통한 vault 접근)
 - OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850 (optional, MCP HTTP 서버 주소)
-- OBSIDIAN_REMOTE_MCP_TOKEN=<secret> (optional, Bearer auth 토큰)
+- OBSIDIAN_REMOTE_MCP_TOKEN=<secret> (optional, Bearer auth 토큰; omitted 시 MCP_WORKER_AUTH_TOKEN fallback)
 - OBSIDIAN_VAULT_NAME=[vault-name] (optional, vault 식별자)
 - OBSIDIAN_ADAPTER_ORDER=remote-mcp,native-cli,script-cli,local-fs (optional)
 - OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,native-cli,script-cli,local-fs (optional)
@@ -138,6 +139,11 @@ Provider fallback controls:
 - OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp,native-cli,local-fs (optional)
 - OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,native-cli,local-fs (optional)
 - OBSIDIAN_ADAPTER_STRICT=false (optional, true면 fallback 없이 1차 adapter 결과만 사용)
+- OBSIDIAN_INBOX_CHAT_LOOP_ENABLED=true (optional, `chat/inbox` 노트를 주기적으로 처리)
+- OBSIDIAN_INBOX_CHAT_LOOP_INTERVAL_SEC=30 (optional)
+- OBSIDIAN_INBOX_CHAT_LOOP_RUN_ON_START=true (optional)
+- OBSIDIAN_INBOX_CHAT_LOOP_MAX_NOTES_PER_RUN=2 (optional)
+- OBSIDIAN_INBOX_CHAT_LOOP_SEARCH_LIMIT=25 (optional)
 - ACTION_CACHE_ENABLED=true (optional)
 - ACTION_CACHE_TTL_MS=600000 (optional, 10 minutes)
 - ACTION_CACHE_MAX_ENTRIES=1000 (optional)
@@ -301,7 +307,7 @@ Provider fallback controls:
 
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
 - ACTION_MCP_STRICT_ROUTING=true
-- MCP_OPENCODE_WORKER_URL=worker-url
+- MCP_IMPLEMENT_WORKER_URL=worker-url
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 
 주의:
@@ -315,7 +321,12 @@ Provider fallback controls:
 
 - START_AUTOMATION_JOBS=true (optional)
 - AUTOMATION_YOUTUBE_ENABLED=true (optional)
-- AUTOMATION_NEWS_ENABLED=false (optional)
+- AUTOMATION_NEWS_ENABLED=true (optional)
+- NEWS_MONITOR_MCP_WORKER_URL= (optional, MCP 뉴스 후보 수집 worker)
+- NEWS_MONITOR_MCP_STRICT=false (optional, false면 n8n/local fallback 허용)
+- NEWS_MONITOR_LOCAL_FALLBACK_ENABLED=true (optional, 마지막 수단으로 Google Finance 후보 수집)
+- N8N_DELEGATION_ENABLED=true (optional, n8n delegation master switch)
+- N8N_WEBHOOK_NEWS_MONITOR_CANDIDATES= (optional, configured 시 news candidate 수집을 n8n에 위임)
 - DYNAMIC_WORKER_RESTORE_ON_BOOT=true (optional, default true: restart 시 승인된 동적 워커 자동 복원)
 - DYNAMIC_WORKER_RUNTIME_DIR=.runtime/dynamic-workers (optional, 동적 워커 코드 아티팩트 저장 경로)
 - WORKER_APPROVAL_STORE_MODE=auto (optional: auto|supabase|file)
@@ -349,12 +360,12 @@ Provider fallback controls:
 
 ## Notes
 
-- `AUTOMATION_NEWS_ENABLED=false` keeps non-essential news push opt-in.
+- `AUTOMATION_NEWS_ENABLED=true` keeps Render production aligned with the current news monitor rollout. Disable it explicitly when staging or during rollback.
 - If multiple providers are configured, `AI_PROVIDER` selects priority.
-- If no provider configuration exists, `/해줘` and `/시작` session creation fails by design.
+- If no provider configuration exists, `/뮤엘`, `/해줘`, and `/시작` session creation fails by design.
 - 비용 최소화가 목표라면 `AI_PROVIDER=ollama`와 소형 모델(예: qwen2.5:3b-instruct) 조합을 권장합니다.
-- local-first hybrid가 목표라면 `AI_PROVIDER=ollama`, `LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface`, `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true` 조합을 권장합니다.
-- `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps command surface minimal (`/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`) and enables mention-first chat UX.
+- local-first hybrid가 목표라면 `AI_PROVIDER=ollama`, `LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface`, `LLM_WORKFLOW_MODEL_BINDINGS=operate.ops=openjarvis:<model>;eval.*=openjarvis:<model>;worker.*=openjarvis:<model>`, `LLM_WORKFLOW_PROFILE_DEFAULTS=operate.ops=quality-optimized;eval.*=quality-optimized;worker.*=quality-optimized`, `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true` 조합을 권장합니다.
+- `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps the compact slash surface (`/뮤엘`, `/해줘`, `/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`, `/프로필`, `/메모`, `/만들어줘`) and enables mention-first chat UX.
 - `DISCORD_LOGIN_SESSION_TTL_MS` controls how long a non-admin login session stays active for subscription add/remove.
 - `DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS` enables sliding expiration; sessions accessed near expiry are extended.
 - `DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS` controls periodic cleanup of expired persisted sessions.
@@ -362,6 +373,8 @@ Provider fallback controls:
 - If `OBSIDIAN_CLI_COMMAND` is set, the backend executes it at runtime to fetch memory hints and falls back to direct markdown reads only when CLI output is unavailable.
 - 로컬 PC가 꺼져도 무인 운영하려면 `remote-mcp` adapter(GCP VM MCP HTTP 서버)를 1순위로 설정하세요. 모든 vault 작업(read/search/write/graph)을 원격 처리합니다.
 - GCP VM이 다운되면 `script-cli` 또는 `native-cli`로 자동 fallback됩니다.
+- 뉴스 모니터 candidate source 우선순위는 `n8n -> MCP worker -> local fallback` 입니다. `/구독` 응답과 로그에서 현재 source를 확인하세요.
+- Obsidian shared-vault health는 `/api/bot/agent/obsidian/runtime`, knowledge compiler lint는 `/api/bot/agent/obsidian/knowledge-control?artifact=lint` 로 확인하세요.
 - LiteLLM 프록시를 사용하려면 `AI_PROVIDER=openclaw` + `OPENCLAW_BASE_URL=[litellm-endpoint]` 조합으로 서버 측 provider 경로를 고정하세요.
 - HF canary A/B를 운영하려면 `LLM_EXPERIMENT_ENABLED=true`, `LLM_EXPERIMENT_HF_PERCENT`, `LLM_EXPERIMENT_GUILD_ALLOWLIST`를 함께 설정하고 `/api/bot/agent/llm/experiments/summary`로 arm별 성공률/지연/비용을 확인하세요.
 - 확장 유틸리티 점검: `/api/bot/agent/runtime/supabase/extensions`, `/api/bot/agent/runtime/supabase/cron-jobs`, `/api/bot/agent/runtime/supabase/hypopg/candidates`.
@@ -376,7 +389,7 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 
 - AUTONOMY_STRICT=true
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL=[required]
+- MCP_IMPLEMENT_WORKER_URL=[required]
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 - ACTION_MCP_DELEGATION_ENABLED=true
 - ACTION_MCP_STRICT_ROUTING=true
@@ -396,7 +409,7 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 운영 규칙:
 
 - 위 프로파일에서는 `local-fs`를 adapter order에서 제거한다.
-- `MCP_OPENCODE_WORKER_URL` 누락 상태는 배포 불가 상태로 간주한다.
+- `MCP_IMPLEMENT_WORKER_URL` 누락 상태는 배포 불가 상태로 간주한다. legacy `MCP_OPENCODE_WORKER_URL` 는 호환 목적 alias 로만 본다.
 
 ## Local-First Hybrid Profile (Local Reasoning + Remote Automation)
 
@@ -409,7 +422,7 @@ Use this profile when 로컬 머신이 켜져 있을 때는 Ollama를 우선 사
 - LLM_PROVIDER_FALLBACK_CHAIN=openclaw,anthropic,openai,gemini,huggingface
 - LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL=`http://127.0.0.1:8787` (로컬 worker) 또는 실제 원격 worker URL
+- MCP_IMPLEMENT_WORKER_URL=`http://127.0.0.1:8787` (로컬 worker) 또는 실제 원격 worker URL
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 - ACTION_MCP_DELEGATION_ENABLED=true
 - ACTION_MCP_STRICT_ROUTING=true

@@ -467,24 +467,31 @@ const writeConsolidationToVault = async (params: {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = params.memoryId.replace(/[^a-z0-9_-]/gi, '_').slice(0, 40);
   const fileName = `consolidated/${dateStr}_${safeName}.md`;
+  const observedAt = new Date().toISOString();
 
   const tagList = params.tags.slice(0, 10).map((t) => `#${t}`).join(' ');
   const builder = doc()
     .title(params.title)
     .tag('consolidated', 'auto-generated', ...params.tags.slice(0, 5))
     .property('schema', 'consolidated-memory/v1')
+    .property('source', 'memory-consolidation')
+    .property('guild_id', params.guildId || 'system')
     .property('memory_id', params.memoryId)
+    .property('canonical_key', `memory:${params.memoryId}`)
     .property('source_count', params.sourceCount)
-    .property('created_at', new Date().toISOString())
+    .property('created', observedAt)
+    .property('observed_at', observedAt)
+    .property('valid_at', observedAt)
+    .property('status', 'active')
     .section('Content')
-    .line(`> Auto-consolidated from ${params.sourceCount} raw memories on ${new Date().toISOString()}`)
+    .line(`> Auto-consolidated from ${params.sourceCount} raw memories on ${observedAt}`)
     .line('')
     .line(params.content)
     .section('Metadata')
     .line(`Tags: ${tagList}`)
     .line(`Memory ID: ${params.memoryId}`);
 
-  const { markdown: content, tags, properties } = builder.build();
+  const { markdown: content, tags, properties } = builder.buildWithFrontmatter();
 
   try {
     await writeObsidianNoteWithAdapter({

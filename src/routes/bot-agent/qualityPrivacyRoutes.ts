@@ -5,8 +5,11 @@ import { buildPrivacyTuningRecommendation, listPrivacyGateSamples, reviewPrivacy
 import { isUserAdmin } from '../../services/adminAllowlistService';
 import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../../services/agent/agentRetentionPolicyService';
 import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previewForgetUserRagData } from '../../services/privacyForgetService';
-import { getObsidianAdapterRuntimeStatus } from '../../services/obsidian/router';
+import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus, readObsidianFileWithAdapter } from '../../services/obsidian/router';
+import { getObsidianInboxChatLoopStats } from '../../services/obsidian/obsidianInboxChatLoopService';
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
+import { getObsidianKnowledgeCompilationStats, getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../../services/obsidian/knowledgeCompilerService';
+import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agent/agentQualityReviewService';
 import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
@@ -249,10 +252,23 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
   });
 
   router.get('/agent/obsidian/runtime', requireAdmin, async (_req, res, next) => {
-    return res.json({
-      vaultPathConfigured: Boolean(getObsidianVaultRoot()),
-      adapterRuntime: getObsidianAdapterRuntimeStatus(),
-    });
+    try {
+      const [vaultHealth, retrievalBoundary] = await Promise.all([
+        getObsidianVaultLiveHealthStatus(),
+        getObsidianRetrievalBoundarySnapshot(),
+      ]);
+      return res.json({
+        vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+        adapterRuntime: getObsidianAdapterRuntimeStatus(),
+        vaultHealth,
+        cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
+        compiler: getObsidianKnowledgeCompilationStats(),
+        inboxChatLoop: getObsidianInboxChatLoopStats(),
+        retrievalBoundary,
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.get('/agent/obsidian/quality', requireAdmin, async (_req, res, next) => {
@@ -261,6 +277,37 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       vaultPathConfigured: Boolean(getObsidianVaultRoot()),
       snapshot,
     });
+  });
+
+  router.get('/agent/obsidian/knowledge-control', requireAdmin, async (req, res, next) => {
+    const artifactRequest = toStringParam(req.query?.artifact);
+
+    try {
+      let artifact: { request: string; path: string; content: string | null } | null = null;
+      if (artifactRequest) {
+        const artifactPath = resolveObsidianKnowledgeArtifactPath(artifactRequest);
+        if (!artifactPath) {
+          return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'artifact must be index|log|lint|topic:<slug>|entity:<slug>' });
+        }
+
+        artifact = {
+          request: artifactRequest,
+          path: artifactPath,
+          content: await readObsidianFileWithAdapter({
+            vaultPath: getObsidianVaultRoot() || '',
+            filePath: artifactPath,
+          }),
+        };
+      }
+
+      return res.json({
+        vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+        ...getObsidianKnowledgeControlSurface(),
+        artifact,
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.post('/agent/privacy/forget-user', requireAuth, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {

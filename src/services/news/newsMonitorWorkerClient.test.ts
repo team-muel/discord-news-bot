@@ -8,6 +8,10 @@ const { mockCallMcpTool, mockParseMcpTextBlocks, mockShouldDelegate, mockDelegat
   mockDelegateNewsMonitorCandidates: vi.fn(),
 }));
 
+const { mockFetchWithTimeout } = vi.hoisted(() => ({
+  mockFetchWithTimeout: vi.fn(),
+}));
+
 vi.mock('../mcpWorkerClient', () => ({
   callMcpTool: mockCallMcpTool,
   parseMcpTextBlocks: mockParseMcpTextBlocks,
@@ -18,8 +22,12 @@ vi.mock('../automation/n8nDelegationService', () => ({
   delegateNewsMonitorCandidates: mockDelegateNewsMonitorCandidates,
 }));
 
+vi.mock('../../utils/network', () => ({
+  fetchWithTimeout: mockFetchWithTimeout,
+}));
+
 describe('newsMonitorWorkerClient', () => {
-  const ENV_KEYS = ['NEWS_MONITOR_MCP_WORKER_URL', 'MCP_NEWS_WORKER_URL', 'NEWS_MONITOR_MCP_STRICT'];
+  const ENV_KEYS = ['NEWS_MONITOR_MCP_WORKER_URL', 'MCP_NEWS_WORKER_URL', 'NEWS_MONITOR_MCP_STRICT', 'NEWS_MONITOR_LOCAL_FALLBACK_ENABLED', 'GOOGLE_FINANCE_NEWS_URL'];
   let envSnapshot: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -28,12 +36,15 @@ describe('newsMonitorWorkerClient', () => {
     mockParseMcpTextBlocks.mockReset().mockReturnValue(['']);
     mockShouldDelegate.mockReset().mockReturnValue(false);
     mockDelegateNewsMonitorCandidates.mockReset();
+    mockFetchWithTimeout.mockReset();
 
     envSnapshot = {};
     for (const k of ENV_KEYS) {
       envSnapshot[k] = process.env[k];
       delete process.env[k];
     }
+
+    process.env.NEWS_MONITOR_LOCAL_FALLBACK_ENABLED = 'false';
   });
 
   afterEach(() => {
@@ -101,6 +112,54 @@ describe('newsMonitorWorkerClient', () => {
       const { fetchNewsMonitorCandidatesByWorker } = await import('./newsMonitorWorkerClient');
       const result = await fetchNewsMonitorCandidatesByWorker(5);
       expect(result).toBeNull();
+    });
+
+    it('reports none when no candidate source is configured', async () => {
+      process.env.NEWS_MONITOR_MCP_STRICT = 'false';
+      vi.resetModules();
+
+      const { getNewsMonitorCandidateSourceStatus } = await import('./newsMonitorWorkerClient');
+      expect(getNewsMonitorCandidateSourceStatus()).toEqual({ configured: false, mode: 'none' });
+    });
+
+    it('reports MCP worker when worker URL is configured', async () => {
+      process.env.NEWS_MONITOR_MCP_WORKER_URL = 'http://worker.test:3000';
+      vi.resetModules();
+
+      const { getNewsMonitorCandidateSourceStatus } = await import('./newsMonitorWorkerClient');
+      expect(getNewsMonitorCandidateSourceStatus()).toEqual({ configured: true, mode: 'mcp-worker' });
+    });
+
+    it('reports n8n when delegation is configured', async () => {
+      mockShouldDelegate.mockReturnValue(true);
+      vi.resetModules();
+
+      const { getNewsMonitorCandidateSourceStatus } = await import('./newsMonitorWorkerClient');
+      expect(getNewsMonitorCandidateSourceStatus()).toEqual({ configured: true, mode: 'n8n' });
+    });
+
+    it('reports local fallback when external sources are absent but fallback is enabled', async () => {
+      process.env.NEWS_MONITOR_LOCAL_FALLBACK_ENABLED = 'true';
+      vi.resetModules();
+
+      const { getNewsMonitorCandidateSourceStatus } = await import('./newsMonitorWorkerClient');
+      expect(getNewsMonitorCandidateSourceStatus()).toEqual({ configured: true, mode: 'local-fallback' });
+    });
+
+    it('returns local fallback candidates when worker is not configured', async () => {
+      process.env.NEWS_MONITOR_LOCAL_FALLBACK_ENABLED = 'true';
+      mockFetchWithTimeout.mockResolvedValue({
+        ok: true,
+        text: async () => '<a href="https://example.com/news-1">Reuters 2 hours ago Stocks rally on ceasefire hopes</a>',
+      });
+      vi.resetModules();
+
+      const { fetchNewsMonitorCandidatesByWorker } = await import('./newsMonitorWorkerClient');
+      const result = await fetchNewsMonitorCandidatesByWorker(5);
+
+      expect(result).toHaveLength(1);
+      expect(result![0].link).toBe('https://example.com/news-1');
+      expect(result![0].title).toContain('Stocks rally');
     });
 
     it('parses valid MCP worker response', async () => {

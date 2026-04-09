@@ -4,6 +4,7 @@ import type { ChannelSink, ChannelSinkSendOptions } from '../automation/types';
 import { startMemoryJobRunner } from '../memory/memoryJobRunner';
 import { startConsolidationLoop } from '../memory/memoryConsolidationService';
 import { startUserEmbeddingLoop } from '../memory/userEmbeddingService';
+import { startObsidianInboxChatLoop } from '../obsidian/obsidianInboxChatLoopService';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { startRuntimeAlerts } from './runtimeAlertService';
 import { startOpencodePublishWorker } from '../opencode/opencodePublishWorker';
@@ -46,6 +47,8 @@ const startSharedLoops = (source: 'server-process' | 'discord-ready') => {
   } else {
     startUserEmbeddingLoop();
   }
+
+  startObsidianInboxChatLoop();
 
   runtimeState.sharedLoopsStarted = true;
   runtimeState.sharedLoopsSource = source;

@@ -25,7 +25,7 @@ const localFirst = (() => {
 const ollamaBaseUrl = read('OLLAMA_BASE_URL') || 'http://127.0.0.1:11434';
 const ollamaModel = read('OLLAMA_MODEL') || read('LOCAL_LLM_MODEL');
 const requireWorker = parseBool(read('OPENJARVIS_REQUIRE_OPENCODE_WORKER'), true);
-const workerUrl = read('MCP_OPENCODE_WORKER_URL');
+const workerUrl = read('MCP_IMPLEMENT_WORKER_URL') || read('MCP_OPENCODE_WORKER_URL');
 const workerRequireAuth = parseBool(read('OPENCODE_LOCAL_WORKER_REQUIRE_AUTH'), false);
 const hasWorkerAuthToken = Boolean(
   read('MCP_WORKER_AUTH_TOKEN')
@@ -98,7 +98,7 @@ const checkWorker = async () => {
     return;
   }
   if (!workerUrl) {
-    addFailure('MCP_OPENCODE_WORKER_URL is required when OPENJARVIS_REQUIRE_OPENCODE_WORKER=true; set the real remote worker URL before enabling unattended autonomy');
+    addFailure('MCP_IMPLEMENT_WORKER_URL is required when OPENJARVIS_REQUIRE_OPENCODE_WORKER=true; legacy alias MCP_OPENCODE_WORKER_URL is still accepted while migrating');
     return;
   }
 
@@ -112,7 +112,7 @@ const checkWorker = async () => {
     }
   }
   if (!ok) {
-    addFailure('Remote worker probe failed for base URL and /health endpoint; verify MCP_OPENCODE_WORKER_URL and worker health before unattended runs');
+    addFailure('Remote worker probe failed for base URL and /health endpoint; verify MCP_IMPLEMENT_WORKER_URL (or legacy MCP_OPENCODE_WORKER_URL) and worker health before unattended runs');
   }
 
   if (!hasWorkerAuthToken) {

@@ -38,6 +38,8 @@ const getLoreMaxChars = (): number => {
   return Math.max(80, Math.min(800, raw));
 };
 
+const hasYamlFrontmatter = (content: string): boolean => /^---\n[\s\S]*?\n---\n?/.test(String(content || ''));
+
 const getTimeoutMs = (): number => {
   const raw = parseIntegerEnv(process.env.OBSIDIAN_NATIVE_CLI_TIMEOUT_MS, 10_000);
   return Math.max(2_000, Math.min(30_000, raw));
@@ -243,6 +245,10 @@ const writeNote = async (
     throw new Error('writeNote: native CLI returned no output');
   }
 
+  if (hasYamlFrontmatter(safeContent)) {
+    return { path: targetPath };
+  }
+
   // Set tags if provided
   if (params.tags && params.tags.length > 0) {
     for (const tag of params.tags) {
@@ -265,8 +271,30 @@ const writeNote = async (
     for (const [key, value] of Object.entries(params.properties)) {
       if (value === null || value === undefined) continue;
       const safeKey = sanitizeArg(key, 60);
+      if (!safeKey) {
+        continue;
+      }
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const safeValue = sanitizeArg(String(item), 200);
+          if (!safeValue) {
+            continue;
+          }
+          await runNativeCli([
+            'property:set',
+            `path=${targetPath}`,
+            `vault=${vaultName}`,
+            `name=${safeKey}`,
+            `value=${safeValue}`,
+            'type=list',
+          ]);
+        }
+        continue;
+      }
+
       const safeValue = sanitizeArg(String(value), 200);
-      if (safeKey && safeValue) {
+      if (safeValue) {
         await runNativeCli([
           'property:set',
           `path=${targetPath}`,

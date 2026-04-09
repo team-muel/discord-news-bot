@@ -23,11 +23,11 @@ services:
       - key: BOT_START_FAILURE_EXIT_ENABLED
         value: "false"
       - key: START_AUTOMATION_JOBS
-        value: "false"
+        value: "true"
       - key: AUTOMATION_YOUTUBE_ENABLED
         value: "true"
       - key: AUTOMATION_NEWS_ENABLED
-        value: "false"
+        value: "true"
       - key: AI_PROVIDER
         value: litellm
       - key: OPENCLAW_MODEL
@@ -86,6 +86,8 @@ services:
         value: "false"
       - key: NEWS_MONITOR_MCP_STRICT
         value: "false"
+      - key: NEWS_MONITOR_MCP_WORKER_URL
+        sync: false
       - key: DISCORD_TOKEN
         sync: false
       - key: SUPABASE_URL
@@ -188,6 +190,10 @@ services:
         value: "true"
       - key: N8N_ENABLED
         value: "true"
+      - key: N8N_DELEGATION_ENABLED
+        value: "true"
+      - key: N8N_WEBHOOK_NEWS_MONITOR_CANDIDATES
+        sync: false
       - key: SIGNAL_BUS_ENABLED
         value: "true"
       - key: SIGNAL_BUS_WIRING_ENABLED

@@ -1,4 +1,8 @@
-import type { ActionDefinition, ActionExecutionResult } from './types';
+import {
+  EXECUTOR_ACTION_CANONICAL_NAME,
+  type ActionDefinition,
+  type ActionExecutionResult,
+} from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { runExternalAction, getExternalAdapterById } from '../../tools/toolRouter';
 import logger from '../../../logger';
@@ -54,8 +58,8 @@ const toMode = (value: unknown): 'read_only' | 'workspace_write' => {
 };
 
 export const opencodeExecuteAction: ActionDefinition = {
-  name: 'opencode.execute',
-  description: 'Opencode MCP 워커를 통해 샌드박스 터미널 작업을 실행합니다(기본: read_only).',
+  name: EXECUTOR_ACTION_CANONICAL_NAME,
+  description: 'Canonical implement.execute executor action. Legacy alias opencode.execute 도 지원하며, Opencode MCP 워커를 통해 샌드박스 터미널 작업을 실행합니다(기본: read_only).',
   category: 'code',
   execute: async ({ goal, args, guildId, requestedBy }) => {
     const task = String(args?.task || goal || '').trim();
@@ -67,7 +71,7 @@ export const opencodeExecuteAction: ActionDefinition = {
     if (!task) {
       return withOpencodeRouting({
         ok: false,
-        name: 'opencode.execute',
+        name: EXECUTOR_ACTION_CANONICAL_NAME,
         summary: '실행할 task가 비어 있습니다.',
         artifacts: [],
         verification: ['task input required'],
@@ -78,7 +82,7 @@ export const opencodeExecuteAction: ActionDefinition = {
     if (task.length > taskLengthLimit) {
       return withOpencodeRouting({
         ok: false,
-        name: 'opencode.execute',
+        name: EXECUTOR_ACTION_CANONICAL_NAME,
         summary: `task 길이가 너무 깁니다(max=${taskLengthLimit}).`,
         artifacts: [],
         verification: ['task length guardrail'],
@@ -89,7 +93,7 @@ export const opencodeExecuteAction: ActionDefinition = {
     if (DANGEROUS_COMMAND_PATTERN.test(safetyCheckText)) {
       return withOpencodeRouting({
         ok: false,
-        name: 'opencode.execute',
+        name: EXECUTOR_ACTION_CANONICAL_NAME,
         summary: '파괴적 명령어 패턴이 감지되어 실행이 차단되었습니다.',
         artifacts: [toSingleLine(safetyCheckText).slice(0, 220)],
         verification: ['dangerous command guardrail'],
@@ -125,7 +129,7 @@ export const opencodeExecuteAction: ActionDefinition = {
           });
           return withOpencodeRouting({
             ok: sandboxResult.ok,
-            name: 'opencode.execute',
+            name: EXECUTOR_ACTION_CANONICAL_NAME,
             summary: sandboxResult.ok
               ? `OpenShell sandbox 실행 완료: ${sandboxResult.output[0]?.slice(0, 140) || 'done'}`
               : `OpenShell sandbox 실행 실패: ${sandboxResult.summary}`,
@@ -143,7 +147,7 @@ export const opencodeExecuteAction: ActionDefinition = {
     }
 
     const delegated = await runDelegatedAction({
-      actionName: 'opencode.execute',
+      actionName: EXECUTOR_ACTION_CANONICAL_NAME,
       workerKind: 'opencode',
       toolName: OPENCODE_TOOL_NAME,
       args: {
@@ -164,15 +168,15 @@ export const opencodeExecuteAction: ActionDefinition = {
       strictFailureError: 'OPENCODE_DELEGATION_FAILED',
       onWorkerMissing: () => ({
         ok: false,
-        name: 'opencode.execute',
+        name: EXECUTOR_ACTION_CANONICAL_NAME,
         summary: 'Opencode MCP 워커가 설정되지 않았습니다.',
-        artifacts: ['env: MCP_OPENCODE_WORKER_URL'],
+        artifacts: ['env: MCP_IMPLEMENT_WORKER_URL', 'legacy env: MCP_OPENCODE_WORKER_URL'],
         verification: ['opencode worker url missing'],
         error: 'OPENCODE_WORKER_NOT_CONFIGURED',
       }),
       onEmptyResult: () => ({
         ok: false,
-        name: 'opencode.execute',
+        name: EXECUTOR_ACTION_CANONICAL_NAME,
         summary: 'Opencode 실행 결과가 비어 있습니다.',
         artifacts: [],
         verification: ['delegated result empty'],
@@ -186,7 +190,7 @@ export const opencodeExecuteAction: ActionDefinition = {
       if (sandboxResult.ok && sandboxResult.output.length > 0) {
         return withOpencodeRouting({
           ok: false,
-          name: 'opencode.execute',
+          name: EXECUTOR_ACTION_CANONICAL_NAME,
           summary: 'MCP 워커 불가 — OpenShell sandbox 사용 가능하나 자동 실행은 아직 지원되지 않습니다.',
           artifacts: [`available_sandboxes: ${sandboxResult.output.slice(0, 3).join(', ')}`],
           verification: ['mcp delegation failed', 'openshell sandbox available'],
@@ -196,7 +200,7 @@ export const opencodeExecuteAction: ActionDefinition = {
 
       return withOpencodeRouting({
         ok: false,
-        name: 'opencode.execute',
+        name: EXECUTOR_ACTION_CANONICAL_NAME,
         summary: 'Opencode 워커 호출에 실패했습니다.',
         artifacts: [],
         verification: ['delegation fallback failed'],

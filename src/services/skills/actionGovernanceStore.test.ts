@@ -83,6 +83,21 @@ describe('upsertGuildActionPolicy + getGuildActionPolicy (in-memory)', () => {
     expect(result.runMode).toBe('auto');
     expect(result.updatedBy).toBe('admin-2');
   });
+
+  it('legacy executor key를 저장해도 canonical action name으로 조회된다', async () => {
+    await upsertGuildActionPolicy({
+      guildId: 'guild-policy-3',
+      actionName: 'opencode.execute',
+      enabled: false,
+      runMode: 'disabled',
+      actorId: 'admin-3',
+    });
+
+    const result = await getGuildActionPolicy('guild-policy-3', 'implement.execute');
+    expect(result.actionName).toBe('implement.execute');
+    expect(result.enabled).toBe(false);
+    expect(result.runMode).toBe('disabled');
+  });
 });
 
 describe('listGuildActionPolicies (in-memory)', () => {

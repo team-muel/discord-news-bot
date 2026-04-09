@@ -22,6 +22,9 @@ import {
   deleteNewsChannelSubscription,
   listNewsChannelSubscriptions,
 } from '../../services/news/newsChannelStore';
+import { isAutomationEnabled, triggerAutomationJob } from '../../services/automationBot';
+import { isNewsSentimentMonitorEnabled } from '../../services/news/newsSentimentMonitor';
+import { getNewsMonitorCandidateSourceStatus } from '../../services/news/newsMonitorWorkerClient';
 import { DISCORD_MESSAGES } from '../messages';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,6 +64,88 @@ const isValidSubscribeChannelType = (t: number): boolean =>
   t === ChannelType.PublicThread ||
   t === ChannelType.PrivateThread ||
   t === ChannelType.AnnouncementThread;
+
+const parseAutomationMetric = (message: string, key: string): number => {
+  const matched = message.match(new RegExp(`${key}=(\\d+)`));
+  return matched ? Number(matched[1]) : 0;
+};
+
+const formatNewsCandidateSource = (): string => {
+  const status = getNewsMonitorCandidateSourceStatus();
+  if (status.mode === 'n8n') {
+    return 'n8n 위임';
+  }
+
+  if (status.mode === 'mcp-worker') {
+    return 'MCP 뉴스 워커';
+  }
+
+  if (status.mode === 'local-fallback') {
+    return '내장 Google Finance fallback';
+  }
+
+  return '미설정';
+};
+
+const buildNewsAutomationWarnings = (): string[] => {
+  const warnings: string[] = [];
+
+  if (!isAutomationEnabled()) {
+    warnings.push('상태: 자동화 런타임이 꺼져 있어 뉴스가 자동 게시되지 않습니다.');
+    warnings.push('관리자 확인: START_AUTOMATION_JOBS=true 와 Discord 토큰 설정이 필요합니다.');
+    return warnings;
+  }
+
+  if (!isNewsSentimentMonitorEnabled()) {
+    warnings.push('상태: 뉴스 모니터가 꺼져 있어 뉴스가 자동 게시되지 않습니다.');
+    warnings.push('관리자 확인: AUTOMATION_NEWS_ENABLED=true 가 필요합니다.');
+  }
+
+  if (!getNewsMonitorCandidateSourceStatus().configured) {
+    warnings.push('상태: 뉴스 후보 공급원이 연결되지 않아 새 기사를 가져올 수 없습니다.');
+    warnings.push('관리자 확인: NEWS_MONITOR_MCP_WORKER_URL 또는 N8N_WEBHOOK_NEWS_MONITOR_CANDIDATES 설정이 필요합니다.');
+  }
+
+  return warnings;
+};
+
+const formatNewsTriggerSummary = (result: { ok: boolean; message: string }): string[] => {
+  if (!result.ok) {
+    return [
+      '즉시 점검 실패: 뉴스 자동화를 바로 실행하지 못했습니다.',
+      `세부: ${result.message}`,
+    ];
+  }
+
+  const sent = parseAutomationMetric(result.message, 'sent');
+  const failed = parseAutomationMetric(result.message, 'failed');
+  const duplicate = parseAutomationMetric(result.message, 'duplicate');
+  const noCandidate = parseAutomationMetric(result.message, 'noCandidate');
+
+  if (sent > 0) {
+    return ['즉시 점검 완료: 새 뉴스를 전송했습니다.'];
+  }
+
+  if (failed > 0) {
+    return [
+      '즉시 점검 완료: 일부 채널 전송에 실패했습니다.',
+      `세부: ${result.message}`,
+    ];
+  }
+
+  if (duplicate > 0) {
+    return ['즉시 점검 완료: 이미 전송한 최신 뉴스라 중복 게시를 건너뛰었습니다.'];
+  }
+
+  if (noCandidate > 0) {
+    return ['즉시 점검 완료: 아직 보낼 신규 뉴스가 없습니다.'];
+  }
+
+  return [
+    '즉시 점검 완료: 뉴스 자동화 호출은 성공했습니다.',
+    `세부: ${result.message}`,
+  ];
+};
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 const handleSubscribeYouTubeCommand = async (
@@ -148,11 +233,30 @@ const handleSubscribeNewsCommand = async (
       discordChannelId: targetChannel.id,
     });
     const state = result.created ? '등록 완료' : '이미 등록됨';
+    const warnings = buildNewsAutomationWarnings();
+    const lines = [`${state}: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`];
+
+    if (access.autoLoggedIn) {
+      lines.push(DISCORD_MESSAGES.common.autoLoginActivated);
+    }
+
+    lines.push(`후보 공급원: ${formatNewsCandidateSource()}`);
+
+    if (warnings.length > 0) {
+      lines.push('', ...warnings);
+    } else {
+      const triggerResult = await triggerAutomationJob('news-monitor', { guildId: interaction.guildId });
+      lines.push('', ...formatNewsTriggerSummary(triggerResult));
+      if (!triggerResult.ok) {
+        warnings.push(triggerResult.message);
+      }
+    }
+
     await interaction.editReply(
       buildSimpleEmbed(
         DISCORD_MESSAGES.subscribe.titleNewsSubscribe,
-        `${state}: news -> <#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})${accessNotice}`,
-        EMBED_SUCCESS,
+        lines.join('\n'),
+        warnings.length > 0 ? EMBED_WARN : EMBED_SUCCESS,
       ),
     );
   } catch (error) {

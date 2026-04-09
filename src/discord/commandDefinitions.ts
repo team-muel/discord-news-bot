@@ -29,6 +29,19 @@ export const AUTOMATION_INTENT_PATTERN = RUNTIME_AUTOMATION_INTENT_PATTERN;
 export const WORKER_APPROVAL_CHANNEL_ID = CFG_WORKER_APPROVAL_CHANNEL_ID;
 export const CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC = CFG_CLEAR_GUILD_COMMANDS;
 
+const createAskSlashCommand = (name: string, description: string) => new SlashCommandBuilder()
+  .setName(name)
+  .setDescription(description)
+  .setDMPermission(false)
+  .addStringOption((o) =>
+    o.setName('질문').setDescription('예: 트레이딩 전략이 어떻게 구성되어 있나요?').setRequired(true),
+  )
+  .addStringOption((o) =>
+    o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+      .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+      .setRequired(false),
+  );
+
 const ALL_COMMANDS = [
   new SlashCommandBuilder()
     .setName('도움말')
@@ -88,18 +101,8 @@ const ALL_COMMANDS = [
     .addStringOption((o) =>
       o.setName('링크').setDescription('영상/게시글일 때 YouTube 채널 링크 또는 UC... 채널 ID').setRequired(false),
     ),
-  new SlashCommandBuilder()
-    .setName('해줘')
-    .setDescription('뮤엘에게 작업을 요청합니다 — 문서·메모·지식 기반으로 답변합니다')
-    .setDMPermission(false)
-    .addStringOption((o) =>
-      o.setName('질문').setDescription('예: 트레이딩 전략이 어떻게 구성되어 있나요?').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
+  createAskSlashCommand('뮤엘', '뮤엘에게 질문합니다 — 문서·메모·지식 기반으로 답변합니다'),
+  createAskSlashCommand('해줘', '호환 명령입니다 — /뮤엘과 같은 질문 응답을 수행합니다'),
   new SlashCommandBuilder()
     .setName('만들어줘')
     .setDescription('코드·스크립트·자동화를 스레드로 협업 생성합니다')

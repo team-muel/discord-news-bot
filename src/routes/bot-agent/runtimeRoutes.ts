@@ -12,16 +12,25 @@ import { getRuntimeSchedulerPolicySnapshot } from '../../services/runtime/runtim
 import { getEfficiencySnapshot, runEfficiencyQuickWins } from '../../services/runtime/efficiencyOptimizationService';
 import { getAgentTelemetryQueueSnapshot } from '../../services/agent/agentTelemetryQueue';
 import { summarizeOpencodeQueueReadiness } from '../../services/opencode/opencodeGitHubQueueService';
-import { getMemoryJobRunnerStats } from '../../services/memory/memoryJobRunner';
+import { getMemoryJobRunnerStats, getMemoryQueueHealthSnapshot } from '../../services/memory/memoryJobRunner';
+import { getObsidianInboxChatLoopStats } from '../../services/obsidian/obsidianInboxChatLoopService';
 import { getObsidianLoreSyncLoopStats } from '../../services/obsidian/obsidianLoreSyncService';
 import { getRetrievalEvalLoopStats } from '../../services/eval/retrievalEvalLoopService';
 import { buildAgentRuntimeReadinessReport } from '../../services/agent/agentRuntimeReadinessService';
 import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloAlertEvents } from '../../services/agent/agentSloService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../../services/finopsService';
 import { getLlmExperimentSummary } from '../../services/llmExperimentAnalyticsService';
+import { getLlmRuntimeSnapshot } from '../../services/llmClient';
 import { buildSocialQualityOperationalSnapshot } from '../../services/agent/agentSocialQualitySnapshotService';
 import { buildWorkerApprovalGateSnapshot } from '../../services/agent/agentWorkerApprovalGateSnapshotService';
+import { buildGoNoGoReport } from '../../services/goNoGoService';
+import { buildToolLearningWeeklyReport } from '../../services/toolLearningService';
+import { getObsidianKnowledgeCompilationStats } from '../../services/obsidian/knowledgeCompilerService';
+import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
+import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
+import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus } from '../../services/obsidian/router';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
+import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import {
   computeSystemGradient,
   computeConvergenceReport,
@@ -33,6 +42,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '../../services/supabase
 
 import { BotAgentRouteDeps } from './types';
 import {
+  MCP_IMPLEMENT_WORKER_URL,
   OPENJARVIS_REQUIRE_OPENCODE_WORKER,
   MCP_OPENCODE_WORKER_URL,
   UNATTENDED_WORKER_HEALTH_TIMEOUT_MS,
@@ -40,6 +50,11 @@ import {
   OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN,
   LLM_EXPERIMENT_NAME,
 } from '../../config';
+
+const EXECUTOR_ACTION_CANONICAL_NAME = 'implement.execute';
+const EXECUTOR_ACTION_LEGACY_NAME = 'opencode.execute';
+const EXECUTOR_WORKER_ENV_CANONICAL_KEY = 'MCP_IMPLEMENT_WORKER_URL';
+const EXECUTOR_WORKER_ENV_LEGACY_KEY = 'MCP_OPENCODE_WORKER_URL';
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -57,7 +72,7 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
 
 const probeOpencodeWorkerHealth = async () => {
   const required = OPENJARVIS_REQUIRE_OPENCODE_WORKER;
-  const workerUrl = MCP_OPENCODE_WORKER_URL;
+  const workerUrl = MCP_IMPLEMENT_WORKER_URL || MCP_OPENCODE_WORKER_URL;
   const timeoutMs = UNATTENDED_WORKER_HEALTH_TIMEOUT_MS;
   if (!required && !workerUrl) {
     return {
@@ -69,7 +84,14 @@ const probeOpencodeWorkerHealth = async () => {
       endpoint: null,
       checkedAt: new Date().toISOString(),
       reason: 'worker_not_required',
-      label: 'opencode',
+      label: 'implement',
+      contract: {
+        canonicalActionName: EXECUTOR_ACTION_CANONICAL_NAME,
+        persistedActionName: EXECUTOR_ACTION_LEGACY_NAME,
+        legacyActionName: EXECUTOR_ACTION_LEGACY_NAME,
+        canonicalWorkerEnvKey: EXECUTOR_WORKER_ENV_CANONICAL_KEY,
+        legacyWorkerEnvKey: EXECUTOR_WORKER_ENV_LEGACY_KEY,
+      },
     };
   }
 
@@ -83,7 +105,14 @@ const probeOpencodeWorkerHealth = async () => {
       endpoint: null,
       checkedAt: new Date().toISOString(),
       reason: 'worker_url_missing',
-      label: 'opencode',
+      label: 'implement',
+      contract: {
+        canonicalActionName: EXECUTOR_ACTION_CANONICAL_NAME,
+        persistedActionName: EXECUTOR_ACTION_LEGACY_NAME,
+        legacyActionName: EXECUTOR_ACTION_LEGACY_NAME,
+        canonicalWorkerEnvKey: EXECUTOR_WORKER_ENV_CANONICAL_KEY,
+        legacyWorkerEnvKey: EXECUTOR_WORKER_ENV_LEGACY_KEY,
+      },
     };
   }
 
@@ -98,7 +127,14 @@ const probeOpencodeWorkerHealth = async () => {
     endpoint: health.endpoint,
     checkedAt: new Date().toISOString(),
     reason: health.ok ? undefined : health.error || 'probe_failed',
-    label: 'opencode',
+    label: 'implement',
+    contract: {
+      canonicalActionName: EXECUTOR_ACTION_CANONICAL_NAME,
+      persistedActionName: EXECUTOR_ACTION_LEGACY_NAME,
+      legacyActionName: EXECUTOR_ACTION_LEGACY_NAME,
+      canonicalWorkerEnvKey: EXECUTOR_WORKER_ENV_CANONICAL_KEY,
+      legacyWorkerEnvKey: EXECUTOR_WORKER_ENV_LEGACY_KEY,
+    },
   };
 };
 
@@ -150,6 +186,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
 
   router.get('/agent/runtime/unattended-health', requireAdmin, async (req, res, next) => {
     const guildId = toStringParam(req.query?.guildId);
+    const actionName = toStringParam(req.query?.actionName) || undefined;
     try {
       const telemetry = getAgentTelemetryQueueSnapshot();
       const readiness = guildId
@@ -157,15 +194,26 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         : null;
       const workerHealth = await probeOpencodeWorkerHealth();
       const advisoryWorkersHealth = await getAgentRoleWorkersHealthSnapshot();
+      const llmRuntime = await getLlmRuntimeSnapshot({ guildId: guildId || undefined, actionName });
       return res.json({
         ok: true,
         timestamp: new Date().toISOString(),
         telemetry,
+        executorReadiness: readiness,
         opencodeReadiness: readiness,
         workerHealth,
         advisoryWorkersHealth,
+        llmRuntime,
         notes: {
           guildScoped: Boolean(guildId),
+          actionName: actionName || null,
+          executorContract: {
+            canonicalActionName: EXECUTOR_ACTION_CANONICAL_NAME,
+            persistedActionName: EXECUTOR_ACTION_LEGACY_NAME,
+            legacyActionName: EXECUTOR_ACTION_LEGACY_NAME,
+            canonicalWorkerEnvKey: EXECUTOR_WORKER_ENV_CANONICAL_KEY,
+            legacyWorkerEnvKey: EXECUTOR_WORKER_ENV_LEGACY_KEY,
+          },
           publishLock: {
             enabled: String(OPENCODE_PUBLISH_DISTRIBUTED_LOCK_ENABLED),
             failOpen: String(OPENCODE_PUBLISH_DISTRIBUTED_LOCK_FAIL_OPEN),
@@ -280,10 +328,69 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     return res.json({
       ok: true,
       memoryJobRunner: getMemoryJobRunnerStats(),
+      obsidianInboxChatLoop: getObsidianInboxChatLoopStats(),
       obsidianLoreSyncLoop: getObsidianLoreSyncLoopStats(),
       retrievalEvalLoop: getRetrievalEvalLoopStats(),
       generatedAt: new Date().toISOString(),
     });
+  });
+
+  router.get('/agent/runtime/knowledge-control-plane', requireAdmin, async (req, res, next) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const days = toBoundedInt(req.query?.days, 14, { min: 1, max: 90 });
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
+    }
+
+    try {
+      const [goNoGo, queueHealth, learning, vaultHealth, graphAudit, retrievalBoundary] = await Promise.all([
+        buildGoNoGoReport({ guildId, days }),
+        getMemoryQueueHealthSnapshot(guildId),
+        buildToolLearningWeeklyReport({ guildId, days }),
+        getObsidianVaultLiveHealthStatus(),
+        getLatestObsidianGraphAuditSnapshot(),
+        getObsidianRetrievalBoundarySnapshot(),
+      ]);
+
+      return res.json({
+        ok: true,
+        snapshot: {
+          guildId,
+          windowDays: days,
+          generatedAt: new Date().toISOString(),
+          releaseGate: {
+            decision: goNoGo.decision,
+            failedChecks: goNoGo.failedChecks,
+            checks: goNoGo.checks,
+          },
+          memory: {
+            scope: goNoGo.scope,
+            quality: goNoGo.metrics,
+            queue: goNoGo.queue,
+            queueHealth,
+          },
+          learning,
+          obsidian: {
+            vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+            adapterRuntime: getObsidianAdapterRuntimeStatus(),
+            vaultHealth,
+            cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
+            compiler: getObsidianKnowledgeCompilationStats(),
+            graphAudit,
+            retrievalBoundary,
+          },
+          loops: {
+            memoryJobRunner: getMemoryJobRunnerStats(),
+            obsidianInboxChatLoop: getObsidianInboxChatLoopStats(),
+            obsidianLoreSyncLoop: getObsidianLoreSyncLoopStats(),
+            retrievalEvalLoop: getRetrievalEvalLoopStats(),
+          },
+          telemetryQueue: goNoGo.telemetryQueue,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.get('/agent/runtime/readiness', requireAdmin, async (req, res, next) => {

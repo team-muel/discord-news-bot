@@ -15,6 +15,7 @@ import {
   getObsidianGraphMetadataWithAdapter,
   writeObsidianNoteWithAdapter,
   getObsidianAdapterRuntimeStatus,
+  getObsidianVaultLiveHealthStatus,
   getObsidianOutlineWithAdapter,
   searchObsidianContextWithAdapter,
   readObsidianPropertyWithAdapter,
@@ -27,7 +28,8 @@ import {
   toggleObsidianTaskWithAdapter,
 } from '../services/obsidian/router';
 import { evalCode as obsidianEvalCode } from '../services/obsidian/adapters/nativeCliAdapter';
-import { queryObsidianRAG } from '../services/obsidian/obsidianRagService';
+import { getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../services/obsidian/knowledgeCompilerService';
+import { getObsidianRetrievalBoundarySnapshot, queryObsidianRAG } from '../services/obsidian/obsidianRagService';
 import { getCacheStats } from '../services/obsidian/obsidianCacheService';
 import { getObsidianLoreSyncLoopStats } from '../services/obsidian/obsidianLoreSyncService';
 import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidian/obsidianQualityService';
@@ -146,6 +148,17 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.knowledge.control',
+    description: 'Knowledge compiler 상태, lint 요약, 생성된 artifact 경로와 선택한 artifact 본문을 조회합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        artifact: { type: 'string', description: 'index|log|lint|topic:<slug>|entity:<slug> 또는 생성된 artifact 경로' },
+      },
       additionalProperties: false,
     },
   },
@@ -422,7 +435,45 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
 
   // ── obsidian.adapter.status ─────────────────────────────────────────────
   if (name === 'obsidian.adapter.status') {
-    return toJsonResult(getObsidianAdapterRuntimeStatus());
+    const [vaultHealth, retrievalBoundary] = await Promise.all([
+      getObsidianVaultLiveHealthStatus(),
+      getObsidianRetrievalBoundarySnapshot(),
+    ]);
+    return toJsonResult({
+      ...getObsidianAdapterRuntimeStatus(),
+      vaultHealth,
+      cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
+      retrievalBoundary,
+    });
+  }
+
+  // ── obsidian.knowledge.control ────────────────────────────────────────
+  if (name === 'obsidian.knowledge.control') {
+    const artifactRequest = compact(args.artifact);
+    const surface = getObsidianKnowledgeControlSurface();
+
+    if (!artifactRequest) {
+      return toJsonResult(surface);
+    }
+
+    const artifactPath = resolveObsidianKnowledgeArtifactPath(artifactRequest);
+    if (!artifactPath) {
+      return toTextResult('artifact must be index|log|lint|topic:<slug>|entity:<slug>', true);
+    }
+
+    const content = await readObsidianFileWithAdapter({
+      vaultPath: vaultPath || '',
+      filePath: artifactPath,
+    });
+
+    return toJsonResult({
+      ...surface,
+      artifact: {
+        request: artifactRequest,
+        path: artifactPath,
+        content,
+      },
+    });
   }
 
   // ── obsidian.outline ────────────────────────────────────────────────────

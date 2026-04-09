@@ -1,4 +1,5 @@
 import { parseBoundedNumberEnv, parseCsvList, parseStringEnv } from '../../../utils/env';
+import { canonicalizeActionName, normalizeActionNameList } from './types';
 
 const normalizeHost = (value: string): string => value.trim().toLowerCase();
 
@@ -17,7 +18,7 @@ const normalizeHostRule = (value: string): string => {
 const RUNNER_MODE_RAW = parseStringEnv(process.env.ACTION_RUNNER_MODE, 'execute').toLowerCase();
 const RUNNER_MODE = RUNNER_MODE_RAW === 'dry-run' ? 'dry-run' : 'execute';
 const ALLOWED_ACTIONS_RAW = parseStringEnv(process.env.ACTION_ALLOWED_ACTIONS, '*');
-const ALLOWED_ACTIONS = new Set(parseCsvList(ALLOWED_ACTIONS_RAW));
+const ALLOWED_ACTIONS = new Set(normalizeActionNameList(parseCsvList(ALLOWED_ACTIONS_RAW)));
 const WEB_ALLOWED_HOSTS = new Set(
   parseCsvList(process.env.ACTION_WEB_FETCH_ALLOWED_HOSTS)
     .map((item) => normalizeHostRule(item))
@@ -30,7 +31,8 @@ export const ACTION_MAX_READ_LIMIT = parseBoundedNumberEnv(process.env.ACTION_DB
 export const getActionRunnerMode = (): 'execute' | 'dry-run' => RUNNER_MODE;
 
 export const isActionAllowed = (actionName: string): boolean => {
-  if (!actionName) {
+  const normalizedActionName = canonicalizeActionName(actionName);
+  if (!normalizedActionName) {
     return false;
   }
 
@@ -38,7 +40,7 @@ export const isActionAllowed = (actionName: string): boolean => {
     return true;
   }
 
-  return ALLOWED_ACTIONS.has(actionName);
+  return ALLOWED_ACTIONS.has(normalizedActionName);
 };
 
 export const isWebHostAllowed = (host: string): boolean => {

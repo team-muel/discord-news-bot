@@ -204,6 +204,48 @@ describe('nativeCliObsidianAdapter', () => {
       expect(result.path).toContain('new-note.md');
     });
 
+    it('does not flatten frontmatter properties when content already contains frontmatter', async () => {
+      mockExecFile.mockImplementation(makeExecCallback('Created: notes/frontmatter.md') as never);
+
+      const result = await nativeCliObsidianAdapter.writeNote!({
+        guildId: 'guild-1',
+        vaultPath: '/vault',
+        fileName: 'frontmatter.md',
+        content: ['---', 'title: Current answer', 'source_refs: [chat/inbox/root.md, chat/answers/prev.md]', 'tags: [chat, answer]', '---', '', '# Current answer'].join('\n'),
+        tags: ['chat', 'answer'],
+        properties: {
+          source_refs: ['chat/inbox/root.md', 'chat/answers/prev.md'],
+        },
+      });
+
+      expect(result.path).toContain('frontmatter.md');
+      expect(mockExecFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes array properties as list fields when frontmatter is not embedded', async () => {
+      mockExecFile.mockImplementation(makeExecCallback('Created: notes/list-props.md') as never);
+
+      await nativeCliObsidianAdapter.writeNote!({
+        guildId: 'guild-1',
+        vaultPath: '/vault',
+        fileName: 'list-props.md',
+        content: 'Hello world',
+        properties: {
+          source_refs: ['chat/inbox/root.md', 'chat/answers/prev.md'],
+        },
+      });
+
+      expect(mockExecFile).toHaveBeenCalledTimes(3);
+      const propertyCalls = mockExecFile.mock.calls.slice(1);
+      expect(propertyCalls).toHaveLength(2);
+      for (const call of propertyCalls) {
+        const args = call[1] as string[];
+        expect(args).toContain('property:set');
+        expect(args).toContain('name=source_refs');
+        expect(args).toContain('type=list');
+      }
+    });
+
     it('throws on empty fileName', async () => {
       await expect(
         nativeCliObsidianAdapter.writeNote!({

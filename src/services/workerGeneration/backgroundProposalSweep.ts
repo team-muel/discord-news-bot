@@ -7,6 +7,7 @@ import { executeExternalAction } from '../tools/externalAdapterRegistry';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { triggerLacunaSprintIfNeeded, type LacunaCandidate } from '../sprint/selfImprovementLoop';
 import { getGuildActionPolicy, upsertGuildActionPolicy } from '../skills/actionGovernanceStore';
+import { EXECUTOR_ACTION_CANONICAL_NAME } from '../skills/actions/types';
 import { runWithConcurrency } from '../../utils/async';
 import { getErrorMessage } from '../../discord/ui';
 import { OPENCLAW_LACUNA_SKILL_CREATE_ENABLED } from '../../config';
@@ -185,14 +186,14 @@ export const enforceImplementApprovalRequiredPilot = async (guildIds: string[]):
   let changed = 0;
   await runWithConcurrency(guildIds, async (guildId) => {
     try {
-      const policy = await getGuildActionPolicy(guildId, 'opencode.execute');
+      const policy = await getGuildActionPolicy(guildId, EXECUTOR_ACTION_CANONICAL_NAME);
       if (policy.enabled && policy.runMode === 'approval_required') {
         return;
       }
 
       await upsertGuildActionPolicy({
         guildId,
-        actionName: 'opencode.execute',
+        actionName: EXECUTOR_ACTION_CANONICAL_NAME,
         enabled: true,
         runMode: 'approval_required',
         actorId: 'system:implement-pilot',

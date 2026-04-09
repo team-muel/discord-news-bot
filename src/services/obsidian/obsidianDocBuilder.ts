@@ -8,6 +8,8 @@
  * - Produces consistent, well-formed Obsidian markdown
  */
 
+import type { ObsidianFrontmatterValue } from './types';
+
 export type ObsidianRelationType =
   | 'spawned-by'    // retro spawned by plan
   | 'follows'       // plan → implement → review flow
@@ -36,10 +38,54 @@ const DEFAULT_STRENGTH: Record<ObsidianRelationType, number> = {
   'derived-from': 0.9,
 };
 
+const sanitizePropertyKey = (value: string): string => value.replace(/[^a-zA-Z0-9_]/g, '_');
+
+const serializeFrontmatterItem = (value: string): string => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return "''";
+  if (/^[a-zA-Z0-9_./:-]+$/.test(normalized)) {
+    return normalized;
+  }
+  return JSON.stringify(normalized);
+};
+
+export const serializeObsidianFrontmatterValue = (value: ObsidianFrontmatterValue): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => serializeFrontmatterItem(entry)).join(', ')}]`;
+  }
+  if (typeof value === 'boolean' || typeof value === 'number') {
+    return String(value);
+  }
+  return serializeFrontmatterItem(value);
+};
+
+export const buildObsidianFrontmatter = (params: {
+  tags?: string[];
+  properties?: Record<string, ObsidianFrontmatterValue | null | undefined>;
+}): string => {
+  const fmLines: string[] = ['---'];
+  const entries = Object.entries(params.properties || {})
+    .filter(([, value]) => value !== null && value !== undefined);
+
+  for (const [key, value] of entries) {
+    fmLines.push(`${sanitizePropertyKey(key)}: ${serializeObsidianFrontmatterValue(value as ObsidianFrontmatterValue)}`);
+  }
+
+  const tags = [...new Set((params.tags || []).map((tag) => String(tag || '').trim()).filter(Boolean))];
+  if (tags.length > 0) {
+    fmLines.push(`tags: ${serializeObsidianFrontmatterValue(tags)}`);
+  }
+
+  fmLines.push('---');
+  return fmLines.join('\n');
+};
+
+export const hasObsidianFrontmatter = (markdown: string): boolean => /^---\n[\s\S]*?\n---\n?/.test(String(markdown || ''));
+
 export class ObsidianDocBuilder {
   private _title = '';
   private _tags: Set<string> = new Set();
-  private _properties: Map<string, string | number | boolean> = new Map();
+  private _properties: Map<string, ObsidianFrontmatterValue> = new Map();
   private _sections: Array<{ heading: string; level: number; content: string[] }> = [];
   private _links: ObsidianLink[] = [];
   private _currentSection: { heading: string; level: number; content: string[] } | null = null;
@@ -57,8 +103,8 @@ export class ObsidianDocBuilder {
     return this;
   }
 
-  property(key: string, value: string | number | boolean): this {
-    const safeKey = key.replace(/[^a-zA-Z0-9_]/g, '_');
+  property(key: string, value: ObsidianFrontmatterValue): this {
+    const safeKey = sanitizePropertyKey(key);
     this._properties.set(safeKey, value);
     return this;
   }
@@ -134,7 +180,7 @@ export class ObsidianDocBuilder {
   }
 
   /** Build the final markdown string. */
-  build(): { markdown: string; tags: string[]; properties: Record<string, string | number | boolean>; links: ObsidianLink[] } {
+  build(): { markdown: string; tags: string[]; properties: Record<string, ObsidianFrontmatterValue>; links: ObsidianLink[] } {
     this._flushSection();
 
     const parts: string[] = [];
@@ -172,7 +218,7 @@ export class ObsidianDocBuilder {
     }
 
     const tags = [...this._tags];
-    const properties: Record<string, string | number | boolean> = {};
+    const properties: Record<string, ObsidianFrontmatterValue> = {};
     for (const [k, v] of this._properties) {
       properties[k] = v;
     }
@@ -190,18 +236,13 @@ export class ObsidianDocBuilder {
    * Use for scripts that write directly to filesystem (e.g., sync-obsidian-code-map).
    * Tags are emitted as a YAML array inside the frontmatter block.
    */
-  buildWithFrontmatter(): { markdown: string; tags: string[]; properties: Record<string, string | number | boolean>; links: ObsidianLink[] } {
+  buildWithFrontmatter(): { markdown: string; tags: string[]; properties: Record<string, ObsidianFrontmatterValue>; links: ObsidianLink[] } {
     const result = this.build();
-    const fmLines: string[] = ['---'];
-    for (const [k, v] of this._properties) {
-      fmLines.push(`${k}: ${typeof v === 'string' ? v : String(v)}`);
-    }
-    const tags = [...this._tags];
-    if (tags.length > 0) {
-      fmLines.push(`tags: [${tags.join(', ')}]`);
-    }
-    fmLines.push('---', '');
-    return { ...result, markdown: fmLines.join('\n') + result.markdown };
+    const frontmatter = buildObsidianFrontmatter({
+      properties: result.properties,
+      tags: result.tags,
+    });
+    return { ...result, markdown: `${frontmatter}\n\n${result.markdown}` };
   }
 
   private _flushSection(): void {

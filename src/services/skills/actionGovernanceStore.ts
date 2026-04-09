@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { canonicalizeActionName, expandActionNameAliases } from './actions/types';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 
@@ -65,9 +66,53 @@ const safeSetApproval = (key: string, value: ActionApprovalRequest): void => {
   memoryApprovals.set(key, value);
 };
 
-const toPolicyKey = (guildId: string, actionName: string): string => `${guildId}::${actionName}`;
+const toPolicyKey = (guildId: string, actionName: string): string => `${guildId}::${String(actionName || '').trim()}`;
 
 const nowIso = () => new Date().toISOString();
+
+const toUpdatedAtMs = (value: string): number => {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const resolveActionLookupNames = (actionName: string): string[] => expandActionNameAliases(actionName);
+
+const selectPreferredRawActionRow = <TRow extends Record<string, unknown>>(
+  rows: TRow[],
+  requestedActionName: string,
+): TRow | null => {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const canonicalActionName = canonicalizeActionName(requestedActionName);
+  return rows.find((row) => String(row?.action_name || '').trim() === canonicalActionName)
+    || rows.find((row) => canonicalizeActionName(row?.action_name) === canonicalActionName)
+    || rows[0]
+    || null;
+};
+
+const dedupePolicies = (policies: GuildActionPolicy[]): GuildActionPolicy[] => {
+  const deduped = new Map<string, GuildActionPolicy>();
+
+  for (const policy of policies) {
+    const actionName = canonicalizeActionName(policy.actionName);
+    if (!actionName) {
+      continue;
+    }
+
+    const normalizedPolicy: GuildActionPolicy = {
+      ...policy,
+      actionName,
+    };
+    const existing = deduped.get(actionName);
+    if (!existing || toUpdatedAtMs(normalizedPolicy.updatedAt) >= toUpdatedAtMs(existing.updatedAt)) {
+      deduped.set(actionName, normalizedPolicy);
+    }
+  }
+
+  return [...deduped.values()].sort((a, b) => a.actionName.localeCompare(b.actionName));
+};
 
 export const isActionRunMode = (value: string): value is ActionRunMode => {
   return value === 'auto' || value === 'approval_required' || value === 'disabled';
@@ -83,7 +128,7 @@ const resolveDefaultRunMode = (): ActionRunMode => {
 const buildFallbackPolicy = (guildId: string, actionName: string, failOpen: boolean): GuildActionPolicy => {
   return {
     guildId,
-    actionName,
+    actionName: canonicalizeActionName(actionName),
     enabled: failOpen ? true : ACTION_POLICY_DEFAULT_ENABLED,
     runMode: failOpen ? 'auto' : resolveDefaultRunMode(),
     updatedAt: nowIso(),
@@ -96,7 +141,7 @@ const normalizePolicyRow = (row: any): GuildActionPolicy => {
   const runMode: ActionRunMode = isActionRunMode(runModeRaw) ? runModeRaw : 'auto';
   return {
     guildId: String(row?.guild_id || '').trim(),
-    actionName: String(row?.action_name || '').trim(),
+    actionName: canonicalizeActionName(row?.action_name),
     enabled: row?.enabled !== false,
     runMode,
     updatedAt: String(row?.updated_at || nowIso()),
@@ -115,7 +160,7 @@ const normalizeApprovalRow = (row: any): ActionApprovalRequest => {
     guildId: String(row?.guild_id || '').trim(),
     requestedBy: String(row?.requested_by || '').trim(),
     goal: String(row?.goal || '').trim(),
-    actionName: String(row?.action_name || '').trim(),
+    actionName: canonicalizeActionName(row?.action_name),
     actionArgs: row?.action_args && typeof row.action_args === 'object' && !Array.isArray(row.action_args)
       ? row.action_args
       : {},
@@ -129,35 +174,54 @@ const normalizeApprovalRow = (row: any): ActionApprovalRequest => {
 };
 
 export const getGuildActionPolicy = async (guildId: string, actionName: string): Promise<GuildActionPolicy> => {
-  const fallback = buildFallbackPolicy(guildId, actionName, false);
-  const failOpenFallback = buildFallbackPolicy(guildId, actionName, true);
+  const normalizedActionName = canonicalizeActionName(actionName);
+  const lookupNames = resolveActionLookupNames(actionName);
+  const fallback = buildFallbackPolicy(guildId, normalizedActionName, false);
+  const failOpenFallback = buildFallbackPolicy(guildId, normalizedActionName, true);
 
   if (!guildId || !actionName) {
     return fallback;
   }
 
   if (!isSupabaseConfigured()) {
-    return memoryPolicies.get(toPolicyKey(guildId, actionName)) || fallback;
+    for (const candidate of lookupNames) {
+      const row = memoryPolicies.get(toPolicyKey(guildId, candidate));
+      if (row) {
+        return {
+          ...row,
+          actionName: normalizedActionName,
+        };
+      }
+    }
+    return fallback;
   }
 
   try {
     const client = getSupabaseClient();
-    const { data, error } = await client
+    let query = client
       .from(ACTION_POLICY_TABLE)
       .select('guild_id, action_name, enabled, run_mode, updated_at, updated_by')
-      .eq('guild_id', guildId)
-      .eq('action_name', actionName)
-      .maybeSingle();
+      .eq('guild_id', guildId);
+
+    query = lookupNames.length > 1
+      ? query.in('action_name', lookupNames)
+      : query.eq('action_name', lookupNames[0]);
+
+    const { data, error } = await query
+      .order('updated_at', { ascending: false })
+      .limit(Math.max(lookupNames.length, 1));
 
     if (error) {
       return ACTION_POLICY_EFFECTIVE_FAIL_OPEN ? failOpenFallback : fallback;
     }
 
-    if (!data) {
+    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    const preferredRow = selectPreferredRawActionRow(rows, normalizedActionName);
+    if (!preferredRow) {
       return fallback;
     }
 
-    return normalizePolicyRow(data);
+    return normalizePolicyRow(preferredRow);
   } catch (err) {
     logger.debug('[GOVERNANCE] policy fetch failed guildId=%s: %s', guildId, getErrorMessage(err));
     return ACTION_POLICY_EFFECTIVE_FAIL_OPEN ? failOpenFallback : fallback;
@@ -186,7 +250,7 @@ export const listGuildActionPolicies = async (guildId: string): Promise<GuildAct
       return [];
     }
 
-    return (data as Record<string, unknown>[]).map((row) => normalizePolicyRow(row));
+    return dedupePolicies((data as Record<string, unknown>[]).map((row) => normalizePolicyRow(row)));
   } catch (err) {
     logger.debug('[GOVERNANCE] policy list failed guildId=%s: %s', guildId, getErrorMessage(err));
     return [];
@@ -202,7 +266,7 @@ export const upsertGuildActionPolicy = async (params: {
 }): Promise<GuildActionPolicy> => {
   const row: GuildActionPolicy = {
     guildId: params.guildId,
-    actionName: params.actionName,
+    actionName: canonicalizeActionName(params.actionName),
     enabled: params.enabled,
     runMode: params.runMode,
     updatedAt: nowIso(),
@@ -303,7 +367,7 @@ export const createActionApprovalRequest = async (params: {
     guildId: params.guildId,
     requestedBy: params.requestedBy,
     goal: String(params.goal || '').slice(0, 2000),
-    actionName: params.actionName,
+    actionName: canonicalizeActionName(params.actionName),
     actionArgs: params.actionArgs || {},
     status: 'pending',
     reason: params.reason ? String(params.reason) : null,

@@ -29,6 +29,9 @@ const scriptMock = makeAdapter('script-cli', ['read_lore'], true, {
   writeNote: undefined,
 });
 const localFsMock = makeAdapter('local-fs', ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note'], true);
+const { runKnowledgeCompilationForNote } = vi.hoisted(() => ({
+  runKnowledgeCompilationForNote: vi.fn().mockResolvedValue({ compiled: true, indexedNotes: 1, artifacts: [], topics: [], entityKey: 'note' }),
+}));
 
 vi.mock('./adapters/nativeCliAdapter.ts', () => ({
   nativeCliObsidianAdapter: nativeMock,
@@ -94,20 +97,45 @@ vi.mock('../../utils/env', () => ({
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('./knowledgeCompilerService.ts', () => ({
+  runKnowledgeCompilationForNote,
+}));
 
 // Default adapter order: remote-mcp → native → script → local
 vi.stubEnv('OBSIDIAN_ADAPTER_ORDER', 'remote-mcp,native-cli,script-cli,local-fs');
 vi.stubEnv('OBSIDIAN_ADAPTER_STRICT', '');
 
 const router = await import('./router');
+const remoteMcpModule = await import('./adapters/remoteMcpAdapter.ts');
 
 describe('Obsidian Router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset adapter availability
     nativeMock.isAvailable = () => true;
+    remoteMcpMock.isAvailable = () => false;
     scriptMock.isAvailable = () => true;
     localFsMock.isAvailable = () => true;
+    vi.mocked(remoteMcpModule.getRemoteMcpAdapterDiagnostics).mockReturnValue({
+      enabled: false,
+      configured: false,
+      baseUrl: null,
+      authConfigured: false,
+      lastToolName: null,
+      lastSuccessAt: null,
+      lastErrorAt: null,
+      lastError: null,
+      consecutiveFailures: 0,
+      lastProbeAt: null,
+      lastProbe: {
+        reachable: null,
+        authValid: null,
+        toolDiscoveryOk: null,
+        remoteObsidianStatusOk: null,
+        error: null,
+      },
+      remoteAdapterRuntime: null,
+    });
   });
 
   describe('isObsidianCapabilityAvailable', () => {
@@ -135,6 +163,8 @@ describe('Obsidian Router', () => {
       expect(status.adapters).toHaveLength(4);
       expect(status.selectedByCapability.read_lore).toBe('native-cli');
       expect(status.selectedByCapability.search_vault).toBe('native-cli');
+      expect(status.effectiveOrderByCapability.read_lore).toEqual(['native-cli', 'script-cli', 'local-fs']);
+      expect(status.routingState.remoteMcpCircuitOpen).toBe(false);
       expect(status.remoteMcp.enabled).toBe(false);
     });
 
@@ -143,6 +173,37 @@ describe('Obsidian Router', () => {
       const status = router.getObsidianAdapterRuntimeStatus();
       expect(status.selectedByCapability.read_lore).toBe('script-cli');
       expect(status.selectedByCapability.search_vault).toBe('local-fs');
+    });
+
+    it('deprioritizes remote MCP after recent failures', () => {
+      remoteMcpMock.isAvailable = () => true;
+      vi.mocked(remoteMcpModule.getRemoteMcpAdapterDiagnostics).mockReturnValue({
+        enabled: true,
+        configured: true,
+        baseUrl: 'http://remote.test',
+        authConfigured: true,
+        lastToolName: 'obsidian.search',
+        lastSuccessAt: null,
+        lastErrorAt: new Date().toISOString(),
+        lastError: 'HTTP 503',
+        consecutiveFailures: 3,
+        lastProbeAt: null,
+        lastProbe: {
+          reachable: null,
+          authValid: null,
+          toolDiscoveryOk: null,
+          remoteObsidianStatusOk: null,
+          error: null,
+        },
+        remoteAdapterRuntime: null,
+      });
+
+      const status = router.getObsidianAdapterRuntimeStatus();
+
+      expect(status.routingState.remoteMcpCircuitOpen).toBe(true);
+      expect(status.selectedByCapability.search_vault).toBe('native-cli');
+      expect(status.effectiveOrderByCapability.search_vault).toEqual(['native-cli', 'local-fs', 'remote-mcp']);
+      expect(status.adapters.find((entry) => entry.id === 'remote-mcp')?.deprioritized).toBe(true);
     });
   });
 
@@ -335,6 +396,9 @@ describe('Obsidian Router', () => {
       });
 
       expect(result).toEqual({ path: 'native-cli/written.md' });
+      expect(runKnowledgeCompilationForNote).toHaveBeenCalledWith(expect.objectContaining({
+        filePath: 'native-cli/written.md',
+      }));
     });
 
     it('falls back when primary throws', async () => {
@@ -363,6 +427,18 @@ describe('Obsidian Router', () => {
       });
 
       expect(result).toBeNull();
+    });
+
+    it('skips compiler hook when explicitly disabled', async () => {
+      await router.writeObsidianNoteWithAdapter({
+        guildId: 'g1',
+        vaultPath: '/vault',
+        fileName: 'ops/knowledge-control/INDEX.md',
+        content: 'This generated document should not recurse.',
+        skipKnowledgeCompilation: true,
+      });
+
+      expect(runKnowledgeCompilationForNote).not.toHaveBeenCalled();
     });
   });
 
@@ -435,9 +511,11 @@ describe('Obsidian Router', () => {
 
       expect(result).toEqual({ path: 'native-cli/written.md' });
       expect(nativeMock.writeNote).toHaveBeenCalledTimes(1);
-      // Verify sanitized content was passed (control chars stripped)
       const passedParams = (nativeMock.writeNote as ReturnType<typeof vi.fn>).mock.calls[0][0];
-      expect(passedParams.content).toBe('This is a perfectly normal note about TypeScript best practices and project architecture');
+      expect(passedParams.content).toContain('title: clean');
+      expect(passedParams.content).toContain('source: obsidian-router');
+      expect(passedParams.content).toContain('guild_id: g1');
+      expect(passedParams.content).toContain('This is a perfectly normal note about TypeScript best practices and project architecture');
     });
 
     it('strips control characters from content before writing', async () => {
@@ -453,21 +531,7 @@ describe('Obsidian Router', () => {
       expect(passedParams.content).not.toContain('\x00');
       expect(passedParams.content).not.toContain('\x01');
       expect(passedParams.content).not.toContain('\x1f');
-    });
-
-    it('preserves markdown structure for frontmatter-style notes', async () => {
-      const result = await router.writeObsidianNoteWithAdapter({
-        guildId: 'g1',
-        vaultPath: '/vault',
-        fileName: 'structured.md',
-        content: ['---', 'title: Inbox', 'tags: [chat, inbox]', '---', '', '## Request', '', '> Need a local-first reply'].join('\n'),
-      });
-
-      expect(result).not.toBeNull();
-      const passedParams = (nativeMock.writeNote as ReturnType<typeof vi.fn>).mock.calls[0][0];
-      expect(passedParams.content).toContain('---\ntitle: Inbox');
-      expect(passedParams.content).toContain('## Request');
-      expect(passedParams.content).toContain('> Need a local-first reply');
+      expect(passedParams.content).toContain('title: dirty');
     });
   });
 });

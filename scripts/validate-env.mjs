@@ -26,12 +26,67 @@ const isValidUrl = (value) => {
   }
 };
 
-const VALID_LLM_PROVIDERS = new Set(['openai', 'gemini', 'anthropic', 'huggingface', 'hf', 'openclaw', 'ollama', 'local', 'claude']);
+const VALID_LLM_PROVIDERS = new Set(['openai', 'gemini', 'anthropic', 'huggingface', 'hf', 'openclaw', 'ollama', 'local', 'claude', 'litellm', 'openjarvis', 'jarvis', 'kimi', 'moonshot']);
+const VALID_LLM_PROVIDER_PROFILES = new Set(['cost-optimized', 'quality-optimized']);
 
 const parseProviderList = (raw) => String(raw || '')
   .split(/[;,]/)
   .map((item) => String(item || '').trim().toLowerCase())
   .filter(Boolean);
+
+const parseRuleEntries = (raw) => String(raw || '')
+  .split(/[;\n]+/)
+  .map((item) => String(item || '').trim())
+  .filter(Boolean);
+
+const parseWorkflowModelBindings = (raw) => {
+  const bindings = [];
+  for (const entry of parseRuleEntries(raw)) {
+    const eqIdx = entry.indexOf('=');
+    if (eqIdx < 1) {
+      add('ERROR', 'LLM_WORKFLOW_MODEL_BINDINGS', `잘못된 binding 형식: ${entry}`);
+      continue;
+    }
+    const pattern = entry.slice(0, eqIdx).trim().toLowerCase();
+    const binding = entry.slice(eqIdx + 1).trim();
+    const colonIdx = binding.indexOf(':');
+    if (!pattern || colonIdx < 1) {
+      add('ERROR', 'LLM_WORKFLOW_MODEL_BINDINGS', `binding은 pattern=provider:model 형식이어야 합니다: ${entry}`);
+      continue;
+    }
+    const provider = binding.slice(0, colonIdx).trim().toLowerCase();
+    const model = binding.slice(colonIdx + 1).trim();
+    if (!VALID_LLM_PROVIDERS.has(provider)) {
+      add('ERROR', 'LLM_WORKFLOW_MODEL_BINDINGS', `지원하지 않는 binding provider: ${provider}`);
+      continue;
+    }
+    if (!model) {
+      add('ERROR', 'LLM_WORKFLOW_MODEL_BINDINGS', `binding model 누락: ${entry}`);
+      continue;
+    }
+    bindings.push({ pattern, provider, model });
+  }
+  return bindings;
+};
+
+const parseWorkflowProfileDefaults = (raw) => {
+  const profiles = [];
+  for (const entry of parseRuleEntries(raw)) {
+    const eqIdx = entry.indexOf('=');
+    if (eqIdx < 1) {
+      add('ERROR', 'LLM_WORKFLOW_PROFILE_DEFAULTS', `잘못된 profile 형식: ${entry}`);
+      continue;
+    }
+    const pattern = entry.slice(0, eqIdx).trim().toLowerCase();
+    const profile = entry.slice(eqIdx + 1).trim().toLowerCase();
+    if (!pattern || !VALID_LLM_PROVIDER_PROFILES.has(profile)) {
+      add('ERROR', 'LLM_WORKFLOW_PROFILE_DEFAULTS', `profile은 pattern=cost-optimized|quality-optimized 형식이어야 합니다: ${entry}`);
+      continue;
+    }
+    profiles.push({ pattern, profile });
+  }
+  return profiles;
+};
 
 const findings = [];
 let hasError = false;
@@ -150,6 +205,19 @@ if (aiProvider === 'openclaw') {
 if (aiProvider === 'ollama' || aiProvider === 'local') {
   recommendNonEmpty('OLLAMA_MODEL', 'AI_PROVIDER=ollama/local 선택 시 모델명을 지정하면 예측 가능성이 높아집니다.');
 }
+if (aiProvider === 'litellm') {
+  recommendNonEmpty('LITELLM_BASE_URL', 'AI_PROVIDER=litellm 선택 시 프록시 URL을 명시하면 운영자가 실제 엔드포인트를 추적하기 쉽습니다.');
+  recommendNonEmpty('LITELLM_MODEL', 'AI_PROVIDER=litellm 선택 시 모델 alias를 명시하면 라우팅이 예측 가능해집니다.');
+}
+if (aiProvider === 'openjarvis' || aiProvider === 'jarvis') {
+  recommendNonEmpty('OPENJARVIS_SERVE_URL', 'AI_PROVIDER=openjarvis 선택 시 serve URL을 명시하면 health/debugging이 쉬워집니다.');
+  recommendNonEmpty('OPENJARVIS_MODEL', 'AI_PROVIDER=openjarvis 선택 시 실제 serve model을 명시하는 편이 안전합니다.');
+}
+if (aiProvider === 'kimi' || aiProvider === 'moonshot') {
+  if (!read('KIMI_API_KEY') && !read('MOONSHOT_API_KEY')) {
+    add('ERROR', 'KIMI_API_KEY|MOONSHOT_API_KEY', 'AI_PROVIDER=kimi(또는 moonshot) 선택 시 필요');
+  }
+}
 
 const providerBaseOrder = parseProviderList(read('LLM_PROVIDER_BASE_ORDER'));
 const invalidBaseProviders = providerBaseOrder.filter((provider) => !VALID_LLM_PROVIDERS.has(provider));
@@ -166,6 +234,8 @@ const invalidFallbackProviders = explicitFallbackChain.filter((provider) => !VAL
 if (invalidFallbackProviders.length > 0) {
   add('ERROR', 'LLM_PROVIDER_FALLBACK_CHAIN', `지원하지 않는 provider: ${invalidFallbackProviders.join(', ')}`);
 }
+const workflowBindings = parseWorkflowModelBindings(read('LLM_WORKFLOW_MODEL_BINDINGS'));
+const workflowProfiles = parseWorkflowProfileDefaults(read('LLM_WORKFLOW_PROFILE_DEFAULTS'));
 const hasRemoteLlmFallback = Boolean(
   read('OPENAI_API_KEY')
   || read('GEMINI_API_KEY')
@@ -180,14 +250,31 @@ const hasRemoteLlmFallback = Boolean(
 if ((aiProvider === 'ollama' || aiProvider === 'local' || providerBaseOrder[0] === 'ollama' || providerBaseOrder[0] === 'local') && !hasRemoteLlmFallback) {
   add('WARN', 'OPENCLAW_BASE_URL|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|HF_TOKEN', 'local-first 구성인데 원격 fallback provider가 없습니다. 로컬 LLM 중단 시 세션 실패 가능성이 큽니다.');
 }
+const expectsOpenJarvisUpperLane = isTruthy(process.env.OPENJARVIS_ENABLED, false)
+  && (aiProvider === 'ollama' || aiProvider === 'local' || providerBaseOrder[0] === 'ollama' || providerBaseOrder[0] === 'local');
+if (expectsOpenJarvisUpperLane) {
+  const hasOpenJarvisOpsBinding = workflowBindings.some(({ pattern, provider }) => provider === 'openjarvis' && ['operate.ops', 'openjarvis.ops', 'eval.*', 'worker.*'].includes(pattern));
+  if (!hasOpenJarvisOpsBinding) {
+    add('WARN', 'LLM_WORKFLOW_MODEL_BINDINGS', 'local-first + OPENJARVIS_ENABLED 조합이면 operate.ops/openjarvis.ops/eval.*/worker.* 중 일부를 openjarvis model binding으로 두는 편이 운영 계층 분리를 명확하게 유지합니다.');
+  }
+
+  const hasOpenJarvisOpsProfile = workflowProfiles.some(({ pattern, profile }) => profile === 'quality-optimized' && ['operate.ops', 'openjarvis.ops', 'eval.*', 'worker.*'].includes(pattern));
+  if (!hasOpenJarvisOpsProfile) {
+    add('WARN', 'LLM_WORKFLOW_PROFILE_DEFAULTS', 'local-first + OPENJARVIS_ENABLED 조합이면 operate.ops/openjarvis.ops/eval.*/worker.* 를 quality-optimized 로 두는 편이 unattended ops 품질 일관성에 유리합니다.');
+  }
+}
 const requireOpencodeWorker = isTruthy(process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER, true);
+const implementWorkerUrl = read('MCP_IMPLEMENT_WORKER_URL') || read('MCP_OPENCODE_WORKER_URL');
+if (!read('MCP_IMPLEMENT_WORKER_URL') && read('MCP_OPENCODE_WORKER_URL')) {
+  add('WARN', 'MCP_IMPLEMENT_WORKER_URL', 'legacy executor env MCP_OPENCODE_WORKER_URL 만 설정되어 있습니다. canonical env MCP_IMPLEMENT_WORKER_URL 로 정리하는 편이 향후 contract drift를 줄입니다.');
+}
 if ((aiProvider === 'ollama' || aiProvider === 'local' || providerBaseOrder[0] === 'ollama' || providerBaseOrder[0] === 'local')
   && startAutomation
   && !requireOpencodeWorker) {
   add('WARN', 'OPENJARVIS_REQUIRE_OPENCODE_WORKER', '로컬 추론 우선 구성이더라도 unattended automation은 원격 worker 강제를 유지하는 편이 안전합니다.');
 }
-if (requireOpencodeWorker && !read('MCP_OPENCODE_WORKER_URL')) {
-  add('ERROR', 'MCP_OPENCODE_WORKER_URL', 'OPENJARVIS_REQUIRE_OPENCODE_WORKER=true 이면 원격 worker URL이 필요합니다.');
+if (requireOpencodeWorker && !implementWorkerUrl) {
+  add('ERROR', 'MCP_IMPLEMENT_WORKER_URL|MCP_OPENCODE_WORKER_URL', 'OPENJARVIS_REQUIRE_OPENCODE_WORKER=true 이면 원격 worker URL이 필요합니다. canonical env는 MCP_IMPLEMENT_WORKER_URL 입니다.');
 }
 const workerRequireAuth = isTruthy(process.env.OPENCODE_LOCAL_WORKER_REQUIRE_AUTH, false);
 const hasWorkerAuthToken = Boolean(

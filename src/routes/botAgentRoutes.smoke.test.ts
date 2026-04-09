@@ -43,10 +43,14 @@ describe('bot agent route module smoke', () => {
     expect(routeKeys.has('GET /agent/runtime/efficiency')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/worker-approval-gates')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/social-quality-snapshot')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/knowledge-control-plane')).toBe(true);
     expect(routeKeys.has('GET /agent/got/policy')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/policy')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/consent')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/retention-policy')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/runtime')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/quality')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/knowledge-control')).toBe(true);
     expect(routeKeys.has('GET /agent/actions/catalog')).toBe(true);
     expect(routeKeys.has('GET /agent/actions/policies')).toBe(true);
     expect(routeKeys.has('POST /agent/actions/execute')).toBe(true);

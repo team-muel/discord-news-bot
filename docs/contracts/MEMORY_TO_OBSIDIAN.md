@@ -4,8 +4,8 @@
 
 ## Boundary
 
-- **Source**: `src/services/memory/` (consolidation, evolution), `src/services/skills/actions/agentCollab.ts`
-- **Sink**: `src/services/obsidian/router.ts` → adapter chain → vault files
+- **Source**: `src/services/memory/` (consolidation, evolution), `src/services/skills/actions/agentCollab.ts`, other shared services that persist durable knowledge
+- **Sink**: `src/services/obsidian/router.ts` → adapter chain → remote MCP vault service or local fallback adapters
 - **Gate**: `sanitizeForObsidianWrite()` in `src/services/obsidian/router.ts`
 
 ## Required Transformations
@@ -20,6 +20,7 @@ import { sanitizeForObsidianWrite } from "./obsidianSanitizationWorker.js";
 ```
 
 The gate:
+
 - Strips dangerous Markdown injection patterns
 - Removes potential prompt injection markers
 - Validates minimum content length (20 chars)
@@ -43,10 +44,23 @@ guild_id: "<Discord guild ID>"
 ---
 ```
 
+Recommended durability fields for knowledge-bearing notes:
+
+```yaml
+observed_at: "<when this fact/note was observed or produced>"
+valid_at: "<when it became usable>"
+invalid_at: "<when it was superseded/invalidated>"   # optional
+status: "open|answered|active|superseded|invalid"    # domain-specific
+canonical_key: "<stable identity across rewrites>"   # optional but preferred
+source_refs: ["<source note path>", "<source note path>"]
+```
+
+The router now auto-injects frontmatter when callers provide plain markdown plus `properties`/`tags` but forget to prepend YAML manually. Notes that already include frontmatter are preserved.
+
 Required fields by write source:
 
 | Source | Required Frontmatter |
-|---|---|
+| --- | --- |
 | Memory consolidation | `title`, `created`, `source: memory`, `tags`, `guild_id` |
 | Sprint retro | `title`, `created`, `source: sprint`, `sprint_id`, `phase: retro` |
 | Topology sync | `title`, `created`, `source: discord-topology`, `guild_id` |
@@ -60,7 +74,7 @@ Required fields by write source:
 
 ### 4. Write Path Architecture
 
-```
+```text
 Caller → writeObsidianNoteWithAdapter()
   → sanitizeForObsidianWrite(content)
   → primaryAdapter.writeNote(sanitizedParams)
@@ -68,10 +82,16 @@ Caller → writeObsidianNoteWithAdapter()
   → [if no adapter] log warning, return null
 ```
 
-The router tries adapters in priority order:
-1. Local filesystem adapter (if `OBSIDIAN_VAULT_PATH` set)
-2. Supabase adapter (if `SUPABASE_URL` set)
-3. No-op with warning log
+The router tries adapters in priority order. Current production preference is:
+
+1. `remote-mcp` — shared vault service on the GCP VM via `OBSIDIAN_REMOTE_MCP_URL`
+2. `native-cli` — local native CLI when a host machine has direct vault access
+3. `script-cli` — script-based bridge for narrow fallback paths
+4. `local-fs` — direct filesystem fallback when the process can mount the vault locally
+
+This layer is intended to be a shared memory backplane for multiple services, not a single bot-only write path.
+
+When `remote-mcp` has recent probe failures or repeated tool-call failures, the router temporarily de-prioritizes it behind healthy local adapters instead of paying the remote timeout cost on every call. This is a short-lived circuit-breaker, not a permanent disable.
 
 ### 5. Vault Path Safety
 
@@ -88,7 +108,7 @@ The router tries adapters in priority order:
 
 ## Current Limitation
 
-> **CRITICAL**: `OBSIDIAN_VAULT_PATH` defaults to empty string. In production, ALL Obsidian write paths are silent no-ops unless explicitly configured. This is tracked but not yet resolved.
+> **CRITICAL**: production now assumes `remote-mcp` first. If the GCP MCP server is unreachable, auth fails, or the remote vault is locked/unavailable, writes can still collapse into no-op or fallback behavior unless operators inspect the runtime health response.
 
 ## Test References
 

@@ -94,8 +94,10 @@ Open these first when verifying behavior:
 Runtime/control-plane verification baseline:
 
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
-- Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze.
+- Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze. Inspect the `llmRuntime` block to see the selected provider, action policy providers, workflow binding, effective provider profile, resolved chain, readiness-pruned chain, and per-provider health.
 - Use `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` when validating A-003 gate -> approval -> model fallback state for a specific guild.
+- Use `GET /api/bot/agent/obsidian/runtime` for shared-vault health, remote-mcp diagnostics, cache boundary, and inbox chat loop state.
+- Use `GET /api/bot/agent/obsidian/knowledge-control?artifact=lint` and `GET /api/bot/agent/runtime/knowledge-control-plane?guildId=<id>` when validating knowledge freshness, grounding, and compiler health.
 - Use `GET /api/bot/agent/actions/catalog` and `GET /api/bot/agent/runtime/role-workers` before assuming that a named role is callable in the current deployment.
 - Distinguish startup phase (`service-init`, `discord-ready`, `database`) from execution ownership (`app`, `db`) during incident triage; not every missing Discord-ready loop is a platform-wide outage.
 
@@ -169,7 +171,7 @@ Sync rule:
     - LLM keys (`AI_PROVIDER` + provider key)
     - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
     - `ACTION_MCP_STRICT_ROUTING=true`
-    - `MCP_OPENCODE_WORKER_URL=https://34.56.232.61.sslip.io` (temporary TLS endpoint; replace with custom domain later)
+    - `MCP_IMPLEMENT_WORKER_URL=https://34.56.232.61.sslip.io` (temporary TLS endpoint; replace with custom domain later; legacy alias `MCP_OPENCODE_WORKER_URL` supported)
     - `MCP_OPENCODE_TOOL_NAME=opencode.run`
 
 3. Set web integration env values:
@@ -221,7 +223,7 @@ Sync rule:
 1. OpenJarvis 원격 실행 강제:
 
 - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
-- `MCP_OPENCODE_WORKER_URL=<remote-worker-url>`
+- `MCP_IMPLEMENT_WORKER_URL=<remote-worker-url>`
 - `MCP_OPENCODE_TOOL_NAME=opencode.run`
 - `ACTION_MCP_STRICT_ROUTING=true`
 
@@ -258,7 +260,7 @@ Sync rule:
 가드레일:
 
 - 적용 스크립트는 기존 `.env`를 `.env.profile-backup`으로 백업한다.
-- 운영형 적용 후에는 `MCP_OPENCODE_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다.
+- 운영형 적용 후에는 `MCP_IMPLEMENT_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다. legacy `MCP_OPENCODE_WORKER_URL` 는 호환 alias 로만 본다.
 - 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
 - local-first hybrid 적용 직후에는 `npm run env:check:local-hybrid`로 Ollama/worker 공존 readiness를 추가 확인한다.
 - 로컬 worker를 사용하는 경우 `npm run worker:opencode:local`을 먼저 실행한 뒤 hybrid 검증을 수행한다.
@@ -328,6 +330,10 @@ Run in order:
 6. Admin-only endpoint check (`/api/trading/strategy` or `/api/bot/status`) matches expected permission
 7. Obsidian sync dry run and real run complete without fatal errors
 8. `guild_lore_docs` has updated rows for active guilds
+9. `GET /api/bot/agent/obsidian/runtime` confirms remote-mcp health, cache boundary, and `inboxChatLoop` state
+10. `GET /api/bot/agent/obsidian/knowledge-control?artifact=lint` returns no unexplained blocking lint issues
+11. Discord ask surface sanity: `/뮤엘` works and `/해줘` resolves through the same compatibility path
+12. `/구독` news add shows the candidate source and does not silently report success when automation or source wiring is missing
 
 ## 5) Daily Operations (Day 2)
 
@@ -362,21 +368,35 @@ VCS policy:
   - `/health`
   - `/ready`
   - `/api/bot/status`
+- `GET /api/bot/agent/runtime/loops` now includes `obsidianInboxChatLoop`; treat it like a first-class background loop during rollout and rollback decisions.
 - Review Render logs for restart loops, auth failures, and upstream timeouts.
 
-### 5.1.1 A-003 Operator Verification
+### 5.1.1 Obsidian Control-Plane Checks
+
+1. `GET /api/bot/agent/obsidian/runtime`
+2. `GET /api/bot/agent/obsidian/knowledge-control?artifact=lint`
+3. `GET /api/bot/agent/runtime/knowledge-control-plane?guildId=<id>`
+
+Expected reading:
+
+- `vaultHealth.remoteMcp` shows whether the shared GCP vault service is reachable, authenticated, and exposing obsidian tools.
+- `inboxChatLoop` shows whether unattended `chat/inbox` processing is enabled, how frequently it runs, and whether it is making forward progress.
+- `compiler.lastLintSummary` should explain missing `source_refs`, stale active notes, invalid lifecycle metadata, or canonical collisions before retrieval quality is trusted.
+- `knowledge-control-plane.snapshot.obsidian.cacheStats` and `retrievalBoundary` distinguish metadata-truth issues from Supabase cache issues.
+
+### 5.1.2 A-003 Operator Verification
 
 When A-003 readiness or release gating is under review, verify in this order:
 
 1. `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5`
-2. `GET /api/bot/agent/runtime/unattended-health?guildId=<id>`
+2. `GET /api/bot/agent/runtime/unattended-health?guildId=<id>&actionName=operate.ops`
 3. `GET /api/bot/agent/runtime/readiness?guildId=<id>`
 
 Expected reading:
 
 - `workerApprovals.pendingApprovals` shows the guild-scoped queue backlog.
-- `policyBindings.opencodeExecutePolicy.runMode` remains `approval_required` unless an operator-approved exception is active.
-- `modelFallback.defaultProviderFallbackChain` and `providerPolicyBindings` match the intended provider routing.
+- `policyBindings.executorPolicy.runMode` is the canonical field and remains `approval_required` unless an operator-approved exception is active. Legacy alias `policyBindings.opencodeExecutePolicy.runMode` is still emitted for compatibility.
+- `llmRuntime.workflowBinding`, `llmRuntime.effectiveProviderProfile`, `modelFallback.defaultProviderFallbackChain`, and `providerPolicyBindings` match the intended provider routing.
 - `safetySignals` stays at `approvalRequiredCompliancePct=100`, `unapprovedAutodeployCount=0`, and `policyViolationCount=0` for the guild under review.
 - `delegationEvidence.complete=true` and `missingDelegationExecutions=0` prove the OpenDev -> NemoClaw sandbox path was not bypassed.
 - `globalArtifacts.latestGateDecision` confirms the latest provider fallback trigger/target and safety verdict.
@@ -390,6 +410,7 @@ If these surfaces disagree, keep high-risk Opencode execution blocked until the 
 - Verify memory pipelines continue to persist and retrieve expected rows.
 - Confirm `guild_lore_docs` freshness is within expected sync window.
 - Confirm ops-loop lock behavior is healthy (`.runtime/obsidian-ops-loop.lock` is not stale).
+- Confirm knowledge compiler lint remains clean enough for the current rollout and that `source_refs` warnings are understood before promoting unattended inbox answering.
 - Confirm aggregate loop failure rate remains below configured threshold (`OBSIDIAN_OPS_MAX_FAILURE_RATE`).
 - Confirm reward/telemetry snapshots are generated on schedule for active guilds.
 
@@ -649,7 +670,7 @@ Current runtime supports a controlled generic action layer via `ops-execution`:
 - `privacy.forget.guild` (guild-scoped full purge, confirm token required)
 - `web.fetch` (host allowlist required)
 - `db.supabase.read` (read-only, table allowlist, row limit)
-- `opencode.execute` (MCP-delegated sandbox terminal execution, policy-first)
+- `implement.execute` (legacy runtime id: `opencode.execute`) — MCP-delegated sandbox terminal execution, policy-first
 
 Safety controls (must be set explicitly in production):
 
@@ -694,6 +715,13 @@ Recommended production baseline:
 3. Set strict host/table allowlists before enabling `execute`
 4. Review `agent_action_logs` regularly for policy and quality drift
 
+Discord operator surface:
+
+- Preferred ask command: `/뮤엘`
+- Compatibility alias: `/해줘`
+- Relationship and memory surfaces: `/프로필`, `/메모`
+- Threaded implementation surface: `/만들어줘`
+
 MCP delegation controls:
 
 - `ACTION_MCP_DELEGATION_ENABLED`
@@ -703,7 +731,7 @@ MCP delegation controls:
 - `MCP_NEWS_WORKER_URL`
 - `MCP_COMMUNITY_WORKER_URL`
 - `MCP_WEB_WORKER_URL`
-- `MCP_OPENCODE_WORKER_URL`
+- `MCP_IMPLEMENT_WORKER_URL` (legacy alias: `MCP_OPENCODE_WORKER_URL`)
 - `MCP_OPENCODE_TOOL_NAME`
 - `AGENT_CONVERSATION_THREAD_IDLE_MS`
 - `MCP_YOUTUBE_DEFAULT_WEBHOOK_URL`
@@ -715,6 +743,14 @@ MCP delegation controls:
 - `NEWS_MONITOR_MCP_WORKER_URL`
 - `NEWS_MONITOR_MCP_TIMEOUT_MS`
 - `NEWS_MONITOR_MCP_STRICT`
+- `NEWS_MONITOR_LOCAL_FALLBACK_ENABLED`
+- `N8N_DELEGATION_ENABLED`
+- `N8N_WEBHOOK_NEWS_MONITOR_CANDIDATES`
+- `OBSIDIAN_INBOX_CHAT_LOOP_ENABLED`
+- `OBSIDIAN_INBOX_CHAT_LOOP_INTERVAL_SEC`
+- `OBSIDIAN_INBOX_CHAT_LOOP_RUN_ON_START`
+- `OBSIDIAN_INBOX_CHAT_LOOP_MAX_NOTES_PER_RUN`
+- `OBSIDIAN_INBOX_CHAT_LOOP_SEARCH_LIMIT`
 
 Worker-first lightweight split status:
 
@@ -832,13 +868,14 @@ Important interpretation of "self-replication":
   - dynamic worker proposal -> approval -> bounded activation
   - fail-closed defaults and automatic rollback on instability
 
-Relationship with `opencode.execute`:
+Relationship with `implement.execute` / `opencode.execute`:
 
-- `opencode.execute` remains a stable action contract and API surface.
+- `implement.execute` is the canonical executor contract exposed to new planning/runtime surfaces.
+- `opencode.execute` remains the persisted legacy runtime id and backward-compatible API surface.
 - Alternative 2 replaces the backend executor worker, not the platform interface.
 - Operationally:
   - Keep policy/approval/queue endpoints unchanged
-  - Swap worker implementation behind `MCP_OPENCODE_WORKER_URL`
+  - Swap worker implementation behind `MCP_IMPLEMENT_WORKER_URL`
   - Preserve action logs and governance history continuity
 
 Result:
@@ -850,12 +887,12 @@ Result:
 
 1. Interface freeze:
 
-- Keep `opencode.execute` action name and payload contract stable.
+- Keep `implement.execute` as the canonical contract while preserving `opencode.execute` as a compatibility alias.
 - Keep admin APIs under `/api/bot/agent/opencode/*` for backward-compatible operations.
 
 1. Worker replacement:
 
-- Deploy permissive-license executor worker and connect it to `MCP_OPENCODE_WORKER_URL`.
+- Deploy permissive-license executor worker and connect it to `MCP_IMPLEMENT_WORKER_URL`.
 - Keep `MCP_OPENCODE_TOOL_NAME=opencode.run` unless contract migration is completed.
 
 1. Governance first:
