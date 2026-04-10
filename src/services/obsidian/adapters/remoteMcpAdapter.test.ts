@@ -69,6 +69,9 @@ describe('remoteMcpObsidianAdapter', () => {
   const loadModule = async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    delete process.env.MCP_SHARED_MCP_URL;
+    delete process.env.MCP_SHARED_MCP_TOKEN;
+    delete process.env.MCP_WORKER_AUTH_TOKEN;
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_ENABLED', 'true');
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', baseUrl);
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_TOKEN', 'test-token');
@@ -79,6 +82,9 @@ describe('remoteMcpObsidianAdapter', () => {
   const loadSharedModule = async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    delete process.env.OBSIDIAN_REMOTE_MCP_URL;
+    delete process.env.OBSIDIAN_REMOTE_MCP_TOKEN;
+    delete process.env.MCP_WORKER_AUTH_TOKEN;
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_ENABLED', 'true');
     vi.stubEnv('MCP_SHARED_MCP_URL', `${baseUrl}/mcp`);
     vi.stubEnv('MCP_SHARED_MCP_TOKEN', 'shared-token');
@@ -89,6 +95,9 @@ describe('remoteMcpObsidianAdapter', () => {
   const loadLegacyAliasModule = async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    delete process.env.MCP_SHARED_MCP_URL;
+    delete process.env.MCP_SHARED_MCP_TOKEN;
+    delete process.env.MCP_WORKER_AUTH_TOKEN;
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_ENABLED', 'true');
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', `${baseUrl}/obsidian`);
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_TOKEN', 'legacy-token');

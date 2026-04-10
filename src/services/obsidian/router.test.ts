@@ -115,6 +115,7 @@ vi.mock('./knowledgeCompilerService.ts', () => ({
 
 // Default adapter order: remote-mcp → native → script → local
 vi.stubEnv('OBSIDIAN_ADAPTER_ORDER', 'remote-mcp,native-cli,script-cli,local-fs');
+vi.stubEnv('OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE', 'native-cli,local-fs');
 vi.stubEnv('OBSIDIAN_ADAPTER_STRICT', '');
 
 const router = await import('./router');
