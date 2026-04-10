@@ -24,9 +24,10 @@ if (-not (Test-Path (Join-Path $repoRoot 'package.json'))) {
 Push-Location $repoRoot
 
 function Write-Step($n, $msg) { Write-Host "`n[$n] $msg" -ForegroundColor Cyan }
-function Write-Ok($msg)       { Write-Host "  OK  $msg" -ForegroundColor Green }
-function Write-Skip($msg)     { Write-Host "  SKIP  $msg" -ForegroundColor Yellow }
-function Write-Warn($msg)     { Write-Host "  WARN  $msg" -ForegroundColor Yellow }
+function Write-Ok($msg) { Write-Host "  OK  $msg" -ForegroundColor Green }
+function Write-Skip($msg) { Write-Host "  SKIP  $msg" -ForegroundColor Yellow }
+function Write-Warn($msg) { Write-Host "  WARN  $msg" -ForegroundColor Yellow }
+function Write-Fail($msg) { Write-Host "  FAIL  $msg" -ForegroundColor Red }
 
 try {
   Write-Host "`n=== Muel MCP Team Bootstrap ===" -ForegroundColor Magenta
@@ -45,9 +46,11 @@ try {
   Write-Step 2 "Installing npm dependencies..."
   if ($SkipNpm) {
     Write-Skip "Skipped (-SkipNpm)"
-  } elseif ((Test-Path 'node_modules') -and -not $Force) {
+  }
+  elseif ((Test-Path 'node_modules') -and -not $Force) {
     Write-Skip "node_modules exists (use -Force to reinstall)"
-  } else {
+  }
+  else {
     & npm install --ignore-scripts 2>&1 | Out-Null
     Write-Ok "npm install complete"
   }
@@ -59,8 +62,9 @@ try {
 
   if ((Test-Path $envFile) -and -not $Force) {
     Write-Skip ".env already exists (use -Force to overwrite)"
-  } else {
-    Copy-Item $envExample $envFile -Force
+  }
+  else {
+    [System.IO.File]::Copy($envExample, $envFile, $true)
     Write-Ok "Created .env from .env.example"
 
     Write-Host ""
@@ -82,14 +86,16 @@ try {
 
   if ($SkipSsh) {
     Write-Skip "Skipped (-SkipSsh)"
-  } elseif ((Test-Path $keyPath) -and -not $Force) {
+  }
+  elseif ((Test-Path $keyPath) -and -not $Force) {
     Write-Skip "SSH key already exists at $keyPath"
     $pubKey = Get-Content $pubPath -Raw
-  } else {
+  }
+  else {
     if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
 
     $comment = "$env:USERNAME@$env:COMPUTERNAME"
-    & ssh-keygen -t ed25519 -f $keyPath -N '""' -C $comment 2>&1 | Out-Null
+    & ssh-keygen -t ed25519 -f $keyPath -N '' -C $comment 2>&1 | Out-Null
     if (-not (Test-Path $pubPath)) {
       Write-Host "  SSH key generation failed" -ForegroundColor Red
       exit 1
@@ -110,7 +116,8 @@ try {
     try {
       $pubKey.Trim() | Set-Clipboard
       Write-Ok "Public key copied to clipboard"
-    } catch {
+    }
+    catch {
       Write-Warn "Could not copy to clipboard — copy manually from above"
     }
   }
@@ -120,7 +127,22 @@ try {
   $mcpJson = Join-Path $repoRoot '.vscode' 'mcp.json'
   if (Test-Path $mcpJson) {
     Write-Ok ".vscode/mcp.json found"
-  } else {
+    $mcpConfig = Get-Content $mcpJson -Raw | ConvertFrom-Json
+    if ($mcpConfig.servers.gcpCompute -and $mcpConfig.servers.gcpCompute.args[-1] -match '/opt/muel/discord-news-bot') {
+      Write-Ok "gcpCompute points at /opt/muel/discord-news-bot"
+    }
+    else {
+      Write-Warn "gcpCompute remote repo path is not the expected /opt/muel/discord-news-bot"
+    }
+
+    if ($mcpConfig.servers.gcpCompute -and $mcpConfig.servers.gcpCompute.args[-1] -match 'unified-mcp.gcp.env') {
+      Write-Ok "gcpCompute loads unified-mcp.gcp.env overrides"
+    }
+    else {
+      Write-Warn "gcpCompute is not loading unified-mcp.gcp.env overrides"
+    }
+  }
+  else {
     Write-Warn ".vscode/mcp.json not found — run 'git checkout .vscode/mcp.json'"
   }
 
@@ -130,24 +152,46 @@ try {
 
   # Check npm scripts exist
   $pkg = Get-Content (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json
-  if ($pkg.scripts.'mcp:dev') { $checks += @{name='mcp:dev script'; ok=$true} }
-  else { $checks += @{name='mcp:dev script'; ok=$false} }
+  if ($pkg.scripts.'mcp:unified:dev') { $checks += @{name = 'mcp:unified:dev script'; ok = $true } }
+  else { $checks += @{name = 'mcp:unified:dev script'; ok = $false } }
 
-  if ($pkg.scripts.'mcp:indexing:dev') { $checks += @{name='mcp:indexing:dev script'; ok=$true} }
-  else { $checks += @{name='mcp:indexing:dev script'; ok=$false} }
+  if ($pkg.scripts.'mcp:indexing:dev') { $checks += @{name = 'mcp:indexing:dev script'; ok = $true } }
+  else { $checks += @{name = 'mcp:indexing:dev script'; ok = $false } }
+
+  if (Test-Path (Join-Path $repoRoot 'scripts' 'publish-gcp-shared-mcp.ps1')) {
+    $checks += @{name = 'publish-gcp-shared-mcp.ps1'; ok = $true }
+  }
+  else {
+    $checks += @{name = 'publish-gcp-shared-mcp.ps1'; ok = $false }
+  }
 
   # Check SSH connectivity (non-blocking)
   if (-not $SkipSsh) {
     $sshTest = & ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -o BatchMode=yes -i $keyPath fancy@34.56.232.61 "echo ok" 2>&1
     if ($sshTest -match 'ok') {
-      $checks += @{name='GCP SSH access'; ok=$true}
-    } else {
-      $checks += @{name='GCP SSH access'; ok=$false}
+      $checks += @{name = 'GCP SSH access'; ok = $true }
+    }
+    else {
+      $checks += @{name = 'GCP SSH access'; ok = $false }
     }
   }
 
+  try {
+    $sharedHealth = Invoke-RestMethod -Method Get -Uri 'https://34.56.232.61.sslip.io/mcp/health' -TimeoutSec 8
+    if ($sharedHealth.status -eq 'ok') {
+      $checks += @{name = 'Shared MCP health'; ok = $true; detail = "tools=$($sharedHealth.tools)" }
+    }
+    else {
+      $checks += @{name = 'Shared MCP health'; ok = $false }
+    }
+  }
+  catch {
+    $checks += @{name = 'Shared MCP health'; ok = $false }
+  }
+
   foreach ($c in $checks) {
-    if ($c.ok) { Write-Ok $c.name }
+    if ($c.ok -and $c.detail) { Write-Ok "$($c.name) ($($c.detail))" }
+    elseif ($c.ok) { Write-Ok $c.name }
     else { Write-Warn "$($c.name) — not ready yet" }
   }
 
@@ -157,17 +201,21 @@ try {
   Write-Host "Next steps:" -ForegroundColor White
   Write-Host "  1. Fill in minimum keys in .env (SUPABASE_URL, SUPABASE_KEY)" -ForegroundColor Gray
   Write-Host "  2. Send your SSH public key to team lead (already in clipboard)" -ForegroundColor Gray
-  Write-Host "  3. After team lead confirms key registration, restart VS Code" -ForegroundColor Gray
-  Write-Host "  4. Open Copilot Chat — MCP tools are auto-configured" -ForegroundColor Gray
+  Write-Host "  3. Team lead runs scripts/register-team-ssh.ps1 to grant gcpCompute access" -ForegroundColor Gray
+  Write-Host "  4. Restart VS Code after the key is registered" -ForegroundColor Gray
+  Write-Host "  5. After shared MCP changes, run scripts/publish-gcp-shared-mcp.ps1 -RestartServices" -ForegroundColor Gray
   Write-Host ""
   Write-Host "Available MCP servers after setup:" -ForegroundColor White
-  Write-Host "  deepwiki      — works immediately (no setup needed)" -ForegroundColor Green
-  Write-Host "  supabase      — works immediately (OAuth in browser)" -ForegroundColor Green
-  Write-Host "  muelCore      — needs .env (SUPABASE_URL, SUPABASE_KEY)" -ForegroundColor Yellow
-  Write-Host "  muelIndexing  — needs .env (same as muelCore)" -ForegroundColor Yellow
-  Write-Host "  gcpCompute    — needs SSH key registered by team lead" -ForegroundColor Yellow
+  Write-Host "  github        — works immediately (Copilot-auth HTTP MCP)" -ForegroundColor Green
+  Write-Host "  muelUnified   — local unified MCP, uses .env" -ForegroundColor Yellow
+  Write-Host "  muelIndexing  — local overlay index, uses .env" -ForegroundColor Yellow
+  Write-Host "  gcpCompute    — shared GCP unified MCP over SSH stdio" -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "Shared MCP canonical health:" -ForegroundColor White
+  Write-Host "  https://34.56.232.61.sslip.io/mcp/health" -ForegroundColor Gray
   Write-Host ""
 
-} finally {
+}
+finally {
   Pop-Location
 }

@@ -1,7 +1,7 @@
 import logger from '../../logger';
 import { parseBooleanEnv, parseMinIntEnv } from '../../utils/env';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
-import { upsertObsidianGuildDocument } from '../obsidian/authoring';
+import { summarizeReflectionBundle, upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { doc } from '../obsidian/obsidianDocBuilder';
 import { logOutcomeSignal, type OutcomeSignal } from '../observability/outcomeSignal';
 import { createBucketManager } from './bucketFlushUtils';
@@ -109,6 +109,15 @@ const flushBucketImpl = async (guildId: string, bucket: GuildBucket): Promise<vo
     return;
   }
 
+  const reflection = summarizeReflectionBundle(result.reflectionBundle);
+  logger.info(
+    '[DISCORD-TELEMETRY] flush synced guild=%s path=%s count=%d concern=%s next=%s',
+    guildId,
+    result.path || 'unknown',
+    bucket.total,
+    reflection.concern,
+    reflection.nextPath,
+  );
   logSignal(guildId, 'success', `flush_ok:count=${bucket.total}`);
   bucket.total = 0;
   bucket.channels.clear();

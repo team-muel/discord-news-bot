@@ -128,8 +128,11 @@ Provider fallback controls:
 - AGENT_WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS=300000 (optional, workflow cache refresh warn log throttle)
 - AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS=300000 (optional, skill catalog refresh warn log throttle)
 - WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS=300000 (optional, approval store save warn log throttle)
+- MCP_SHARED_MCP_URL=https://<worker-domain-or-sslip>/mcp (optional, canonical shared full-catalog MCP ingress)
+- MCP_SHARED_MCP_TOKEN=<secret> (optional, shared MCP Bearer token; omitted 시 OBSIDIAN_REMOTE_MCP_TOKEN 또는 MCP_WORKER_AUTH_TOKEN fallback)
+- MCP_INDEXING_REMOTE_URL=https://<worker-domain-or-sslip>/mcp (optional, shared code-index ingress; omitted 시 MCP_SHARED_MCP_URL fallback)
 - OBSIDIAN_REMOTE_MCP_ENABLED=true (optional, 권장: GCP VM의 MCP 서버를 통한 vault 접근)
-- OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850 (optional, MCP HTTP 서버 주소)
+- OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/mcp (optional, legacy obsidian alias; `/obsidian` compatibility path도 계속 지원)
 - OBSIDIAN_REMOTE_MCP_TOKEN=<secret> (optional, Bearer auth 토큰; omitted 시 MCP_WORKER_AUTH_TOKEN fallback)
 - OBSIDIAN_VAULT_NAME=[vault-name] (optional, vault 식별자)
 - OBSIDIAN_ADAPTER_ORDER=remote-mcp,native-cli,script-cli,local-fs (optional)
@@ -396,7 +399,8 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 - ACTION_POLICY_FAIL_OPEN_ON_ERROR=false
 - AGENT_READINESS_FAIL_OPEN=false
 - OBSIDIAN_REMOTE_MCP_ENABLED=true
-- OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+- MCP_SHARED_MCP_URL=https://<worker-domain-or-sslip>/mcp
+- OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/mcp
 - OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
 - OBSIDIAN_ADAPTER_STRICT=true
 - OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli

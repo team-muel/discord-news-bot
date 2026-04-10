@@ -13,7 +13,12 @@ import { setGateProviderProfileOverride, type LlmProviderProfile } from '../llmC
 import { getAction } from './actions/registry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
-import { EXECUTOR_ACTION_CANONICAL_NAME, normalizeActionNameList } from './actions/types';
+import {
+  EXECUTOR_ACTION_CANONICAL_NAME,
+  parseActionReflectionArtifact,
+  normalizeActionNameList,
+  type ActionExecutionResult,
+} from './actions/types';
 import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseStringEnv } from '../../utils/env';
@@ -294,6 +299,40 @@ const extractUrlFromArtifact = (artifact: string): string | null => {
 
   const inline = String(artifact || '').match(/https?:\/\/\S+/i);
   return inline?.[0] || null;
+};
+
+export const formatActionArtifactsForDisplay = (artifacts: string[]): {
+  artifactLines: string[];
+  reflectionLines: string[];
+} => {
+  const artifactLines: string[] = [];
+  const reflectionLines: string[] = [];
+
+  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
+    const reflection = parseActionReflectionArtifact(artifact);
+    if (!reflection) {
+      artifactLines.push(artifact);
+      continue;
+    }
+
+    reflectionLines.push(`plane=${reflection.plane}`);
+    reflectionLines.push(`concern=${reflection.concern}`);
+    reflectionLines.push(`next_path=${reflection.nextPath}`);
+    reflectionLines.push(`customer_impact=${reflection.customerImpact}`);
+  }
+
+  return {
+    artifactLines,
+    reflectionLines,
+  };
+};
+
+const pushActionArtifactSections = (lines: string[], artifacts: string[]): void => {
+  const display = formatActionArtifactsForDisplay(artifacts);
+  lines.push(display.artifactLines.length > 0 ? `산출물:\n${display.artifactLines.map((line) => `- ${line}`).join('\n')}` : '산출물: 없음');
+  if (display.reflectionLines.length > 0) {
+    lines.push(`반영 가이드:\n${display.reflectionLines.map((line) => `- ${line}`).join('\n')}`);
+  }
 };
 
 type ParsedNewsArtifact = {
@@ -589,10 +628,20 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
 
 export const runGoalActions = async (input: GoalActionInput): Promise<SkillActionResult> => {
   const diagnostics = createEmptyDiagnostics();
+  const actionResults: ActionExecutionResult[] = [];
 
   const finish = (result: SkillActionResult): SkillActionResult => {
     updateActionRunnerDiagnostics(result);
     return result;
+  };
+
+  const pushActionResult = (result: ActionExecutionResult): void => {
+    actionResults.push({
+      ...result,
+      artifacts: [...(result.artifacts || [])],
+      verification: [...(result.verification || [])],
+      handoff: result.handoff ? { ...result.handoff } : undefined,
+    });
   };
 
   const recordFailureCategory = (code: string | undefined) => {
@@ -694,6 +743,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
           estimatedCostUsd: 0,
           finopsMode,
         });
+        pushActionResult({
+          ok: false,
+          name: planned.actionName,
+          summary: 'FinOps 예산 가드레일에 의해 실행이 차단되었습니다.',
+          artifacts: [],
+          verification: ['finops guardrail block'],
+          error: finopsDecision.reason,
+        });
         continue;
       }
     }
@@ -718,6 +775,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         estimatedCostUsd: 0,
         finopsMode,
       });
+      pushActionResult({
+        ok: false,
+        name: planned.actionName,
+        summary: '정책 allowlist에 없는 액션입니다.',
+        artifacts: [],
+        verification: ['action allowlist policy block'],
+        error: 'ACTION_NOT_ALLOWED',
+      });
       continue;
     }
 
@@ -741,6 +806,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         error: 'ACTION_NOT_IMPLEMENTED',
         estimatedCostUsd: 0,
         finopsMode,
+      });
+      pushActionResult({
+        ok: false,
+        name: planned.actionName,
+        summary: '요청된 액션이 아직 구현되지 않았습니다.',
+        artifacts: [],
+        verification: ['action registry lookup miss'],
+        error: 'ACTION_NOT_IMPLEMENTED',
       });
       externalUnavailable = true;
       continue;
@@ -774,6 +847,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         estimatedCostUsd: 0,
         finopsMode,
       });
+      pushActionResult({
+        ok: false,
+        name: action.name,
+        summary: '길드 액션 정책 조회 실패로 실행이 차단되었습니다.',
+        artifacts: [],
+        verification: ['tenant action policy unavailable'],
+        error: 'ACTION_POLICY_UNAVAILABLE',
+      });
       continue;
     }
 
@@ -796,6 +877,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         error: 'ACTION_DISABLED_BY_POLICY',
         estimatedCostUsd: 0,
         finopsMode,
+      });
+      pushActionResult({
+        ok: false,
+        name: action.name,
+        summary: '길드 액션 정책에서 비활성화된 액션입니다.',
+        artifacts: [],
+        verification: ['tenant action policy disabled'],
+        error: 'ACTION_DISABLED_BY_POLICY',
       });
       continue;
     }
@@ -841,6 +930,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         error: 'ACTION_APPROVAL_REQUIRED',
         estimatedCostUsd: 0,
         finopsMode,
+      });
+      pushActionResult({
+        ok: false,
+        name: action.name,
+        summary: '승인 게이트에 의해 실행이 보류되었습니다.',
+        artifacts: [request.id],
+        verification: ['tenant action policy approval_required'],
+        error: 'ACTION_APPROVAL_REQUIRED',
       });
       continue;
     }
@@ -892,6 +989,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         estimatedCostUsd: 0,
         finopsMode,
       });
+      pushActionResult({
+        ok: false,
+        name: action.name,
+        summary: '회로차단기로 실행이 차단되었습니다.',
+        artifacts: [],
+        verification: ['circuit breaker open'],
+        error: 'CIRCUIT_OPEN',
+      });
       continue;
     }
 
@@ -936,7 +1041,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       if (cached) {
         lines.push(`액션: ${cached.name}`);
         lines.push(`${cached.summary} (cache hit)`);
-        lines.push(cached.artifacts.length > 0 ? `산출물:\n${cached.artifacts.map((line) => `- ${line}`).join('\n')}` : '산출물: 없음');
+        pushActionArtifactSections(lines, cached.artifacts);
         lines.push(cached.verification.length > 0
           ? `검증:\n${[...cached.verification, `cache_ttl_ms=${ACTION_CACHE_TTL_MS}`, 'cache_hit=true'].map((line) => `- ${line}`).join('\n')}`
           : `검증:\n- cache_ttl_ms=${ACTION_CACHE_TTL_MS}\n- cache_hit=true`);
@@ -958,6 +1063,16 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
           circuitOpen: false,
           estimatedCostUsd: 0,
           finopsMode,
+          agentRole: cached.agentRole,
+          handoff: cached.handoff,
+        });
+
+        pushActionResult({
+          ok: true,
+          name: cached.name,
+          summary: `${cached.summary} (cache hit)`,
+          artifacts: [...cached.artifacts],
+          verification: [...cached.verification, `cache_ttl_ms=${ACTION_CACHE_TTL_MS}`, 'cache_hit=true'],
           agentRole: cached.agentRole,
           handoff: cached.handoff,
         });
@@ -1064,7 +1179,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
 
     lines.push(`액션: ${final.name}`);
     lines.push(final.summary);
-    lines.push(final.artifacts.length > 0 ? `산출물:\n${final.artifacts.map((line) => `- ${line}`).join('\n')}` : '산출물: 없음');
+  pushActionArtifactSections(lines, final.artifacts);
     lines.push(final.verification.length > 0 ? `검증:\n${final.verification.map((line) => `- ${line}`).join('\n')}` : '검증: 없음');
     lines.push(`재시도 횟수: ${Math.max(0, attempt - 1)}`);
     lines.push(`소요시간(ms): ${durationMs}`);
@@ -1091,6 +1206,17 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       error: final.error,
       estimatedCostUsd,
       finopsMode,
+      agentRole: final.agentRole,
+      handoff: final.handoff,
+    });
+
+    pushActionResult({
+      ok: final.ok,
+      name: final.name,
+      summary: final.summary,
+      artifacts: [...final.artifacts],
+      verification: [...final.verification],
+      error: final.error,
       agentRole: final.agentRole,
       handoff: final.handoff,
     });
@@ -1123,6 +1249,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
     hasSuccess,
     externalUnavailable,
     diagnostics,
+    actionResults,
   });
 };
 

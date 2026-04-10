@@ -5,10 +5,11 @@ Requires=unified-mcp-http.service
 
 [Service]
 Type=oneshot
-User=fancy
-WorkingDirectory=/home/fancy/discord-news-bot
-EnvironmentFile=-/home/fancy/discord-news-bot/.env
-ExecStart=/usr/bin/node --import tsx scripts/sync-obsidian-lore.ts
+User=muel
+WorkingDirectory=/opt/muel/muel-platform
+Environment=HOME=/opt/muel
+EnvironmentFile=-/opt/muel/muel-platform/.env
+ExecStart=/usr/bin/node --import tsx /opt/muel/muel-platform/scripts/sync-obsidian-lore.ts
 
 [Install]
 WantedBy=multi-user.target

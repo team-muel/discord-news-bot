@@ -5,7 +5,7 @@
 ## Boundary
 
 - **Source**: `src/services/memory/` (consolidation, evolution), `src/services/skills/actions/agentCollab.ts`, other shared services that persist durable knowledge
-- **Sink**: `src/services/obsidian/router.ts` → adapter chain → remote MCP vault service or local fallback adapters
+- **Sink**: `src/services/obsidian/router.ts` → adapter chain → shared remote MCP vault service (default) or explicit local overlay adapters
 - **Gate**: `sanitizeForObsidianWrite()` in `src/services/obsidian/router.ts`
 
 ## Required Transformations
@@ -78,20 +78,20 @@ Required fields by write source:
 Caller → writeObsidianNoteWithAdapter()
   → sanitizeForObsidianWrite(content)
   → primaryAdapter.writeNote(sanitizedParams)
-  → [if fails] fallbackAdapter.writeNote(sanitizedParams)
+  → [if primary write fails] return null and preserve primary target semantics
   → [if no adapter] log warning, return null
 ```
 
 The router tries adapters in priority order. Current production preference is:
 
-1. `remote-mcp` — shared vault service on the GCP VM via `OBSIDIAN_REMOTE_MCP_URL`
+1. `remote-mcp` — shared vault service on the GCP VM via `MCP_SHARED_MCP_URL` (legacy alias: `OBSIDIAN_REMOTE_MCP_URL`)
 2. `native-cli` — local native CLI when a host machine has direct vault access
 3. `script-cli` — script-based bridge for narrow fallback paths
 4. `local-fs` — direct filesystem fallback when the process can mount the vault locally
 
 This layer is intended to be a shared memory backplane for multiple services, not a single bot-only write path.
 
-When `remote-mcp` has recent probe failures or repeated tool-call failures, the router temporarily de-prioritizes it behind healthy local adapters instead of paying the remote timeout cost on every call. This is a short-lived circuit-breaker, not a permanent disable.
+When `remote-mcp` has recent probe failures or repeated tool-call failures, the router temporarily de-prioritizes it behind healthy local adapters instead of paying the remote timeout cost on every call. This is a short-lived circuit-breaker, not a permanent disable. Once a primary write adapter is selected, however, write failure does not silently fall through to another adapter.
 
 ### 5. Vault Path Safety
 

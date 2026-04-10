@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# upgrade-gcp-to-e2-small.sh — Resize GCP VM and deploy full OpenJarvis
+# upgrade-gcp-to-e2-small.sh — Legacy helper to resize GCP VM and deploy full OpenJarvis
 #
 # Purpose:
-#   Upgrade from e2-micro (1GB) to e2-small (2GB) to enable full jarvis serve
-#   on GCP, removing WSL dependency for the 24/7 learning loop.
+#   Historical purpose: upgrade from e2-micro to a larger machine type to enable
+#   full jarvis serve on GCP, removing WSL dependency for the 24/7 learning loop.
+#   Current default target should be e2-medium (4GB).
 #
 # What this does:
 #   1. Stops the VM instance
-#   2. Resizes to e2-small
+#   2. Resizes to the configured target machine type
 #   3. Restarts the VM
 #   4. SSHes in and installs OpenJarvis full (not lite mode)
 #   5. Creates systemd unit for jarvis serve
@@ -21,16 +22,16 @@
 #   bash scripts/upgrade-gcp-to-e2-small.sh [--dry-run]
 #
 # Cost impact:
-#   e2-micro: ~$6.11/month (free tier eligible)
-#   e2-small: ~$12.23/month (no free tier)
-#   Delta: ~$6.12/month for 24/7 jarvis serve + full bench/optimize/trace
+#   e2-micro: legacy low-cost baseline
+#   e2-medium: current operating baseline
+#   Check current GCP pricing directly before resize.
 
 set -euo pipefail
 
 INSTANCE="${GCP_INSTANCE:-instance-20260319-223412}"
 PROJECT="${GCP_PROJECT:-gen-lang-client-0405212361}"
 ZONE="${GCP_ZONE:-us-central1-c}"
-NEW_MACHINE_TYPE="${NEW_MACHINE_TYPE:-e2-small}"
+NEW_MACHINE_TYPE="${NEW_MACHINE_TYPE:-e2-medium}"
 DRY_RUN=false
 
 for arg in "$@"; do
@@ -46,7 +47,7 @@ fail() { printf "${RED}[FAIL]${NC} %s\n" "$1"; exit 1; }
 
 echo ""
 echo "============================================"
-echo "  GCP VM Upgrade: e2-micro -> $NEW_MACHINE_TYPE"
+echo "  GCP VM Upgrade: legacy baseline -> $NEW_MACHINE_TYPE"
 echo "============================================"
 echo "  Instance: $INSTANCE"
 echo "  Project:  $PROJECT"
@@ -177,16 +178,15 @@ JARVIS_BIN=\\\$(command -v jarvis || echo /usr/local/bin/jarvis)
 sudo tee /etc/systemd/system/openjarvis-serve.service > /dev/null << SVCEOF
 [Unit]
 Description=OpenJarvis Serve (Stanford) - Full Mode
-After=network.target ollama.service
-Wants=ollama.service
+After=network.target
 
 [Service]
 Type=simple
 User=muel
-ExecStart=\\\$JARVIS_BIN serve --host 0.0.0.0 --port 8000
+EnvironmentFile=-/opt/muel/muel-platform/config/env/openjarvis-worker.gcp.env
+ExecStart=/bin/bash -lc 'export PATH="\\\$HOME/.local/bin:\\\$PATH"; if [ -z "\\\${OPENJARVIS_API_KEY:-}" ] && [ -n "\\\${OPENJARVIS_SERVE_API_KEY:-}" ]; then export OPENJARVIS_API_KEY="\\\$OPENJARVIS_SERVE_API_KEY"; fi; exec "\\\$1" serve --engine litellm --host 0.0.0.0 --port 8000' _ \\\$JARVIS_BIN
 Restart=always
 RestartSec=5
-Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
 WorkingDirectory=/opt/muel/OpenJarvis
 
 [Install]
@@ -219,28 +219,31 @@ echo "--- Health Checks ---"
 VM_IP=$(gcloud compute instances describe "$INSTANCE" \
   --project="$PROJECT" --zone="$ZONE" \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null)
+PUBLIC_BASE="https://$VM_IP.sslip.io"
 
 ENDPOINTS=(
-  "opencode-worker:8787:/health"
-  "opendev-worker:8791:/health"
-  "nemoclaw-worker:8792:/health"
-  "openjarvis-worker:8793:/health"
-  "jarvis-serve:8000:/health"
+  "opencode-worker|$PUBLIC_BASE/health"
+  "opendev-worker|$PUBLIC_BASE/architect/health"
+  "nemoclaw-worker|$PUBLIC_BASE/review/health"
+  "openjarvis-worker|$PUBLIC_BASE/operate/health"
+  "openjarvis-serve|$PUBLIC_BASE/openjarvis/health"
 )
 
 PASS=0
 for entry in "${ENDPOINTS[@]}"; do
-  name="${entry%%:*}"
-  rest="${entry#*:}"
-  port="${rest%%:*}"
-  path="${rest#*:}"
-  if curl -sf --max-time 10 "http://$VM_IP:$port$path" &>/dev/null; then
-    ok "$name: healthy on port $port"
+  name="${entry%%|*}"
+  url="${entry#*|}"
+  if curl -sf --max-time 10 "$url" &>/dev/null; then
+    ok "$name: healthy via $url"
     PASS=$((PASS + 1))
   else
-    warn "$name: not responding on port $port"
+    warn "$name: not responding via $url"
   fi
 done
+
+if [ "$PASS" -lt "${#ENDPOINTS[@]}" ]; then
+  fail "One or more upgraded services are unhealthy after resize"
+fi
 
 echo ""
 echo "============================================"

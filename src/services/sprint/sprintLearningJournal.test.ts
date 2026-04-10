@@ -13,6 +13,12 @@ vi.mock('../../utils/obsidianEnv', () => ({
 
 vi.mock('../obsidian/authoring', () => ({
   upsertObsidianGuildDocument: (...args: unknown[]) => mockUpsert(...args),
+  summarizeReflectionBundle: vi.fn((bundle?: { concern?: string; suggestedPaths?: string[]; gatePaths?: string[]; plane?: string; customerImpact?: boolean }) => ({
+    plane: bundle?.plane || 'none',
+    concern: bundle?.concern || 'none',
+    nextPath: bundle?.suggestedPaths?.[0] || bundle?.gatePaths?.[0] || 'none',
+    customerImpact: Boolean(bundle?.customerImpact),
+  })),
 }));
 
 vi.mock('../obsidian/router', () => ({
@@ -90,12 +96,28 @@ describe('sprintLearningJournal', () => {
 
   describe('recordSprintJournalEntry', () => {
     it('Obsidian에 journal entry를 기록한다', async () => {
-      mockUpsert.mockResolvedValue({ ok: true, path: 'guilds/123456/sprint-journal/20260325_sprint-test-001.md' });
+      mockUpsert.mockResolvedValue({
+        ok: true,
+        path: 'guilds/123456/sprint-journal/20260325_sprint-test-001.md',
+        reflectionBundle: {
+          targetPath: 'guilds/123456/sprint-journal/20260325_sprint-test-001.md',
+          plane: 'learning',
+          concern: 'recursive-improvement',
+          requiredPaths: [],
+          suggestedPaths: ['ops/improvement/rules/knowledge-reflection-pipeline.md'],
+          suggestedPatterns: [],
+          verificationChecklist: [],
+          gatePaths: [],
+          customerImpact: false,
+          notes: [],
+        },
+      });
 
       const result = await recordSprintJournalEntry(makeEntry());
 
       expect(result.ok).toBe(true);
       expect(result.path).toContain('sprint-journal');
+      expect(result.reflectionBundle?.concern).toBe('recursive-improvement');
       expect(mockUpsert).toHaveBeenCalledTimes(1);
 
       const call = mockUpsert.mock.calls[0][0];

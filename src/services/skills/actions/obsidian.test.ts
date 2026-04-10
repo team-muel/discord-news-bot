@@ -45,7 +45,22 @@ describe('obsidianGuildDocUpsertAction', () => {
 
   it('저장 성공 시 경로를 artifacts에 포함한다', async () => {
     vi.mocked(getObsidianVaultRoot).mockReturnValue('C:/vault');
-    vi.mocked(upsertObsidianGuildDocument).mockResolvedValue({ ok: true, path: 'C:/vault/guilds/123/test.md' });
+    vi.mocked(upsertObsidianGuildDocument).mockResolvedValue({
+      ok: true,
+      path: 'C:/vault/guilds/123/test.md',
+      reflectionBundle: {
+        targetPath: 'guilds/123456789012345678/test.md',
+        plane: 'record',
+        concern: 'guild-memory',
+        requiredPaths: ['guilds/123456789012345678/test.md'],
+        suggestedPaths: ['guilds/123456789012345678/customer/PROFILE.md'],
+        suggestedPatterns: [],
+        verificationChecklist: [],
+        gatePaths: ['ops/control-tower/GATE_ENTRYPOINTS.md'],
+        customerImpact: false,
+        notes: [],
+      },
+    });
 
     const result = await obsidianGuildDocUpsertAction.execute({
       guildId: '123456789012345678',
@@ -59,6 +74,16 @@ describe('obsidianGuildDocUpsertAction', () => {
 
     expect(result.ok).toBe(true);
     expect(result.artifacts[0]).toContain('test.md');
+    expect(result.artifacts[1]).toMatch(/^reflection=/);
+    expect(JSON.parse(result.artifacts[1].slice('reflection='.length))).toEqual({
+      type: 'obsidian_reflection',
+      plane: 'record',
+      concern: 'guild-memory',
+      nextPath: 'guilds/123456789012345678/customer/PROFILE.md',
+      customerImpact: false,
+    });
+    expect(result.verification).toContain('reflection_plane=record');
+    expect(result.verification).toContain('reflection_concern=guild-memory');
   });
 
   it('자동 태그 분류와 frontmatter 템플릿 속성을 강제한다', async () => {

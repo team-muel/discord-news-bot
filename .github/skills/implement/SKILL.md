@@ -53,7 +53,7 @@ applyTo: "src/**"
 - **Reuse over creation**: extending an existing 500-line file is almost always better than creating a new 200-line file. New abstractions must justify their existence.
 - New files per sprint are hard-capped by `SPRINT_NEW_FILE_CAP` (default: 3, enforced by `scopeGuard.checkNewFileCreation`). Test files don't count.
 - Do not perform unrelated refactors.
-- Prefer `muelIndexing` MCP tools for symbol discovery before broad text search.
+- Prefer shared code-index tools for committed/team repo state before broad text search, and use `muelIndexing` only when local dirty workspace or uncommitted files are relevant.
 - Escalate architectural reshaping to `/plan` before broad refactors.
 - Backward compatibility check for public bot or API behavior.
 

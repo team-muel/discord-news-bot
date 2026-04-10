@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { stripMarkdownExtension } from './authoring';
@@ -5,6 +8,9 @@ import { parseObsidianFrontmatter } from './obsidianCacheService';
 import { doc } from './obsidianDocBuilder';
 import { listObsidianFilesWithAdapter, readObsidianFileWithAdapter, writeObsidianNoteWithAdapter } from './router';
 import type { ObsidianFileInfo, ObsidianFrontmatterValue } from './types';
+import { getObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const GENERATED_ROOT = 'ops/knowledge-control';
 const INDEX_PATH = `${GENERATED_ROOT}/INDEX.md`;
@@ -12,6 +18,18 @@ const LOG_PATH = `${GENERATED_ROOT}/LOG.md`;
 const LINT_PATH = `${GENERATED_ROOT}/LINT.md`;
 const TOPIC_DIR = `${GENERATED_ROOT}/topics`;
 const ENTITY_DIR = `${GENERATED_ROOT}/entities`;
+const CONTROL_TOWER_DIR = 'ops/control-tower';
+const BLUEPRINT_PATH = `${CONTROL_TOWER_DIR}/BLUEPRINT.md`;
+const CANONICAL_MAP_PATH = `${CONTROL_TOWER_DIR}/CANONICAL_MAP.md`;
+const CADENCE_PATH = `${CONTROL_TOWER_DIR}/CADENCE.md`;
+const GATE_ENTRYPOINTS_PATH = `${CONTROL_TOWER_DIR}/GATE_ENTRYPOINTS.md`;
+const CONTROL_TOWER_PATHS = [BLUEPRINT_PATH, CANONICAL_MAP_PATH, CADENCE_PATH, GATE_ENTRYPOINTS_PATH] as const;
+const QUALITY_RUBRIC_PATH = 'ops/quality/RUBRIC.md';
+const QUALITY_METRICS_BASELINE_PATH = 'ops/quality/METRICS_BASELINE.md';
+const VISIBLE_REFLECTION_GATE_PATH = 'ops/quality/gates/2026-04-10_visible-reflection-gate.md';
+const VISIBLE_REFLECTION_CORRECTION_PATH = 'ops/improvement/corrections/2026-04-10_visible-reflection-definition.md';
+const KNOWLEDGE_REFLECTION_RULE_PATH = 'ops/improvement/rules/knowledge-reflection-pipeline.md';
+const KNOWLEDGE_BACKFILL_CATALOG_PATH = path.resolve(__dirname, '../../../config/runtime/knowledge-backfill-catalog.json');
 
 const TRACKED_ROOTS = ['chat/answers', 'consolidated', 'retros', 'memory'];
 const SYSTEM_TAGS = new Set([
@@ -103,6 +121,104 @@ export type ObsidianKnowledgeCompilationStats = {
   lastLintSummary: ObsidianKnowledgeLintSummary | null;
 };
 
+export type ObsidianKnowledgePlaneId = 'control' | 'runtime' | 'record' | 'learning';
+
+export type ObsidianKnowledgePlaneDefinition = {
+  id: ObsidianKnowledgePlaneId;
+  label: string;
+  description: string;
+  pathPatterns: string[];
+  primaryQuestions: string[];
+};
+
+export type ObsidianKnowledgeControlBlueprint = {
+  model: '4-plane-control-tower';
+  controlPaths: string[];
+  reflectionChecklist: string[];
+  planes: ObsidianKnowledgePlaneDefinition[];
+};
+
+export type ObsidianKnowledgePathDescriptor = {
+  path: string;
+  plane: ObsidianKnowledgePlaneId;
+  concern: string;
+  generated: boolean;
+};
+
+export type ObsidianKnowledgeCatalogAudience = 'operator-primary' | 'shared' | 'agent-support';
+
+export type ObsidianKnowledgeCatalogEntry = {
+  id: string;
+  title: string;
+  sourcePath: string;
+  targetPath: string;
+  sectionHeading?: string;
+  tags: string[];
+  plane: string;
+  concern: string;
+  intent: string;
+  audience: ObsidianKnowledgeCatalogAudience;
+  canonical: boolean;
+  startHere: boolean;
+  agentReference: boolean;
+  queries: string[];
+};
+
+export type ObsidianKnowledgeCatalogPolicy = {
+  humanFirst: boolean;
+  rules: string[];
+  avoidAsPrimary: string[];
+};
+
+export type ObsidianKnowledgeCatalogDocument = {
+  schemaVersion: number;
+  updatedAt: string;
+  description: string;
+  policy: ObsidianKnowledgeCatalogPolicy;
+  entries: ObsidianKnowledgeCatalogEntry[];
+};
+
+export type ObsidianKnowledgeCatalogCoverage = {
+  vaultConfigured: boolean;
+  vaultRoot: string;
+  totalEntries: number;
+  presentEntries: number;
+  missingEntries: number;
+  operatorPrimaryEntries: number;
+  operatorPrimaryPresent: number;
+  operatorPrimaryMissing: number;
+  startHereEntries: number;
+  startHerePresent: number;
+  startHereMissing: number;
+  missingTargetPaths: string[];
+  operatorPrimaryMissingPaths: string[];
+  startHereMissingPaths: string[];
+};
+
+export type ObsidianKnowledgeAccessProfile = {
+  humanFirst: boolean;
+  rules: string[];
+  avoidAsPrimary: string[];
+  startHerePaths: string[];
+  operatorPrimaryPaths: string[];
+  agentReferencePaths: string[];
+  canonicalPaths: string[];
+  coverage: ObsidianKnowledgeCatalogCoverage;
+};
+
+export type ObsidianKnowledgeReflectionBundle = {
+  targetPath: string;
+  plane: ObsidianKnowledgePlaneId;
+  concern: string;
+  requiredPaths: string[];
+  suggestedPaths: string[];
+  suggestedPatterns: string[];
+  verificationChecklist: string[];
+  gatePaths: string[];
+  customerImpact: boolean;
+  notes: string[];
+};
+
 const state: ObsidianKnowledgeCompilationStats = {
   enabled: true,
   runs: 0,
@@ -119,6 +235,61 @@ const state: ObsidianKnowledgeCompilationStats = {
   lastLintSummary: null,
 };
 
+const CONTROL_TOWER_BLUEPRINT: ObsidianKnowledgeControlBlueprint = {
+  model: '4-plane-control-tower',
+  controlPaths: [...CONTROL_TOWER_PATHS],
+  reflectionChecklist: [
+    'source note or incident evidence captured',
+    'topic or operating artifact updated',
+    'index and log updated',
+    'search visibility verified in the user-visible vault',
+    'served vault root matches the intended workspace when remote serving is involved',
+  ],
+  planes: [
+    {
+      id: 'control',
+      label: 'Control Plane',
+      description: 'Canonical policy, cadence, and gate standards that decide what is true.',
+      pathPatterns: ['ops/control-tower/**', 'ops/quality/**'],
+      primaryQuestions: ['What is canonical?', 'What gate applies?', 'What cadence should run?'],
+    },
+    {
+      id: 'runtime',
+      label: 'Runtime Plane',
+      description: 'Service memory and live execution boundaries for running systems.',
+      pathPatterns: ['ops/services/**'],
+      primaryQuestions: ['What is running?', 'What depends on it?', 'How is it recovered?'],
+    },
+    {
+      id: 'record',
+      label: 'Record Plane',
+      description: 'Visible evidence of what happened, what changed, and who was affected.',
+      pathPatterns: ['ops/knowledge-control/**', 'ops/incidents/**', 'ops/vulnerabilities/**', 'guilds/**'],
+      primaryQuestions: ['What happened?', 'What evidence exists?', 'Who was affected?'],
+    },
+    {
+      id: 'learning',
+      label: 'Learning Plane',
+      description: 'Corrections, rules, retros, and validated practices for future behavior.',
+      pathPatterns: ['ops/improvement/**', 'retros/**'],
+      primaryQuestions: ['What changed in the rules?', 'What should we repeat?', 'What should we stop doing?'],
+    },
+  ],
+};
+
+const DEFAULT_KNOWLEDGE_CATALOG_POLICY: ObsidianKnowledgeCatalogPolicy = {
+  humanFirst: true,
+  rules: [
+    'Start with operator-primary canonical docs before generated knowledge-control artifacts.',
+    'Treat generated ops/knowledge-control pages as navigation aids and evidence support, not as the first semantic source.',
+    'When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries.',
+  ],
+  avoidAsPrimary: [INDEX_PATH, LOG_PATH, LINT_PATH],
+};
+
+let cachedKnowledgeCatalogMtimeMs = -1;
+let cachedKnowledgeCatalog: ObsidianKnowledgeCatalogDocument | null = null;
+
 const cloneLintSummary = (value: ObsidianKnowledgeLintSummary | null): ObsidianKnowledgeLintSummary | null => {
   if (!value) {
     return null;
@@ -133,7 +304,40 @@ const cloneLintSummary = (value: ObsidianKnowledgeLintSummary | null): ObsidianK
   };
 };
 
+const cloneBlueprint = (value: ObsidianKnowledgeControlBlueprint): ObsidianKnowledgeControlBlueprint => ({
+  ...value,
+  controlPaths: [...value.controlPaths],
+  reflectionChecklist: [...value.reflectionChecklist],
+  planes: value.planes.map((plane) => ({
+    ...plane,
+    pathPatterns: [...plane.pathPatterns],
+    primaryQuestions: [...plane.primaryQuestions],
+  })),
+});
+
+const cloneCatalogPolicy = (value: ObsidianKnowledgeCatalogPolicy): ObsidianKnowledgeCatalogPolicy => ({
+  humanFirst: Boolean(value.humanFirst),
+  rules: [...value.rules],
+  avoidAsPrimary: [...value.avoidAsPrimary],
+});
+
+const cloneCatalogEntry = (value: ObsidianKnowledgeCatalogEntry): ObsidianKnowledgeCatalogEntry => ({
+  ...value,
+  tags: [...value.tags],
+  queries: [...value.queries],
+});
+
 const normalizePath = (value: string): string => String(value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+
+const normalizeCatalogPath = (value: unknown): string => normalizePath(String(value || ''));
+
+const normalizeCatalogAudience = (value: unknown): ObsidianKnowledgeCatalogAudience => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'operator-primary' || normalized === 'agent-support') {
+    return normalized;
+  }
+  return 'shared';
+};
 
 const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
   const seen = new Set<string>();
@@ -147,6 +351,167 @@ const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
     result.push(normalized);
   }
   return result;
+};
+
+const normalizeKnowledgeCatalogEntry = (value: unknown): ObsidianKnowledgeCatalogEntry | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const entry = value as Record<string, unknown>;
+  const id = String(entry.id || '').trim();
+  const title = String(entry.title || '').trim();
+  const sourcePath = normalizeCatalogPath(entry.sourcePath);
+  const targetPath = normalizeCatalogPath(entry.targetPath);
+  if (!id || !title || !sourcePath || !targetPath) {
+    return null;
+  }
+
+  return {
+    id,
+    title,
+    sourcePath,
+    targetPath,
+    sectionHeading: String(entry.sectionHeading || '').trim() || undefined,
+    tags: dedupeStrings(Array.isArray(entry.tags) ? entry.tags.map((item) => String(item || '').trim()) : []),
+    plane: String(entry.plane || '').trim() || 'record',
+    concern: String(entry.concern || '').trim() || 'general-record',
+    intent: String(entry.intent || '').trim() || 'memory',
+    audience: normalizeCatalogAudience(entry.audience),
+    canonical: Boolean(entry.canonical),
+    startHere: Boolean(entry.startHere),
+    agentReference: entry.agentReference !== false,
+    queries: dedupeStrings(Array.isArray(entry.queries) ? entry.queries.map((item) => String(item || '').trim()) : []),
+  };
+};
+
+const normalizeKnowledgeCatalogPolicy = (value: unknown): ObsidianKnowledgeCatalogPolicy => {
+  if (!value || typeof value !== 'object') {
+    return cloneCatalogPolicy(DEFAULT_KNOWLEDGE_CATALOG_POLICY);
+  }
+
+  const policy = value as Record<string, unknown>;
+  return {
+    humanFirst: policy.humanFirst !== false,
+    rules: dedupeStrings(Array.isArray(policy.rules) ? policy.rules.map((item) => String(item || '').trim()) : DEFAULT_KNOWLEDGE_CATALOG_POLICY.rules),
+    avoidAsPrimary: dedupeStrings(Array.isArray(policy.avoidAsPrimary) ? policy.avoidAsPrimary.map((item) => normalizeCatalogPath(item)) : DEFAULT_KNOWLEDGE_CATALOG_POLICY.avoidAsPrimary),
+  };
+};
+
+const loadKnowledgeBackfillCatalog = (): ObsidianKnowledgeCatalogDocument => {
+  try {
+    const stat = fs.statSync(KNOWLEDGE_BACKFILL_CATALOG_PATH);
+    if (cachedKnowledgeCatalog && stat.mtimeMs === cachedKnowledgeCatalogMtimeMs) {
+      return cachedKnowledgeCatalog;
+    }
+
+    const raw = fs.readFileSync(KNOWLEDGE_BACKFILL_CATALOG_PATH, 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const entries = Array.isArray(parsed.entries)
+      ? parsed.entries
+        .map((item) => normalizeKnowledgeCatalogEntry(item))
+        .filter((item): item is ObsidianKnowledgeCatalogEntry => Boolean(item))
+      : [];
+
+    cachedKnowledgeCatalog = {
+      schemaVersion: Number(parsed.schemaVersion || 1) || 1,
+      updatedAt: String(parsed.updatedAt || '').trim() || '',
+      description: String(parsed.description || '').trim() || '',
+      policy: normalizeKnowledgeCatalogPolicy(parsed.policy),
+      entries,
+    };
+    cachedKnowledgeCatalogMtimeMs = stat.mtimeMs;
+    return cachedKnowledgeCatalog;
+  } catch {
+    return {
+      schemaVersion: 1,
+      updatedAt: '',
+      description: '',
+      policy: cloneCatalogPolicy(DEFAULT_KNOWLEDGE_CATALOG_POLICY),
+      entries: [],
+    };
+  }
+};
+
+const resolveCatalogVaultPath = (vaultRoot: string, targetPath: string): string => {
+  const normalized = normalizeCatalogPath(targetPath).replace(/\.md$/i, '');
+  const segments = normalized.split('/').map((segment) => String(segment || '').trim()).filter(Boolean);
+  return path.join(path.resolve(vaultRoot), ...segments) + '.md';
+};
+
+const buildKnowledgeCatalogCoverage = (
+  entries: ObsidianKnowledgeCatalogEntry[],
+): ObsidianKnowledgeCatalogCoverage => {
+  const vaultRuntime = getObsidianVaultRuntimeInfo();
+  const vaultAvailable = Boolean(vaultRuntime.configured && vaultRuntime.exists && vaultRuntime.root);
+  const missingTargetPaths: string[] = [];
+  const operatorPrimaryMissingPaths: string[] = [];
+  const startHereMissingPaths: string[] = [];
+  let presentEntries = 0;
+  let operatorPrimaryEntries = 0;
+  let operatorPrimaryPresent = 0;
+  let startHereEntries = 0;
+  let startHerePresent = 0;
+
+  for (const entry of entries) {
+    const exists = vaultAvailable && fs.existsSync(resolveCatalogVaultPath(vaultRuntime.root, entry.targetPath));
+    if (exists) {
+      presentEntries += 1;
+    } else {
+      missingTargetPaths.push(entry.targetPath);
+    }
+
+    if (entry.audience === 'operator-primary') {
+      operatorPrimaryEntries += 1;
+      if (exists) {
+        operatorPrimaryPresent += 1;
+      } else {
+        operatorPrimaryMissingPaths.push(entry.targetPath);
+      }
+    }
+
+    if (entry.startHere) {
+      startHereEntries += 1;
+      if (exists) {
+        startHerePresent += 1;
+      } else {
+        startHereMissingPaths.push(entry.targetPath);
+      }
+    }
+  }
+
+  return {
+    vaultConfigured: vaultAvailable,
+    vaultRoot: vaultRuntime.root,
+    totalEntries: entries.length,
+    presentEntries,
+    missingEntries: entries.length - presentEntries,
+    operatorPrimaryEntries,
+    operatorPrimaryPresent,
+    operatorPrimaryMissing: operatorPrimaryEntries - operatorPrimaryPresent,
+    startHereEntries,
+    startHerePresent,
+    startHereMissing: startHereEntries - startHerePresent,
+    missingTargetPaths,
+    operatorPrimaryMissingPaths,
+    startHereMissingPaths,
+  };
+};
+
+const buildKnowledgeAccessProfile = (
+  catalog: ObsidianKnowledgeCatalogDocument,
+): ObsidianKnowledgeAccessProfile => {
+  const entries = catalog.entries.map(cloneCatalogEntry);
+  return {
+    humanFirst: catalog.policy.humanFirst,
+    rules: [...catalog.policy.rules],
+    avoidAsPrimary: [...catalog.policy.avoidAsPrimary],
+    startHerePaths: dedupeStrings(entries.filter((entry) => entry.startHere).map((entry) => entry.targetPath)),
+    operatorPrimaryPaths: dedupeStrings(entries.filter((entry) => entry.audience === 'operator-primary').map((entry) => entry.targetPath)),
+    agentReferencePaths: dedupeStrings(entries.filter((entry) => entry.agentReference).map((entry) => entry.targetPath)),
+    canonicalPaths: dedupeStrings(entries.filter((entry) => entry.canonical).map((entry) => entry.targetPath)),
+    coverage: buildKnowledgeCatalogCoverage(entries),
+  };
 };
 
 const toText = (value: unknown): string => String(value || '').trim();
@@ -231,6 +596,119 @@ const formatTimestamp = (value: string): string => {
 const buildTopicArtifactPath = (topic: string): string => `${TOPIC_DIR}/${slugify(topic)}.md`;
 
 const buildEntityArtifactPath = (entityKey: string): string => `${ENTITY_DIR}/${slugify(entityKey)}.md`;
+
+const describeKnowledgePath = (filePath: string): Omit<ObsidianKnowledgePathDescriptor, 'path' | 'generated'> => {
+  const normalized = normalizePath(filePath).toLowerCase();
+
+  if (normalized.startsWith(`${CONTROL_TOWER_DIR.toLowerCase()}/`) || normalized.startsWith('ops/quality/')) {
+    return {
+      plane: 'control',
+      concern: normalized.startsWith('ops/quality/') ? 'quality-control' : 'control-tower',
+    };
+  }
+
+  if (normalized.startsWith('ops/services/')) {
+    return {
+      plane: 'runtime',
+      concern: 'service-memory',
+    };
+  }
+
+  if (normalized.startsWith('ops/improvement/') || normalized.startsWith('retros/')) {
+    return {
+      plane: 'learning',
+      concern: 'recursive-improvement',
+    };
+  }
+
+  if (normalized.startsWith('ops/incidents/') || normalized.startsWith('ops/vulnerabilities/')) {
+    return {
+      plane: 'record',
+      concern: 'vulnerability-and-incident-analysis',
+    };
+  }
+
+  if (/^guilds\/[^/]+\/sprint-journal\//.test(normalized)) {
+    return {
+      plane: 'learning',
+      concern: 'recursive-improvement',
+    };
+  }
+
+  if (normalized.startsWith('guilds/')) {
+    return {
+      plane: 'record',
+      concern: normalized.includes('/customer/') ? 'customer-operating-memory' : 'guild-memory',
+    };
+  }
+
+  if (normalized.startsWith(`${GENERATED_ROOT.toLowerCase()}/`)) {
+    return {
+      plane: 'record',
+      concern: 'knowledge-control',
+    };
+  }
+
+  return {
+    plane: 'record',
+    concern: 'general-record',
+  };
+};
+
+const buildKnowledgePathIndex = (paths: Array<{ path: string; generated: boolean }>): ObsidianKnowledgePathDescriptor[] => {
+  const seen = new Set<string>();
+  const result: ObsidianKnowledgePathDescriptor[] = [];
+
+  for (const entry of paths) {
+    const normalized = normalizePath(entry.path);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push({
+      path: normalized,
+      generated: entry.generated,
+      ...describeKnowledgePath(normalized),
+    });
+  }
+
+  return result;
+};
+
+const extractGuildIdFromPath = (value: string): string | null => {
+  const match = normalizePath(value).match(/^guilds\/([^/]+)\//i);
+  return match?.[1] || null;
+};
+
+const extractServiceSlugFromPath = (value: string): string | null => {
+  const match = normalizePath(value).match(/^ops\/services\/([^/]+)\//i);
+  return match?.[1] || null;
+};
+
+const buildCustomerLedgerPaths = (guildId: string | null): string[] => {
+  if (!guildId) {
+    return [];
+  }
+
+  return [
+    `guilds/${guildId}/customer/PROFILE.md`,
+    `guilds/${guildId}/customer/REQUIREMENTS.md`,
+    `guilds/${guildId}/customer/ISSUES.md`,
+    `guilds/${guildId}/customer/ESCALATIONS.md`,
+  ];
+};
+
+const buildGuildCorePaths = (guildId: string | null): string[] => {
+  if (!guildId) {
+    return [];
+  }
+
+  return [
+    `guilds/${guildId}/Guild_Lore.md`,
+    `guilds/${guildId}/Server_History.md`,
+    `guilds/${guildId}/Decision_Log.md`,
+  ];
+};
 
 const isGeneratedArtifactPath = (filePath: string): boolean => {
   const normalized = normalizePath(filePath).toLowerCase();
@@ -754,6 +1232,18 @@ export const resolveObsidianKnowledgeArtifactPath = (value: string): string | nu
   if (normalized === 'lint' || normalized === LINT_PATH.toLowerCase()) {
     return LINT_PATH;
   }
+  if (normalized === 'blueprint' || normalized === BLUEPRINT_PATH.toLowerCase()) {
+    return BLUEPRINT_PATH;
+  }
+  if (normalized === 'canonical-map' || normalized === CANONICAL_MAP_PATH.toLowerCase()) {
+    return CANONICAL_MAP_PATH;
+  }
+  if (normalized === 'cadence' || normalized === CADENCE_PATH.toLowerCase()) {
+    return CADENCE_PATH;
+  }
+  if (normalized === 'gate-entrypoints' || normalized === GATE_ENTRYPOINTS_PATH.toLowerCase()) {
+    return GATE_ENTRYPOINTS_PATH;
+  }
 
   const topicMatch = raw.match(/^topic:(.+)$/i);
   if (topicMatch?.[1]) {
@@ -776,11 +1266,141 @@ export const resolveObsidianKnowledgeArtifactPath = (value: string): string | nu
   return null;
 };
 
+export const buildObsidianKnowledgeReflectionBundle = (value: string): ObsidianKnowledgeReflectionBundle | null => {
+  const raw = normalizePath(value);
+  if (!raw || raw.includes('..')) {
+    return null;
+  }
+
+  const targetPath = resolveObsidianKnowledgeArtifactPath(raw) || raw;
+  const { plane, concern } = describeKnowledgePath(targetPath);
+  const guildId = extractGuildIdFromPath(targetPath);
+  const serviceSlug = extractServiceSlugFromPath(targetPath);
+  const requiredPaths = dedupeStrings([targetPath, INDEX_PATH, LOG_PATH]);
+  const gatePaths = dedupeStrings([GATE_ENTRYPOINTS_PATH, VISIBLE_REFLECTION_GATE_PATH]);
+  let suggestedPaths: string[] = [];
+  let suggestedPatterns: string[] = [];
+  let notes: string[] = [];
+  let customerImpact = false;
+
+  switch (concern) {
+    case 'control-tower':
+      suggestedPaths = [...CONTROL_TOWER_PATHS, QUALITY_RUBRIC_PATH, QUALITY_METRICS_BASELINE_PATH, VISIBLE_REFLECTION_GATE_PATH];
+      notes = [
+        'Control-plane changes should update canonical precedence, cadence, and gate entrypoints before downstream runtime notes drift.',
+      ];
+      break;
+    case 'service-memory':
+      suggestedPaths = [CANONICAL_MAP_PATH, GATE_ENTRYPOINTS_PATH, KNOWLEDGE_REFLECTION_RULE_PATH];
+      suggestedPatterns = serviceSlug
+        ? [
+            `ops/services/${serviceSlug}/DEPENDENCY_MAP.md`,
+            `ops/services/${serviceSlug}/RECOVERY.md`,
+            `ops/services/${serviceSlug}/WEAK_POINTS.md`,
+          ]
+        : ['ops/services/<service>/DEPENDENCY_MAP.md', 'ops/services/<service>/RECOVERY.md', 'ops/services/<service>/WEAK_POINTS.md'];
+      notes = [
+        'Runtime-plane service work should pair a profile update with dependency and recovery follow-up artifacts.',
+      ];
+      break;
+    case 'quality-control':
+      suggestedPaths = [QUALITY_RUBRIC_PATH, QUALITY_METRICS_BASELINE_PATH, VISIBLE_REFLECTION_GATE_PATH, GATE_ENTRYPOINTS_PATH];
+      suggestedPatterns = ['ops/quality/gates/<date>_<slug>.md', 'ops/quality/regressions/<slug>.md', 'ops/quality/retrieval/<date>_<slug>.md'];
+      notes = [
+        'Quality-facing work is incomplete until a metric or gate artifact captures the decision and evidence.',
+      ];
+      break;
+    case 'customer-operating-memory':
+      customerImpact = true;
+      suggestedPaths = [...buildCustomerLedgerPaths(guildId), KNOWLEDGE_REFLECTION_RULE_PATH];
+      suggestedPatterns = guildId
+        ? [`guilds/${guildId}/customer/SUCCESS_FAILURE_NARRATIVE.md`]
+        : ['guilds/<guildId>/customer/SUCCESS_FAILURE_NARRATIVE.md'];
+      notes = [
+        'Customer-visible trust changes should update issues or escalations, not only the profile.',
+      ];
+      break;
+    case 'vulnerability-and-incident-analysis':
+      customerImpact = true;
+      suggestedPaths = [VISIBLE_REFLECTION_GATE_PATH, KNOWLEDGE_REFLECTION_RULE_PATH, VISIBLE_REFLECTION_CORRECTION_PATH];
+      suggestedPatterns = ['ops/postmortems/<date>_<slug>.md', 'ops/mitigations/<slug>.md'];
+      notes = [
+        'Record the event and the countermeasure separately so recurrence is easier to detect and gate.',
+      ];
+      break;
+    case 'recursive-improvement':
+      suggestedPaths = [KNOWLEDGE_REFLECTION_RULE_PATH, VISIBLE_REFLECTION_CORRECTION_PATH, GATE_ENTRYPOINTS_PATH];
+      suggestedPatterns = ['ops/improvement/patterns/<slug>.md', 'ops/improvement/validated-practices/<slug>.md'];
+      notes = [
+        'Learning-plane updates should leave both a rule artifact and a reusable practice or failure pattern.',
+      ];
+      break;
+    case 'knowledge-control':
+      suggestedPaths = [BLUEPRINT_PATH, CANONICAL_MAP_PATH, KNOWLEDGE_REFLECTION_RULE_PATH];
+      suggestedPatterns = ['ops/knowledge-control/topics/<topic>.md', 'ops/knowledge-control/entities/<entityKey>.md'];
+      notes = [
+        'Navigation-layer updates should preserve index/log coherence and topic/entity coverage.',
+      ];
+      break;
+    case 'guild-memory':
+      suggestedPaths = [...buildGuildCorePaths(guildId), KNOWLEDGE_REFLECTION_RULE_PATH];
+      suggestedPatterns = guildId
+        ? [`guilds/${guildId}/events/ingest/<artifact>.md`, `guilds/${guildId}/events/subscriptions/<date>_<mode>_<slug>.md`]
+        : ['guilds/<guildId>/events/ingest/<artifact>.md'];
+      notes = [
+        'Guild-scoped records should update lore, history, or decision hubs before escalating into customer ledgers.',
+      ];
+      break;
+    default:
+      suggestedPaths = [BLUEPRINT_PATH, CANONICAL_MAP_PATH, KNOWLEDGE_REFLECTION_RULE_PATH];
+      suggestedPatterns = ['ops/knowledge-control/topics/<topic>.md'];
+      notes = [
+        'General record updates should still close the loop through index, log, and visible search verification.',
+      ];
+      break;
+  }
+
+  return {
+    targetPath,
+    plane,
+    concern,
+    requiredPaths,
+    suggestedPaths: dedupeStrings(suggestedPaths),
+    suggestedPatterns,
+    verificationChecklist: [...CONTROL_TOWER_BLUEPRINT.reflectionChecklist],
+    gatePaths,
+    customerImpact,
+    notes,
+  };
+};
+
 export const getObsidianKnowledgeControlSurface = () => {
   const compiler = getObsidianKnowledgeCompilationStats();
+  const artifactPaths = listObsidianKnowledgeArtifactPaths(compiler);
+  const controlPaths = [...CONTROL_TOWER_PATHS];
+  const backfillCatalog = loadKnowledgeBackfillCatalog();
   return {
     compiler,
-    artifactPaths: listObsidianKnowledgeArtifactPaths(compiler),
+    artifactPaths,
+    controlPaths,
+    blueprint: cloneBlueprint(CONTROL_TOWER_BLUEPRINT),
+    backfillCatalog: {
+      schemaVersion: backfillCatalog.schemaVersion,
+      updatedAt: backfillCatalog.updatedAt,
+      description: backfillCatalog.description,
+      policy: cloneCatalogPolicy(backfillCatalog.policy),
+      entries: backfillCatalog.entries.map(cloneCatalogEntry),
+    },
+    accessProfile: buildKnowledgeAccessProfile(backfillCatalog),
+    bundleSupport: {
+      enabled: true,
+      queryParam: 'bundleFor',
+      acceptedAliases: ['blueprint', 'canonical-map', 'cadence', 'gate-entrypoints'],
+    },
+    pathIndex: buildKnowledgePathIndex([
+      ...controlPaths.map((path) => ({ path, generated: false })),
+      ...artifactPaths.map((path) => ({ path, generated: true })),
+    ]),
   };
 };
 

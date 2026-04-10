@@ -28,12 +28,12 @@ import {
   toggleObsidianTaskWithAdapter,
 } from '../services/obsidian/router';
 import { evalCode as obsidianEvalCode } from '../services/obsidian/adapters/nativeCliAdapter';
-import { getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../services/obsidian/knowledgeCompilerService';
+import { buildObsidianKnowledgeReflectionBundle, getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../services/obsidian/knowledgeCompilerService';
 import { getObsidianRetrievalBoundarySnapshot, queryObsidianRAG } from '../services/obsidian/obsidianRagService';
 import { getCacheStats } from '../services/obsidian/obsidianCacheService';
 import { getObsidianLoreSyncLoopStats } from '../services/obsidian/obsidianLoreSyncService';
 import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidian/obsidianQualityService';
-import { getObsidianVaultRoot } from '../utils/obsidianEnv';
+import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../utils/obsidianEnv';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
 const compact = (value: unknown): string => String(value ?? '').trim();
@@ -153,11 +153,12 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'obsidian.knowledge.control',
-    description: 'Knowledge compiler 상태, lint 요약, 생성된 artifact 경로와 선택한 artifact 본문을 조회합니다.',
+    description: 'Knowledge compiler 상태, human-first access profile, repo-to-vault catalog coverage, control-tower metadata, artifact 본문, 그리고 reflection bundle 추천을 조회합니다.',
     inputSchema: {
       type: 'object',
       properties: {
-        artifact: { type: 'string', description: 'index|log|lint|topic:<slug>|entity:<slug> 또는 생성된 artifact 경로' },
+        artifact: { type: 'string', description: 'index|log|lint|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug> 또는 생성된 artifact 경로' },
+        bundleFor: { type: 'string', description: 'control-tower alias 또는 vault 상대 경로. reflection bundle 추천을 반환합니다.' },
       },
       additionalProperties: false,
     },
@@ -441,6 +442,7 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
     ]);
     return toJsonResult({
       ...getObsidianAdapterRuntimeStatus(),
+      vaultRuntime: getObsidianVaultRuntimeInfo(),
       vaultHealth,
       cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
       retrievalBoundary,
@@ -450,15 +452,24 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
   // ── obsidian.knowledge.control ────────────────────────────────────────
   if (name === 'obsidian.knowledge.control') {
     const artifactRequest = compact(args.artifact);
+    const bundleRequest = compact(args.bundleFor);
     const surface = getObsidianKnowledgeControlSurface();
+    const bundle = bundleRequest ? buildObsidianKnowledgeReflectionBundle(bundleRequest) : null;
+
+    if (bundleRequest && !bundle) {
+      return toTextResult('bundleFor must be a control-tower alias or vault-relative path', true);
+    }
 
     if (!artifactRequest) {
-      return toJsonResult(surface);
+      return toJsonResult({
+        ...surface,
+        bundle,
+      });
     }
 
     const artifactPath = resolveObsidianKnowledgeArtifactPath(artifactRequest);
     if (!artifactPath) {
-      return toTextResult('artifact must be index|log|lint|topic:<slug>|entity:<slug>', true);
+      return toTextResult('artifact must be index|log|lint|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug>', true);
     }
 
     const content = await readObsidianFileWithAdapter({
@@ -468,6 +479,7 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
 
     return toJsonResult({
       ...surface,
+      bundle,
       artifact: {
         request: artifactRequest,
         path: artifactPath,

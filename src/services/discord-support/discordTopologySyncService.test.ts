@@ -4,7 +4,15 @@ import type { Guild, GuildBasedChannel } from 'discord.js';
 
 vi.mock('../../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../utils/obsidianEnv', () => ({ getObsidianVaultRoot: vi.fn() }));
-vi.mock('../obsidian/authoring', () => ({ upsertObsidianGuildDocument: vi.fn() }));
+vi.mock('../obsidian/authoring', () => ({
+  upsertObsidianGuildDocument: vi.fn(),
+  summarizeReflectionBundle: vi.fn((bundle?: { concern?: string; suggestedPaths?: string[]; gatePaths?: string[]; plane?: string; customerImpact?: boolean }) => ({
+    plane: bundle?.plane || 'none',
+    concern: bundle?.concern || 'none',
+    nextPath: bundle?.suggestedPaths?.[0] || bundle?.gatePaths?.[0] || 'none',
+    customerImpact: Boolean(bundle?.customerImpact),
+  })),
+}));
 vi.mock('../observability/outcomeSignal', () => ({
   logOutcomeSignal: vi.fn(),
 }));
@@ -14,6 +22,7 @@ import {
   autoSyncGuildTopologyOnJoin,
   autoSyncGuildTopologiesOnReady,
 } from './discordTopologySyncService';
+import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 
@@ -34,12 +43,36 @@ beforeEach(() => {
 
 describe('syncGuildTopologySnapshot', () => {
   it('writes topology document on success', async () => {
+    vi.mocked(upsertObsidianGuildDocument).mockResolvedValue({
+      ok: true,
+      path: '/vault/test',
+      reflectionBundle: {
+        targetPath: 'guilds/g1/events/ingest/discord_topology_2026-04-10.md',
+        plane: 'record',
+        concern: 'guild-memory',
+        requiredPaths: [],
+        suggestedPaths: ['guilds/g1/Guild_Lore.md'],
+        suggestedPatterns: [],
+        verificationChecklist: [],
+        gatePaths: [],
+        customerImpact: false,
+        notes: [],
+      },
+    });
     const guild = makeGuild('g1', 'TestGuild', [
       makeChannel('c1', 'general', ChannelType.GuildText),
     ]);
     await syncGuildTopologySnapshot(guild, 'manual');
     expect(upsertObsidianGuildDocument).toHaveBeenCalledWith(
       expect.objectContaining({ guildId: 'g1' }),
+    );
+    expect(vi.mocked(logger).info).toHaveBeenCalledWith(
+      '[DISCORD-TOPOLOGY] snapshot synced guild=%s reason=%s path=%s concern=%s next=%s',
+      'g1',
+      'manual',
+      '/vault/test',
+      'guild-memory',
+      'guilds/g1/Guild_Lore.md',
     );
   });
 

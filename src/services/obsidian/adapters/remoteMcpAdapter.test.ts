@@ -67,12 +67,31 @@ describe('remoteMcpObsidianAdapter', () => {
   };
 
   const loadModule = async () => {
-    vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', baseUrl);
-    // Re-import to pick up new env
     vi.resetModules();
+    vi.unstubAllEnvs();
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_ENABLED', 'true');
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', baseUrl);
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_TOKEN', 'test-token');
+    vi.stubEnv('OBSIDIAN_REMOTE_MCP_TIMEOUT_MS', '5000');
+    return import('./remoteMcpAdapter');
+  };
+
+  const loadSharedModule = async () => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv('OBSIDIAN_REMOTE_MCP_ENABLED', 'true');
+    vi.stubEnv('MCP_SHARED_MCP_URL', `${baseUrl}/mcp`);
+    vi.stubEnv('MCP_SHARED_MCP_TOKEN', 'shared-token');
+    vi.stubEnv('OBSIDIAN_REMOTE_MCP_TIMEOUT_MS', '5000');
+    return import('./remoteMcpAdapter');
+  };
+
+  const loadLegacyAliasModule = async () => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv('OBSIDIAN_REMOTE_MCP_ENABLED', 'true');
+    vi.stubEnv('OBSIDIAN_REMOTE_MCP_URL', `${baseUrl}/obsidian`);
+    vi.stubEnv('OBSIDIAN_REMOTE_MCP_TOKEN', 'legacy-token');
     vi.stubEnv('OBSIDIAN_REMOTE_MCP_TIMEOUT_MS', '5000');
     return import('./remoteMcpAdapter');
   };
@@ -198,6 +217,41 @@ describe('remoteMcpObsidianAdapter', () => {
       await adapter.searchVault!({ query: 'x', vaultPath: '/v', limit: 5 });
       expect(lastRequestHeaders['authorization']).toBe('Bearer test-token');
     });
+
+    it('accepts canonical shared MCP env aliases', async () => {
+      const mod = await loadSharedModule();
+      respondWith = {
+        status: 200,
+        body: { content: [{ type: 'text', text: '[]' }], isError: false },
+      };
+
+      await mod.remoteMcpObsidianAdapter.searchVault!({ query: 'shared', vaultPath: '/v', limit: 5 });
+      expect(lastRequestHeaders['authorization']).toBe('Bearer shared-token');
+    });
+
+    it('reports canonical shared ingress metadata when configured via MCP_SHARED_MCP_URL', async () => {
+      const mod = await loadSharedModule();
+
+      expect(mod.getRemoteMcpAdapterDiagnostics()).toMatchObject({
+        baseUrl: `${baseUrl}/mcp`,
+        baseUrlSource: 'shared-mcp',
+        canonicalBaseUrl: `${baseUrl}/mcp`,
+        compatibilityBaseUrl: `${baseUrl}/obsidian`,
+        usesCanonicalSharedIngress: true,
+      });
+    });
+
+    it('derives canonical /mcp from the legacy /obsidian alias for diagnostics', async () => {
+      const mod = await loadLegacyAliasModule();
+
+      expect(mod.getRemoteMcpAdapterDiagnostics()).toMatchObject({
+        baseUrl: `${baseUrl}/obsidian`,
+        baseUrlSource: 'legacy-obsidian',
+        canonicalBaseUrl: `${baseUrl}/mcp`,
+        compatibilityBaseUrl: `${baseUrl}/obsidian`,
+        usesCanonicalSharedIngress: false,
+      });
+    });
   });
 
   describe('diagnostics', () => {
@@ -224,7 +278,16 @@ describe('remoteMcpObsidianAdapter', () => {
           body: {
             content: [{
               type: 'text',
-              text: JSON.stringify({ selectedByCapability: { read_file: 'native-cli', write_note: 'native-cli' } }),
+              text: JSON.stringify({
+                selectedByCapability: { read_file: 'native-cli', write_note: 'native-cli' },
+                vaultRuntime: {
+                  configured: true,
+                  root: '/remote-vault',
+                  resolvedName: 'Obsidian Vault',
+                  topLevelDirectories: ['chat', 'guilds', 'ops'],
+                  looksLikeDesktopVault: true,
+                },
+              }),
             }],
             isError: false,
           },
@@ -239,6 +302,13 @@ describe('remoteMcpObsidianAdapter', () => {
       expect(diagnostics.lastProbe.toolDiscoveryOk).toBe(true);
       expect(diagnostics.lastProbe.remoteObsidianStatusOk).toBe(true);
       expect(diagnostics.remoteAdapterRuntime?.selectedByCapability).toEqual({ read_file: 'native-cli', write_note: 'native-cli' });
+      expect(diagnostics.remoteAdapterRuntime?.vaultRuntime).toEqual({
+        configured: true,
+        root: '/remote-vault',
+        resolvedName: 'Obsidian Vault',
+        topLevelDirectories: ['chat', 'guilds', 'ops'],
+        looksLikeDesktopVault: true,
+      });
     });
 
     it('marks auth failure when tools discovery returns 401', async () => {

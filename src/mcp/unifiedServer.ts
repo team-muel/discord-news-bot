@@ -1,5 +1,4 @@
 /* eslint-disable no-console */
-import { MCP_WORKER_AUTH_TOKEN, NODE_ENV } from '../config';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 /**
@@ -16,8 +15,11 @@ import readline from 'node:readline';
 import { listAllMcpTools, callAnyMcpTool } from './unifiedToolAdapter';
 import type { JsonRpcRequest, JsonRpcResponse, McpToolCallResult } from './types';
 import { getErrorMessage } from '../utils/errorMessage';
+import { parseStringEnv } from '../utils/env';
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
+const NODE_ENV = parseStringEnv(process.env.NODE_ENV, 'development');
+const MCP_WORKER_AUTH_TOKEN = parseStringEnv(process.env.MCP_WORKER_AUTH_TOKEN, '');
 
 const asObject = (value: unknown): Record<string, unknown> => {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -263,7 +265,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
     }
 
     // List tools
-    if (url === '/mcp/tools/list' && method === 'POST') {
+    if ((url === '/mcp/tools/list' || url === '/tools/list') && method === 'POST') {
       jsonResponse(res, 200, { tools: await listAllMcpTools() });
       return;
     }
@@ -307,7 +309,7 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
     }
 
     // JSON-RPC (full MCP protocol over HTTP)
-    if (url === '/mcp/rpc' && method === 'POST') {
+    if ((url === '/mcp/rpc' || url === '/rpc') && method === 'POST') {
       let body: string;
       try {
         body = await collectHttpBody(req);

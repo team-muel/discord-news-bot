@@ -68,6 +68,7 @@ Suggested baseline SLO (adjust as needed):
 
 Open these first when verifying behavior:
 
+- Operational runtime contract manifest: `config/runtime/operating-baseline.json`
 - Runtime architecture index: `docs/ARCHITECTURE_INDEX.md`
 - Unified roadmap (canonical): `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`
 - 24/7 runtime ops: `docs/OPERATIONS_24_7.md`
@@ -93,6 +94,7 @@ Open these first when verifying behavior:
 
 Runtime/control-plane verification baseline:
 
+- Treat `config/runtime/operating-baseline.json` as the canonical source for current machine profile, always-on required services, canonical worker endpoints, and local-only acceleration lanes.
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
 - Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze. Inspect the `llmRuntime` block to see the selected provider, action policy providers, workflow binding, effective provider profile, resolved chain, readiness-pruned chain, and per-provider health.
 - Use `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` when validating A-003 gate -> approval -> model fallback state for a specific guild.
@@ -172,6 +174,12 @@ Sync rule:
     - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
     - `ACTION_MCP_STRICT_ROUTING=true`
     - `MCP_IMPLEMENT_WORKER_URL=https://34.56.232.61.sslip.io` (temporary TLS endpoint; replace with custom domain later; legacy alias `MCP_OPENCODE_WORKER_URL` supported)
+    - `MCP_ARCHITECT_WORKER_URL=https://34.56.232.61.sslip.io/architect`
+    - `MCP_REVIEW_WORKER_URL=https://34.56.232.61.sslip.io/review`
+    - `MCP_OPERATE_WORKER_URL=https://34.56.232.61.sslip.io/operate`
+    - `OPENJARVIS_SERVE_URL=https://34.56.232.61.sslip.io/openjarvis`
+    - `MCP_SHARED_MCP_URL=https://34.56.232.61.sslip.io/mcp`
+    - `OBSIDIAN_REMOTE_MCP_URL=https://34.56.232.61.sslip.io/mcp` (legacy alias, `/obsidian` compatibility path retained)
     - `MCP_OPENCODE_TOOL_NAME=opencode.run`
 
 3. Set web integration env values:
@@ -209,7 +217,8 @@ Sync rule:
 1. Obsidian remote-mcp 기반 경로 활성화:
 
 - `OBSIDIAN_REMOTE_MCP_ENABLED=true`
-- `OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850`
+- `MCP_SHARED_MCP_URL=https://<worker-domain-or-sslip>/mcp`
+- `OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/mcp`
 - `OBSIDIAN_REMOTE_MCP_TOKEN=<secret>`
 - `OBSIDIAN_VAULT_NAME=<vault-name>`
 - `OBSIDIAN_ADAPTER_STRICT=true`
@@ -219,6 +228,8 @@ Sync rule:
 - `OBSIDIAN_ADAPTER_ORDER_READ_FILE=remote-mcp`
 - `OBSIDIAN_ADAPTER_ORDER_GRAPH_METADATA=remote-mcp`
 - `OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,script-cli`
+- fresh VM에서 `scripts/deploy-gcp-workers.sh` 는 `xvfb-run` 과 `OBSIDIAN_APP_BIN` 기본값 `/opt/obsidian-app/obsidian` 이 있으면 `obsidian-headless`, `unified-mcp-http`, `obsidian-lore-sync.timer` 를 함께 설치해 canonical `/mcp` ingress와 compatibility `/obsidian` alias를 모두 제공하는 always-on shared MCP 경로를 재현한다.
+- 팀/IDE 에이전트는 shared operator docs, 요구사항, 계획 note를 확인할 때 로컬 vault 대신 `gcpCompute` 또는 canonical `/mcp` ingress를 기본 경로로 사용한다.
 
 1. OpenJarvis 원격 실행 강제:
 
@@ -263,6 +274,7 @@ Sync rule:
 - 운영형 적용 후에는 `MCP_IMPLEMENT_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다. legacy `MCP_OPENCODE_WORKER_URL` 는 호환 alias 로만 본다.
 - 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
 - local-first hybrid 적용 직후에는 `npm run env:check:local-hybrid`로 Ollama/worker 공존 readiness를 추가 확인한다.
+- `npm run env:check:local-hybrid` 통과는 로컬 추론 readiness만 의미한다. 항상-온 운영 readiness는 `GET /api/bot/agent/runtime/unattended-health`와 원격 worker/LiteLLM/remote-mcp health로 별도 판단한다.
 - 로컬 worker를 사용하는 경우 `npm run worker:opencode:local`을 먼저 실행한 뒤 hybrid 검증을 수행한다.
 - 원격 worker가 GCP VM일 경우 외부 IP는 정적 IP로 예약하고, `sslip.io`는 임시 도메인으로만 사용한다.
 

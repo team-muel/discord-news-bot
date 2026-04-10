@@ -28,7 +28,7 @@ For each modified file:
 
 1. Read the original file to understand baseline behavior.
 2. Identify imports, exports, and cross-references affected by the change.
-3. Use `muelIndexing` (symbol search, references, scope reads) when available.
+3. Use shared code-index search first for committed/team state, and use `muelIndexing` (symbol search, references, scope reads) only when local dirty edits matter.
 
 Do not narrate during this step — gather context silently.
 

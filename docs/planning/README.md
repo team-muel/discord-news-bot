@@ -1,6 +1,8 @@
 # Planning Docs Index
 
-**상태: Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 마일스톤 승격 대기**
+## 상태
+
+Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 마일스톤 승격 대기
 
 ## Daily Operating Set
 
@@ -32,6 +34,10 @@
 - `../RUNTIME_NAME_AND_SURFACE_MATRIX.md`: 이름 충돌 해석과 실제 런타임 surface availability의 정본
 - `../ARCHITECTURE_INDEX.md`: 현재 코드와 런타임 경계의 정본
 - `../OPERATIONS_24_7.md`: 운영 절차, 배포, 상태 확인의 정본
+- `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`: 옵시디언 중심 운영체계 목표 상태의 정본
+- `OBSIDIAN_OBJECT_MODEL.md`: 볼트 객체 스키마의 정본
+- `OBSIDIAN_TRANSITION_PLAN.md`: 현행 구조에서 목표 상태로 가는 이행 계획의 정본
+- `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`: repo 전반에 흩어진 개발 과정과 cross-repo 맥락을 wiki object로 수렴하는 규칙의 정본
 - `LOCAL_COLLAB_AGENT_WORKFLOW.md`: 로컬 IDE 협업 규칙과 handoff 계약의 정본
 - `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`: 향후 로컬 외부 도구 통합 설계의 정본
 - `EXTERNAL_TOOL_INTEGRATION_PLAN.md`: NVIDIA OpenShell/NemoClaw/OpenClaw/Nemotron 실제 외부 도구 통합 계획
@@ -57,6 +63,12 @@
 - OPENJARVIS_TEST_DEPLOY_GATE_CHECKLIST.md
 - OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md
 - LOCAL_FIRST_HYBRID_AUTONOMY.md
+- OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md
+- OBSIDIAN_OBJECT_MODEL.md
+- OBSIDIAN_TRANSITION_PLAN.md
+- OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md
+- contexts/team-muel_discord-news-bot.md
+- development/2026-04-10_obsidian-development-archaeology-wikiization.md
 - GCP_OPENCODE_WORKER_VM_DEPLOY.md
 - GCP_REMOTE_INFERENCE_NODE.md
 - gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md
@@ -174,6 +186,18 @@ Moved to [docs/archive/](../archive/README.md).
 - `LOCAL_FIRST_HYBRID_AUTONOMY.md`
 - `REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
 - `OPENCODE_EXECUTOR_MIN_SPEC.md`
+
+### Obsidian Operating Model Reference
+
+- `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`
+- `OBSIDIAN_OBJECT_MODEL.md`
+- `OBSIDIAN_TRANSITION_PLAN.md`
+- `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`
+
+### Development Archaeology Seed Objects
+
+- `contexts/team-muel_discord-news-bot.md`
+- `development/2026-04-10_obsidian-development-archaeology-wikiization.md`
 
 ## Archive / Shrink Rules
 

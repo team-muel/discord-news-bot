@@ -67,12 +67,46 @@ const parseJson = (raw, fallback) => {
   }
 };
 
-const ensureBudgetAmount = (raw) => {
-  const num = Number(raw);
-  if (!Number.isFinite(num) || num <= 0) {
-    throw new Error(`Invalid --amount-usd value: ${raw}`);
+const DEFAULT_BUDGET_AMOUNT_BY_CURRENCY = {
+  USD: '10USD',
+  KRW: '14000KRW',
+};
+
+const resolveBillingCurrency = (billingAccount) => {
+  const result = runGcloud(['billing', 'accounts', 'describe', billingAccount, '--format=json'], { allowFail: true });
+  if (!result.ok) {
+    return '';
   }
-  return `${num}USD`;
+  const payload = parseJson(result.stdout, {});
+  return String(payload?.currencyCode || '').trim().toUpperCase();
+};
+
+const defaultBudgetAmountForCurrency = (currencyCode) => {
+  const normalized = String(currencyCode || '').trim().toUpperCase();
+  if (normalized && DEFAULT_BUDGET_AMOUNT_BY_CURRENCY[normalized]) {
+    return DEFAULT_BUDGET_AMOUNT_BY_CURRENCY[normalized];
+  }
+  return `10${normalized || 'USD'}`;
+};
+
+const ensureBudgetAmount = (raw, fallbackCurrency = '') => {
+  const trimmed = String(raw || '').trim();
+  const match = trimmed.match(/^([0-9]+(?:\.[0-9]+)?)([A-Za-z]{3})?$/);
+  if (!match) {
+    throw new Error(`Invalid budget amount value: ${raw}`);
+  }
+
+  const num = Number(match[1]);
+  if (!Number.isFinite(num) || num <= 0) {
+    throw new Error(`Invalid budget amount value: ${raw}`);
+  }
+
+  const currencyCode = String(match[2] || fallbackCurrency || 'USD').trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currencyCode)) {
+    throw new Error(`Invalid budget currency code: ${currencyCode || raw}`);
+  }
+
+  return `${num}${currencyCode}`;
 };
 
 const resolveBillingAccount = () => {
@@ -116,9 +150,14 @@ const resolveProjectId = () => {
 const main = () => {
   const apply = hasFlag('apply');
   const displayName = getArg('display-name', read('GCP_BUDGET_DISPLAY_NAME', 'muel-worker-monthly-budget'));
-  const amountUsd = getArg('amount-usd', read('GCP_BUDGET_AMOUNT_USD', '10'));
-  const budgetAmount = ensureBudgetAmount(amountUsd);
   const billingAccount = resolveBillingAccount();
+  const billingCurrency = resolveBillingCurrency(billingAccount);
+  const explicitBudgetAmount = getArg('budget-amount', getArg('amount', read('GCP_BUDGET_AMOUNT', '')));
+  const legacyBudgetAmountUsd = getArg('amount-usd', read('GCP_BUDGET_AMOUNT_USD', ''));
+  const budgetAmount = ensureBudgetAmount(
+    explicitBudgetAmount || legacyBudgetAmountUsd || defaultBudgetAmountForCurrency(billingCurrency),
+    explicitBudgetAmount ? billingCurrency : (legacyBudgetAmountUsd ? 'USD' : billingCurrency),
+  );
   const projectId = resolveProjectId();
 
   const budgets = runGcloud([
@@ -165,6 +204,7 @@ const main = () => {
     mode: 'gcp-budget-alert-setup',
     apply,
     billingAccount,
+    billingCurrency: billingCurrency || null,
     projectId: projectId || null,
     displayName,
     budgetAmount,

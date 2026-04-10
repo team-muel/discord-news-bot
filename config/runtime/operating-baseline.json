@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-04-10",
+  "environment": "production-current",
+  "description": "Canonical operating runtime contract for the current always-on deployment.",
+  "gcpWorker": {
+    "projectId": "gen-lang-client-0405212361",
+    "instanceName": "instance-20260319-223412",
+    "zone": "us-central1-c",
+    "machineType": "e2-medium",
+    "memoryGb": 4,
+    "bootDiskGb": 30,
+    "staticIpName": "opencode-worker-ip",
+    "staticIpAddress": "34.56.232.61",
+    "publicBaseUrl": "https://34.56.232.61.sslip.io"
+  },
+  "services": {
+    "implementWorker": {
+      "envKey": "MCP_IMPLEMENT_WORKER_URL",
+      "url": "https://34.56.232.61.sslip.io",
+      "directUrl": "http://34.56.232.61:8787",
+      "healthPath": "/health",
+      "alwaysOn": true
+    },
+    "architectWorker": {
+      "envKey": "MCP_ARCHITECT_WORKER_URL",
+      "url": "https://34.56.232.61.sslip.io/architect",
+      "directUrl": "http://34.56.232.61:8791",
+      "healthPath": "/health",
+      "alwaysOn": true
+    },
+    "reviewWorker": {
+      "envKey": "MCP_REVIEW_WORKER_URL",
+      "url": "https://34.56.232.61.sslip.io/review",
+      "directUrl": "http://34.56.232.61:8792",
+      "healthPath": "/health",
+      "alwaysOn": true
+    },
+    "operateWorker": {
+      "envKey": "MCP_OPERATE_WORKER_URL",
+      "url": "https://34.56.232.61.sslip.io/operate",
+      "directUrl": "http://34.56.232.61:8793",
+      "healthPath": "/health",
+      "alwaysOn": true
+    },
+    "openjarvisServe": {
+      "envKey": "OPENJARVIS_SERVE_URL",
+      "url": "https://34.56.232.61.sslip.io/openjarvis",
+      "directUrl": "http://34.56.232.61:8000",
+      "healthPath": "/health",
+      "alwaysOn": true
+    },
+    "unifiedMcp": {
+      "envKey": "MCP_SHARED_MCP_URL",
+      "legacyEnvKey": "OBSIDIAN_REMOTE_MCP_URL",
+      "indexingEnvKey": "MCP_INDEXING_REMOTE_URL",
+      "url": "https://34.56.232.61.sslip.io/mcp",
+      "legacyUrl": "https://34.56.232.61.sslip.io/obsidian",
+      "directUrl": "http://34.56.232.61:8850",
+      "healthPath": "/health",
+      "alwaysOn": true
+    },
+    "litellmProxy": {
+      "envKey": "LITELLM_BASE_URL",
+      "url": "https://muel-litellm-proxy.onrender.com",
+      "healthPath": "/health/liveliness",
+      "alwaysOn": true
+    },
+    "localOllama": {
+      "envKey": "OLLAMA_BASE_URL",
+      "url": "http://127.0.0.1:11434",
+      "healthPath": "/api/tags",
+      "alwaysOn": false
+    }
+  },
+  "lanes": {
+    "alwaysOnRequired": [
+      "implementWorker",
+      "architectWorker",
+      "reviewWorker",
+      "operateWorker",
+      "openjarvisServe",
+      "unifiedMcp",
+      "litellmProxy"
+    ],
+    "localAccelerationOnly": [
+      "localOllama"
+    ]
+  },
+  "readiness": {
+    "localHybridCheck": {
+      "command": "npm run env:check:local-hybrid",
+      "meaning": "Verifies local Ollama and worker coexistence only. It does not assert always-on readiness."
+    },
+    "alwaysOnChecks": [
+      "GET /api/bot/agent/runtime/unattended-health",
+      "GET /api/bot/agent/runtime/role-workers",
+      "LiteLLM /health/liveliness",
+      "Shared MCP /mcp health (indexing + obsidian)"
+    ]
+  },
+  "externalOssRoles": {
+    "opencode": "Canonical implementation executor for code changes and tests.",
+    "openjarvis": "Operations, eval, and learning lane on the always-on path.",
+    "openclaw": "Conversational and session ingress, not the canonical always-on executor.",
+    "nemoclaw": "Review and sandbox lane; prefer lite mode or a separate node.",
+    "openshell": "Sandbox runtime; prefer a separate node from the always-on control plane."
+  }
+}

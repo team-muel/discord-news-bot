@@ -97,6 +97,7 @@ describe('sprintLearningJournal — Supabase fallback', () => {
       expect(result.ok).toBe(true);
       expect(result.path).toContain('supabase://');
       expect(result.path).toContain('sprint-sb-001');
+      expect(result.reflectionBundle).toBeNull();
       expect(mockSupabaseFrom).toHaveBeenCalledWith('sprint_journal_entries');
       expect(mockSupabaseUpsert).toHaveBeenCalledTimes(1);
 

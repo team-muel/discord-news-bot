@@ -12,6 +12,8 @@ import { SPRINT_AUTOPLAN_ENABLED } from '../../config';
 import { loadWorkflowReconfigHints, formatReconfigHintsForPreamble } from './sprintLearningJournal';
 import { buildToolCatalogPrompt } from '../skills/actions/registry';
 import type { ActionCategory, ActionExecutionResult } from '../skills/actions/types';
+import { getObsidianKnowledgeControlSurface } from '../obsidian/knowledgeCompilerService';
+import { loadOperatingBaseline, summarizeOperatingBaseline } from '../runtime/operatingBaseline';
 
 // ──── Phase → tool category mapping (Cline-inspired variant config) ───────────
 
@@ -411,6 +413,60 @@ export const loadJournalPreambleSection = async (): Promise<string> => {
   } catch {
     return '';
   }
+};
+
+const normalizeRepoPath = (value: string): string => String(value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+
+export const buildKnowledgeControlPromptSection = (
+  phase: string,
+  changedFiles: string[],
+): string => {
+  if (!['plan', 'review', 'qa'].includes(phase)) {
+    return '';
+  }
+
+  const surface = getObsidianKnowledgeControlSurface();
+  const operatingBaseline = summarizeOperatingBaseline(loadOperatingBaseline());
+  const touchedDocs = changedFiles
+    .map((filePath) => normalizeRepoPath(filePath))
+    .filter((filePath) => filePath.startsWith('docs/') || filePath.startsWith('retros/') || filePath === 'config/runtime/operating-baseline.json')
+    .slice(0, 6);
+
+  const sections = [
+    '## Knowledge Control Context',
+    `- blueprint_model: ${surface.blueprint.model}`,
+    `- control_paths: ${surface.controlPaths.slice(0, 4).join(', ')}`,
+    `- reflection_focus: ${surface.blueprint.reflectionChecklist.slice(0, 3).join(' | ')}`,
+    `- bundle_aliases: ${surface.bundleSupport.acceptedAliases.join(', ')}`,
+    `- start_here_paths: ${surface.accessProfile.startHerePaths.slice(0, 5).join(', ')}`,
+    '',
+    '## Operating Baseline',
+    `- worker_machine: ${operatingBaseline.machineType}${operatingBaseline.memoryGb ? ` (${operatingBaseline.memoryGb}GB)` : ''}`,
+    `- public_base_url: ${operatingBaseline.publicBaseUrl}`,
+    `- always_on_required: ${operatingBaseline.alwaysOnRequired.join(', ')}`,
+    `- local_acceleration_only: ${operatingBaseline.localAccelerationOnly.join(', ') || 'none'}`,
+    `- local_hybrid_meaning: ${operatingBaseline.localHybridMeaning}`,
+    `- openjarvis_role: ${operatingBaseline.openjarvisRole}`,
+    '',
+    '## Human-First Reference Policy',
+    `- human_first: ${surface.accessProfile.humanFirst}`,
+    `- operator_primary_paths: ${surface.accessProfile.operatorPrimaryPaths.slice(0, 5).join(', ')}`,
+    `- agent_reference_paths: ${surface.accessProfile.agentReferencePaths.slice(0, 5).join(', ')}`,
+    `- avoid_as_primary: ${surface.accessProfile.avoidAsPrimary.join(', ')}`,
+    `- catalog_coverage: ${surface.accessProfile.coverage.presentEntries}/${surface.accessProfile.coverage.totalEntries}`,
+    `- operator_primary_missing: ${surface.accessProfile.coverage.operatorPrimaryMissing}`,
+  ];
+
+  for (const rule of surface.accessProfile.rules.slice(0, 2)) {
+    sections.push(`- rule: ${rule}`);
+  }
+
+  if (touchedDocs.length > 0) {
+    sections.push('', '## Documentation Drift Watch', ...touchedDocs.map((filePath) => `- ${filePath}`));
+  }
+
+  sections.push('', 'Use this context before deciding scope, review findings, or QA acceptance criteria.');
+  return sections.join('\n');
 };
 
 // ──── Phase Context Enrichment (Layer 2: cross-adapter context) ───────────────

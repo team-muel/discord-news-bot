@@ -3,9 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 // actionRunner의 순수 공개 함수 테스트
 // runGoalActions는 LLM/Supabase 의존이 있어 여기서는 diagnostics snapshot 구조만 검증
 import {
+  formatActionArtifactsForDisplay,
   getActionRunnerDiagnosticsSnapshot,
   type ActionRunnerDiagnosticsSnapshot,
 } from './actionRunner';
+import { buildActionReflectionArtifact, parseActionReflectionArtifact } from './actions/types';
 
 describe('getActionRunnerDiagnosticsSnapshot (초기 상태)', () => {
   it('스냅샷 구조가 올바르다', () => {
@@ -78,6 +80,44 @@ describe('getActionRunnerDiagnosticsSnapshot (초기 상태)', () => {
   it('trend.windowSize는 최솟값(4) 이상이다', () => {
     const snap = getActionRunnerDiagnosticsSnapshot();
     expect(snap.trend.windowSize).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('reflection artifact helpers', () => {
+  it('reflection artifact를 다시 파싱할 수 있다', () => {
+    const artifact = buildActionReflectionArtifact({
+      plane: 'record',
+      concern: 'guild-memory',
+      nextPath: 'guilds/123/Guild_Lore.md',
+      customerImpact: false,
+    });
+
+    expect(parseActionReflectionArtifact(artifact)).toEqual({
+      type: 'obsidian_reflection',
+      plane: 'record',
+      concern: 'guild-memory',
+      nextPath: 'guilds/123/Guild_Lore.md',
+      customerImpact: false,
+    });
+  });
+
+  it('display formatter는 raw reflection artifact를 숨기고 follow-up 힌트로 바꾼다', () => {
+    const artifact = buildActionReflectionArtifact({
+      plane: 'learning',
+      concern: 'recursive-improvement',
+      nextPath: 'ops/improvement/rules/knowledge-reflection-pipeline.md',
+      customerImpact: true,
+    });
+
+    const result = formatActionArtifactsForDisplay(['/vault/guilds/123/test.md', artifact]);
+
+    expect(result.artifactLines).toEqual(['/vault/guilds/123/test.md']);
+    expect(result.reflectionLines).toEqual([
+      'plane=learning',
+      'concern=recursive-improvement',
+      'next_path=ops/improvement/rules/knowledge-reflection-pipeline.md',
+      'customer_impact=true',
+    ]);
   });
 });
 

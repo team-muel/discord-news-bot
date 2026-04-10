@@ -2,7 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../utils/obsidianEnv', () => ({ getObsidianVaultRoot: vi.fn() }));
-vi.mock('../obsidian/authoring', () => ({ upsertObsidianGuildDocument: vi.fn() }));
+vi.mock('../obsidian/authoring', () => ({
+  upsertObsidianGuildDocument: vi.fn(),
+  summarizeReflectionBundle: vi.fn((bundle: { plane?: string; concern?: string; suggestedPaths?: string[]; gatePaths?: string[]; customerImpact?: boolean } | null | undefined) => ({
+    plane: bundle?.plane || 'none',
+    concern: bundle?.concern || 'none',
+    nextPath: bundle?.suggestedPaths?.[0] || bundle?.gatePaths?.[0] || 'none',
+    customerImpact: Boolean(bundle?.customerImpact),
+  })),
+}));
 vi.mock('../observability/outcomeSignal', () => ({
   logOutcomeSignal: vi.fn(),
 }));
@@ -12,10 +20,17 @@ vi.mock('./bucketFlushUtils', async (importOriginal) => {
 });
 
 import { recordDiscordChannelMessageSignal } from './discordChannelTelemetryService';
+import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 
+const flushAsyncWork = async (): Promise<void> => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(getObsidianVaultRoot).mockReturnValue('/vault');
   vi.mocked(upsertObsidianGuildDocument).mockResolvedValue({ ok: true, path: '/vault/test' });
 });
@@ -76,5 +91,45 @@ describe('recordDiscordChannelMessageSignal', () => {
         parentChannelId: 'parent1',
       }),
     ).not.toThrow();
+  });
+
+  it('logs reflection summary when a flush succeeds', async () => {
+    vi.mocked(upsertObsidianGuildDocument).mockResolvedValue({
+      ok: true,
+      path: '/vault/guilds/g-flush-telemetry/events/ingest/channel_activity_2026-01-01-00.md',
+      reflectionBundle: {
+        targetPath: 'guilds/g-flush-telemetry/events/ingest/channel_activity_2026-01-01-00.md',
+        plane: 'record',
+        concern: 'guild-memory',
+        requiredPaths: ['guilds/g-flush-telemetry/events/ingest/channel_activity_2026-01-01-00.md'],
+        suggestedPaths: ['guilds/g-flush-telemetry/Guild_Lore.md'],
+        suggestedPatterns: [],
+        verificationChecklist: [],
+        gatePaths: ['ops/control-tower/GATE_ENTRYPOINTS.md'],
+        customerImpact: false,
+        notes: [],
+      },
+    });
+
+    for (let index = 0; index < 40; index += 1) {
+      recordDiscordChannelMessageSignal({
+        guildId: 'g-flush-telemetry',
+        channelId: `c${index}`,
+        channelName: `general-${index}`,
+        authorId: `u${index}`,
+      });
+    }
+
+    await flushAsyncWork();
+
+    expect(vi.mocked(upsertObsidianGuildDocument)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      '[DISCORD-TELEMETRY] flush synced guild=%s path=%s count=%d concern=%s next=%s',
+      'g-flush-telemetry',
+      '/vault/guilds/g-flush-telemetry/events/ingest/channel_activity_2026-01-01-00.md',
+      40,
+      'guild-memory',
+      'guilds/g-flush-telemetry/Guild_Lore.md',
+    );
   });
 });

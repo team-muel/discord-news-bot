@@ -36,18 +36,18 @@ services:
         value: "true"
       - key: ACTION_MCP_STRICT_ROUTING
         value: "true"
-      - key: MCP_OPENCODE_WORKER_URL
-        value: http://34.56.232.61:8787
+      - key: MCP_IMPLEMENT_WORKER_URL
+        value: https://34.56.232.61.sslip.io
       - key: MCP_OPENCODE_TOOL_NAME
         value: opencode.run
       - key: MCP_ARCHITECT_WORKER_URL
-        value: http://34.56.232.61:8791
+        value: https://34.56.232.61.sslip.io/architect
       - key: MCP_REVIEW_WORKER_URL
-        value: http://34.56.232.61:8792
+        value: https://34.56.232.61.sslip.io/review
       - key: MCP_OPERATE_WORKER_URL
-        value: http://34.56.232.61:8793
+        value: https://34.56.232.61.sslip.io/operate
       - key: OPENJARVIS_SERVE_URL
-        value: http://34.56.232.61:8000
+        value: https://34.56.232.61.sslip.io/openjarvis
       - key: MCP_WORKER_AUTH_TOKEN
         sync: false
       - key: AGENT_AUTO_ONBOARDING_ENABLED
@@ -209,8 +209,12 @@ services:
         value: docs
       - key: OBSIDIAN_REMOTE_MCP_ENABLED
         value: "true"
+      - key: MCP_SHARED_MCP_URL
+        value: https://34.56.232.61.sslip.io/mcp
+      - key: MCP_INDEXING_REMOTE_URL
+        value: https://34.56.232.61.sslip.io/mcp
       - key: OBSIDIAN_REMOTE_MCP_URL
-        value: http://34.56.232.61:8850
+        value: https://34.56.232.61.sslip.io/mcp
       - key: OBSIDIAN_REMOTE_MCP_TOKEN
         sync: false
       - key: OBSIDIAN_ADAPTER_ORDER

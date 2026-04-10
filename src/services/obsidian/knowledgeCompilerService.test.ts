@@ -62,7 +62,13 @@ describe('knowledgeCompilerService', () => {
   });
 
   it('rebuilds index, log, topic, and entity artifacts for knowledge-bearing notes', async () => {
-    const { getObsidianKnowledgeCompilationStats, runKnowledgeCompilationForNote } = await import('./knowledgeCompilerService');
+    const {
+      buildObsidianKnowledgeReflectionBundle,
+      getObsidianKnowledgeCompilationStats,
+      getObsidianKnowledgeControlSurface,
+      resolveObsidianKnowledgeArtifactPath,
+      runKnowledgeCompilationForNote,
+    } = await import('./knowledgeCompilerService');
 
     const result = await runKnowledgeCompilationForNote({
       guildId: 'guild-1',
@@ -120,6 +126,69 @@ describe('knowledgeCompilerService', () => {
       invalidLifecycleNotes: 0,
       canonicalCollisions: 0,
     });
+
+    const surface = getObsidianKnowledgeControlSurface();
+    expect(surface.controlPaths).toContain('ops/control-tower/BLUEPRINT.md');
+    expect(surface.blueprint).toMatchObject({
+      model: '4-plane-control-tower',
+      reflectionChecklist: expect.arrayContaining(['search visibility verified in the user-visible vault']),
+    });
+    expect(surface.backfillCatalog).toMatchObject({
+      schemaVersion: 2,
+      policy: {
+        humanFirst: true,
+      },
+    });
+    expect(surface.backfillCatalog.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'control-architecture-index', targetPath: 'ops/control-tower/ARCHITECTURE_INDEX.md', audience: 'operator-primary' }),
+      expect.objectContaining({ id: 'control-decision-table', targetPath: 'ops/quality/DECISION_TABLE.md', canonical: true }),
+    ]));
+    expect(surface.accessProfile).toMatchObject({
+      humanFirst: true,
+      startHerePaths: expect.arrayContaining(['ops/control-tower/BLUEPRINT.md', 'ops/control-tower/GATE_ENTRYPOINTS.md']),
+      operatorPrimaryPaths: expect.arrayContaining(['ops/control-tower/ARCHITECTURE_INDEX.md', 'ops/control-tower/OBSIDIAN_OPERATING_SYSTEM.md']),
+      agentReferencePaths: expect.arrayContaining(['ops/improvement/rules/knowledge-reflection-pipeline.md']),
+      avoidAsPrimary: expect.arrayContaining(['ops/knowledge-control/INDEX.md']),
+      coverage: expect.objectContaining({
+        totalEntries: surface.backfillCatalog.entries.length,
+      }),
+    });
+    expect(surface.bundleSupport).toMatchObject({
+      enabled: true,
+      queryParam: 'bundleFor',
+    });
+    expect(surface.pathIndex).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'ops/control-tower/BLUEPRINT.md', plane: 'control', concern: 'control-tower', generated: false }),
+      expect.objectContaining({ path: 'ops/knowledge-control/INDEX.md', plane: 'record', concern: 'knowledge-control', generated: true }),
+    ]));
+    expect(resolveObsidianKnowledgeArtifactPath('blueprint')).toBe('ops/control-tower/BLUEPRINT.md');
+    expect(resolveObsidianKnowledgeArtifactPath('canonical-map')).toBe('ops/control-tower/CANONICAL_MAP.md');
+
+    const bundle = buildObsidianKnowledgeReflectionBundle('ops/services/unified-mcp/PROFILE.md');
+    expect(bundle).toMatchObject({
+      targetPath: 'ops/services/unified-mcp/PROFILE.md',
+      plane: 'runtime',
+      concern: 'service-memory',
+      requiredPaths: expect.arrayContaining(['ops/services/unified-mcp/PROFILE.md', 'ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LOG.md']),
+      gatePaths: expect.arrayContaining(['ops/control-tower/GATE_ENTRYPOINTS.md', 'ops/quality/gates/2026-04-10_visible-reflection-gate.md']),
+    });
+    expect(bundle?.suggestedPatterns).toContain('ops/services/unified-mcp/DEPENDENCY_MAP.md');
+
+    const guildBundle = buildObsidianKnowledgeReflectionBundle('guilds/123456789012345678/events/ingest/discord_topology_2026-04-10.md');
+    expect(guildBundle).toMatchObject({
+      plane: 'record',
+      concern: 'guild-memory',
+      customerImpact: false,
+    });
+    expect(guildBundle?.suggestedPaths).toContain('guilds/123456789012345678/Guild_Lore.md');
+
+    const journalBundle = buildObsidianKnowledgeReflectionBundle('guilds/123456789012345678/sprint-journal/20260410_sprint-demo.md');
+    expect(journalBundle).toMatchObject({
+      plane: 'learning',
+      concern: 'recursive-improvement',
+      customerImpact: false,
+    });
+    expect(journalBundle?.suggestedPaths).toContain('ops/improvement/rules/knowledge-reflection-pipeline.md');
   });
 
   it('skips raw inbox notes', async () => {

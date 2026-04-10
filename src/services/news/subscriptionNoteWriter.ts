@@ -1,7 +1,7 @@
 import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { doc } from '../obsidian/obsidianDocBuilder';
-import { upsertObsidianGuildDocument } from '../obsidian/authoring';
+import { summarizeReflectionBundle, upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 type NoteInput = {
@@ -86,7 +86,8 @@ export const writeSubscriptionNote = async (input: NoteInput): Promise<void> => 
   });
 
   if (result.ok) {
-    logger.info('[SUBSCRIPTION-NOTE] wrote %s for guild=%s source=%d', fileName, guildId, row.id);
+    const reflection = summarizeReflectionBundle(result.reflectionBundle);
+    logger.info('[SUBSCRIPTION-NOTE] wrote %s for guild=%s source=%d concern=%s next=%s', fileName, guildId, row.id, reflection.concern, reflection.nextPath);
   } else {
     logger.warn('[SUBSCRIPTION-NOTE] failed guild=%s file=%s reason=%s', guildId, fileName, result.reason);
   }

@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { buildActionReflectionArtifact } from '../skills/actions/types';
 import { toAgentOutcome } from './agentOutcomeContract';
 
 describe('toAgentOutcome', () => {
   it('ok=true는 success로 정규화한다', () => {
+    const reflection = buildActionReflectionArtifact({
+      plane: 'record',
+      concern: 'guild-memory',
+      nextPath: 'guilds/123/Guild_Lore.md',
+      customerImpact: false,
+    });
     const out = toAgentOutcome({
       ok: true,
       name: 'web.search',
       summary: '검색 성공',
-      artifacts: [],
+      artifacts: [reflection],
       verification: [],
     });
 
@@ -15,6 +22,10 @@ describe('toAgentOutcome', () => {
     expect(out.code).toBe('OK');
     expect(out.retryable).toBe(false);
     expect(out.confidence).toBe('high');
+    expect(out.reflection).toMatchObject({
+      concern: 'guild-memory',
+      nextPath: 'guilds/123/Guild_Lore.md',
+    });
   });
 
   it('UNVERIFIED_CONTENT는 degraded로 정규화한다', () => {
@@ -45,5 +56,17 @@ describe('toAgentOutcome', () => {
     expect(out.state).toBe('failure');
     expect(out.code).toBe('ACTION_NOT_ALLOWED');
     expect(out.confidence).toBe('low');
+  });
+
+  it('invalid reflection artifact는 무시한다', () => {
+    const out = toAgentOutcome({
+      ok: true,
+      name: 'obsidian.guild_doc.upsert',
+      summary: '저장 완료',
+      artifacts: ['reflection={broken'],
+      verification: [],
+    });
+
+    expect(out.reflection).toBeUndefined();
   });
 });

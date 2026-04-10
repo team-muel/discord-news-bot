@@ -14,7 +14,7 @@ import {
 import { getPhaseActionName, getPhaseLeadAgent, buildPhaseSystemPrompt } from './skillPromptLoader';
 import { isDeterministicPhase, executeFastPath } from './fastPathExecutors';
 import { formatActionableOutput } from './actionableErrors';
-import { buildSprintPreamble, buildLiveStateSection, storeLearningInsight, getLearningInsightCount, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
+import { buildSprintPreamble, buildLiveStateSection, buildKnowledgeControlPromptSection, storeLearningInsight, getLearningInsightCount, loadJournalPreambleSection, isActionBlockedInPhase, accumulateActionContext, clearSprintContext, enrichPhaseContext } from './sprintPreamble';
 import { recordSprintJournalEntry, applyReconfigToPhaseOrder, loadWorkflowReconfigHints, type JournalEntry, type WorkflowReconfigHints } from './sprintLearningJournal';
 import { createLoopState, checkActionLoop, actionSignature, formatLoopWarning, type LoopState } from '../skills/loopDetection';
 import { parseBenchResult } from '../tools/adapters/openjarvisAdapter';
@@ -590,6 +590,15 @@ const executePhaseAction = async (
       }
     } catch (err) {
       logger.debug('[SPRINT] live state injection failed phase=%s: %s', phase, getErrorMessage(err));
+    }
+
+    try {
+      const knowledgeControl = buildKnowledgeControlPromptSection(phase, pipeline.changedFiles);
+      if (knowledgeControl) {
+        enrichedGoal = `${enrichedGoal}\n\n${knowledgeControl}`;
+      }
+    } catch (err) {
+      logger.debug('[SPRINT] knowledge-control injection failed phase=%s: %s', phase, getErrorMessage(err));
     }
 
     const goalWithLoopWarning = loopWarning ? `${enrichedGoal}\n\n${loopWarning}` : enrichedGoal;

@@ -14,9 +14,11 @@ const {
   mockGetLatestObsidianGraphAuditSnapshot,
   mockGetObsidianKnowledgeCompilationStats,
   mockGetObsidianKnowledgeControlSurface,
+  mockBuildObsidianKnowledgeReflectionBundle,
   mockResolveObsidianKnowledgeArtifactPath,
   mockReadObsidianFileWithAdapter,
   mockGetObsidianVaultRoot,
+  mockGetObsidianVaultRuntimeInfo,
   mockBuildGoNoGoReport,
   mockGetMemoryQueueHealthSnapshot,
   mockBuildToolLearningWeeklyReport,
@@ -27,6 +29,7 @@ const {
   mockListAgentRoleWorkerSpecs,
   mockProbeHttpWorkerHealth,
   mockSummarizeOpencodeQueueReadiness,
+  mockLoadOperatingBaseline,
 } = vi.hoisted(() => ({
   mockBuildAgentRuntimeReadinessReport: vi.fn(),
   mockGetAgentRoleWorkersHealthSnapshot: vi.fn(),
@@ -38,9 +41,11 @@ const {
   mockGetLatestObsidianGraphAuditSnapshot: vi.fn(),
   mockGetObsidianKnowledgeCompilationStats: vi.fn(),
   mockGetObsidianKnowledgeControlSurface: vi.fn(),
+  mockBuildObsidianKnowledgeReflectionBundle: vi.fn(),
   mockResolveObsidianKnowledgeArtifactPath: vi.fn(),
   mockReadObsidianFileWithAdapter: vi.fn(),
   mockGetObsidianVaultRoot: vi.fn(),
+  mockGetObsidianVaultRuntimeInfo: vi.fn(),
   mockBuildGoNoGoReport: vi.fn(),
   mockGetMemoryQueueHealthSnapshot: vi.fn(),
   mockBuildToolLearningWeeklyReport: vi.fn(),
@@ -51,6 +56,7 @@ const {
   mockListAgentRoleWorkerSpecs: vi.fn(),
   mockProbeHttpWorkerHealth: vi.fn(),
   mockSummarizeOpencodeQueueReadiness: vi.fn(),
+  mockLoadOperatingBaseline: vi.fn(),
 }));
 
 vi.mock('../middleware/auth', () => ({
@@ -73,6 +79,7 @@ vi.mock('../services/obsidian/obsidianQualityService', () => ({
 }));
 
 vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
+  buildObsidianKnowledgeReflectionBundle: mockBuildObsidianKnowledgeReflectionBundle,
   getObsidianKnowledgeCompilationStats: mockGetObsidianKnowledgeCompilationStats,
   getObsidianKnowledgeControlSurface: mockGetObsidianKnowledgeControlSurface,
   resolveObsidianKnowledgeArtifactPath: mockResolveObsidianKnowledgeArtifactPath,
@@ -80,6 +87,7 @@ vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
 
 vi.mock('../utils/obsidianEnv', () => ({
   getObsidianVaultRoot: mockGetObsidianVaultRoot,
+  getObsidianVaultRuntimeInfo: mockGetObsidianVaultRuntimeInfo,
 }));
 
 vi.mock('../services/goNoGoService', () => ({
@@ -111,6 +119,10 @@ vi.mock('../services/agent/agentTelemetryQueue', async () => {
 
 vi.mock('../services/opencode/opencodeGitHubQueueService', () => ({
   summarizeOpencodeQueueReadiness: mockSummarizeOpencodeQueueReadiness,
+}));
+
+vi.mock('../services/runtime/operatingBaseline', () => ({
+  loadOperatingBaseline: mockLoadOperatingBaseline,
 }));
 
 vi.mock('../services/llmClient', () => ({
@@ -206,9 +218,35 @@ describe('bot agent Obsidian runtime routes', () => {
     vi.stubEnv('OPENJARVIS_REQUIRE_OPENCODE_WORKER', 'true');
 
     mockGetObsidianVaultRoot.mockReturnValue('/vault');
+    mockGetObsidianVaultRuntimeInfo.mockReturnValue({
+      configured: true,
+      root: '/vault',
+      configuredName: 'Obsidian Vault',
+      resolvedName: 'Obsidian Vault',
+      exists: true,
+      topLevelDirectories: ['chat', 'guilds', 'ops'],
+      topLevelFiles: [],
+      looksLikeDesktopVault: true,
+      looksLikeRepoDocs: false,
+    });
     mockGetObsidianAdapterRuntimeStatus.mockReturnValue({
       selectedByCapability: { search_vault: 'remote-mcp', write_note: 'remote-mcp' },
       routingState: { remoteMcpCircuitOpen: false, remoteMcpCircuitReason: null },
+      remoteMcp: {
+        remoteAdapterRuntime: {
+          vaultRuntime: {
+            configured: true,
+            root: '/remote-vault',
+            configuredName: 'Obsidian Vault',
+            resolvedName: 'Obsidian Vault',
+            exists: true,
+            topLevelDirectories: ['chat', 'guilds', 'ops'],
+            topLevelFiles: [],
+            looksLikeDesktopVault: true,
+            looksLikeRepoDocs: false,
+          },
+        },
+      },
     });
     mockGetObsidianVaultLiveHealthStatus.mockResolvedValue({
       healthy: true,
@@ -272,8 +310,43 @@ describe('bot agent Obsidian runtime routes', () => {
     mockGetObsidianKnowledgeControlSurface.mockReturnValue({
       compiler: mockGetObsidianKnowledgeCompilationStats(),
       artifactPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LINT.md'],
+      controlPaths: ['ops/control-tower/BLUEPRINT.md'],
+      blueprint: {
+        model: '4-plane-control-tower',
+        controlPaths: ['ops/control-tower/BLUEPRINT.md'],
+        reflectionChecklist: ['search visibility verified in the user-visible vault'],
+        planes: [{
+          id: 'control',
+          label: 'Control Plane',
+          description: 'Canonical policy and gate standards.',
+          pathPatterns: ['ops/control-tower/**'],
+          primaryQuestions: ['What is canonical?'],
+        }],
+      },
+      bundleSupport: {
+        enabled: true,
+        queryParam: 'bundleFor',
+        acceptedAliases: ['blueprint'],
+      },
+      pathIndex: [{ path: 'ops/control-tower/BLUEPRINT.md', plane: 'control', concern: 'control-tower', generated: false }],
     });
-    mockResolveObsidianKnowledgeArtifactPath.mockImplementation((artifact: string) => artifact === 'lint' ? 'ops/knowledge-control/LINT.md' : null);
+    mockBuildObsidianKnowledgeReflectionBundle.mockImplementation((value: string) => ({
+      targetPath: value,
+      plane: 'runtime',
+      concern: 'service-memory',
+      requiredPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LOG.md'],
+      suggestedPaths: ['ops/control-tower/GATE_ENTRYPOINTS.md'],
+      suggestedPatterns: ['ops/services/unified-mcp/RECOVERY.md'],
+      verificationChecklist: ['search visibility verified in the user-visible vault'],
+      gatePaths: ['ops/quality/gates/2026-04-10_visible-reflection-gate.md'],
+      customerImpact: false,
+      notes: ['test bundle'],
+    }));
+    mockResolveObsidianKnowledgeArtifactPath.mockImplementation((artifact: string) => artifact === 'lint'
+      ? 'ops/knowledge-control/LINT.md'
+      : artifact === 'blueprint'
+        ? 'ops/control-tower/BLUEPRINT.md'
+        : null);
     mockReadObsidianFileWithAdapter.mockResolvedValue('# Knowledge Control Lint\n\nTest Note');
     mockBuildGoNoGoReport.mockResolvedValue({
       decision: 'GO',
@@ -290,6 +363,21 @@ describe('bot agent Obsidian runtime routes', () => {
     mockGetObsidianInboxChatLoopStats.mockReturnValue({ enabled: true, started: true, running: false, intervalSec: 30, runOnStart: true, processedTotal: 4, lastFinishedAt: '2026-04-09T00:00:30.000Z', lastCandidateCount: 1, lastProcessedPaths: ['chat/inbox/2026-04-09/test-note.md'], lastSummary: 'candidates=1 processed=1' });
     mockGetObsidianLoreSyncLoopStats.mockReturnValue({ enabled: true, running: true });
     mockGetRetrievalEvalLoopStats.mockReturnValue({ enabled: true, running: false });
+    mockLoadOperatingBaseline.mockReturnValue({
+      schemaVersion: 1,
+      updatedAt: '2026-04-10',
+      environment: 'production-current',
+      description: 'Canonical operating runtime contract for the current always-on deployment.',
+      gcpWorker: {
+        machineType: 'e2-medium',
+        memoryGb: 4,
+        publicBaseUrl: 'https://34.56.232.61.sslip.io',
+      },
+      lanes: {
+        alwaysOnRequired: ['implementWorker', 'unifiedMcp'],
+        localAccelerationOnly: ['localOllama'],
+      },
+    });
     mockBuildAgentRuntimeReadinessReport.mockResolvedValue({ decision: 'pass', checks: [] });
     mockGetAgentRoleWorkersHealthSnapshot.mockResolvedValue([{ worker: 'implement', ok: true }]);
     mockListAgentRoleWorkerSpecs.mockReturnValue([{ kind: 'implement', label: 'implement' }]);
@@ -334,6 +422,11 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({
       vaultPathConfigured: true,
+      vault: {
+        root: '/vault',
+        looksLikeDesktopVault: true,
+        looksLikeRepoDocs: false,
+      },
       vaultHealth: { healthy: true },
       cacheStats: { activeDocs: 8, staleDocs: 2 },
       compiler: { runs: 3, lastIndexedNotes: 10 },
@@ -387,10 +480,31 @@ describe('bot agent Obsidian runtime routes', () => {
         guildId: 'guild-1',
         obsidian: {
           vaultPathConfigured: true,
+          vault: {
+            root: '/vault',
+            looksLikeDesktopVault: true,
+            looksLikeRepoDocs: false,
+          },
+          vaultParity: {
+            compared: true,
+            remoteSelectedForWrite: true,
+            ok: true,
+            reason: 'desktop_vault_shape_aligned',
+            sameResolvedName: true,
+            sharedTopLevelDirectories: ['chat', 'guilds', 'ops'],
+          },
           vaultHealth: { healthy: true },
           cacheStats: { totalDocs: 10, activeDocs: 8 },
           compiler: { runs: 3, lastEntityKey: 'chat/answers/2026-04-09/test' },
+          knowledgeControl: {
+            controlPaths: ['ops/control-tower/BLUEPRINT.md'],
+            blueprint: { model: '4-plane-control-tower' },
+          },
           retrievalBoundary: { supabaseBacked: { cacheAvailable: true } },
+        },
+        operatingBaseline: {
+          gcpWorker: { machineType: 'e2-medium', memoryGb: 4 },
+          lanes: { alwaysOnRequired: ['implementWorker', 'unifiedMcp'] },
         },
         loops: {
           memoryJobRunner: { running: true },
@@ -511,8 +625,16 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({
       vaultPathConfigured: true,
+      vault: {
+        root: '/vault',
+        looksLikeDesktopVault: true,
+        looksLikeRepoDocs: false,
+      },
       compiler: { runs: 3, lastLintSummary: { issueCount: 1 } },
       artifactPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LINT.md'],
+      controlPaths: ['ops/control-tower/BLUEPRINT.md'],
+      blueprint: { model: '4-plane-control-tower' },
+      bundleSupport: { queryParam: 'bundleFor' },
       artifact: {
         request: 'lint',
         path: 'ops/knowledge-control/LINT.md',
@@ -520,5 +642,30 @@ describe('bot agent Obsidian runtime routes', () => {
     });
     const body = res.body as { artifact?: { content?: string | null } };
     expect(body.artifact?.content).toContain('Test Note');
+  });
+
+  it('returns reflection bundle recommendations for bundleFor targets', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/knowledge-control', {
+      query: { bundleFor: 'ops/services/unified-mcp/PROFILE.md' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      bundle: {
+        targetPath: 'ops/services/unified-mcp/PROFILE.md',
+        plane: 'runtime',
+        concern: 'service-memory',
+      },
+    });
   });
 });

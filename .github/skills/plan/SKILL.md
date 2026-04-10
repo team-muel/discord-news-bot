@@ -24,7 +24,7 @@ applyTo: "**"
 ## Process
 
 1. **Clarify the problem** — reframe the user's request into a concrete objective with non-goals.
-2. **Map current state** — use `muelIndexing` context bundles and file outlines to understand existing boundaries.
+2. **Map current state** — use shared code-index context (`gcpCompute` in IDE routing) for committed/team repository state, and use `muelIndexing` context bundles or file outlines only when local dirty workspace context matters.
 3. **Define target state** — architecture, data flow, API contracts, and ownership boundaries.
 4. **Sequence milestones** — each milestone must yield deployable value; name dependencies, decision owners, and gating assumptions.
 5. **Risk assessment** — migration safety, rollback, data integrity, and blast radius.

@@ -25,12 +25,13 @@ import { buildSocialQualityOperationalSnapshot } from '../../services/agent/agen
 import { buildWorkerApprovalGateSnapshot } from '../../services/agent/agentWorkerApprovalGateSnapshotService';
 import { buildGoNoGoReport } from '../../services/goNoGoService';
 import { buildToolLearningWeeklyReport } from '../../services/toolLearningService';
-import { getObsidianKnowledgeCompilationStats } from '../../services/obsidian/knowledgeCompilerService';
+import { getObsidianKnowledgeCompilationStats, getObsidianKnowledgeControlSurface } from '../../services/obsidian/knowledgeCompilerService';
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
 import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus } from '../../services/obsidian/router';
+import { loadOperatingBaseline } from '../../services/runtime/operatingBaseline';
 import { toBoundedInt, toStringParam } from '../../utils/validation';
-import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
+import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo, type ObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 import {
   computeSystemGradient,
   computeConvergenceReport,
@@ -68,6 +69,89 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
     return false;
   }
   return fallback;
+};
+
+const readRemoteVaultRuntime = (adapterRuntime: Record<string, unknown> | null | undefined): Partial<ObsidianVaultRuntimeInfo> | null => {
+  const remoteMcp = adapterRuntime?.remoteMcp;
+  if (!remoteMcp || typeof remoteMcp !== 'object') {
+    return null;
+  }
+
+  const remoteAdapterRuntime = (remoteMcp as Record<string, unknown>).remoteAdapterRuntime;
+  if (!remoteAdapterRuntime || typeof remoteAdapterRuntime !== 'object') {
+    return null;
+  }
+
+  const vaultRuntime = (remoteAdapterRuntime as Record<string, unknown>).vaultRuntime;
+  if (!vaultRuntime || typeof vaultRuntime !== 'object') {
+    return null;
+  }
+
+  return vaultRuntime as Partial<ObsidianVaultRuntimeInfo>;
+};
+
+const buildVaultParitySnapshot = (params: {
+  localVault: ObsidianVaultRuntimeInfo;
+  adapterRuntime: Record<string, unknown> | null | undefined;
+}) => {
+  const { localVault, adapterRuntime } = params;
+  const selectedByCapability = adapterRuntime?.selectedByCapability;
+  const remoteSelectedForWrite = Boolean(
+    selectedByCapability
+    && typeof selectedByCapability === 'object'
+    && (selectedByCapability as Record<string, unknown>).write_note === 'remote-mcp',
+  );
+  const remoteVault = readRemoteVaultRuntime(adapterRuntime);
+
+  if (!remoteSelectedForWrite) {
+    return {
+      compared: false,
+      remoteSelectedForWrite: false,
+      ok: null,
+      reason: 'remote_mcp_not_selected_for_write',
+      local: localVault,
+      remote: remoteVault,
+      sharedTopLevelDirectories: [],
+      sameResolvedName: null,
+    };
+  }
+
+  if (!remoteVault) {
+    return {
+      compared: false,
+      remoteSelectedForWrite: true,
+      ok: null,
+      reason: 'remote_vault_runtime_missing',
+      local: localVault,
+      remote: null,
+      sharedTopLevelDirectories: [],
+      sameResolvedName: null,
+    };
+  }
+
+  const localDirs = new Set((localVault.topLevelDirectories || []).map((value) => String(value || '').trim()).filter(Boolean));
+  const remoteDirs = new Set(
+    (Array.isArray(remoteVault.topLevelDirectories) ? remoteVault.topLevelDirectories : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  );
+  const sharedTopLevelDirectories = ['chat', 'guilds', 'ops'].filter((dir) => localDirs.has(dir) && remoteDirs.has(dir));
+  const sameResolvedName = localVault.resolvedName && remoteVault.resolvedName
+    ? localVault.resolvedName === remoteVault.resolvedName
+    : null;
+  const sameDesktopShape = Boolean(localVault.looksLikeDesktopVault) && Boolean(remoteVault.looksLikeDesktopVault);
+  const ok = sameDesktopShape && sharedTopLevelDirectories.length >= 3 && sameResolvedName !== false;
+
+  return {
+    compared: true,
+    remoteSelectedForWrite: true,
+    ok,
+    reason: ok ? 'desktop_vault_shape_aligned' : 'desktop_vault_shape_mismatch',
+    local: localVault,
+    remote: remoteVault,
+    sharedTopLevelDirectories,
+    sameResolvedName,
+  };
 };
 
 const probeOpencodeWorkerHealth = async () => {
@@ -351,6 +435,12 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         getLatestObsidianGraphAuditSnapshot(),
         getObsidianRetrievalBoundarySnapshot(),
       ]);
+      const localVault = getObsidianVaultRuntimeInfo();
+      const adapterRuntime = getObsidianAdapterRuntimeStatus();
+      const vaultParity = buildVaultParitySnapshot({
+        localVault,
+        adapterRuntime: adapterRuntime as Record<string, unknown>,
+      });
 
       return res.json({
         ok: true,
@@ -372,13 +462,17 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
           learning,
           obsidian: {
             vaultPathConfigured: Boolean(getObsidianVaultRoot()),
-            adapterRuntime: getObsidianAdapterRuntimeStatus(),
+            vault: localVault,
+            adapterRuntime,
+            vaultParity,
             vaultHealth,
             cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
             compiler: getObsidianKnowledgeCompilationStats(),
+            knowledgeControl: getObsidianKnowledgeControlSurface(),
             graphAudit,
             retrievalBoundary,
           },
+          operatingBaseline: loadOperatingBaseline(),
           loops: {
             memoryJobRunner: getMemoryJobRunnerStats(),
             obsidianInboxChatLoop: getObsidianInboxChatLoopStats(),

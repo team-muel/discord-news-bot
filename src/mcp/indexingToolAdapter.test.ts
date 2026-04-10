@@ -17,6 +17,7 @@ const parseToolText = async (resultPromise: ReturnType<typeof callIndexingMcpToo
 
 describe('indexingToolAdapter', () => {
   let repoRoot = '';
+  let secondaryRepoRoot = '';
 
   beforeEach(async () => {
     repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'indexing-mcp-'));
@@ -104,6 +105,9 @@ describe('indexingToolAdapter', () => {
     if (repoRoot) {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }
+    if (secondaryRepoRoot) {
+      await fs.rm(secondaryRepoRoot, { recursive: true, force: true });
+    }
   });
 
   it('symbol_search는 top-level 심볼을 찾는다', async () => {
@@ -120,6 +124,41 @@ describe('indexingToolAdapter', () => {
     expect(JSON.stringify(items[0])).toContain('renderThing');
     expect(payload).toHaveProperty('metadata.repoId', 'test-repo');
     expect(payload).toHaveProperty('metadata.indexVersion');
+  });
+
+  it('INDEXING_MCP_REPOS_JSON으로 복수 repo를 resolve한다', async () => {
+    secondaryRepoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'indexing-mcp-shared-'));
+    await fs.mkdir(path.join(secondaryRepoRoot, 'src'), { recursive: true });
+    await fs.mkdir(path.join(secondaryRepoRoot, '.git', 'refs', 'heads'), { recursive: true });
+    await fs.writeFile(path.join(secondaryRepoRoot, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    await fs.writeFile(path.join(secondaryRepoRoot, '.git', 'refs', 'heads', 'main'), '987654\n', 'utf8');
+    await fs.writeFile(
+      path.join(secondaryRepoRoot, 'src', 'shared.ts'),
+      [
+        'export class SharedIndexService {',
+        '  run(): string {',
+        "    return 'shared';",
+        '  }',
+        '}',
+      ].join('\n'),
+      'utf8',
+    );
+
+    vi.stubEnv('INDEXING_MCP_REPOS_JSON', JSON.stringify([
+      { repoId: 'test-repo-2', repoRoot: secondaryRepoRoot },
+    ]));
+    __resetCodeIndexCacheForTests();
+
+    const payload = await parseToolText(callIndexingMcpTool({
+      name: 'code.index.symbol_search',
+      arguments: {
+        repoId: 'test-repo-2',
+        query: 'SharedIndexService',
+      },
+    }));
+
+    expect(JSON.stringify(payload.items || [])).toContain('SharedIndexService');
+    expect(payload).toHaveProperty('metadata.repoId', 'test-repo-2');
   });
 
   it('scope_read는 심볼 범위 스니펫을 반환한다', async () => {

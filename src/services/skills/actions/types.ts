@@ -5,6 +5,16 @@ export type ActionExecutionInput = {
   requestedBy?: string;
 };
 
+export type ActionReflectionArtifact = {
+  type: 'obsidian_reflection';
+  plane: string;
+  concern: string;
+  nextPath: string;
+  customerImpact: boolean;
+};
+
+export const ACTION_REFLECTION_ARTIFACT_PREFIX = 'reflection=';
+
 /** Canonical agent role names — neutral, function-based labels. */
 export const AGENT_ROLES = ['operate', 'implement', 'review', 'architect'] as const;
 export type AgentRoleName = (typeof AGENT_ROLES)[number];
@@ -82,6 +92,57 @@ export const normalizeActionNameList = (values: Iterable<unknown>): string[] => 
   }
 
   return normalized;
+};
+
+export const buildActionReflectionArtifact = (value: Omit<ActionReflectionArtifact, 'type'>): string => {
+  return `${ACTION_REFLECTION_ARTIFACT_PREFIX}${JSON.stringify({
+    type: 'obsidian_reflection',
+    plane: String(value.plane || '').trim() || 'none',
+    concern: String(value.concern || '').trim() || 'none',
+    nextPath: String(value.nextPath || '').trim() || 'none',
+    customerImpact: Boolean(value.customerImpact),
+  })}`;
+};
+
+export const parseActionReflectionArtifact = (value: unknown): ActionReflectionArtifact | null => {
+  const text = String(value || '').trim();
+  if (!text.startsWith(ACTION_REFLECTION_ARTIFACT_PREFIX)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(text.slice(ACTION_REFLECTION_ARTIFACT_PREFIX.length)) as Record<string, unknown>;
+    if (parsed.type !== 'obsidian_reflection') {
+      return null;
+    }
+
+    const plane = String(parsed.plane || '').trim();
+    const concern = String(parsed.concern || '').trim();
+    const nextPath = String(parsed.nextPath || '').trim();
+    if (!plane || !concern || !nextPath) {
+      return null;
+    }
+
+    return {
+      type: 'obsidian_reflection',
+      plane,
+      concern,
+      nextPath,
+      customerImpact: Boolean(parsed.customerImpact),
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const findActionReflectionArtifact = (values: Iterable<unknown>): ActionReflectionArtifact | null => {
+  for (const value of values) {
+    const parsed = parseActionReflectionArtifact(value);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return null;
 };
 
 export function inferAgentRoleByActionName(actionName: string): AgentRoleName {

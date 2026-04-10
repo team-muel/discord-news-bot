@@ -265,7 +265,7 @@ npm run obsidian:ops-loop -- --guild 123456789012345678 --interval-sec 300 --max
 
 ```bash
 OBSIDIAN_REMOTE_MCP_ENABLED=true
-OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/obsidian
 OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
 
 OBSIDIAN_ADAPTER_ORDER=remote-mcp,native-cli,script-cli,local-fs
@@ -302,7 +302,7 @@ OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>
 OPENCLAW_API_KEY=<secret>
 
 OBSIDIAN_REMOTE_MCP_ENABLED=true
-OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/obsidian
 OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
 OBSIDIAN_VAULT_NAME=<vault-name>
 

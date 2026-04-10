@@ -25,6 +25,7 @@ import {
 } from './langgraph/runtimeSupport/runtimeEvaluation';
 import {
   cancelAllPendingSteps,
+  appendShadowOutcomes,
   cloneSession,
   ensureShadowGraph,
   touch,
@@ -438,6 +439,8 @@ const runStep = async (
       touch(session);
       throw new Error('SESSION_CANCELLED');
     }
+
+    appendShadowOutcomes(session, result.outcomes);
 
     step.status = 'completed';
     step.endedAt = nowIso();

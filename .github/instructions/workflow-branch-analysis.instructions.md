@@ -32,7 +32,7 @@ git diff "$B" --stat
 
 - Read the full diff without providing commentary.
 - Identify patterns, architectural modifications, or potential impacts.
-- Use symbol search (muelIndexing) to trace cross-references.
+- Use shared code-index search to trace committed/team cross-references first, then use `muelIndexing` only for local dirty overlay analysis.
 - Read related source files for context.
 
 ## Step 3: Context Gathering

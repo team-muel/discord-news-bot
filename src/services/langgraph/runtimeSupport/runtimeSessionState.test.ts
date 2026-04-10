@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AgentSession } from '../../multiAgentService';
-import { cancelAllPendingSteps, cloneSession, ensureShadowGraph, touch, traceShadowNode } from './runtimeSessionState';
+import { cancelAllPendingSteps, cloneSession, ensureShadowGraph, touch, traceShadowNode, appendShadowOutcomes } from './runtimeSessionState';
 
 const buildSession = (): AgentSession => ({
   id: 'session-1',
@@ -63,5 +63,38 @@ describe('runtimeSessionState', () => {
     expect(session.steps[0].status).toBe('pending');
     touch(session);
     expect(session.updatedAt).not.toBe('2026-03-20T00:00:00.000Z');
+  });
+
+  it('appendShadowOutcomes는 reflection metadata를 포함한 outcome을 누적하고 깊은 복사한다', () => {
+    const session = buildSession();
+    const reasons = ['policy block'];
+    const outcomes = [{
+      state: 'failure' as const,
+      code: 'ACTION_NOT_ALLOWED',
+      summary: '정책 차단',
+      retryable: false,
+      confidence: 'low' as const,
+      reasons,
+      reflection: {
+        type: 'obsidian_reflection' as const,
+        plane: 'record',
+        concern: 'guild-memory',
+        nextPath: 'guilds/123/Guild_Lore.md',
+        customerImpact: false,
+      },
+    }];
+
+    appendShadowOutcomes(session, outcomes);
+    reasons[0] = 'mutated';
+
+    expect(session.shadowGraph?.outcomes).toHaveLength(1);
+    expect(session.shadowGraph?.outcomes[0]).toMatchObject({
+      code: 'ACTION_NOT_ALLOWED',
+      reflection: {
+        concern: 'guild-memory',
+        nextPath: 'guilds/123/Guild_Lore.md',
+      },
+    });
+    expect(session.shadowGraph?.outcomes[0].reasons).toEqual(['policy block']);
   });
 });

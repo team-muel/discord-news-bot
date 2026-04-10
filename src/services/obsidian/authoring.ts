@@ -1,8 +1,10 @@
 import logger from '../../logger';
+import { getErrorMessage } from '../../utils/errorMessage';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { doc } from './obsidianDocBuilder';
 import { writeObsidianNoteWithAdapter } from './router';
 import { getToolCatalog } from '../tools/externalAdapterRegistry';
+import type { ObsidianKnowledgeReflectionBundle } from './knowledgeCompilerService';
 
 const sanitizeGuildId = (value: unknown): string => {
   const candidate = String(value || '').trim();
@@ -72,21 +74,93 @@ const normalizeTags = (tags?: string[]): string[] => {
     .slice(0, 40);
 };
 
+type ReflectionBundleBuilder = (value: string) => ObsidianKnowledgeReflectionBundle | null;
+
+export type ObsidianAuthoringWriteResult = {
+  ok: boolean;
+  path: string | null;
+  reason?: string;
+  reflectionBundle?: ObsidianKnowledgeReflectionBundle | null;
+};
+
+export type ObsidianReflectionBundleSummary = {
+  plane: string;
+  concern: string;
+  nextPath: string;
+  customerImpact: boolean;
+};
+
+let reflectionBundleBuilderPromise: Promise<ReflectionBundleBuilder> | null = null;
+
+const loadReflectionBundleBuilder = async (): Promise<ReflectionBundleBuilder> => {
+  if (!reflectionBundleBuilderPromise) {
+    reflectionBundleBuilderPromise = import('./knowledgeCompilerService')
+      .then((module) => module.buildObsidianKnowledgeReflectionBundle);
+  }
+  return reflectionBundleBuilderPromise;
+};
+
+const resolveReflectionBundle = async (path: string): Promise<ObsidianKnowledgeReflectionBundle | null> => {
+  const targetPath = String(path || '').trim();
+  if (!targetPath) {
+    return null;
+  }
+
+  try {
+    const buildReflectionBundle = await loadReflectionBundleBuilder();
+    return buildReflectionBundle(targetPath);
+  } catch (error) {
+    logger.warn('[OBSIDIAN-AUTHORING] reflection bundle resolve failed path=%s error=%s', targetPath, getErrorMessage(error));
+    return null;
+  }
+};
+
+export const summarizeReflectionBundle = (bundle: ObsidianKnowledgeReflectionBundle | null | undefined): ObsidianReflectionBundleSummary => {
+  return {
+    plane: bundle?.plane || 'none',
+    concern: bundle?.concern || 'none',
+    nextPath: bundle?.suggestedPaths[0] || bundle?.gatePaths[0] || 'none',
+    customerImpact: Boolean(bundle?.customerImpact),
+  };
+};
+
+const buildWriteSuccess = async (path: string): Promise<ObsidianAuthoringWriteResult> => {
+  const reflectionBundle = await resolveReflectionBundle(path);
+  const reflection = summarizeReflectionBundle(reflectionBundle);
+
+  if (reflectionBundle) {
+    logger.info(
+      '[OBSIDIAN-AUTHORING] reflection bundle plane=%s concern=%s next=%s target=%s',
+      reflection.plane,
+      reflection.concern,
+      reflection.nextPath,
+      reflectionBundle.targetPath,
+    );
+  }
+
+  return {
+    ok: true,
+    path,
+    reflectionBundle,
+  };
+};
+
 export const upsertObsidianSystemDocument = async (params: {
   vaultPath: string;
   fileName: string;
   content: string;
   tags?: string[];
   properties?: Record<string, string | number | boolean | null>;
-}): Promise<{ ok: boolean; path: string | null; reason?: string }> => {
+  allowHighLinkDensity?: boolean;
+}): Promise<ObsidianAuthoringWriteResult> => {
   const vaultPath = String(params.vaultPath || '').trim();
   if (!vaultPath) {
-    return { ok: false, path: null, reason: 'VAULT_PATH_REQUIRED' };
+    return { ok: false, path: null, reason: 'VAULT_PATH_REQUIRED', reflectionBundle: null };
   }
 
   const content = String(params.content || '').trim();
   if (!content) {
-    return { ok: false, path: null, reason: 'EMPTY_CONTENT' };
+    return { ok: false, path: null, reason: 'EMPTY_CONTENT', reflectionBundle: null };
   }
 
   const relativePath = normalizeNestedRelativePath(params.fileName) + '.md';
@@ -99,14 +173,15 @@ export const upsertObsidianSystemDocument = async (params: {
     tags: normalizeTags(params.tags),
     properties: params.properties || {},
     trustedSource: true,
+    allowHighLinkDensity: Boolean(params.allowHighLinkDensity),
   });
 
   if (!result?.path) {
     logger.warn('[OBSIDIAN-AUTHORING] system write failed file=%s', params.fileName);
-    return { ok: false, path: null, reason: 'WRITE_FAILED' };
+    return { ok: false, path: null, reason: 'WRITE_FAILED', reflectionBundle: null };
   }
 
-  return { ok: true, path: result.path };
+  return buildWriteSuccess(result.path);
 };
 
 export const upsertObsidianGuildDocument = async (params: {
@@ -116,20 +191,20 @@ export const upsertObsidianGuildDocument = async (params: {
   content: string;
   tags?: string[];
   properties?: Record<string, string | number | boolean | null>;
-}): Promise<{ ok: boolean; path: string | null; reason?: string }> => {
+}): Promise<ObsidianAuthoringWriteResult> => {
   const guildId = sanitizeGuildId(params.guildId);
   if (!guildId) {
-    return { ok: false, path: null, reason: 'INVALID_GUILD_ID' };
+    return { ok: false, path: null, reason: 'INVALID_GUILD_ID', reflectionBundle: null };
   }
 
   const vaultPath = String(params.vaultPath || '').trim();
   if (!vaultPath) {
-    return { ok: false, path: null, reason: 'VAULT_PATH_REQUIRED' };
+    return { ok: false, path: null, reason: 'VAULT_PATH_REQUIRED', reflectionBundle: null };
   }
 
   const content = String(params.content || '').trim();
   if (!content) {
-    return { ok: false, path: null, reason: 'EMPTY_CONTENT' };
+    return { ok: false, path: null, reason: 'EMPTY_CONTENT', reflectionBundle: null };
   }
 
   const result = await writeObsidianNoteWithAdapter({
@@ -144,10 +219,10 @@ export const upsertObsidianGuildDocument = async (params: {
 
   if (!result?.path) {
     logger.warn('[OBSIDIAN-AUTHORING] write failed for guild=%s file=%s', guildId, params.fileName);
-    return { ok: false, path: null, reason: 'WRITE_FAILED' };
+    return { ok: false, path: null, reason: 'WRITE_FAILED', reflectionBundle: null };
   }
 
-  return { ok: true, path: result.path };
+  return buildWriteSuccess(result.path);
 };
 
 /* ---------- Vault Schema Emitter ---------- */
@@ -168,6 +243,18 @@ const VAULT_PATH_REGISTRY = [
   { pattern: 'ops/knowledge-control/LINT.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge lint summary' },
   { pattern: 'ops/knowledge-control/topics/{topic}.md', writer: 'knowledgeCompilerService', description: 'Topic rollup pages' },
   { pattern: 'ops/knowledge-control/entities/{entityKey}.md', writer: 'knowledgeCompilerService', description: 'Entity rollup pages' },
+  { pattern: 'ops/control-tower/BLUEPRINT.md', writer: 'control-tower', description: '4-plane operating blueprint' },
+  { pattern: 'ops/control-tower/CANONICAL_MAP.md', writer: 'control-tower', description: 'Canonical truth precedence map' },
+  { pattern: 'ops/control-tower/CADENCE.md', writer: 'control-tower', description: 'Operational review cadence' },
+  { pattern: 'ops/control-tower/GATE_ENTRYPOINTS.md', writer: 'control-tower', description: 'Gate and runtime entrypoint checklist' },
+  { pattern: 'ops/services/{service}/PROFILE.md', writer: 'service-memory', description: 'Operational service profile' },
+  { pattern: 'ops/quality/METRICS_BASELINE.md', writer: 'quality-control', description: 'Quality metrics baseline' },
+  { pattern: 'ops/quality/gates/{date}_{slug}.md', writer: 'quality-control', description: 'Quality gate snapshots and baselines' },
+  { pattern: 'ops/incidents/{date}_{slug}.md', writer: 'incident-analysis', description: 'Incident timeline and blast radius record' },
+  { pattern: 'ops/vulnerabilities/{slug}.md', writer: 'incident-analysis', description: 'Known vulnerability or weak point record' },
+  { pattern: 'ops/improvement/rules/{slug}.md', writer: 'improvement', description: 'Operating rule updates and automation rules' },
+  { pattern: 'ops/improvement/corrections/{date}_{slug}.md', writer: 'improvement', description: 'Operator corrections and rule clarifications' },
+  { pattern: 'guilds/{guildId}/customer/{artifact}.md', writer: 'customer-memory', description: 'Customer requirements/issues/escalations ledger' },
   { pattern: 'ops/VAULT_SCHEMA.md', writer: 'authoring (system)', description: 'This schema document (auto-generated)' },
   { pattern: 'ops/TOOL_CATALOG.md', writer: 'authoring (system)', description: 'Available tool adapter catalog (auto-generated)' },
 ] as const;
@@ -210,6 +297,14 @@ export const emitVaultSchema = async (): Promise<{ ok: boolean; reason?: string 
       '**Wiki** (`sprint-journal/`, `retros/`, `memory/`) — synthesized knowledge from raw sources',
       '**Compiler** (`ops/knowledge-control/`) — generated index/log/topic/entity surfaces over knowledge notes',
       '**Schema** (`ops/VAULT_SCHEMA.md`) — navigation index (this document)',
+    ]);
+
+  builder.section('Operating Planes')
+    .bullets([
+      '**Control Plane** (`ops/control-tower/`, `ops/quality/`) — canonical map, cadence, and gate standards',
+      '**Runtime Plane** (`ops/services/`) — service profiles, dependencies, recovery, weak points',
+      '**Record Plane** (`ops/knowledge-control/`, `ops/incidents/`, `ops/vulnerabilities/`, `guilds/*/customer/`) — visible evidence and user-facing operating memory',
+      '**Learning Plane** (`ops/improvement/`, `retros/`) — corrections, rules, retros, validated practices',
     ]);
 
   const { markdown } = builder.buildWithFrontmatter();

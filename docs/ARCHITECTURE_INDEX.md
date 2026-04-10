@@ -30,6 +30,9 @@ Primary operations entrypoint:
 - `docs/planning/mcp/MCP_TOOL_SPEC.md` (MCP tool contract)
 - `docs/planning/mcp/MCP_ROLLOUT_1W.md` (MCP rollout plan)
 - `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md` (core-worker split)
+- `docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md` (vault-first operating system target state)
+- `docs/planning/OBSIDIAN_OBJECT_MODEL.md` (canonical vault object families)
+- `docs/planning/OBSIDIAN_TRANSITION_PLAN.md` (migration from current mixed control plane)
 - `docs/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (LangGraph migration-ready state graph blueprint)
 - `docs/GOT_LANGGRAPH_EXECUTION_PLAN.md` (GoT reasoning + LangGraph execution rollout plan)
 - `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` (local IDE lead+consult agent workflow)
@@ -338,7 +341,7 @@ Profile note:
 5-Phase architecture — 3 phases implemented, 2 planned:
 
 | Phase | Name | Status | Entry |
-|-------|------|--------|-------|
+| ----- | ---- | ------ | ----- |
 | F | Observer Layer | ✅ 활성 | `src/services/observer/observerOrchestrator.ts` |
 | G | Intent Formation | ✅ 활성 | `src/services/intent/intentFormationEngine.ts` |
 | H | Progressive Trust | ✅ 활성 | `src/services/sprint/trustScoreService.ts` |
@@ -354,23 +357,24 @@ Design doc: `docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`
 ## MCP Architecture (Multi-Server)
 
 | Surface | Location | 도구 수 | 역할 |
-|---------|----------|---------|------|
-| muelIndexing | `.vscode/mcp.json` (local stdio) | 7 | 코드 인덱싱 |
-| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (general + Indexing + Obsidian + ext.* + upstream.*) |
+| ------- | -------- | ------- | ---- |
+| muelIndexing | `.vscode/mcp.json` (local stdio) | 7 | local overlay 인덱싱 전용 (dirty workspace / uncommitted only) |
+| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (general + Indexing + Obsidian + `ext.*` + `upstream.*`) |
 | gcpCompute | GCP VM `34.56.232.61` (SSH stdio) | 40+ | 원격 통합 서버 (로컬 대비 외부 어댑터 더 풍부) |
 | Supabase | `MCP_UPSTREAM_SERVERS` → `upstream.supabase.*` | DB | 스키마/데이터 조회 |
 | DeepWiki | `MCP_UPSTREAM_SERVERS` → `upstream.deepwiki.*` | — | 외부 repo 문서 질의 |
 
-> **Note**: `muelUnified`(로컬)와 `gcpCompute`는 같은 unified 서버지만, 외부 OSS 어댑터(NemoClaw, OpenJarvis 등) 가용성은 환경에 따라 다를 수 있습니다.
+> **Note**: `muelIndexing`와 `gcpCompute`는 인덱싱 도구가 겹치지만 역할은 다르다. `gcpCompute`는 shared truth, `muelIndexing`는 local overlay diff lane이다. `muelUnified`(로컬)와 `gcpCompute`는 같은 unified 서버지만, 팀 공용 Obsidian/운영 문서/요구사항 확인은 `gcpCompute`를 기본 경로로 본다. `muelUnified`는 로컬 overlay 또는 로컬 전용 vault 실험에만 사용한다.
 
 MCP 서버 코드:
+
 - `src/mcp/server.ts` — 기본 MCP 서버 (stdio/http)
 - `src/mcp/indexingServer.ts` — 인덱싱 전용
-- `src/mcp/unifiedServer.ts` — 통합 진입점 (기본 + 인덱싱 + Obsidian + ext.*)
+- `src/mcp/unifiedServer.ts` — 통합 진입점 (기본 + 인덱싱 + Obsidian + `ext.*`)
 - `src/mcp/obsidianToolAdapter.ts` — Obsidian vault 도구 (search/read/write/backlinks + 20+ 도구)
-- `src/mcp/unifiedToolAdapter.ts` — ext.* MCP 브릿지 (외부 어댑터 capability를 MCP 도구로 노출)
+- `src/mcp/unifiedToolAdapter.ts` — `ext.*` MCP 브릿지 (외부 어댑터 capability를 MCP 도구로 노출)
 
-전체 도구 카탈로그: `docs/planning/mcp/MCP_TOOL_SPEC.md`  
+전체 도구 카탈로그: `docs/planning/mcp/MCP_TOOL_SPEC.md`
 갭 분석: `docs/planning/CAPABILITY_GAP_ANALYSIS.md`
 
 Regeneration command:
@@ -378,7 +382,6 @@ Regeneration command:
 ```bash
 npm run docs:build
 ```
-
 
 ## Change Control
 

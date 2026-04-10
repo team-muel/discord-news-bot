@@ -1,6 +1,6 @@
 import { ChannelType, type Guild, type GuildBasedChannel } from 'discord.js';
 import logger from '../../logger';
-import { upsertObsidianGuildDocument } from '../obsidian/authoring';
+import { summarizeReflectionBundle, upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { doc } from '../obsidian/obsidianDocBuilder';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { parseBooleanEnv } from '../../utils/env';
@@ -153,7 +153,8 @@ export const syncGuildTopologySnapshot = async (guild: Guild, reason: string): P
   }
 
   logSignal(guild.id, 'success', `snapshot_ok:reason=${reason}`);
-  logger.info('[DISCORD-TOPOLOGY] snapshot synced guild=%s reason=%s path=%s', guild.id, reason, result.path || 'unknown');
+  const reflection = summarizeReflectionBundle(result.reflectionBundle);
+  logger.info('[DISCORD-TOPOLOGY] snapshot synced guild=%s reason=%s path=%s concern=%s next=%s', guild.id, reason, result.path || 'unknown', reflection.concern, reflection.nextPath);
 };
 
 export const autoSyncGuildTopologyOnJoin = async (guild: Guild): Promise<void> => {

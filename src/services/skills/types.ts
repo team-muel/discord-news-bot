@@ -1,3 +1,5 @@
+import type { AgentOutcome } from '../agent/agentOutcomeContract';
+
 export type SkillId = string;
 
 export type SkillContext = {
@@ -31,4 +33,5 @@ export type SkillDefinition = {
 export type SkillExecutionResult = {
   skillId: SkillId;
   output: string;
+  outcomes?: AgentOutcome[];
 };

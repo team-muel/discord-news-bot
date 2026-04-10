@@ -16,14 +16,16 @@ Use this before sprint planning. Every item here should have a milestone in the 
 ### What is Built
 
 | Surface | Entry point | Status |
-|---------|-------------|--------|
+| ------- | ----------- | ------ |
 | `muelCore` (6 tools) | `src/mcp/server.ts` + `toolAdapter.ts` | ✅ 통합됨 — `muelUnified`에 포함 |
-| `muelIndexing` (7 tools) | `src/mcp/indexingServer.ts` + `indexingToolAdapter.ts` | ✅ Running locally |
+| `muelIndexing` (7 tools) | `src/mcp/indexingServer.ts` + `indexingToolAdapter.ts` | ✅ Running locally — strict local overlay index for dirty/uncommitted workspace state |
 | `muelUnified` (40+ tools) | `src/mcp/unifiedServer.ts` + `unifiedToolAdapter.ts` | ✅ Running on GCP VM via SSH |
 | `muelObsidian` (20+ tools) | `src/mcp/obsidianToolAdapter.ts` | ✅ Part of unified |
 | `ext.*` adapters (8) | `src/services/tools/externalAdapterRegistry.ts` | ✅ Adapters registered, availability varies |
 | `deepwiki` MCP | External URL | ✅ IDE config only |
 | `supabase` MCP | External URL | ✅ IDE config only |
+
+Shared/team repo analysis는 `gcpCompute`를 기본 truth surface로 보고, `muelIndexing`는 local diff overlay가 필요할 때만 추가로 사용한다.
 
 ### Gaps vs. Vision
 

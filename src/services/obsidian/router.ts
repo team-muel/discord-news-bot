@@ -30,6 +30,7 @@ import type {
 } from './types';
 import { supportsCapability } from './types';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { getObsidianVaultRuntimeInfo, type ObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 
 const DEFAULT_ORDER = ['remote-mcp', 'native-cli', 'script-cli', 'local-fs'];
 const REMOTE_MCP_DEPRIORITIZE_AFTER_FAILURES = 2;
@@ -164,12 +165,28 @@ const getOrderedAdapters = (capability?: ObsidianCapability): ObsidianVaultAdapt
   return [remoteMcpObsidianAdapter, nativeCliObsidianAdapter, scriptCliObsidianAdapter];
 };
 
-const pickAdapter = (capability: ObsidianCapability): ObsidianVaultAdapter | null => {
+const hasRequestedVaultPath = (vaultPath?: string): boolean => String(vaultPath || '').trim().length > 0;
+
+const isAdapterAvailableForCapability = (
+  adapter: ObsidianVaultAdapter,
+  capability: ObsidianCapability,
+  vaultPath?: string,
+): boolean => {
+  if (!supportsCapability(adapter, capability)) {
+    return false;
+  }
+  if (adapter.isAvailable()) {
+    return true;
+  }
+  if (adapter.id === 'local-fs' && hasRequestedVaultPath(vaultPath)) {
+    return true;
+  }
+  return false;
+};
+
+const pickAdapter = (capability: ObsidianCapability, vaultPath?: string): ObsidianVaultAdapter | null => {
   for (const adapter of getOrderedAdapters(capability)) {
-    if (!adapter.isAvailable()) {
-      continue;
-    }
-    if (!supportsCapability(adapter, capability)) {
+    if (!isAdapterAvailableForCapability(adapter, capability, vaultPath)) {
       continue;
     }
     return adapter;
@@ -190,6 +207,7 @@ export const getObsidianAdapterRuntimeStatus = (): {
   selectedByCapability: Record<string, string | null>;
   routingState: { remoteMcpCircuitOpen: boolean; remoteMcpCircuitReason: string | null };
   remoteMcp: RemoteMcpAdapterDiagnostics;
+  vault: ObsidianVaultRuntimeInfo;
 } => {
   const routingState = getRemoteMcpRoutingState();
   const adapters = getOrderedAdapters().map((adapter) => ({
@@ -223,6 +241,7 @@ export const getObsidianAdapterRuntimeStatus = (): {
     selectedByCapability,
     routingState,
     remoteMcp: getRemoteMcpAdapterDiagnostics(),
+    vault: getObsidianVaultRuntimeInfo(),
   };
 };
 
@@ -275,7 +294,7 @@ const ensureObsidianWriteFrontmatter = (params: ObsidianNoteWriteInput): string 
 };
 
 export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Promise<string[]> => {
-  const adapter = pickAdapter('read_lore');
+  const adapter = pickAdapter('read_lore', params.vaultPath);
   if (!adapter || !adapter.readLore) {
     if (OBSIDIAN_ADAPTER_STRICT) {
       logger.warn('[OBSIDIAN-ADAPTER] no adapter available for read_lore (strict mode)');
@@ -303,10 +322,10 @@ export const readObsidianLoreWithAdapter = async (params: ObsidianLoreQuery): Pr
 
   // Best-effort fallback across remaining adapters.
   for (const fallback of getOrderedAdapters('read_lore')) {
-    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.readLore) {
+    if (fallback.id === adapter.id || !fallback.readLore) {
       continue;
     }
-    if (!supportsCapability(fallback, 'read_lore')) {
+    if (!isAdapterAvailableForCapability(fallback, 'read_lore', params.vaultPath)) {
       continue;
     }
     try {
@@ -351,8 +370,12 @@ const maybeCompileKnowledgeArtifacts = async (params: {
   }
 };
 
-export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput & { trustedSource?: boolean; skipKnowledgeCompilation?: boolean }): Promise<{ path: string } | null> => {
-  const sanitized = sanitizeForObsidianWrite({ content: params.content, trustedSource: params.trustedSource });
+export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInput & { trustedSource?: boolean; skipKnowledgeCompilation?: boolean; allowHighLinkDensity?: boolean }): Promise<{ path: string } | null> => {
+  const sanitized = sanitizeForObsidianWrite({
+    content: params.content,
+    trustedSource: params.trustedSource,
+    allowHighLinkDensity: params.allowHighLinkDensity,
+  });
   if (sanitized.blocked) {
     logger.warn('[OBSIDIAN-ADAPTER] write_note blocked by sanitizer: %s (file: %s)', sanitized.reasons.join(', '), params.fileName);
     logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: null, detail: `sanitizer_blocked:${sanitized.reasons.join(',')}` });
@@ -369,7 +392,7 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
     properties: ensuredProperties,
   };
 
-  const adapter = pickAdapter('write_note');
+  const adapter = pickAdapter('write_note', params.vaultPath);
   if (!adapter || !adapter.writeNote) {
     logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: null, detail: 'no_adapter' });
     return null;
@@ -389,42 +412,18 @@ export const writeObsidianNoteWithAdapter = async (params: ObsidianNoteWriteInpu
     return primary;
   } catch (error) {
     logger.warn('[OBSIDIAN-ADAPTER] write_note failed on %s: %s', adapter.id, getErrorMessage(error));
-    if (OBSIDIAN_ADAPTER_STRICT) {
-      logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: adapter.id, detail: 'strict_primary_error' });
-      return null;
-    }
-
-    for (const fallback of getOrderedAdapters('write_note')) {
-      if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.writeNote) {
-        continue;
-      }
-      if (!supportsCapability(fallback, 'write_note')) {
-        continue;
-      }
-      try {
-        const fallbackResult = await fallback.writeNote(sanitizedParams);
-        await maybeCompileKnowledgeArtifacts({
-          guildId: sanitizedParams.guildId,
-          vaultPath: sanitizedParams.vaultPath,
-          filePath: fallbackResult.path || sanitizedParams.fileName,
-          content: sanitizedParams.content,
-          properties: sanitizedParams.properties,
-          skipKnowledgeCompilation: params.skipKnowledgeCompilation,
-        });
-        logAdapterSignal({ capability: 'write_note', outcome: 'degraded', primary: adapter.id, fallback: fallback.id, detail: 'fallback_write_ok' });
-        return fallbackResult;
-      } catch (err) {
-        logger.debug('[OBSIDIAN-ROUTER] writeNote fallback=%s failed: %s', fallback.id, getErrorMessage(err));
-        // Continue fallback chain.
-      }
-    }
-    logAdapterSignal({ capability: 'write_note', outcome: 'failure', primary: adapter.id, detail: 'all_fallback_failed' });
+    logAdapterSignal({
+      capability: 'write_note',
+      outcome: 'failure',
+      primary: adapter.id,
+      detail: OBSIDIAN_ADAPTER_STRICT ? 'strict_primary_error' : 'primary_error_no_fallback',
+    });
     return null;
   }
 };
 
 export const searchObsidianVaultWithAdapter = async (params: ObsidianSearchQuery): Promise<ObsidianSearchResult[]> => {
-  const adapter = pickAdapter('search_vault');
+  const adapter = pickAdapter('search_vault', params.vaultPath);
   if (!adapter || !adapter.searchVault) {
     logAdapterSignal({ capability: 'search_vault', outcome: 'failure', primary: null, detail: 'no_adapter' });
     return [];
@@ -450,10 +449,10 @@ export const searchObsidianVaultWithAdapter = async (params: ObsidianSearchQuery
   }
 
   for (const fallback of getOrderedAdapters('search_vault')) {
-    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.searchVault) {
+    if (fallback.id === adapter.id || !fallback.searchVault) {
       continue;
     }
-    if (!supportsCapability(fallback, 'search_vault')) {
+    if (!isAdapterAvailableForCapability(fallback, 'search_vault', params.vaultPath)) {
       continue;
     }
     try {
@@ -473,7 +472,7 @@ export const searchObsidianVaultWithAdapter = async (params: ObsidianSearchQuery
 };
 
 export const readObsidianFileWithAdapter = async (params: ObsidianReadFileQuery): Promise<string | null> => {
-  const adapter = pickAdapter('read_file');
+  const adapter = pickAdapter('read_file', params.vaultPath);
   if (!adapter || !adapter.readFile) {
     logAdapterSignal({ capability: 'read_file', outcome: 'failure', primary: null, detail: 'no_adapter' });
     return null;
@@ -499,10 +498,10 @@ export const readObsidianFileWithAdapter = async (params: ObsidianReadFileQuery)
   }
 
   for (const fallback of getOrderedAdapters('read_file')) {
-    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.readFile) {
+    if (fallback.id === adapter.id || !fallback.readFile) {
       continue;
     }
-    if (!supportsCapability(fallback, 'read_file')) {
+    if (!isAdapterAvailableForCapability(fallback, 'read_file', params.vaultPath)) {
       continue;
     }
     try {
@@ -522,7 +521,7 @@ export const readObsidianFileWithAdapter = async (params: ObsidianReadFileQuery)
 };
 
 export const getObsidianGraphMetadataWithAdapter = async (params: { vaultPath: string }): Promise<Record<string, ObsidianNode>> => {
-  const adapter = pickAdapter('graph_metadata');
+  const adapter = pickAdapter('graph_metadata', params.vaultPath);
   if (!adapter || !adapter.getGraphMetadata) {
     logAdapterSignal({ capability: 'graph_metadata', outcome: 'failure', primary: null, detail: 'no_adapter' });
     return {};
@@ -548,10 +547,10 @@ export const getObsidianGraphMetadataWithAdapter = async (params: { vaultPath: s
   }
 
   for (const fallback of getOrderedAdapters('graph_metadata')) {
-    if (fallback.id === adapter.id || !fallback.isAvailable() || !fallback.getGraphMetadata) {
+    if (fallback.id === adapter.id || !fallback.getGraphMetadata) {
       continue;
     }
-    if (!supportsCapability(fallback, 'graph_metadata')) {
+    if (!isAdapterAvailableForCapability(fallback, 'graph_metadata', params.vaultPath)) {
       continue;
     }
     try {
@@ -577,7 +576,12 @@ export const warmupObsidianAdapters = async (vaultPath: string): Promise<void> =
   }
 
   const tasks = getOrderedAdapters()
-    .filter((adapter) => adapter.isAvailable() && typeof adapter.warmup === 'function')
+    .filter((adapter) => {
+      if (typeof adapter.warmup !== 'function') {
+        return false;
+      }
+      return adapter.isAvailable() || (adapter.id === 'local-fs' && hasRequestedVaultPath(safeVaultPath));
+    })
     .map(async (adapter) => {
       try {
         await adapter.warmup?.({ vaultPath: safeVaultPath });
@@ -698,6 +702,12 @@ export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
     issues.push('No Obsidian adapters available — vault is completely disconnected');
   }
 
+  if (adapterStatus.remoteMcp.enabled && adapterStatus.remoteMcp.configured && adapterStatus.selectedByCapability.write_note !== 'remote-mcp') {
+    issues.push(
+      `Remote MCP is configured but write_note routes to ${adapterStatus.selectedByCapability.write_note || 'none'} — shared/team vault writes are not active`,
+    );
+  }
+
   return {
     healthy: issues.length === 0,
     issues,
@@ -751,7 +761,7 @@ export const getObsidianOutlineWithAdapter = async (
   vaultPath: string,
   filePath: string,
 ): Promise<ObsidianOutlineHeading[]> => {
-  const adapter = pickAdapter('outline');
+  const adapter = pickAdapter('outline', vaultPath);
   if (!adapter?.getOutline) return [];
   try {
     return await adapter.getOutline({ vaultPath, filePath });
@@ -765,7 +775,7 @@ export const searchObsidianContextWithAdapter = async (
   query: string,
   limit?: number,
 ): Promise<ObsidianSearchContextResult[]> => {
-  const adapter = pickAdapter('search_context');
+  const adapter = pickAdapter('search_context', vaultPath);
   if (!adapter?.searchContext) return [];
   try {
     return await adapter.searchContext({ vaultPath, query, limit });
@@ -779,7 +789,7 @@ export const readObsidianPropertyWithAdapter = async (
   filePath: string,
   name: string,
 ): Promise<string | null> => {
-  const adapter = pickAdapter('property_read');
+  const adapter = pickAdapter('property_read', vaultPath);
   if (!adapter?.readProperty) return null;
   try {
     return await adapter.readProperty({ vaultPath, filePath, name });
@@ -794,7 +804,7 @@ export const setObsidianPropertyWithAdapter = async (
   name: string,
   value: string,
 ): Promise<boolean> => {
-  const adapter = pickAdapter('set_property');
+  const adapter = pickAdapter('set_property', vaultPath);
   if (!adapter?.setProperty) return false;
   try {
     return await adapter.setProperty({ vaultPath, filePath, name, value });
@@ -808,10 +818,11 @@ export const listObsidianFilesWithAdapter = async (
   folder?: string,
   extension?: string,
 ): Promise<ObsidianFileInfo[]> => {
-  const adapter = pickAdapter('files_list');
+  const adapter = pickAdapter('files_list', vaultPath);
   if (!adapter?.listFiles) return [];
   try {
-    return await adapter.listFiles({ vaultPath, folder, extension });
+    const files = await adapter.listFiles({ vaultPath, folder, extension });
+    return Array.isArray(files) ? files : [];
   } catch {
     return [];
   }
@@ -822,7 +833,7 @@ export const appendObsidianContentWithAdapter = async (
   filePath: string,
   content: string,
 ): Promise<boolean> => {
-  const adapter = pickAdapter('append_content');
+  const adapter = pickAdapter('append_content', vaultPath);
   if (!adapter?.appendContent) return false;
   try {
     return await adapter.appendContent({ vaultPath, filePath, content });

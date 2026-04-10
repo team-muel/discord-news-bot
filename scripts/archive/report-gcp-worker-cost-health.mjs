@@ -75,6 +75,23 @@ const compactError = (raw) => {
   return lines.slice(0, 2).join(' | ');
 };
 
+const loadOperatingBaseline = () => {
+  const manifestPath = path.resolve('config/runtime/operating-baseline.json');
+  try {
+    const raw = fs.readFileSync(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return {
+      manifestPath,
+      data: parsed,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const timedFetch = async (url, timeoutMs) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -107,6 +124,52 @@ const toMachineType = (value) => {
   return parts[parts.length - 1] || raw;
 };
 
+const joinHealthUrl = (baseUrl, healthPath) => {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const suffix = `/${String(healthPath || '/health').trim().replace(/^\/+/, '')}`;
+  if (!base) {
+    return '';
+  }
+  return base.endsWith(suffix) ? base : `${base}${suffix}`;
+};
+
+const probeService = async (id, config, timeoutMs) => {
+  const url = String(config?.url || '').trim();
+  const directUrl = String(config?.directUrl || '').trim();
+  const healthPath = String(config?.healthPath || '/health').trim() || '/health';
+  const targets = [...new Set([
+    joinHealthUrl(url, healthPath),
+    joinHealthUrl(directUrl, healthPath),
+    url,
+    directUrl,
+  ].filter(Boolean))];
+
+  const result = {
+    id,
+    url,
+    directUrl,
+    healthPath,
+    checkedUrl: '',
+    ok: false,
+    status: 0,
+    error: '',
+  };
+
+  for (const target of targets) {
+    const response = await timedFetch(target, timeoutMs);
+    result.checkedUrl = target;
+    result.status = response.status;
+    if (response.ok) {
+      result.ok = true;
+      result.error = '';
+      break;
+    }
+    result.error = response.error || response.body || '';
+  }
+
+  return result;
+};
+
 const getProjectId = () => {
   const explicit = getArg(
     'project-id',
@@ -127,6 +190,15 @@ const getProjectId = () => {
 };
 
 const formatMarkdown = (report) => {
+  const expectedMachineType = report.baseline.machineType || 'e2-medium';
+  const expectedMemoryGb = report.baseline.memoryGb || 4;
+  const formatUrlValue = (value) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed || trimmed === 'unset' || trimmed === 'unknown') {
+      return trimmed || 'unset';
+    }
+    return /^https?:\/\//i.test(trimmed) ? `<${trimmed}>` : trimmed;
+  };
   const lines = [];
   lines.push('# GCP Worker Cost/Health Report');
   lines.push('');
@@ -136,6 +208,7 @@ const formatMarkdown = (report) => {
   lines.push(`- projectId: ${report.projectId || 'unknown'}`);
   lines.push('');
   lines.push('## Worker');
+  lines.push('');
   lines.push(`- instance: ${report.worker.instanceName}`);
   lines.push(`- zone: ${report.worker.zone}`);
   lines.push(`- status: ${report.worker.status || 'unknown'}`);
@@ -143,22 +216,34 @@ const formatMarkdown = (report) => {
   lines.push(`- bootDiskGb: ${report.worker.bootDiskGb ?? 'unknown'}`);
   lines.push('');
   lines.push('## Endpoint');
-  lines.push(`- url: ${report.endpoint.url || 'unset'}`);
+  lines.push('');
+  lines.push(`- url: ${formatUrlValue(report.endpoint.url || 'unset')}`);
   lines.push(`- healthOk: ${report.endpoint.ok}`);
   lines.push(`- statusCode: ${report.endpoint.status}`);
   lines.push('');
+  if (Array.isArray(report.serviceChecks) && report.serviceChecks.length > 0) {
+    lines.push('## Always-On Services');
+    lines.push('');
+    for (const item of report.serviceChecks) {
+      lines.push(`- ${item.id}: ok=${item.ok} status=${item.status} checkedUrl=${formatUrlValue(item.checkedUrl || item.url || 'unset')}`);
+    }
+    lines.push('');
+  }
   lines.push('## Static IP');
+  lines.push('');
   lines.push(`- addressName: ${report.staticIp.name || 'unknown'}`);
   lines.push(`- address: ${report.staticIp.address || 'unknown'}`);
   lines.push(`- status: ${report.staticIp.status || 'unknown'}`);
   lines.push('');
   lines.push('## Budget');
+  lines.push('');
   lines.push(`- billingAccount: ${report.budget.billingAccount || 'unknown'}`);
   lines.push(`- foundDisplayName: ${report.budget.foundDisplayName || 'not-found'}`);
   lines.push(`- expectedDisplayName: ${report.budget.expectedDisplayName}`);
   lines.push('');
   if (report.failures.length > 0) {
     lines.push('## Failures');
+    lines.push('');
     for (const item of report.failures) {
       lines.push(`- ${item}`);
     }
@@ -166,26 +251,39 @@ const formatMarkdown = (report) => {
   }
   if (report.warnings.length > 0) {
     lines.push('## Warnings');
+    lines.push('');
     for (const item of report.warnings) {
       lines.push(`- ${item}`);
     }
     lines.push('');
   }
   lines.push('## Notes');
+  lines.push('');
+  lines.push(`- Baseline manifest: ${report.baseline.manifestPath || 'config/runtime/operating-baseline.json'}`);
   lines.push('- If static IP is kept for endpoint stability, expect small recurring IP cost.');
-  lines.push('- Worker runs on e2-small (2GB). Keep disk around 30GB baseline where possible.');
+  lines.push(`- Worker baseline is ${expectedMachineType} (${expectedMemoryGb}GB). Keep disk around ${report.baseline.bootDiskGb || 30}GB where possible.`);
   return `${lines.join('\n')}\n`;
 };
 
 const main = async () => {
+  const operatingBaseline = loadOperatingBaseline();
+  const baselineData = operatingBaseline?.data || {};
+  const baselineGcp = baselineData.gcpWorker || {};
+  const baselineServices = baselineData.services || {};
   const period = getArg('period', 'weekly').toLowerCase() === 'monthly' ? 'monthly' : 'weekly';
   const timeoutMs = Math.max(1000, Number(getArg('timeout-ms', read('GCP_WORKER_HEALTH_TIMEOUT_MS', '5000'))) || 5000);
 
-  const projectId = getProjectId();
-  const instanceName = getArg('instance', read('GCP_WORKER_INSTANCE_NAME', 'instance-20260319-223412'));
-  const zone = getArg('zone', read('GCP_WORKER_ZONE', 'us-central1-c'));
-  const staticIpName = getArg('static-ip-name', read('GCP_WORKER_STATIC_IP_NAME', 'opencode-worker-ip'));
-  const workerUrl = getArg('worker-url', read('MCP_IMPLEMENT_WORKER_URL', read('MCP_OPENCODE_WORKER_URL', '')));
+  const projectId = getArg('project-id', baselineGcp.projectId || read('GCP_PROJECT_ID', read('GOOGLE_CLOUD_PROJECT', getProjectId())));
+  const instanceName = getArg('instance', baselineGcp.instanceName || read('GCP_WORKER_INSTANCE_NAME', 'instance-20260319-223412'));
+  const zone = getArg('zone', baselineGcp.zone || read('GCP_WORKER_ZONE', 'us-central1-c'));
+  const staticIpName = getArg('static-ip-name', baselineGcp.staticIpName || read('GCP_WORKER_STATIC_IP_NAME', 'opencode-worker-ip'));
+  const workerUrl = getArg(
+    'worker-url',
+    baselineServices.implementWorker?.url
+      || baselineServices.implementWorker?.publicBaseUrl
+      || baselineGcp.publicBaseUrl
+      || read('MCP_IMPLEMENT_WORKER_URL', read('MCP_OPENCODE_WORKER_URL', '')),
+  );
   const budgetDisplayName = getArg('budget-display-name', read('GCP_BUDGET_DISPLAY_NAME', 'muel-worker-monthly-budget'));
 
   const failures = [];
@@ -219,6 +317,13 @@ const main = async () => {
       expectedDisplayName: budgetDisplayName,
       foundDisplayName: '',
     },
+    serviceChecks: [],
+    baseline: {
+      manifestPath: operatingBaseline?.manifestPath || '',
+      machineType: String(baselineGcp.machineType || ''),
+      memoryGb: Number(baselineGcp.memoryGb || 0) || null,
+      bootDiskGb: Number(baselineGcp.bootDiskGb || 0) || null,
+    },
     failures,
     warnings,
   };
@@ -227,22 +332,30 @@ const main = async () => {
     warnings.push('GCP project is not set in gcloud config and GCP_PROJECT_ID is empty.');
   }
 
-  if (workerUrl) {
-    const healthTargets = [workerUrl, `${workerUrl.replace(/\/+$/, '')}/health`];
-    for (const target of healthTargets) {
-      const response = await timedFetch(target, timeoutMs);
-      if (response.ok) {
-        report.endpoint.ok = true;
-        report.endpoint.status = response.status;
-        break;
-      }
-      report.endpoint.status = response.status;
-      report.endpoint.error = response.error || response.body || '';
+  const alwaysOnServiceIds = Array.isArray(baselineData?.lanes?.alwaysOnRequired) && baselineData.lanes.alwaysOnRequired.length > 0
+    ? baselineData.lanes.alwaysOnRequired
+    : ['implementWorker'];
+
+  for (const serviceId of alwaysOnServiceIds) {
+    const serviceConfig = baselineServices[serviceId];
+    if (!serviceConfig || typeof serviceConfig !== 'object') {
+      warnings.push(`Operating baseline is missing service config for '${serviceId}'.`);
+      continue;
     }
-    if (!report.endpoint.ok) {
-      failures.push('Remote worker endpoint health probe failed (base URL and /health).');
+    const serviceCheck = await probeService(serviceId, serviceConfig, timeoutMs);
+    report.serviceChecks.push(serviceCheck);
+    if (!serviceCheck.ok) {
+      failures.push(`Always-on service '${serviceId}' health probe failed.`);
     }
-  } else {
+  }
+
+  const implementCheck = report.serviceChecks.find((item) => item.id === 'implementWorker');
+  if (implementCheck) {
+    report.endpoint.url = implementCheck.url || workerUrl;
+    report.endpoint.ok = implementCheck.ok;
+    report.endpoint.status = implementCheck.status;
+    report.endpoint.error = implementCheck.error;
+  } else if (!workerUrl) {
     failures.push('MCP_IMPLEMENT_WORKER_URL is empty; remote worker endpoint is not configured (legacy alias MCP_OPENCODE_WORKER_URL is also accepted).');
   }
 
@@ -272,11 +385,11 @@ const main = async () => {
       if (report.worker.status !== 'RUNNING') {
         failures.push(`Worker instance is not RUNNING (current: ${report.worker.status || 'unknown'}).`);
       }
-      if (report.worker.machineType && report.worker.machineType !== 'e2-small') {
-        warnings.push(`Machine type is ${report.worker.machineType}; expected e2-small (2GB) as of 2026-04-05.`);
+      if (report.worker.machineType && report.baseline.machineType && report.worker.machineType !== report.baseline.machineType) {
+        warnings.push(`Machine type is ${report.worker.machineType}; expected ${report.baseline.machineType} (${report.baseline.memoryGb || '?'}GB) from operating baseline.`);
       }
-      if (report.worker.bootDiskGb && report.worker.bootDiskGb > 30) {
-        warnings.push(`Boot disk is ${report.worker.bootDiskGb}GB; free-tier baseline for standard persistent disk is about 30GB.`);
+      if (report.worker.bootDiskGb && report.baseline.bootDiskGb && report.worker.bootDiskGb > report.baseline.bootDiskGb) {
+        warnings.push(`Boot disk is ${report.worker.bootDiskGb}GB; operating baseline is ${report.baseline.bootDiskGb}GB.`);
       }
     }
 

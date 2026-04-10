@@ -31,6 +31,7 @@ import {
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
+import { buildObsidianKnowledgeReflectionBundle, type ObsidianKnowledgeReflectionBundle } from './knowledgeCompilerService';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { isSupabaseConfigured } from '../supabaseClient';
@@ -806,7 +807,7 @@ export async function writeRetroToVault(params: {
   planPath?: string;
   /** Vault-relative path to the previous retro for the follows chain. */
   prevRetroPath?: string;
-}): Promise<{ path: string } | null> {
+}): Promise<{ path: string; reflectionBundle: ObsidianKnowledgeReflectionBundle | null } | null> {
   const vaultPath = getObsidianVaultRoot();
 
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -867,10 +868,23 @@ export async function writeRetroToVault(params: {
       properties,
     });
 
-    if (result) {
+    if (result?.path) {
+      const reflectionBundle = buildObsidianKnowledgeReflectionBundle(result.path);
       logger.info('[OBSIDIAN-RAG] Retro written to vault: %s', result.path);
+      if (reflectionBundle) {
+        logger.info(
+          '[OBSIDIAN-RAG] Retro reflection bundle plane=%s concern=%s target=%s',
+          reflectionBundle.plane,
+          reflectionBundle.concern,
+          reflectionBundle.targetPath,
+        );
+      }
+      return {
+        path: result.path,
+        reflectionBundle,
+      };
     }
-    return result;
+    return null;
   } catch (error) {
     logger.warn('[OBSIDIAN-RAG] Failed to write retro to vault: %s', getErrorMessage(error));
     return null;

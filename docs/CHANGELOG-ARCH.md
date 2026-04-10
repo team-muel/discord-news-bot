@@ -21,6 +21,101 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-10 - Development Archaeology Seed Objects And Team Repeatability
+
+- Why: the development-archaeology contract had been defined, but the team still lacked concrete seed objects proving that repository-context and development-slice notes can be created from repo source and replayed into the shared vault.
+- Scope: repository-context seed for `team-muel/discord-news-bot`, development-slice seed for the archaeology rollout, README/catalog alignment, and explicit team repeatability workflow in the archaeology policy
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/contexts/team-muel_discord-news-bot.md`, `docs/planning/development/2026-04-10_obsidian-development-archaeology-wikiization.md`, `docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. This slice seeds the first durable archaeology objects and keeps the repeat path repo-driven so other operators can run the same workflow from `main`.
+- Validation: targeted backfill of the new repository-context and development-slice notes plus full catalog coverage report
+
+## 2026-04-10 - Development Archaeology Wikiization Contract
+
+- Why: the Obsidian operating model already covered control, runtime, and improvement knowledge, but repo-wide development process, `.github` customization, scripts/config context, and cross-repo integrations still remained scattered across the repository with no stable archaeology layer.
+- Scope: development-archaeology canonical doc, object-model expansion for `repository_context` and `development_slice`, blueprint/transition/README alignment, repo-to-vault backfill catalog entry for the new policy doc
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`, `docs/planning/OBSIDIAN_OBJECT_MODEL.md`, `docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`, `docs/planning/OBSIDIAN_TRANSITION_PLAN.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. This slice defines how repo-wide development history and multi-repo/service context should converge into wiki objects without mirroring every file into the vault.
+- Validation: targeted backfill of the new archaeology policy note plus full catalog coverage report
+
+## 2026-04-10 - Indexing MCP Local Overlay Contract Clarification
+
+- Why: `muelIndexing` and `gcpCompute` both exposed indexing tools, but the intended split between shared repo truth and local dirty-workspace overlay was still too implicit in docs and agent guidance. That ambiguity invited the wrong server choice during planning, implementation, and review.
+- Scope: local-overlay indexing role clarification, overlap matrix documentation, IDE/workflow/skill routing alignment, MCP tool spec externalization into the shared vault
+- Impacted Routes: N/A
+- Impacted Services: `.vscode/mcp.json`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/ARCHITECTURE_INDEX.md`, `.github/instructions/mcp-routing.instructions.md`, `.github/instructions/workflow-pr-review.instructions.md`, `.github/instructions/workflow-branch-analysis.instructions.md`, `.github/instructions/tribal-knowledge.instructions.md`, `.github/skills/plan/SKILL.md`, `.github/skills/implement/SKILL.md`, `.github/skills/review/SKILL.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime product behavior changed. `muelIndexing` remains available, but docs and IDE metadata now treat it as a strict local overlay lane while `gcpCompute` remains the shared truth for committed/team repository analysis.
+- Validation: `node --import tsx scripts/backfill-obsidian-system.ts --report --json`, targeted backfill of MCP docs to the synced vault
+
+## 2026-04-10 - Shared Vault Write Readiness Gate + Externalization Catalog Expansion
+
+- Why: shared MCP read/search could still appear healthy while write routing remained pinned to a local adapter, which made team-shared visibility and phone-sync claims ambiguous. At the same time, backlog, roadmap, and incident/postmortem templates were not yet part of the canonical repo-to-vault backfill set.
+- Scope: shared-write fail-closed health signaling, repo-to-vault catalog expansion for backlog/roadmap/incident templates, local/production profile alignment toward canonical shared `/mcp`
+- Impacted Routes: `GET /api/bot/agent/obsidian/runtime`, `GET /api/bot/agent/runtime/knowledge-control-plane`, MCP `obsidian.adapter.status`
+- Impacted Services: `src/services/obsidian/router.ts`, `src/services/obsidian/router.test.ts`, `config/runtime/knowledge-backfill-catalog.json`, `config/env/production.profile.env`, `config/env/local-first-hybrid.profile.env`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: read/search behavior is unchanged. Obsidian health now fails closed when remote MCP is configured but writes are still routed away from `remote-mcp`, more planning/incident artifacts are eligible for canonical vault backfill, and profile defaults now prefer canonical shared `/mcp` while preserving the legacy env alias name.
+- Validation: `npx vitest run src/services/obsidian/router.test.ts`, `npx tsc --noEmit`
+
+## 2026-04-10 - Shared MCP Canonical Team Access Promotion
+
+- Why: the remote Obsidian path had already become operational, but key env examples, contracts, and IDE routing guidance still left room for local-vault-first interpretation. That weakened the goal of making the shared MCP surface the default team and agent reference plane.
+- Scope: remote MCP diagnostics enrichment, canonical shared ingress visibility, `.env.example` shared MCP defaults, IDE routing/doc contract alignment toward shared vault access
+- Impacted Routes: `GET /api/bot/agent/obsidian/runtime`, MCP `obsidian.adapter.status`
+- Impacted Services: `src/services/obsidian/adapters/remoteMcpAdapter.ts`, `.env.example`, `docs/contracts/MEMORY_TO_OBSIDIAN.md`, `docs/contracts/OBSIDIAN_READ_LOOP.md`, `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `.github/instructions/mcp-routing.instructions.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: additive diagnostics and doc/env alignment only. Existing `/obsidian` compatibility ingress remains valid, but shared/team workflows now treat `/mcp` and `MCP_SHARED_MCP_URL` as the canonical path.
+- Validation: `npx vitest run src/services/obsidian/adapters/remoteMcpAdapter.test.ts`, `npx tsc --noEmit`
+
+## 2026-04-10 - Human-First Obsidian Access Profile + Vault Coverage Verification
+
+- Why: the vault and knowledge-control surface had become usable as a runtime memory plane, but neither operators nor the agent had a single machine-readable answer for which repo docs are human-primary, which ones should seed autonomous reference, and whether those canonical docs are actually present in the live vault.
+- Scope: human-first repo-to-vault catalog policy, operator/agent entrypoint metadata, vault coverage reporting for system backfill, knowledge-control surface enrichment, sprint prompt injection for human-first reference paths
+- Impacted Routes: `GET /api/bot/agent/obsidian/knowledge-control`, `GET /api/bot/agent/runtime/loops` via embedded `knowledgeControl`, MCP `obsidian.knowledge.control`
+- Impacted Services: `config/runtime/knowledge-backfill-catalog.json`, `scripts/backfill-obsidian-system.ts`, `src/services/obsidian/knowledgeCompilerService.ts`, `src/services/sprint/sprintPreamble.ts`, `package.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: additive metadata only. Existing backfill, runtime, and MCP surfaces remain backward-compatible while gaining a human-first access policy and vault coverage snapshot. No write-path routing behavior changes in this slice.
+- Validation: `npm run test:obsidian -- --runInBand` equivalent targeted coverage via Vitest on touched obsidian services, `npx tsc --noEmit`, `npm run obsidian:backfill:system:report`, `npm run obsidian:backfill:system`, `npm run retrieval:bootstrap -- --source catalog --guild 1284113159191269386`
+
+## 2026-04-10 - Obsidian Operating System Blueprint, Object Model, and Transition Plan
+
+- Why: the repository had already moved toward Obsidian as a runtime-visible knowledge/control surface, but the intended end state was still implicit across runbook prose, roadmap notes, and runtime routes. A vault-first operating blueprint makes the design goal inspectable before additional loops and schemas deepen drift.
+- Scope: Obsidian-centered target-state architecture, canonical object families for the vault, phased transition plan, planning index sync, execution-board linkage, architecture index references
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`, `docs/planning/OBSIDIAN_OBJECT_MODEL.md`, `docs/planning/OBSIDIAN_TRANSITION_PLAN.md`, `docs/planning/README.md`, `docs/planning/EXECUTION_BOARD.md`, `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `docs/ARCHITECTURE_INDEX.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed in this slice. The new documents define the intended semantic owner model: evidence remains immutable, canonical object meaning belongs in the vault, runtime surfaces mirror that graph, and Supabase/cache layers remain derived acceleration planes rather than semantic authorities.
+- Validation: consistency review against `docs/ARCHITECTURE_INDEX.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/contracts/OBSIDIAN_READ_LOOP.md`, `docs/planning/PLATFORM_CONTROL_TOWER.md`, `docs/planning/EXECUTION_BOARD.md`
+
+## 2026-04-10 - Knowledge Control 4-Plane Blueprint Surface
+
+- Why: the vault gained service, quality, customer, incident, and improvement notes quickly, but operators still lacked a runtime-visible architectural overlay and a reflection-bundle hint system to tell control truth, runtime truth, record evidence, and learning rules apart.
+- Scope: knowledge-control surface metadata, control-tower artifact resolution, refined guild/sprint-journal reflection bundle classification, caller-facing next-path exposure for subscription/topology/journal/telemetry/reward writes, write-path bundle consumption for guild/system/retro notes, structured reflection artifacts for obsidian guild-doc action results, runner/outcome-side reflection consumption for follow-up guidance, vault schema registry expansion, runtime test contract updates
+- Follow-up: `ops-execution` now preserves additive action outcomes and pushes them into live `shadowGraph.outcomes`, so reflection guidance survives beyond runner text output and becomes visible in runtime session state.
+- Follow-up: sprint `plan|review|qa` phases now auto-inject knowledge-control and operating-baseline context, `GET /agent/runtime/knowledge-control-plane` now exposes the machine-readable operating baseline alongside control-surface metadata, and the repo ships a canonical backfill catalog plus CLI/bootstrap scripts for system-doc wiki seeding and retrieval-eval coverage.
+- Follow-up: system backfill now skips existing canonical vault notes by default unless overwrite is explicitly requested, and retrieval bootstrap resolves guild-relative eval targets from synced source metadata so target paths match live vault layouts.
+- Follow-up: MCP `obsidian.adapter.status` and the runtime knowledge-control snapshot now surface remote vault runtime details plus a local-vs-remote desktop parity check, so remote-mcp writes can be evaluated against the user-visible desktop vault instead of being treated as implicitly equivalent.
+- Follow-up: `writeObsidianNoteWithAdapter()` no longer degrades across adapters after a primary write failure. A failed remote write now stays failed instead of silently succeeding through `local-fs`, preserving same-vault write semantics for desktop/mobile Obsidian visibility.
+- Impacted Routes: `GET /api/bot/agent/obsidian/knowledge-control`, MCP `obsidian.knowledge.control`
+- Impacted Services: `src/services/obsidian/knowledgeCompilerService.ts`, `src/services/obsidian/authoring.ts`, `src/services/obsidian/obsidianRagService.ts`, `src/services/skills/actions/obsidian.ts`, `src/services/skills/actionRunner.ts`, `src/services/agent/agentOutcomeContract.ts`, `src/services/discord-support/discordChannelTelemetryService.ts`, `src/services/discord-support/discordReactionRewardService.ts`, `src/mcp/obsidianToolAdapter.ts`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: existing `artifactPaths` remain backward-compatible; new `controlPaths`, `blueprint`, `bundleSupport`, `pathIndex`, and optional `bundle` response fields are additive. Successful guild/system writes and retro writes now attach additive reflection-bundle metadata for downstream verification or logging. Guild-scoped event notes now prefer lore/history/decision hubs over customer ledgers by default, while `guilds/*/sprint-journal/*` notes resolve as learning-plane artifacts. Artifact resolution now accepts `blueprint|canonical-map|cadence|gate-entrypoints` aliases. Generic action result contracts remain unchanged; structured reflection is emitted additively through existing `artifacts` and verification/log channels, then consumed by runner display and AgentOutcome follow-up guidance rather than shown as raw payloads.
+- Validation: `npx vitest run src/services/obsidian/knowledgeCompilerService.test.ts src/mcp/obsidianToolAdapter.test.ts src/routes/botAgentObsidianRuntime.test.ts src/services/obsidian/authoring.test.ts src/services/skills/actions/obsidian.test.ts`, `npx vitest run src/services/discord-support/discordChannelTelemetryService.test.ts src/services/discord-support/discordReactionRewardService.test.ts src/services/skills/actions/obsidian.test.ts`, `npx tsc --noEmit`
+
+## 2026-04-10 - Operating Runtime Manifest Baseline
+
+- Why: GCP machine profile, canonical worker endpoints, always-on required services, and local-only acceleration lanes were drifting across runbooks and deploy notes. A machine-readable runtime manifest reduces contract drift and keeps readiness interpretation consistent.
+- Scope: runtime baseline manifest, repo-managed Caddy ingress template, LF-enforced deployment file attributes, GCP worker cost/health reporting, local hybrid readiness output, runbook/control-tower/GCP deployment docs
+- Impacted Routes: N/A
+- Impacted Services: `.gitattributes`, `scripts/archive/report-gcp-worker-cost-health.mjs`, `scripts/archive/check-local-hybrid-readiness.mjs`, `scripts/deploy-gcp-workers.sh`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: `env:check:local-hybrid` remains a local readiness check only; operators must still use unattended-health plus remote worker/LiteLLM/remote-mcp health for always-on decisions. Caddy public ingress is now path-prefix based and should be treated as repo-managed config.
+- Validation: `gcloud compute instances describe instance-20260319-223412 --project gen-lang-client-0405212361 --zone us-central1-c --format="get(machineType)"`, `npm run ops:gcp:report:weekly`, `npm run ops:gcp:report:monthly`
+
 ## 2026-04-10 - Obsidian Knowledge Control Plane + Compatibility Surface Hardening
 
 - Why: shared-vault metadata, knowledge compiler artifacts, unattended inbox answering, and the restored Discord ask alias all became real runtime surfaces, but operators still lacked a single documented control-plane view and rollback toggles for them.

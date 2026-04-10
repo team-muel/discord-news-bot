@@ -1,0 +1,27 @@
+__WORKER_HOST__ {
+  handle_path /mcp/* {
+    reverse_proxy 127.0.0.1:8850
+  }
+
+  handle_path /architect/* {
+    reverse_proxy 127.0.0.1:8791
+  }
+
+  handle_path /review/* {
+    reverse_proxy 127.0.0.1:8792
+  }
+
+  handle_path /operate/* {
+    reverse_proxy 127.0.0.1:8793
+  }
+
+  handle_path /openjarvis/* {
+    reverse_proxy 127.0.0.1:8000
+  }
+
+  handle_path /obsidian/* {
+    reverse_proxy 127.0.0.1:8850
+  }
+
+  reverse_proxy 127.0.0.1:8787
+}

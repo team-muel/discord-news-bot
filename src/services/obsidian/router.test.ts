@@ -42,6 +42,10 @@ vi.mock('./adapters/remoteMcpAdapter.ts', () => ({
     enabled: false,
     configured: false,
     baseUrl: null,
+    baseUrlSource: 'unconfigured',
+    canonicalBaseUrl: null,
+    compatibilityBaseUrl: null,
+    usesCanonicalSharedIngress: false,
     authConfigured: false,
     lastToolName: null,
     lastSuccessAt: null,
@@ -62,6 +66,10 @@ vi.mock('./adapters/remoteMcpAdapter.ts', () => ({
     enabled: false,
     configured: false,
     baseUrl: null,
+    baseUrlSource: 'unconfigured',
+    canonicalBaseUrl: null,
+    compatibilityBaseUrl: null,
+    usesCanonicalSharedIngress: false,
     authConfigured: false,
     lastToolName: null,
     lastSuccessAt: null,
@@ -88,12 +96,16 @@ vi.mock('./adapters/localFsAdapter.ts', () => ({
 vi.mock('../observability/outcomeSignal', () => ({
   logOutcomeSignal: vi.fn(),
 }));
-vi.mock('../../utils/env', () => ({
-  parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
-  parseIntegerEnv: (_v: unknown, fallback: number) => fallback,
-  parseMinIntEnv: (_v: unknown, fallback: number, min: number) => Math.max(min, fallback),
-  parseCsvList: (v: unknown) => String(v || '').split(',').map((s: string) => s.trim()).filter(Boolean),
-}));
+vi.mock('../../utils/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/env')>();
+  return {
+    ...actual,
+    parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
+    parseIntegerEnv: (_v: unknown, fallback: number) => fallback,
+    parseMinIntEnv: (_v: unknown, fallback: number, min: number) => Math.max(min, fallback),
+    parseCsvList: (v: unknown) => String(v || '').split(',').map((s: string) => s.trim()).filter(Boolean),
+  };
+});
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -120,6 +132,10 @@ describe('Obsidian Router', () => {
       enabled: false,
       configured: false,
       baseUrl: null,
+      baseUrlSource: 'unconfigured',
+      canonicalBaseUrl: null,
+      compatibilityBaseUrl: null,
+      usesCanonicalSharedIngress: false,
       authConfigured: false,
       lastToolName: null,
       lastSuccessAt: null,
@@ -181,6 +197,10 @@ describe('Obsidian Router', () => {
         enabled: true,
         configured: true,
         baseUrl: 'http://remote.test',
+        baseUrlSource: 'shared-mcp',
+        canonicalBaseUrl: 'http://remote.test',
+        compatibilityBaseUrl: null,
+        usesCanonicalSharedIngress: true,
         authConfigured: true,
         lastToolName: 'obsidian.search',
         lastSuccessAt: null,
@@ -204,6 +224,40 @@ describe('Obsidian Router', () => {
       expect(status.selectedByCapability.search_vault).toBe('native-cli');
       expect(status.effectiveOrderByCapability.search_vault).toEqual(['native-cli', 'local-fs', 'remote-mcp']);
       expect(status.adapters.find((entry) => entry.id === 'remote-mcp')?.deprioritized).toBe(true);
+    });
+  });
+
+  describe('getObsidianVaultHealthStatus', () => {
+    it('fails closed when remote MCP is configured but shared write is not selected', () => {
+      vi.mocked(remoteMcpModule.getRemoteMcpAdapterDiagnostics).mockReturnValue({
+        enabled: true,
+        configured: true,
+        baseUrl: 'http://remote.test',
+        baseUrlSource: 'shared-mcp',
+        canonicalBaseUrl: 'http://remote.test',
+        compatibilityBaseUrl: null,
+        usesCanonicalSharedIngress: true,
+        authConfigured: true,
+        lastToolName: null,
+        lastSuccessAt: null,
+        lastErrorAt: null,
+        lastError: null,
+        consecutiveFailures: 0,
+        lastProbeAt: null,
+        lastProbe: {
+          reachable: null,
+          authValid: null,
+          toolDiscoveryOk: null,
+          remoteObsidianStatusOk: null,
+          error: null,
+        },
+        remoteAdapterRuntime: null,
+      });
+
+      const status = router.getObsidianVaultHealthStatus();
+
+      expect(status.healthy).toBe(false);
+      expect(status.issues).toContain('Remote MCP is configured but write_note routes to native-cli — shared/team vault writes are not active');
     });
   });
 
@@ -313,6 +367,20 @@ describe('Obsidian Router', () => {
       expect(localFsMock.searchVault).toHaveBeenCalledTimes(1);
       expect(results[0].filePath).toContain('local-fs');
     });
+
+    it('allows explicit vault-path searches to use local-fs even when env-based availability is false', async () => {
+      nativeMock.isAvailable = () => false;
+      localFsMock.isAvailable = () => false;
+
+      const results = await router.searchObsidianVaultWithAdapter({
+        vaultPath: '/explicit-vault',
+        query: 'fallback search',
+        limit: 5,
+      });
+
+      expect(localFsMock.searchVault).toHaveBeenCalledTimes(1);
+      expect(results[0].filePath).toContain('local-fs');
+    });
   });
 
   describe('readObsidianLoreWithAdapter — primary exception', () => {
@@ -386,7 +454,7 @@ describe('Obsidian Router', () => {
     });
   });
 
-  describe('writeObsidianNoteWithAdapter — failover', () => {
+  describe('writeObsidianNoteWithAdapter — primary target preservation', () => {
     it('writes via primary adapter', async () => {
       const result = await router.writeObsidianNoteWithAdapter({
         guildId: 'g1',
@@ -401,7 +469,7 @@ describe('Obsidian Router', () => {
       }));
     });
 
-    it('falls back when primary throws', async () => {
+    it('returns null when primary throws instead of writing through a fallback adapter', async () => {
       (nativeMock.writeNote as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('write failed'));
 
       const result = await router.writeObsidianNoteWithAdapter({
@@ -411,8 +479,38 @@ describe('Obsidian Router', () => {
         content: 'This is valid content for the fallback adapter write test.',
       });
 
-      // script-cli doesn't support write_note, should fallback to local-fs
+      expect(result).toBeNull();
+      expect(localFsMock.writeNote).not.toHaveBeenCalled();
+      expect(runKnowledgeCompilationForNote).not.toHaveBeenCalled();
+    });
+
+    it('still writes via local-fs when local-fs is the selected primary adapter', async () => {
+      nativeMock.isAvailable = () => false;
+
+      const result = await router.writeObsidianNoteWithAdapter({
+        guildId: 'g1',
+        vaultPath: '/vault',
+        fileName: 'new.md',
+        content: 'This is valid content for a local-primary write path.',
+      });
+
       expect(result).toEqual({ path: 'local-fs/written.md' });
+      expect(localFsMock.writeNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats explicit vault paths as sufficient for local-fs writes even when env-based availability is false', async () => {
+      nativeMock.isAvailable = () => false;
+      localFsMock.isAvailable = () => false;
+
+      const result = await router.writeObsidianNoteWithAdapter({
+        guildId: 'g1',
+        vaultPath: '/explicit-vault',
+        fileName: 'ops/services/gcp-worker/PROFILE.md',
+        content: 'This explicit vault path should still allow a local-fs write when the caller provides the vault root directly.',
+      });
+
+      expect(result).toEqual({ path: 'local-fs/written.md' });
+      expect(localFsMock.writeNote).toHaveBeenCalledTimes(1);
     });
 
     it('returns null when no adapter can write', async () => {
@@ -421,7 +519,7 @@ describe('Obsidian Router', () => {
 
       const result = await router.writeObsidianNoteWithAdapter({
         guildId: 'g1',
-        vaultPath: '/vault',
+        vaultPath: '',
         fileName: 'new.md',
         content: 'This is valid content but no adapter is available to write it.',
       });
@@ -449,11 +547,11 @@ describe('Obsidian Router', () => {
       localFsMock.isAvailable = () => false;
 
       const [lore, search, file, graph, write] = await Promise.all([
-        router.readObsidianLoreWithAdapter({ guildId: 'g1', goal: 'test', vaultPath: '/v' }),
-        router.searchObsidianVaultWithAdapter({ vaultPath: '/v', query: 'test', limit: 5 }),
-        router.readObsidianFileWithAdapter({ vaultPath: '/v', filePath: 'test.md' }),
-        router.getObsidianGraphMetadataWithAdapter({ vaultPath: '/v' }),
-        router.writeObsidianNoteWithAdapter({ guildId: 'g1', vaultPath: '/v', fileName: 'x', content: '' }),
+        router.readObsidianLoreWithAdapter({ guildId: 'g1', goal: 'test', vaultPath: '' }),
+        router.searchObsidianVaultWithAdapter({ vaultPath: '', query: 'test', limit: 5 }),
+        router.readObsidianFileWithAdapter({ vaultPath: '', filePath: 'test.md' }),
+        router.getObsidianGraphMetadataWithAdapter({ vaultPath: '' }),
+        router.writeObsidianNoteWithAdapter({ guildId: 'g1', vaultPath: '', fileName: 'x', content: '' }),
       ]);
 
       expect(lore).toEqual([]);
@@ -518,6 +616,22 @@ describe('Obsidian Router', () => {
       expect(passedParams.content).toContain('This is a perfectly normal note about TypeScript best practices and project architecture');
     });
 
+    it('allows link-heavy internal backfill content only when explicitly enabled', async () => {
+      const linkHeavyContent = Array.from({ length: 12 }, (_, index) => `https://example.com/${index + 1}`).join('\n');
+
+      const result = await router.writeObsidianNoteWithAdapter({
+        guildId: 'system',
+        vaultPath: '/vault',
+        fileName: 'ops/services/gcp-worker/PROFILE.md',
+        content: linkHeavyContent,
+        trustedSource: true,
+        allowHighLinkDensity: true,
+      });
+
+      expect(result).toEqual({ path: 'native-cli/written.md' });
+      expect(nativeMock.writeNote).toHaveBeenCalledTimes(1);
+    });
+
     it('strips control characters from content before writing', async () => {
       const result = await router.writeObsidianNoteWithAdapter({
         guildId: 'g1',
@@ -532,6 +646,19 @@ describe('Obsidian Router', () => {
       expect(passedParams.content).not.toContain('\x01');
       expect(passedParams.content).not.toContain('\x1f');
       expect(passedParams.content).toContain('title: dirty');
+    });
+  });
+
+  describe('listObsidianFilesWithAdapter', () => {
+    it('treats non-array adapter payloads as empty results', async () => {
+      if (!(localFsMock.capabilities as string[]).includes('files_list')) {
+        (localFsMock.capabilities as string[]).push('files_list');
+      }
+      localFsMock.listFiles = vi.fn(async () => ({ items: [] } as any));
+
+      const result = await router.listObsidianFilesWithAdapter('/vault', 'retros', 'md');
+
+      expect(result).toEqual([]);
     });
   });
 });

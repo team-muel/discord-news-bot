@@ -1,6 +1,7 @@
 import type { SkillExecutionResult, SkillContext } from '../types';
 import { runSkillText } from './common';
 import { runGoalActions } from '../actionRunner';
+import { toAgentOutcome } from '../../agent/agentOutcomeContract';
 import { parseBooleanEnv } from '../../../utils/env';
 
 const REACT_REFLECT_ON_ACTION_FAILURE_ENABLED = parseBooleanEnv(process.env.REACT_REFLECT_ON_ACTION_FAILURE_ENABLED, true);
@@ -40,6 +41,14 @@ const maybeBuildYouTubeResult = (goal: string): string | null => {
   ].join('\n');
 };
 
+const buildSkillOutcomes = (actionResult: Awaited<ReturnType<typeof runGoalActions>>): SkillExecutionResult['outcomes'] => {
+  if (!Array.isArray(actionResult.actionResults) || actionResult.actionResults.length === 0) {
+    return undefined;
+  }
+
+  return actionResult.actionResults.map((result) => toAgentOutcome(result));
+};
+
 export const executeOpsExecutionSkill = async (context: SkillContext): Promise<SkillExecutionResult> => {
   if (shouldAttemptActionRunner(context.goal)) {
     const actionResult = await runGoalActions({
@@ -47,8 +56,10 @@ export const executeOpsExecutionSkill = async (context: SkillContext): Promise<S
       guildId: context.guildId,
       requestedBy: context.requestedBy,
     });
+    const outcomes = buildSkillOutcomes(actionResult);
+
     if (actionResult.handled && actionResult.hasSuccess) {
-      return { skillId: 'ops-execution', output: actionResult.output };
+      return { skillId: 'ops-execution', output: actionResult.output, outcomes };
     }
 
     if (actionResult.handled && !actionResult.hasSuccess && actionResult.externalUnavailable) {
@@ -69,7 +80,7 @@ export const executeOpsExecutionSkill = async (context: SkillContext): Promise<S
         maxTokens: 900,
       });
 
-      return { skillId: 'ops-execution', output: fallback };
+      return { skillId: 'ops-execution', output: fallback, outcomes };
     }
 
     if (actionResult.handled && !actionResult.hasSuccess && REACT_REFLECT_ON_ACTION_FAILURE_ENABLED) {
@@ -92,7 +103,7 @@ export const executeOpsExecutionSkill = async (context: SkillContext): Promise<S
         maxTokens: 900,
       });
 
-      return { skillId: 'ops-execution', output: reflected };
+      return { skillId: 'ops-execution', output: reflected, outcomes };
     }
   }
 

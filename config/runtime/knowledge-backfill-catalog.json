@@ -1,0 +1,515 @@
+{
+  "schemaVersion": 2,
+  "updatedAt": "2026-04-10",
+  "description": "Repository-source backfill catalog for canonical Obsidian system docs, operating-model docs, and retrieval-eval targets.",
+  "policy": {
+    "humanFirst": true,
+    "rules": [
+      "Start with operator-primary canonical docs before generated knowledge-control artifacts.",
+      "Treat generated ops/knowledge-control pages as navigation aids and evidence support, not as the first semantic source.",
+      "When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries."
+    ],
+    "avoidAsPrimary": [
+      "ops/knowledge-control/INDEX.md",
+      "ops/knowledge-control/LOG.md",
+      "ops/knowledge-control/LINT.md"
+    ]
+  },
+  "entries": [
+    {
+      "id": "control-blueprint",
+      "title": "Platform Control Tower Blueprint",
+      "sourcePath": "docs/planning/PLATFORM_CONTROL_TOWER.md",
+      "targetPath": "ops/control-tower/BLUEPRINT.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "architecture", "knowledge-control"],
+      "intent": "architecture",
+      "queries": [
+        "platform control tower blueprint",
+        "4-plane control tower",
+        "knowledge control blueprint"
+      ]
+    },
+    {
+      "id": "control-architecture-index",
+      "title": "Architecture Index",
+      "sourcePath": "docs/ARCHITECTURE_INDEX.md",
+      "targetPath": "ops/control-tower/ARCHITECTURE_INDEX.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "architecture", "runtime-truth"],
+      "intent": "architecture",
+      "queries": [
+        "architecture index",
+        "runtime architecture index",
+        "current runtime structure"
+      ]
+    },
+    {
+      "id": "control-canonical-map",
+      "title": "Runtime Name And Surface Matrix",
+      "sourcePath": "docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md",
+      "targetPath": "ops/control-tower/CANONICAL_MAP.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "canonical", "runtime-surface"],
+      "intent": "architecture",
+      "queries": [
+        "canonical runtime surface map",
+        "runtime name and surface matrix",
+        "canonical map for runtime names"
+      ]
+    },
+    {
+      "id": "control-cadence",
+      "title": "Operations 24 7",
+      "sourcePath": "docs/OPERATIONS_24_7.md",
+      "targetPath": "ops/control-tower/CADENCE.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "operations", "cadence"],
+      "intent": "operations",
+      "queries": [
+        "24 7 operations cadence",
+        "operational review cadence",
+        "always-on operations procedure"
+      ]
+    },
+    {
+      "id": "control-gate-entrypoints",
+      "title": "Runbook Muel Platform",
+      "sourcePath": "docs/RUNBOOK_MUEL_PLATFORM.md",
+      "targetPath": "ops/control-tower/GATE_ENTRYPOINTS.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "runbook", "gates"],
+      "intent": "operations",
+      "queries": [
+        "gate entrypoints runbook",
+        "operator gate entrypoints",
+        "muel platform runbook"
+      ]
+    },
+    {
+      "id": "control-decision-table",
+      "title": "Operator SOP Decision Table",
+      "sourcePath": "docs/OPERATOR_SOP_DECISION_TABLE.md",
+      "targetPath": "ops/quality/DECISION_TABLE.md",
+      "plane": "control",
+      "concern": "quality-control",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "operations", "decision-table"],
+      "intent": "operations",
+      "queries": [
+        "operator sop decision table",
+        "runtime decision thresholds",
+        "operator decision table"
+      ]
+    },
+    {
+      "id": "service-unified-mcp-profile",
+      "title": "IDE MCP Workspace Setup",
+      "sourcePath": "docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md",
+      "targetPath": "ops/services/unified-mcp/PROFILE.md",
+      "plane": "runtime",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "mcp", "service-profile"],
+      "intent": "operations",
+      "queries": [
+        "shared unified mcp profile",
+        "gcp compute mcp workspace setup",
+        "unified mcp service profile"
+      ]
+    },
+    {
+      "id": "service-mcp-tool-spec",
+      "title": "MCP Tool Spec",
+      "sourcePath": "docs/planning/mcp/MCP_TOOL_SPEC.md",
+      "targetPath": "ops/services/unified-mcp/TOOL_SPEC.md",
+      "plane": "runtime",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "mcp", "tool-spec"],
+      "intent": "operations",
+      "queries": [
+        "mcp tool spec",
+        "indexing overlap matrix",
+        "local overlay indexing rules"
+      ]
+    },
+    {
+      "id": "service-gcp-worker-profile",
+      "title": "GCP Opencode Worker VM Deploy",
+      "sourcePath": "docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md",
+      "targetPath": "ops/services/gcp-worker/PROFILE.md",
+      "plane": "runtime",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "gcp", "worker"],
+      "intent": "operations",
+      "queries": [
+        "gcp worker profile",
+        "opencode worker vm deploy",
+        "gcp worker always-on profile"
+      ]
+    },
+    {
+      "id": "service-openjarvis-profile",
+      "title": "GCP OSS Integration Blueprint",
+      "sourcePath": "docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md",
+      "targetPath": "ops/services/openjarvis/PROFILE.md",
+      "plane": "runtime",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "openjarvis", "service-profile"],
+      "intent": "operations",
+      "queries": [
+        "openjarvis operating profile",
+        "gcp oss integration blueprint",
+        "openjarvis always-on lane"
+      ]
+    },
+    {
+      "id": "plan-execution-board",
+      "title": "Execution Board",
+      "sourcePath": "docs/planning/EXECUTION_BOARD.md",
+      "targetPath": "plans/execution/EXECUTION_BOARD.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["plan", "execution", "board"],
+      "intent": "memory",
+      "queries": [
+        "execution board planning",
+        "current execution board",
+        "platform execution priorities"
+      ]
+    },
+    {
+      "id": "plan-remote-only",
+      "title": "Remote Only Autonomy Implementation",
+      "sourcePath": "docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md",
+      "targetPath": "plans/runtime/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "runtime", "autonomy"],
+      "intent": "architecture",
+      "queries": [
+        "remote only autonomy plan",
+        "remote only autonomy implementation",
+        "runtime remote-only plan"
+      ]
+    },
+    {
+      "id": "plan-local-hybrid",
+      "title": "Local First Hybrid Autonomy",
+      "sourcePath": "docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md",
+      "targetPath": "plans/runtime/LOCAL_FIRST_HYBRID_AUTONOMY.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "runtime", "hybrid"],
+      "intent": "architecture",
+      "queries": [
+        "local first hybrid autonomy",
+        "hybrid autonomy plan",
+        "local hybrid readiness plan"
+      ]
+    },
+    {
+      "id": "plan-sprint-backlog",
+      "title": "Sprint Backlog Memory Agent",
+      "sourcePath": "docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md",
+      "targetPath": "plans/execution/SPRINT_BACKLOG_MEMORY_AGENT.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["plan", "backlog", "execution"],
+      "intent": "memory",
+      "queries": [
+        "sprint backlog memory agent",
+        "active sprint backlog",
+        "current execution backlog"
+      ]
+    },
+    {
+      "id": "plan-roadmap-social-ops",
+      "title": "Unified Roadmap Social Ops 2026Q2",
+      "sourcePath": "docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md",
+      "targetPath": "plans/strategy/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "roadmap", "strategy"],
+      "intent": "architecture",
+      "queries": [
+        "social ops roadmap",
+        "unified roadmap 2026 q2",
+        "platform strategy roadmap"
+      ]
+    },
+    {
+      "id": "incident-comms-playbook",
+      "title": "Oncall Comms Playbook",
+      "sourcePath": "docs/ONCALL_COMMS_PLAYBOOK.md",
+      "targetPath": "ops/incidents/ONCALL_COMMS_PLAYBOOK.md",
+      "plane": "control",
+      "concern": "incident-response",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["ops", "incident", "comms"],
+      "intent": "operations",
+      "queries": [
+        "oncall comms playbook",
+        "incident communications playbook",
+        "operator incident comms"
+      ]
+    },
+    {
+      "id": "incident-template",
+      "title": "Oncall Incident Template",
+      "sourcePath": "docs/ONCALL_INCIDENT_TEMPLATE.md",
+      "targetPath": "ops/incidents/ONCALL_INCIDENT_TEMPLATE.md",
+      "plane": "control",
+      "concern": "incident-response",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["ops", "incident", "template"],
+      "intent": "operations",
+      "queries": [
+        "oncall incident template",
+        "incident template",
+        "operator incident draft template"
+      ]
+    },
+    {
+      "id": "postmortem-template",
+      "title": "Postmortem Template",
+      "sourcePath": "docs/POSTMORTEM_TEMPLATE.md",
+      "targetPath": "ops/improvement/POSTMORTEM_TEMPLATE.md",
+      "plane": "learning",
+      "concern": "incident-learning",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["ops", "postmortem", "template"],
+      "intent": "operations",
+      "queries": [
+        "postmortem template",
+        "incident postmortem template",
+        "retro postmortem template"
+      ]
+    },
+    {
+      "id": "obsidian-os-blueprint",
+      "title": "Obsidian Operating System Blueprint",
+      "sourcePath": "docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md",
+      "targetPath": "ops/control-tower/OBSIDIAN_OPERATING_SYSTEM.md",
+      "plane": "control",
+      "concern": "obsidian-operating-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "obsidian", "operating-system"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian operating system blueprint",
+        "vault first operating system",
+        "obsidian operating model blueprint"
+      ]
+    },
+    {
+      "id": "obsidian-object-model",
+      "title": "Obsidian Object Model",
+      "sourcePath": "docs/planning/OBSIDIAN_OBJECT_MODEL.md",
+      "targetPath": "ops/control-tower/OBSIDIAN_OBJECT_MODEL.md",
+      "plane": "control",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "obsidian", "schema"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian object model",
+        "vault object schema",
+        "canonical vault object families"
+      ]
+    },
+    {
+      "id": "obsidian-transition-plan",
+      "title": "Obsidian Transition Plan",
+      "sourcePath": "docs/planning/OBSIDIAN_TRANSITION_PLAN.md",
+      "targetPath": "plans/runtime/OBSIDIAN_TRANSITION_PLAN.md",
+      "plane": "learning",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["plan", "obsidian", "transition"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian transition plan",
+        "vault operating model transition",
+        "obsidian operating system migration plan"
+      ]
+    },
+    {
+      "id": "obsidian-development-archaeology",
+      "title": "Obsidian Development Archaeology",
+      "sourcePath": "docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md",
+      "targetPath": "ops/control-tower/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md",
+      "plane": "control",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "obsidian", "development-archaeology"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian development archaeology",
+        "repo wikiization rules",
+        "repository context and development slice policy"
+      ]
+    },
+    {
+      "id": "repo-context-discord-news-bot",
+      "title": "Repository Context - team-muel/discord-news-bot",
+      "sourcePath": "docs/planning/contexts/team-muel_discord-news-bot.md",
+      "targetPath": "ops/contexts/repos/team-muel_discord-news-bot.md",
+      "plane": "control",
+      "concern": "development-archaeology",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["context", "repository", "development-archaeology"],
+      "intent": "architecture",
+      "queries": [
+        "repository context discord news bot",
+        "team muel discord news bot repo context",
+        "primary runtime repo context"
+      ]
+    },
+    {
+      "id": "dev-slice-obsidian-archaeology-wikiization",
+      "title": "Development Slice - Obsidian Development Archaeology Wikiization",
+      "sourcePath": "docs/planning/development/2026-04-10_obsidian-development-archaeology-wikiization.md",
+      "targetPath": "plans/development/2026-04-10_obsidian-development-archaeology-wikiization.md",
+      "plane": "learning",
+      "concern": "development-archaeology",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["development", "archaeology", "slice"],
+      "intent": "memory",
+      "queries": [
+        "development archaeology wikiization slice",
+        "obsidian archaeology rollout",
+        "repo context seed slice"
+      ]
+    },
+    {
+      "id": "learning-reflection-rule",
+      "title": "Knowledge Reflection Pipeline Rule",
+      "sourcePath": "docs/CHANGELOG-ARCH.md",
+      "sectionHeading": "## 2026-04-10 - Knowledge Control 4-Plane Blueprint Surface",
+      "targetPath": "ops/improvement/rules/knowledge-reflection-pipeline.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "agent-support",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["learning", "reflection", "rule"],
+      "intent": "memory",
+      "queries": [
+        "knowledge reflection pipeline",
+        "reflection bundle rule",
+        "knowledge control reflection guidance"
+      ]
+    },
+    {
+      "id": "retro-sprint-42",
+      "title": "Sprint 42 Retro",
+      "sourcePath": "retros/2026-04-05_retro_sprint-42 retro.md",
+      "targetPath": "retros/2026-04-05_retro_sprint-42.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "agent-support",
+      "canonical": false,
+      "startHere": false,
+      "agentReference": false,
+      "tags": ["retro", "sprint", "learning"],
+      "intent": "memory",
+      "queries": [
+        "sprint 42 retro",
+        "retro lessons sprint 42",
+        "what broke in sprint 42"
+      ]
+    }
+  ]
+}

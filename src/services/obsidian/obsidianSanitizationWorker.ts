@@ -78,6 +78,7 @@ export const sanitizeForObsidianWrite = (params: {
   sourceRef?: unknown;
   excerpt?: unknown;
   trustedSource?: boolean;
+  allowHighLinkDensity?: boolean;
 }): ObsidianSanitizeResult => {
   const cleaned = {
     title: params.title == null ? null : sanitizeInlineText(params.title, 160),
@@ -111,7 +112,7 @@ export const sanitizeForObsidianWrite = (params: {
   }
 
   const links = countLinks(corpus);
-  if (links > SANITIZER_MAX_LINKS) {
+  if (links > SANITIZER_MAX_LINKS && !params.allowHighLinkDensity) {
     reasons.push('too_many_links');
   }
 

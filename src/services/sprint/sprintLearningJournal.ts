@@ -13,7 +13,7 @@
 
 import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
-import { upsertObsidianGuildDocument } from '../obsidian/authoring';
+import { summarizeReflectionBundle, type ObsidianAuthoringWriteResult, upsertObsidianGuildDocument } from '../obsidian/authoring';
 import { searchObsidianVaultWithAdapter, readObsidianFileWithAdapter } from '../obsidian/router';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
@@ -81,6 +81,12 @@ export type PipelineMutation = {
   log: string[];
 };
 
+export type SprintJournalWriteResult = {
+  ok: boolean;
+  path: string | null;
+  reflectionBundle?: ObsidianAuthoringWriteResult['reflectionBundle'];
+};
+
 // ──── Write: Record sprint retro to Obsidian ──────────────────────────────────
 
 const formatJournalMarkdown = (entry: JournalEntry): string => {
@@ -146,8 +152,8 @@ const buildJournalTags = (entry: JournalEntry): string[] => {
 
 // ──── Supabase fallback: write ────────────────────────────────────────────────
 
-const writeJournalToSupabase = async (entry: JournalEntry): Promise<{ ok: boolean; path: string | null }> => {
-  if (!isSupabaseConfigured()) return { ok: false, path: null };
+const writeJournalToSupabase = async (entry: JournalEntry): Promise<SprintJournalWriteResult> => {
+  if (!isSupabaseConfigured()) return { ok: false, path: null, reflectionBundle: null };
 
   try {
     const client = getSupabaseClient();
@@ -174,10 +180,10 @@ const writeJournalToSupabase = async (entry: JournalEntry): Promise<{ ok: boolea
 
     const path = `supabase://${JOURNAL_TABLE}/${entry.sprintId}`;
     logger.info('[SPRINT-JOURNAL] recorded entry via Supabase for sprint=%s', entry.sprintId);
-    return { ok: true, path };
+    return { ok: true, path, reflectionBundle: null };
   } catch (err) {
     logger.warn('[SPRINT-JOURNAL] Supabase write failed: %s', getErrorMessage(err));
-    return { ok: false, path: null };
+    return { ok: false, path: null, reflectionBundle: null };
   }
 };
 
@@ -207,9 +213,9 @@ const loadJournalEntriesFromSupabase = async (limit: number): Promise<string[]> 
 
 // ──── Write: Record sprint retro (Obsidian-first, Supabase-fallback) ──────────
 
-export const recordSprintJournalEntry = async (entry: JournalEntry): Promise<{ ok: boolean; path: string | null }> => {
+export const recordSprintJournalEntry = async (entry: JournalEntry): Promise<SprintJournalWriteResult> => {
   if (!JOURNAL_ENABLED) {
-    return { ok: false, path: null };
+    return { ok: false, path: null, reflectionBundle: null };
   }
 
   const vaultPath = getObsidianVaultRoot();
@@ -223,7 +229,7 @@ export const recordSprintJournalEntry = async (entry: JournalEntry): Promise<{ o
   return writeJournalToSupabase(entry);
 };
 
-const recordJournalToObsidian = async (entry: JournalEntry, vaultPath: string): Promise<{ ok: boolean; path: string | null }> => {
+const recordJournalToObsidian = async (entry: JournalEntry, vaultPath: string): Promise<SprintJournalWriteResult> => {
   const guildId = entry.guildId && /^\d{6,30}$/.test(entry.guildId) ? entry.guildId : JOURNAL_GUILD_ID;
   // Use a non-numeric guild prefix for system-level journal entries
   const effectiveGuildId = /^\d{6,30}$/.test(guildId) ? guildId : '000000';
@@ -255,15 +261,16 @@ const recordJournalToObsidian = async (entry: JournalEntry, vaultPath: string): 
     });
 
     if (result.ok) {
-      logger.info('[SPRINT-JOURNAL] recorded entry for sprint=%s path=%s', entry.sprintId, result.path);
+      const reflection = summarizeReflectionBundle(result.reflectionBundle);
+      logger.info('[SPRINT-JOURNAL] recorded entry for sprint=%s path=%s concern=%s next=%s', entry.sprintId, result.path, reflection.concern, reflection.nextPath);
     } else {
       logger.warn('[SPRINT-JOURNAL] write failed for sprint=%s reason=%s', entry.sprintId, result.reason);
     }
 
-    return { ok: result.ok, path: result.path };
+    return { ok: result.ok, path: result.path, reflectionBundle: result.reflectionBundle || null };
   } catch (err) {
     logger.warn('[SPRINT-JOURNAL] recordSprintJournalEntry error: %s', getErrorMessage(err));
-    return { ok: false, path: null };
+    return { ok: false, path: null, reflectionBundle: null };
   }
 };
 

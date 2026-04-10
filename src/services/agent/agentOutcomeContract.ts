@@ -1,4 +1,4 @@
-import type { ActionExecutionResult } from '../skills/actions/types';
+import { findActionReflectionArtifact, type ActionExecutionResult, type ActionReflectionArtifact } from '../skills/actions/types';
 
 export type AgentOutcomeState = 'success' | 'degraded' | 'failure';
 
@@ -11,6 +11,7 @@ export type AgentOutcome = {
   score?: number;
   reasons?: string[];
   evidenceBundleId?: string;
+  reflection?: ActionReflectionArtifact;
 };
 
 const DEGRADED_ERROR_CODES = new Set([
@@ -37,6 +38,7 @@ const isRetryableError = (errorCode: string): boolean => {
 export const toAgentOutcome = (result: ActionExecutionResult): AgentOutcome => {
   const code = normalizeCode(result.error);
   const summary = String(result.summary || '').trim() || 'no summary';
+  const reflection = findActionReflectionArtifact(result.artifacts || []);
 
   if (result.ok) {
     return {
@@ -45,6 +47,7 @@ export const toAgentOutcome = (result: ActionExecutionResult): AgentOutcome => {
       summary,
       retryable: false,
       confidence: 'high',
+      reflection: reflection || undefined,
     };
   }
 
@@ -55,5 +58,6 @@ export const toAgentOutcome = (result: ActionExecutionResult): AgentOutcome => {
     summary,
     retryable: isRetryableError(code),
     confidence: degraded ? 'medium' : 'low',
+    reflection: reflection || undefined,
   };
 };

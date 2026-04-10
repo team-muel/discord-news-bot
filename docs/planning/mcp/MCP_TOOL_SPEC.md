@@ -12,11 +12,11 @@ Methods: `initialize`, `tools/list`, `tools/call`
 ## Server Inventory
 
 | Server ID | Location | Transport | Tool Count | Primary Role |
-|-----------|----------|-----------|------------|-------------|
+| --------- | -------- | --------- | ---------- | ------------ |
 | `github` | Remote / `.vscode/mcp.json` | HTTP (Copilot OAuth) | 40+ | Cross-repo GitHub operations |
-| `muelIndexing` | Local / `.vscode/mcp.json` | stdio | 7 | Code indexing & symbol search |
+| `muelIndexing` | Local / `.vscode/mcp.json` | stdio | 7 | Strict local overlay index for dirty workspace / uncommitted files |
 | `muelUnified` | Local / `.vscode/mcp.json` | stdio | 40+ | Local hub (Obsidian, actions, ext adapters) |
-| `gcpCompute` | GCP VM → SSH stdio | stdio (SSH) | 40+ (unified) | Remote heavy compute |
+| `gcpCompute` | GCP VM → SSH stdio | stdio (SSH) | 40+ (unified) | Remote shared MCP surface; public canonical ingress is `/mcp` |
 | `supabase` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | DB | Data persistence |
 | `deepwiki` | `MCP_UPSTREAM_SERVERS` | HTTP (upstream proxy) | — | External repo wiki |
 
@@ -27,10 +27,11 @@ Configuration file: `.vscode/mcp.json` (stdio + HTTP servers); `MCP_UPSTREAM_SER
 Use this table to decide which MCP server to call for a given task category.
 
 | Task Category | Primary Server | Fallback | Examples |
-|---------------|---------------|----------|----------|
+| ------------- | -------------- | -------- | -------- |
 | **Cross-repo GitHub ops** | `github` | `autonomousGit.ts` (runtime) | PR CRUD, issue triage, repo search, branch mgmt, actions status |
-| **Code analysis** | `muelIndexing` | — | Symbol search, references, scope read, context bundle |
-| **Obsidian vault read** | `muelUnified` | `gcpCompute` | Search, RAG query, graph metadata, file read |
+| **Code analysis (shared repo state)** | `gcpCompute` | `muelIndexing` | Symbol search, references, scope read, context bundle |
+| **Code analysis (dirty workspace / local-only diff)** | `muelIndexing` | `gcpCompute` | Uncommitted files, local experiments, branch-only edits |
+| **Obsidian vault read** | `gcpCompute` | `muelUnified` | Search, RAG query, graph metadata, file read on the shared team vault |
 | **Obsidian vault write** | `gcpCompute` | `muelUnified` | Note write, sync, daily append (prefer remote for CLI) |
 | **Sprint pipeline** | `muelUnified` | — | action-execute-direct, action-catalog |
 | **External tool ops** | `gcpCompute` | `muelUnified` | OpenClaw, NemoClaw, OpenJarvis, OpenShell |
@@ -41,10 +42,36 @@ Use this table to decide which MCP server to call for a given task category.
 
 ### Overlap Resolution Rules
 
-1. **GitHub PR/Issue/Branch**: Use `github` MCP for IDE agent work. Runtime server uses `autonomousGit.ts` (direct GitHub REST API). Do NOT mix — `github` MCP is IDE-only.
-2. **Code indexing**: `muelIndexing` tools also appear in `muelUnified`/`gcpCompute`. Use `muelIndexing` for IDE context — it reads local files. Use `gcpCompute` code-index tools only when analyzing remote server state.
-3. **Obsidian**: `muelUnified` and `gcpCompute` both expose Obsidian tools. Local adapter reads the local vault; GCP adapter reads the GCP vault (`/opt/muel/discord-news-bot/docs`). Pick based on which vault you need.
-4. **GitKraken / GH PR Extension**: Remain as IDE UI helpers for visual PR review. For programmatic multi-step GitHub operations, prefer `github` MCP.
+- **GitHub PR/Issue/Branch**: Use `github` MCP for IDE agent work. Runtime server uses `autonomousGit.ts` (direct GitHub REST API). Do NOT mix — `github` MCP is IDE-only.
+- **Code indexing**: `muelIndexing` tools also appear in `muelUnified`/`gcpCompute`. Use `gcpCompute` (or the canonical public `/mcp` ingress) for shared/team repo state. Use `muelIndexing` only for dirty workspace, uncommitted local files, or branch-only experiments.
+- **Obsidian**: `gcpCompute` is the default for team-shared/operator-visible vault work and the canonical public ingress is `/mcp`. Use `muelUnified` only for explicit local-only vault overlay work.
+- **GitKraken / GH PR Extension**: Remain as IDE UI helpers for visual PR review. For programmatic multi-step GitHub operations, prefer `github` MCP.
+
+### Canonical Shared MCP Ingress
+
+- Canonical full-catalog public base URL: `https://34.56.232.61.sslip.io/mcp`
+- Compatibility alias retained for older Obsidian clients: `https://34.56.232.61.sslip.io/obsidian`
+- Shared indexing clients should prefer `MCP_SHARED_MCP_URL` or `MCP_INDEXING_REMOTE_URL`
+
+## Indexing Overlap Matrix
+
+`muelIndexing`의 7개 도구는 shared unified surface에도 존재한다. 최적화 포인트는 중복 제거가 아니라 역할 고정이다.
+
+| Tool | Shared/team default | Local overlay default | Usage rule |
+| ---- | ------------------- | --------------------- | ---------- |
+| `code.index.symbol_search` | `gcpCompute` | `muelIndexing` | shared branch 기준선은 원격, 미커밋 탐색만 로컬 |
+| `code.index.symbol_define` | `gcpCompute` | `muelIndexing` | 정의 위치는 shared truth 우선 |
+| `code.index.symbol_references` | `gcpCompute` | `muelIndexing` | 영향도 분석은 shared, local patch 확인만 overlay |
+| `code.index.file_outline` | `gcpCompute` | `muelIndexing` | 구조 이해는 shared, 새 임시 파일은 local |
+| `code.index.scope_read` | `gcpCompute` | `muelIndexing` | 범위 판독은 shared 기준으로 시작 |
+| `code.index.context_bundle` | `gcpCompute` | `muelIndexing` | AI 컨텍스트 기본은 shared bundle, local diff는 보강용 |
+| `security.candidates_list` | `gcpCompute` | `muelIndexing` | shared review는 원격, local-only branch 실험은 overlay |
+
+운영 규칙:
+
+1. shared/team 질문이면 `gcpCompute`만으로 답을 만들고, 필요할 때만 `muelIndexing`으로 local diff를 덧댄다.
+2. `muelIndexing` 단독 결과를 shared truth처럼 취급하지 않는다.
+3. 같은 질문에 두 서버가 모두 필요하면 순서는 항상 `gcpCompute` → `muelIndexing` 이다.
 
 ---
 

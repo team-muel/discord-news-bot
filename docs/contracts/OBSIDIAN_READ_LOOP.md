@@ -4,7 +4,7 @@
 
 ## Boundary
 
-- **Source**: Obsidian vault exposed through the adapter chain, with `remote-mcp` as the primary production path
+- **Source**: Obsidian vault exposed through the adapter chain, with `remote-mcp` as the primary production path via the canonical shared MCP ingress (`MCP_SHARED_MCP_URL`, usually `/mcp`)
 - **Sink**: `src/services/obsidian/obsidianRagService.ts`, Discord command responses, and any service consuming shared memory hints
 - **Strategy**: Graph-first retrieval (link graph → semantic search → chunk fallback)
 
@@ -72,7 +72,7 @@ Discord command / agent query
   → return to caller for response formatting
 ```
 
-In production this usually means Render or another service calling the shared GCP vault service over `remote-mcp`, not direct local disk access.
+In production this usually means Render, IDE agents, or another service calling the shared GCP vault service over `remote-mcp` and the canonical shared `/mcp` ingress, not direct local disk access.
 
 ## Response Formatting Rules
 

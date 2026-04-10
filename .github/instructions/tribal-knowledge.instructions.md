@@ -148,14 +148,14 @@ These rules enforce data transformation correctness at domain boundaries. Full s
 
 Before writing code that creates new services, modifies observer/intent/memory systems, or changes infrastructure wiring, answer these 6 questions. Check `.state/system-snapshot.json` if it exists — it contains live data.
 
-| # | Question | Where to Check |
-|---|----------|---------------|
-| 1 | **What's currently broken?** | `.state/system-snapshot.json` → `recentObservations`, or `getRecentObservations({ unconsumedOnly: true })` |
-| 2 | **What was already tried?** | `.state/system-snapshot.json` → `recentIntents`, or `getIntents({ status: 'failed' })` |
-| 3 | **What patterns are recurring?** | `searchMemory({ tags: ['observer'], limit: 10 })` or Obsidian graph tags `obs/*` |
-| 4 | **Which tools are alive?** | `.state/system-snapshot.json` → `workerHealth`, or MCP router status |
-| 5 | **What depends on this code?** | `muelIndexing` → `symbol_references` / `context_bundle` |
-| 6 | **What must NOT be done?** | This file (tribal-knowledge), anti-pattern table above |
+| #   | Question                         | Where to Check                                                                                                             |
+| --- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **What's currently broken?**     | `.state/system-snapshot.json` → `recentObservations`, or `getRecentObservations({ unconsumedOnly: true })`                 |
+| 2   | **What was already tried?**      | `.state/system-snapshot.json` → `recentIntents`, or `getIntents({ status: 'failed' })`                                     |
+| 3   | **What patterns are recurring?** | `searchMemory({ tags: ['observer'], limit: 10 })` or Obsidian graph tags `obs/*`                                           |
+| 4   | **Which tools are alive?**       | `.state/system-snapshot.json` → `workerHealth`, or MCP router status                                                       |
+| 5   | **What depends on this code?**   | shared code-index (`gcpCompute`) → `symbol_references` / `context_bundle`; use `muelIndexing` only for local dirty overlay |
+| 6   | **What must NOT be done?**       | This file (tribal-knowledge), anti-pattern table above                                                                     |
 
 **If any of questions 1-4 reveal relevant context, incorporate it into the implementation plan BEFORE writing code.**
 

@@ -64,7 +64,7 @@ Ship a production-safe MCP bridge for Muel with governance controls and observab
 
 ### New in This Iteration
 
-1. **Multi-server architecture**: muelCore + muelIndexing + gcpCompute (SSH) + Supabase + DeepWiki
+1. **Multi-server architecture**: muelCore + muelIndexing (local overlay index) + gcpCompute (SSH shared truth) + Supabase + DeepWiki
 2. **Obsidian tool adapter**: 20+ tools for vault read/write/RAG operations
 3. **ext.* adapter bridge**: 8 external adapters exposed as MCP tools via `unifiedToolAdapter.ts`
 4. **`diag.llm` tool**: LLM connectivity diagnostic added to muelCore (v2 spec)

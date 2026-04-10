@@ -10,12 +10,14 @@
  *
  * Environment:
  *   OBSIDIAN_REMOTE_MCP_ENABLED  — enable this adapter (default: false, auto-enabled when URL is set)
- *   OBSIDIAN_REMOTE_MCP_URL      — base URL of the MCP HTTP server (e.g. http://34.56.232.61:8850)
- *   OBSIDIAN_REMOTE_MCP_TOKEN    — auth token (falls back to MCP_WORKER_AUTH_TOKEN)
+ *   MCP_SHARED_MCP_URL           — canonical shared full-catalog MCP ingress (preferred)
+ *   OBSIDIAN_REMOTE_MCP_URL      — legacy Obsidian alias ingress (compatible fallback)
+ *   MCP_SHARED_MCP_TOKEN         — shared MCP auth token (preferred)
+ *   OBSIDIAN_REMOTE_MCP_TOKEN    — legacy Obsidian auth token alias (falls back to MCP_WORKER_AUTH_TOKEN)
  *   OBSIDIAN_REMOTE_MCP_TIMEOUT_MS — request timeout (default: 15000)
  */
 
-import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../../utils/env';
+import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../../utils/env';
 import logger from '../../../logger';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import type {
@@ -32,10 +34,51 @@ import type {
   ObsidianVaultAdapter,
 } from '../types';
 
+export type RemoteMcpBaseUrlSource = 'shared-mcp' | 'legacy-obsidian' | 'unconfigured';
+
+const stripTrailingSlash = (value: string): string => String(value || '').trim().replace(/\/+$/, '');
+
+const rewriteTerminalPath = (baseUrl: string, fromPath: string, toPath: string): string | null => {
+  const normalizedBaseUrl = stripTrailingSlash(baseUrl);
+  if (!normalizedBaseUrl) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalizedBaseUrl);
+    const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/';
+    if (normalizedPath !== fromPath) {
+      return null;
+    }
+    parsed.pathname = toPath;
+    parsed.search = '';
+    parsed.hash = '';
+    return stripTrailingSlash(parsed.toString());
+  } catch {
+    return null;
+  }
+};
+
+const SHARED_BASE_URL = parseUrlEnv(process.env.MCP_SHARED_MCP_URL, '');
+const LEGACY_BASE_URL = parseUrlEnv(process.env.OBSIDIAN_REMOTE_MCP_URL, '');
+const BASE_URL = SHARED_BASE_URL || LEGACY_BASE_URL;
+const BASE_URL_SOURCE: RemoteMcpBaseUrlSource = SHARED_BASE_URL
+  ? 'shared-mcp'
+  : LEGACY_BASE_URL
+    ? 'legacy-obsidian'
+    : 'unconfigured';
+const LEGACY_ALIAS_URL = rewriteTerminalPath(BASE_URL, '/mcp', '/obsidian');
+const CANONICAL_SHARED_URL = rewriteTerminalPath(BASE_URL, '/obsidian', '/mcp') || BASE_URL;
+const USES_CANONICAL_SHARED_INGRESS = BASE_URL_SOURCE === 'shared-mcp' || Boolean(LEGACY_ALIAS_URL);
+
 // ── Config ─────────────────────────────────────────
-const BASE_URL = parseStringEnv(process.env.OBSIDIAN_REMOTE_MCP_URL, '').replace(/\/+$/, '');
 const ENABLED = parseBooleanEnv(process.env.OBSIDIAN_REMOTE_MCP_ENABLED, BASE_URL.length > 0);
-const AUTH_TOKEN = parseStringEnv(process.env.OBSIDIAN_REMOTE_MCP_TOKEN ?? process.env.MCP_WORKER_AUTH_TOKEN, '');
+const AUTH_TOKEN = parseStringEnv(
+  process.env.MCP_SHARED_MCP_TOKEN
+    ?? process.env.OBSIDIAN_REMOTE_MCP_TOKEN
+    ?? process.env.MCP_WORKER_AUTH_TOKEN,
+  '',
+);
 const TIMEOUT_MS = parseMinIntEnv(process.env.OBSIDIAN_REMOTE_MCP_TIMEOUT_MS, 15_000, 3_000);
 
 export type RemoteMcpAdapterProbeStatus = {
@@ -50,6 +93,10 @@ export type RemoteMcpAdapterDiagnostics = {
   enabled: boolean;
   configured: boolean;
   baseUrl: string | null;
+  baseUrlSource: RemoteMcpBaseUrlSource;
+  canonicalBaseUrl: string | null;
+  compatibilityBaseUrl: string | null;
+  usesCanonicalSharedIngress: boolean;
   authConfigured: boolean;
   lastToolName: string | null;
   lastSuccessAt: string | null;
@@ -69,10 +116,14 @@ const createEmptyProbeStatus = (): RemoteMcpAdapterProbeStatus => ({
   error: null,
 });
 
-const getConfigDiagnostics = (): Pick<RemoteMcpAdapterDiagnostics, 'enabled' | 'configured' | 'baseUrl' | 'authConfigured'> => ({
+const getConfigDiagnostics = (): Pick<RemoteMcpAdapterDiagnostics, 'enabled' | 'configured' | 'baseUrl' | 'baseUrlSource' | 'canonicalBaseUrl' | 'compatibilityBaseUrl' | 'usesCanonicalSharedIngress' | 'authConfigured'> => ({
   enabled: ENABLED,
   configured: ENABLED && BASE_URL.length > 0,
   baseUrl: BASE_URL || null,
+  baseUrlSource: BASE_URL_SOURCE,
+  canonicalBaseUrl: CANONICAL_SHARED_URL || null,
+  compatibilityBaseUrl: LEGACY_ALIAS_URL || (BASE_URL_SOURCE === 'legacy-obsidian' ? BASE_URL || null : null),
+  usesCanonicalSharedIngress: USES_CANONICAL_SHARED_INGRESS,
   authConfigured: AUTH_TOKEN.length > 0,
 });
 

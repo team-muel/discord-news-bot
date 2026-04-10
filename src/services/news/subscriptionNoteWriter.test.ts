@@ -6,6 +6,12 @@ vi.mock('../../utils/obsidianEnv', () => ({
 
 vi.mock('../obsidian/authoring', () => ({
   upsertObsidianGuildDocument: vi.fn(async () => ({ ok: true, path: '/mock/vault/guilds/123456789/events/subscriptions/test.md' })),
+  summarizeReflectionBundle: vi.fn((bundle?: { concern?: string; suggestedPaths?: string[]; gatePaths?: string[]; plane?: string; customerImpact?: boolean }) => ({
+    plane: bundle?.plane || 'none',
+    concern: bundle?.concern || 'none',
+    nextPath: bundle?.suggestedPaths?.[0] || bundle?.gatePaths?.[0] || 'none',
+    customerImpact: Boolean(bundle?.customerImpact),
+  })),
 }));
 
 vi.mock('../../logger', () => ({
@@ -13,11 +19,13 @@ vi.mock('../../logger', () => ({
 }));
 
 import { writeSubscriptionNote } from './subscriptionNoteWriter';
+import logger from '../../logger';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { upsertObsidianGuildDocument } from '../obsidian/authoring';
 
 const mockUpsert = vi.mocked(upsertObsidianGuildDocument);
 const mockVaultRoot = vi.mocked(getObsidianVaultRoot);
+const mockLogger = vi.mocked(logger);
 
 const makeInput = (overrides?: Partial<Parameters<typeof writeSubscriptionNote>[0]>) => ({
   row: {
@@ -46,6 +54,23 @@ describe('writeSubscriptionNote', () => {
   });
 
   it('writes a note with correct metadata for videos', async () => {
+    mockUpsert.mockResolvedValue({
+      ok: true,
+      path: '/mock/path.md',
+      reflectionBundle: {
+        targetPath: 'guilds/123456789012345678/events/subscriptions/2026-04-09_videos_New-GPU-Review.md',
+        plane: 'record',
+        concern: 'guild-memory',
+        requiredPaths: [],
+        suggestedPaths: ['guilds/123456789012345678/Guild_Lore.md'],
+        suggestedPatterns: [],
+        verificationChecklist: [],
+        gatePaths: [],
+        customerImpact: false,
+        notes: [],
+      },
+    });
+
     await writeSubscriptionNote(makeInput());
 
     expect(mockUpsert).toHaveBeenCalledOnce();
@@ -60,6 +85,14 @@ describe('writeSubscriptionNote', () => {
     expect(call.tags).toContain('youtube');
     expect(call.tags).toContain('subscription');
     expect(call.tags).toContain('videos');
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[SUBSCRIPTION-NOTE] wrote %s for guild=%s source=%d concern=%s next=%s',
+      expect.any(String),
+      '123456789012345678',
+      42,
+      'guild-memory',
+      'guilds/123456789012345678/Guild_Lore.md',
+    );
   });
 
   it('writes a note with correct metadata for posts', async () => {

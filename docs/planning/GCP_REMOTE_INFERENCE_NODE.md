@@ -10,10 +10,10 @@
 
 ## 1) 현재 상태 판단
 
-현재 worker VM은 `e2-small`, 메모리 약 2GiB, CPU 2 vCPU 수준이다. (2026-04-05 업그레이드)
+현재 worker VM은 `e2-medium`, 메모리 4GiB, CPU 1-2 vCPU 수준이다. (2026-04-10 baseline)
 
-- 이 사양은 `opencode.run` HTTP worker + full jarvis serve 상주에 충분하다.
-- Ollama 7B 계열이나 vLLM 추론 서버를 같은 VM에 동시 배치하기에는 여전히 부족하다.
+- 이 사양은 role worker + full jarvis serve + remote-mcp 상주에는 충분하다.
+- Ollama 7B 계열이나 vLLM 추론 서버를 같은 VM에 항상-온 경로와 함께 동시 배치하기에는 여전히 부족하다.
 - 따라서 원격 추론은 별도 VM 또는 별도 managed endpoint로 분리한다.
 
 ## 2) 권장 분리 원칙

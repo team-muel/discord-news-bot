@@ -56,7 +56,7 @@ Use this document when a role name, runtime label, external OSS name, or model f
 | Signal Bus | in-process event hub | `src/services/runtime/signalBus.ts` + `signalBusWiring.ts` | `SIGNAL_BUS_ENABLED` + internal diagnostics | yes | no extra config | implemented — 17 signal types, async fire-and-forget, cooldown/dedup |
 | Workflow Persistence + Traffic Routing | A/B routing | `src/services/workflow/trafficRoutingService.ts` + `workflowPersistenceService.ts` | `GET /agent/traffic/decisions`, `GET /agent/traffic/distribution` | no | `TRAFFIC_ROUTING_ENABLED=true` | implemented — 4-gate routing (flag/readiness/bucket/divergence) |
 | User CRM | user profiling | `src/services/discord-support/userCrmService.ts` | `src/routes/bot-agent/crmRoutes.ts` (GET /agent/crm/*) | no | Supabase user_profiles table | implemented — write-behind activity tracking, profiles, leaderboard |
-| MCP Unified Server | single MCP entry | `src/mcp/unifiedServer.ts` (40 tools) | GCP VM :8850 (Caddy :8447) or local stdio | no | GCP VM access or local `scripts/unified-mcp-stdio.ts` | implemented — standard + indexing + Obsidian + ext.* |
+| MCP Unified Server | single MCP entry | `src/mcp/unifiedServer.ts` (40 tools) | GCP VM :8850 with canonical public ingress `/mcp` (compatibility alias `/obsidian`) or local stdio | no | GCP VM access or local `scripts/unified-mcp-stdio.ts` | implemented — standard + indexing + Obsidian + ext.*; `/mcp` is the team-shared full-catalog path |
 | Generic upstream framework embedding for OpenShell, NemoClaw, OpenClaw, OpenJarvis, DeepWiki, n8n | external runtime integration | 6 adapters implemented + probed; 33 capabilities mapped; composite execution (primary + secondary) active | see `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md`, `docs/contracts/SPRINT_DATA_FLOW.md` | no | install + env config + adapter enable flags required | Phase 1 complete; external adapter capability expansion (고도화) complete — 28 enrichment actions, 5 secondary adapter mappings, ext.* MCP bridge, OpenClaw session bootstrap |
 | ext.* MCP bridge | sprint pipeline / tool layer | `src/mcp/unifiedToolAdapter.ts` ext.* routing | `ext.<adapterId>.<capability>` tool calls via MCP | no | at least one external adapter enabled | implemented — routes external adapter capabilities as MCP tools with `ext.` namespace |
 | OpenClaw Gateway session bootstrap | sprint pipeline | `src/services/tools/adapters/openclawCliAdapter.ts` bootstrapOpenClawSession | OpenClaw session endpoint `/api/sessions/{id}/message` | no | `OPENCLAW_GATEWAY_URL` + `OPENCLAW_GATEWAY_TOKEN` required | implemented — idempotent per sessionId, registers ext.* tools as session skills before implement phase |
@@ -99,6 +99,7 @@ If a role or tool name appears only in `.github` customization files or planning
 
 ## Relationship To Other Docs
 
+- `config/runtime/operating-baseline.json` is the canonical operating baseline for machine profile, always-on required services, and canonical worker endpoints.
 - `docs/ARCHITECTURE_INDEX.md` explains current runtime structure and boundaries.
 - `docs/RUNBOOK_MUEL_PLATFORM.md` explains operator procedure.
 - `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` explains IDE collaboration behavior.

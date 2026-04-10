@@ -71,7 +71,7 @@ Status note:
 
 - `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true`
 - `ACTION_MCP_STRICT_ROUTING=true`
-- `MCP_IMPLEMENT_WORKER_URL` 필수 (`local-first-hybrid` 기본값은 `http://127.0.0.1:8787`; legacy alias `MCP_OPENCODE_WORKER_URL` 지원)
+- `MCP_IMPLEMENT_WORKER_URL` 필수 (`local-first-hybrid` 기본값은 `https://34.56.232.61.sslip.io`; legacy alias `MCP_OPENCODE_WORKER_URL` 지원)
 
 ## 4) 권장 provider 구성
 
@@ -83,13 +83,14 @@ Status note:
 - `LLM_PROVIDER_FALLBACK_CHAIN=openclaw,anthropic,openai,gemini,huggingface`
 - `LLM_WORKFLOW_MODEL_BINDINGS=operate.ops=openjarvis:<model>;openjarvis.ops=openjarvis:<model>;eval.*=openjarvis:<model>;worker.*=openjarvis:<model>`
 - `LLM_WORKFLOW_PROFILE_DEFAULTS=operate.ops=quality-optimized;openjarvis.ops=quality-optimized;eval.*=quality-optimized;worker.*=quality-optimized;action.code.*=cost-optimized`
-- `MCP_IMPLEMENT_WORKER_URL=http://127.0.0.1:8787`
+- `MCP_IMPLEMENT_WORKER_URL=https://34.56.232.61.sslip.io`
 
 권장 이유:
 
 - 로컬 응답이 가장 싸고 빠르다.
 - OpenClaw/LiteLLM 또는 상용 provider를 fallback으로 두면 로컬 장애 시 복원력이 높다.
 - OpenJarvis는 일반 채팅 기본 provider가 아니라 operations/eval/worker 계층으로 고정하는 편이 역할 분리가 명확하다.
+- 로컬 worker를 직접 검증하고 싶을 때만 임시로 `MCP_IMPLEMENT_WORKER_URL=http://127.0.0.1:8787` 로 override 한다.
 
 ## 5) 운영 가드레일
 

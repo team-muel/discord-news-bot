@@ -6,7 +6,7 @@ import {
   readObsidianFileWithAdapter,
   searchObsidianVaultWithAdapter,
 } from '../../obsidian/router';
-import type { ActionDefinition } from './types';
+import { buildActionReflectionArtifact, type ActionDefinition } from './types';
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -270,6 +270,60 @@ const runPostWriteVerification = async (params: {
   return { verification, failed };
 };
 
+const buildReflectionVerification = (bundle: {
+  plane: string;
+  concern: string;
+  customerImpact: boolean;
+  gatePaths: string[];
+  suggestedPaths: string[];
+} | null | undefined): string[] => {
+  if (!bundle) {
+    return [];
+  }
+
+  const nextPath = bundle.suggestedPaths[0] || bundle.gatePaths[0] || 'none';
+  return [
+    `reflection_plane=${bundle.plane}`,
+    `reflection_concern=${bundle.concern}`,
+    `reflection_customer_impact=${bundle.customerImpact}`,
+    `reflection_next=${nextPath}`,
+  ];
+};
+
+const buildReflectionArtifact = (bundle: {
+  plane: string;
+  concern: string;
+  customerImpact: boolean;
+  gatePaths: string[];
+  suggestedPaths: string[];
+} | null | undefined): string | null => {
+  if (!bundle) {
+    return null;
+  }
+
+  const nextPath = bundle.suggestedPaths[0] || bundle.gatePaths[0] || 'none';
+  return buildActionReflectionArtifact({
+    plane: bundle.plane,
+    concern: bundle.concern,
+    nextPath,
+    customerImpact: bundle.customerImpact,
+  });
+};
+
+const buildActionArtifacts = (
+  path: string,
+  bundle: {
+    plane: string;
+    concern: string;
+    customerImpact: boolean;
+    gatePaths: string[];
+    suggestedPaths: string[];
+  } | null | undefined,
+): string[] => {
+  const reflectionArtifact = buildReflectionArtifact(bundle);
+  return reflectionArtifact ? [path, reflectionArtifact] : [path];
+};
+
 export const obsidianGuildDocUpsertAction: ActionDefinition = {
   name: 'obsidian.guild_doc.upsert',
   description: '길드 문서를 Obsidian vault에 기록하거나 갱신합니다.',
@@ -357,8 +411,8 @@ export const obsidianGuildDocUpsertAction: ActionDefinition = {
         ok: false,
         name: 'obsidian.guild_doc.upsert',
         summary: 'Obsidian 문서 저장 후 정합성 검증 실패',
-        artifacts: [result.path],
-        verification: ['adapter write_note', ...postVerify.verification],
+        artifacts: buildActionArtifacts(result.path, result.reflectionBundle),
+        verification: ['adapter write_note', ...postVerify.verification, ...buildReflectionVerification(result.reflectionBundle)],
         error: 'POST_WRITE_VERIFY_FAILED',
       };
     }
@@ -367,10 +421,11 @@ export const obsidianGuildDocUpsertAction: ActionDefinition = {
       ok: true,
       name: 'obsidian.guild_doc.upsert',
       summary: 'Obsidian 문서 저장 완료',
-      artifacts: [result.path],
+      artifacts: buildActionArtifacts(result.path, result.reflectionBundle),
       verification: [
         'adapter write_note',
         ...postVerify.verification,
+        ...buildReflectionVerification(result.reflectionBundle),
         `auto_tags=${tags.join(',')}`,
         `category=${String(properties.category || 'general')}`,
       ],

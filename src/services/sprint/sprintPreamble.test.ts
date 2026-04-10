@@ -3,6 +3,7 @@ import {
   trackSprintSession,
   getActiveSessionCount,
   buildSprintPreamble,
+  buildKnowledgeControlPromptSection,
   isActionBlockedInPhase,
   accumulateActionContext,
   getAccumulatedContextSection,
@@ -66,6 +67,23 @@ describe('sprintPreamble', () => {
     it('implement 단계에서 Restricted Tool Categories를 포함하지 않는다', () => {
       const preamble = buildSprintPreamble('sprint-impl-noblock', 'implement');
       expect(preamble).not.toContain('Restricted Tool Categories');
+    });
+
+    it('plan/review/qa용 knowledge control prompt section을 만든다', () => {
+      const section = buildKnowledgeControlPromptSection('plan', ['docs/planning/PLATFORM_CONTROL_TOWER.md']);
+      expect(section).toContain('Knowledge Control Context');
+      expect(section).toContain('blueprint_model: 4-plane-control-tower');
+      expect(section).toContain('start_here_paths:');
+      expect(section).toContain('Operating Baseline');
+      expect(section).toContain('worker_machine: e2-medium');
+      expect(section).toContain('Human-First Reference Policy');
+      expect(section).toContain('human_first: true');
+      expect(section).toContain('catalog_coverage:');
+      expect(section).toContain('docs/planning/PLATFORM_CONTROL_TOWER.md');
+    });
+
+    it('implement 단계에는 knowledge control prompt section을 만들지 않는다', () => {
+      expect(buildKnowledgeControlPromptSection('implement', [])).toBe('');
     });
   });
 

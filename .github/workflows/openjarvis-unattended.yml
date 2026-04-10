@@ -43,7 +43,7 @@ jobs:
       AUTONOMY_AUTO_COMMIT_REPORTS: ${{ github.event.inputs.autoCommitReports || 'true' }}
       OPENJARVIS_REQUIRE_OPENCODE_WORKER: "true"
       OPENJARVIS_ROUTE_MODE: ${{ github.event.inputs.routeMode || 'auto' }}
-      MCP_OPENCODE_WORKER_URL: ${{ secrets.MCP_OPENCODE_WORKER_URL }}
+      MCP_IMPLEMENT_WORKER_URL: ${{ secrets.MCP_IMPLEMENT_WORKER_URL }}
       MCP_ARCHITECT_WORKER_URL: ${{ secrets.MCP_ARCHITECT_WORKER_URL }}
       MCP_REVIEW_WORKER_URL: ${{ secrets.MCP_REVIEW_WORKER_URL }}
       MCP_OPERATE_WORKER_URL: ${{ secrets.MCP_OPERATE_WORKER_URL }}

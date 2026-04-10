@@ -8,9 +8,9 @@ import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previ
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus, readObsidianFileWithAdapter } from '../../services/obsidian/router';
 import { getObsidianInboxChatLoopStats } from '../../services/obsidian/obsidianInboxChatLoopService';
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
-import { getObsidianKnowledgeCompilationStats, getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../../services/obsidian/knowledgeCompilerService';
+import { buildObsidianKnowledgeReflectionBundle, getObsidianKnowledgeCompilationStats, getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../../services/obsidian/knowledgeCompilerService';
 import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
-import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
+import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agent/agentQualityReviewService';
 import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
@@ -259,6 +259,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       ]);
       return res.json({
         vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+        vault: getObsidianVaultRuntimeInfo(),
         adapterRuntime: getObsidianAdapterRuntimeStatus(),
         vaultHealth,
         cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
@@ -275,19 +276,22 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const snapshot = await getLatestObsidianGraphAuditSnapshot();
     return res.json({
       vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+      vault: getObsidianVaultRuntimeInfo(),
       snapshot,
     });
   });
 
   router.get('/agent/obsidian/knowledge-control', requireAdmin, async (req, res, next) => {
     const artifactRequest = toStringParam(req.query?.artifact);
+    const bundleRequest = toStringParam(req.query?.bundleFor);
 
     try {
       let artifact: { request: string; path: string; content: string | null } | null = null;
+      let bundle = null;
       if (artifactRequest) {
         const artifactPath = resolveObsidianKnowledgeArtifactPath(artifactRequest);
         if (!artifactPath) {
-          return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'artifact must be index|log|lint|topic:<slug>|entity:<slug>' });
+          return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'artifact must be index|log|lint|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug>' });
         }
 
         artifact = {
@@ -300,10 +304,19 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
         };
       }
 
+      if (bundleRequest) {
+        bundle = buildObsidianKnowledgeReflectionBundle(bundleRequest);
+        if (!bundle) {
+          return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'bundleFor must be a control-tower alias or vault-relative path' });
+        }
+      }
+
       return res.json({
         vaultPathConfigured: Boolean(getObsidianVaultRoot()),
+        vault: getObsidianVaultRuntimeInfo(),
         ...getObsidianKnowledgeControlSurface(),
         artifact,
+        bundle,
       });
     } catch (error) {
       next(error);

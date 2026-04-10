@@ -16,6 +16,12 @@ const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
 const TMP_DIR = path.join(ROOT, 'tmp', 'autonomy');
 const SUMMARY_PATH = path.join(TMP_DIR, 'openjarvis-unattended-last-run.json');
+const DRY_RUN_MISSING_SOURCE_ENV_DEFAULTS = Object.freeze({
+  LLM_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_TABLE: 'true',
+  HYBRID_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_REPORTS: 'true',
+  AUTO_JUDGE_WEEKLY_ALLOW_MISSING_SOURCE_REPORTS: 'true',
+  SELF_IMPROVEMENT_ALLOW_MISSING_SOURCE_SNAPSHOTS: 'true',
+});
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const VALID_ROUTE_MODES = new Set(['auto', 'delivery', 'operations']);
@@ -272,6 +278,13 @@ async function main() {
   const dryRun = parseBool(parseArg('dryRun', process.env.AUTONOMY_DRY_RUN || 'false'));
   const autoDeploy = parseBool(parseArg('autoDeploy', process.env.AUTONOMY_AUTO_DEPLOY || 'false'));
   const strict = parseBool(parseArg('strict', process.env.AUTONOMY_STRICT || 'true'), true);
+  if (dryRun) {
+    for (const [envKey, envValue] of Object.entries(DRY_RUN_MISSING_SOURCE_ENV_DEFAULTS)) {
+      if (!String(process.env[envKey] || '').trim()) {
+        process.env[envKey] = envValue;
+      }
+    }
+  }
   const objective = String(parseArg('objective', process.env.OPENJARVIS_OBJECTIVE || 'weekly unattended autonomy cycle')).trim();
   const scope = String(process.env.OPENJARVIS_SCOPE || 'weekly:auto').trim() || 'weekly:auto';
   const stage = String(process.env.OPENJARVIS_STAGE || 'A').trim() || 'A';

@@ -163,6 +163,10 @@ const main = async () => {
     ok: failures.length === 0,
     failures,
     warnings,
+    notes: [
+      'This check validates local-first readiness only.',
+      'Always-on readiness must be verified separately via unattended-health, remote worker reachability, LiteLLM health, and remote-mcp health.',
+    ],
     checkedAt: new Date().toISOString(),
   };
   console.log(JSON.stringify(report, null, 2));

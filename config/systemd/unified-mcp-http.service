@@ -1,16 +1,18 @@
 [Unit]
-Description=MCP Unified HTTP Server (Obsidian vault tools)
+Description=MCP Unified HTTP Server (shared full-catalog MCP)
 After=network.target obsidian-headless.service
 Wants=obsidian-headless.service
 
 [Service]
 Type=simple
-User=fancy
-WorkingDirectory=/home/fancy/discord-news-bot
+User=muel
+WorkingDirectory=/opt/muel/discord-news-bot
+Environment=HOME=/opt/muel
 Environment=NODE_ENV=production
 Environment=MCP_HTTP_PORT=8850
-EnvironmentFile=-/home/fancy/discord-news-bot/.env
-ExecStart=/usr/bin/node --import tsx scripts/unified-mcp-http.ts
+EnvironmentFile=-/opt/muel/discord-news-bot/.env
+EnvironmentFile=-/opt/muel/discord-news-bot/config/env/unified-mcp.gcp.env
+ExecStart=/bin/bash -lc 'set -a; if [ -f /opt/muel/discord-news-bot/.env ]; then . /opt/muel/discord-news-bot/.env; fi; if [ -f /opt/muel/discord-news-bot/config/env/unified-mcp.gcp.env ]; then . /opt/muel/discord-news-bot/config/env/unified-mcp.gcp.env; fi; set +a; exec /usr/bin/node --import tsx /opt/muel/discord-news-bot/scripts/unified-mcp-http.ts'
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=30

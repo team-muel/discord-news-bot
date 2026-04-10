@@ -61,7 +61,7 @@ Runtime loop 인벤토리(현재 코드 기준, `scheduler-policy` ID):
 어댑터별 검증 경로:
 
 - OpenClaw: `http://<OPENCLAW_GATEWAY_URL>/api/health`
-- OpenJarvis: `http://<OPENJARVIS_SERVE_URL>/health`
+- OpenJarvis: `<OPENJARVIS_SERVE_URL>/health`
 - NemoClaw: `nemoclaw <name> status` (WSL/Docker)
 - OpenShell: `openshell sandbox list` (WSL)
 - DeepWiki: adapter probe via `DEEPWIKI_ADAPTER_ENABLED` flag

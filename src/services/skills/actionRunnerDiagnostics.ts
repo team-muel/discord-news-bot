@@ -3,6 +3,7 @@
  * Extracted from actionRunner to reduce file size.
  */
 import { parseBoundedNumberEnv } from '../../utils/env';
+import type { ActionExecutionResult } from './actions/types';
 
 // ──── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export type SkillActionResult = {
   hasSuccess: boolean;
   externalUnavailable: boolean;
   diagnostics: FailureDiagnostics;
+  actionResults?: ActionExecutionResult[];
 };
 
 export type ActionRunnerDiagnosticsSnapshot = {

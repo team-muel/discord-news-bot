@@ -23,7 +23,7 @@ applyTo: "src/**"
 
 ## Process
 
-1. **Gather context** — use `muelIndexing` symbol definitions, references, and scope reads to understand the change surface.
+1. **Gather context** — use shared code-index tools for the committed/team change surface, and use `muelIndexing` symbol definitions, references, and scope reads only when the review depends on local dirty edits.
 2. **Review priorities** — in this order:
    - Correctness and runtime safety
    - Security and secret exposure risk

@@ -32,7 +32,7 @@ Status note:
 - SUPABASE_SERVICE_ROLE_KEY (또는 SUPABASE_KEY)
 - AUTONOMY_STRICT=true
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL=[remote worker base url]
+- MCP_IMPLEMENT_WORKER_URL=[remote worker base url]
 - MCP_OPENCODE_TOOL_NAME=opencode.run
 
 자동 배포 사용 시:
@@ -59,7 +59,7 @@ Status note:
 권장값:
 
 - OBSIDIAN_REMOTE_MCP_ENABLED=true
-- OBSIDIAN_REMOTE_MCP_URL=http://<gcp-vm>:8850
+- OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/obsidian
 - OBSIDIAN_ADAPTER_STRICT=true
 - OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli
 - OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,script-cli
@@ -85,7 +85,7 @@ Status note:
 1. OpenJarvis 원격 worker 강제
 
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
-- MCP_OPENCODE_WORKER_URL 설정
+- MCP_IMPLEMENT_WORKER_URL 설정
 
 1. strict gate 강제
 
@@ -129,7 +129,7 @@ Status note:
 
 1. worker URL 누락/불능
 
-- MCP_OPENCODE_WORKER_URL health 확인 후 rerun
+- MCP_IMPLEMENT_WORKER_URL health 확인 후 rerun
 
 1. gate strict 실패
 

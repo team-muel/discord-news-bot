@@ -44,6 +44,11 @@ type RepositoryIndex = {
   symbols: IndexedSymbol[];
 };
 
+type ConfiguredRepo = {
+  repoId: string;
+  repoRoot: string;
+};
+
 type SymbolSearchArgs = {
   repoId: string;
   branch?: string;
@@ -183,6 +188,84 @@ const getConfiguredRepoRoot = (): string => {
   return path.resolve(envRoot || process.cwd());
 };
 
+const normalizeConfiguredRepo = (entry: unknown, fallbackRepoId?: string): ConfiguredRepo | null => {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const repoId = typeof record.repoId === 'string'
+    ? record.repoId.trim()
+    : typeof record.id === 'string'
+      ? record.id.trim()
+      : typeof fallbackRepoId === 'string'
+        ? fallbackRepoId.trim()
+        : '';
+  const repoRootRaw = typeof record.repoRoot === 'string'
+    ? record.repoRoot.trim()
+    : typeof record.root === 'string'
+      ? record.root.trim()
+      : '';
+
+  if (!repoId || !repoRootRaw) {
+    return null;
+  }
+
+  return {
+    repoId,
+    repoRoot: path.resolve(repoRootRaw),
+  };
+};
+
+const getConfiguredRepos = (): ConfiguredRepo[] => {
+  const repoMap = new Map<string, ConfiguredRepo>();
+  const primaryRepo: ConfiguredRepo = {
+    repoId: getConfiguredRepoId(),
+    repoRoot: getConfiguredRepoRoot(),
+  };
+  repoMap.set(primaryRepo.repoId, primaryRepo);
+
+  const registryRaw = parseStringEnv(process.env.INDEXING_MCP_REPOS_JSON, '');
+  if (!registryRaw) {
+    return [...repoMap.values()];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(registryRaw);
+  } catch (err) {
+    throw new Error(`invalid INDEXING_MCP_REPOS_JSON: ${getErrorMessage(err)}`);
+  }
+
+  const appendRepo = (entry: ConfiguredRepo | null) => {
+    if (!entry || repoMap.has(entry.repoId)) {
+      return;
+    }
+    repoMap.set(entry.repoId, entry);
+  };
+
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) {
+      appendRepo(normalizeConfiguredRepo(entry));
+    }
+  } else if (parsed && typeof parsed === 'object') {
+    for (const [repoId, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof entry === 'string') {
+        appendRepo(normalizeConfiguredRepo({ repoId, repoRoot: entry }));
+        continue;
+      }
+
+      if (entry && typeof entry === 'object') {
+        appendRepo(normalizeConfiguredRepo({ repoId, ...(entry as Record<string, unknown>) }, repoId));
+      }
+    }
+  } else {
+    throw new Error('invalid INDEXING_MCP_REPOS_JSON: expected an array or object map');
+  }
+
+  return [...repoMap.values()];
+};
+
 const getIndexTtlMs = (): number => parsePositiveIntegerEnv(process.env.INDEXING_MCP_INDEX_TTL_MS, 15_000);
 
 const isIndexingStrictMode = (): boolean => parseBooleanEnv(process.env.INDEXING_MCP_STRICT, false);
@@ -196,15 +279,18 @@ const getStalePolicy = (): StalePolicy => {
 };
 
 const resolveRepo = (repoId: string): { repoId: string; repoRoot: string } => {
-  const configuredRepoId = getConfiguredRepoId();
-  if (repoId !== configuredRepoId && repoId !== 'current') {
+  const requestedRepoId = String(repoId || '').trim() || 'current';
+  const configuredRepos = getConfiguredRepos();
+  if (requestedRepoId === 'current') {
+    return configuredRepos[0];
+  }
+
+  const matchedRepo = configuredRepos.find((entry) => entry.repoId === requestedRepoId);
+  if (!matchedRepo) {
     throw new Error(`unsupported repoId: ${repoId}`);
   }
 
-  return {
-    repoId: configuredRepoId,
-    repoRoot: getConfiguredRepoRoot(),
-  };
+  return matchedRepo;
 };
 
 const ensureRepoScopedPath = (repoRoot: string, filePath: string, fieldName = 'filePath'): string => {

@@ -104,6 +104,18 @@ vi.mock('../services/obsidian/obsidianQualityService', () => ({
 }));
 
 vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
+  buildObsidianKnowledgeReflectionBundle: vi.fn((value: string) => ({
+    targetPath: value === 'blueprint' ? 'ops/control-tower/BLUEPRINT.md' : value,
+    plane: value === 'blueprint' ? 'control' : 'runtime',
+    concern: value === 'blueprint' ? 'control-tower' : 'service-memory',
+    requiredPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LOG.md'],
+    suggestedPaths: ['ops/control-tower/GATE_ENTRYPOINTS.md'],
+    suggestedPatterns: ['ops/services/unified-mcp/RECOVERY.md'],
+    verificationChecklist: ['search visibility verified in the user-visible vault'],
+    gatePaths: ['ops/quality/gates/2026-04-10_visible-reflection-gate.md'],
+    customerImpact: false,
+    notes: ['test bundle'],
+  })),
   getObsidianKnowledgeControlSurface: vi.fn().mockReturnValue({
     compiler: {
       enabled: true,
@@ -135,12 +147,51 @@ vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
       },
     },
     artifactPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LINT.md'],
+    controlPaths: ['ops/control-tower/BLUEPRINT.md'],
+    blueprint: {
+      model: '4-plane-control-tower',
+      controlPaths: ['ops/control-tower/BLUEPRINT.md'],
+      reflectionChecklist: ['search visibility verified in the user-visible vault'],
+      planes: [{
+        id: 'control',
+        label: 'Control Plane',
+        description: 'Canonical policy and gate standards.',
+        pathPatterns: ['ops/control-tower/**'],
+        primaryQuestions: ['What is canonical?'],
+      }],
+    },
+    bundleSupport: {
+      enabled: true,
+      queryParam: 'bundleFor',
+      acceptedAliases: ['blueprint'],
+    },
+    pathIndex: [{
+      path: 'ops/control-tower/BLUEPRINT.md',
+      plane: 'control',
+      concern: 'control-tower',
+      generated: false,
+    }],
   }),
-  resolveObsidianKnowledgeArtifactPath: vi.fn((artifact: string) => artifact === 'lint' ? 'ops/knowledge-control/LINT.md' : null),
+  resolveObsidianKnowledgeArtifactPath: vi.fn((artifact: string) => {
+    if (artifact === 'lint') return 'ops/knowledge-control/LINT.md';
+    if (artifact === 'blueprint') return 'ops/control-tower/BLUEPRINT.md';
+    return null;
+  }),
 }));
 
 vi.mock('../utils/obsidianEnv', () => ({
   getObsidianVaultRoot: vi.fn().mockReturnValue('/test-vault'),
+  getObsidianVaultRuntimeInfo: vi.fn().mockReturnValue({
+    configured: true,
+    root: '/test-vault',
+    configuredName: 'Obsidian Vault',
+    resolvedName: 'Obsidian Vault',
+    exists: true,
+    topLevelDirectories: ['chat', 'guilds', 'ops'],
+    topLevelFiles: [],
+    looksLikeDesktopVault: true,
+    looksLikeRepoDocs: false,
+  }),
 }));
 
 import { listObsidianMcpTools, callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from './obsidianToolAdapter';
@@ -361,6 +412,8 @@ describe('obsidianToolAdapter', () => {
       const data = JSON.parse(result.content[0]?.text || '{}');
       expect(data.strictMode).toBe(false);
       expect(data.adapters).toHaveLength(1);
+      expect(data.vaultRuntime.root).toBe('/test-vault');
+      expect(data.vaultRuntime.looksLikeDesktopVault).toBe(true);
       expect(data.vaultHealth.healthy).toBe(true);
       expect(data.retrievalBoundary.metadataOnly.available).toBe(true);
       expect(data.cacheStats.activeDocs).toBe(40);
@@ -373,6 +426,9 @@ describe('obsidianToolAdapter', () => {
       expect(data.compiler.runs).toBe(3);
       expect(data.compiler.lastLintSummary.issueCount).toBe(1);
       expect(data.artifactPaths).toContain('ops/knowledge-control/LINT.md');
+      expect(data.controlPaths).toContain('ops/control-tower/BLUEPRINT.md');
+      expect(data.blueprint.model).toBe('4-plane-control-tower');
+      expect(data.bundleSupport.queryParam).toBe('bundleFor');
     });
 
     it('obsidian.knowledge.control returns requested artifact content', async () => {
@@ -384,6 +440,31 @@ describe('obsidianToolAdapter', () => {
       const data = JSON.parse(result.content[0]?.text || '{}');
       expect(data.artifact.path).toBe('ops/knowledge-control/LINT.md');
       expect(data.artifact.content).toContain('Test Note');
+    });
+
+    it('obsidian.knowledge.control resolves control-tower blueprint artifacts', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'obsidian.knowledge.control',
+        arguments: { artifact: 'blueprint' },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.artifact.path).toBe('ops/control-tower/BLUEPRINT.md');
+      expect(data.artifact.content).toContain('Test Note');
+    });
+
+    it('obsidian.knowledge.control returns reflection bundle recommendations', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'obsidian.knowledge.control',
+        arguments: { bundleFor: 'ops/services/unified-mcp/PROFILE.md' },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.bundle).toMatchObject({
+        targetPath: 'ops/services/unified-mcp/PROFILE.md',
+        plane: 'runtime',
+        concern: 'service-memory',
+      });
     });
   });
 });
