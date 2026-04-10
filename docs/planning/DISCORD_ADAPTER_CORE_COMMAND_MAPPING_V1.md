@@ -18,6 +18,7 @@ Primary handler hub:
 
 | Discord command | Adapter handler                           | Core command_type        | Core payload focus                |
 | --------------- | ----------------------------------------- | ------------------------ | --------------------------------- |
+| 해줘            | docsHandlers.handleAskCommand             | docs.ask                 | query, visibility (compat alias) |
 | 뮤엘            | docsHandlers.handleAskCommand             | docs.ask                 | query, visibility                 |
 | 만들어줘        | vibeHandlers.handleMakeCommand            | worker.generate.request  | goal, coding intent, visibility   |
 | 변경사항        | docsHandlers.handleChangelogCommand       | docs.changelog           | Obsidian #changelog tag search    |
