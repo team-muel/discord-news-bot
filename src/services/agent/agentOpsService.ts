@@ -1,9 +1,14 @@
-import type { Client, Guild } from 'discord.js';
+import { ChannelType, type Client, type Guild, type GuildBasedChannel } from 'discord.js';
+import { DISCORD_MESSAGES } from '../../discord/messages';
 import logger from '../../logger';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv } from '../../utils/env';
 import { queueMemoryJob } from './agentMemoryStore';
 import { getAgentGotCutoverDecision } from './agentGotCutoverService';
 import { listGuildAgentSessions, startAgentSession } from '../multiAgentService';
+import { isAutomationEnabled, triggerAutomationJob } from '../automationBot';
+import { T_SOURCES } from '../infra/tableRegistry';
+import { getNewsMonitorCandidateSourceStatus } from '../news/newsMonitorWorkerClient';
+import { createNewsChannelSubscription } from '../news/newsChannelStore';
 import { autoBootstrapGuildKnowledgeOnJoin } from '../obsidian/obsidianBootstrapService';
 import { autoSyncGuildTopologyOnJoin } from '../discord-support/discordTopologySyncService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
@@ -19,6 +24,21 @@ const AGENT_GOT_CUTOVER_AUTOPILOT_INTERVAL_MIN = parseMinIntEnv(process.env.AGEN
 const AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MAX_GUILDS, 100, 1);
 const AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT = parseBoundedNumberEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_TARGET_ROLLOUT_PERCENT, 100, 0, 100);
 const AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES = parseMinIntEnv(process.env.AGENT_GOT_CUTOVER_AUTOPILOT_MIN_REVIEW_SAMPLES, 20, 0);
+
+type SendableGuildChannel = GuildBasedChannel & {
+  id: string;
+  name: string;
+  rawPosition?: number;
+  isSendable: () => boolean;
+  send: (content: string) => Promise<unknown>;
+};
+
+type GuildJoinNewsBootstrapStatus =
+  | 'created'
+  | 'existing'
+  | 'skipped-has-sources'
+  | 'skipped-supabase'
+  | 'failed';
 
 let dailyTimer: NodeJS.Timeout | null = null;
 let gotCutoverAutopilotTimer: NodeJS.Timeout | null = null;
@@ -36,6 +56,150 @@ const hasRecentOnboardingSession = (guildId: string): boolean => {
   return sessions.some((session) =>
     session.requestedSkillId === 'guild-onboarding-blueprint'
     && Date.parse(session.createdAt) >= cutoff);
+};
+
+const isSendableGuildChannel = (channel: GuildBasedChannel | null | undefined): channel is SendableGuildChannel => {
+  if (!channel) {
+    return false;
+  }
+
+  if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) {
+    return false;
+  }
+
+  if (!('isSendable' in channel) || typeof channel.isSendable !== 'function' || !channel.isSendable()) {
+    return false;
+  }
+
+  return 'send' in channel && typeof channel.send === 'function';
+};
+
+const getChannelSortPos = (channel: GuildBasedChannel): number => {
+  return Number(('rawPosition' in channel ? channel.rawPosition : 0) || 0);
+};
+
+const resolveGuildBootstrapChannel = (guild: Guild): SendableGuildChannel | null => {
+  const selected = new Set<string>();
+  const orderedCandidates: SendableGuildChannel[] = [];
+  const push = (channel: GuildBasedChannel | null | undefined) => {
+    if (!isSendableGuildChannel(channel) || selected.has(channel.id)) {
+      return;
+    }
+    selected.add(channel.id);
+    orderedCandidates.push(channel);
+  };
+
+  push(guild.systemChannel);
+
+  const fallbackChannels = [...guild.channels.cache.values()]
+    .filter(isSendableGuildChannel)
+    .sort((left, right) => getChannelSortPos(left) - getChannelSortPos(right) || left.name.localeCompare(right.name));
+
+  for (const channel of fallbackChannels) {
+    push(channel);
+  }
+
+  return orderedCandidates[0] || null;
+};
+
+const hasAnyGuildSourceRows = async (guildId: string): Promise<boolean> => {
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  const { data, error } = await getSupabaseClient()
+    .from(T_SOURCES)
+    .select('id')
+    .eq('guild_id', guildId)
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  return Array.isArray(data) && data.length > 0;
+};
+
+const ensureDefaultGuildNewsSubscription = async (guild: Guild, channelId: string): Promise<GuildJoinNewsBootstrapStatus> => {
+  if (!isSupabaseConfigured()) {
+    return 'skipped-supabase';
+  }
+
+  if (await hasAnyGuildSourceRows(guild.id)) {
+    return 'skipped-has-sources';
+  }
+
+  try {
+    const result = await createNewsChannelSubscription({
+      userId: 'system-on-guild-join',
+      guildId: guild.id,
+      discordChannelId: channelId,
+    });
+    return result.created ? 'created' : 'existing';
+  } catch (error) {
+    logger.warn('[AGENT-OPS] default news bootstrap failed guild=%s channel=%s error=%s', guild.id, channelId, getErrorMessage(error));
+    return 'failed';
+  }
+};
+
+const buildGuildJoinWelcomeLines = (params: {
+  sessionId: string | null;
+  newsBootstrapStatus: GuildJoinNewsBootstrapStatus;
+  channelId: string;
+}): string[] => {
+  const lines = [...DISCORD_MESSAGES.bot.onboardingWelcomeLines(params.sessionId)];
+  const automationReady = isAutomationEnabled() && getNewsMonitorCandidateSourceStatus().configured;
+
+  switch (params.newsBootstrapStatus) {
+    case 'created':
+      lines.push(
+        automationReady
+          ? `기본 뉴스 브리핑을 <#${params.channelId}> 채널에 연결했습니다. 새 뉴스가 확인되면 이 채널로 자동 전송됩니다.`
+          : `기본 뉴스 브리핑 source를 <#${params.channelId}> 채널에 연결했습니다. 자동화 런타임이 준비되면 이 채널로 전달됩니다.`,
+      );
+      break;
+    case 'existing':
+      lines.push(`기본 뉴스 브리핑은 이미 <#${params.channelId}> 채널에 연결되어 있습니다.`);
+      break;
+    case 'skipped-supabase':
+      lines.push('기본 뉴스 프로비저닝은 현재 저장소 연결이 없어 건너뛰었습니다. 필요하면 이 채널에서 `/구독 뉴스`로 직접 연결해주세요.');
+      break;
+    case 'failed':
+      lines.push('기본 뉴스 프로비저닝 중 오류가 있어 이 채널에서 `/구독 뉴스`로 다시 연결해주세요.');
+      break;
+    case 'skipped-has-sources':
+    default:
+      break;
+  }
+
+  return lines;
+};
+
+const ensureGuildJoinReadySurface = async (guild: Guild, onboardingSessionId: string | null): Promise<void> => {
+  const channel = resolveGuildBootstrapChannel(guild);
+  if (!channel) {
+    logger.warn('[AGENT-OPS] guild bootstrap channel missing guild=%s', guild.id);
+    return;
+  }
+
+  const newsBootstrapStatus = await ensureDefaultGuildNewsSubscription(guild, channel.id);
+  const lines = buildGuildJoinWelcomeLines({
+    sessionId: onboardingSessionId,
+    newsBootstrapStatus,
+    channelId: channel.id,
+  });
+
+  try {
+    await channel.send(lines.join('\n'));
+  } catch (error) {
+    logger.warn('[AGENT-OPS] guild welcome send failed guild=%s channel=%s error=%s', guild.id, channel.id, getErrorMessage(error));
+  }
+
+  if (newsBootstrapStatus === 'created' && isAutomationEnabled() && getNewsMonitorCandidateSourceStatus().configured) {
+    void triggerAutomationJob('news-monitor', { guildId: guild.id }).catch((error) => {
+      logger.warn('[AGENT-OPS] initial news monitor trigger failed guild=%s error=%s', guild.id, getErrorMessage(error));
+    });
+  }
 };
 
 export const triggerGuildOnboardingSession = (params: {
@@ -328,10 +492,16 @@ export const onGuildJoined = (guild: Guild) => {
     logger.warn('[AGENT-OPS] obsidian bootstrap failed guild=%s error=%s', guild.id, getErrorMessage(error));
   });
 
-  return triggerGuildOnboardingSession({
+  const onboarding = triggerGuildOnboardingSession({
     guildId: guild.id,
     guildName: guild.name,
     requestedBy: 'system-on-guild-join',
     reason: 'guildCreate',
   });
+
+  void ensureGuildJoinReadySurface(guild, onboarding.ok ? String(onboarding.sessionId || '') : null).catch((error) => {
+    logger.warn('[AGENT-OPS] guild ready surface bootstrap failed guild=%s error=%s', guild.id, getErrorMessage(error));
+  });
+
+  return onboarding;
 };
