@@ -16,6 +16,7 @@ export type ToolHint = {
 import { TASK_ROUTING_LEARNING_RULE_CACHE_TTL_MS, TASK_ROUTING_LEARNING_RULE_MIN_CONFIDENCE } from '../config';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getToolCatalog } from './tools/externalAdapterRegistry';
+import { validateTaskRoutingSignalPattern } from '../utils/validation';
 
 const KNOWLEDGE_PATTERN = /(무엇|정의|설명|원인|비교|차이|왜|근거|문서|스키마|정책|알려줘|요약|정리|what|why|explain|summary|schema|policy|docs?)/i;
 const EXECUTION_PATTERN = /(구현|만들|작성|수정|적용|배포|설정|연동|실행|자동화|고쳐|리팩터|코드|build|implement|create|fix|patch|deploy|configure|integrat|automate)/i;
@@ -30,6 +31,7 @@ type LearningRoutingRule = {
   recommendedRoute: TaskRoute;
   confidence: number;
   supportCount: number;
+  matcher: RegExp;
 };
 
 const learningRuleCache = new Map<string, { expiresAt: number; rules: LearningRoutingRule[] }>();
@@ -68,17 +70,26 @@ const clampSupportCount = (value: unknown): number => {
 
 const normalizeLearningRule = (row: Record<string, unknown>): LearningRoutingRule | null => {
   const recommendedRoute = toTaskRoute(row.recommended_route);
-  const signalPattern = String(row.signal_pattern || '').trim();
-  if (!recommendedRoute || !signalPattern) {
+  const signalPattern = validateTaskRoutingSignalPattern(row.signal_pattern);
+  if (!recommendedRoute || !signalPattern.ok) {
+    if (!signalPattern.ok) {
+      console.warn(
+        '[task-routing] skipping invalid learning rule guild=%s key=%s issue=%s',
+        String(row.guild_id || '').trim() || '*',
+        String(row.signal_key || '').trim() || '(unknown)',
+        signalPattern.issue,
+      );
+    }
     return null;
   }
   return {
     guildId: String(row.guild_id || '').trim(),
     signalKey: String(row.signal_key || '').trim(),
-    signalPattern,
+    signalPattern: signalPattern.pattern,
     recommendedRoute,
     confidence: clamp01(Number(row.confidence || 0)),
     supportCount: clampSupportCount(row.support_count),
+    matcher: new RegExp(signalPattern.pattern, 'i'),
   };
 };
 
@@ -132,12 +143,7 @@ const selectLearningRuleMatch = (text: string, rules: LearningRoutingRule[]): Le
       continue;
     }
 
-    let matched = false;
-    try {
-      matched = new RegExp(rule.signalPattern, 'i').test(source);
-    } catch {
-      matched = false;
-    }
+    const matched = rule.matcher.test(source);
     if (!matched) {
       continue;
     }

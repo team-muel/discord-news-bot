@@ -66,6 +66,53 @@ const safeSetApproval = (key: string, value: ActionApprovalRequest): void => {
   memoryApprovals.set(key, value);
 };
 
+const listMemoryApprovals = (params: {
+  guildId: string;
+  status?: ActionApprovalStatus;
+  limit: number;
+}): ActionApprovalRequest[] => {
+  return [...memoryApprovals.values()]
+    .filter((row) => row.guildId === params.guildId)
+    .filter((row) => !params.status || row.status === params.status)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, params.limit);
+};
+
+const approvalFreshnessMs = (row: ActionApprovalRequest): number => {
+  const timestamp = Date.parse(row.approvedAt || row.createdAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const mergeApprovalRows = (rows: ActionApprovalRequest[], limit: number): ActionApprovalRequest[] => {
+  const deduped = new Map<string, ActionApprovalRequest>();
+  for (const row of rows) {
+    const existing = deduped.get(row.id);
+    if (!existing || approvalFreshnessMs(row) >= approvalFreshnessMs(existing)) {
+      deduped.set(row.id, row);
+    }
+  }
+
+  return [...deduped.values()]
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, limit);
+};
+
+const applyApprovalDecision = (params: {
+  row: ActionApprovalRequest;
+  status: ActionApprovalStatus;
+  actorId: string;
+  decidedAt: string;
+  reason?: string;
+}): ActionApprovalRequest => {
+  return {
+    ...params.row,
+    status: params.status,
+    approvedBy: params.actorId,
+    approvedAt: params.decidedAt,
+    reason: params.reason ? String(params.reason) : params.row.reason,
+  };
+};
+
 const toPolicyKey = (guildId: string, actionName: string): string => `${guildId}::${String(actionName || '').trim()}`;
 
 const nowIso = () => new Date().toISOString();
@@ -420,13 +467,14 @@ export const listActionApprovalRequests = async (params: {
   limit?: number;
 }): Promise<ActionApprovalRequest[]> => {
   const limit = Math.max(1, Math.min(200, Math.trunc(params.limit ?? 30)));
+  const memoryRows = listMemoryApprovals({
+    guildId: params.guildId,
+    status: params.status,
+    limit,
+  });
 
   if (!isSupabaseConfigured()) {
-    return [...memoryApprovals.values()]
-      .filter((row) => row.guildId === params.guildId)
-      .filter((row) => !params.status || row.status === params.status)
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-      .slice(0, limit);
+    return memoryRows;
   }
 
   try {
@@ -444,13 +492,14 @@ export const listActionApprovalRequests = async (params: {
 
     const { data, error } = await query;
     if (error || !data) {
-      return [];
+      return memoryRows;
     }
 
-    return (data as Record<string, unknown>[]).map((row) => normalizeApprovalRow(row));
+    const dbRows = (data as Record<string, unknown>[]).map((row) => normalizeApprovalRow(row));
+    return mergeApprovalRows([...dbRows, ...memoryRows], limit);
   } catch (err) {
     logger.debug('[GOVERNANCE] approval list failed: %s', getErrorMessage(err));
-    return [];
+    return memoryRows;
   }
 };
 
@@ -462,9 +511,10 @@ export const decideActionApprovalRequest = async (params: {
 }): Promise<ActionApprovalRequest | null> => {
   const status: ActionApprovalStatus = params.decision === 'approve' ? 'approved' : 'rejected';
   const decidedAt = nowIso();
+  const memoryRow = memoryApprovals.get(params.requestId) || null;
 
   if (!isSupabaseConfigured()) {
-    const row = memoryApprovals.get(params.requestId);
+    const row = memoryRow;
     if (!row) {
       return null;
     }
@@ -472,15 +522,19 @@ export const decideActionApprovalRequest = async (params: {
       return row;
     }
 
-    const next: ActionApprovalRequest = {
-      ...row,
+    const next = applyApprovalDecision({
+      row,
       status,
-      approvedBy: params.actorId,
-      approvedAt: decidedAt,
-      reason: params.reason ? String(params.reason) : row.reason,
-    };
+      actorId: params.actorId,
+      decidedAt,
+      reason: params.reason,
+    });
     safeSetApproval(params.requestId, next);
     return next;
+  }
+
+  if (memoryRow && memoryRow.status !== 'pending') {
+    return memoryRow;
   }
 
   try {
@@ -492,10 +546,24 @@ export const decideActionApprovalRequest = async (params: {
       .maybeSingle();
 
     if (!existing) {
-      return null;
+      if (!memoryRow) {
+        return null;
+      }
+      const next = memoryRow.status === 'pending'
+        ? applyApprovalDecision({
+          row: memoryRow,
+          status,
+          actorId: params.actorId,
+          decidedAt,
+          reason: params.reason,
+        })
+        : memoryRow;
+      safeSetApproval(params.requestId, next);
+      return next;
     }
 
     if (String(existing.status) !== 'pending') {
+      memoryApprovals.delete(params.requestId);
       return normalizeApprovalRow(existing);
     }
 
@@ -512,12 +580,37 @@ export const decideActionApprovalRequest = async (params: {
       .single();
 
     if (error || !data) {
-      return null;
+      const baseRow = memoryRow || normalizeApprovalRow(existing);
+      const next = baseRow.status === 'pending'
+        ? applyApprovalDecision({
+          row: baseRow,
+          status,
+          actorId: params.actorId,
+          decidedAt,
+          reason: params.reason,
+        })
+        : baseRow;
+      safeSetApproval(params.requestId, next);
+      return next;
     }
 
+    memoryApprovals.delete(params.requestId);
     return normalizeApprovalRow(data);
   } catch (err) {
     logger.debug('[GOVERNANCE] approval decide failed requestId=%s: %s', params.requestId, getErrorMessage(err));
-    return null;
+    if (!memoryRow) {
+      return null;
+    }
+    const next = memoryRow.status === 'pending'
+      ? applyApprovalDecision({
+        row: memoryRow,
+        status,
+        actorId: params.actorId,
+        decidedAt,
+        reason: params.reason,
+      })
+      : memoryRow;
+    safeSetApproval(params.requestId, next);
+    return next;
   }
 };

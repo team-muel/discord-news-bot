@@ -184,6 +184,7 @@ export type HealthResponse = {
   status: 'ok' | 'degraded';
   botStatusGrade: BotStatusGrade;
   uptimeSec: number;
+  diagnosticsVisibility?: 'public' | 'admin';
   bot: BotRuntimeStatus;
   automation: AutomationRuntimeStatus;
   n8n?: {
@@ -206,4 +207,42 @@ export type HealthResponse = {
     pendingCount: number;
     pendingNames: string[];
   } | null;
+  runtimeBootstrap?: {
+    serverStarted: boolean;
+    discordReadyStarted: boolean;
+    sharedLoopsStarted: boolean;
+    sharedLoopsSource: 'server-process' | 'discord-ready' | null;
+    pgCron: {
+      status: 'not-required' | 'pending' | 'ready' | 'partial' | 'failed';
+      startedAt: string | null;
+      completedAt: string | null;
+      lastError?: string | null;
+      deferredTaskCount: number;
+      replacedLoops?: string[];
+      summary: {
+        totalJobs: number;
+        created: number;
+        existing: number;
+        error: number;
+        confirmedLoopCount: number;
+      } | null;
+    };
+  };
+  startup?: {
+    summary: {
+      total: number;
+      idle: number;
+      pending: number;
+      ok: number;
+      warn: number;
+      skipped: number;
+    };
+    tasks?: Array<{
+      id: string;
+      label: string;
+      status: 'idle' | 'pending' | 'ok' | 'warn' | 'skipped';
+      updatedAt: string | null;
+      message: string | null;
+    }>;
+  };
 };

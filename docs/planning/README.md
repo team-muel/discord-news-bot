@@ -1,5 +1,7 @@
 # Planning Docs Index
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/team-muel/discord-news-bot)
+
 ## 상태
 
 현재 실행 상태와 Active WIP는 `EXECUTION_BOARD.md`에서만 판정한다.
@@ -107,6 +109,7 @@
 - OBSIDIAN_SEED_OBJECTS_PRIORITY.md
 - REPO_DOC_EXTERNALIZATION_PLAN.md
 - contexts/team-muel_discord-news-bot.md
+- TEAM_SHAREABLE_USER_MEMORY.md
 - development/2026-04-10_obsidian-development-archaeology-wikiization.md
 - GCP_OPENCODE_WORKER_VM_DEPLOY.md
 - GCP_REMOTE_INFERENCE_NODE.md

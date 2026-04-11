@@ -131,22 +131,23 @@ type PhaseAdapterMapping = {
 
 | Phase | Primary Adapter | Secondary Adapter |
 |---|---|---|
-| plan | openclaw (agent.chat) | deepwiki (wiki.ask) |
+| plan | deepwiki (wiki.ask) | openjarvis (jarvis.research) |
 | implement | openclaw (agent.chat) | — |
-| review | nemoclaw (code.review) | — |
-| qa | nemoclaw (code.review) | openjarvis (jarvis.eval) |
+| review | nemoclaw (code.review) | deepwiki (wiki.diagnose) |
+| qa | openjarvis (jarvis.ask) | openshell (sandbox.exec) |
 | security-audit | nemoclaw (code.review) | openjarvis (jarvis.memory.search) |
-| ops-validate | openjarvis (jarvis.telemetry) | openjarvis (jarvis.scheduler.run) |
-| ship | openclaw (agent.health) | — |
+| ops-validate | openjarvis (jarvis.telemetry) | openjarvis (jarvis.ask) |
+| ship | — | — |
 | retro | deepwiki (wiki.ask) | openjarvis (jarvis.digest) |
 
 ### Phase Enrichment
 
 `PHASE_ENRICHMENT_MAP` in `sprintPreamble.ts` injects context from external adapters before phase execution:
 
-- 28 enrichment actions across all 8 phases
+- 34 enrichment actions across all 8 phases
 - Each enrichment maps to an `ext.<adapterId>.<capability>` MCP tool call
 - Enrichment failures are non-blocking (context injection is best-effort)
+- DeepWiki enrichment is now used beyond plan/retro to surface repo-specific regression, QA, security, and operational diagnostic risks.
 
 ### OpenClaw Session Bootstrap
 

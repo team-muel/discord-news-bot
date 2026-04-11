@@ -7,6 +7,7 @@
  */
 import { defineSchema, defineReducer, Entity, mutation, createRepository, type Adapter } from 'ventyd';
 import { valibot, v } from 'ventyd/valibot';
+import { buildPhaseResultKey } from '../phaseResultKey';
 
 // ──── Domain value types (matching sprintOrchestrator.ts) ─────────────────────
 
@@ -138,12 +139,13 @@ export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevSt
         error: null,
       };
 
-    case 'sprint_pipeline:phase_completed':
+    case 'sprint_pipeline:phase_completed': {
+      const resultKey = buildPhaseResultKey(event.body.phase, prevState.totalPhasesExecuted);
       return {
         ...prevState,
         phaseResults: {
           ...prevState.phaseResults,
-          [event.body.phase]: {
+          [resultKey]: {
             phase: event.body.phase as typeof prevState.currentPhase,
             status: event.body.status as typeof prevState.phaseResults[string]['status'],
             output: event.body.output,
@@ -155,6 +157,7 @@ export const sprintPipelineReducer = defineReducer(sprintPipelineSchema, (prevSt
         },
         totalPhasesExecuted: prevState.totalPhasesExecuted + 1,
       };
+    }
 
     case 'sprint_pipeline:looped_back':
       return {

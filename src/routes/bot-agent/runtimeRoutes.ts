@@ -43,7 +43,7 @@ import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/ob
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus } from '../../services/obsidian/router';
 import { loadOperatingBaseline } from '../../services/runtime/operatingBaseline';
 import { getPendingIntentCount } from '../../services/intent';
-import { toBoundedInt, toStringParam } from '../../utils/validation';
+import { sanitizeRecord, toBoundedInt, toStringParam } from '../../utils/validation';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo, type ObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 import {
   computeSystemGradient,
@@ -97,6 +97,8 @@ const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
   }
   return result;
 };
+
+const CHANNEL_ROUTING_KEY_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
 
 type PromotionBacklink = {
   artifactKind: ObsidianKnowledgePromotionKind;
@@ -1158,15 +1160,22 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
 
   router.put('/agent/runtime/channel-routing', requireAdmin, adminActionRateLimiter, async (req, res, next) => {
     const guildId = toStringParam(req.body?.guildId);
-    const channels = req.body?.channels as Record<string, string> | undefined;
+    const channels = sanitizeRecord(req.body?.channels);
     if (!guildId) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId is required' });
     }
-    if (!channels || typeof channels !== 'object' || Array.isArray(channels)) {
+    if (!channels) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'channels object is required (must be key-value map, not array)' });
     }
     // Validate channel provider values
     for (const [channel, provider] of Object.entries(channels)) {
+      if (!CHANNEL_ROUTING_KEY_PATTERN.test(channel)) {
+        return res.status(400).json({
+          ok: false,
+          error: 'VALIDATION',
+          message: `Invalid channel key "${channel}". Keys must match /^[A-Za-z0-9_-]{1,50}$/ and are stored verbatim.`,
+        });
+      }
       if (typeof provider !== 'string' || !VALID_CHANNEL_PROVIDERS.has(provider)) {
         return res.status(400).json({
           ok: false,
@@ -1177,8 +1186,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     }
     const sanitized: Record<string, string> = {};
     for (const [k, v] of Object.entries(channels)) {
-      const key = String(k).slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '');
-      if (key) sanitized[key] = String(v);
+      sanitized[k] = String(v);
     }
     await saveChannelRouting(guildId, sanitized);
     return res.json({ ok: true, guildId, channels: sanitized, updatedAt: new Date().toISOString() });

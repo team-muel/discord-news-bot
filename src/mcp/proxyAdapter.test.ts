@@ -316,6 +316,27 @@ describe('proxyAdapter', () => {
       expect(tools.map((tool) => tool.name)).toEqual(['upstream.deny_filtered.list_tables']);
     });
 
+    it('drops sanitized-name collisions and records them in diagnostics', async () => {
+      registerUpstream({ id: 'collide', url: 'http://collide.test', namespace: 'collide' });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([
+        { name: 'list-tables' },
+        { name: 'list.tables' },
+        { name: 'read_tables' },
+      ]));
+
+      const tools = await listProxiedTools();
+      expect(tools.map((tool) => tool.name)).toEqual([
+        'upstream.collide.list_tables',
+        'upstream.collide.read_tables',
+      ]);
+
+      const diagnostics = listUpstreamDiagnostics();
+      expect(diagnostics[0].catalog.visibleToolCount).toBe(2);
+      expect(diagnostics[0].catalog.rawToolCount).toBe(3);
+      expect(diagnostics[0].catalog.nameCollisionCount).toBe(1);
+      expect(diagnostics[0].catalog.collisionExamples).toContain('list.tables -> upstream.collide.list_tables');
+    });
+
     it('returns upstream diagnostics with metadata and catalog state', async () => {
       registerUpstream({
         id: 'federated_runtime',
@@ -368,6 +389,10 @@ describe('proxyAdapter', () => {
         },
       });
       expect(diagnostics[0].catalog.visibleToolCount).toBe(1);
+      expect(diagnostics[0].catalog.rawToolCount).toBe(1);
+      expect(diagnostics[0].catalog.filteredToolCount).toBe(0);
+      expect(diagnostics[0].catalog.invalidToolCount).toBe(0);
+      expect(diagnostics[0].catalog.nameCollisionCount).toBe(0);
       expect(diagnostics[0].catalog.cacheState).toBe('warm');
       expect(diagnostics[0].catalog.lastSuccessAt).toBeTruthy();
       expect(diagnostics[0].catalog.lastError).toBeNull();

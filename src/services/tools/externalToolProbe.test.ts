@@ -135,6 +135,49 @@ describe('externalAdapterRegistry', () => {
       expect(typeof s.available).toBe('boolean');
     }
   }, 30_000);
+
+  describe('deepwikiAdapter', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ models: [], status: 'ok' }),
+        text: async () => 'DeepWiki diagnostic output',
+      });
+    });
+
+    it('exposes wiki.diagnose in capabilities and liteCapabilities', async () => {
+      const { deepwikiAdapter } = await import('./adapters/deepwikiAdapter');
+      expect(deepwikiAdapter.capabilities).toContain('wiki.diagnose');
+      expect(deepwikiAdapter.liteCapabilities).toContain('wiki.diagnose');
+    });
+
+    it('wiki.diagnose builds a repo-specific diagnostic prompt', async () => {
+      const { deepwikiAdapter } = await import('./adapters/deepwikiAdapter');
+      const result = await deepwikiAdapter.execute('wiki.diagnose', {
+        repo: 'team-muel/discord-news-bot',
+        phase: 'review',
+        objective: 'Fix auth regression',
+        changedFiles: ['src/auth.ts', 'src/routes/bot.ts'],
+        primaryOutput: 'Possible missing null guard on token parsing',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.action).toBe('wiki.diagnose');
+      expect(result.summary).toContain('Diagnosis for team-muel/discord-news-bot');
+
+      const lastCall = fetchMock.mock.calls.at(-1);
+      expect(lastCall).toBeTruthy();
+      expect(String(lastCall?.[0])).toContain('/chat/completions/stream');
+
+      const body = JSON.parse(String((lastCall?.[1] as RequestInit | undefined)?.body || '{}'));
+      expect(body.repo_url).toBe('https://github.com/team-muel/discord-news-bot');
+      expect(body.messages[0].content).toContain('Phase: review');
+      expect(body.messages[0].content).toContain('Changed files: src/auth.ts, src/routes/bot.ts');
+      expect(body.messages[0].content).toContain('Likely defects or regressions');
+      expect(body.messages[0].content).toContain('Possible missing null guard on token parsing');
+    });
+  });
 });
 
 describe('externalAdapterTypes — M-15 schema validation', () => {

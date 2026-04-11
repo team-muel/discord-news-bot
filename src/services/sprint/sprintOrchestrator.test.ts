@@ -130,6 +130,10 @@ describe('sprintOrchestrator', () => {
       // plan has deepwiki primary + openjarvis secondary
       expect(map['plan']!.secondary).toBeDefined();
       expect(map['plan']!.secondary!.adapterId).toBe('openjarvis');
+      // review keeps NemoClaw primary + DeepWiki diagnostics secondary
+      expect(map['review']!.secondary).toBeDefined();
+      expect(map['review']!.secondary!.adapterId).toBe('deepwiki');
+      expect(map['review']!.secondary!.action).toBe('wiki.diagnose');
       // qa has openjarvis primary + openshell secondary
       expect(map['qa']!.secondary).toBeDefined();
       expect(map['qa']!.secondary!.adapterId).toBe('openshell');
@@ -243,6 +247,15 @@ describe('sprintOrchestrator', () => {
       const args = buildSecondaryAdapterArgs('qa', pipeline, 'test gaps found');
       expect(args.command).toContain('vitest');
       expect(args.mode).toBe('read_only');
+    });
+
+    it('review phase secondary에 DeepWiki 진단 args를 생성한다', () => {
+      const args = buildSecondaryAdapterArgs('review', pipeline, 'Potential regression in cache invalidation path');
+      expect(args.repo).toBe('team-muel/discord-news-bot');
+      expect(args.phase).toBe('review');
+      expect(args.objective).toBe('Add caching');
+      expect(args.changedFiles).toEqual(['src/cache.ts']);
+      expect(args.primaryOutput).toContain('Potential regression');
     });
 
     it('security-audit secondary는 memory search를 한다', () => {

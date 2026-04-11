@@ -81,6 +81,7 @@ Open these first when verifying behavior:
 - Supabase schema: `docs/SUPABASE_SCHEMA.sql`
 - Secret rotation and shared Supabase read-plane rollout: `docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md`
 - Obsidian sync operations: `docs/OBSIDIAN_SUPABASE_SYNC.md`
+- Team-shared MCP and IDE operating standard: `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`
 - MCP tool spec and rollout: `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/planning/mcp/MCP_ROLLOUT_1W.md`
 - Lightweight worker split: `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md`
 - Progressive autonomy 30-day checklist: `docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md` (ARCHIVED)
@@ -96,6 +97,7 @@ Open these first when verifying behavior:
 Runtime/control-plane verification baseline:
 
 - Treat `config/runtime/operating-baseline.json` as the canonical source for current machine profile, always-on required services, canonical worker endpoints, and local-only acceleration lanes.
+- Use public `GET /health` and `/dashboard` for startup summary state only. Detailed startup error text and loop ownership diagnostics are shown only to signed-in admins; use `GET /api/bot/agent/runtime/scheduler-policy` and `GET /api/bot/agent/runtime/loops` for the full operator view.
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
 - Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze. Inspect the `llmRuntime` block to see the selected provider, action policy providers, workflow binding, effective provider profile, resolved chain, readiness-pruned chain, and per-provider health.
 - Use `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` when validating A-003 gate -> approval -> model fallback state for a specific guild.

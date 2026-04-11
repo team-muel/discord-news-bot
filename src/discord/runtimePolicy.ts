@@ -38,30 +38,96 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const REDOS_SUSPECT_RE = /([+*]|\{[0-9,]+\})\s*\)\s*[+*?]/;
 
-const toRegex = (raw: string | undefined, fallbackSource: string): RegExp => {
-  const source = String(raw || '').trim() || fallbackSource;
-  if (REDOS_SUSPECT_RE.test(source)) {
-    return new RegExp(fallbackSource, 'i');
+type IntentPatternStatus = 'default' | 'custom' | 'disabled-invalid';
+type IntentPatternReason = 'missing' | 'ok' | 'redos-suspect' | 'invalid-regex';
+
+export type IntentPatternDiagnostics = {
+  label: 'coding' | 'automation';
+  status: IntentPatternStatus;
+  reason: IntentPatternReason;
+  source: string;
+};
+
+const NEVER_MATCH_PATTERN_SOURCE = '(?!)';
+
+const buildIntentPattern = (
+  raw: string | undefined,
+  fallbackSource: string,
+  label: IntentPatternDiagnostics['label'],
+): { regex: RegExp; diagnostics: IntentPatternDiagnostics } => {
+  const source = String(raw || '').trim();
+  if (!source) {
+    return {
+      regex: new RegExp(fallbackSource, 'i'),
+      diagnostics: {
+        label,
+        status: 'default',
+        reason: 'missing',
+        source: fallbackSource,
+      },
+    };
   }
+
+  if (REDOS_SUSPECT_RE.test(source)) {
+    console.error('[discord-runtime-policy] invalid %s intent regex rejected (redos-suspect); override disabled', label);
+    return {
+      regex: new RegExp(NEVER_MATCH_PATTERN_SOURCE, 'i'),
+      diagnostics: {
+        label,
+        status: 'disabled-invalid',
+        reason: 'redos-suspect',
+        source,
+      },
+    };
+  }
+
   try {
-    return new RegExp(source, 'i');
+    return {
+      regex: new RegExp(source, 'i'),
+      diagnostics: {
+        label,
+        status: 'custom',
+        reason: 'ok',
+        source,
+      },
+    };
   } catch {
-    return new RegExp(fallbackSource, 'i');
+    console.error('[discord-runtime-policy] invalid %s intent regex rejected (syntax); override disabled', label);
+    return {
+      regex: new RegExp(NEVER_MATCH_PATTERN_SOURCE, 'i'),
+      diagnostics: {
+        label,
+        status: 'disabled-invalid',
+        reason: 'invalid-regex',
+        source,
+      },
+    };
   }
 };
 
 const DEFAULT_CODING_INTENT_PATTERN_SOURCE = '(코드|코딩|구현|함수|클래스|버그|리팩터|script|typescript|javascript|python|sql|api\\s*만들|코드\\s*짜|만들어|짜줘|작성해줘)';
 const DEFAULT_AUTOMATION_INTENT_PATTERN_SOURCE = '(자동화|봇|워커|연동|알림|크롤|webhook|api.*만들|자동.*전송|데이터.*수집|주기적|스케줄)';
 
-export const CODING_INTENT_PATTERN = toRegex(
+const CODING_INTENT_PATTERN_STATE = buildIntentPattern(
   DISCORD_CODING_INTENT_PATTERN_RAW || undefined,
   DEFAULT_CODING_INTENT_PATTERN_SOURCE,
+  'coding',
 );
 
-export const AUTOMATION_INTENT_PATTERN = toRegex(
+const AUTOMATION_INTENT_PATTERN_STATE = buildIntentPattern(
   DISCORD_AUTOMATION_INTENT_PATTERN_RAW || undefined,
   DEFAULT_AUTOMATION_INTENT_PATTERN_SOURCE,
+  'automation',
 );
+
+export const CODING_INTENT_PATTERN = CODING_INTENT_PATTERN_STATE.regex;
+
+export const AUTOMATION_INTENT_PATTERN = AUTOMATION_INTENT_PATTERN_STATE.regex;
+
+export const INTENT_PATTERN_DIAGNOSTICS = {
+  coding: CODING_INTENT_PATTERN_STATE.diagnostics,
+  automation: AUTOMATION_INTENT_PATTERN_STATE.diagnostics,
+};
 
 export const DISCORD_EMBED_DESCRIPTION_LIMIT = clamp(DISCORD_EMBED_DESCRIPTION_LIMIT_RAW, 500, 4000);
 export const DISCORD_ADMIN_SUMMARY_LIMIT = clamp(DISCORD_ADMIN_SUMMARY_LIMIT_RAW, 200, 3000);

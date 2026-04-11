@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateRuntimeReadiness, summarizeRuntimeHealth } from './health';
+import { buildRuntimeDiagnosticsPayload, evaluateRuntimeReadiness, summarizeRuntimeHealth } from './health';
 
 describe('evaluateRuntimeReadiness', () => {
   it('requires the bot to be ready when START_BOT is enabled', () => {
@@ -96,6 +96,117 @@ describe('summarizeRuntimeHealth', () => {
       anyEnabled: true,
       healthy: true,
       allEnabledHealthy: false,
+    });
+  });
+});
+
+describe('buildRuntimeDiagnosticsPayload', () => {
+  const runtimeBootstrap = {
+    serverStarted: true,
+    discordReadyStarted: true,
+    sharedLoopsStarted: true,
+    sharedLoopsSource: 'server-process' as const,
+    pgCronReplacedLoops: ['consolidationLoop'],
+    pgCron: {
+      status: 'failed' as const,
+      startedAt: '2026-04-11T00:00:00.000Z',
+      completedAt: '2026-04-11T00:01:00.000Z',
+      lastError: 'RPC not deployed',
+      deferredTaskCount: 2,
+      summary: {
+        totalJobs: 1,
+        created: 0,
+        existing: 0,
+        error: 1,
+        confirmedLoopCount: 0,
+      },
+    },
+  };
+
+  const startup = {
+    summary: {
+      total: 2,
+      idle: 0,
+      pending: 0,
+      ok: 1,
+      warn: 1,
+      skipped: 0,
+    },
+    tasks: [
+      {
+        id: 'adapter-auto-load',
+        label: 'Adapter auto-load',
+        status: 'warn' as const,
+        updatedAt: '2026-04-11T00:01:00.000Z',
+        message: 'adapters-directory: EACCES',
+      },
+    ],
+  };
+
+  it('공개 health payload에서는 상세 진단을 숨긴다', () => {
+    const result = buildRuntimeDiagnosticsPayload(runtimeBootstrap, startup, false);
+
+    expect(result).toEqual({
+      diagnosticsVisibility: 'public',
+      runtimeBootstrap: {
+        serverStarted: true,
+        discordReadyStarted: true,
+        sharedLoopsStarted: true,
+        sharedLoopsSource: 'server-process',
+        pgCron: {
+          status: 'failed',
+          startedAt: '2026-04-11T00:00:00.000Z',
+          completedAt: '2026-04-11T00:01:00.000Z',
+          deferredTaskCount: 2,
+          summary: {
+            totalJobs: 1,
+            created: 0,
+            existing: 0,
+            error: 1,
+            confirmedLoopCount: 0,
+          },
+        },
+      },
+      startup: {
+        summary: {
+          total: 2,
+          idle: 0,
+          pending: 0,
+          ok: 1,
+          warn: 1,
+          skipped: 0,
+        },
+      },
+    });
+  });
+
+  it('관리자 health payload에서는 상세 진단을 포함한다', () => {
+    const result = buildRuntimeDiagnosticsPayload(runtimeBootstrap, startup, true);
+
+    expect(result).toEqual({
+      diagnosticsVisibility: 'admin',
+      runtimeBootstrap: {
+        serverStarted: true,
+        discordReadyStarted: true,
+        sharedLoopsStarted: true,
+        sharedLoopsSource: 'server-process',
+        pgCron: {
+          status: 'failed',
+          startedAt: '2026-04-11T00:00:00.000Z',
+          completedAt: '2026-04-11T00:01:00.000Z',
+          lastError: 'RPC not deployed',
+          deferredTaskCount: 2,
+          replacedLoops: ['consolidationLoop'],
+          summary: {
+            totalJobs: 1,
+            created: 0,
+            existing: 0,
+            error: 1,
+            confirmedLoopCount: 0,
+          },
+        },
+      },
+      startup,
     });
   });
 });

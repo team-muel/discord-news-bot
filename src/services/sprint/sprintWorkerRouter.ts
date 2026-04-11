@@ -32,7 +32,7 @@ export type PhaseAdapterMapping = {
 export const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, PhaseAdapterMapping>> = {
   plan: { adapterId: 'deepwiki', action: 'wiki.ask', secondary: { adapterId: 'openjarvis', action: 'jarvis.research' } },
   implement: { adapterId: 'openclaw', action: 'agent.chat' },
-  review: { adapterId: 'nemoclaw', action: 'code.review' },
+  review: { adapterId: 'nemoclaw', action: 'code.review', secondary: { adapterId: 'deepwiki', action: 'wiki.diagnose' } },
   qa: { adapterId: 'openjarvis', action: 'jarvis.ask', secondary: { adapterId: 'openshell', action: 'sandbox.exec' } },
   'security-audit': { adapterId: 'nemoclaw', action: 'code.review', secondary: { adapterId: 'openjarvis', action: 'jarvis.memory.search' } },
   'ops-validate': { adapterId: 'openjarvis', action: 'jarvis.telemetry', secondary: { adapterId: 'openjarvis', action: 'jarvis.ask' } },
@@ -143,6 +143,14 @@ export const buildSecondaryAdapterArgs = (
     case 'plan':
       // jarvis.research: deep dive based on wiki findings
       return { query: `Based on codebase analysis, research best practices for: ${pipeline.objective}\n\nContext:\n${primaryOutput.slice(0, 2000)}` };
+    case 'review':
+      return {
+        repo: 'team-muel/discord-news-bot',
+        phase: 'review',
+        objective: pipeline.objective,
+        changedFiles: pipeline.changedFiles,
+        primaryOutput: primaryOutput.slice(0, 2_000),
+      };
     case 'qa':
       // openshell.sandbox.exec: run tests in isolation
       return { sandboxId: 'default', command: `cd /workspace && npx vitest run --reporter=verbose 2>&1 | head -50`, mode: 'read_only' };

@@ -41,6 +41,103 @@ const EXECUTOR_ACTION_CANONICAL_NAME = 'implement.execute';
 const EXECUTOR_ACTION_PERSISTED_NAME = 'opencode.execute';
 const EXECUTOR_WORKER_ENV_CANONICAL_KEY = 'MCP_IMPLEMENT_WORKER_URL';
 const EXECUTOR_WORKER_ENV_LEGACY_KEY = 'MCP_OPENCODE_WORKER_URL';
+const MAX_ACTION_EXECUTE_ARG_KEYS = 40;
+const MAX_ACTION_EXECUTE_ARG_BYTES = 16_000;
+const MAX_ACTION_EXECUTE_ARG_DEPTH = 5;
+
+const INVALID_ACTION_EXECUTE_ARGS = Symbol('INVALID_ACTION_EXECUTE_ARGS');
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+};
+
+const sanitizeActionExecuteArgValue = (
+  value: unknown,
+  depth: number,
+): unknown | typeof INVALID_ACTION_EXECUTE_ARGS => {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : INVALID_ACTION_EXECUTE_ARGS;
+  }
+  if (Array.isArray(value)) {
+    if (depth >= MAX_ACTION_EXECUTE_ARG_DEPTH) {
+      return INVALID_ACTION_EXECUTE_ARGS;
+    }
+    const out: unknown[] = [];
+    for (const entry of value) {
+      const sanitized = sanitizeActionExecuteArgValue(entry, depth + 1);
+      if (sanitized === INVALID_ACTION_EXECUTE_ARGS) {
+        return INVALID_ACTION_EXECUTE_ARGS;
+      }
+      out.push(sanitized);
+    }
+    return out;
+  }
+  if (!isPlainObject(value) || depth >= MAX_ACTION_EXECUTE_ARG_DEPTH) {
+    return INVALID_ACTION_EXECUTE_ARGS;
+  }
+
+  const sanitized = sanitizeRecord(value);
+  if (!sanitized) {
+    return INVALID_ACTION_EXECUTE_ARGS;
+  }
+  if (Object.keys(sanitized).length !== Object.keys(value).length) {
+    return INVALID_ACTION_EXECUTE_ARGS;
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(sanitized)) {
+    const sanitizedEntry = sanitizeActionExecuteArgValue(entry, depth + 1);
+    if (sanitizedEntry === INVALID_ACTION_EXECUTE_ARGS) {
+      return INVALID_ACTION_EXECUTE_ARGS;
+    }
+    out[key] = sanitizedEntry;
+  }
+
+  return out;
+};
+
+const validateActionExecuteArgs = (
+  rawArgs: unknown,
+): { ok: true; args: Record<string, unknown> } | { ok: false; message: string } => {
+  if (rawArgs === undefined || rawArgs === null) {
+    return { ok: true, args: {} };
+  }
+  if (!isPlainObject(rawArgs)) {
+    return { ok: false, message: 'args must be a plain JSON object' };
+  }
+
+  const sanitized = sanitizeActionExecuteArgValue(rawArgs, 0);
+  if (sanitized === INVALID_ACTION_EXECUTE_ARGS || !isPlainObject(sanitized)) {
+    return { ok: false, message: 'args must contain only JSON-safe scalars, arrays, and plain objects' };
+  }
+
+  const topLevelKeys = Object.keys(sanitized);
+  if (topLevelKeys.length > MAX_ACTION_EXECUTE_ARG_KEYS) {
+    return { ok: false, message: `args cannot exceed ${MAX_ACTION_EXECUTE_ARG_KEYS} top-level keys` };
+  }
+
+  let serialized = '';
+  try {
+    serialized = JSON.stringify(sanitized);
+  } catch {
+    return { ok: false, message: 'args must be JSON-serializable' };
+  }
+  if (serialized.length > MAX_ACTION_EXECUTE_ARG_BYTES) {
+    return { ok: false, message: `args cannot exceed ${MAX_ACTION_EXECUTE_ARG_BYTES} bytes when serialized` };
+  }
+
+  return { ok: true, args: sanitized };
+};
 
 const inferActionRole = (actionName: string): 'operate' | 'implement' | 'review' | 'architect' => {
   const normalized = String(actionName || '').trim().toLowerCase();
@@ -223,14 +320,16 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
     const goal = toStringParam(req.body?.goal);
     const guildId = toStringParam(req.body?.guildId) || undefined;
     const requestedBy = toStringParam(req.user?.id) || toStringParam(req.body?.requestedBy) || 'api';
-    const rawArgs = req.body?.args;
-    const args = rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)
-      ? rawArgs as Record<string, unknown>
-      : {};
+    const argsResult = validateActionExecuteArgs(req.body?.args);
 
     if (!actionName || !goal) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'actionName and goal are required' });
     }
+    if (!argsResult.ok) {
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: argsResult.message });
+    }
+
+    const args = argsResult.args;
 
     const action = getAction(actionName);
     if (!action) {

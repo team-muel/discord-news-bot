@@ -16,10 +16,32 @@ const startRuntimeAlerts = vi.fn();
 const startOpencodePublishWorker = vi.fn();
 const startBotAutoRecovery = vi.fn();
 const startLoginSessionCleanupLoop = vi.fn();
-const bootstrapPgCronJobs = vi.fn(() => Promise.resolve({ enabled: true, jobs: [] }));
-const getPgCronReplacedLoops = vi.fn(() => new Set<string>());
+const bootstrapPgCronJobs = vi.fn<
+  () => Promise<{
+    enabled: boolean;
+    jobs: Array<{ jobName: string; status: 'created' | 'exists' | 'error'; message?: string }>;
+  }>
+>(() => Promise.resolve({ enabled: true, jobs: [] }));
 const startConsolidationLoop = vi.fn();
 const startObsidianInboxChatLoop = vi.fn();
+
+const getPgCronReplacedLoopsFromBootstrap = vi.fn((result?: { jobs?: Array<{ jobName: string; status: string }> }) => {
+  const replacements: Record<string, string> = {
+    muel_memory_consolidation: 'consolidationLoop',
+    muel_slo_check: 'agentSloAlertLoop',
+    muel_login_session_cleanup: 'loginSessionCleanupLoop',
+    muel_obsidian_lore_sync: 'obsidianLoreSyncLoop',
+    muel_retrieval_eval: 'retrievalEvalLoop',
+    muel_reward_signal: 'rewardSignalLoop',
+    muel_eval_auto_promote: 'evalAutoPromoteLoop',
+  };
+  return new Set(
+    (result?.jobs || [])
+      .filter((job) => job.status === 'created' || job.status === 'exists')
+      .map((job) => replacements[job.jobName])
+      .filter(Boolean),
+  );
+});
 
 vi.mock('../automationBot', () => ({
   isAutomationEnabled,
@@ -45,7 +67,7 @@ vi.mock('./botAutoRecoveryService', () => ({ startBotAutoRecovery }));
 vi.mock('../../discord/auth', () => ({ startLoginSessionCleanupLoop }));
 vi.mock('../infra/pgCronBootstrapService', () => ({
   bootstrapPgCronJobs,
-  getPgCronReplacedLoops,
+  getPgCronReplacedLoopsFromBootstrap,
 }));
 vi.mock('../../config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../config')>();
@@ -56,10 +78,16 @@ vi.mock('../../logger', () => ({
 }));
 
 describe('runtimeBootstrap', () => {
+  const flushBootstrap = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     isAutomationEnabled.mockReturnValue(true);
+    bootstrapPgCronJobs.mockResolvedValue({ enabled: true, jobs: [] });
   });
 
   it('server runtime은 공유 루프/서버 소유 루프를 1회만 시작한다', async () => {
@@ -130,10 +158,21 @@ describe('runtimeBootstrap', () => {
     });
     vi.doMock('../infra/pgCronBootstrapService', () => ({
       bootstrapPgCronJobs,
-      getPgCronReplacedLoops: vi.fn(() =>
-        new Set(['consolidationLoop', 'agentSloAlertLoop', 'loginSessionCleanupLoop', 'obsidianLoreSyncLoop', 'retrievalEvalLoop', 'rewardSignalLoop', 'evalAutoPromoteLoop']),
-      ),
+      getPgCronReplacedLoopsFromBootstrap,
     }));
+
+    bootstrapPgCronJobs.mockResolvedValue({
+      enabled: true,
+      jobs: [
+        { jobName: 'muel_memory_consolidation', status: 'exists' },
+        { jobName: 'muel_slo_check', status: 'exists' },
+        { jobName: 'muel_login_session_cleanup', status: 'exists' },
+        { jobName: 'muel_obsidian_lore_sync', status: 'exists' },
+        { jobName: 'muel_retrieval_eval', status: 'exists' },
+        { jobName: 'muel_reward_signal', status: 'exists' },
+        { jobName: 'muel_eval_auto_promote', status: 'exists' },
+      ],
+    });
 
     const runtime = await import('./runtimeBootstrap');
     runtime.startServerProcessRuntime();
@@ -142,6 +181,7 @@ describe('runtimeBootstrap', () => {
       guilds: { cache: { values: () => [][Symbol.iterator]() } },
     } as any;
     runtime.startDiscordReadyRuntime(client);
+    await flushBootstrap();
 
     // pg_cron이 소유한 루프는 호출되지 않아야 한다
     expect(startConsolidationLoop).not.toHaveBeenCalled();
@@ -159,7 +199,53 @@ describe('runtimeBootstrap', () => {
     expect(runtime.getRuntimeBootstrapState()).toMatchObject({
       serverStarted: true,
       discordReadyStarted: true,
+      pgCron: {
+        status: 'ready',
+      },
       pgCronReplacedLoops: expect.arrayContaining(['consolidationLoop', 'agentSloAlertLoop', 'retrievalEvalLoop', 'rewardSignalLoop', 'evalAutoPromoteLoop']),
+    });
+  });
+
+  it('PG_CRON_REPLACES_APP_LOOPS=true여도 bootstrap이 실패하면 앱 루프로 fallback한다', async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+
+    vi.doMock('../../config', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../config')>();
+      return { ...actual, PG_CRON_REPLACES_APP_LOOPS: true };
+    });
+    vi.doMock('../infra/pgCronBootstrapService', () => ({
+      bootstrapPgCronJobs,
+      getPgCronReplacedLoopsFromBootstrap,
+    }));
+
+    bootstrapPgCronJobs.mockResolvedValue({
+      enabled: true,
+      jobs: [
+        { jobName: 'muel_memory_consolidation', status: 'error', message: 'RPC not deployed' },
+      ],
+    });
+
+    const runtime = await import('./runtimeBootstrap');
+    runtime.startServerProcessRuntime();
+
+    const client = {
+      guilds: { cache: { values: () => [][Symbol.iterator]() } },
+    } as any;
+    runtime.startDiscordReadyRuntime(client);
+    await flushBootstrap();
+
+    expect(startConsolidationLoop).toHaveBeenCalledTimes(1);
+    expect(startLoginSessionCleanupLoop).toHaveBeenCalledTimes(1);
+    expect(startObsidianLoreSyncLoop).toHaveBeenCalledTimes(1);
+    expect(startRetrievalEvalLoop).toHaveBeenCalledTimes(1);
+    expect(startAgentSloAlertLoop).toHaveBeenCalledTimes(1);
+
+    expect(runtime.getRuntimeBootstrapState()).toMatchObject({
+      pgCron: {
+        status: 'failed',
+      },
+      pgCronReplacedLoops: [],
     });
   });
 });

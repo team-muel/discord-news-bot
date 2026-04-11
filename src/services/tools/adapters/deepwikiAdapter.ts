@@ -2,8 +2,8 @@
  * DeepWiki Tool Adapter — exposes DeepWiki HTTP API as an ExternalToolAdapter.
  *
  * Provides AI-generated documentation and analysis for public GitHub repositories
- * via the DeepWiki REST/streaming API. Used by sprint phases (retro, plan) to reference
- * dependency library architectures and patterns.
+ * via the DeepWiki REST/streaming API. Used by sprint phases for architecture
+ * reference, review-time defect discovery, and operational diagnostics.
  *
  * Verified against: AsyncFuncAI/deepwiki-open (api/api.py, api/simple_chat.py)
  *
@@ -21,6 +21,7 @@
  *   - wiki.read: read generated wiki for a public GitHub repo
  *   - wiki.ask: ask a question about a repo's codebase
  *   - wiki.search: search across indexed repositories
+ *   - wiki.diagnose: ask for repo-specific defect and diagnostic insights
  *
  * Environment:
  *   DEEPWIKI_BASE_URL — default http://localhost:8001 (self-hosted backend)
@@ -57,6 +58,78 @@ const validateRepo = (repo: unknown): string | null => {
   const trimmed = repo.trim();
   if (!REPO_PATTERN.test(trimmed)) return null;
   return trimmed;
+};
+
+const sanitizeText = (value: unknown, maxLength: number): string => {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ').slice(0, maxLength);
+};
+
+const sanitizeChangedFiles = (value: unknown, limit = 10): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeText(item, 180))
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n,]+/)
+      .map((item) => sanitizeText(item, 180))
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+  return [];
+};
+
+const getDiagnosticFocus = (phase: string): string => {
+  switch (phase) {
+    case 'review':
+      return 'regressions, edge cases, contract mismatches, and risky assumptions';
+    case 'qa':
+      return 'test gaps, failure reproduction hints, and missing runtime diagnostics';
+    case 'security-audit':
+      return 'security boundaries, secret exposure, auth/authz gaps, and unsafe trust assumptions';
+    case 'ops-validate':
+      return 'startup health, scheduler safety, alerting gaps, rollback confidence, and observability blind spots';
+    default:
+      return 'repo-specific defects, diagnostics gaps, and validation blind spots';
+  }
+};
+
+const buildDiagnosticQuestion = (args: Record<string, unknown>): string => {
+  const phase = sanitizeText(args.phase, 40).toLowerCase() || 'review';
+  const objective = sanitizeText(args.objective ?? args.goal, 400);
+  const changedFiles = sanitizeChangedFiles(args.changedFiles ?? args.files);
+  const errorSummary = sanitizeText(
+    args.errorSummary ?? args.error ?? args.failure ?? args.telemetrySummary,
+    1_200,
+  );
+  const primaryOutput = sanitizeText(
+    args.primaryOutput ?? args.context ?? args.analysis,
+    1_500,
+  );
+
+  const contextLines = [
+    `Phase: ${phase}`,
+    objective ? `Objective: ${objective}` : '',
+    changedFiles.length > 0 ? `Changed files: ${changedFiles.join(', ')}` : '',
+    errorSummary ? `Failure or telemetry context: ${errorSummary}` : '',
+    primaryOutput ? `Prior analysis: ${primaryOutput}` : '',
+  ].filter(Boolean);
+
+  return [
+    'Analyze this repository and surface repo-specific defect and diagnostic insights.',
+    ...contextLines,
+    '',
+    `Focus on ${getDiagnosticFocus(phase)}.`,
+    'Respond with concise bullets covering:',
+    '1. Likely defects or regressions tied to this repository context.',
+    '2. Missing diagnostics, observability, or logging blind spots.',
+    '3. Missing tests or verification steps that would catch the issue sooner.',
+    '4. The single highest-risk file, service boundary, or workflow and why.',
+    'Avoid generic advice. Be specific to this repository and the supplied context.',
+  ].join('\n');
 };
 
 const fetchDeepWiki = async (
@@ -202,6 +275,16 @@ const askWiki = async (repo: string, question: string): Promise<ExternalAdapterR
   }
 };
 
+const diagnoseWiki = async (repo: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
+  const result = await askWiki(repo, buildDiagnosticQuestion(args));
+  const validated = validateRepo(repo);
+  return {
+    ...result,
+    action: 'wiki.diagnose',
+    ...(result.ok ? { summary: `Diagnosis for ${validated ?? repo}` } : {}),
+  };
+};
+
 /**
  * Search across DeepWiki-indexed repositories.
  * Real endpoint: GET /api/processed_projects
@@ -249,9 +332,9 @@ const searchWiki = async (query: string): Promise<ExternalAdapterResult> => {
 
 export const deepwikiAdapter: ExternalToolAdapter = {
   id: 'deepwiki' as ExternalAdapterId,
-  description: 'DeepWiki — AI-powered documentation for GitHub repositories. Read wiki pages, ask questions, and search project documentation.',
-  capabilities: ['wiki.read', 'wiki.ask', 'wiki.search'],
-  liteCapabilities: ['wiki.read', 'wiki.search'],
+  description: 'DeepWiki — AI-powered repository documentation and diagnostics. Read wiki pages, diagnose risks, ask questions, and search project documentation.',
+  capabilities: ['wiki.read', 'wiki.ask', 'wiki.search', 'wiki.diagnose'],
+  liteCapabilities: ['wiki.read', 'wiki.search', 'wiki.diagnose'],
 
   isAvailable: async () => {
     if (!isNotDisabled()) return false;
@@ -276,6 +359,7 @@ export const deepwikiAdapter: ExternalToolAdapter = {
       case 'wiki.read': return readWiki(repo);
       case 'wiki.ask': return askWiki(repo, question);
       case 'wiki.search': return searchWiki(question || repo);
+      case 'wiki.diagnose': return diagnoseWiki(repo, args);
       default:
         return makeResult(false, action, 'Unknown action', [], 0, `UNSUPPORTED_ACTION:${action}`);
     }

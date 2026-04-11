@@ -72,6 +72,21 @@ type CatalogStateEntry = {
   lastErrorAt?: number;
   lastError?: string;
   lastToolCount?: number;
+  lastVisibleToolCount?: number;
+  lastRawToolCount?: number;
+  lastFilteredToolCount?: number;
+  lastInvalidToolCount?: number;
+  lastNameCollisionCount?: number;
+  lastCollisionExamples?: string[];
+};
+
+type ParsedToolCatalog = {
+  tools: McpToolSpec[];
+  rawToolCount: number;
+  filteredToolCount: number;
+  invalidToolCount: number;
+  nameCollisionCount: number;
+  collisionExamples: string[];
 };
 
 export type UpstreamDiagnosticSnapshot = {
@@ -94,6 +109,11 @@ export type UpstreamDiagnosticSnapshot = {
   catalog: {
     cacheState: 'cold' | 'warm' | 'stale';
     visibleToolCount: number;
+    rawToolCount: number;
+    filteredToolCount: number;
+    invalidToolCount: number;
+    nameCollisionCount: number;
+    collisionExamples: string[];
     lastFetchAt: string | null;
     lastSuccessAt: string | null;
     lastErrorAt: string | null;
@@ -108,7 +128,7 @@ const catalogState = new Map<string, CatalogStateEntry>();
 const isCacheValid = (entry: CacheEntry): boolean => Date.now() < entry.expiresAt;
 const toIsoTimestamp = (value: number | undefined): string | null => (typeof value === 'number' ? new Date(value).toISOString() : null);
 
-const markCatalogSuccess = (serverId: string, toolCount: number): void => {
+const markCatalogSuccess = (serverId: string, catalogSnapshot: ParsedToolCatalog): void => {
   const now = Date.now();
   const previous = catalogState.get(serverId);
   catalogState.set(serverId, {
@@ -116,7 +136,13 @@ const markCatalogSuccess = (serverId: string, toolCount: number): void => {
     lastFetchAt: now,
     lastSuccessAt: now,
     lastError: undefined,
-    lastToolCount: toolCount,
+    lastToolCount: catalogSnapshot.tools.length,
+    lastVisibleToolCount: catalogSnapshot.tools.length,
+    lastRawToolCount: catalogSnapshot.rawToolCount,
+    lastFilteredToolCount: catalogSnapshot.filteredToolCount,
+    lastInvalidToolCount: catalogSnapshot.invalidToolCount,
+    lastNameCollisionCount: catalogSnapshot.nameCollisionCount,
+    lastCollisionExamples: [...catalogSnapshot.collisionExamples],
   });
 };
 
@@ -180,7 +206,12 @@ export const listUpstreamDiagnostics = (
       },
       catalog: {
         cacheState,
-        visibleToolCount: cache?.tools.length ?? catalog?.lastToolCount ?? 0,
+        visibleToolCount: cache?.tools.length ?? catalog?.lastVisibleToolCount ?? catalog?.lastToolCount ?? 0,
+        rawToolCount: catalog?.lastRawToolCount ?? 0,
+        filteredToolCount: catalog?.lastFilteredToolCount ?? 0,
+        invalidToolCount: catalog?.lastInvalidToolCount ?? 0,
+        nameCollisionCount: catalog?.lastNameCollisionCount ?? 0,
+        collisionExamples: [...(catalog?.lastCollisionExamples ?? [])],
         lastFetchAt: toIsoTimestamp(catalog?.lastFetchAt),
         lastSuccessAt: toIsoTimestamp(catalog?.lastSuccessAt),
         lastErrorAt: toIsoTimestamp(catalog?.lastErrorAt),
@@ -326,9 +357,9 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
       };
       const rawTools = data?.result?.tools ?? [];
       if (Array.isArray(rawTools)) {
-        const tools = parseToolSpecs(rawTools, server);
-        markCatalogSuccess(server.id, tools.length);
-        return tools;
+        const parsed = parseToolSpecs(rawTools, server);
+        markCatalogSuccess(server.id, parsed);
+        return parsed.tools;
       }
       markCatalogFailure(server.id, 'invalid streamable tools/list payload');
       return [];
@@ -349,9 +380,9 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
       const rpcData = await rpcRes.json() as { result?: { tools?: unknown[] }; tools?: unknown[] };
       const rawTools = rpcData?.result?.tools ?? (rpcData as { tools?: unknown[] })?.tools ?? [];
       if (Array.isArray(rawTools)) {
-        const tools = parseToolSpecs(rawTools, server);
-        markCatalogSuccess(server.id, tools.length);
-        return tools;
+        const parsed = parseToolSpecs(rawTools, server);
+        markCatalogSuccess(server.id, parsed);
+        return parsed.tools;
       }
     }
 
@@ -366,9 +397,9 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
       const restData = await restRes.json() as { tools?: unknown[] };
       const rawTools = restData?.tools ?? [];
       if (Array.isArray(rawTools)) {
-        const tools = parseToolSpecs(rawTools, server);
-        markCatalogSuccess(server.id, tools.length);
-        return tools;
+        const parsed = parseToolSpecs(rawTools, server);
+        markCatalogSuccess(server.id, parsed);
+        return parsed.tools;
       }
     }
 
@@ -383,17 +414,45 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
   }
 };
 
-const parseToolSpecs = (rawTools: unknown[], server: UpstreamServerCfg): McpToolSpec[] => {
+const parseToolSpecs = (rawTools: unknown[], server: UpstreamServerCfg): ParsedToolCatalog => {
   const result: McpToolSpec[] = [];
+  let rawToolCount = 0;
+  let filteredToolCount = 0;
+  let invalidToolCount = 0;
+  let nameCollisionCount = 0;
+  const collisionExamples: string[] = [];
+  const seenInternalNames = new Set<string>();
+
   for (const raw of rawTools) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      invalidToolCount += 1;
+      continue;
+    }
     const t = raw as Record<string, unknown>;
     const name = typeof t.name === 'string' ? t.name.trim() : '';
-    if (!name) continue;
-    if (!isUpstreamToolAllowed(server, name)) continue;
+    if (!name) {
+      invalidToolCount += 1;
+      continue;
+    }
+
+    rawToolCount += 1;
+    if (!isUpstreamToolAllowed(server, name)) {
+      filteredToolCount += 1;
+      continue;
+    }
+
     const description = typeof t.description === 'string' ? t.description : `Upstream tool: ${name}`;
     const inputSchema = normalizeMcpInputSchema(t.inputSchema);
     const internalName = buildInternalName(server.namespace, name);
+    if (seenInternalNames.has(internalName)) {
+      nameCollisionCount += 1;
+      if (collisionExamples.length < 3) {
+        collisionExamples.push(`${name} -> ${internalName}`);
+      }
+      continue;
+    }
+
+    seenInternalNames.add(internalName);
     // Preserve the original name so callProxiedTool can send the exact name the
     // upstream server registered (hyphens must not be silently converted).
     originalUpstreamNames.set(internalName, name);
@@ -403,7 +462,15 @@ const parseToolSpecs = (rawTools: unknown[], server: UpstreamServerCfg): McpTool
       inputSchema,
     });
   }
-  return result;
+
+  return {
+    tools: result,
+    rawToolCount,
+    filteredToolCount,
+    invalidToolCount,
+    nameCollisionCount,
+    collisionExamples,
+  };
 };
 
 // ──── Public API ───────────────────────────────────────────────────────────────

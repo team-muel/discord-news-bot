@@ -1,6 +1,6 @@
 ﻿import { requireAdmin, requireAuth } from '../../middleware/auth';
 import { getUserConsentSnapshot, upsertUserConsentSnapshot } from '../../services/agent/agentConsentService';
-import { getAgentPrivacyPolicySnapshot, upsertAgentPrivacyPolicy } from '../../services/agent/agentPrivacyPolicyService';
+import { getAgentPrivacyPolicySnapshot, upsertAgentPrivacyPolicy, validateAgentPrivacyRuleInputs } from '../../services/agent/agentPrivacyPolicyService';
 import { buildPrivacyTuningRecommendation, listPrivacyGateSamples, reviewPrivacyGateSample } from '../../services/agent/agentPrivacyTuningService';
 import { isUserAdmin } from '../../services/adminAllowlistService';
 import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../../services/agent/agentRetentionPolicyService';
@@ -39,6 +39,12 @@ const parseCsvQueryValues = (value: unknown): string[] => {
     .map((entry) => entry.trim())
     .filter(Boolean);
 };
+
+  const VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS = ['note', 'requirement', 'ops-note', 'contract', 'retrofit', 'lesson'] as const;
+  type ValidObsidianPromotionArtifactKind = typeof VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS[number];
+
+  const VALID_OBSIDIAN_WIKI_CHANGE_KINDS = ['repo-memory', 'architecture-delta', 'service-change', 'ops-change', 'development-slice', 'changelog-worthy'] as const;
+  type ValidObsidianWikiChangeKind = typeof VALID_OBSIDIAN_WIKI_CHANGE_KINDS[number];
 
 export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
@@ -192,14 +198,20 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     const modeDefault = toStringParam(req.body?.modeDefault) as 'direct' | 'plan_act' | 'deliberate' | 'guarded';
     const reviewScore = toBoundedInt(req.body?.reviewScore, 60, { min: 0, max: 100 });
     const blockScore = toBoundedInt(req.body?.blockScore, 80, { min: 0, max: 100 });
-    const reviewPatterns = Array.isArray(req.body?.reviewPatterns) ? req.body.reviewPatterns : [];
-    const blockPatterns = Array.isArray(req.body?.blockPatterns) ? req.body.blockPatterns : [];
+    const reviewPatterns = validateAgentPrivacyRuleInputs(req.body?.reviewPatterns, 'reviewPatterns');
+    const blockPatterns = validateAgentPrivacyRuleInputs(req.body?.blockPatterns, 'blockPatterns');
 
     if (!isOneOf(modeDefault, ['direct', 'plan_act', 'deliberate', 'guarded'])) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'modeDefault invalid' });
     }
     if (blockScore <= reviewScore) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'blockScore must be greater than reviewScore' });
+    }
+    if (!reviewPatterns.ok) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: reviewPatterns.message });
+    }
+    if (!blockPatterns.ok) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: blockPatterns.message });
     }
 
     try {
@@ -209,8 +221,8 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
         modeDefault,
         reviewScore,
         blockScore,
-        reviewPatterns,
-        blockPatterns,
+        reviewPatterns: reviewPatterns.rules,
+        blockPatterns: blockPatterns.rules,
         enabled: req.body?.enabled !== false,
         updatedBy,
       });
@@ -476,16 +488,23 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
   });
 
   router.post('/agent/obsidian/knowledge-promote', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
-    const artifactKind = toStringParam(req.body?.artifactKind) as 'note' | 'requirement' | 'ops-note' | 'contract' | 'retrofit' | 'lesson';
+    const artifactKind = toStringParam(req.body?.artifactKind);
     const title = toStringParam(req.body?.title);
     const content = toStringParam(req.body?.content);
     if (!artifactKind || !title || !content) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'artifactKind, title, and content are required' });
     }
+    if (!isOneOf(artifactKind, VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'VALIDATION',
+        message: `artifactKind must be one of: ${VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS.join(', ')}`,
+      });
+    }
 
     try {
       const result = await promoteKnowledgeToObsidian({
-        artifactKind,
+        artifactKind: artifactKind as ValidObsidianPromotionArtifactKind,
         title,
         content,
         sources: Array.isArray(req.body?.sources) ? req.body.sources : [],
@@ -519,7 +538,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
   router.post('/agent/obsidian/wiki-change-capture', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
     const changeSummary = toStringParam(req.body?.changeSummary);
     const changeKind = toStringParam(req.body?.changeKind).toLowerCase();
-    if (!changeSummary || !isOneOf(changeKind, ['repo-memory', 'architecture-delta', 'service-change', 'ops-change', 'development-slice', 'changelog-worthy'])) {
+    if (!changeSummary || !isOneOf(changeKind, VALID_OBSIDIAN_WIKI_CHANGE_KINDS)) {
       return res.status(400).json({
         ok: false,
         error: 'VALIDATION',
@@ -530,7 +549,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     try {
       const result = await captureObsidianWikiChange({
         changeSummary,
-        changeKind,
+        changeKind: changeKind as ValidObsidianWikiChangeKind,
         changedPaths: Array.isArray(req.body?.changedPaths) ? req.body.changedPaths : [],
         validationRefs: Array.isArray(req.body?.validationRefs) ? req.body.validationRefs : [],
         mirrorTargets: Array.isArray(req.body?.mirrorTargets) ? req.body.mirrorTargets : [],

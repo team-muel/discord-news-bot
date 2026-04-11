@@ -26,6 +26,10 @@ export type AgentPrivacyPolicySnapshot = {
   blockRules: AgentPrivacyCompiledRule[];
 };
 
+type AgentPrivacyRuleValidationResult =
+  | { ok: true; rules: AgentPrivacyRuleInput[] }
+  | { ok: false; message: string };
+
 const AGENT_PRIVACY_POLICY_CACHE_TTL_MS = parseMinIntEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_TTL_MS, 60_000, 5_000);
 const AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS = parseMinIntEnv(process.env.AGENT_PRIVACY_POLICY_CACHE_ERROR_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
 
@@ -48,8 +52,72 @@ const DEFAULT_BLOCK_RULES: AgentPrivacyRuleInput[] = [
   { pattern: '(개인정보.*수집.*자동|동의 없이|무단 수집)', score: 50, reason: 'non_consensual_collection' },
 ];
 
+const MAX_POLICY_RULE_COUNT = 64;
+const MAX_POLICY_RULE_PATTERN_LENGTH = 240;
+const MAX_POLICY_RULE_REASON_LENGTH = 120;
+
 // Reject patterns with nested quantifiers that could cause catastrophic backtracking
 const REDOS_SUSPECT_RE = /([+*]|\{[0-9,]+\})\s*\)\s*[+*?]|\(\?=.*[+*].*\)\s*[+*]/;
+
+export const validateAgentPrivacyRuleInputs = (
+  value: unknown,
+  fieldName: string,
+): AgentPrivacyRuleValidationResult => {
+  if (value === undefined || value === null) {
+    return { ok: true, rules: [] };
+  }
+  if (!Array.isArray(value)) {
+    return { ok: false, message: `${fieldName} must be an array of rule objects` };
+  }
+  if (value.length > MAX_POLICY_RULE_COUNT) {
+    return { ok: false, message: `${fieldName} cannot exceed ${MAX_POLICY_RULE_COUNT} rules` };
+  }
+
+  const rules: AgentPrivacyRuleInput[] = [];
+  for (const [index, item] of value.entries()) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return { ok: false, message: `${fieldName}[${index}] must be an object with pattern, score, and optional reason` };
+    }
+
+    const row = item as Record<string, unknown>;
+    const pattern = String(row.pattern || '').trim();
+    if (!pattern) {
+      return { ok: false, message: `${fieldName}[${index}].pattern is required` };
+    }
+    if (pattern.length > MAX_POLICY_RULE_PATTERN_LENGTH) {
+      return {
+        ok: false,
+        message: `${fieldName}[${index}].pattern must be ${MAX_POLICY_RULE_PATTERN_LENGTH} characters or fewer`,
+      };
+    }
+    if (REDOS_SUSPECT_RE.test(pattern)) {
+      return { ok: false, message: `${fieldName}[${index}].pattern looks unsafe for regex execution` };
+    }
+    try {
+      void new RegExp(pattern, 'i');
+    } catch {
+      return { ok: false, message: `${fieldName}[${index}].pattern is not a valid regex` };
+    }
+
+    const scoreNumber = Number(row.score);
+    const score = Number.isFinite(scoreNumber) ? Math.trunc(scoreNumber) : NaN;
+    if (!Number.isFinite(score) || score < 0 || score > 100) {
+      return { ok: false, message: `${fieldName}[${index}].score must be a number between 0 and 100` };
+    }
+
+    const reason = String(row.reason || '').trim() || 'policy_rule';
+    if (reason.length > MAX_POLICY_RULE_REASON_LENGTH) {
+      return {
+        ok: false,
+        message: `${fieldName}[${index}].reason must be ${MAX_POLICY_RULE_REASON_LENGTH} characters or fewer`,
+      };
+    }
+
+    rules.push({ pattern, score, reason });
+  }
+
+  return { ok: true, rules };
+};
 
 const compileRules = (rules: AgentPrivacyRuleInput[]): AgentPrivacyCompiledRule[] => {
   const out: AgentPrivacyCompiledRule[] = [];
@@ -229,6 +297,15 @@ export const upsertAgentPrivacyPolicy = async (params: {
     throw new Error('SUPABASE_NOT_CONFIGURED');
   }
 
+  const reviewValidation = validateAgentPrivacyRuleInputs(params.reviewPatterns, 'reviewPatterns');
+  if (!reviewValidation.ok) {
+    throw new Error(reviewValidation.message);
+  }
+  const blockValidation = validateAgentPrivacyRuleInputs(params.blockPatterns, 'blockPatterns');
+  if (!blockValidation.ok) {
+    throw new Error(blockValidation.message);
+  }
+
   const client = getSupabaseClient();
   const payload = {
     guild_id: params.guildId,
@@ -236,8 +313,8 @@ export const upsertAgentPrivacyPolicy = async (params: {
     mode_default: params.modeDefault,
     review_score: Math.max(0, Math.min(100, Math.trunc(params.reviewScore))),
     block_score: Math.max(0, Math.min(100, Math.trunc(params.blockScore))),
-    review_patterns: params.reviewPatterns,
-    block_patterns: params.blockPatterns,
+    review_patterns: reviewValidation.rules,
+    block_patterns: blockValidation.rules,
     updated_by: params.updatedBy || null,
   };
 

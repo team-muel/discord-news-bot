@@ -32,6 +32,67 @@ export const isOneOf = <T extends string>(value: string, options: readonly T[]):
   return (options as readonly string[]).includes(value);
 };
 
+export type RegexPatternValidationIssue = 'empty' | 'too-long' | 'redos-suspect' | 'invalid-regex';
+
+export type RegexPatternValidationResult =
+  | { ok: true; pattern: string }
+  | { ok: false; pattern: string; issue: RegexPatternValidationIssue; message: string };
+
+const REDOS_SUSPECT_RE = /([+*]|\{[0-9,]+\})\s*\)\s*[+*?]|\(\?=.*[+*].*\)\s*[+*]/;
+
+export const validateSafeRegexPattern = (
+  value: unknown,
+  options?: { label?: string; maxLength?: number; allowEmpty?: boolean },
+): RegexPatternValidationResult => {
+  const label = String(options?.label || 'pattern').trim() || 'pattern';
+  const maxLength = Math.max(1, Math.trunc(Number(options?.maxLength) || 240));
+  const allowEmpty = options?.allowEmpty === true;
+  const pattern = String(value || '').trim();
+
+  if (!pattern) {
+    return allowEmpty
+      ? { ok: true, pattern }
+      : { ok: false, pattern, issue: 'empty', message: `${label} is required` };
+  }
+
+  if (pattern.length > maxLength) {
+    return {
+      ok: false,
+      pattern,
+      issue: 'too-long',
+      message: `${label} must be ${maxLength} characters or fewer`,
+    };
+  }
+
+  if (REDOS_SUSPECT_RE.test(pattern)) {
+    return {
+      ok: false,
+      pattern,
+      issue: 'redos-suspect',
+      message: `${label} looks unsafe for regex execution`,
+    };
+  }
+
+  try {
+    void new RegExp(pattern, 'i');
+    return { ok: true, pattern };
+  } catch {
+    return {
+      ok: false,
+      pattern,
+      issue: 'invalid-regex',
+      message: `${label} is not a valid regex`,
+    };
+  }
+};
+
+export const validateTaskRoutingSignalPattern = (value: unknown): RegexPatternValidationResult => {
+  return validateSafeRegexPattern(value, {
+    label: 'signalPattern',
+    maxLength: 180,
+  });
+};
+
 const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**

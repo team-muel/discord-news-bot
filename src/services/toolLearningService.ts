@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { validateTaskRoutingSignalPattern, type RegexPatternValidationIssue } from '../utils/validation';
 
 export type LearningScope = 'task_routing';
 export type LearningCandidateStatus = 'pending' | 'approved' | 'rejected' | 'applied';
@@ -30,6 +31,8 @@ export type ToolLearningCandidate = {
   scope: LearningScope;
   signalKey: string;
   signalPattern: string;
+  signalPatternStatus: 'valid' | 'invalid';
+  signalPatternIssue: RegexPatternValidationIssue | null;
   recommendedRoute: 'knowledge' | 'execution' | 'mixed' | 'casual';
   recommendedChannel: 'docs' | 'vibe';
   supportCount: number;
@@ -49,6 +52,8 @@ export type ToolLearningRule = {
   scope: LearningScope;
   signalKey: string;
   signalPattern: string;
+  signalPatternStatus: 'valid' | 'invalid';
+  signalPatternIssue: RegexPatternValidationIssue | null;
   recommendedRoute: 'knowledge' | 'execution' | 'mixed' | 'casual';
   recommendedChannel: 'docs' | 'vibe';
   confidence: number;
@@ -118,45 +123,76 @@ const makeSignalPattern = (reason: string): string => {
   return `(${tokens.join('|')})`;
 };
 
-const normalizeCandidateRow = (row: Record<string, unknown>): ToolLearningCandidate => ({
-  id: Number(row.id || 0),
-  guildId: String(row.guild_id || ''),
-  scope: 'task_routing',
-  signalKey: String(row.signal_key || ''),
-  signalPattern: String(row.signal_pattern || ''),
-  recommendedRoute: (toRoute(row.recommended_route) || 'mixed'),
-  recommendedChannel: (toChannel(row.recommended_channel) || 'docs'),
-  supportCount: Math.max(0, Math.trunc(Number(row.support_count || 0))),
-  avgOutcomeScore: clamp01(row.avg_outcome_score),
-  status: (['pending', 'approved', 'rejected', 'applied'].includes(String(row.status || ''))
-    ? String(row.status)
-    : 'pending') as LearningCandidateStatus,
-  evidence: (row.evidence && typeof row.evidence === 'object' && !Array.isArray(row.evidence)
-    ? row.evidence
-    : {}) as Record<string, unknown>,
-  proposedBy: row.proposed_by ? String(row.proposed_by) : null,
-  decidedBy: row.decided_by ? String(row.decided_by) : null,
-  decidedAt: row.decided_at ? String(row.decided_at) : null,
-  createdAt: String(row.created_at || ''),
-  updatedAt: String(row.updated_at || ''),
-});
+const getSignalPatternDiagnostics = (value: unknown): {
+  pattern: string;
+  status: 'valid' | 'invalid';
+  issue: RegexPatternValidationIssue | null;
+} => {
+  const validation = validateTaskRoutingSignalPattern(value);
+  return {
+    pattern: validation.pattern,
+    status: validation.ok ? 'valid' : 'invalid',
+    issue: validation.ok ? null : validation.issue,
+  };
+};
 
-const normalizeRuleRow = (row: Record<string, unknown>): ToolLearningRule => ({
-  id: Number(row.id || 0),
-  guildId: String(row.guild_id || ''),
-  scope: 'task_routing',
-  signalKey: String(row.signal_key || ''),
-  signalPattern: String(row.signal_pattern || ''),
-  recommendedRoute: (toRoute(row.recommended_route) || 'mixed'),
-  recommendedChannel: (toChannel(row.recommended_channel) || 'docs'),
-  confidence: clamp01(row.confidence),
-  supportCount: Math.max(0, Math.trunc(Number(row.support_count || 0))),
-  status: (String(row.status || '') === 'inactive' ? 'inactive' : 'active'),
-  sourceCandidateId: Number.isFinite(Number(row.source_candidate_id)) ? Number(row.source_candidate_id) : null,
-  updatedBy: row.updated_by ? String(row.updated_by) : null,
-  createdAt: String(row.created_at || ''),
-  updatedAt: String(row.updated_at || ''),
-});
+const assertValidSignalPattern = (value: unknown): string => {
+  const validation = validateTaskRoutingSignalPattern(value);
+  if (!validation.ok) {
+    throw new Error(`TOOL_LEARNING_INVALID_SIGNAL_PATTERN:${validation.issue}`);
+  }
+  return validation.pattern;
+};
+
+const normalizeCandidateRow = (row: Record<string, unknown>): ToolLearningCandidate => {
+  const signalPattern = getSignalPatternDiagnostics(row.signal_pattern);
+  return {
+    id: Number(row.id || 0),
+    guildId: String(row.guild_id || ''),
+    scope: 'task_routing',
+    signalKey: String(row.signal_key || ''),
+    signalPattern: signalPattern.pattern,
+    signalPatternStatus: signalPattern.status,
+    signalPatternIssue: signalPattern.issue,
+    recommendedRoute: (toRoute(row.recommended_route) || 'mixed'),
+    recommendedChannel: (toChannel(row.recommended_channel) || 'docs'),
+    supportCount: Math.max(0, Math.trunc(Number(row.support_count || 0))),
+    avgOutcomeScore: clamp01(row.avg_outcome_score),
+    status: (['pending', 'approved', 'rejected', 'applied'].includes(String(row.status || ''))
+      ? String(row.status)
+      : 'pending') as LearningCandidateStatus,
+    evidence: (row.evidence && typeof row.evidence === 'object' && !Array.isArray(row.evidence)
+      ? row.evidence
+      : {}) as Record<string, unknown>,
+    proposedBy: row.proposed_by ? String(row.proposed_by) : null,
+    decidedBy: row.decided_by ? String(row.decided_by) : null,
+    decidedAt: row.decided_at ? String(row.decided_at) : null,
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+  };
+};
+
+const normalizeRuleRow = (row: Record<string, unknown>): ToolLearningRule => {
+  const signalPattern = getSignalPatternDiagnostics(row.signal_pattern);
+  return {
+    id: Number(row.id || 0),
+    guildId: String(row.guild_id || ''),
+    scope: 'task_routing',
+    signalKey: String(row.signal_key || ''),
+    signalPattern: signalPattern.pattern,
+    signalPatternStatus: signalPattern.status,
+    signalPatternIssue: signalPattern.issue,
+    recommendedRoute: (toRoute(row.recommended_route) || 'mixed'),
+    recommendedChannel: (toChannel(row.recommended_channel) || 'docs'),
+    confidence: clamp01(row.confidence),
+    supportCount: Math.max(0, Math.trunc(Number(row.support_count || 0))),
+    status: (String(row.status || '') === 'inactive' ? 'inactive' : 'active'),
+    sourceCandidateId: Number.isFinite(Number(row.source_candidate_id)) ? Number(row.source_candidate_id) : null,
+    updatedBy: row.updated_by ? String(row.updated_by) : null,
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+  };
+};
 
 export const recordToolLearningLog = async (params: ToolLearningLogParams): Promise<void> => {
   if (!isSupabaseConfigured()) return;
@@ -265,6 +301,12 @@ export const generateTaskRoutingLearningCandidates = async (params: GenerateRout
       continue;
     }
 
+    const signalPatternValidation = validateTaskRoutingSignalPattern(group.signalPattern);
+    if (!signalPatternValidation.ok) {
+      skipped += 1;
+      continue;
+    }
+
     const evidence = {
       source: 'task_routing_feedback',
       supportCount: group.count,
@@ -280,7 +322,7 @@ export const generateTaskRoutingLearningCandidates = async (params: GenerateRout
         guild_id: guildId,
         scope: 'task_routing',
         signal_key: group.signalKey,
-        signal_pattern: group.signalPattern,
+        signal_pattern: signalPatternValidation.pattern,
         recommended_route: group.route,
         recommended_channel: group.channel,
         support_count: group.count,
@@ -365,6 +407,10 @@ export const decideToolLearningCandidate = async (params: {
   }
 
   const candidate = normalizeCandidateRow(data as Record<string, unknown>);
+  const willApplyRule = params.applyNow === true || params.decision === 'approved' || params.decision === 'applied';
+  if (willApplyRule) {
+    void assertValidSignalPattern(candidate.signalPattern);
+  }
   const now = new Date().toISOString();
   const nextStatus: LearningCandidateStatus = params.decision;
 
@@ -418,13 +464,14 @@ const upsertToolLearningRuleFromCandidate = async (params: {
 }): Promise<ToolLearningRule> => {
   const client = getSupabaseClient();
   const now = new Date().toISOString();
+  const signalPattern = assertValidSignalPattern(params.candidate.signalPattern);
   const { data, error } = await client
     .from('agent_tool_learning_rules')
     .upsert({
       guild_id: params.guildId,
       scope: params.candidate.scope,
       signal_key: params.candidate.signalKey,
-      signal_pattern: params.candidate.signalPattern,
+      signal_pattern: signalPattern,
       recommended_route: params.candidate.recommendedRoute,
       recommended_channel: params.candidate.recommendedChannel,
       confidence: params.candidate.avgOutcomeScore,

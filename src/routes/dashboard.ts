@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { getBotRuntimeSnapshot } from '../bot';
 import { START_BOT } from '../config';
+import { isUserAdmin } from '../services/adminAllowlistService';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
 import { getLastMigrationValidation } from '../utils/migrationRegistry';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { getObsidianAdapterRuntimeStatus } from '../services/obsidian/router';
+import { getRuntimeBootstrapState } from '../services/runtime/runtimeBootstrap';
+import { getServerInfrastructureStartupSnapshot } from '../services/runtime/bootstrapServerInfra';
 import { existsSync, readdirSync } from 'node:fs';
 import { summarizeRuntimeHealth } from './health';
 
@@ -20,6 +23,9 @@ const dot = (ok: boolean) => ok
 
 const badge = (label: string, ok: boolean) =>
   `<span class="badge ${ok ? 'bg-green' : 'bg-red'}">${esc(label)}</span>`;
+
+const renderStateBadge = (label: string, tone: 'green' | 'yellow' | 'red' | 'blue') =>
+  `<span class="badge bg-${tone}">${esc(label)}</span>`;
 
 const formatUptime = (sec: number) => {
   const d = Math.floor(sec / 86400);
@@ -132,7 +138,7 @@ const CSS = `
 export function createDashboardRouter(): Router {
   const router = Router();
 
-  router.get('/dashboard', async (_req, res) => {
+  router.get('/dashboard', async (req, res) => {
     const uptimeSec = Math.floor(process.uptime());
     const bot = getBotRuntimeSnapshot();
     const automation = getAutomationRuntimeSnapshot();
@@ -144,6 +150,11 @@ export function createDashboardRouter(): Router {
       automationEnabled,
       automationReady: automation.healthy,
     });
+    const runtimeBootstrap = getRuntimeBootstrapState();
+    const startup = getServerInfrastructureStartupSnapshot();
+    const canViewSensitiveDiagnostics = req.user?.id
+      ? await isUserAdmin(req.user.id).catch(() => false)
+      : false;
     const botReady = botEnabled && bot.ready;
     const automationReady = automationEnabled && automation.healthy;
 
@@ -185,6 +196,22 @@ export function createDashboardRouter(): Router {
         ? 'bg-green'
         : 'bg-yellow';
 
+    const pgCronTone = runtimeBootstrap.pgCron.status === 'ready'
+      ? 'green'
+      : runtimeBootstrap.pgCron.status === 'not-required'
+        ? 'blue'
+        : runtimeBootstrap.pgCron.status === 'pending'
+          ? 'yellow'
+          : 'red';
+    const startupTone = startup.summary.warn > 0
+      ? 'red'
+      : startup.summary.pending > 0
+        ? 'yellow'
+        : 'green';
+    const adapterLoaderTask = startup.tasks.find((task) => task.id === 'adapter-auto-load');
+    const diagnosticsHidden = !canViewSensitiveDiagnostics
+      && Boolean(runtimeBootstrap.pgCron.lastError || adapterLoaderTask?.message || runtimeBootstrap.pgCronReplacedLoops.length > 0);
+
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -211,6 +238,17 @@ export function createDashboardRouter(): Router {
       <div class="kv"><span class="k">Uptime</span><span class="v">${formatUptime(uptimeSec)}</span></div>
       <div class="kv"><span class="k">Last Ready</span><span class="v" style="font-size:11px">${bot.lastReadyAt ? new Date(bot.lastReadyAt).toLocaleString('ko-KR') : '-'}</span></div>
       <div class="kv"><span class="k">Reconnect Attempts</span><span class="v">${bot.reconnectAttempts}</span></div>
+    </div>
+
+    <div class="card">
+      <h2>${dot(startup.summary.warn === 0 && runtimeBootstrap.pgCron.status !== 'failed')} Startup / pg_cron</h2>
+      <div class="kv"><span class="k">pg_cron Bootstrap</span><span class="v">${renderStateBadge(runtimeBootstrap.pgCron.status, pgCronTone)}</span></div>
+      <div class="kv"><span class="k">Startup Tasks</span><span class="v">${renderStateBadge(`warn ${startup.summary.warn} / pending ${startup.summary.pending}`, startupTone)}</span></div>
+      ${canViewSensitiveDiagnostics ? `<div class="kv"><span class="k">Confirmed Replaced Loops</span><span class="v">${runtimeBootstrap.pgCronReplacedLoops.length}</span></div>` : ''}
+      ${canViewSensitiveDiagnostics ? `<div class="kv"><span class="k">Deferred Starts</span><span class="v">${runtimeBootstrap.pgCron.deferredTaskCount}</span></div>` : ''}
+      ${canViewSensitiveDiagnostics && runtimeBootstrap.pgCron.lastError ? `<div class="kv"><span class="k">pg_cron Error</span><span class="v" style="font-size:11px;color:var(--yellow)">${esc(runtimeBootstrap.pgCron.lastError)}</span></div>` : ''}
+      ${canViewSensitiveDiagnostics && adapterLoaderTask?.message ? `<div class="kv"><span class="k">Adapter Loader</span><span class="v" style="font-size:11px;${adapterLoaderTask.status === 'warn' ? 'color:var(--yellow)' : ''}">${esc(adapterLoaderTask.message)}</span></div>` : ''}
+      ${diagnosticsHidden ? `<div class="kv"><span class="k">Diagnostics</span><span class="v" style="font-size:11px;color:var(--muted)">Detailed startup errors and loop ownership are shown only to signed-in admins.</span></div>` : ''}
     </div>
 
     <!-- Adapters -->

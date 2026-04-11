@@ -21,6 +21,78 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-12 - Shared MCP Operating Standard And Same-Window Promotion Rule Documented
+
+- Why: the strengthened GCP shared MCP is now at the point where operating consistency matters more than attaching more lanes. The repo needed one explicit place to state what to harden next, how to use the shared/local MCP surfaces in the IDE, and that shared Obsidian/profile sync for operator-visible control-plane changes should close in the same change window instead of becoming a separate follow-up task.
+- Scope: expanded the IDE MCP workspace setup document with next-step GCP VM priorities, IDE agent usage guardrails, a same-window completion rule, and a daily/shared-publish checklist; added a repo-shareable user-memory extract for team collaboration alignment.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `docs/planning/TEAM_SHAREABLE_USER_MEMORY.md`, `docs/planning/README.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: this is guidance-only, but it raises the bar for treating lane metadata completeness, publish verification, and shared profile backfill as part of normal operator workflow instead of optional cleanup.
+- Validation: documentation review and same-window shared profile backfill attempted via `obsidian:backfill:system` for `service-unified-mcp-profile`
+
+## 2026-04-11 - Learned Routing Rules, Action Execute Payloads, And Upstream Tool Drift Hardened
+
+- Why: the next DeepWiki-guided review pass found three control-plane gaps that could survive normal happy-path testing. Learned task-routing regexes could be stored in Supabase and later fail silently at match time, `/agent/actions/execute` still accepted loosely bounded `args` objects at the admin ingress, and upstream MCP catalogs could expose sanitized-name collisions where two different upstream tools mapped to the same internal name.
+- Scope: task-routing learning rules now validate regex safety on both persistence and load, learning rule/candidate listings surface invalid signal-pattern diagnostics, admin action execution only accepts bounded JSON-safe plain-object args, and upstream proxy diagnostics now report raw, filtered, invalid, and colliding tool counts while dropping ambiguous collisions.
+- Impacted Routes: `POST /api/bot/agent/actions/execute`
+- Impacted Services: `src/utils/validation.ts`, `src/services/toolLearningService.ts`, `src/services/taskRoutingService.ts`, `src/routes/bot-agent/governanceRoutes.ts`, `src/mcp/proxyAdapter.ts`
+- Risk/Regression Notes: invalid learned routing patterns are now explicit operator-visible faults instead of silent no-op rules, oversized or non-JSON-safe admin action payloads are rejected up front, and colliding upstream tools are hidden until the upstream namespace is fixed so a proxied call cannot resolve to the wrong original tool.
+- Validation: targeted Vitest task-routing, tool-learning, governance-route, and proxy-adapter suites passed; `npx tsc --noEmit` passed
+
+## 2026-04-11 - Action Approval Fallback No Longer Disappears Under Partial DB Failure
+
+- Why: DeepWiki-guided review plus local verification found a control-plane drift bug in the approval store. When Supabase was configured but `createActionApprovalRequest()` hit a transient DB write failure, the request was stored only in in-memory fallback state. However, `listActionApprovalRequests()` and `decideActionApprovalRequest()` still treated Supabase as authoritative and ignored that fallback row, so the approval appeared to succeed but vanished from the admin surface in the same process.
+- Scope: approval listing now merges DB rows with in-memory fallback rows, and approval decisions can operate on fallback requests when the DB lookup/update path misses or fails. Successful DB updates clear stale fallback rows.
+- Impacted Services: `src/services/skills/actionGovernanceStore.ts`
+- Risk/Regression Notes: during transient DB outages, approval state is now internally consistent within the running process instead of disappearing between create/list/decide steps. Restart-time durability is still bounded by the existing in-memory fallback design.
+- Validation: targeted Vitest action-governance fallback tests passed; `npx tsc --noEmit` passed
+
+## 2026-04-11 - Discord Intent Regex Overrides Now Fail Closed On Invalid Input
+
+- Why: a DeepWiki-guided audit found that invalid `DISCORD_CODING_INTENT_PATTERN` or `DISCORD_AUTOMATION_INTENT_PATTERN` overrides silently fell back to the broad default regex. An operator trying to narrow intent detection could therefore misconfigure the pattern and accidentally widen request classification back to the default behavior.
+- Scope: Discord runtime intent regex handling now uses default patterns only when no override is supplied. If a custom override is syntactically invalid or looks ReDoS-suspect, the override is disabled instead of reverting to the broader default, and diagnostics expose whether each intent pattern is default, custom, or disabled-invalid.
+- Impacted Services: `src/discord/runtimePolicy.ts`, `src/discord/commands/vibe.ts`
+- Risk/Regression Notes: a broken custom override now fails closed and stops matching instead of silently restoring broad matching. This is an intentional safety tradeoff in favor of explicit operator correction.
+- Validation: targeted Vitest Discord runtime-policy tests passed; `npx tsc --noEmit` passed
+
+## 2026-04-11 - Admin Route Input Contracts Hardened For Privacy, Obsidian Promotion, And Channel Routing
+
+- Why: a DeepWiki-guided control-plane review found three places where invalid admin input could be silently normalized or downgraded instead of being rejected: privacy regex rules could be stored even when downstream compilation would drop them, Obsidian promotion accepted unknown `artifactKind` values that fell back to repository-context notes, and channel routing keys were rewritten by sanitization before save.
+- Scope: privacy policy writes now reject malformed or unsafe regex rules up front, Obsidian promotion and wiki change capture enforce allowed enum values at both HTTP and MCP ingress, and runtime channel routing only accepts canonical key names that round-trip without mutation.
+- Impacted Routes: `PUT /api/bot/agent/privacy/policy`, `POST /api/bot/agent/obsidian/knowledge-promote`, `POST /api/bot/agent/obsidian/wiki-change-capture`, `PUT /api/bot/agent/runtime/channel-routing`
+- Impacted Services: `src/services/agent/agentPrivacyPolicyService.ts`, `src/routes/bot-agent/qualityPrivacyRoutes.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/mcp/obsidianToolAdapter.ts`
+- Risk/Regression Notes: operators using previously lossy channel names or unsupported artifact/change kinds will now get explicit validation errors instead of silent fallback behavior. This is an intentional contract tightening.
+- Validation: targeted Vitest admin route and MCP Obsidian adapter tests passed; `npx tsc --noEmit` passed
+
+## 2026-04-11 - Sprint Event Replay And Discord Deliverable Rendering Hardened
+
+- Why: DeepWiki-guided review found two subtle correctness gaps that could survive routine testing: event-sourced sprint replay stored `phaseResults` under bare phase names while the live orchestrator used `phase-ordinal` keys, and Discord user-facing rendering only extracted `## Deliverable` blocks, which left heading-format variance able to fall back to the full raw output.
+- Scope: sprint phase result key generation is now shared between the live orchestrator and Ventyd reducer so replay preserves retry history, and Discord session rendering now accepts deeper markdown headings / emphasized labels for deliverable extraction while stripping verification and debug sections more defensively.
+- Impacted Routes: `GET /api/bot/agent/sprint/pipelines/:id/events`, Discord session progress rendering surfaces
+- Impacted Services: `src/services/sprint/phaseResultKey.ts`, `src/services/sprint/sprintOrchestrator.ts`, `src/services/sprint/eventSourcing/sprintPipelineEntity.ts`, `src/discord/session.ts`
+- Risk/Regression Notes: sprint diagnostics now expose per-execution `phaseResults` keys consistently with live pipeline snapshots, and Discord users should see fewer cases where malformed deliverable headings leak verification or debug text.
+- Validation: targeted Vitest sprint event-sourcing, sprint orchestrator, and discord session tests passed; `npx tsc --noEmit` passed
+
+## 2026-04-11 - Public Health Surfaces Redact Detailed Bootstrap Diagnostics
+
+- Why: `/health` and `/dashboard` are documented public surfaces, but recent bootstrap hardening had started exposing raw startup task messages, pg_cron error text, and loop ownership details there. That violated the established contract that public health surfaces only expose summary operational metadata.
+- Scope: public health and dashboard responses now keep summary startup/bootstrap state visible while detailed error text, startup task messages, and loop ownership details only appear for signed-in admins.
+- Impacted Routes: `GET /health`, `GET /dashboard`
+- Impacted Services: `src/routes/health.ts`, `src/routes/dashboard.ts`, `src/services/adminAllowlistService.ts`, `src/contracts/bot.ts`
+- Risk/Regression Notes: public health probes and unauthenticated dashboard access remain available, but operators now need an admin session or the protected runtime endpoints for full bootstrap diagnostics.
+- Validation: targeted Vitest health/runtime suites passed and `npx tsc --noEmit` passed
+
+## 2026-04-11 - Runtime Bootstrap Fallback And Startup Diagnostics Hardened
+
+- Why: the runtime could previously mark several loops as pg_cron-owned before bootstrap actually confirmed any jobs, which created a silent failure mode where app loops were skipped even when pg_cron install failed. Startup failures for sprint rehydration, MCP router init, sandbox sync, and adapter auto-load were also too easy to miss because they only surfaced as debug-only skips.
+- Scope: pg_cron ownership confirmation now derives from completed bootstrap results, replaceable app loops wait for bootstrap resolution before deciding ownership, startup task outcomes are tracked in-process, and `/health` plus `/dashboard` now expose pg_cron/bootstrap and startup warning state.
+- Impacted Routes: `GET /health`, `GET /dashboard`
+- Impacted Services: `src/services/infra/pgCronBootstrapService.ts`, `src/services/runtime/runtimeBootstrap.ts`, `src/services/runtime/bootstrapServerInfra.ts`, `src/services/tools/adapterAutoLoader.ts`, `src/routes/health.ts`, `src/routes/dashboard.ts`, `src/contracts/bot.ts`
+- Impacted Tables/RPC: `public.ensure_pg_cron_job` bootstrap path only; no schema contract change
+- Risk/Regression Notes: loop skipping is now fail-safe toward app-owned fallback when pg_cron bootstrap is partial or failed. This can temporarily favor duplicate-safe app loops over silent non-execution, which is the intended reliability tradeoff.
+- Validation: targeted Vitest runtime/health/DeepWiki/sprint suites passed and `npx tsc --noEmit` passed
+
 ## 2026-04-11 - IDE-Safe Tool Schema Normalization And Shared-Only Bootstrap
 
 - Why: one malformed MCP tool schema is enough to make VS Code reject the tool catalog before the user can do any useful work. The immediate incident came from a custom server exporting array parameters without `items`, but the deeper team issue was that a teammate should still be able to start with `gcpCompute` using only SSH access instead of needing local Obsidian token or local MCP wiring first.

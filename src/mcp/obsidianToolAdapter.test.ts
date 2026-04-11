@@ -865,6 +865,34 @@ describe('obsidianToolAdapter', () => {
       expect(data.writtenArtifacts[0]).toContain('ops/contexts/repos/shared-routing.md');
     });
 
+    it('knowledge.promote rejects unknown artifact kinds', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'knowledge.promote',
+        arguments: {
+          artifactKind: 'service_profile',
+          title: 'Shared Routing',
+          content: 'Promoted shared routing knowledge with provenance and stable ownership.',
+          sources: ['repo:docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md'],
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('artifactKind must be one of');
+    });
+
+    it('wiki.change.capture rejects unknown change kinds', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'wiki.change.capture',
+        arguments: {
+          changeSummary: 'operator routing policy update',
+          changeKind: 'service_profile',
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('changeKind must be one of');
+    });
+
     it('semantic.lint.audit returns semantic lint findings', async () => {
       const result = await callObsidianMcpTool({
         name: 'semantic.lint.audit',

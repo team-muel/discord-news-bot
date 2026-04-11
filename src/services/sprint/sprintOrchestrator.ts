@@ -64,6 +64,7 @@ import {
   shadowPipelineCancelled,
   shadowPipelineBlocked,
 } from './eventSourcing/bridge';
+import { buildPhaseResultKey } from './phaseResultKey';
 import { logCatchError, debugCatchError, getErrorMessage } from '../../utils/errorMessage';
 
 const catchPersist = logCatchError(logger, '[SPRINT] persistPipeline');
@@ -1193,7 +1194,7 @@ const advanceSprintPhaseInner = async (pipeline: SprintPipeline, sprintId: strin
   }
 
   // Record result
-  const resultKey = `${currentPhase}-${pipeline.totalPhasesExecuted}`;
+  const resultKey = buildPhaseResultKey(currentPhase, pipeline.totalPhasesExecuted);
   pipeline.phaseResults[resultKey] = phaseResult;
   pipeline.totalPhasesExecuted++;
 

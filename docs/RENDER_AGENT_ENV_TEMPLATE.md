@@ -88,7 +88,7 @@ Provider fallback controls:
 - OPENJARVIS_ENABLED=true (optional, enable OpenJarvis adapter)
 - NEMOCLAW_ENABLED=true (optional, enable NemoClaw adapter)
 - OPENSHELL_ENABLED=true (optional, enable OpenShell sandbox adapter for qa/security-audit secondary)
-- DEEPWIKI_ADAPTER_ENABLED=true (optional, enable DeepWiki adapter for plan/retro enrichment)
+- DEEPWIKI_ADAPTER_ENABLED=true (optional, enable DeepWiki adapter for sprint architecture lookup plus review/QA/security/ops diagnostics)
 - N8N_ENABLED=true (optional, enable n8n adapter for ops-validate enrichment)
 - SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED=true (optional, NemoClaw as cross-model outside voice)
 - LOCAL_CLI_TOOL_ENABLED=false (optional, true면 단일 명시적 CLI tool slice 활성화)

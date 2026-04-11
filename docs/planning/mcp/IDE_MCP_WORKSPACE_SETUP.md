@@ -99,6 +99,76 @@ MCP_UPSTREAM_SERVERS=[{"id":"supabase-ro","label":"Shared Supabase Read Plane","
 - `gcpCompute`는 원격에서 `.env`를 먼저 로드하고, 그 다음 `config/env/unified-mcp.gcp.env` override를 로드한다.
 - `unified-mcp-http.service`도 같은 순서로 env를 읽는다.
 
+## 강화된 GCP VM에서 다음 우선순위
+
+이제 우선순위는 "새 lane을 더 붙이는 일"보다 "shared truth를 더 명확하게 운영하는 일"이다.
+
+1. lane contract completeness를 release gate로 취급한다.
+   - `namespace`, `label`, `plane`, `audience`, `owner`, `sourceRepo` 중 하나라도 빠지면 단순 메타데이터 누락이 아니라 운영 계약 결손으로 본다.
+2. shared runtime mirror 원칙을 계속 유지한다.
+   - shared MCP는 git checkout이 아니라 `/opt/muel/shared-mcp-runtime` 같은 published non-git mirror에서만 실행한다.
+3. shared publish 검증을 도구 단위가 아니라 lane 단위로 한다.
+   - publish 후 `GET /mcp/health`와 `diag.upstreams`를 같이 보고, visible tool 수만이 아니라 metadata, filter, collision 상태까지 확인한다.
+4. shared public lane은 read-only 또는 idempotent capability 위주로 유지한다.
+   - write, DDL, cron mutation, privileged admin 작업은 operator-only namespace 또는 별도 host로 분리한다.
+5. drift review를 정기 업무로 넣는다.
+   - 매일은 health, upstream summary, role worker 상태를 보고, 주간에는 stale lane, filter drift, shared vault root drift를 같이 점검한다.
+
+## IDE에서 Copilot을 잘 쓰는 기준
+
+좋은 결과를 얻기 위해 프롬프트 템플릿이 필요한 것은 아니다. 대신 아래 4가지만 명확하면 된다.
+
+1. 먼저 어떤 truth surface를 기준으로 볼지 말한다.
+   - shared truth면 `gcpCompute`, dirty local overlay면 `muelIndexing`, local aggregation이나 실험이면 `muelUnified`를 먼저 보게 한다.
+2. 요청의 종류를 짧게 분류한다.
+   - `shared review`, `local fix`, `publish risk check` 중 어디에 가까운지만 말해도 검색 경로와 검증 범위가 크게 좋아진다.
+3. control-plane 변경에는 구현만이 아니라 hardening까지 같이 요구한다.
+   - route, health, diagnostics, docs sync, rollback visibility를 함께 보라고 하면 후행 drift가 줄어든다.
+4. vague한 질문이어도 agent가 분류와 개선을 먼저 하도록 기대한다.
+   - 사용자가 완성형 프롬프트를 만드는 것이 아니라, agent가 현재 요청을 shared problem, local problem, ops problem으로 먼저 정리하는 것이 맞다.
+
+권장 협업 루틴:
+
+- shared issue가 의심되면 먼저 "shared truth 기준으로 보고 local dirty overlay는 나중에 덧씌워 달라"고 요청한다.
+- publish 전에는 "operator-visible contract change인지부터 분류하고, 맞다면 same-window close-out까지 포함해 달라"고 요청한다.
+- local patch를 하고 있어도 shared MCP drift가 의심되면 먼저 `diag.upstreams`와 shared health를 확인하게 한다.
+
+## same-window completion rule
+
+shared Obsidian promotion이나 shared profile sync를 별도 프로젝트처럼 떼어내지 않는다.
+
+operator-visible 또는 architecture-significant한 shared MCP 변경은 같은 change window 안에서 아래를 함께 닫는다.
+
+1. repo source doc 갱신
+2. 필요 시 `docs/CHANGELOG-ARCH.md` 갱신
+3. shared service profile backfill 실행
+   - `npm run obsidian:backfill:system -- --entry service-unified-mcp-profile --overwrite`
+4. publish 또는 반영 확인
+   - `GET /mcp/health`
+   - `diag.upstreams`
+
+반대로 아래는 same-window shared promotion 대상이 아니다.
+
+- dirty local overlay 실험
+- 아직 operator-visible contract로 승격되지 않은 임시 구조 탐색
+- local-only scratch notes 또는 prompt 실험
+
+## 팀 공용 운영 체크리스트
+
+매일 빠르게 보는 항목:
+
+1. `GET /mcp/health`에서 shared ingress와 upstream summary가 정상인지 확인한다.
+2. `diag.upstreams`에서 lane metadata, filter, cache 상태, tool collision 여부를 확인한다.
+3. `GET /api/bot/agent/actions/catalog`와 `GET /api/bot/agent/runtime/role-workers`로 실제 callable surface를 확인한다.
+4. shared vault 관련 작업이면 `GET /api/bot/agent/obsidian/runtime`도 함께 본다.
+
+shared publish 직후 추가로 보는 항목:
+
+1. 새 lane 또는 수정된 lane의 visible tool count가 기대치와 맞는지 본다.
+2. allowlist/denylist 적용 결과가 의도와 맞는지 확인한다.
+3. sanitized-name collision이나 invalid schema drift가 새로 생기지 않았는지 확인한다.
+4. operator-visible 문서가 바뀌었다면 같은 change window에서 service profile backfill까지 닫았는지 확인한다.
+
 ## 권장 사용 방식
 
 1. 팀 공용 상태, 운영 기준, 공용 repo index, shared Obsidian read/write는 `gcpCompute` 우선

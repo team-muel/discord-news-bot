@@ -556,9 +556,14 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
     },
     {
       adapterId: 'deepwiki',
-      action: 'wiki.ask',
-      args: (obj) => ({ repo: 'team-muel/discord-news-bot', question: `Common review issues for: ${obj.slice(0, 150)}` }),
-      label: 'Wiki review patterns',
+      action: 'wiki.diagnose',
+      args: (obj, files) => ({
+        repo: 'team-muel/discord-news-bot',
+        phase: 'review',
+        objective: obj.slice(0, 180),
+        changedFiles: files.slice(0, 10),
+      }),
+      label: 'Wiki regression and diagnostic risks',
     },
   ],
   qa: [
@@ -567,6 +572,17 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
       action: 'index.context',
       args: (obj, files) => ({ goal: `QA test targets: ${obj.slice(0, 180)}`, changedPaths: files.slice(0, 20), maxItems: 10 }),
       label: 'Code context bundle (test targets)',
+    },
+    {
+      adapterId: 'deepwiki',
+      action: 'wiki.diagnose',
+      args: (obj, files) => ({
+        repo: 'team-muel/discord-news-bot',
+        phase: 'qa',
+        objective: obj.slice(0, 180),
+        changedFiles: files.slice(0, 10),
+      }),
+      label: 'Wiki defect and diagnostic risks',
     },
     {
       adapterId: 'openjarvis',
@@ -607,6 +623,17 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
       label: 'LLM proxy health',
     },
     {
+      adapterId: 'deepwiki',
+      action: 'wiki.diagnose',
+      args: (obj, files) => ({
+        repo: 'team-muel/discord-news-bot',
+        phase: 'security-audit',
+        objective: obj.slice(0, 180),
+        changedFiles: files.slice(0, 10),
+      }),
+      label: 'Wiki security diagnostics',
+    },
+    {
       adapterId: 'openclaw',
       action: 'agent.health',
       args: () => ({}),
@@ -631,6 +658,17 @@ const PHASE_ENRICHMENT_MAP: Record<string, PhaseEnrichmentAction[]> = {
       action: 'jarvis.telemetry',
       args: () => ({ window: '1h' }),
       label: 'Recent telemetry metrics',
+    },
+    {
+      adapterId: 'deepwiki',
+      action: 'wiki.diagnose',
+      args: (obj, files) => ({
+        repo: 'team-muel/discord-news-bot',
+        phase: 'ops-validate',
+        objective: obj.slice(0, 180),
+        changedFiles: files.slice(0, 10),
+      }),
+      label: 'Wiki operational risk patterns',
     },
     {
       adapterId: 'n8n',

@@ -56,6 +56,39 @@ describe('taskRoutingService', () => {
       expect(result.route).toBe('knowledge');
     });
 
+    it('skips invalid learning rules instead of throwing or silently overriding the base route', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          or: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({
+                  order: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockReturnValue({
+                      data: [{
+                        guild_id: '124',
+                        signal_key: 'broken',
+                        signal_pattern: '(',
+                        recommended_route: 'execution',
+                        confidence: 0.99,
+                        support_count: 10,
+                        status: 'active',
+                      }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      });
+
+      const result = await detectTaskRouteForGuild('스키마 문서', '124');
+      expect(result.route).toBe('knowledge');
+      expect(result.reasons).not.toContainEqual(expect.stringContaining('learning_rule_match'));
+    });
+
     it('applies learning rule match when available', async () => {
       // Mock learning rules returning a match
       mockFrom.mockReturnValue({
@@ -67,7 +100,7 @@ describe('taskRoutingService', () => {
                   order: vi.fn().mockReturnValue({
                     limit: vi.fn().mockReturnValue({
                       data: [{
-                        guild_id: '123',
+                        guild_id: '456',
                         signal_key: 'deploy',
                         signal_pattern: 'deploy',
                         recommended_route: 'execution',
@@ -84,7 +117,7 @@ describe('taskRoutingService', () => {
           }),
         }),
       });
-      const result = await detectTaskRouteForGuild('deploy the new version', '123');
+      const result = await detectTaskRouteForGuild('deploy the new version', '456');
       expect(result.route).toBe('execution');
       expect(result.reasons).toContainEqual(expect.stringContaining('learning_rule_match'));
     });

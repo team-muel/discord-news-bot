@@ -46,10 +46,17 @@ import { getCacheStats } from '../services/obsidian/obsidianCacheService';
 import { getObsidianLoreSyncLoopStats } from '../services/obsidian/obsidianLoreSyncService';
 import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidian/obsidianQualityService';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../utils/obsidianEnv';
+import { isOneOf } from '../utils/validation';
 import { buildActiveWorkset, buildOperatorSnapshot } from '../routes/bot-agent/runtimeRoutes';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
 const compact = (value: unknown): string => String(value ?? '').trim();
+
+const VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS = ['note', 'requirement', 'ops-note', 'contract', 'retrofit', 'lesson'] as const;
+type ValidObsidianPromotionArtifactKind = typeof VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS[number];
+
+const VALID_OBSIDIAN_WIKI_CHANGE_KINDS = ['repo-memory', 'architecture-delta', 'service-change', 'ops-change', 'development-slice', 'changelog-worthy'] as const;
+type ValidObsidianWikiChangeKind = typeof VALID_OBSIDIAN_WIKI_CHANGE_KINDS[number];
 
 const toTextResult = (text: string, isError = false): McpToolCallResult => ({
   content: [{ type: 'text', text }],
@@ -809,13 +816,16 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
   // ── wiki.change.capture ───────────────────────────────────────────────
   if (name === 'wiki.change.capture') {
     const changeSummary = compact(args.changeSummary);
-    const changeKind = compact(args.changeKind) as 'repo-memory' | 'architecture-delta' | 'service-change' | 'ops-change' | 'development-slice' | 'changelog-worthy';
+    const changeKind = compact(args.changeKind).toLowerCase();
     if (!changeSummary) return toTextResult('changeSummary is required', true);
     if (!changeKind) return toTextResult('changeKind is required', true);
+    if (!isOneOf(changeKind, VALID_OBSIDIAN_WIKI_CHANGE_KINDS)) {
+      return toTextResult(`changeKind must be one of: ${VALID_OBSIDIAN_WIKI_CHANGE_KINDS.join(', ')}`, true);
+    }
 
     const result = await captureObsidianWikiChange({
       changeSummary,
-      changeKind,
+      changeKind: changeKind as ValidObsidianWikiChangeKind,
       changedPaths: Array.isArray(args.changedPaths) ? args.changedPaths.map((value) => compact(value)).filter(Boolean) : [],
       validationRefs: Array.isArray(args.validationRefs) ? args.validationRefs.map((value) => compact(value)).filter(Boolean) : [],
       mirrorTargets: Array.isArray(args.mirrorTargets) ? args.mirrorTargets.map((value) => compact(value)).filter(Boolean) : [],
@@ -827,15 +837,18 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
 
   // ── knowledge.promote ─────────────────────────────────────────────────
   if (name === 'knowledge.promote') {
-    const artifactKind = compact(args.artifactKind) as 'note' | 'requirement' | 'ops-note' | 'contract' | 'retrofit' | 'lesson';
+    const artifactKind = compact(args.artifactKind);
     const title = compact(args.title);
     const content = compact(args.content);
     if (!artifactKind) return toTextResult('artifactKind is required', true);
+    if (!isOneOf(artifactKind, VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS)) {
+      return toTextResult(`artifactKind must be one of: ${VALID_OBSIDIAN_PROMOTION_ARTIFACT_KINDS.join(', ')}`, true);
+    }
     if (!title) return toTextResult('title is required', true);
     if (!content) return toTextResult('content is required', true);
 
     const result = await promoteKnowledgeToObsidian({
-      artifactKind,
+      artifactKind: artifactKind as ValidObsidianPromotionArtifactKind,
       title,
       content,
       sources: Array.isArray(args.sources) ? args.sources.map((value) => compact(value)).filter(Boolean) : [],

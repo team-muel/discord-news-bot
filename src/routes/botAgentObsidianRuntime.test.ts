@@ -1088,6 +1088,91 @@ describe('bot agent Obsidian runtime routes', () => {
     });
   });
 
+  it('rejects unknown knowledge promotion artifact kinds from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/obsidian/knowledge-promote', {
+      body: {
+        artifactKind: 'service_profile',
+        title: 'Shared Routing',
+        content: 'Promoted shared routing knowledge with provenance and stable ownership.',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({
+      ok: false,
+      error: 'VALIDATION',
+    });
+    expect((res.body as { message?: string }).message).toContain('artifactKind must be one of');
+  });
+
+  it('rejects unsafe privacy regex rules instead of silently persisting them', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'PUT', '/agent/privacy/policy', {
+      body: {
+        guildId: 'guild-1',
+        modeDefault: 'guarded',
+        reviewScore: 60,
+        blockScore: 80,
+        reviewPatterns: [{ pattern: '(a+)+', score: 25, reason: 'unsafe-test' }],
+        blockPatterns: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({
+      ok: false,
+      error: 'VALIDATION',
+    });
+    expect((res.body as { message?: string }).message).toContain('reviewPatterns[0].pattern looks unsafe');
+  });
+
+  it('rejects lossy channel routing keys instead of silently rewriting them', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'PUT', '/agent/runtime/channel-routing', {
+      body: {
+        guildId: 'guild-1',
+        channels: {
+          'discord/main': 'native',
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({
+      ok: false,
+      error: 'VALIDATION',
+    });
+    expect((res.body as { message?: string }).message).toContain('Invalid channel key');
+  });
+
   it('returns semantic lint audit from the admin route', async () => {
     const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
     const router = Router();

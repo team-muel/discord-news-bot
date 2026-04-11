@@ -53,12 +53,29 @@ export const seedFeedbackReactions = async (
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
-const SECTION_LABEL_ONLY_PATTERN =
-  /^(?:#+\s*)?(?:deliverable|verification|confidence)\s*:?$/i;
 const DEBUG_LINE_PATTERN =
   /^(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
 const DEBUG_INLINE_PATTERN =
   /(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
+const SECTION_HEADER_PATTERN =
+  /^(?:#+\s*)?\*{0,2}(deliverable|verification|confidence)\*{0,2}\s*:?\s*(.*)$/i;
+
+type SectionName = 'deliverable' | 'verification' | 'confidence';
+
+const parseSectionHeader = (line: string): { section: SectionName; trailing: string } | null => {
+  const match = String(line || '').trim().match(SECTION_HEADER_PATTERN);
+  if (!match) return null;
+
+  const section = String(match[1] || '').toLowerCase() as SectionName;
+  if (section !== 'deliverable' && section !== 'verification' && section !== 'confidence') {
+    return null;
+  }
+
+  return {
+    section,
+    trailing: String(match[2] || '').trim(),
+  };
+};
 
 const isDebugLine = (line: string): boolean =>
   DEBUG_LINE_PATTERN.test(String(line || '').trim());
@@ -133,20 +150,47 @@ const stripActionDebugText = (raw: string): string => {
 };
 
 const extractDeliverableBody = (raw: string): string | null => {
-  const match = raw.match(
-    /##\s*Deliverable\s*([\s\S]*?)(?:\n##\s*Verification|\n##\s*Confidence|$)/i,
-  );
-  if (!match) return null;
-  return String(match[1] || '').trim() || null;
+  const lines = String(raw || '').split(/\r?\n/);
+  const captured: string[] = [];
+  let inDeliverable = false;
+
+  for (const original of lines) {
+    const header = parseSectionHeader(original);
+    if (!inDeliverable) {
+      if (!header || header.section !== 'deliverable') continue;
+      inDeliverable = true;
+      if (header.trailing) captured.push(header.trailing);
+      continue;
+    }
+
+    if (header && header.section !== 'deliverable') break;
+    captured.push(original);
+  }
+
+  if (!inDeliverable) return null;
+  const body = captured.join('\n').trim();
+  return body || null;
+};
+
+const stripTrailingDiagnosticSections = (raw: string): string => {
+  const kept: string[] = [];
+  for (const original of String(raw || '').split(/\r?\n/)) {
+    const header = parseSectionHeader(original);
+    if (header && header.section !== 'deliverable') break;
+    kept.push(original);
+  }
+  return kept.join('\n').trim();
 };
 
 const removeSectionLabelLeaks = (raw: string): string =>
   String(raw || '')
     .split(/\r?\n/)
+    .map((l) => {
+      const header = parseSectionHeader(l);
+      if (!header) return l.trim();
+      return header.trailing;
+    })
     .map((l) => l.trim())
-    .filter(Boolean)
-    .filter((l) => !SECTION_LABEL_ONLY_PATTERN.test(l))
-    .map((l) => l.replace(/^#+\s*(deliverable|verification|confidence)\s*:?\s*/i, '').trim())
     .filter(Boolean)
     .join('\n')
     .trim();
@@ -170,10 +214,7 @@ const toUserFacingResult = (session: AgentSession, options: ProgressRenderOption
 
   const sourceText = extractDeliverableBody(raw) || raw;
   const cleaned = stripActionDebugText(sourceText) || stripActionDebugText(raw);
-  const stripped = String(cleaned || '')
-    .replace(/##\s*Verification[\s\S]*/i, '')
-    .replace(/##\s*Confidence[\s\S]*/i, '')
-    .trim();
+  const stripped = stripTrailingDiagnosticSections(cleaned);
   const deLabeled = removeSectionLabelLeaks(stripped);
   const linkLimited = limitLinks(deLabeled, options.maxLinks);
 

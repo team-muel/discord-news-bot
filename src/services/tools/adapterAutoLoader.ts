@@ -44,7 +44,9 @@ export const autoLoadAdapters = async (): Promise<{ loaded: number; skipped: str
   try {
     files = await readdir(ADAPTERS_DIR);
   } catch (err) {
-    logger.debug('[ADAPTER-LOADER] adapters directory not readable: %s', getErrorMessage(err));
+    const message = getErrorMessage(err);
+    result.errors.push(`adapters-directory: ${message}`);
+    logger.debug('[ADAPTER-LOADER] adapters directory not readable: %s', message);
     return result;
   }
 

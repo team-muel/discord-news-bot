@@ -2,9 +2,12 @@ import { Router } from 'express';
 import type { BotStatusGrade, HealthResponse } from '../contracts/bot';
 import { getBotRuntimeSnapshot } from '../bot';
 import { START_BOT } from '../config';
+import { isUserAdmin } from '../services/adminAllowlistService';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
 import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegistry';
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
+import { getRuntimeBootstrapState } from '../services/runtime/runtimeBootstrap';
+import { getServerInfrastructureStartupSnapshot } from '../services/runtime/bootstrapServerInfra';
 import { getLastMigrationValidation } from '../utils/migrationRegistry';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { existsSync, readdirSync } from 'node:fs';
@@ -94,6 +97,40 @@ export const evaluateRuntimeReadiness = (state: RuntimeReadinessState) => {
   } as const;
 };
 
+export const buildRuntimeDiagnosticsPayload = (
+  runtimeBootstrap: ReturnType<typeof getRuntimeBootstrapState>,
+  startup: ReturnType<typeof getServerInfrastructureStartupSnapshot>,
+  includeSensitiveDetails: boolean,
+): Pick<HealthResponse, 'diagnosticsVisibility' | 'runtimeBootstrap' | 'startup'> => {
+  const payload: Pick<HealthResponse, 'diagnosticsVisibility' | 'runtimeBootstrap' | 'startup'> = {
+    diagnosticsVisibility: includeSensitiveDetails ? 'admin' : 'public',
+    runtimeBootstrap: {
+      serverStarted: runtimeBootstrap.serverStarted,
+      discordReadyStarted: runtimeBootstrap.discordReadyStarted,
+      sharedLoopsStarted: runtimeBootstrap.sharedLoopsStarted,
+      sharedLoopsSource: runtimeBootstrap.sharedLoopsSource,
+      pgCron: {
+        status: runtimeBootstrap.pgCron.status,
+        startedAt: runtimeBootstrap.pgCron.startedAt,
+        completedAt: runtimeBootstrap.pgCron.completedAt,
+        deferredTaskCount: runtimeBootstrap.pgCron.deferredTaskCount,
+        summary: runtimeBootstrap.pgCron.summary,
+      },
+    },
+    startup: {
+      summary: startup.summary,
+    },
+  };
+
+  if (includeSensitiveDetails) {
+    payload.runtimeBootstrap!.pgCron.lastError = runtimeBootstrap.pgCron.lastError;
+    payload.runtimeBootstrap!.pgCron.replacedLoops = runtimeBootstrap.pgCronReplacedLoops;
+    payload.startup!.tasks = startup.tasks;
+  }
+
+  return payload;
+};
+
 export function createHealthRouter(): Router {
   const router = Router();
 
@@ -112,7 +149,7 @@ export function createHealthRouter(): Router {
     };
   };
 
-  router.get('/health', async (_req, res) => {
+  router.get('/health', async (req, res) => {
     const bot = buildBotSnapshot();
     const automation = getAutomationRuntimeSnapshot();
 
@@ -124,6 +161,11 @@ export function createHealthRouter(): Router {
       automationEnabled,
       automationReady: automation.healthy,
     });
+    const runtimeBootstrap = getRuntimeBootstrapState();
+    const startup = getServerInfrastructureStartupSnapshot();
+    const includeSensitiveDiagnostics = req.user?.id
+      ? await isUserAdmin(req.user.id).catch(() => false)
+      : false;
 
     // n8n status: adapter availability + delegation config
     let n8nStatus: {
@@ -188,6 +230,7 @@ export function createHealthRouter(): Router {
       ...(n8nStatus ? { n8n: n8nStatus } : {}),
       ...(obsidianStatus ? { obsidian: obsidianStatus } : {}),
       migrations: getLastMigrationValidation(),
+      ...buildRuntimeDiagnosticsPayload(runtimeBootstrap, startup, includeSensitiveDiagnostics),
     };
 
     return res.status(200).json(payload);

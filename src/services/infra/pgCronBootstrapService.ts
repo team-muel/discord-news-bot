@@ -153,7 +153,7 @@ const CRON_JOBS: CronJobSpec[] = [
   },
 ];
 
-type BootstrapResult = {
+export type BootstrapResult = {
   enabled: boolean;
   jobs: Array<{ jobName: string; status: 'created' | 'exists' | 'error'; message?: string }>;
 };
@@ -283,4 +283,22 @@ export const PG_CRON_LOOP_REPLACEMENTS: Record<string, string> = {
 export const getPgCronReplacedLoops = (): Set<string> => {
   if (!ENABLED) return new Set();
   return new Set(Object.values(PG_CRON_LOOP_REPLACEMENTS));
+};
+
+/**
+ * Returns the subset of app loops that are confirmed to be owned by pg_cron
+ * based on a completed bootstrap result.
+ */
+export const getPgCronReplacedLoopsFromBootstrap = (
+  result: BootstrapResult | null | undefined,
+): Set<string> => {
+  if (!ENABLED || !result?.enabled) return new Set();
+
+  const ownedLoops = new Set<string>();
+  for (const job of result.jobs) {
+    if (job.status !== 'created' && job.status !== 'exists') continue;
+    const loopName = PG_CRON_LOOP_REPLACEMENTS[job.jobName];
+    if (loopName) ownedLoops.add(loopName);
+  }
+  return ownedLoops;
 };

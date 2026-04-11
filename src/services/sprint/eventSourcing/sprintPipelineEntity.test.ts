@@ -69,8 +69,8 @@ describe('SprintPipelineEntity', () => {
     });
     expect(pipeline.currentPhase).toBe('implement');
     expect(pipeline.state.totalPhasesExecuted).toBe(1);
-    expect(pipeline.state.phaseResults['plan']).toBeDefined();
-    expect(pipeline.state.phaseResults['plan'].status).toBe('success');
+    expect(pipeline.state.phaseResults['plan-0']).toBeDefined();
+    expect(pipeline.state.phaseResults['plan-0'].status).toBe('success');
 
     // implement → review
     pipeline.completePhase({
@@ -274,7 +274,7 @@ describe('SprintPipelineRepository (in-memory)', () => {
 
     expect(rehydrated).not.toBeNull();
     expect(rehydrated!.currentPhase).toBe('implement');
-    expect(rehydrated!.state.phaseResults['plan']?.status).toBe('success');
+    expect(rehydrated!.state.phaseResults['plan-0']?.status).toBe('success');
     expect(rehydrated!.state.changedFiles).toEqual(['src/fix.ts']);
     expect(rehydrated!.state.guildId).toBe('guild-123');
   });
@@ -339,8 +339,8 @@ describe('SprintPipelineRepository (in-memory)', () => {
     expect(rehydrated!.currentPhase).toBe('review');
     expect(rehydrated!.state.implementReviewLoopCount).toBe(1);
     expect(rehydrated!.state.totalPhasesExecuted).toBe(4);
-    expect(rehydrated!.state.phaseResults['review']?.output).toBe('Bug in error handling');
-    // Second implement result overwrites the first in phaseResults (latest wins)
-    expect(rehydrated!.state.phaseResults['implement']?.output).toBe('Fixed error handling');
+    expect(rehydrated!.state.phaseResults['review-2']?.output).toBe('Bug in error handling');
+    expect(rehydrated!.state.phaseResults['implement-1']?.output).toBe('Built');
+    expect(rehydrated!.state.phaseResults['implement-3']?.output).toBe('Fixed error handling');
   });
 });
