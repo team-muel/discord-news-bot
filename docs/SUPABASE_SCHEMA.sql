@@ -737,7 +737,7 @@ create table if not exists public.memory_jobs (
   completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (job_type in ('short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot')),
+  check (job_type in ('short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot', 'consolidation')),
   check (status in ('queued', 'running', 'completed', 'failed', 'canceled'))
 );
 
@@ -778,7 +778,7 @@ create table if not exists public.memory_job_deadletters (
   failed_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (job_type in ('short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot')),
+  check (job_type in ('short_summary', 'topic_synthesis', 'durable_extraction', 'reindex', 'conflict_scan', 'onboarding_snapshot', 'consolidation')),
   check (recovery_status in ('pending', 'requeued', 'ignored')),
   check (recovery_attempts >= 0)
 );
@@ -932,7 +932,7 @@ create table if not exists public.agent_weekly_reports (
   markdown text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (report_kind in ('llm_latency_weekly', 'go_no_go_weekly', 'hybrid_weekly'))
+  check (report_kind in ('llm_latency_weekly', 'go_no_go_weekly', 'hybrid_weekly', 'rollback_rehearsal_weekly', 'memory_queue_weekly', 'self_improvement_patterns', 'jarvis_optimize_result', 'cross_loop_origin', 'convergence_report'))
 );
 
 create index if not exists idx_agent_weekly_reports_kind_created
@@ -969,16 +969,32 @@ begin
   ) then
     create policy memory_items_guild_select on public.memory_items
       for select
-      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+      using ((select auth.role()) = 'service_role' or guild_id = coalesce((select auth.jwt() ->> 'guild_id'), ''));
   end if;
 
   if not exists (
-    select 1 from pg_policies where schemaname='public' and tablename='memory_items' and policyname='memory_items_guild_write'
+    select 1 from pg_policies where schemaname='public' and tablename='memory_items' and policyname='memory_items_guild_insert'
   ) then
-    create policy memory_items_guild_write on public.memory_items
-      for all
-      using (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''))
-      with check (auth.role() = 'service_role' or guild_id = coalesce(auth.jwt() ->> 'guild_id', ''));
+    create policy memory_items_guild_insert on public.memory_items
+      for insert
+      with check ((select auth.role()) = 'service_role' or guild_id = coalesce((select auth.jwt() ->> 'guild_id'), ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='memory_items' and policyname='memory_items_guild_update'
+  ) then
+    create policy memory_items_guild_update on public.memory_items
+      for update
+      using ((select auth.role()) = 'service_role' or guild_id = coalesce((select auth.jwt() ->> 'guild_id'), ''))
+      with check ((select auth.role()) = 'service_role' or guild_id = coalesce((select auth.jwt() ->> 'guild_id'), ''));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='memory_items' and policyname='memory_items_guild_delete'
+  ) then
+    create policy memory_items_guild_delete on public.memory_items
+      for delete
+      using ((select auth.role()) = 'service_role' or guild_id = coalesce((select auth.jwt() ->> 'guild_id'), ''));
   end if;
 
   if not exists (
@@ -3649,8 +3665,8 @@ alter table public.intents enable row level security;
 
 create policy intents_service_role_all on public.intents
   for all
-  using (true)
-  with check (true);
+  using ((select auth.role()) = 'service_role')
+  with check ((select auth.role()) = 'service_role');
 
 -- 24.2 Agent trust scores table (Phase H preview)
 create table if not exists public.agent_trust_scores (
@@ -3669,8 +3685,8 @@ alter table public.agent_trust_scores enable row level security;
 
 create policy trust_scores_service_role_all on public.agent_trust_scores
   for all
-  using (true)
-  with check (true);
+  using ((select auth.role()) = 'service_role')
+  with check ((select auth.role()) = 'service_role');
 
 -- ============================================================
 -- 25. Reward Signal & Eval (Migration 005)
@@ -3678,39 +3694,102 @@ create policy trust_scores_service_role_all on public.agent_trust_scores
 
 -- 25.1 Reward signal snapshots
 create table if not exists public.reward_signal_snapshots (
-  id          bigint generated always as identity primary key,
-  guild_id    text        not null,
-  session_id  text,
-  user_id     text,
-  signal_type text        not null default 'blended',
-  score       real        not null,
-  components  jsonb       not null default '{}',
-  created_at  timestamptz not null default now()
+  id bigint generated always as identity primary key,
+  guild_id text not null,
+  window_start timestamptz not null,
+  window_end timestamptz not null,
+  reaction_score real not null default 0,
+  session_success_rate real not null default 0,
+  citation_rate real not null default 0,
+  latency_score real not null default 0,
+  reward_scalar real not null default 0,
+  reaction_up integer not null default 0,
+  reaction_down integer not null default 0,
+  session_total integer not null default 0,
+  session_succeeded integer not null default 0,
+  retrieval_logs_count integer not null default 0,
+  avg_retrieval_score real,
+  avg_latency_ms real,
+  p95_latency_ms real,
+  created_at timestamptz not null default now()
 );
+
+create index if not exists idx_reward_signal_snapshots_guild_window
+  on public.reward_signal_snapshots (guild_id, window_end desc);
+
+create unique index if not exists idx_reward_signal_snapshots_guild_window_unique
+  on public.reward_signal_snapshots (guild_id, window_start);
 
 -- 25.2 A/B evaluation runs
 create table if not exists public.eval_ab_runs (
-  id            bigint generated always as identity primary key,
-  guild_id      text        not null,
-  run_type      text        not null default 'retrieval',
-  baseline      jsonb       not null default '{}',
-  candidate     jsonb       not null default '{}',
-  status        text        not null default 'pending',
-  result        jsonb,
-  created_at    timestamptz not null default now(),
-  completed_at  timestamptz
+  id bigint generated always as identity primary key,
+  guild_id text not null,
+  eval_name text not null,
+  baseline_config jsonb not null default '{}'::jsonb,
+  candidate_config jsonb not null default '{}'::jsonb,
+  baseline_reward real,
+  candidate_reward real,
+  delta_reward real,
+  verdict text not null default 'pending',
+  judge_reasoning text,
+  sample_count integer not null default 0,
+  promoted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+create index if not exists idx_eval_ab_runs_guild
+  on public.eval_ab_runs (guild_id, created_at desc);
 
 -- 25.3 Shadow graph divergence logs
 create table if not exists public.shadow_graph_divergence_logs (
-  id            bigint generated always as identity primary key,
-  session_id    text        not null,
-  node_name     text        not null,
-  main_output   text,
-  shadow_output text,
-  divergence    real,
-  created_at    timestamptz not null default now()
+  id bigint generated always as identity primary key,
+  session_id text not null,
+  guild_id text not null,
+  main_path_nodes text[] not null default array[]::text[],
+  shadow_path_nodes text[] not null default array[]::text[],
+  diverge_at_index integer,
+  main_final_status text,
+  shadow_final_text text,
+  shadow_error text,
+  quality_delta real,
+  elapsed_ms integer,
+  traffic_routing_decision_id bigint,
+  workflow_session_id text,
+  created_at timestamptz not null default now()
 );
+
+create index if not exists idx_shadow_graph_divergence_guild
+  on public.shadow_graph_divergence_logs (guild_id, created_at desc);
+
+alter table public.reward_signal_snapshots enable row level security;
+alter table public.eval_ab_runs enable row level security;
+alter table public.shadow_graph_divergence_logs enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='reward_signal_snapshots' and policyname='reward_signal_snapshots_service_role'
+  ) then
+    create policy reward_signal_snapshots_service_role on public.reward_signal_snapshots
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='eval_ab_runs' and policyname='eval_ab_runs_service_role'
+  ) then
+    create policy eval_ab_runs_service_role on public.eval_ab_runs
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='shadow_graph_divergence_logs' and policyname='shadow_graph_divergence_logs_service_role'
+  ) then
+    create policy shadow_graph_divergence_logs_service_role on public.shadow_graph_divergence_logs
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+end
+$$;
 
 -- ============================================================
 -- 26. Entity Nervous System (Migration 006)
@@ -3731,47 +3810,132 @@ create table if not exists public.entity_self_notes (
 
 -- 27.1 Workflow sessions
 create table if not exists public.workflow_sessions (
-  id            bigint generated always as identity primary key,
-  session_id    text        not null unique,
-  guild_id      text        not null,
-  workflow_type text        not null default 'agent',
-  status        text        not null default 'active',
-  metadata      jsonb       not null default '{}',
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  id bigint generated by default as identity primary key,
+  session_id text not null unique,
+  workflow_name text not null,
+  stage text not null,
+  scope text,
+  status text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (status in ('proposed', 'classified', 'routed', 'executing', 'verifying', 'approving', 'released', 'recovering', 'failed'))
 );
 
 -- 27.2 Workflow steps
 create table if not exists public.workflow_steps (
-  id            bigint generated always as identity primary key,
-  session_id    text        not null,
-  step_name     text        not null,
-  status        text        not null default 'pending',
-  input         jsonb,
-  output        jsonb,
-  started_at    timestamptz,
-  completed_at  timestamptz,
-  created_at    timestamptz not null default now()
+  id bigint generated by default as identity primary key,
+  session_id text not null references public.workflow_sessions(session_id) on delete cascade,
+  step_order integer not null,
+  step_name text not null,
+  agent_role text,
+  status text not null,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  duration_ms integer,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (status in ('queued', 'running', 'passed', 'failed', 'skipped'))
 );
+
+create unique index if not exists idx_workflow_steps_session_order
+  on public.workflow_steps (session_id, step_order);
 
 -- 27.3 Workflow events
 create table if not exists public.workflow_events (
-  id            bigint generated always as identity primary key,
-  session_id    text        not null,
-  event_type    text        not null,
-  payload       jsonb       not null default '{}',
-  created_at    timestamptz not null default now()
+  id bigint generated by default as identity primary key,
+  session_id text not null references public.workflow_sessions(session_id) on delete cascade,
+  event_type text not null,
+  from_state text,
+  to_state text,
+  handoff_from text,
+  handoff_to text,
+  decision_reason text,
+  evidence_id text,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
 );
 
 -- 27.4 Traffic routing decisions
 create table if not exists public.traffic_routing_decisions (
-  id            bigint generated always as identity primary key,
-  session_id    text        not null,
-  guild_id      text        not null,
-  route         text        not null default 'main',
-  gates         jsonb       not null default '{}',
-  created_at    timestamptz not null default now()
+  id bigint generated always as identity primary key,
+  session_id text not null,
+  guild_id text not null,
+  route text not null,
+  reason text not null,
+  got_cutover_allowed boolean,
+  rollout_percentage integer,
+  stable_bucket integer,
+  shadow_divergence_rate real,
+  shadow_quality_delta real,
+  readiness_recommended boolean,
+  policy_snapshot jsonb not null default '{}'::jsonb,
+  workflow_session_id text,
+  sprint_pipeline_id text,
+  created_at timestamptz not null default now()
 );
+
+create index if not exists idx_workflow_sessions_status_started
+  on public.workflow_sessions (status, started_at desc);
+
+create index if not exists idx_workflow_steps_session_status
+  on public.workflow_steps (session_id, status);
+
+create index if not exists idx_workflow_events_session_created
+  on public.workflow_events (session_id, created_at desc);
+
+drop trigger if exists trg_workflow_sessions_updated_at on public.workflow_sessions;
+create trigger trg_workflow_sessions_updated_at
+before update on public.workflow_sessions
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_workflow_steps_updated_at on public.workflow_steps;
+create trigger trg_workflow_steps_updated_at
+before update on public.workflow_steps
+for each row
+execute function public.set_updated_at();
+
+create index if not exists idx_traffic_routing_decisions_guild_created
+  on public.traffic_routing_decisions (guild_id, created_at desc);
+
+create index if not exists idx_traffic_routing_decisions_session
+  on public.traffic_routing_decisions (session_id);
+
+create index if not exists idx_traffic_routing_decisions_route
+  on public.traffic_routing_decisions (route, created_at desc);
+
+alter table public.workflow_sessions enable row level security;
+alter table public.workflow_steps enable row level security;
+alter table public.workflow_events enable row level security;
+alter table public.traffic_routing_decisions enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='workflow_sessions' and policyname='workflow_sessions_service_role') then
+    create policy workflow_sessions_service_role on public.workflow_sessions
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='workflow_steps' and policyname='workflow_steps_service_role') then
+    create policy workflow_steps_service_role on public.workflow_steps
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='workflow_events' and policyname='workflow_events_service_role') then
+    create policy workflow_events_service_role on public.workflow_events
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='traffic_routing_decisions' and policyname='traffic_routing_decisions_service_role') then
+    create policy traffic_routing_decisions_service_role on public.traffic_routing_decisions
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+end
+$$;
 
 -- ============================================================
 -- 28. Observer Layer (Migration 008)
@@ -3804,6 +3968,73 @@ create table if not exists public.user_embeddings (
   computed_at timestamptz not null default now(),
   primary key (user_id, guild_id)
 );
+
+-- ============================================================
+-- 30. Runtime Service Policy Normalization (Phase 2)
+-- ============================================================
+
+alter table if exists public.api_idempotency_keys enable row level security;
+alter table if exists public.api_rate_limits enable row level security;
+alter table if exists public.discord_login_sessions enable row level security;
+alter table if exists public.distributed_locks enable row level security;
+alter table if exists public.schema_migrations enable row level security;
+alter table if exists public.agent_telemetry_queue_tasks enable row level security;
+alter table if exists public.user_learning_prefs enable row level security;
+
+drop policy if exists "user can manage own prefs" on public.user_learning_prefs;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='api_idempotency_keys' and policyname='api_idempotency_keys_service_role_all'
+  ) then
+    create policy api_idempotency_keys_service_role_all on public.api_idempotency_keys
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='api_rate_limits' and policyname='api_rate_limits_service_role_all'
+  ) then
+    create policy api_rate_limits_service_role_all on public.api_rate_limits
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='discord_login_sessions' and policyname='discord_login_sessions_service_role_all'
+  ) then
+    create policy discord_login_sessions_service_role_all on public.discord_login_sessions
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='distributed_locks' and policyname='distributed_locks_service_role_all'
+  ) then
+    create policy distributed_locks_service_role_all on public.distributed_locks
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='schema_migrations' and policyname='schema_migrations_service_role_all'
+  ) then
+    create policy schema_migrations_service_role_all on public.schema_migrations
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='agent_telemetry_queue_tasks' and policyname='agent_telemetry_queue_tasks_service_role_all'
+  ) then
+    create policy agent_telemetry_queue_tasks_service_role_all on public.agent_telemetry_queue_tasks
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname='public' and tablename='user_learning_prefs' and policyname='user_learning_prefs_service_role_all'
+  ) then
+    create policy user_learning_prefs_service_role_all on public.user_learning_prefs
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+  end if;
+end
+$$;
 
 -- Note: memory_feedback_signals table and get_memory_feedback_summary RPC
 -- are defined in migration 010_user_embedding_feedback.sql

@@ -2,6 +2,7 @@ import { listActions, getAction } from '../services/skills/actions/registry';
 import { runGoalActions } from '../services/skills/actionRunner';
 import { NODE_ENV } from '../config';
 import { generateText, isAnyLlmConfigured, resolveLlmProvider } from '../services/llmClient';
+import { listProxiedTools, listUpstreamDiagnostics } from './proxyAdapter';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 import { getErrorMessage } from '../utils/errorMessage';
 
@@ -88,6 +89,19 @@ const MCP_TOOLS: McpToolSpec[] = [
       type: 'object',
       properties: {
         prompt: { type: 'string', description: 'Test prompt (default: "say hi")' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'diag.upstreams',
+    description: 'Configured upstream namespaces, federation metadata, filters, and cached catalog status를 조회합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        refresh: { type: 'boolean', description: 'True면 upstream tool catalog를 먼저 새로 읽습니다. 기본값은 true입니다.' },
+        includeDisabled: { type: 'boolean', description: '비활성 upstream도 포함합니다.' },
+        includeUrls: { type: 'boolean', description: 'True면 upstream base URL도 반환합니다.' },
       },
       additionalProperties: false,
     },
@@ -195,6 +209,18 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
     } catch (err) {
       return toTextResult(JSON.stringify({ configured: true, provider, error: getErrorMessage(err) }), true);
     }
+  }
+
+  if (request.name === 'diag.upstreams') {
+    const refresh = args.refresh !== false;
+    const includeDisabled = args.includeDisabled === true;
+    const includeUrls = args.includeUrls === true;
+
+    if (refresh) {
+      await listProxiedTools();
+    }
+
+    return toTextResult(JSON.stringify(listUpstreamDiagnostics({ includeDisabled, includeUrl: includeUrls }), null, 2));
   }
 
   return toTextResult(`unknown tool: ${request.name}`, true);

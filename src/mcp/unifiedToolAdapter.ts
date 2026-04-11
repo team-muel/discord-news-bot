@@ -17,6 +17,7 @@ import { listIndexingMcpTools, callIndexingMcpTool } from './indexingToolAdapter
 import { listObsidianMcpTools, callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from './obsidianToolAdapter';
 import { listProxiedTools, callProxiedTool, invalidateAllServerCaches } from './proxyAdapter';
 import { loadUpstreamsFromConfig } from './proxyRegistry';
+import { normalizeMcpToolSpec } from './schemaNormalization';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
 // Bootstrap upstream servers from environment at module init (idempotent)
@@ -105,7 +106,7 @@ export const listAllMcpTools = async (): Promise<McpToolSpec[]> => {
     ...listObsidianMcpTools(),
     ...(await buildExternalMcpTools()),
     ...(await listProxiedTools()),
-  ];
+  ].map((tool) => normalizeMcpToolSpec(tool));
   return _allToolsCache;
 };
 

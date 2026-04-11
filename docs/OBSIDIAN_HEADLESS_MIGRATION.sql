@@ -64,38 +64,28 @@ ALTER TABLE obsidian_query_log ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-  -- Policy: Anyone can read cache (world-readable)
+  -- Policy: Only service role can read/write cache
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'cache_read'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'obsidian_cache_service_role_all'
   ) THEN
-    CREATE POLICY cache_read ON obsidian_cache FOR SELECT USING (true);
+    CREATE POLICY obsidian_cache_service_role_all ON obsidian_cache
+      FOR ALL
+      USING ((select auth.role()) = 'service_role')
+      WITH CHECK ((select auth.role()) = 'service_role');
   END IF;
 
-  -- Policy: Only service role can write cache
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'cache_write'
-  ) THEN
-    CREATE POLICY cache_write ON obsidian_cache FOR INSERT WITH CHECK (auth.role() = 'service_role');
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_cache' AND policyname = 'cache_update'
-  ) THEN
-    CREATE POLICY cache_update ON obsidian_cache FOR UPDATE USING (auth.role() = 'service_role');
-  END IF;
-
-  -- Policy: Log reads
+  -- Policy: Service role reads query logs
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_query_log' AND policyname = 'query_log_read'
   ) THEN
-    CREATE POLICY query_log_read ON obsidian_query_log FOR SELECT USING (true);
+    CREATE POLICY query_log_read ON obsidian_query_log FOR SELECT USING (auth.role() = 'service_role');
   END IF;
 
-  -- Policy: Anyone can insert logs
+  -- Policy: Service role inserts query logs
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'obsidian_query_log' AND policyname = 'query_log_write'
   ) THEN
-    CREATE POLICY query_log_write ON obsidian_query_log FOR INSERT WITH CHECK (true);
+    CREATE POLICY query_log_write ON obsidian_query_log FOR INSERT WITH CHECK (auth.role() = 'service_role');
   END IF;
 END
 $$;
@@ -115,7 +105,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Grant privileges
-GRANT SELECT ON obsidian_cache TO anon, authenticated;
-GRANT INSERT, UPDATE ON obsidian_cache TO service_role;
-GRANT SELECT, INSERT ON obsidian_query_log TO anon, authenticated;
+REVOKE ALL ON obsidian_cache FROM anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON obsidian_cache TO service_role;
+REVOKE ALL ON obsidian_query_log FROM anon, authenticated;
+GRANT SELECT, INSERT ON obsidian_query_log TO service_role;
 GRANT SELECT, INSERT, UPDATE ON obsidian_metadata TO service_role;

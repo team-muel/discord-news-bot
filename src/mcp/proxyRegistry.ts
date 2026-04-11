@@ -16,6 +16,9 @@ import { getErrorMessage } from '../utils/errorMessage';
 
 // ──── Types ────────────────────────────────────────────────────────────────────
 
+export type UpstreamPlane = 'semantic' | 'operational' | 'execution' | 'control';
+export type UpstreamAudience = 'shared' | 'operator' | 'hybrid';
+
 export type UpstreamMcpServerConfig = {
   /** Unique identifier for the server (used as registry key). */
   id: string;
@@ -36,6 +39,22 @@ export type UpstreamMcpServerConfig = {
   protocol?: 'simple' | 'streamable';
   /** When false the server is ignored during tool listing and routing. Default true. */
   enabled?: boolean;
+  /** Optional human-readable label used in diagnostics and operator tooling. */
+  label?: string;
+  /** Optional short description of the lane's purpose. */
+  description?: string;
+  /** Optional semantic classification for federated control-plane routing. */
+  plane?: UpstreamPlane;
+  /** Optional visibility boundary for the lane. */
+  audience?: UpstreamAudience;
+  /** Optional owning team, service, or operator label. */
+  owner?: string;
+  /** Optional source repository or service identifier. */
+  sourceRepo?: string;
+  /** Optional wildcard allowlist (`*` supported) applied to original upstream tool names. */
+  toolAllowlist?: string[];
+  /** Optional wildcard denylist (`*` supported) applied after allowlist checks. */
+  toolDenylist?: string[];
 };
 
 // ──── Internal state ───────────────────────────────────────────────────────────
@@ -47,11 +66,71 @@ const nsIndex = new Map<string, string>();
 // ──── Validation ───────────────────────────────────────────────────────────────
 
 const NAMESPACE_RE = /^[a-z0-9_]+$/;
+const PLANE_VALUES = new Set<UpstreamPlane>(['semantic', 'operational', 'execution', 'control']);
+const AUDIENCE_VALUES = new Set<UpstreamAudience>(['shared', 'operator', 'hybrid']);
+
+const normalizeOptionalString = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const normalizeEnumValue = <T extends string>(value: unknown, allowed: ReadonlySet<T>): T | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim() as T;
+  return allowed.has(normalized) ? normalized : undefined;
+};
+
+const normalizeToolPatterns = (patterns: string[] | undefined): string[] | undefined => {
+  if (!patterns) return undefined;
+  const normalized = patterns
+    .map((pattern) => (typeof pattern === 'string' ? pattern.trim() : ''))
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const wildcardPatternToRegExp = (pattern: string): RegExp => {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped.replace(/\*/g, '.*')}$`);
+};
+
+const matchesAnyPattern = (toolName: string, patterns: string[] | undefined): boolean => {
+  if (!patterns || patterns.length === 0) return false;
+  return patterns.some((pattern) => wildcardPatternToRegExp(pattern).test(toolName));
+};
+
+export const hasUpstreamToolFilters = (cfg: UpstreamMcpServerConfig): boolean =>
+  Boolean((cfg.toolAllowlist && cfg.toolAllowlist.length > 0) || (cfg.toolDenylist && cfg.toolDenylist.length > 0));
+
+export const isUpstreamToolAllowed = (cfg: UpstreamMcpServerConfig, toolName: string): boolean => {
+  const denied = matchesAnyPattern(toolName, cfg.toolDenylist);
+  if (denied) return false;
+
+  const allowlist = cfg.toolAllowlist;
+  if (!allowlist || allowlist.length === 0) return true;
+  return matchesAnyPattern(toolName, allowlist);
+};
 
 const assertValidConfig = (cfg: UpstreamMcpServerConfig): void => {
   if (!cfg.id || typeof cfg.id !== 'string') throw new Error('UpstreamMcpServerConfig.id is required');
   if (!cfg.url || typeof cfg.url !== 'string') throw new Error('UpstreamMcpServerConfig.url is required');
   if (!cfg.namespace || typeof cfg.namespace !== 'string') throw new Error('UpstreamMcpServerConfig.namespace is required');
+  if (cfg.label !== undefined && typeof cfg.label !== 'string') throw new Error('UpstreamMcpServerConfig.label must be a string');
+  if (cfg.description !== undefined && typeof cfg.description !== 'string') throw new Error('UpstreamMcpServerConfig.description must be a string');
+  if (cfg.owner !== undefined && typeof cfg.owner !== 'string') throw new Error('UpstreamMcpServerConfig.owner must be a string');
+  if (cfg.sourceRepo !== undefined && typeof cfg.sourceRepo !== 'string') throw new Error('UpstreamMcpServerConfig.sourceRepo must be a string');
+  if (cfg.plane !== undefined && !PLANE_VALUES.has(cfg.plane)) {
+    throw new Error(`UpstreamMcpServerConfig.plane must be one of: ${[...PLANE_VALUES].join(', ')}`);
+  }
+  if (cfg.audience !== undefined && !AUDIENCE_VALUES.has(cfg.audience)) {
+    throw new Error(`UpstreamMcpServerConfig.audience must be one of: ${[...AUDIENCE_VALUES].join(', ')}`);
+  }
+  if (cfg.toolAllowlist && (!Array.isArray(cfg.toolAllowlist) || cfg.toolAllowlist.some((pattern) => typeof pattern !== 'string'))) {
+    throw new Error('UpstreamMcpServerConfig.toolAllowlist must be an array of strings');
+  }
+  if (cfg.toolDenylist && (!Array.isArray(cfg.toolDenylist) || cfg.toolDenylist.some((pattern) => typeof pattern !== 'string'))) {
+    throw new Error('UpstreamMcpServerConfig.toolDenylist must be an array of strings');
+  }
   if (!NAMESPACE_RE.test(cfg.namespace)) {
     throw new Error(`UpstreamMcpServerConfig.namespace must match [a-z0-9_]: "${cfg.namespace}"`);
   }
@@ -70,6 +149,14 @@ export const registerUpstream = (config: UpstreamMcpServerConfig): void => {
     ...config,
     url: config.url.replace(/\/+$/, ''),
     enabled: config.enabled ?? true,
+    label: normalizeOptionalString(config.label),
+    description: normalizeOptionalString(config.description),
+    plane: normalizeEnumValue(config.plane, PLANE_VALUES),
+    audience: normalizeEnumValue(config.audience, AUDIENCE_VALUES),
+    owner: normalizeOptionalString(config.owner),
+    sourceRepo: normalizeOptionalString(config.sourceRepo),
+    toolAllowlist: normalizeToolPatterns(config.toolAllowlist),
+    toolDenylist: normalizeToolPatterns(config.toolDenylist),
   };
 
   // Clean stale namespace entry if the server was previously registered with a different namespace

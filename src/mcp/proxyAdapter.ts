@@ -15,7 +15,14 @@
 /* eslint-disable no-console */
 
 import { MCP_UPSTREAM_TOOL_CACHE_TTL_MS } from '../config';
-import { listUpstreams, findUpstreamByNamespace } from './proxyRegistry';
+import {
+  listUpstreams,
+  getAllUpstreams,
+  findUpstreamByNamespace,
+  hasUpstreamToolFilters,
+  isUpstreamToolAllowed,
+} from './proxyRegistry';
+import { normalizeMcpInputSchema } from './schemaNormalization';
 import type { McpToolSpec, McpToolCallResult } from './types';
 import { getErrorMessage } from '../utils/errorMessage';
 import { fetchWithTimeout } from '../utils/network';
@@ -55,12 +62,74 @@ const originalUpstreamNames = new Map<string, string>();
 
 type CacheEntry = {
   tools: McpToolSpec[];
+  fetchedAt: number;
   expiresAt: number;
 };
 
+type CatalogStateEntry = {
+  lastFetchAt?: number;
+  lastSuccessAt?: number;
+  lastErrorAt?: number;
+  lastError?: string;
+  lastToolCount?: number;
+};
+
+export type UpstreamDiagnosticSnapshot = {
+  id: string;
+  namespace: string;
+  url?: string;
+  protocol: 'simple' | 'streamable';
+  enabled: boolean;
+  label: string | null;
+  description: string | null;
+  plane: string | null;
+  audience: string | null;
+  owner: string | null;
+  sourceRepo: string | null;
+  filters: {
+    allowlist: string[];
+    denylist: string[];
+    hasFilters: boolean;
+  };
+  catalog: {
+    cacheState: 'cold' | 'warm' | 'stale';
+    visibleToolCount: number;
+    lastFetchAt: string | null;
+    lastSuccessAt: string | null;
+    lastErrorAt: string | null;
+    lastError: string | null;
+    cacheExpiresAt: string | null;
+  };
+};
+
 const toolCache = new Map<string, CacheEntry>();
+const catalogState = new Map<string, CatalogStateEntry>();
 
 const isCacheValid = (entry: CacheEntry): boolean => Date.now() < entry.expiresAt;
+const toIsoTimestamp = (value: number | undefined): string | null => (typeof value === 'number' ? new Date(value).toISOString() : null);
+
+const markCatalogSuccess = (serverId: string, toolCount: number): void => {
+  const now = Date.now();
+  const previous = catalogState.get(serverId);
+  catalogState.set(serverId, {
+    ...previous,
+    lastFetchAt: now,
+    lastSuccessAt: now,
+    lastError: undefined,
+    lastToolCount: toolCount,
+  });
+};
+
+const markCatalogFailure = (serverId: string, error: string): void => {
+  const now = Date.now();
+  const previous = catalogState.get(serverId);
+  catalogState.set(serverId, {
+    ...previous,
+    lastFetchAt: now,
+    lastErrorAt: now,
+    lastError: error,
+  });
+};
 
 /** Invalidate the cached tool list for a specific server (by server id). */
 export const invalidateServerCache = (serverId: string): void => {
@@ -70,10 +139,56 @@ export const invalidateServerCache = (serverId: string): void => {
 /** Invalidate all cached tool lists (name map preserved for callProxiedTool). */
 export const invalidateAllServerCaches = (): void => {
   toolCache.clear();
+  catalogState.clear();
   // originalUpstreamNames is intentionally NOT cleared here — it is a stable
   // translation table that only changes when fetchServerTools re-parses the
   // upstream catalog.  Keeping it lets callProxiedTool resolve the correct
   // original name between cache invalidation and the next listProxiedTools call.
+};
+
+export const listUpstreamDiagnostics = (
+  options: { includeDisabled?: boolean; includeUrl?: boolean } = {},
+): UpstreamDiagnosticSnapshot[] => {
+  const { includeDisabled = false, includeUrl = false } = options;
+  const upstreams = includeDisabled ? getAllUpstreams() : listUpstreams();
+
+  return upstreams.map((server) => {
+    const cache = toolCache.get(server.id);
+    const catalog = catalogState.get(server.id);
+    const cacheState: 'cold' | 'warm' | 'stale' = !cache
+      ? 'cold'
+      : isCacheValid(cache)
+        ? 'warm'
+        : 'stale';
+
+    return {
+      id: server.id,
+      namespace: server.namespace,
+      ...(includeUrl ? { url: server.url } : {}),
+      protocol: server.protocol ?? 'simple',
+      enabled: server.enabled !== false,
+      label: server.label ?? null,
+      description: server.description ?? null,
+      plane: server.plane ?? null,
+      audience: server.audience ?? null,
+      owner: server.owner ?? null,
+      sourceRepo: server.sourceRepo ?? null,
+      filters: {
+        allowlist: [...(server.toolAllowlist ?? [])],
+        denylist: [...(server.toolDenylist ?? [])],
+        hasFilters: hasUpstreamToolFilters(server),
+      },
+      catalog: {
+        cacheState,
+        visibleToolCount: cache?.tools.length ?? catalog?.lastToolCount ?? 0,
+        lastFetchAt: toIsoTimestamp(catalog?.lastFetchAt),
+        lastSuccessAt: toIsoTimestamp(catalog?.lastSuccessAt),
+        lastErrorAt: toIsoTimestamp(catalog?.lastErrorAt),
+        lastError: catalog?.lastError ?? null,
+        cacheExpiresAt: toIsoTimestamp(cache?.expiresAt),
+      },
+    };
+  });
 };
 
 // ──── Upstream HTTP helpers ────────────────────────────────────────────────────
@@ -210,7 +325,12 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
         result?: { tools?: unknown[] };
       };
       const rawTools = data?.result?.tools ?? [];
-      if (Array.isArray(rawTools)) return parseToolSpecs(rawTools, server.namespace);
+      if (Array.isArray(rawTools)) {
+        const tools = parseToolSpecs(rawTools, server);
+        markCatalogSuccess(server.id, tools.length);
+        return tools;
+      }
+      markCatalogFailure(server.id, 'invalid streamable tools/list payload');
       return [];
     }
 
@@ -229,7 +349,9 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
       const rpcData = await rpcRes.json() as { result?: { tools?: unknown[] }; tools?: unknown[] };
       const rawTools = rpcData?.result?.tools ?? (rpcData as { tools?: unknown[] })?.tools ?? [];
       if (Array.isArray(rawTools)) {
-        return parseToolSpecs(rawTools, server.namespace);
+        const tools = parseToolSpecs(rawTools, server);
+        markCatalogSuccess(server.id, tools.length);
+        return tools;
       }
     }
 
@@ -244,31 +366,34 @@ const fetchServerTools = async (server: UpstreamServerCfg): Promise<McpToolSpec[
       const restData = await restRes.json() as { tools?: unknown[] };
       const rawTools = restData?.tools ?? [];
       if (Array.isArray(rawTools)) {
-        return parseToolSpecs(rawTools, server.namespace);
+        const tools = parseToolSpecs(rawTools, server);
+        markCatalogSuccess(server.id, tools.length);
+        return tools;
       }
     }
 
     console.error('[mcp-proxy] upstream %s: tools/list returned non-ok status', server.id);
+    markCatalogFailure(server.id, 'tools/list returned non-ok status');
     return [];
   } catch (err) {
     const reason = getErrorMessage(err);
     console.error('[mcp-proxy] upstream %s: failed to fetch tools — %s', server.id, reason);
+    markCatalogFailure(server.id, reason);
     return [];
   }
 };
 
-const parseToolSpecs = (rawTools: unknown[], namespace: string): McpToolSpec[] => {
+const parseToolSpecs = (rawTools: unknown[], server: UpstreamServerCfg): McpToolSpec[] => {
   const result: McpToolSpec[] = [];
   for (const raw of rawTools) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     const t = raw as Record<string, unknown>;
     const name = typeof t.name === 'string' ? t.name.trim() : '';
     if (!name) continue;
+    if (!isUpstreamToolAllowed(server, name)) continue;
     const description = typeof t.description === 'string' ? t.description : `Upstream tool: ${name}`;
-    const inputSchema = (t.inputSchema && typeof t.inputSchema === 'object' && !Array.isArray(t.inputSchema))
-      ? (t.inputSchema as McpToolSpec['inputSchema'])
-      : { type: 'object' as const, properties: {} };
-    const internalName = buildInternalName(namespace, name);
+    const inputSchema = normalizeMcpInputSchema(t.inputSchema);
+    const internalName = buildInternalName(server.namespace, name);
     // Preserve the original name so callProxiedTool can send the exact name the
     // upstream server registered (hyphens must not be silently converted).
     originalUpstreamNames.set(internalName, name);
@@ -298,7 +423,11 @@ export const listProxiedTools = async (): Promise<McpToolSpec[]> => {
       if (cached && isCacheValid(cached)) return cached.tools;
 
       const tools = await fetchServerTools(server);
-      toolCache.set(server.id, { tools, expiresAt: Date.now() + MCP_UPSTREAM_TOOL_CACHE_TTL_MS });
+      toolCache.set(server.id, {
+        tools,
+        fetchedAt: Date.now(),
+        expiresAt: Date.now() + MCP_UPSTREAM_TOOL_CACHE_TTL_MS,
+      });
       return tools;
     }),
   );
@@ -337,19 +466,39 @@ export const callProxiedTool = async (
   // and dots with underscores, which is irreversible in general. We must look up
   // the name that the upstream server originally advertised; otherwise tools like
   // "list-tables" would be called as "list_tables" → 404/method-not-found.
-  const mapLookup = originalUpstreamNames.get(internalName);
-  if (!mapLookup) {
-    // The original upstream name is unknown — likely the tool catalog hasn't been
-    // fetched yet, or the server is newly registered.  Fall back to the sanitized
-    // name segment.  A subsequent listProxiedTools() call will populate the map.
-    console.warn('[mcp-proxy] originalUpstreamNames miss for %s — using sanitized fallback', internalName);
-  }
-  const originalName = mapLookup ?? withoutPrefix.slice(dotIdx + 1);
-
   const server = findUpstreamByNamespace(namespace);
   if (!server) {
     return {
       content: [{ type: 'text', text: `No upstream server registered for namespace "${namespace}"` }],
+      isError: true,
+    };
+  }
+
+  let originalName = originalUpstreamNames.get(internalName);
+  if (!originalName && hasUpstreamToolFilters(server)) {
+    const tools = await fetchServerTools(server);
+    toolCache.set(server.id, {
+      tools,
+      fetchedAt: Date.now(),
+      expiresAt: Date.now() + MCP_UPSTREAM_TOOL_CACHE_TTL_MS,
+    });
+    originalName = originalUpstreamNames.get(internalName);
+  }
+
+  if (!originalName) {
+    if (hasUpstreamToolFilters(server)) {
+      return {
+        content: [{ type: 'text', text: `Tool is not exposed by upstream filter: ${internalName}` }],
+        isError: true,
+      };
+    }
+    console.warn('[mcp-proxy] originalUpstreamNames miss for %s — using sanitized fallback', internalName);
+    originalName = withoutPrefix.slice(dotIdx + 1);
+  }
+
+  if (!isUpstreamToolAllowed(server, originalName)) {
+    return {
+      content: [{ type: 'text', text: `Tool is not exposed by upstream filter: ${internalName}` }],
       isError: true,
     };
   }

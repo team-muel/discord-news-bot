@@ -19,7 +19,7 @@ create table if not exists public.agent_weekly_reports (
   markdown text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (report_kind in ('llm_latency_weekly', 'go_no_go_weekly', 'hybrid_weekly', 'rollback_rehearsal_weekly', 'memory_queue_weekly'))
+  check (report_kind in ('llm_latency_weekly', 'go_no_go_weekly', 'hybrid_weekly', 'rollback_rehearsal_weekly', 'memory_queue_weekly', 'self_improvement_patterns', 'jarvis_optimize_result', 'cross_loop_origin', 'convergence_report'))
 );
 
 do $$
@@ -45,7 +45,11 @@ begin
         'go_no_go_weekly',
         'hybrid_weekly',
         'rollback_rehearsal_weekly',
-        'memory_queue_weekly'
+        'memory_queue_weekly',
+        'self_improvement_patterns',
+        'jarvis_optimize_result',
+        'cross_loop_origin',
+        'convergence_report'
       )
     );
 end $$;

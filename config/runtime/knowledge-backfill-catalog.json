@@ -113,6 +113,26 @@
       ]
     },
     {
+      "id": "control-secret-rotation-rollout",
+      "title": "Secret Rotation And Shared Supabase RO Rollout",
+      "sourcePath": "docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md",
+      "targetPath": "ops/security/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md",
+      "plane": "control",
+      "concern": "security-operations",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "security", "secrets", "supabase", "mcp"],
+      "intent": "operations",
+      "queries": [
+        "secret rotation checklist",
+        "shared supabase ro rollout",
+        "supabase read plane rollout",
+        "operator secret rotation runbook"
+      ]
+    },
+    {
       "id": "control-decision-table",
       "title": "Operator SOP Decision Table",
       "sourcePath": "docs/OPERATOR_SOP_DECISION_TABLE.md",

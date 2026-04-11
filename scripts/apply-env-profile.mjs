@@ -107,6 +107,7 @@ const applyProfile = async ({ profileName, dryRun }) => {
   await fs.writeFile(BACKUP_PATH, envRaw, 'utf8');
   await fs.writeFile(ENV_PATH, `${envLines.join('\n').replace(/\n+$/g, '')}\n`, 'utf8');
   console.log(`[env-profile] backup written: ${path.relative(ROOT, BACKUP_PATH)}`);
+  console.log('[env-profile] backup may contain live secrets. Keep it local only and do not commit or share it.');
   console.log('[env-profile] .env updated successfully');
 };
 

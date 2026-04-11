@@ -21,6 +21,96 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-11 - IDE-Safe Tool Schema Normalization And Shared-Only Bootstrap
+
+- Why: one malformed MCP tool schema is enough to make VS Code reject the tool catalog before the user can do any useful work. The immediate incident came from a custom server exporting array parameters without `items`, but the deeper team issue was that a teammate should still be able to start with `gcpCompute` using only SSH access instead of needing local Obsidian token or local MCP wiring first.
+- Scope: shared MCP tool-schema normalization for upstream catalogs, regression tests for IDE-safe schemas, shared-only teammate bootstrap path, and onboarding/troubleshooting guidance for catalog recovery
+- Impacted Routes: `tools/list` over shared MCP stdio/HTTP, `GET /mcp/health`
+- Impacted Services: `src/mcp/schemaNormalization.ts`, `src/mcp/proxyAdapter.ts`, `src/mcp/proxyAdapter.test.ts`, `src/mcp/unifiedToolAdapter.ts`, `src/mcp/unifiedToolAdapter.test.ts`, `scripts/bootstrap-team.ps1`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: malformed upstream schemas are now normalized before the shared catalog is exposed, which keeps array nodes from missing `items` in the IDE-facing surface. This does not magically fix a completely separate broken local MCP server registered outside `gcpCompute`, so the shared-only bootstrap path remains the operational escape hatch when a teammate's local catalog is poisoned.
+- Validation: focused Vitest coverage added for upstream array-schema normalization and unified-catalog IDE-safety; bootstrap now has an explicit `-SharedOnly` mode for SSH-only team onboarding
+
+## 2026-04-11 - Shared MCP Runtime Mirror Split From Git Checkout
+
+- Why: the shared GCP MCP surface was still executing directly from `/opt/muel/discord-news-bot`, so every publish turned the remote git checkout into a mutable deployment tree. That made remote `dirty` state structurally inevitable and caused publish safety checks to fight the deployment model instead of protecting it.
+- Scope: gcpCompute SSH target, shared MCP systemd template, GCP runtime env example, bootstrap expectations, publish script behavior, and operator docs for the new non-git runtime mirror path
+- Impacted Routes: `GET /mcp/health`, `GET /obsidian/health`
+- Impacted Services: `.vscode/mcp.json`, `config/systemd/unified-mcp-http.service`, `config/env/unified-mcp.gcp.env.example`, `scripts/publish-gcp-shared-mcp.ps1`, `scripts/bootstrap-team.ps1`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: shared MCP now expects to run from `/opt/muel/shared-mcp-runtime`, while the old `/opt/muel/discord-news-bot` path becomes a legacy source checkout rather than the live execution surface. Existing remote dirty state may remain in the legacy checkout, but it no longer blocks shared MCP rollout once the new runtime mirror is deployed.
+- Validation: publish script updated to deploy into a non-git runtime mirror and to migrate the existing GCP env file from the legacy checkout when needed; bootstrap and docs now point teammates at the runtime mirror rather than the git working tree
+
+## 2026-04-11 - Teamwide gcpCompute Adoption Readiness Gates
+
+- Why: the shared GCP MCP surface was already usable, but team-wide aggressive adoption still depended on three operational truths being explicit: lane contracts must be visible, teammate bootstrap must expose what the shared surface is actually advertising, and the shared Obsidian service profile must be republished when the repo-side contract changes.
+- Scope: teammate onboarding/readiness guidance, bootstrap visibility for shared lanes, and shared-profile backfill discipline for the unified MCP service profile
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `scripts/bootstrap-team.ps1`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime routing changed. This slice raises the operating bar for team adoption by treating lane metadata, `diag.upstreams`, public health upstream summaries, and service-profile backfill as first-class readiness gates instead of implicit tribal knowledge.
+- Validation: PowerShell parser validation passed for `scripts/bootstrap-team.ps1`; docs updated to describe the same lane-governance contract the live shared MCP now exposes
+
+## 2026-04-11 - Federated Upstream Namespace Diagnostics And Control-Plane Metadata
+
+- Why: shared MCP could already proxy multiple upstream namespaces, but those lanes were still opaque config blobs. That made multi-repo, multi-runtime collaboration look like a checkout-sync problem instead of a federated control-plane problem, and it left operators without a first-class way to inspect which semantic, operational, or execution lanes were actually mounted.
+- Scope: upstream MCP metadata contract, diagnostics surface, health visibility, and env/doc examples for federated namespace lanes
+- Impacted Routes: `GET /mcp/health`, `GET /health`
+- Impacted Services: `src/mcp/proxyRegistry.ts`, `src/mcp/proxyAdapter.ts`, `src/mcp/toolAdapter.ts`, `src/mcp/unifiedServer.ts`, `src/mcp/proxyAdapter.test.ts`, `src/mcp/unifiedToolAdapter.test.ts`, `.env.example`, `config/env/unified-mcp.gcp.env.example`, `config/env/production.profile.env`, `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `docs/ARCHITECTURE_INDEX.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no existing upstream routing contract was removed. Existing `MCP_UPSTREAM_SERVERS` entries remain valid, while new optional metadata (`label`, `plane`, `audience`, `owner`, `sourceRepo`) and the new `diag.upstreams` tool make the shared surface easier to reason about when multiple external execution runtimes, separate wikis, or cross-repo service lanes are attached.
+- Validation: focused Vitest coverage for proxy/unified MCP adapters plus targeted typecheck on the touched MCP modules
+
+## 2026-04-11 - Secret Surface Sanitization And Shared Supabase RO Rollout Guidance
+
+- Why: the repo-side architecture cleanup and env-template hardening were complete, but operator follow-through was still implicit. The remaining risk was no longer missing code support; it was stale live credentials in real secret stores and an unstructured rollout path for the shared read-only Supabase MCP surface.
+- Scope: tracked env documentation sanitization, shared `supabase_ro` rollout guidance, operator secret-rotation checklist, runbook linkage, and shared-vault backfill wiring
+- Impacted Routes: N/A
+- Impacted Services: `docs/.env`, `.env.example`, `config/env/production.profile.env`, `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `scripts/apply-env-profile.mjs`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/ARCHITECTURE_INDEX.md`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime code path changed. This slice reduces the chance of reintroducing live secrets into tracked documentation, makes `.env.profile-backup` explicitly operator-sensitive, and defines `supabase_ro` as a filtered shared read plane rather than a general admin ingress.
+- Validation: targeted markdown and script diagnostics passed on all touched files; tracked docs were re-scanned for obvious secret patterns and only placeholder examples remained
+
+## 2026-04-11 - Phase 3 Policy Completion And Upstream Filter Support Landed
+
+- Why: after phase 2, the remaining Supabase hygiene risk was no longer missing tables but the last 27 policyless RLS tables plus a world-readable `obsidian_cache` policy. In parallel, shared read-only Supabase MCP was still blocked because the upstream proxy could not filter write-capable tools.
+- Scope: live phase-3 policy migration, `obsidian_cache` hardening, migration/checklist/inventory alignment, and upstream MCP tool allowlist/denylist support with tests
+- Impacted Routes: N/A
+- Impacted Services: `docs/MIGRATION_SUPABASE_HYGIENE_PHASE3_POLICY_COMPLETION.sql`, `docs/MIGRATIONS_APPLY_ALL.sql`, `docs/OBSIDIAN_HEADLESS_MIGRATION.sql`, `docs/SUPABASE_CLEANUP_INVENTORY.md`, `docs/planning/SUPABASE_HYGIENE_EXECUTION_PLAN.md`, `docs/SUPABASE_MIGRATION_CHECKLIST.md`, `src/utils/migrationRegistry.ts`, `src/mcp/proxyRegistry.ts`, `src/mcp/proxyAdapter.ts`, `src/mcp/proxyAdapter.test.ts`
+- Impacted Tables/RPC: `public.agent_sessions`, `public.agent_steps`, `public.sources`, `public.users`, `public.guild_lore_docs`, the remaining legacy/operator tables with RLS enabled, and `public.obsidian_cache`
+- Risk/Regression Notes: this slice closes every previously policyless RLS table in `public` as explicit `service_role`-only ownership and removes the last `USING (true)` policy. Shared Supabase MCP is no longer code-blocked, but it is still not safe to roll out without a curated read-only allowlist.
+- Validation: live phase-3 migration applied successfully; `public.schema_migrations` recorded `MIGRATION_SUPABASE_HYGIENE_PHASE3_POLICY_COMPLETION`; direct catalog queries confirmed `rls_enabled_no_policy = 0` and remaining `USING (true)` / `WITH CHECK (true)` policies = 0; targeted tests passed for `src/mcp/proxyAdapter.test.ts` and `src/utils/migrationRegistry.test.ts`
+
+## 2026-04-11 - Runtime Service Policies Applied And Canonical Schema Drift Closed
+
+- Why: the broader Supabase audit showed that the next live gap was no longer missing tables but low-ambiguity policy coverage on runtime service tables, while repo-visible canonical schema sections for reward/eval/workflow surfaces had fallen behind the applied live migration shapes. That combination kept the DB ownership story and the repo-visible source of truth out of sync.
+- Scope: live runtime-service policy migration apply, `user_learning_prefs` hardening, migration/checklist alignment, and canonical schema synchronization for reward/eval/workflow/traffic tables
+- Impacted Routes: N/A
+- Impacted Services: `docs/MIGRATION_SUPABASE_HYGIENE_PHASE2_RUNTIME_SERVICE_POLICIES.sql`, `docs/MIGRATIONS_APPLY_ALL.sql`, `docs/SUPABASE_SCHEMA.sql`, `docs/SUPABASE_CLEANUP_INVENTORY.md`, `docs/planning/SUPABASE_HYGIENE_EXECUTION_PLAN.md`, `docs/SUPABASE_MIGRATION_CHECKLIST.md`, `src/utils/migrationRegistry.ts`
+- Impacted Tables/RPC: `public.api_idempotency_keys`, `public.api_rate_limits`, `public.discord_login_sessions`, `public.distributed_locks`, `public.schema_migrations`, `public.agent_telemetry_queue_tasks`, `public.user_learning_prefs`, `public.reward_signal_snapshots`, `public.eval_ab_runs`, `public.shadow_graph_divergence_logs`, `public.workflow_sessions`, `public.workflow_steps`, `public.workflow_events`, `public.traffic_routing_decisions`
+- Risk/Regression Notes: this slice keeps runtime access on the direct SDK path and only hardens tables already used through server-side flows. It also removes the last permissive `user_learning_prefs` policy from the prior hygiene snapshot. Remaining `rls_enabled_no_policy` work is narrowed to runtime-domain and legacy tables, not the low-ambiguity service-table set.
+- Validation: live migration `supabase_hygiene_phase2_runtime_service_policies` applied successfully; `public.schema_migrations` recorded `MIGRATION_SUPABASE_HYGIENE_PHASE2_RUNTIME_SERVICE_POLICIES`; targeted policy catalog query confirmed the seven new `service_role` policies; policyless RLS table count dropped from `33` to `27`
+
+## 2026-04-11 - Autonomy Reporting Baseline Reconciled With Live Scripts
+
+- Why: the unattended OpenJarvis weekly pipeline had drifted away from the canonical repo-visible migration surface. Runtime scripts expected `agent_weekly_reports`, `agent_llm_call_logs`, `memory_jobs`, and `memory_job_deadletters`, plus newer `report_kind` and `job_type` values, while the tracked migration set and script entrypoints no longer matched that reality.
+- Scope: weekly auto-judge entrypoint restoration, null-safe weekly metric coercion, named Supabase migration for autonomy reporting baseline, and migration/checklist/schema alignment
+- Impacted Routes: N/A
+- Impacted Services: `scripts/auto-judge-from-weekly.mjs`, `scripts/auto-judge-go-no-go.mjs`, `scripts/archive/auto-judge-go-no-go.mjs`, `docs/MIGRATION_AUTONOMY_REPORTING_BASELINE.sql`, `docs/SUPABASE_SCHEMA.sql`, `docs/planning/MIGRATION_AGENT_WEEKLY_REPORTS.sql`, `src/utils/migrationRegistry.ts`, `docs/SUPABASE_MIGRATION_CHECKLIST.md`
+- Impacted Tables/RPC: `public.agent_weekly_reports`, `public.agent_llm_call_logs`, `public.memory_jobs`, `public.memory_job_deadletters`
+- Risk/Regression Notes: this slice does not move runtime DB access to MCP. It restores the expected weekly auto-judge entrypoint, prevents `null -> 0` coercion from turning missing latency snapshots into `errorRatePct=100`, and adds a tracked migration so new or drifted environments can converge on the autonomy reporting baseline without relying on the monolithic schema file alone.
+- Validation: `npm run -s openjarvis:autonomy:run` reproduced the current failures before the fix; after the fix and live migration apply, the same command completed with `OPENJARVIS][UNATTENDED] final status: pass`, `self_improvement_patterns` persisted successfully, and weekly auto-judge created fresh gate-run markdown/json artifacts without `MODULE_NOT_FOUND`
+
+## 2026-04-11 - Supabase Hygiene Phase 1 Applied And M2 Ownership Split Locked
+
+- Why: Supabase hygiene had already been partially modeled in repo docs, but the real bottleneck was the live database state. After phase 1 was applied and verified against the connected project, the remaining work needed to be reframed from bulk lint cleanup into ownership-driven policy design so the next slice would harden live runtime tables first without accidentally defining the wrong product boundary.
+- Scope: live phase 1 hygiene verification, cleanup inventory refresh, phase 2 ownership triage, and shared-MCP rollout gate clarification
+- Impacted Routes: N/A
+- Impacted Services: `docs/MIGRATION_SUPABASE_HYGIENE_PHASE1.sql`, `docs/SUPABASE_CLEANUP_INVENTORY.md`, `docs/planning/SUPABASE_HYGIENE_EXECUTION_PLAN.md`, `src/services/userLearningPrefsService.ts`, `src/services/agent/agentSessionStore.ts`, `src/middleware/idempotency.ts`, `src/services/infra/supabaseRateLimitService.ts`, `src/services/discord-support/discordLoginSessionStore.ts`, `src/services/infra/distributedLockService.ts`, `src/routes/auth.ts`, `src/routes/bot.ts`
+- Impacted Tables/RPC: `memory_items`, `intents`, `agent_trust_scores`, `obsidian_query_log`, `ventyd_events`, `agent_sessions`, `agent_steps`, `api_idempotency_keys`, `api_rate_limits`, `discord_login_sessions`, `distributed_locks`, `schema_migrations`, `sources`, `users`, `user_learning_prefs`
+- Risk/Regression Notes: phase 1 is already live and reduced advisor counts, but the remaining 33 `rls_enabled_no_policy`, 68 `auth_rls_initplan`, and 1 `rls_policy_always_true` finding are intentionally not being auto-closed. The repo now treats M2 as an ownership split: runtime service tables first, runtime domain tables second, ownership-heavy analytics/community/learning families after that, and shared Supabase MCP still blocked until upstream tool filtering or a dedicated read-only ingress exists.
+- Validation: live verification confirmed policy changes on `memory_items`, `intents`, `agent_trust_scores`, `obsidian_query_log`, and `ventyd_events`, creation of the 12 phase 1 FK indexes, and advisor delta from security `54 -> 34` plus performance `211 -> 186`; targeted runtime-path review confirmed `user_learning_prefs` is currently reached through the server-side direct SDK path rather than a client JWT flow
+
 ## 2026-04-11 - Additional Planning Surface Closure For Autonomy And GCP Profiles
 
 - Why: two remaining planning docs still presented themselves as `ACTIVE` even though they no longer owned current execution state. One already mapped to a shared service-profile backfill lane, and the other had become a target-state strategy reference with implemented status now reflected in architecture/runtime surfaces instead of a standalone WIP plan.

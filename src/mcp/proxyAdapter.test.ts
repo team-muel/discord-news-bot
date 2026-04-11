@@ -15,7 +15,7 @@ import {
   clearUpstreams,
   loadUpstreamsFromConfig,
 } from './proxyRegistry';
-import { listProxiedTools, callProxiedTool, invalidateAllServerCaches } from './proxyAdapter';
+import { listProxiedTools, callProxiedTool, invalidateAllServerCaches, listUpstreamDiagnostics } from './proxyAdapter';
 
 // ──── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -84,6 +84,24 @@ describe('proxyRegistry', () => {
       expect(() => registerUpstream({ id: 'same', url: 'http://same2', namespace: 'same' }))
         .not.toThrow();
     });
+
+    it('throws when toolAllowlist is not an array of strings', () => {
+      expect(() => registerUpstream({
+        id: 'bad_allow',
+        url: 'http://x',
+        namespace: 'bad_allow',
+        toolAllowlist: ['ok', 123 as unknown as string],
+      })).toThrowError('toolAllowlist must be an array of strings');
+    });
+
+    it('throws when plane is not one of the allowed values', () => {
+      expect(() => registerUpstream({
+        id: 'bad_plane',
+        url: 'http://x',
+        namespace: 'bad_plane',
+        plane: 'analytics' as unknown as 'operational',
+      })).toThrowError('plane must be one of');
+    });
   });
 
   describe('unregisterUpstream', () => {
@@ -136,12 +154,18 @@ describe('proxyRegistry', () => {
 // ──── proxyAdapter tests ──────────────────────────────────────────────────────
 
 describe('proxyAdapter', () => {
-  const makeRpcToolsResponse = (tools: Array<{ name: string; description?: string }>) =>
+  const makeRpcToolsResponse = (tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>) =>
     new Response(
       JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        result: { tools: tools.map((t) => ({ name: t.name, description: t.description ?? t.name })) },
+        result: {
+          tools: tools.map((t) => ({
+            name: t.name,
+            description: t.description ?? t.name,
+            inputSchema: t.inputSchema ?? { type: 'object', properties: {} },
+          })),
+        },
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
@@ -218,6 +242,135 @@ describe('proxyAdapter', () => {
 
       const tools = await listProxiedTools();
       expect(tools[0].name).toBe('upstream.fallback.fb_tool');
+    });
+
+    it('normalizes upstream array schemas missing items before exposing tools', async () => {
+      registerUpstream({ id: 'axiom', url: 'http://axiom.test', namespace: 'axiom' });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([
+        {
+          name: 'axiom.compose',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              selectedModels: {
+                type: 'array',
+              },
+              targetInstrumentation: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    roles: {
+                      type: 'array',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ]));
+
+      const tools = await listProxiedTools();
+      const composeTool = tools[0];
+      const props = composeTool.inputSchema.properties as Record<string, any>;
+
+      expect(props.selectedModels.items).toEqual({});
+      expect(props.targetInstrumentation.items.properties.roles.items).toEqual({});
+    });
+
+    it('respects toolAllowlist patterns when listing tools', async () => {
+      registerUpstream({
+        id: 'filtered',
+        url: 'http://filtered.test',
+        namespace: 'filtered',
+        toolAllowlist: ['read_*', 'list_*'],
+      });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([
+        { name: 'read_rows' },
+        { name: 'list_tables' },
+        { name: 'execute_sql' },
+      ]));
+
+      const tools = await listProxiedTools();
+      expect(tools.map((tool) => tool.name)).toEqual([
+        'upstream.filtered.read_rows',
+        'upstream.filtered.list_tables',
+      ]);
+    });
+
+    it('applies toolDenylist after allowlist when listing tools', async () => {
+      registerUpstream({
+        id: 'deny_filtered',
+        url: 'http://deny-filtered.test',
+        namespace: 'deny_filtered',
+        toolAllowlist: ['*'],
+        toolDenylist: ['execute_*'],
+      });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([
+        { name: 'list_tables' },
+        { name: 'execute_sql' },
+      ]));
+
+      const tools = await listProxiedTools();
+      expect(tools.map((tool) => tool.name)).toEqual(['upstream.deny_filtered.list_tables']);
+    });
+
+    it('returns upstream diagnostics with metadata and catalog state', async () => {
+      registerUpstream({
+        id: 'federated_runtime',
+        url: 'http://runtime.test',
+        namespace: 'exec_projection',
+        protocol: 'streamable',
+        label: 'External Projection Runtime',
+        description: 'Projection and synthesis lane',
+        plane: 'execution',
+        audience: 'shared',
+        owner: 'team-runtime',
+        sourceRepo: 'team-runtime/projection-runtime',
+        toolAllowlist: ['project_*'],
+      });
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-03-26' } }),
+          { status: 200, headers: { 'content-type': 'application/json', 'mcp-session-id': 'session-1' } },
+        ),
+      ).mockResolvedValueOnce(new Response('', { status: 202 }))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              result: {
+                tools: [{ name: 'project_refresh', description: 'refresh projection' }],
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+
+      await listProxiedTools();
+      const diagnostics = listUpstreamDiagnostics({ includeUrl: true });
+
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatchObject({
+        id: 'federated_runtime',
+        namespace: 'exec_projection',
+        url: 'http://runtime.test',
+        plane: 'execution',
+        audience: 'shared',
+        owner: 'team-runtime',
+        sourceRepo: 'team-runtime/projection-runtime',
+        filters: {
+          allowlist: ['project_*'],
+          denylist: [],
+          hasFilters: true,
+        },
+      });
+      expect(diagnostics[0].catalog.visibleToolCount).toBe(1);
+      expect(diagnostics[0].catalog.cacheState).toBe('warm');
+      expect(diagnostics[0].catalog.lastSuccessAt).toBeTruthy();
+      expect(diagnostics[0].catalog.lastError).toBeNull();
     });
   });
 
@@ -328,6 +481,45 @@ describe('proxyAdapter', () => {
       const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
       const headers = init.headers as Record<string, string>;
       expect(headers['Authorization']).toBeUndefined();
+    });
+
+    it('rejects a tool hidden by upstream filter', async () => {
+      registerUpstream({
+        id: 'hidden',
+        url: 'http://hidden.test',
+        namespace: 'hidden',
+        toolAllowlist: ['visible_tool'],
+      });
+      mockFetch.mockResolvedValueOnce(makeRpcToolsResponse([
+        { name: 'visible_tool' },
+        { name: 'hidden_tool' },
+      ]));
+
+      const result = await callProxiedTool('upstream.hidden.hidden_tool', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not exposed by upstream filter');
+    });
+
+    it('allows a filtered tool after refreshing the upstream catalog', async () => {
+      registerUpstream({
+        id: 'visible',
+        url: 'http://visible.test',
+        namespace: 'visible',
+        toolAllowlist: ['visible_tool'],
+      });
+      mockFetch
+        .mockResolvedValueOnce(makeRpcToolsResponse([{ name: 'visible_tool' }]))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'visible-ok' }] } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+
+      const result = await callProxiedTool('upstream.visible.visible_tool', { ok: true });
+      expect(result.isError).not.toBe(true);
+      expect(result.content[0].text).toBe('visible-ok');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 });

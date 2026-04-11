@@ -43,7 +43,7 @@
         "-i",
         "${env:USERPROFILE}/.ssh/google_compute_engine",
         "fancy@34.56.232.61",
-        "cd /opt/muel/discord-news-bot && if [ -f .env ]; then set -a && . ./.env && set +a; fi && if [ -f config/env/unified-mcp.gcp.env ]; then set -a && . config/env/unified-mcp.gcp.env && set +a; fi && exec node --import tsx scripts/unified-mcp-stdio.ts"
+        "cd /opt/muel/shared-mcp-runtime && if [ -f .env ]; then set -a && . ./.env && set +a; fi && if [ -f config/env/unified-mcp.gcp.env ]; then set -a && . config/env/unified-mcp.gcp.env && set +a; fi && exec node --import tsx scripts/unified-mcp-stdio.ts"
       ]
     }
   }

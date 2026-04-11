@@ -28,6 +28,14 @@ const asNumber = (value, fallback = null) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+const asOptionalNumber = (value, fallback = null) => {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 const resolveMetric = (cliArgName, dataSource, fallback = null) => {
   const cliVal = parseArg(cliArgName, '').trim();
   if (cliVal) {
@@ -390,7 +398,7 @@ async function main() {
   const strategyNorm = go?.strategy_quality_normalization || {};
   const strategyBaseline = strategyNorm?.by_strategy?.baseline || {};
   const retrievalEvalSamples = asNumber(strategyNorm.retrieval_eval_runs_samples, 0);
-  const normRecallAtK = asNumber(strategyBaseline.recall_at_k_avg, null);
+  const normRecallAtK = asOptionalNumber(strategyBaseline.recall_at_k_avg, null);
   const normHallucinationFailRate = strategyBaseline.hallucination_fail_rate_pct !== null
     && strategyBaseline.hallucination_fail_rate_pct !== undefined
     ? Number((strategyBaseline.hallucination_fail_rate_pct / 100).toFixed(4))
@@ -425,7 +433,7 @@ async function main() {
   const noGoCount = asNumber(go.no_go, 0);
   const p95DeltaMs = asNumber(llmDelta.p95_latency_ms, 0);
   const successDeltaPct = asNumber(llmDelta.success_rate_pct, 0);
-  const candidateSuccessRatePct = asNumber(llmCandidate.successRatePct, null);
+  const candidateSuccessRatePct = asOptionalNumber(llmCandidate.successRatePct, null);
   const candidateErrorRatePct = candidateSuccessRatePct === null
     ? null
     : Number((100 - candidateSuccessRatePct).toFixed(2));
@@ -454,9 +462,9 @@ async function main() {
     operator,
     thresholdProfile,
     allowPending,
-    queueLagSec: asNumber(memory.queue_lag_p95_sec, null),
+    queueLagSec: asOptionalNumber(memory.queue_lag_p95_sec, null),
     errorRatePct: candidateErrorRatePct,
-    p95LatencyMs: asNumber(llmCandidate.p95LatencyMs, asNumber(llmDelta.p95_latency_ms, null)),
+    p95LatencyMs: asOptionalNumber(llmCandidate.p95LatencyMs, asOptionalNumber(llmDelta.p95_latency_ms, null)),
     citationRate: resolveMetric('citationRate', qualitySummary.citation_rate),
     retrievalHitAtK: resolveMetric('retrievalHitAtK', qualitySummary.retrieval_hit_at_k) ?? normRecallAtK,
     hallucinationReviewFailRate: resolveMetric('hallucinationReviewFailRate', qualitySummary.hallucination_review_fail_rate) ?? normHallucinationFailRate,
@@ -470,9 +478,9 @@ async function main() {
     backlogSynced: true,
     runbookSynced: true,
     changelogSynced: true,
-    rollbackRehearsalFailCount: asNumber(rollback.fail, null),
-    memoryDeadletterPendingCount: asNumber(memory.deadletter_pending, null),
-    memoryDeadletterIgnoredCount: asNumber(memory.deadletter_ignored, null),
+    rollbackRehearsalFailCount: asOptionalNumber(rollback.fail, null),
+    memoryDeadletterPendingCount: asOptionalNumber(memory.deadletter_pending, null),
+    memoryDeadletterIgnoredCount: asOptionalNumber(memory.deadletter_ignored, null),
     qualityGateOverride,
     providerProfileHint,
     autoCompleteChecklist: parseBoolArg('autoCompleteChecklist', false),
@@ -500,7 +508,7 @@ async function main() {
   // Per-action latency diagnostics
   const candidateActions = Array.isArray(llmTopActions.candidate) ? llmTopActions.candidate : [];
   if (candidateActions.length > 0) {
-    const maxP95 = asNumber(baseArgs.p95LatencyMs, null);
+    const maxP95 = asOptionalNumber(baseArgs.p95LatencyMs, null);
     const slowActions = candidateActions.filter((a) => a.p95LatencyMs && maxP95 && a.p95LatencyMs > maxP95 * 0.8);
     console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] top_actions: ${candidateActions.map((a) => `${a.actionName}(n=${a.total},p95=${a.p95LatencyMs}ms)`).join(', ')}`);
     if (slowActions.length > 0) {

@@ -79,6 +79,7 @@ Open these first when verifying behavior:
 - Harness release gates: `docs/HARNESS_RELEASE_GATES.md`
 - Frontend contract and CORS/auth details: `docs/FRONTEND_INTEGRATION.md`
 - Supabase schema: `docs/SUPABASE_SCHEMA.sql`
+- Secret rotation and shared Supabase read-plane rollout: `docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md`
 - Obsidian sync operations: `docs/OBSIDIAN_SUPABASE_SYNC.md`
 - MCP tool spec and rollout: `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/planning/mcp/MCP_ROLLOUT_1W.md`
 - Lightweight worker split: `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md`
@@ -271,12 +272,14 @@ Sync rule:
 가드레일:
 
 - 적용 스크립트는 기존 `.env`를 `.env.profile-backup`으로 백업한다.
+- `.env.profile-backup`은 live secret material로 취급한다. 로컬에서만 유지하고, 외부 공유나 커밋 대상으로 취급하지 않는다.
 - 운영형 적용 후에는 `MCP_IMPLEMENT_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다. legacy `MCP_OPENCODE_WORKER_URL` 는 호환 alias 로만 본다.
 - 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
 - local-first hybrid 적용 직후에는 `npm run env:check:local-hybrid`로 Ollama/worker 공존 readiness를 추가 확인한다.
 - `npm run env:check:local-hybrid` 통과는 로컬 추론 readiness만 의미한다. 항상-온 운영 readiness는 `GET /api/bot/agent/runtime/unattended-health`와 원격 worker/LiteLLM/remote-mcp health로 별도 판단한다.
 - 로컬 worker를 사용하는 경우 `npm run worker:opencode:local`을 먼저 실행한 뒤 hybrid 검증을 수행한다.
 - 원격 worker가 GCP VM일 경우 외부 IP는 정적 IP로 예약하고, `sslip.io`는 임시 도메인으로만 사용한다.
+- shared Supabase MCP가 필요하면 `supabase_ro` 같은 filtered read-only namespace만 공유 표면에 올리고, write/DDL/extension mutation은 별도 operator-only surface로 둔다.
 
 ### 3.7 Bootstrap Profiles and Startup DAG
 
@@ -513,6 +516,7 @@ Decision priority when multiple thresholds trigger:
 - Use strong, rotated `JWT_SECRET`.
 - Restrict admin operations using allowlist policy (`user_roles` or static IDs).
 - Store webhook URLs and tokens only in secret managers.
+- Follow `docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md` when rotating credentials or enabling the shared `supabase_ro` surface.
 
 ## 9) Change Management
 

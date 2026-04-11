@@ -13,7 +13,8 @@
 param(
   [string]$GcpHost = 'fancy@34.56.232.61',
   [string]$PublicHost = '34.56.232.61.sslip.io',
-  [string]$RepoDir = '/opt/muel/discord-news-bot',
+  [string]$RuntimeDir = '/opt/muel/shared-mcp-runtime',
+  [string]$LegacyRepoDir = '/opt/muel/discord-news-bot',
   [string]$KeyPath = (Join-Path $env:USERPROFILE '.ssh\google_compute_engine'),
   [string[]]$IncludePath = @(),
   [switch]$RestartServices,
@@ -30,23 +31,21 @@ if (-not (Test-Path (Join-Path $repoRoot 'package.json'))) {
 }
 
 $defaultPaths = @(
-  'config/env/unified-mcp.gcp.env.example',
-  'config/runtime/gcp-worker.Caddyfile.template',
-  'config/systemd/unified-mcp-http.service',
-  'docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md',
+  '.github',
+  'bot.ts',
+  'server.ts',
+  'ecosystem.config.cjs',
+  'ecosystem.role-workers.config.cjs',
   'package.json',
   'package-lock.json',
-  'scripts/unified-mcp-http.ts',
-  'scripts/unified-mcp-stdio.ts',
+  'render.yaml',
+  'config',
+  'docs',
+  'retros',
+  'scripts',
   'src',
-  'tsconfig.json'
-)
-
-$allowedDirtyPatterns = @(
-  '^\?\? config/env/.*\.env(?:\.bak)?$',
-  '^\?\? config/runtime/.*$',
-  '^\?\? docs/\.obsidian/.*$',
-  '^\?\? docs/ops/.*$'
+  'tsconfig.json',
+  'vitest.config.ts'
 )
 
 function Write-Step($n, $msg) { Write-Host "`n[$n] $msg" -ForegroundColor Cyan }
@@ -79,45 +78,30 @@ Push-Location $repoRoot
 try {
   Write-Host "`n=== Publish GCP Shared MCP ===" -ForegroundColor Magenta
   Write-Host "Repo: $repoRoot" -ForegroundColor Gray
-  Write-Host "Target: ${GcpHost}:$RepoDir" -ForegroundColor Gray
+  Write-Host "Runtime target: ${GcpHost}:$RuntimeDir" -ForegroundColor Gray
+  Write-Host "Legacy source checkout: ${GcpHost}:$LegacyRepoDir" -ForegroundColor DarkGray
 
-  Write-Step 1 'Checking remote repository state...'
-  $statusOutput = (Invoke-Ssh "bash -lc 'set -e; cd $RepoDir; git rev-parse --is-inside-work-tree >/dev/null; git status --porcelain'") | Out-String
-  $statusLines = @($statusOutput -split "`r?`n" | Where-Object { $_.Trim() })
-  $blockingStatus = New-Object System.Collections.Generic.List[string]
-  $allowedStatus = New-Object System.Collections.Generic.List[string]
-
-  foreach ($line in $statusLines) {
-    $isAllowed = $false
-    foreach ($pattern in $allowedDirtyPatterns) {
-      if ($line -match $pattern) {
-        $allowedStatus.Add($line)
-        $isAllowed = $true
-        break
-      }
-    }
-
-    if (-not $isAllowed) {
-      $blockingStatus.Add($line)
-    }
-  }
-
-  if ($allowedStatus.Count -gt 0) {
-    Write-Warn 'Ignoring deployment-local artifacts in the remote repo:'
-    $allowedStatus | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
-  }
-
-  if ($blockingStatus.Count -gt 0) {
+  Write-Step 1 'Checking remote runtime target...'
+  $runtimeCheck = (Invoke-Ssh "bash -lc 'set -e; mkdir -p $RuntimeDir; if [ -d $RuntimeDir/.git ]; then echo RUNTIME_IS_GIT; fi; echo RUNTIME_READY'") | Out-String
+  if ($runtimeCheck -match 'RUNTIME_IS_GIT') {
     if (-not $Force) {
-      Write-Fail 'Remote repo has blocking changes. Re-run with -Force only if you intend to overwrite them.'
-      $blockingStatus | ForEach-Object { Write-Host $_ -ForegroundColor DarkYellow }
+      Write-Fail 'Runtime target is a git checkout. Re-run with -Force only if you intend to overwrite it.'
       exit 1
     }
-    Write-Warn 'Remote repo has blocking changes, but continuing because -Force was supplied.'
-    $blockingStatus | ForEach-Object { Write-Host $_ -ForegroundColor DarkYellow }
+    Write-Warn 'Runtime target is a git checkout, but continuing because -Force was supplied.'
   }
-  else {
-    Write-Ok 'Remote repo is publishable'
+  if ($runtimeCheck -match 'RUNTIME_READY') {
+    Write-Ok 'Runtime target is ready'
+  }
+
+  $legacyStatusOutput = (Invoke-Ssh "bash -lc 'if [ -d $LegacyRepoDir/.git ]; then cd $LegacyRepoDir && git status --porcelain; fi'") | Out-String
+  $legacyStatusLines = @($legacyStatusOutput -split "`r?`n" | Where-Object { $_.Trim() })
+  if ($legacyStatusLines.Count -gt 0) {
+    Write-Warn 'Legacy source checkout is dirty, but shared MCP publish no longer blocks on it:'
+    $legacyStatusLines | Select-Object -First 20 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    if ($legacyStatusLines.Count -gt 20) {
+      Write-Host "... ($($legacyStatusLines.Count - 20) more lines)" -ForegroundColor DarkGray
+    }
   }
 
   Write-Step 2 'Creating rollout archive...'
@@ -132,7 +116,7 @@ try {
 
   Write-Step 3 'Uploading and extracting shared MCP files...'
   & scp -q -i $KeyPath $archivePath "$GcpHost`:/tmp/shared-mcp-rollout.tar"
-  $extractOutput = Invoke-Ssh "bash -lc 'set -e; mkdir -p $RepoDir; tar -xf /tmp/shared-mcp-rollout.tar -C $RepoDir; rm -f /tmp/shared-mcp-rollout.tar; echo REMOTE_SYNC_OK'"
+  $extractOutput = Invoke-Ssh "bash -lc 'set -e; mkdir -p $RuntimeDir; tar -xf /tmp/shared-mcp-rollout.tar -C $RuntimeDir; rm -f /tmp/shared-mcp-rollout.tar; echo REMOTE_SYNC_OK'"
   if (($extractOutput | Out-String) -match 'REMOTE_SYNC_OK') {
     Write-Ok 'Remote sync complete'
   }
@@ -147,8 +131,8 @@ try {
     }
     else {
       @"
-if [ -f $RepoDir/config/runtime/gcp-worker.Caddyfile.template ]; then
-  sed "s|__WORKER_HOST__|$PublicHost|g" $RepoDir/config/runtime/gcp-worker.Caddyfile.template | sudo tee /etc/caddy/Caddyfile >/dev/null
+if [ -f $RuntimeDir/config/runtime/gcp-worker.Caddyfile.template ]; then
+  sed "s|__WORKER_HOST__|$PublicHost|g" $RuntimeDir/config/runtime/gcp-worker.Caddyfile.template | sudo tee /etc/caddy/Caddyfile >/dev/null
   if sudo systemctl is-active --quiet caddy; then
     sudo systemctl reload caddy
   else
@@ -161,26 +145,65 @@ fi
 
     $restartScript = (@"
 set -e
-if [ ! -f $RepoDir/config/env/unified-mcp.gcp.env ] && [ -f $RepoDir/config/env/unified-mcp.gcp.env.example ]; then
-  cp $RepoDir/config/env/unified-mcp.gcp.env.example $RepoDir/config/env/unified-mcp.gcp.env
+mkdir -p $RuntimeDir/config/env
+if [ ! -f $RuntimeDir/.env ] && [ -f $LegacyRepoDir/.env ]; then
+  cp $LegacyRepoDir/.env $RuntimeDir/.env
+fi
+if [ ! -f $RuntimeDir/config/env/unified-mcp.gcp.env ] && [ -f $LegacyRepoDir/config/env/unified-mcp.gcp.env ]; then
+  cp $LegacyRepoDir/config/env/unified-mcp.gcp.env $RuntimeDir/config/env/unified-mcp.gcp.env
+elif [ ! -f $RuntimeDir/config/env/unified-mcp.gcp.env ] && [ -f $RuntimeDir/config/env/unified-mcp.gcp.env.example ]; then
+  cp $RuntimeDir/config/env/unified-mcp.gcp.env.example $RuntimeDir/config/env/unified-mcp.gcp.env
+fi
+if [ -L $RuntimeDir/node_modules ]; then
+  rm $RuntimeDir/node_modules
+fi
+if [ -f $RuntimeDir/package.json ]; then
+  cd $RuntimeDir
+  npm install --ignore-scripts --no-fund --no-audit --loglevel=error >/tmp/shared-mcp-npm-install.log 2>&1 || { cat /tmp/shared-mcp-npm-install.log; exit 1; }
+  rm -f /tmp/shared-mcp-npm-install.log
 fi
 sed \
   -e "s|^User=.*|User=$remoteUser|" \
-  -e "s|/opt/muel/muel-platform|$RepoDir|g" \
-  -e "s|/opt/muel/discord-news-bot|$RepoDir|g" \
+  -e "s|/opt/muel/shared-mcp-runtime|$RuntimeDir|g" \
+  -e "s|/opt/muel/discord-news-bot|$RuntimeDir|g" \
   -e "s|Environment=HOME=/opt/muel|Environment=HOME=$remoteHome|" \
-  $RepoDir/config/systemd/unified-mcp-http.service | sed 's/\r$//' | sudo tee /etc/systemd/system/unified-mcp-http.service >/dev/null
+  $RuntimeDir/config/systemd/unified-mcp-http.service | sed 's/\r$//' | sudo tee /etc/systemd/system/unified-mcp-http.service >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl stop unified-mcp-http >/dev/null 2>&1 || true
-sudo pkill -f '$RepoDir/scripts/unified-mcp-http.ts' >/dev/null 2>&1 || true
+sudo pkill -f '$RuntimeDir/scripts/unified-mcp-http.ts' >/dev/null 2>&1 || true
+sudo pkill -f '$LegacyRepoDir/scripts/unified-mcp-http.ts' >/dev/null 2>&1 || true
 sudo systemctl reset-failed unified-mcp-http >/dev/null 2>&1 || true
 sudo systemctl enable unified-mcp-http >/dev/null
 sudo systemctl start unified-mcp-http
+rm -f /tmp/shared-mcp-local-health.json
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  if curl -fsS http://127.0.0.1:8850/mcp/health >/tmp/shared-mcp-local-health.json 2>/dev/null; then
+    cat /tmp/shared-mcp-local-health.json
+    rm -f /tmp/shared-mcp-local-health.json
+    break
+  fi
+  sleep 1
+done
+if [ -f /tmp/shared-mcp-local-health.json ]; then
+  rm -f /tmp/shared-mcp-local-health.json
+  exit 1
+fi
 $caddyBlock
 echo RESTART_OK
 "@) -replace "`r", ''
-    $restartBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($restartScript))
-    $restartOutput = Invoke-Ssh ('bash -lc "echo {0} | base64 -d | bash"' -f $restartBase64)
+
+    $restartScriptPath = Join-Path $env:TEMP 'publish-gcp-shared-mcp-restart.sh'
+    [System.IO.File]::WriteAllText($restartScriptPath, $restartScript, [System.Text.UTF8Encoding]::new($false))
+
+    try {
+      & scp -q -i $KeyPath $restartScriptPath "$GcpHost`:/tmp/publish-gcp-shared-mcp-restart.sh"
+      $restartOutput = Invoke-Ssh 'bash /tmp/publish-gcp-shared-mcp-restart.sh; rm -f /tmp/publish-gcp-shared-mcp-restart.sh'
+    }
+    finally {
+      if (Test-Path $restartScriptPath) {
+        Remove-Item $restartScriptPath -Force
+      }
+    }
 
     if (($restartOutput | Out-String) -match 'RESTART_OK') {
       Write-Ok 'shared MCP service restart complete'
@@ -191,7 +214,8 @@ echo RESTART_OK
   }
 
   Write-Step 5 'Checking canonical shared MCP health...'
-  $health = Invoke-RestMethod -Method Get -Uri "https://$PublicHost/mcp/health" -TimeoutSec 10
+  $publicHealthRaw = & curl.exe --silent --show-error --fail --retry 30 --retry-all-errors --retry-delay 1 "https://$PublicHost/mcp/health"
+  $health = (($publicHealthRaw | Out-String).Trim() | ConvertFrom-Json)
   if ($health.status -ne 'ok') {
     throw 'Shared MCP health probe returned a non-ok status'
   }

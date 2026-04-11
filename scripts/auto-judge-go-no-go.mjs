@@ -1,0 +1,1 @@
+import './archive/auto-judge-go-no-go.mjs';

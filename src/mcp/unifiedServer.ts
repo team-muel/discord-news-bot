@@ -13,6 +13,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 import readline from 'node:readline';
 import { listAllMcpTools, callAnyMcpTool } from './unifiedToolAdapter';
+import { listUpstreamDiagnostics } from './proxyAdapter';
 import type { JsonRpcRequest, JsonRpcResponse, McpToolCallResult } from './types';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseStringEnv } from '../utils/env';
@@ -238,6 +239,17 @@ export const createMcpHttpHandler = (options?: { authToken?: string }) => {
         version: '0.2.0',
         tools: tools.length,
         toolNames: tools.map((t) => t.name),
+        upstreams: listUpstreamDiagnostics().map((entry) => ({
+          id: entry.id,
+          namespace: entry.namespace,
+          protocol: entry.protocol,
+          enabled: entry.enabled,
+          plane: entry.plane,
+          audience: entry.audience,
+          visibleToolCount: entry.catalog.visibleToolCount,
+          cacheState: entry.catalog.cacheState,
+          hasFilters: entry.filters.hasFilters,
+        })),
       });
       return;
     }

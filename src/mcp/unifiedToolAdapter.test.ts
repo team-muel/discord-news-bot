@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { listAllMcpTools, callAnyMcpTool } from './unifiedToolAdapter';
+import { hasSchemaArrayWithoutItems } from './schemaNormalization';
 
 describe('unifiedToolAdapter', () => {
   it('listAllMcpTools returns both general and indexing tools', async () => {
@@ -9,6 +10,7 @@ describe('unifiedToolAdapter', () => {
     // General tools
     expect(names).toContain('stock.quote');
     expect(names).toContain('action.catalog');
+    expect(names).toContain('diag.upstreams');
 
     // Indexing tools
     expect(names).toContain('code.index.symbol_search');
@@ -22,10 +24,24 @@ describe('unifiedToolAdapter', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('exposes only IDE-safe input schemas', async () => {
+    const tools = await listAllMcpTools();
+    for (const tool of tools) {
+      expect(tool.inputSchema.type).toBe('object');
+      expect(hasSchemaArrayWithoutItems(tool.inputSchema)).toBe(false);
+    }
+  });
+
   it('routes general tool to general adapter', async () => {
     const result = await callAnyMcpTool({ name: 'action.catalog' });
     expect(result.isError).not.toBe(true);
     expect(result.content.length).toBeGreaterThan(0);
+  });
+
+  it('routes upstream diagnostics tool to the general adapter', async () => {
+    const result = await callAnyMcpTool({ name: 'diag.upstreams', arguments: { refresh: false } });
+    expect(result.isError).not.toBe(true);
+    expect(Array.isArray(JSON.parse(result.content[0].text))).toBe(true);
   });
 
   it('routes indexing tool to indexing adapter', async () => {

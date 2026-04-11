@@ -11,11 +11,14 @@
 param(
   [switch]$SkipNpm,
   [switch]$SkipSsh,
+  [switch]$SharedOnly,
   [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+$sharedRuntimeDir = '/opt/muel/shared-mcp-runtime'
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not (Test-Path (Join-Path $repoRoot 'package.json'))) {
@@ -44,7 +47,10 @@ try {
 
   # ── Step 2: npm install ──
   Write-Step 2 "Installing npm dependencies..."
-  if ($SkipNpm) {
+  if ($SharedOnly) {
+    Write-Skip "Skipped (-SharedOnly: gcpCompute onboarding does not require local npm dependencies)"
+  }
+  elseif ($SkipNpm) {
     Write-Skip "Skipped (-SkipNpm)"
   }
   elseif ((Test-Path 'node_modules') -and -not $Force) {
@@ -60,7 +66,10 @@ try {
   $envFile = Join-Path $repoRoot '.env'
   $envExample = Join-Path $repoRoot '.env.example'
 
-  if ((Test-Path $envFile) -and -not $Force) {
+  if ($SharedOnly) {
+    Write-Skip "Skipped (-SharedOnly: gcpCompute onboarding does not require local .env or local Obsidian token)"
+  }
+  elseif ((Test-Path $envFile) -and -not $Force) {
     Write-Skip ".env already exists (use -Force to overwrite)"
   }
   else {
@@ -128,11 +137,11 @@ try {
   if (Test-Path $mcpJson) {
     Write-Ok ".vscode/mcp.json found"
     $mcpConfig = Get-Content $mcpJson -Raw | ConvertFrom-Json
-    if ($mcpConfig.servers.gcpCompute -and $mcpConfig.servers.gcpCompute.args[-1] -match '/opt/muel/discord-news-bot') {
-      Write-Ok "gcpCompute points at /opt/muel/discord-news-bot"
+    if ($mcpConfig.servers.gcpCompute -and $mcpConfig.servers.gcpCompute.args[-1] -match [regex]::Escape($sharedRuntimeDir)) {
+      Write-Ok "gcpCompute points at $sharedRuntimeDir"
     }
     else {
-      Write-Warn "gcpCompute remote repo path is not the expected /opt/muel/discord-news-bot"
+      Write-Warn "gcpCompute remote runtime path is not the expected $sharedRuntimeDir"
     }
 
     if ($mcpConfig.servers.gcpCompute -and $mcpConfig.servers.gcpCompute.args[-1] -match 'unified-mcp.gcp.env') {
@@ -149,20 +158,27 @@ try {
   # ── Step 6: Quick validation ──
   Write-Step 6 "Validating setup..."
   $checks = @()
+  $sharedUpstreamLanes = @()
+  $sharedDiagAvailable = $false
 
-  # Check npm scripts exist
-  $pkg = Get-Content (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json
-  if ($pkg.scripts.'mcp:unified:dev') { $checks += @{name = 'mcp:unified:dev script'; ok = $true } }
-  else { $checks += @{name = 'mcp:unified:dev script'; ok = $false } }
-
-  if ($pkg.scripts.'mcp:indexing:dev') { $checks += @{name = 'mcp:indexing:dev script'; ok = $true } }
-  else { $checks += @{name = 'mcp:indexing:dev script'; ok = $false } }
-
-  if (Test-Path (Join-Path $repoRoot 'scripts' 'publish-gcp-shared-mcp.ps1')) {
-    $checks += @{name = 'publish-gcp-shared-mcp.ps1'; ok = $true }
+  if ($SharedOnly) {
+    $checks += @{name = 'Shared-only bootstrap mode'; ok = $true; detail = 'local .env and local MCP skipped by design' }
   }
   else {
-    $checks += @{name = 'publish-gcp-shared-mcp.ps1'; ok = $false }
+    # Check npm scripts exist
+    $pkg = Get-Content (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json
+    if ($pkg.scripts.'mcp:unified:dev') { $checks += @{name = 'mcp:unified:dev script'; ok = $true } }
+    else { $checks += @{name = 'mcp:unified:dev script'; ok = $false } }
+
+    if ($pkg.scripts.'mcp:indexing:dev') { $checks += @{name = 'mcp:indexing:dev script'; ok = $true } }
+    else { $checks += @{name = 'mcp:indexing:dev script'; ok = $false } }
+
+    if (Test-Path (Join-Path $repoRoot 'scripts' 'publish-gcp-shared-mcp.ps1')) {
+      $checks += @{name = 'publish-gcp-shared-mcp.ps1'; ok = $true }
+    }
+    else {
+      $checks += @{name = 'publish-gcp-shared-mcp.ps1'; ok = $false }
+    }
   }
 
   # Check SSH connectivity (non-blocking)
@@ -179,7 +195,29 @@ try {
   try {
     $sharedHealth = Invoke-RestMethod -Method Get -Uri 'https://34.56.232.61.sslip.io/mcp/health' -TimeoutSec 8
     if ($sharedHealth.status -eq 'ok') {
+      $sharedDiagAvailable = @($sharedHealth.toolNames) -contains 'diag.upstreams'
+      $sharedUpstreamLanes = @(
+        @($sharedHealth.upstreams) |
+          Where-Object { $_ -and $_.namespace } |
+          ForEach-Object {
+            $namespace = [string]$_.namespace
+            $plane = [string]$_.plane
+            $audience = [string]$_.audience
+            if ($plane -and $audience) { "$namespace($plane/$audience)" }
+            elseif ($plane) { "$namespace($plane)" }
+            elseif ($audience) { "$namespace($audience)" }
+            else { $namespace }
+          }
+      )
+
       $checks += @{name = 'Shared MCP health'; ok = $true; detail = "tools=$($sharedHealth.tools)" }
+      $checks += @{name = 'Shared MCP diag.upstreams'; ok = $sharedDiagAvailable }
+      if ($sharedUpstreamLanes.Count -gt 0) {
+        $checks += @{name = 'Shared MCP upstream lanes'; ok = $true; detail = [string]::Join(', ', $sharedUpstreamLanes) }
+      }
+      else {
+        $checks += @{name = 'Shared MCP upstream lanes'; ok = $false }
+      }
     }
     else {
       $checks += @{name = 'Shared MCP health'; ok = $false }
@@ -199,20 +237,47 @@ try {
   Write-Host "`n=== Setup Complete ===" -ForegroundColor Magenta
   Write-Host ""
   Write-Host "Next steps:" -ForegroundColor White
-  Write-Host "  1. Fill in minimum keys in .env (SUPABASE_URL, SUPABASE_KEY)" -ForegroundColor Gray
-  Write-Host "  2. Send your SSH public key to team lead (already in clipboard)" -ForegroundColor Gray
-  Write-Host "  3. Team lead runs scripts/register-team-ssh.ps1 to grant gcpCompute access" -ForegroundColor Gray
-  Write-Host "  4. Restart VS Code after the key is registered" -ForegroundColor Gray
-  Write-Host "  5. After shared MCP changes, run scripts/publish-gcp-shared-mcp.ps1 -RestartServices" -ForegroundColor Gray
+  if ($SharedOnly) {
+    Write-Host "  1. Send your SSH public key to team lead (already in clipboard)" -ForegroundColor Gray
+    Write-Host "  2. Team lead runs scripts/register-team-ssh.ps1 to grant gcpCompute access" -ForegroundColor Gray
+    Write-Host "  3. Restart VS Code after the key is registered" -ForegroundColor Gray
+    Write-Host "  4. If another custom MCP server breaks the catalog, disable it and start with github + gcpCompute first" -ForegroundColor Gray
+    Write-Host "  5. In Copilot Chat, call diag.upstreams through gcpCompute once and confirm the shared lanes you expect" -ForegroundColor Gray
+    Write-Host "  6. Run bootstrap-team.ps1 again without -SharedOnly only when you need local muelUnified or muelIndexing" -ForegroundColor Gray
+  }
+  else {
+    Write-Host "  1. Fill in minimum keys in .env (SUPABASE_URL, SUPABASE_KEY)" -ForegroundColor Gray
+    Write-Host "  2. Send your SSH public key to team lead (already in clipboard)" -ForegroundColor Gray
+    Write-Host "  3. Team lead runs scripts/register-team-ssh.ps1 to grant gcpCompute access" -ForegroundColor Gray
+    Write-Host "  4. Restart VS Code after the key is registered" -ForegroundColor Gray
+    Write-Host "  5. In Copilot Chat, call diag.upstreams through gcpCompute once and confirm the shared lanes you expect" -ForegroundColor Gray
+    Write-Host "  6. After shared MCP changes, run scripts/publish-gcp-shared-mcp.ps1 -RestartServices" -ForegroundColor Gray
+  }
   Write-Host ""
   Write-Host "Available MCP servers after setup:" -ForegroundColor White
   Write-Host "  github        — works immediately (Copilot-auth HTTP MCP)" -ForegroundColor Green
-  Write-Host "  muelUnified   — local unified MCP, uses .env" -ForegroundColor Yellow
-  Write-Host "  muelIndexing  — local overlay index, uses .env" -ForegroundColor Yellow
-  Write-Host "  gcpCompute    — shared GCP unified MCP over SSH stdio" -ForegroundColor Yellow
+  if ($SharedOnly) {
+    Write-Host "  gcpCompute    — shared GCP unified MCP over SSH stdio (no local .env, no local Obsidian token required)" -ForegroundColor Yellow
+    Write-Host "  muelUnified   — optional later for local experiments and local upstream aggregation" -ForegroundColor DarkGray
+    Write-Host "  muelIndexing  — optional later for local dirty-workspace overlay" -ForegroundColor DarkGray
+  }
+  else {
+    Write-Host "  muelUnified   — local unified MCP, uses .env" -ForegroundColor Yellow
+    Write-Host "  muelIndexing  — local overlay index, uses .env" -ForegroundColor Yellow
+    Write-Host "  gcpCompute    — shared GCP unified MCP over SSH stdio (published non-git runtime mirror)" -ForegroundColor Yellow
+  }
+  Write-Host ""
+  Write-Host "Shared auth note: gcpCompute uses the server-side shared MCP auth path. Teammates do not need local OBSIDIAN_REMOTE_MCP_TOKEN for this shared-only route." -ForegroundColor Gray
   Write-Host ""
   Write-Host "Shared MCP canonical health:" -ForegroundColor White
   Write-Host "  https://34.56.232.61.sslip.io/mcp/health" -ForegroundColor Gray
+  if ($sharedUpstreamLanes.Count -gt 0) {
+    Write-Host "" 
+    Write-Host "Shared upstream lanes advertised by public health:" -ForegroundColor White
+    foreach ($lane in $sharedUpstreamLanes) {
+      Write-Host "  - $lane" -ForegroundColor Gray
+    }
+  }
   Write-Host ""
 
 }

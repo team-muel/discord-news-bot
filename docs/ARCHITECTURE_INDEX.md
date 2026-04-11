@@ -9,6 +9,13 @@
 This document is the external analysis entrypoint for the backend repository.
 It provides a stable map of runtime flow, domain boundaries, and data boundaries.
 
+Control-plane ownership rule:
+
+- shared Obsidian is the semantic cockpit: human-visible operations control, durable context, wiki, decision history, and graph-first navigation
+- Supabase is the operational substrate: sessions, events, policy enforcement, cron, vector and hybrid retrieval, extension ops, structured analytics, and runtime diagnostics
+- the design goal is not "Obsidian instead of Supabase" but "Obsidian explains and controls; Supabase executes and measures"
+- future Supabase capability growth should happen by expanding the operational substrate, not by pushing semantic ownership out of Obsidian
+
 Document Role:
 
 - Canonical for repository runtime structure and service/data boundary map.
@@ -361,12 +368,22 @@ Design doc: `docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`
 | Surface | Location | 도구 수 | 역할 |
 | ------- | -------- | ------- | ---- |
 | muelIndexing | `.vscode/mcp.json` (local stdio) | 7 | local overlay 인덱싱 전용 (dirty workspace / uncommitted only) |
-| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (general + Indexing + Obsidian + `ext.*` + `upstream.*`) |
+| muelUnified | `.vscode/mcp.json` (local stdio) | 40+ | 통합 진입점 (general + Indexing + Obsidian + `ext.*` + `upstream.*` + `diag.upstreams`) |
 | gcpCompute | GCP VM `34.56.232.61` (SSH stdio) | 40+ | 원격 통합 서버 (로컬 대비 외부 어댑터 더 풍부) |
-| Supabase | `MCP_UPSTREAM_SERVERS` → `upstream.supabase.*` | DB | 스키마/데이터 조회 |
+| Supabase read plane | `MCP_UPSTREAM_SERVERS` → `upstream.supabase_ro.*` | DB | 팀 공용 read-only diagnostics, schema/advisor/migration/log 조회 |
 | DeepWiki | `MCP_UPSTREAM_SERVERS` → `upstream.deepwiki.*` | — | 외부 repo 문서 질의 |
 
+Supabase admin or mutation surfaces are intentionally not listed as shared team MCP surfaces here. If introduced later, they should live behind a separate operator-only namespace or host rather than the shared `supabase_ro` lane.
+
 > **Note**: `muelIndexing`와 `gcpCompute`는 인덱싱 도구가 겹치지만 역할은 다르다. `gcpCompute`는 shared truth, `muelIndexing`는 local overlay diff lane이다. `muelUnified`(로컬)와 `gcpCompute`는 같은 unified 서버지만, 팀 공용 Obsidian/운영 문서/요구사항 확인은 `gcpCompute`를 기본 경로로 본다. `muelUnified`는 로컬 overlay 또는 로컬 전용 vault 실험에만 사용한다.
+
+Federated shared-control-plane 원칙:
+
+- 협업의 기본 단위는 checkout 동기화가 아니라 namespaced capability lane이다.
+- 다른 레포, 다른 VM, 다른 external execution runtime도 `MCP_UPSTREAM_SERVERS`에 별도 namespace로 붙일 수 있다.
+- 권장 metadata는 `label`, `plane`, `audience`, `owner`, `sourceRepo`다.
+- `diag.upstreams`는 현재 붙어 있는 upstream namespace, filter, catalog 상태를 운영자와 IDE agent에게 같은 형식으로 보여준다.
+- semantic lane은 Obsidian/shared wiki, operational lane은 Supabase read plane, execution lane은 외부 runtime worker, control lane은 shared orchestration surface로 분리하는 편이 덜 엉킨다.
 
 MCP 서버 코드:
 
