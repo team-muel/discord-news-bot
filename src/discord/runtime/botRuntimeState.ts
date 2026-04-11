@@ -61,6 +61,31 @@ export type ManualReconnectRequestResult = {
   message: string;
 };
 
+export type SourceUsageRow = {
+  guild_id: string | null;
+  is_active: boolean | null;
+  name: string | null;
+  created_at?: string | null;
+};
+
+export type GuildSourceUsageStats = {
+  guildId: string;
+  total: number;
+  active: number;
+  youtube: number;
+  news: number;
+  newestCreatedAt: string | null;
+};
+
+export type SourceUsageSummary = {
+  total: number;
+  active: number;
+  youtube: number;
+  news: number;
+  activeGuilds: number;
+  byGuild: GuildSourceUsageStats[];
+};
+
 // ─── Mutable State ────────────────────────────────────────────────────────────
 
 export const botRuntimeState: BotRuntimeSnapshot = {
@@ -117,6 +142,59 @@ export const resetBotRuntimeState = (): void => {
 };
 
 const MANUAL_RECONNECT_COOLDOWN_MS = BOT_MANUAL_RECONNECT_COOLDOWN_MS;
+
+const isYoutubeSource = (name: string | null | undefined): boolean => String(name || '').startsWith('youtube-');
+
+const isNewsSource = (name: string | null | undefined): boolean => String(name || '') === 'google-finance-news';
+
+export const summarizeSourceUsageRows = (rows: SourceUsageRow[]): SourceUsageSummary => {
+  const byGuildMap = new Map<string, GuildSourceUsageStats>();
+  let active = 0;
+  let youtube = 0;
+  let news = 0;
+
+  for (const row of rows) {
+    const guildId = row.guild_id || 'unknown';
+    const stat = byGuildMap.get(guildId) || {
+      guildId,
+      total: 0,
+      active: 0,
+      youtube: 0,
+      news: 0,
+      newestCreatedAt: null,
+    };
+
+    stat.total += 1;
+
+    if (row.is_active) {
+      stat.active += 1;
+      active += 1;
+    }
+
+    if (isYoutubeSource(row.name)) {
+      stat.youtube += 1;
+      youtube += 1;
+    } else if (isNewsSource(row.name)) {
+      stat.news += 1;
+      news += 1;
+    }
+
+    if (row.created_at && (!stat.newestCreatedAt || Date.parse(row.created_at) > Date.parse(stat.newestCreatedAt))) {
+      stat.newestCreatedAt = row.created_at;
+    }
+
+    byGuildMap.set(guildId, stat);
+  }
+
+  return {
+    total: rows.length,
+    active,
+    youtube,
+    news,
+    activeGuilds: byGuildMap.size,
+    byGuild: [...byGuildMap.values()].sort((left, right) => right.active - left.active || right.total - left.total),
+  };
+};
 
 // ─── Cooldown & Rate-Limit Helpers ────────────────────────────────────────────
 
@@ -200,12 +278,8 @@ export const getUsageSummaryLine = async (client: Client): Promise<string> => {
       return `Usage: guilds=${guildCount} | source-stats unavailable (${error.message})`;
     }
 
-    const rows = data || [];
-    const active = rows.filter((row: any) => Boolean(row.is_active)).length;
-    const youtube = rows.filter((row: any) => String(row.name || '').startsWith('youtube-')).length;
-    const news = rows.filter((row: any) => String(row.name || '') === 'google-finance-news').length;
-    const activeGuilds = new Set(rows.map((row: any) => String(row.guild_id || 'unknown'))).size;
-    return `Usage: guilds=${guildCount} | activeGuilds=${activeGuilds} | sources=${rows.length} (active=${active}, yt=${youtube}, news=${news})`;
+    const summary = summarizeSourceUsageRows((data || []) as SourceUsageRow[]);
+    return `Usage: guilds=${guildCount} | activeGuilds=${summary.activeGuilds} | sources=${summary.total} (active=${summary.active}, yt=${summary.youtube}, news=${summary.news})`;
   } catch (error) {
     const message = getErrorMessage(error);
     return `Usage: guilds=${guildCount} | source-stats unavailable (${message})`;
@@ -228,12 +302,15 @@ export const getGuildUsageSummaryLine = async (guildId: string | null): Promise<
       return `Current guild: usage unavailable (${error.message})`;
     }
 
-    const rows = data || [];
-    const active = rows.filter((row: any) => Boolean(row.is_active)).length;
-    const youtube = rows.filter((row: any) => String(row.name || '').startsWith('youtube-')).length;
-    const news = rows.filter((row: any) => String(row.name || '') === 'google-finance-news').length;
+    const summary = summarizeSourceUsageRows(
+      ((data || []) as Array<Pick<SourceUsageRow, 'is_active' | 'name'>>).map((row) => ({
+        guild_id: guildId,
+        is_active: row.is_active,
+        name: row.name,
+      })),
+    );
 
-    return `Current guild: sources=${rows.length} (active=${active}, yt=${youtube}, news=${news})`;
+    return `Current guild: sources=${summary.total} (active=${summary.active}, yt=${summary.youtube}, news=${summary.news})`;
   } catch (error) {
     const message = getErrorMessage(error);
     return `Current guild: usage unavailable (${message})`;

@@ -1,6 +1,7 @@
-import type { AgentIntent, AgentPriority } from '../agent/agentRuntimeTypes';
+import type { AgentIntent, AgentPolicyGateDecision, AgentPriority } from '../agent/agentRuntimeTypes';
 import type { PromptCompileResult } from '../infra/promptCompiler';
 import type { AgentOutcome } from '../agent/agentOutcomeContract';
+import type { ExecutionStrategy } from './nodes/strategyNodes';
 
 export type LangGraphNodeId =
   | 'ingest'
@@ -11,6 +12,17 @@ export type LangGraphNodeId =
   | 'plan_actions'
   | 'execute_actions'
   | 'critic_review'
+  | 'requested_skill_run'
+  | 'requested_skill_refine'
+  | 'fast_path_run'
+  | 'fast_path_refine'
+  | 'full_review_plan'
+  | 'full_review_execute'
+  | 'full_review_critique'
+  | 'full_review_tot'
+  | 'hitl_review'
+  | 'full_review_compose'
+  | 'full_review_promote'
   | 'policy_gate'
   | 'compose_response'
   | 'persist_and_emit';
@@ -31,6 +43,16 @@ export type LangGraphPlanItem = {
   reason?: string;
 };
 
+export type LangGraphTotShadowBest = {
+  rawResult: string;
+  score: number;
+  beamProbability: number;
+  beamCorrectness: number;
+  beamScore: number;
+  beamProbabilitySource: 'provider_logprob' | 'self_eval' | 'fallback';
+  evidenceBundleId: string;
+};
+
 export type LangGraphState = {
   sessionId: string;
   guildId: string;
@@ -43,6 +65,15 @@ export type LangGraphState = {
   memoryHints: string[];
   plans: LangGraphPlanItem[];
   outcomes: AgentOutcome[];
+  executionStrategy?: ExecutionStrategy | null;
+  policyDecision?: AgentPolicyGateDecision | null;
+  planText?: string | null;
+  subgoals: string[];
+  executionDraft?: string | null;
+  critiqueText?: string | null;
+  finalCandidate?: string | null;
+  selectedFinalRaw?: string | null;
+  totShadowBest?: LangGraphTotShadowBest | null;
   policyBlocked: boolean;
   finalText: string | null;
   errorCode: string | null;
@@ -73,6 +104,15 @@ export const createInitialLangGraphState = (params: {
     memoryHints: [],
     plans: [],
     outcomes: [],
+    executionStrategy: null,
+    policyDecision: null,
+    planText: null,
+    subgoals: [],
+    executionDraft: null,
+    critiqueText: null,
+    finalCandidate: null,
+    selectedFinalRaw: null,
+    totShadowBest: null,
     policyBlocked: false,
     finalText: null,
     errorCode: null,

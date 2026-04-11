@@ -5,6 +5,7 @@ import { doc } from './obsidianDocBuilder';
 import { writeObsidianNoteWithAdapter } from './router';
 import { getToolCatalog } from '../tools/externalAdapterRegistry';
 import type { ObsidianKnowledgeReflectionBundle } from './knowledgeCompilerService';
+import type { ObsidianFrontmatterValue } from './types';
 
 const sanitizeGuildId = (value: unknown): string => {
   const candidate = String(value || '').trim();
@@ -150,7 +151,7 @@ export const upsertObsidianSystemDocument = async (params: {
   fileName: string;
   content: string;
   tags?: string[];
-  properties?: Record<string, string | number | boolean | null>;
+  properties?: Record<string, ObsidianFrontmatterValue | null>;
   allowHighLinkDensity?: boolean;
 }): Promise<ObsidianAuthoringWriteResult> => {
   const vaultPath = String(params.vaultPath || '').trim();
@@ -190,7 +191,7 @@ export const upsertObsidianGuildDocument = async (params: {
   fileName: string;
   content: string;
   tags?: string[];
-  properties?: Record<string, string | number | boolean | null>;
+  properties?: Record<string, ObsidianFrontmatterValue | null>;
 }): Promise<ObsidianAuthoringWriteResult> => {
   const guildId = sanitizeGuildId(params.guildId);
   if (!guildId) {

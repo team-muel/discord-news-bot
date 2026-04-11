@@ -146,3 +146,9 @@ export const getModelCooldownSnapshot = (): Array<{ model: string; untilMs: numb
   [...modelCooldownUntilMs.entries()]
     .filter(([, until]) => until > Date.now())
     .map(([model, untilMs]) => ({ model, untilMs }));
+
+export const __resetGatewayHealthStateForTests = (): void => {
+  healthy = null;
+  checkedAt = 0;
+  modelCooldownUntilMs.clear();
+};

@@ -28,12 +28,25 @@ import {
   toggleObsidianTaskWithAdapter,
 } from '../services/obsidian/router';
 import { evalCode as obsidianEvalCode } from '../services/obsidian/adapters/nativeCliAdapter';
-import { buildObsidianKnowledgeReflectionBundle, getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../services/obsidian/knowledgeCompilerService';
+import {
+  buildObsidianKnowledgeReflectionBundle,
+  captureObsidianWikiChange,
+  compileObsidianRequirement,
+  compileObsidianKnowledgeBundle,
+  getObsidianKnowledgeControlSurface,
+  promoteKnowledgeToObsidian,
+  resolveObsidianIncidentGraph,
+  resolveInternalKnowledge,
+  resolveObsidianKnowledgeArtifactPath,
+  runObsidianSemanticLintAudit,
+  traceObsidianDecision,
+} from '../services/obsidian/knowledgeCompilerService';
 import { getObsidianRetrievalBoundarySnapshot, queryObsidianRAG } from '../services/obsidian/obsidianRagService';
 import { getCacheStats } from '../services/obsidian/obsidianCacheService';
 import { getObsidianLoreSyncLoopStats } from '../services/obsidian/obsidianLoreSyncService';
 import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidian/obsidianQualityService';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../utils/obsidianEnv';
+import { buildActiveWorkset, buildOperatorSnapshot } from '../routes/bot-agent/runtimeRoutes';
 import type { McpToolCallRequest, McpToolCallResult, McpToolSpec } from './types';
 
 const compact = (value: unknown): string => String(value ?? '').trim();
@@ -110,6 +123,7 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
         content: { type: 'string', description: '마크다운 본문 (frontmatter 포함)' },
         folder: { type: 'string', description: 'vault 내 대상 폴더 (선택)' },
         guildId: { type: 'string', description: '길드 ID (선택)' },
+        allowHighLinkDensity: { type: 'boolean', description: '내부 백필처럼 링크가 많은 문서를 허용할지 여부 (선택)' },
       },
       required: ['fileName', 'content'],
       additionalProperties: false,
@@ -160,6 +174,191 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
         artifact: { type: 'string', description: 'index|log|lint|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug> 또는 생성된 artifact 경로' },
         bundleFor: { type: 'string', description: 'control-tower alias 또는 vault 상대 경로. reflection bundle 추천을 반환합니다.' },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'knowledge.bundle.compile',
+    description: 'Shared Obsidian, backfill catalog, and repo fallback을 합쳐 질문에 필요한 최소 knowledge bundle을 컴파일합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: '질문 또는 작업 목표' },
+        domains: { type: 'array', items: { type: 'string' }, description: 'planning|requirements|ops|architecture|memory|runtime|company-context' },
+        sourceHints: { type: 'array', items: { type: 'string' }, description: 'obsidian|internal-docs|runtime|repo-docs|code-index|local-overlay' },
+        explicitSources: { type: 'array', items: { type: 'string' }, description: '사용자가 먼저 제공한 URL, 문서 경로, note identifier를 trigger provenance로 고정합니다.' },
+        includeLocalOverlay: { type: 'boolean', description: 'local overlay 포함 여부' },
+        maxArtifacts: { type: 'number', description: '최대 artifact 수 (기본: 8)' },
+        maxFacts: { type: 'number', description: '최대 fact 수 (기본: 12)' },
+        audience: { type: 'string', description: 'engineering|ops|leadership 등 대상 독자' },
+      },
+      required: ['goal'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'internal.knowledge.resolve',
+    description: 'team/company internal knowledge 질문에 대해 shared MCP internal 경로 우선으로 관련 artifact, fact, access gap을 정리합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: '해결하려는 내부 지식 질문 또는 목표' },
+        targets: { type: 'array', items: { type: 'string' }, description: '관련 서비스, 문서, 주제 힌트' },
+        sourceHints: { type: 'array', items: { type: 'string' }, description: 'internal-docs|obsidian|runtime|repo-docs 등 힌트' },
+        includeRelatedArtifacts: { type: 'boolean', description: '관련 artifact를 넓게 포함할지 여부' },
+        maxArtifacts: { type: 'number', description: '최대 artifact 수' },
+        maxFacts: { type: 'number', description: '최대 fact 수' },
+        audience: { type: 'string', description: 'engineering|ops|leadership 등 대상 독자' },
+      },
+      required: ['goal'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'requirement.compile',
+    description: '자연어 objective와 관련 knowledge bundle을 이용해 문제, 제약, 엔터티, 워크플로, 갭, 다음 artifact를 구조화합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        objective: { type: 'string', description: '정리할 요구사항 목표' },
+        targets: { type: 'array', items: { type: 'string' }, description: '관련 서비스, 문서, 주제 힌트' },
+        sourceHints: { type: 'array', items: { type: 'string' }, description: 'obsidian|internal-docs|runtime|repo-docs 등 힌트' },
+        explicitSources: { type: 'array', items: { type: 'string' }, description: '구현 전에 사람이 봐야 하는 trigger source 목록' },
+        maxArtifacts: { type: 'number', description: '최대 artifact 수' },
+        maxFacts: { type: 'number', description: '최대 fact 수' },
+        audience: { type: 'string', description: 'engineering|ops|leadership 등 대상 독자' },
+        desiredArtifact: { type: 'string', description: '원하는 산출물 종류 예: playbook, requirement, decision' },
+        promoteImmediately: { type: 'boolean', description: 'shared vault requirement note로 즉시 promotion할지 여부' },
+        allowOverwrite: { type: 'boolean', description: 'promotion target overwrite 허용 여부' },
+      },
+      required: ['objective'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'operator.snapshot',
+    description: '운영자 기준 현재 runtime, loops, workers, operating baseline, obsidian control surface를 하나의 snapshot으로 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        guildId: { type: 'string', description: '길드 ID (선택)' },
+        days: { type: 'number', description: '집계 기간 (기본: 14)' },
+        includeDocs: { type: 'boolean', description: 'obsidian/control 문서 surface 포함 여부 (기본: true)' },
+        includeRuntime: { type: 'boolean', description: 'runtime loops/worker/scheduler 포함 여부 (기본: true)' },
+        includePendingIntents: { type: 'boolean', description: 'pending intent count 포함 여부' },
+        includeInternalKnowledge: { type: 'boolean', description: 'compact internal knowledge summary 포함 여부 (기본: true)' },
+        internalKnowledgeGoal: { type: 'string', description: 'internal knowledge summary에 사용할 목표 문장' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wiki.change.capture',
+    description: '변경 요약과 changed paths를 받아 shared wiki target 분류, backfill 대상 계산, 선택적 즉시 promotion을 수행합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        changeSummary: { type: 'string', description: '변경 요약' },
+        changedPaths: { type: 'array', items: { type: 'string' }, description: '변경된 repo 경로 목록' },
+        changeKind: {
+          type: 'string',
+          enum: ['repo-memory', 'architecture-delta', 'service-change', 'ops-change', 'development-slice', 'changelog-worthy'],
+          description: '변경 분류',
+        },
+        validationRefs: { type: 'array', items: { type: 'string' }, description: '검증 참조' },
+        mirrorTargets: { type: 'array', items: { type: 'string' }, description: 'repo mirror 대상' },
+        promoteImmediately: { type: 'boolean', description: '가능하면 즉시 vault promotion 시도' },
+        allowOverwrite: { type: 'boolean', description: '기존 target overwrite 허용' },
+      },
+      required: ['changeSummary', 'changeKind'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'knowledge.promote',
+    description: '검증된 사실이나 요약을 durable shared wiki object로 승격합니다. wiki first, mirror second 원칙을 따릅니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        artifactKind: { type: 'string', enum: ['note', 'requirement', 'ops-note', 'contract', 'retrofit', 'lesson'], description: '승격할 객체 종류' },
+        title: { type: 'string', description: '객체 제목' },
+        content: { type: 'string', description: '승격할 본문 또는 요약' },
+        sources: { type: 'array', items: { type: 'string' }, description: 'provenance source refs' },
+        confidence: { type: 'number', description: '0~1 confidence' },
+        tags: { type: 'array', items: { type: 'string' }, description: '추가 태그' },
+        owner: { type: 'string', description: 'object owner' },
+        canonicalKey: { type: 'string', description: 'stable canonical key' },
+        nextAction: { type: 'string', description: '다음 액션' },
+        supersedes: { type: 'array', items: { type: 'string' }, description: '대체하는 기존 객체 목록' },
+        validAt: { type: 'string', description: 'valid_at timestamp or date' },
+        allowOverwrite: { type: 'boolean', description: '기존 target overwrite 허용 여부' },
+      },
+      required: ['artifactKind', 'title', 'content', 'sources'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'semantic.lint.audit',
+    description: 'compiler lint, shared coverage, graph quality, runtime-vs-doc mismatch를 합친 semantic lint 결과를 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxIssues: { type: 'number', description: '최대 이슈 수' },
+        includeGraphAudit: { type: 'boolean', description: 'graph quality snapshot 포함 여부' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'workset.resolve',
+    description: '지금 중요한 object, blocker, next action, evidence를 active workset으로 묶어 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        guildId: { type: 'string', description: '길드 ID (선택)' },
+        objective: { type: 'string', description: '현재 workset objective' },
+        days: { type: 'number', description: '집계 기간 (기본: 14)' },
+        includeEvidence: { type: 'boolean', description: 'evidence artifact 포함 여부' },
+        maxArtifacts: { type: 'number', description: '최대 evidence artifact 수' },
+        maxFacts: { type: 'number', description: 'bundle compile fact 수' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'decision.trace',
+    description: '어떤 정책, 구조, 요구사항이 왜 그렇게 되었는지 evidence, contradiction, supersedes chain과 함께 추적합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject: { type: 'string', description: '추적할 정책, 구조, 요구사항, 결정 제목' },
+        targets: { type: 'array', items: { type: 'string' }, description: '관련 서비스, 문서, canonical key 힌트' },
+        sourceHints: { type: 'array', items: { type: 'string' }, description: 'obsidian|internal-docs|runtime|repo-docs 등 힌트' },
+        explicitSources: { type: 'array', items: { type: 'string' }, description: '사용자가 먼저 지정한 trigger source' },
+        maxArtifacts: { type: 'number', description: '최대 artifact 수' },
+        maxFacts: { type: 'number', description: '최대 fact 수' },
+        audience: { type: 'string', description: 'engineering|ops|leadership 등 대상 독자' },
+      },
+      required: ['subject'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'incident.graph.resolve',
+    description: 'incident를 서비스, playbook, improvement, contradiction, next action까지 연결한 compiled graph로 반환합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        incident: { type: 'string', description: 'incident title, symptom, or object identifier' },
+        serviceHints: { type: 'array', items: { type: 'string' }, description: '영향받는 서비스 힌트' },
+        sourceHints: { type: 'array', items: { type: 'string' }, description: 'obsidian|internal-docs|runtime|repo-docs 등 힌트' },
+        explicitSources: { type: 'array', items: { type: 'string' }, description: '사용자가 먼저 지정한 trigger source' },
+        maxArtifacts: { type: 'number', description: '최대 artifact 수' },
+        maxFacts: { type: 'number', description: '최대 fact 수' },
+        includeImprovements: { type: 'boolean', description: 'improvement object를 함께 찾을지 여부' },
+        audience: { type: 'string', description: 'engineering|ops|leadership 등 대상 독자' },
+      },
+      required: ['incident'],
       additionalProperties: false,
     },
   },
@@ -396,6 +595,7 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
     }
     const folder = compact(args.folder) || undefined;
     const guildId = compact(args.guildId) || 'MCP';
+    const allowHighLinkDensity = args.allowHighLinkDensity === true;
 
     const result = await writeObsidianNoteWithAdapter({
       fileName,
@@ -403,6 +603,7 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
       guildId,
       vaultPath: vaultPath || '',
       ...(folder ? { tags: [folder] } : {}),
+      ...(allowHighLinkDensity ? { allowHighLinkDensity: true } : {}),
     });
 
     if (!result) {
@@ -486,6 +687,177 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
         content,
       },
     });
+  }
+
+  // ── knowledge.bundle.compile ───────────────────────────────────────────
+  if (name === 'knowledge.bundle.compile') {
+    const goal = compact(args.goal);
+    if (!goal) return toTextResult('goal is required', true);
+
+    const result = await compileObsidianKnowledgeBundle({
+      goal,
+      domains: Array.isArray(args.domains) ? args.domains.map((value) => compact(value)).filter(Boolean) : [],
+      sourceHints: Array.isArray(args.sourceHints) ? args.sourceHints.map((value) => compact(value)).filter(Boolean) : [],
+      explicitSources: Array.isArray(args.explicitSources) ? args.explicitSources.map((value) => compact(value)).filter(Boolean) : [],
+      includeLocalOverlay: args.includeLocalOverlay === true,
+      maxArtifacts: typeof args.maxArtifacts === 'number' ? args.maxArtifacts : undefined,
+      maxFacts: typeof args.maxFacts === 'number' ? args.maxFacts : undefined,
+      audience: compact(args.audience) || undefined,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── internal.knowledge.resolve ───────────────────────────────────────
+  if (name === 'internal.knowledge.resolve') {
+    const goal = compact(args.goal);
+    if (!goal) return toTextResult('goal is required', true);
+
+    const result = await resolveInternalKnowledge({
+      goal,
+      targets: Array.isArray(args.targets) ? args.targets.map((value) => compact(value)).filter(Boolean) : [],
+      sourceHints: Array.isArray(args.sourceHints) ? args.sourceHints.map((value) => compact(value)).filter(Boolean) : [],
+      includeRelatedArtifacts: args.includeRelatedArtifacts === true,
+      maxArtifacts: typeof args.maxArtifacts === 'number' ? args.maxArtifacts : undefined,
+      maxFacts: typeof args.maxFacts === 'number' ? args.maxFacts : undefined,
+      audience: compact(args.audience) || undefined,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── requirement.compile ──────────────────────────────────────────────
+  if (name === 'requirement.compile') {
+    const objective = compact(args.objective);
+    if (!objective) return toTextResult('objective is required', true);
+
+    const result = await compileObsidianRequirement({
+      objective,
+      targets: Array.isArray(args.targets) ? args.targets.map((value) => compact(value)).filter(Boolean) : [],
+      sourceHints: Array.isArray(args.sourceHints) ? args.sourceHints.map((value) => compact(value)).filter(Boolean) : [],
+      explicitSources: Array.isArray(args.explicitSources) ? args.explicitSources.map((value) => compact(value)).filter(Boolean) : [],
+      maxArtifacts: typeof args.maxArtifacts === 'number' ? args.maxArtifacts : undefined,
+      maxFacts: typeof args.maxFacts === 'number' ? args.maxFacts : undefined,
+      audience: compact(args.audience) || undefined,
+      desiredArtifact: compact(args.desiredArtifact) || undefined,
+      promoteImmediately: args.promoteImmediately === true,
+      allowOverwrite: args.allowOverwrite === true,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── operator.snapshot ─────────────────────────────────────────────────
+  if (name === 'operator.snapshot') {
+    const result = await buildOperatorSnapshot({
+      guildId: compact(args.guildId) || undefined,
+      days: typeof args.days === 'number' ? args.days : undefined,
+      includeDocs: args.includeDocs === undefined ? true : args.includeDocs === true,
+      includeRuntime: args.includeRuntime === undefined ? true : args.includeRuntime === true,
+      includePendingIntents: args.includePendingIntents === true,
+      includeInternalKnowledge: args.includeInternalKnowledge === undefined ? true : args.includeInternalKnowledge === true,
+      internalKnowledgeGoal: compact(args.internalKnowledgeGoal) || undefined,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── workset.resolve ───────────────────────────────────────────────────
+  if (name === 'workset.resolve') {
+    const result = await buildActiveWorkset({
+      guildId: compact(args.guildId) || undefined,
+      objective: compact(args.objective) || undefined,
+      days: typeof args.days === 'number' ? args.days : undefined,
+      includeEvidence: args.includeEvidence === undefined ? true : args.includeEvidence === true,
+      maxArtifacts: typeof args.maxArtifacts === 'number' ? args.maxArtifacts : undefined,
+      maxFacts: typeof args.maxFacts === 'number' ? args.maxFacts : undefined,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── decision.trace ───────────────────────────────────────────────────
+  if (name === 'decision.trace') {
+    const subject = compact(args.subject);
+    if (!subject) return toTextResult('subject is required', true);
+
+    const result = await traceObsidianDecision({
+      subject,
+      targets: Array.isArray(args.targets) ? args.targets.map((value) => compact(value)).filter(Boolean) : [],
+      sourceHints: Array.isArray(args.sourceHints) ? args.sourceHints.map((value) => compact(value)).filter(Boolean) : [],
+      explicitSources: Array.isArray(args.explicitSources) ? args.explicitSources.map((value) => compact(value)).filter(Boolean) : [],
+      maxArtifacts: typeof args.maxArtifacts === 'number' ? args.maxArtifacts : undefined,
+      maxFacts: typeof args.maxFacts === 'number' ? args.maxFacts : undefined,
+      audience: compact(args.audience) || undefined,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── incident.graph.resolve ───────────────────────────────────────────
+  if (name === 'incident.graph.resolve') {
+    const incident = compact(args.incident);
+    if (!incident) return toTextResult('incident is required', true);
+
+    const result = await resolveObsidianIncidentGraph({
+      incident,
+      serviceHints: Array.isArray(args.serviceHints) ? args.serviceHints.map((value) => compact(value)).filter(Boolean) : [],
+      sourceHints: Array.isArray(args.sourceHints) ? args.sourceHints.map((value) => compact(value)).filter(Boolean) : [],
+      explicitSources: Array.isArray(args.explicitSources) ? args.explicitSources.map((value) => compact(value)).filter(Boolean) : [],
+      maxArtifacts: typeof args.maxArtifacts === 'number' ? args.maxArtifacts : undefined,
+      maxFacts: typeof args.maxFacts === 'number' ? args.maxFacts : undefined,
+      includeImprovements: args.includeImprovements === undefined ? true : args.includeImprovements === true,
+      audience: compact(args.audience) || undefined,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── wiki.change.capture ───────────────────────────────────────────────
+  if (name === 'wiki.change.capture') {
+    const changeSummary = compact(args.changeSummary);
+    const changeKind = compact(args.changeKind) as 'repo-memory' | 'architecture-delta' | 'service-change' | 'ops-change' | 'development-slice' | 'changelog-worthy';
+    if (!changeSummary) return toTextResult('changeSummary is required', true);
+    if (!changeKind) return toTextResult('changeKind is required', true);
+
+    const result = await captureObsidianWikiChange({
+      changeSummary,
+      changeKind,
+      changedPaths: Array.isArray(args.changedPaths) ? args.changedPaths.map((value) => compact(value)).filter(Boolean) : [],
+      validationRefs: Array.isArray(args.validationRefs) ? args.validationRefs.map((value) => compact(value)).filter(Boolean) : [],
+      mirrorTargets: Array.isArray(args.mirrorTargets) ? args.mirrorTargets.map((value) => compact(value)).filter(Boolean) : [],
+      promoteImmediately: args.promoteImmediately === true,
+      allowOverwrite: args.allowOverwrite === true,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── knowledge.promote ─────────────────────────────────────────────────
+  if (name === 'knowledge.promote') {
+    const artifactKind = compact(args.artifactKind) as 'note' | 'requirement' | 'ops-note' | 'contract' | 'retrofit' | 'lesson';
+    const title = compact(args.title);
+    const content = compact(args.content);
+    if (!artifactKind) return toTextResult('artifactKind is required', true);
+    if (!title) return toTextResult('title is required', true);
+    if (!content) return toTextResult('content is required', true);
+
+    const result = await promoteKnowledgeToObsidian({
+      artifactKind,
+      title,
+      content,
+      sources: Array.isArray(args.sources) ? args.sources.map((value) => compact(value)).filter(Boolean) : [],
+      confidence: typeof args.confidence === 'number' ? args.confidence : undefined,
+      tags: Array.isArray(args.tags) ? args.tags.map((value) => compact(value)).filter(Boolean) : [],
+      owner: compact(args.owner) || undefined,
+      canonicalKey: compact(args.canonicalKey) || undefined,
+      nextAction: compact(args.nextAction) || undefined,
+      supersedes: Array.isArray(args.supersedes) ? args.supersedes.map((value) => compact(value)).filter(Boolean) : [],
+      validAt: compact(args.validAt) || undefined,
+      allowOverwrite: args.allowOverwrite === true,
+    });
+    return toJsonResult(result);
+  }
+
+  // ── semantic.lint.audit ───────────────────────────────────────────────
+  if (name === 'semantic.lint.audit') {
+    const result = await runObsidianSemanticLintAudit({
+      maxIssues: typeof args.maxIssues === 'number' ? args.maxIssues : undefined,
+      includeGraphAudit: args.includeGraphAudit === undefined ? true : args.includeGraphAudit === true,
+    });
+    return toJsonResult(result);
   }
 
   // ── obsidian.outline ────────────────────────────────────────────────────

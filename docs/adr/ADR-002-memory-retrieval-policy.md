@@ -1,33 +1,8 @@
-# ADR-002: 메모리 회수 정책 (Hybrid Retrieval)
+# ADR-002 Memory Retrieval Policy
 
-- 상태: Accepted
-- 날짜: 2026-03-12
-
-## 배경
-
-장기기억 에이전트의 응답 품질은 회수 품질에 의해 결정된다.
-
-## 결정
-
-회수는 하이브리드 방식으로 고정한다.
-
-1. 벡터 검색: 의미 유사도 기반 후보군 확보
-2. 구조화 필터: guild_id, channel_id, role_scope, recency, confidence 필터
-3. 재정렬: 최신성 + 신뢰도 + 관리자 확정 플래그 가중치로 rerank
-
-Top-K 기본값은 8, 최대 20으로 제한한다.
-
-## 근거
-
-- 벡터 단독은 정책성 기억 회수에서 누락이 발생하기 쉽다.
-- 구조화 필터 단독은 표현 다양성을 놓치기 쉽다.
-
-## 결과
-
-- 정책/규칙 답변 안정성 향상
-- 길드별 맥락 오염 가능성 감소
-
-## 후속 작업
-
-- retrieval_debug 로그에 후보군, 최종 선택, 점수 기록
-- recall@k, citation_rate 지표 대시보드 추가
+Status: Compatibility stub (2026-04-11)
+Canonical shared wiki object: plans/decisions/ADR-002-memory-retrieval-policy.md
+Catalog entry: adr-002-memory-retrieval-policy
+Role: Repo-local compatibility mirror only. The shared Obsidian note is the semantic owner.
+Backfill note: automated repo-to-vault promotion must not overwrite from this reduced source.
+Local continuity: keep this path only during the delete-candidate grace period, and use docs/ARCHITECTURE_INDEX.md plus docs/CHANGELOG-ARCH.md for rollout context.

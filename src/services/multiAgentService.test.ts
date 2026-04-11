@@ -1,5 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const {
+  resolveTrafficRouteMock,
+  persistTrafficRoutingDecisionMock,
+  isShadowRunnerEnabledMock,
+  runShadowGraphMock,
+  getAgentGotCutoverDecisionMock,
+} = vi.hoisted(() => ({
+  resolveTrafficRouteMock: vi.fn(),
+  persistTrafficRoutingDecisionMock: vi.fn(),
+  isShadowRunnerEnabledMock: vi.fn(),
+  runShadowGraphMock: vi.fn(),
+  getAgentGotCutoverDecisionMock: vi.fn(),
+}));
+
 // ──────────────────────────────────────────────────────────
 // 의존성 모킹 (가장 먼저 선언해야 hoisting됨)
 // ──────────────────────────────────────────────────────────
@@ -30,6 +44,33 @@ vi.mock('./supabaseClient', () => ({
   getSupabaseClient: vi.fn(() => { throw new Error('SUPABASE_NOT_CONFIGURED'); }),
 }));
 
+vi.mock('./agent/agentGotCutoverService', async () => {
+  const actual = await vi.importActual<typeof import('./agent/agentGotCutoverService')>('./agent/agentGotCutoverService');
+  return {
+    ...actual,
+    getAgentGotCutoverDecision: getAgentGotCutoverDecisionMock,
+  };
+});
+
+vi.mock('./workflow/trafficRoutingService', async () => {
+  const actual = await vi.importActual<typeof import('./workflow/trafficRoutingService')>('./workflow/trafficRoutingService');
+  return {
+    ...actual,
+    TRAFFIC_ROUTING_ENABLED: true,
+    resolveTrafficRoute: resolveTrafficRouteMock,
+    persistTrafficRoutingDecision: persistTrafficRoutingDecisionMock,
+  };
+});
+
+vi.mock('./langgraph/shadowGraphRunner', async () => {
+  const actual = await vi.importActual<typeof import('./langgraph/shadowGraphRunner')>('./langgraph/shadowGraphRunner');
+  return {
+    ...actual,
+    isShadowRunnerEnabled: isShadowRunnerEnabledMock,
+    runShadowGraph: runShadowGraphMock,
+  };
+});
+
 import * as llmClient from './llmClient';
 import {
   __resetAgentRuntimeForTests,
@@ -42,14 +83,49 @@ import {
   listAgentSkills,
   listGuildAgentSessions,
   rehydrateActiveSessions,
+  resumeAgentSession,
   serializeAgentSessionForApi,
   startAgentSession,
 } from './multiAgentService';
 import { isSupabaseConfigured, getSupabaseClient } from './supabaseClient';
 import { appendTrace, createInitialLangGraphState } from './langgraph/stateContract';
 
+const buildTrafficDecision = (route: 'main' | 'shadow' | 'langgraph' = 'main') => ({
+  route,
+  reason: `test_route:${route}`,
+  gotCutoverAllowed: route !== 'main',
+  rolloutPercentage: route === 'main' ? 0 : 100,
+  stableBucket: 42,
+  shadowDivergenceRate: route === 'main' ? null : 0.05,
+  shadowQualityDelta: route === 'main' ? null : 0.1,
+  readinessRecommended: true,
+  policySnapshot: {
+    trafficRoutingMode: route,
+  },
+});
+
 beforeEach(() => {
   __resetAgentRuntimeForTests();
+  resolveTrafficRouteMock.mockReset();
+  resolveTrafficRouteMock.mockResolvedValue(buildTrafficDecision('main'));
+  persistTrafficRoutingDecisionMock.mockReset();
+  persistTrafficRoutingDecisionMock.mockResolvedValue(undefined);
+  isShadowRunnerEnabledMock.mockReset();
+  isShadowRunnerEnabledMock.mockReturnValue(false);
+  runShadowGraphMock.mockReset();
+  runShadowGraphMock.mockResolvedValue({});
+  getAgentGotCutoverDecisionMock.mockReset();
+  getAgentGotCutoverDecisionMock.mockResolvedValue({
+    guildId: 'test-guild',
+    allowed: true,
+    readinessRecommended: true,
+    rolloutPercentage: 100,
+    selectedByRollout: true,
+    reason: 'test_ready',
+    failedReasons: [],
+    evaluatedAt: '2026-04-11T00:00:00.000Z',
+    windowDays: 14,
+  });
 });
 
 // ──────────────────────────────────────────────────────────
@@ -163,6 +239,11 @@ describe('startAgentSession', () => {
     expect(session.requestedBy).toBe('user-test-1');
     expect(session.goal).toBe('비트코인 시장 분석을 해줘');
     expect(session.status).toBe('queued');
+    expect(session.trafficRoute).toBe('main');
+    expect(session.executionEngine).toBe('main');
+    expect(session.trafficRoutingDecision).toBeNull();
+    expect(session.graphCheckpoint).toBeNull();
+    expect(session.hitlState).toBeNull();
     expect(Array.isArray(session.steps)).toBe(true);
     expect(session.steps.length).toBeGreaterThan(0);
   });
@@ -428,6 +509,80 @@ describe('executeSession integration path', () => {
     expect(completed?.status).toBe('completed');
     // shadowGraph is released after terminal persistence for memory optimization
     expect(completed?.shadowGraph).toBeNull();
+  });
+
+  it('langgraph route 세션은 primary graph engine으로 실행하고 최종 라우팅 결정을 기록한다', async () => {
+    resolveTrafficRouteMock.mockResolvedValue(buildTrafficDecision('langgraph'));
+
+    const created = startAgentSession({
+      guildId: 'guild-langgraph-primary',
+      requestedBy: 'user-langgraph-primary',
+      goal: 'LangGraph primary 실행 경로 검증',
+      skillId: 'ops-execution',
+      priority: 'balanced',
+      isAdmin: true,
+    });
+
+    for (let i = 0; i < 6; i += 1) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+    }
+
+    const completed = getAgentSession(created.id);
+    expect(completed?.status).toBe('completed');
+    expect(completed?.trafficRoute).toBe('langgraph');
+    expect(completed?.executionEngine).toBe('langgraphjs');
+    expect(persistTrafficRoutingDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: created.id,
+      guildId: 'guild-langgraph-primary',
+      decision: expect.objectContaining({
+        route: 'langgraph',
+      }),
+    }));
+    expect(runShadowGraphMock).not.toHaveBeenCalled();
+  });
+
+  it('precise full_review langgraph 세션은 HITL에서 pause 후 resume로 완료된다', async () => {
+    resolveTrafficRouteMock.mockResolvedValue(buildTrafficDecision('langgraph'));
+
+    const created = startAgentSession({
+      guildId: 'guild-langgraph-hitl',
+      requestedBy: 'user-langgraph-hitl',
+      goal: '운영 리스크를 포함한 상세 실행 계획을 작성해줘',
+      priority: 'precise',
+      isAdmin: true,
+    });
+
+    for (let i = 0; i < 6; i += 1) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+    }
+
+    const paused = getAgentSession(created.id);
+    expect(paused?.status).toBe('queued');
+    expect(paused?.executionEngine).toBe('langgraphjs');
+    expect(paused?.graphCheckpoint?.resumable).toBe(true);
+    expect(paused?.graphCheckpoint?.nextNode).toBe('hitl_review');
+    expect(paused?.hitlState?.awaitingInput).toBe(true);
+    expect(paused?.hitlState?.gateNode).toBe('hitl_review');
+
+    const resume = resumeAgentSession({
+      sessionId: created.id,
+      decision: 'approve',
+      note: '계속 진행',
+    });
+    expect(resume.ok).toBe(true);
+
+    for (let i = 0; i < 6; i += 1) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+    }
+
+    const completed = getAgentSession(created.id);
+    expect(completed?.status).toBe('completed');
+    expect(completed?.hitlState?.awaitingInput).toBe(false);
+    expect(completed?.hitlState?.decision).toBe('approve');
+    expect(completed?.graphCheckpoint).toBeNull();
   });
 });
 

@@ -21,7 +21,7 @@ import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv 
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import { TtlCache } from '../../utils/ttlCache';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';
-import type { AgentGotCutoverDecision } from '../agent/agentGotCutoverService';
+import { getStableRolloutBucket, type AgentGotCutoverDecision } from '../agent/agentGotCutoverService';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 // ──── Configuration ──────────────────────────────────────────────────────────
@@ -64,6 +64,12 @@ export type ShadowDivergenceStats = {
   windowHours: number;
 };
 
+type ShadowRoutingStatsRow = {
+  diverge_at_index: number | null;
+  quality_delta: number | null;
+  shadow_error?: string | null;
+};
+
 // ──── Rolling Shadow Stats Cache ─────────────────────────────────────────────
 
 const statsCache = new TtlCache<ShadowDivergenceStats>(100);
@@ -92,7 +98,7 @@ export const getShadowDivergenceStatsForRouting = async (
 
     const { data, error } = await client
       .from('shadow_graph_divergence_logs')
-      .select('diverge_at_index, quality_delta')
+      .select('diverge_at_index, quality_delta, shadow_error')
       .eq('guild_id', guildId)
       .gte('created_at', windowStart)
       .order('created_at', { ascending: false })
@@ -103,9 +109,13 @@ export const getShadowDivergenceStatsForRouting = async (
       return fallback;
     }
 
-    const total = data.length;
-    const diverged = data.filter((row) => row.diverge_at_index !== null).length;
-    const deltas = data
+    const rows = (data || []) as ShadowRoutingStatsRow[];
+    const total = rows.length;
+    const diverged = rows.filter((row) => {
+      const hasError = Boolean(String(row.shadow_error || '').trim());
+      return row.diverge_at_index !== null || hasError;
+    }).length;
+    const deltas = rows
       .map((row) => row.quality_delta as number | null)
       .filter((d): d is number => d !== null && Number.isFinite(d));
 
@@ -132,6 +142,7 @@ export const resolveTrafficRoute = async (
   input: TrafficRoutingInput,
 ): Promise<TrafficRoutingDecision> => {
   const { sessionId, guildId, gotCutoverDecision } = input;
+  const stableBucket = getStableRolloutBucket(`${guildId}:${sessionId}`);
 
   // Gate 0: Feature flag
   if (!TRAFFIC_ROUTING_ENABLED) {
@@ -140,6 +151,7 @@ export const resolveTrafficRoute = async (
       reason: 'traffic_routing_disabled',
       gotCutoverDecision,
       stats: null,
+      stableBucket,
     });
   }
 
@@ -150,6 +162,7 @@ export const resolveTrafficRoute = async (
       reason: `got_dashboard_not_ready:${gotCutoverDecision.failedReasons.join(',')}`,
       gotCutoverDecision,
       stats: null,
+      stableBucket,
     });
   }
 
@@ -160,6 +173,7 @@ export const resolveTrafficRoute = async (
       reason: 'rollout_holdout',
       gotCutoverDecision,
       stats: null,
+      stableBucket,
     });
   }
 
@@ -172,6 +186,7 @@ export const resolveTrafficRoute = async (
       reason: `insufficient_shadow_samples:${stats.totalSamples}/${TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES}`,
       gotCutoverDecision,
       stats,
+      stableBucket,
     });
   }
 
@@ -181,6 +196,7 @@ export const resolveTrafficRoute = async (
       reason: `high_divergence_rate:${stats.divergenceRate.toFixed(3)}>${TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD}`,
       gotCutoverDecision,
       stats,
+      stableBucket,
     });
   }
 
@@ -190,6 +206,7 @@ export const resolveTrafficRoute = async (
       reason: `low_quality_delta:${stats.avgQualityDelta.toFixed(3)}<${TRAFFIC_ROUTING_QUALITY_DELTA_THRESHOLD}`,
       gotCutoverDecision,
       stats,
+      stableBucket,
     });
   }
 
@@ -200,6 +217,7 @@ export const resolveTrafficRoute = async (
     reason: `all_gates_passed:mode=${TRAFFIC_ROUTING_MODE}`,
     gotCutoverDecision,
     stats,
+    stableBucket,
   });
 };
 
@@ -210,15 +228,16 @@ const buildDecision = (params: {
   reason: string;
   gotCutoverDecision: AgentGotCutoverDecision;
   stats: ShadowDivergenceStats | null;
+  stableBucket: number;
 }): TrafficRoutingDecision => {
-  const { route, reason, gotCutoverDecision, stats } = params;
+  const { route, reason, gotCutoverDecision, stats, stableBucket } = params;
 
   return {
     route,
     reason,
     gotCutoverAllowed: gotCutoverDecision.allowed,
     rolloutPercentage: gotCutoverDecision.rolloutPercentage,
-    stableBucket: 0, // Populated by caller from cutover service
+    stableBucket,
     shadowDivergenceRate: stats?.divergenceRate ?? null,
     shadowQualityDelta: stats?.avgQualityDelta ?? null,
     readinessRecommended: gotCutoverDecision.readinessRecommended,

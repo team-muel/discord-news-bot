@@ -20,6 +20,13 @@ const buildLockFilePath = (vaultRoot: string, key: string): string => {
   return path.join(safeRoot, '.muel-locks', `${digest}.lock`);
 };
 
+const hasFsErrorCode = (error: unknown, code: string): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  return 'code' in error && String((error as { code?: unknown }).code || '') === code;
+};
+
 const releaseLock = async (lockPath: string): Promise<void> => {
   try {
     await fs.rm(lockPath, { force: true });
@@ -60,8 +67,8 @@ export const withObsidianFileLock = async <T>(params: {
         await handle.close();
       }
       break;
-    } catch (error: any) {
-      if (error?.code !== 'EEXIST') {
+    } catch (error: unknown) {
+      if (!hasFsErrorCode(error, 'EEXIST')) {
         throw error;
       }
 

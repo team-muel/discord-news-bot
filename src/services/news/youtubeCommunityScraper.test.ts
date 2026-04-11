@@ -145,6 +145,51 @@ describe('youtubeCommunityScraper', () => {
       const result = await scrapeLatestCommunityPostByUrl('https://evil.com/community', 5000);
       expect(result).toBeNull();
     });
+
+    it('accepts mobile YouTube community URLs', async () => {
+      const ytData = {
+        contents: {
+          twoColumnBrowseResultsRenderer: {
+            tabs: [{
+              tabRenderer: {
+                content: {
+                  sectionListRenderer: {
+                    contents: [{
+                      itemSectionRenderer: {
+                        contents: [{
+                          backstagePostThreadRenderer: {
+                            post: {
+                              backstagePostRenderer: {
+                                postId: 'UgkxMobile123',
+                                contentText: { runs: [{ text: 'Mobile community post' }] },
+                                publishedTimeText: { runs: [{ text: '3 hours ago' }] },
+                                authorText: { runs: [{ text: 'MobileChannel' }] },
+                              },
+                            },
+                          },
+                        }],
+                      },
+                    }],
+                  },
+                },
+              },
+            }],
+          },
+        },
+      };
+
+      mockFetchWithTimeout.mockResolvedValueOnce({
+        ok: true,
+        text: async () => `<html><body><script>window["ytInitialData"] = ${JSON.stringify(ytData)};</script></body></html>`,
+      });
+
+      const { scrapeLatestCommunityPostByUrl } = await import('./youtubeCommunityScraper');
+      const result = await scrapeLatestCommunityPostByUrl('https://m.youtube.com/channel/UCsXVk37bltHxD1rDPwtNM8Q/community', 5000);
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('UgkxMobile123');
+      expect(result!.title).toBe('Mobile community post');
+    });
   });
 
   // ── scrapeLatestCommunityPostByInnerTube ─────────────────────────────
@@ -276,6 +321,73 @@ describe('youtubeCommunityScraper', () => {
       expect(result!.title).toBe('InnerTube로 가져온 포스트입니다!');
       expect(result!.author).toBe('테스트채널');
       expect(result!.link).toBe('https://www.youtube.com/post/UgkxInnerTube123');
+    });
+
+    it('extracts shared posts even when the content tab is not marked selected', async () => {
+      mockFetchWithTimeout.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          contents: {
+            twoColumnBrowseResultsRenderer: {
+              tabs: [{
+                tabRenderer: {
+                  endpoint: {
+                    commandMetadata: { webCommandMetadata: { url: '/@test/posts' } },
+                    browseEndpoint: { browseId: 'UCsXVk37bltHxD1rDPwtNM8Q', params: 'EgVwb3N0cw%3D%3D' },
+                  },
+                },
+              }],
+            },
+          },
+        }),
+      });
+
+      mockFetchWithTimeout.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          contents: {
+            twoColumnBrowseResultsRenderer: {
+              tabs: [{
+                tabRenderer: {
+                  content: {
+                    sectionListRenderer: {
+                      contents: [{
+                        itemSectionRenderer: {
+                          contents: [{
+                            backstagePostThreadRenderer: {
+                              post: {
+                                sharedPostRenderer: {
+                                  navigationEndpoint: {
+                                    commandMetadata: {
+                                      webCommandMetadata: { url: '/post/UgkxSharedPost123' },
+                                    },
+                                  },
+                                  contentText: { runs: [{ text: 'Shared community post' }] },
+                                  publishedTimeText: { runs: [{ text: '방금 전' }] },
+                                  authorText: { runs: [{ text: '공유채널' }] },
+                                },
+                              },
+                            },
+                          }],
+                        },
+                      }],
+                    },
+                  },
+                },
+              }],
+            },
+          },
+        }),
+      });
+
+      const { scrapeLatestCommunityPostByInnerTube } = await import('./youtubeCommunityScraper');
+      const result = await scrapeLatestCommunityPostByInnerTube('UCsXVk37bltHxD1rDPwtNM8Q', 10000);
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('UgkxSharedPost123');
+      expect(result!.title).toBe('Shared community post');
+      expect(result!.author).toBe('공유채널');
+      expect(result!.link).toBe('https://www.youtube.com/post/UgkxSharedPost123');
     });
 
     it('makes two InnerTube requests (step-1 + step-2)', async () => {

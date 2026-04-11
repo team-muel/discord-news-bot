@@ -27,6 +27,11 @@ const truncate = (input: string, maxLength: number): string => {
   return `${text.slice(0, Math.max(1, maxLength - 1))}...`;
 };
 
+const isYouTubeHost = (hostname: string): boolean => {
+  const normalized = String(hostname || '').replace(/^www\./, '').toLowerCase();
+  return normalized === 'youtube.com' || normalized.endsWith('.youtube.com');
+};
+
 const deriveCommunityPostTitle = (content: string, fallback: string): string => {
   const normalized = String(content || '').replace(/\r/g, '').trim();
   if (!normalized) {
@@ -237,8 +242,7 @@ export const scrapeLatestCommunityPostByUrl = async (
     return null;
   }
 
-  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-  if (host !== 'youtube.com') {
+  if (!isYouTubeHost(parsed.hostname)) {
     return null;
   }
 
@@ -358,17 +362,22 @@ const extractPostFromTabData = (data: Record<string, unknown>): ScrapedCommunity
   const tabs = getNested(data, ['contents', 'twoColumnBrowseResultsRenderer', 'tabs']);
   if (!Array.isArray(tabs)) return null;
 
-  for (const tab of tabs) {
-    const tabRenderer = getNested(tab, ['tabRenderer']) as Record<string, unknown> | undefined;
-    if (!tabRenderer?.content) continue;
-    const selected = tabRenderer.selected;
-    if (!selected) continue;
+  const candidateTabs = tabs
+    .map((tab) => getNested(tab, ['tabRenderer']) as Record<string, unknown> | undefined)
+    .filter((tabRenderer): tabRenderer is Record<string, unknown> => Boolean(tabRenderer?.content));
+
+  const prioritizedTabs = candidateTabs.some((tabRenderer) => Boolean(tabRenderer.selected))
+    ? candidateTabs.filter((tabRenderer) => Boolean(tabRenderer.selected))
+    : candidateTabs;
+
+  for (const tabRenderer of prioritizedTabs) {
+    if (!tabRenderer.content) continue;
 
     const renderer = findFirstPostRenderer(tabRenderer.content);
     if (!renderer) continue;
 
-    const postId = getNested(renderer, ['postId']);
-    if (typeof postId !== 'string' || !postId.trim()) continue;
+    const postId = extractPostId(renderer, '');
+    if (!postId) continue;
 
     const rawContent = getRunsText(getNested(renderer, ['contentText']));
     const content = decodeHtml(rawContent || '');
@@ -377,10 +386,10 @@ const extractPostFromTabData = (data: Record<string, unknown>): ScrapedCommunity
     const published = decodeHtml(getRunsText(getNested(renderer, ['publishedTimeText'])));
 
     return {
-      id: postId.trim(),
+      id: postId,
       title: title || '새 커뮤니티 게시글',
       content,
-      link: `https://www.youtube.com/post/${postId.trim()}`,
+      link: `https://www.youtube.com/post/${postId}`,
       published,
       author: author || 'YouTube Channel',
     };

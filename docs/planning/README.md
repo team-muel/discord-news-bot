@@ -2,11 +2,12 @@
 
 ## 상태
 
-Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 마일스톤 승격 대기
+현재 실행 상태와 Active WIP는 `EXECUTION_BOARD.md`에서만 판정한다.
+이 문서는 planning index와 ownership map을 제공하며, point-in-time milestone 상태를 자체적으로 들고 있지 않는다.
 
 ## Daily Operating Set
 
-매일 열어야 하는 문서는 아래 4개로 제한한다. (현재 Active WIP 없음)
+매일 열어야 하는 문서는 아래 4개로 제한한다. Active WIP 판단은 `EXECUTION_BOARD.md`만 따른다.
 
 1. `UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` — 방향, 우선순위, milestone ID
 2. `EXECUTION_BOARD.md` — 현재 활성 항목만 관리
@@ -23,6 +24,35 @@ Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 
 4. `../RUNBOOK_MUEL_PLATFORM.md` — operator procedure and execution
 5. `PLATFORM_CONTROL_TOWER.md` — tie-breaker for document ownership and canonical scope
 
+## Autopilot Convergence Track
+
+현재의 cross-cut execution은 아래 4개 축을 하나의 spine으로 묶어서 진행한다.
+
+1. ownership split: `MANAGED_AGENTS_FOUR_LAYER_MODEL.md`
+2. semantic owner + repo shrink policy: `REPO_DOC_EXTERNALIZATION_PLAN.md`
+3. human-visible provenance contract: `mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`, `mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`
+4. runtime alignment gate: `knowledge.bundle.compile`와 `requirement.compile`은 explicit trigger source를 반환 artifact와 promoted note에 남겨야 한다.
+
+이 축은 새 planning 문서를 계속 늘리지 않고, 본 README와 canonical execution 문서에서만 추적한다.
+
+## 2026-04-11 Closure Rule
+
+아래 문서군은 새 execution board가 아니라 reference/control 문서로 닫는다.
+
+- `MANAGED_AGENTS_FOUR_LAYER_MODEL.md`
+- `REPO_DOC_EXTERNALIZATION_PLAN.md`
+- `mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`
+- `mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`
+- `mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md`
+- `OBSIDIAN_SEED_OBJECTS_PRIORITY.md`
+
+운영 규칙:
+
+1. 위 문서의 `Status: Proposed`는 실행 대기 상태가 아니라 reference maturity 표시로 해석한다.
+2. 후속 실행 상태는 `EXECUTION_BOARD.md`, `docs/CHANGELOG-ARCH.md`, development slice, 그리고 backfill catalog coverage에서만 추적한다.
+3. 위 문서군에서 새 WIP를 만들지 말고, 필요한 변경은 canonical control core 또는 shared wiki object로 바로 흡수한다.
+4. `LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md`만 implementation-coupled migration note로 남기되, active 승격 판단은 여전히 `EXECUTION_BOARD.md` 기준으로만 한다.
+
 주의:
 
 - `PLATFORM_CONTROL_TOWER.md`는 매일 읽는 실행 문서가 아니라 문서 충돌 시에만 여는 조정 레이어다.
@@ -34,10 +64,16 @@ Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 
 - `../RUNTIME_NAME_AND_SURFACE_MATRIX.md`: 이름 충돌 해석과 실제 런타임 surface availability의 정본
 - `../ARCHITECTURE_INDEX.md`: 현재 코드와 런타임 경계의 정본
 - `../OPERATIONS_24_7.md`: 운영 절차, 배포, 상태 확인의 정본
+- `MANAGED_AGENTS_FOUR_LAYER_MODEL.md`: brain / hands / session / semantic owner 역할 분리의 정본
 - `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`: 옵시디언 중심 운영체계 목표 상태의 정본
 - `OBSIDIAN_OBJECT_MODEL.md`: 볼트 객체 스키마의 정본
 - `OBSIDIAN_TRANSITION_PLAN.md`: 현행 구조에서 목표 상태로 가는 이행 계획의 정본
 - `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`: repo 전반에 흩어진 개발 과정과 cross-repo 맥락을 wiki object로 수렴하는 규칙의 정본
+- `mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`: shared MCP와 shared Obsidian을 위한 고수준 지식 계약의 정본
+- `mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`: `knowledge.bundle.compile` 세부 계약의 정본
+- `mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md`: Obsidian/MCP leverage 우선순위의 정본
+- `OBSIDIAN_SEED_OBJECTS_PRIORITY.md`: shared wiki seed object 우선순위의 정본
+- `REPO_DOC_EXTERNALIZATION_PLAN.md`: planning 과밀도 축소, shared Obsidian externalization, stub conversion, delete-ready gate의 정본
 - `LOCAL_COLLAB_AGENT_WORKFLOW.md`: 로컬 IDE 협업 규칙과 handoff 계약의 정본
 - `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`: 향후 로컬 외부 도구 통합 설계의 정본
 - `EXTERNAL_TOOL_INTEGRATION_PLAN.md`: NVIDIA OpenShell/NemoClaw/OpenClaw/Nemotron 실제 외부 도구 통합 계획
@@ -66,7 +102,10 @@ Phase 2 Active (2026-04-04) — M-15 Pluggable Adapter Framework 완료, 다음 
 - OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md
 - OBSIDIAN_OBJECT_MODEL.md
 - OBSIDIAN_TRANSITION_PLAN.md
+- MANAGED_AGENTS_FOUR_LAYER_MODEL.md
 - OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md
+- OBSIDIAN_SEED_OBJECTS_PRIORITY.md
+- REPO_DOC_EXTERNALIZATION_PLAN.md
 - contexts/team-muel_discord-news-bot.md
 - development/2026-04-10_obsidian-development-archaeology-wikiization.md
 - GCP_OPENCODE_WORKER_VM_DEPLOY.md
@@ -185,14 +224,28 @@ Moved to [docs/archive/](../archive/README.md).
 - `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`
 - `LOCAL_FIRST_HYBRID_AUTONOMY.md`
 - `REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
+- `GCP_OSS_INTEGRATION_BLUEPRINT.md`
 - `OPENCODE_EXECUTOR_MIN_SPEC.md`
+
+### Autonomy Strategy Reference
+
+- `AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`
 
 ### Obsidian Operating Model Reference
 
 - `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`
 - `OBSIDIAN_OBJECT_MODEL.md`
 - `OBSIDIAN_TRANSITION_PLAN.md`
+- `MANAGED_AGENTS_FOUR_LAYER_MODEL.md`
 - `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`
+- `OBSIDIAN_SEED_OBJECTS_PRIORITY.md`
+- `REPO_DOC_EXTERNALIZATION_PLAN.md`
+
+### MCP Knowledge Tooling Reference
+
+- `mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`
+- `mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`
+- `mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md`
 
 ### Development Archaeology Seed Objects
 

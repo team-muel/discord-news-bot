@@ -32,9 +32,88 @@ type MemoryHintCandidate = {
   ownerUserId: string;
   tier: string;
   linkCount: number;
+  tags: string[];
 };
 
+type GuildLoreDocRow = {
+  title: string | null;
+  summary: string | null;
+  content: string | null;
+  updated_at: string | null;
+};
+
+type MemorySourceRow = {
+  memory_item_id: string | null;
+};
+
+type MemorySearchRow = Record<string, unknown>;
+
+const MARKET_GOAL_TERMS = [
+  'market', 'markets', 'macro', 'investment', 'investing', 'stock', 'stocks',
+  'cpi', 'inflation', 'fomc', 'bond', 'bonds', 'nasdaq', 's&p', 's&p500', 'dow', 'russell',
+  '시장', '증시', '거시', '투자', '주식', '채권', '금리', '물가', '인플레이션', '국채', '나스닥', '다우', '러셀',
+] as const;
+
+const MARKET_SOURCE_TAGS = new Set(['youtube', 'subscription', 'posts', 'community-post']);
+const MARKET_SOURCE_BOOST = 0.06;
+
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+
+const normalizeTagList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((tag) => String(tag || '').trim().toLowerCase()).filter(Boolean);
+  }
+  return String(value || '')
+    .split(',')
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const getMemorySearchRowId = (row: MemorySearchRow): string => String(row.id || '').trim();
+
+const normalizeGuildLoreDocRow = (row: GuildLoreDocRow): string => {
+  const title = toSingleLine(row.title || 'lore');
+  const summary = toSingleLine(row.summary || row.content || '').slice(0, 220);
+  return summary ? `${title}: ${summary}` : title;
+};
+
+const normalizeMemoryHintCandidate = (
+  row: MemorySearchRow,
+  sourceCount: number,
+): MemoryHintCandidate | null => {
+  const id = getMemorySearchRowId(row);
+  const type = toSingleLine(row.type || 'memory');
+  const title = toSingleLine(row.title || row.summary || '').slice(0, 80);
+  const body = toSingleLine(row.summary || row.content || '').slice(0, 220);
+  const numericConfidence = Number(row.confidence ?? 0.5);
+  const confidence = Number.isFinite(numericConfidence) ? clamp01(numericConfidence) : 0.5;
+  const confidenceLabel = confidence.toFixed(2);
+  const pinned = Boolean(row.pinned);
+  const pinnedMark = pinned ? ' pinned' : '';
+  const ownerUserId = String(row.owner_user_id || '').trim();
+  const updatedAt = String(row.updated_at || '').trim();
+  const tags = normalizeTagList(row.tags);
+  const poison = assessMemoryPoisonRisk({
+    title,
+    summary: String(row.summary || ''),
+    content: String(row.content || ''),
+  });
+
+  if (!pinned && (poison.blocked || confidence < MEMORY_HINT_MIN_CONFIDENCE)) {
+    return null;
+  }
+
+  return {
+    text: `[memory:${id}${pinnedMark}] (${type}, conf=${confidenceLabel}, src=${sourceCount}) ${title ? `${title}: ` : ''}${body}`,
+    confidence,
+    pinned,
+    updatedAt,
+    ownerUserId,
+    tier: String(row.tier || 'raw'),
+    linkCount: 0,
+    tags,
+  };
+};
 
 const sanitizeUntrustedText = (value: unknown, maxLen = OBSIDIAN_INPUT_MAX_LENGTH): string => {
   const normalized = String(value || '')
@@ -112,6 +191,22 @@ const safeGoalTerms = (goal: string): string[] =>
     .filter((term) => term.length >= 2 && !term.includes('_'))
     .slice(0, 6);
 
+const isMarketGoal = (goal: string): boolean => {
+  const normalizedGoal = sanitizeUntrustedText(goal, 480).toLowerCase();
+  return MARKET_GOAL_TERMS.some((term) => normalizedGoal.includes(term));
+};
+
+const marketSourceBoost = (goal: string, tags: string[]): number => {
+  if (!isMarketGoal(goal)) {
+    return 0;
+  }
+  const matchedTags = tags.filter((tag) => MARKET_SOURCE_TAGS.has(tag)).length;
+  if (matchedTags < 3) {
+    return 0;
+  }
+  return MARKET_SOURCE_BOOST;
+};
+
 const readObsidianLore = async (params: { guildId: string; goal: string }): Promise<string[]> => {
   const safeGuildId = sanitizeGuildId(params.guildId);
   const safeGoal = sanitizeUntrustedText(params.goal);
@@ -164,11 +259,9 @@ const readSupabaseLore = async (guildId: string): Promise<string[]> => {
       return [];
     }
 
-    return (data || []).map((row: any) => {
-      const title = toSingleLine(row?.title || 'lore');
-      const summary = toSingleLine(row?.summary || row?.content || '').slice(0, 220);
-      return summary ? `${title}: ${summary}` : title;
-    }).filter(Boolean);
+    return ((data || []) as GuildLoreDocRow[])
+      .map(normalizeGuildLoreDocRow)
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -189,7 +282,7 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<M
       query: queryText,
       type: null,
       limit: 12,
-      extraSelect: 'owner_user_id, priority',
+      extraSelect: 'owner_user_id, priority, tags',
       flatSearch: !MEMORY_TIERED_SEARCH_ENABLED,
     });
 
@@ -197,7 +290,7 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<M
       return [];
     }
 
-    const ids = items.map((item: any) => String(item.id || '')).filter(Boolean);
+    const ids = items.map((item) => getMemorySearchRowId(item)).filter(Boolean);
     const sourceCountById = new Map<string, number>();
 
     if (ids.length > 0) {
@@ -207,46 +300,16 @@ const readSupabaseMemoryItems = async (guildId: string, goal: string): Promise<M
         .in('memory_item_id', ids)
         .limit(120);
 
-      for (const row of (sourceRows || []) as Array<any>) {
-        const id = String(row?.memory_item_id || '');
+      for (const row of (sourceRows || []) as MemorySourceRow[]) {
+        const id = String(row.memory_item_id || '');
         if (!id) continue;
         sourceCountById.set(id, (sourceCountById.get(id) || 0) + 1);
       }
     }
 
-    return items.map((row: any) => {
-      const id = String(row?.id || '');
-      const type = toSingleLine(row?.type || 'memory');
-      const title = toSingleLine(row?.title || row?.summary || '').slice(0, 80);
-      const body = toSingleLine(row?.summary || row?.content || '').slice(0, 220);
-      const conf = Number(row?.confidence ?? 0.5);
-      const confidenceNumeric = Number.isFinite(conf) ? clamp01(conf) : 0.5;
-      const confidence = Number.isFinite(conf) ? conf.toFixed(2) : '0.50';
-      const pinnedMark = row?.pinned ? ' pinned' : '';
-      const pinned = Boolean(row?.pinned);
-      const sourceCount = sourceCountById.get(id) || 0;
-      const ownerUserId = String(row?.owner_user_id || '').trim();
-      const updatedAt = String(row?.updated_at || '').trim();
-      const poison = assessMemoryPoisonRisk({
-        title,
-        summary: String(row?.summary || ''),
-        content: String(row?.content || ''),
-      });
-
-      if (!row?.pinned && (poison.blocked || Number(conf || 0) < MEMORY_HINT_MIN_CONFIDENCE)) {
-        return null;
-      }
-
-      return {
-        text: `[memory:${id}${pinnedMark}] (${type}, conf=${confidence}, src=${sourceCount}) ${title ? `${title}: ` : ''}${body}`,
-        confidence: confidenceNumeric,
-        pinned,
-        updatedAt,
-        ownerUserId,
-        tier: String(row?.tier || 'raw'),
-        linkCount: 0, // populated in batch below
-      };
-    }).filter(Boolean) as MemoryHintCandidate[];
+    return items
+      .map((row) => normalizeMemoryHintCandidate(row, sourceCountById.get(getMemorySearchRowId(row)) || 0))
+      .filter((item): item is MemoryHintCandidate => item !== null);
   } catch {
     return [];
   }
@@ -402,6 +465,7 @@ export const buildAgentMemoryHints = async (params: {
     const pinnedBoost = item.pinned ? 0.08 : 0;
     const tierBoost = tierWeight(item.tier);
     const graphBoost = linkBonus(item.linkCount);
+    const sourceBoost = marketSourceBoost(safeGoal, item.tags);
 
     // User affinity: cosine similarity between user embedding and memory embedding
     // Weights redistributed: confidence 0.35, recency 0.25, social 0.15, userAffinity 0.10
@@ -420,7 +484,8 @@ export const buildAgentMemoryHints = async (params: {
       (userAffinityScore * 0.10) +
       pinnedBoost +
       tierBoost +
-      graphBoost,
+      graphBoost +
+      sourceBoost,
     );
     const label = `${item.text} [rank=${rank.toFixed(2)} rel=${socialScore.toFixed(2)} recency=${recencyScore.toFixed(2)}${hasUserAffinity ? ` affinity=${userAffinityScore.toFixed(2)}` : ''}]`;
     allScoredHints.push({ text: label, rank, source: 'memory' });

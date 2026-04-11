@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { HealthResponse } from '../contracts/bot';
+import type { BotStatusGrade, HealthResponse } from '../contracts/bot';
 import { getBotRuntimeSnapshot } from '../bot';
 import { START_BOT } from '../config';
 import { getAutomationRuntimeSnapshot, isAutomationEnabled } from '../services/automationBot';
@@ -14,6 +14,28 @@ export type RuntimeReadinessState = {
   botReady: boolean;
   automationEnabled: boolean;
   automationReady: boolean;
+};
+
+export const summarizeRuntimeHealth = (state: RuntimeReadinessState): {
+  status: HealthResponse['status'];
+  botStatusGrade: BotStatusGrade;
+  anyEnabled: boolean;
+  healthy: boolean;
+  allEnabledHealthy: boolean;
+} => {
+  const botHealthy = state.botEnabled && state.botReady;
+  const automationHealthy = state.automationEnabled && state.automationReady;
+  const healthy = botHealthy || automationHealthy;
+  const allEnabledHealthy = (!state.botEnabled || botHealthy) && (!state.automationEnabled || automationHealthy);
+  const anyEnabled = state.botEnabled || state.automationEnabled;
+
+  return {
+    status: anyEnabled && allEnabledHealthy ? 'ok' : 'degraded',
+    botStatusGrade: !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline',
+    anyEnabled,
+    healthy,
+    allEnabledHealthy,
+  };
 };
 
 export const evaluateRuntimeReadiness = (state: RuntimeReadinessState) => {
@@ -96,13 +118,12 @@ export function createHealthRouter(): Router {
 
     const botEnabled = START_BOT;
     const automationEnabled = isAutomationEnabled();
-    const botHealthy = botEnabled && bot.ready;
-    const automationHealthy = automationEnabled && automation.healthy;
-    const healthy = botHealthy || automationHealthy;
-    const allEnabledHealthy = (!botEnabled || botHealthy) && (!automationEnabled || automationHealthy);
-    const anyEnabled = botEnabled || automationEnabled;
-    const status = allEnabledHealthy ? 'ok' : 'degraded';
-    const botStatusGrade = !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline';
+    const runtimeHealth = summarizeRuntimeHealth({
+      botEnabled,
+      botReady: bot.ready,
+      automationEnabled,
+      automationReady: automation.healthy,
+    });
 
     // n8n status: adapter availability + delegation config
     let n8nStatus: {
@@ -159,8 +180,8 @@ export function createHealthRouter(): Router {
     }
 
     const payload: HealthResponse = {
-      status,
-      botStatusGrade,
+      status: runtimeHealth.status,
+      botStatusGrade: runtimeHealth.botStatusGrade,
       uptimeSec: Math.floor(process.uptime()),
       bot,
       automation,

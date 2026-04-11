@@ -30,6 +30,8 @@ vi.mock('../services/obsidian/router', () => ({
   }),
 }));
 
+import { writeObsidianNoteWithAdapter } from '../services/obsidian/router';
+
 vi.mock('../services/obsidian/obsidianRagService', () => ({
   queryObsidianRAG: vi.fn().mockResolvedValue({
     answer: 'The architecture uses graph-first retrieval.',
@@ -172,10 +174,209 @@ vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
       generated: false,
     }],
   }),
+  compileObsidianKnowledgeBundle: vi.fn().mockResolvedValue({
+    summary: 'Compiled 2 artifacts for operator routing.',
+    facts: [{
+      id: 'fact-1',
+      statement: 'Shared knowledge questions should try shared MCP first.',
+      confidence: 0.94,
+      sourceRefs: ['repo:config/runtime/knowledge-backfill-catalog.json'],
+      freshness: 'current',
+      factType: 'decision',
+    }],
+    artifacts: [{
+      id: 'artifact-1',
+      artifactType: 'obsidian-note',
+      title: 'Shared Knowledge Routing',
+      locator: 'ops/control-tower/BLUEPRINT.md',
+      whyIncluded: 'start-here canonical artifact',
+      confidence: 0.95,
+      preview: '# Shared Knowledge Routing',
+      sourceRole: 'supporting',
+    }],
+    gaps: [],
+    recommendedPromotions: [],
+    resolutionTrace: ['shared-obsidian'],
+    confidence: 0.91,
+    inputs: {
+      goal: 'operator routing',
+      domains: ['architecture'],
+      sourceHints: ['obsidian'],
+      explicitSources: [],
+      includeLocalOverlay: false,
+      audience: 'engineering',
+    },
+  }),
+  resolveInternalKnowledge: vi.fn().mockResolvedValue({
+    summary: 'Resolved 2 internal knowledge artifacts via shared-mcp-internal.',
+    facts: [{
+      id: 'fact-1',
+      statement: 'Shared MCP internal surfaces should be preferred before repo-local archaeology.',
+      confidence: 0.93,
+      sourceRefs: ['repo:config/runtime/knowledge-backfill-catalog.json'],
+      freshness: 'current',
+      factType: 'decision',
+    }],
+    artifacts: [{
+      id: 'artifact-1',
+      artifactType: 'obsidian-note',
+      title: 'Shared Knowledge Routing',
+      locator: 'ops/control-tower/BLUEPRINT.md',
+      whyIncluded: 'start-here canonical artifact',
+      confidence: 0.95,
+      preview: '# Shared Knowledge Routing',
+    }],
+    redactions: [],
+    accessNotes: ['Prefer the shared MCP internal knowledge surface before assuming repo-local context is complete.'],
+    gaps: [{
+      id: 'gap-access-internal-knowledge',
+      gapType: 'access',
+      description: 'Company-internal knowledge resolution is not yet compiled directly from the local repository runtime.',
+      severity: 'medium',
+      suggestedNextStep: 'Route this query through the shared MCP internal knowledge surface before assuming the repository is complete.',
+    }],
+    preferredPath: 'shared-mcp-internal',
+    confidence: 0.88,
+  }),
+  promoteKnowledgeToObsidian: vi.fn().mockResolvedValue({
+    status: 'written',
+    writtenArtifacts: ['ops/contexts/repos/shared-routing.md'],
+    skippedReasons: [],
+    targetPath: 'ops/contexts/repos/shared-routing.md',
+    canonicalKey: 'repo/shared-routing',
+  }),
+  runObsidianSemanticLintAudit: vi.fn().mockResolvedValue({
+    summary: 'Detected 2 semantic lint issues across compiler lint, graph quality, shared coverage, or runtime-vs-doc alignment.',
+    healthy: false,
+    issueCount: 2,
+    issues: [{
+      id: 'coverage-missing-shared-targets',
+      kind: 'coverage-gap',
+      severity: 'high',
+      message: '2 shared wiki targets are still missing from the configured vault mirror.',
+      evidenceRefs: ['ops/control-tower/BLUEPRINT.md'],
+      suggestedNextStep: 'Backfill missing shared wiki targets before treating repo mirrors as canonical.',
+    }],
+    followUps: ['Backfill missing shared wiki targets before treating repo mirrors as canonical.'],
+    coverage: { totalEntries: 10, presentEntries: 8, missingEntries: 2 },
+  }),
+  compileObsidianRequirement: vi.fn().mockResolvedValue({
+    problem: 'Compile a requirement for shared MCP routing.',
+    constraints: ['Preserve existing runtime behavior'],
+    entities: ['Shared Knowledge Routing', 'Unified MCP'],
+    workflows: ['shared MCP routing and internal knowledge resolution', 'shared Obsidian wikiization and backfill'],
+    capabilityGaps: ['Company-internal knowledge resolution is not yet compiled directly from the local repository runtime.'],
+    openQuestions: ['Which shared MCP or internal surface should answer this access gap: Company-internal knowledge resolution is not yet compiled directly from the local repository runtime.'],
+    recommendedNextArtifacts: ['requirement: Shared Knowledge Routing'],
+    sourceArtifacts: [{
+      id: 'artifact-trigger-1',
+      artifactType: 'internal-doc',
+      title: 'anthropic.com/engineering/managed-agents',
+      locator: 'https://www.anthropic.com/engineering/managed-agents',
+      whyIncluded: 'explicit trigger source supplied by the caller',
+      confidence: 0.68,
+      preview: 'Explicit trigger source preserved for human-visible provenance.',
+      sourceRole: 'trigger',
+    }],
+    confidence: 0.87,
+    bundleSummary: 'Compiled 2 artifacts for operator routing.',
+  }),
+  traceObsidianDecision: vi.fn().mockResolvedValue({
+    subject: 'shared MCP routing policy',
+    summary: 'Traced "shared MCP routing policy" through 2 artifacts, 1 contradiction signals, and 1 explicit gaps.',
+    facts: [{ id: 'fact-1', statement: 'Shared MCP should be preferred first.', confidence: 0.91, sourceRefs: ['repo:config/runtime/knowledge-backfill-catalog.json'], freshness: 'current', factType: 'decision' }],
+    artifacts: [{ id: 'artifact-1', artifactType: 'obsidian-note', title: 'Shared Knowledge Routing', locator: 'ops/control-tower/BLUEPRINT.md', whyIncluded: 'start-here canonical artifact', confidence: 0.95, preview: '# Shared Knowledge Routing', sourceRole: 'supporting' }],
+    gaps: [{ id: 'gap-1', gapType: 'promotion-needed', description: 'Repo mirror still needs shared promotion.', severity: 'medium', suggestedNextStep: 'Promote the repo mirror to shared vault.' }],
+    trace: [{ id: 'trace-1', stepKind: 'artifact', title: 'Shared Knowledge Routing', locator: 'ops/control-tower/BLUEPRINT.md', reason: 'start-here canonical artifact', sourceRole: 'supporting' }],
+    contradictions: [{ id: 'issue-1', kind: 'runtime-doc-mismatch', severity: 'medium', message: 'Runtime routing still exposes a stale fallback.', evidenceRefs: ['ops/control-tower/BLUEPRINT.md'], suggestedNextStep: 'Align runtime fallback behavior with the control-tower policy.' }],
+    supersedes: ['docs/archive/legacy-routing.md'],
+    confidence: 0.88,
+  }),
+  resolveObsidianIncidentGraph: vi.fn().mockResolvedValue({
+    incident: 'unified mcp routing outage',
+    summary: 'Resolved incident graph for "unified mcp routing outage" from 3 artifacts across 1 services with 1 blockers and 2 next actions.',
+    facts: [{ id: 'fact-1', statement: 'Unified MCP routing degraded before fallback engaged.', confidence: 0.9, sourceRefs: ['vault:ops/incidents/2026-04-11_unified-mcp-routing.md'], freshness: 'shared-vault', factType: 'runtime' }],
+    artifacts: [{ id: 'artifact-1', artifactType: 'obsidian-note', title: 'Unified MCP Routing Incident', locator: 'ops/incidents/2026-04-11_unified-mcp-routing.md', whyIncluded: 'direct shared retrieval matched incident graph', confidence: 0.94, preview: '# Unified MCP Routing Incident', sourceRole: 'supporting' }],
+    gaps: [],
+    contradictions: [{ id: 'issue-1', kind: 'runtime-doc-mismatch', severity: 'medium', message: 'Recovery playbook has not been updated for the latest worker alias.', evidenceRefs: ['ops/playbooks/unified-mcp-recovery.md'], suggestedNextStep: 'Refresh the playbook mirror and promote the corrected object.' }],
+    affectedServices: ['unified-mcp'],
+    relatedIncidents: ['ops/incidents/2026-04-11_unified-mcp-routing.md'],
+    relatedPlaybooks: ['ops/playbooks/unified-mcp-recovery.md'],
+    relatedImprovements: ['ops/improvement/unified-mcp-routing-hardening.md'],
+    blockers: ['Recovery playbook has not been updated for the latest worker alias.'],
+    nextActions: ['Refresh the playbook mirror and promote the corrected object.', 'Promote the post-incident hardening improvement.'],
+    customerImpactLikely: true,
+    confidence: 0.86,
+  }),
+  captureObsidianWikiChange: vi.fn().mockResolvedValue({
+    classification: ['development_slice'],
+    wikiTargets: ['plans/development/2026-04-11_operator-routing.md'],
+    writtenArtifacts: ['plans/development/2026-04-11_operator-routing.md'],
+    mirrorUpdates: ['CHANGELOG-ARCH'],
+    followUps: [],
+    gaps: [],
+    matchedCatalogEntries: ['service-mcp-tool-first-contracts'],
+  }),
   resolveObsidianKnowledgeArtifactPath: vi.fn((artifact: string) => {
     if (artifact === 'lint') return 'ops/knowledge-control/LINT.md';
     if (artifact === 'blueprint') return 'ops/control-tower/BLUEPRINT.md';
     return null;
+  }),
+}));
+
+vi.mock('../routes/bot-agent/runtimeRoutes', () => ({
+  buildOperatorSnapshot: vi.fn().mockResolvedValue({
+    generatedAt: '2026-04-11T00:00:00.000Z',
+    guildId: 'guild-1',
+    windowDays: 14,
+    operatingBaseline: {
+      gcpWorker: { machineType: 'e2-medium', memoryGb: 4 },
+    },
+    runtime: {
+      schedulerPolicy: { summary: { total: 4 } },
+      workers: { specs: [{ label: 'implement' }], health: [{ label: 'implement', healthy: true }] },
+      loops: { memoryJobRunner: { running: true } },
+    },
+    obsidian: {
+      knowledgeControl: { blueprint: { model: '4-plane-control-tower' } },
+      internalKnowledge: {
+        preferredPath: 'shared-mcp-internal',
+        confidence: 0.88,
+      },
+      decisionTrace: {
+        subject: 'active operator workset',
+        summary: 'Traced active operator workset through canonical artifacts.',
+      },
+      incidentGraph: {
+        incident: 'active operator workset incident',
+        summary: 'Resolved incident graph for active operator workset incident.',
+      },
+      promotionBacklinks: [{
+        artifactKind: 'service_profile',
+        title: 'Knowledge Bundle Compile Spec',
+        reason: 'resolved from repo source fallback instead of shared vault content',
+        targetPath: 'ops/services/knowledge-bundle-compile-spec/PROFILE.md',
+        sourceRefs: ['repo:docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md'],
+      }],
+    },
+  }),
+  buildActiveWorkset: vi.fn().mockResolvedValue({
+    generatedAt: '2026-04-11T00:00:00.000Z',
+    guildId: 'guild-1',
+    objective: 'active operator workset',
+    summary: 'Resolved active workset from 2 compiled artifacts with 1 blockers and 2 next actions.',
+    currentFocus: ['Shared Knowledge Routing'],
+    blockers: ['2 shared wiki targets are still missing from the configured vault mirror.'],
+    nextActions: ['Backfill missing shared wiki targets before treating repo mirrors as canonical.'],
+    affectedServices: ['unified-mcp'],
+    evidence: [{ title: 'Shared Knowledge Routing', locator: 'ops/control-tower/BLUEPRINT.md', whyIncluded: 'start-here canonical artifact' }],
+    objectRefs: ['ops/control-tower/BLUEPRINT.md'],
+    decisionTrace: { subject: 'active operator workset' },
+    incidentGraph: { incident: 'active operator workset incident' },
+    promotionBacklinks: [{ targetPath: 'ops/services/knowledge-bundle-compile-spec/PROFILE.md' }],
+    lint: { healthy: false, issueCount: 2 },
+    releaseGate: { decision: 'GO', failedChecks: [] },
+    pendingIntentCount: 2,
   }),
 }));
 
@@ -204,7 +405,7 @@ describe('obsidianToolAdapter', () => {
   describe('listObsidianMcpTools', () => {
     it('returns all obsidian tools with valid specs', () => {
       const tools = listObsidianMcpTools();
-      expect(tools.length).toBe(21);
+      expect(tools.length).toBe(31);
 
       const names = tools.map((t) => t.name);
       expect(names).toContain('obsidian.search');
@@ -217,6 +418,16 @@ describe('obsidianToolAdapter', () => {
       expect(names).toContain('obsidian.quality.audit');
       expect(names).toContain('obsidian.adapter.status');
       expect(names).toContain('obsidian.knowledge.control');
+      expect(names).toContain('knowledge.bundle.compile');
+      expect(names).toContain('internal.knowledge.resolve');
+      expect(names).toContain('requirement.compile');
+      expect(names).toContain('operator.snapshot');
+      expect(names).toContain('workset.resolve');
+      expect(names).toContain('decision.trace');
+      expect(names).toContain('incident.graph.resolve');
+      expect(names).toContain('wiki.change.capture');
+      expect(names).toContain('knowledge.promote');
+      expect(names).toContain('semantic.lint.audit');
       expect(names).toContain('obsidian.outline');
       expect(names).toContain('obsidian.search.context');
       expect(names).toContain('obsidian.property.read');
@@ -247,10 +458,20 @@ describe('obsidianToolAdapter', () => {
 
   describe('OBSIDIAN_TOOL_NAMES', () => {
     it('contains all tool names', () => {
-      expect(OBSIDIAN_TOOL_NAMES.size).toBe(21);
+      expect(OBSIDIAN_TOOL_NAMES.size).toBe(31);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.search')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.write')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.knowledge.control')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('knowledge.bundle.compile')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('internal.knowledge.resolve')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('requirement.compile')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('operator.snapshot')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('workset.resolve')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('decision.trace')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('incident.graph.resolve')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('wiki.change.capture')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('knowledge.promote')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('semantic.lint.audit')).toBe(true);
     });
   });
 
@@ -377,6 +598,26 @@ describe('obsidianToolAdapter', () => {
       expect(data.path).toBe('docs/new-note.md');
     });
 
+    it('obsidian.write forwards allowHighLinkDensity to the router', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'obsidian.write',
+        arguments: {
+          fileName: 'ops/services/gcp-worker/PROFILE.md',
+          content: '# Link-heavy content',
+          allowHighLinkDensity: true,
+        },
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(writeObsidianNoteWithAdapter).toHaveBeenLastCalledWith({
+        fileName: 'ops/services/gcp-worker/PROFILE.md',
+        content: '# Link-heavy content',
+        guildId: 'MCP',
+        vaultPath: '/test-vault',
+        allowHighLinkDensity: true,
+      });
+    });
+
     // ── obsidian.sync.status ─────────────────────────────────────────────
     it('obsidian.sync.status returns loop stats', async () => {
       const result = await callObsidianMcpTool({ name: 'obsidian.sync.status' });
@@ -465,6 +706,175 @@ describe('obsidianToolAdapter', () => {
         plane: 'runtime',
         concern: 'service-memory',
       });
+    });
+
+    it('knowledge.bundle.compile returns compiled bundle output', async () => {
+      const knowledgeCompilerService = await import('../services/obsidian/knowledgeCompilerService');
+      const result = await callObsidianMcpTool({
+        name: 'knowledge.bundle.compile',
+        arguments: {
+          goal: 'operator routing',
+          domains: ['architecture'],
+          sourceHints: ['obsidian'],
+          explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.summary).toContain('Compiled 2 artifacts');
+      expect(data.artifacts[0].title).toBe('Shared Knowledge Routing');
+      expect(data.resolutionTrace).toContain('shared-obsidian');
+      expect(vi.mocked(knowledgeCompilerService.compileObsidianKnowledgeBundle)).toHaveBeenCalledWith(expect.objectContaining({
+        explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+      }));
+    });
+
+    it('internal.knowledge.resolve returns internal knowledge guidance', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'internal.knowledge.resolve',
+        arguments: {
+          goal: 'resolve internal routing policy',
+          targets: ['shared MCP', 'company-context'],
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.preferredPath).toBe('shared-mcp-internal');
+      expect(data.accessNotes[0]).toContain('shared MCP internal knowledge surface');
+    });
+
+    it('requirement.compile returns structured requirement output', async () => {
+      const knowledgeCompilerService = await import('../services/obsidian/knowledgeCompilerService');
+      const result = await callObsidianMcpTool({
+        name: 'requirement.compile',
+        arguments: {
+          objective: 'Compile a requirement for shared MCP routing.',
+          desiredArtifact: 'requirement',
+          explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.problem).toContain('shared MCP routing');
+      expect(data.workflows).toContain('shared MCP routing and internal knowledge resolution');
+      expect(data.recommendedNextArtifacts[0]).toContain('requirement');
+      expect(data.sourceArtifacts[0].sourceRole).toBe('trigger');
+      expect(vi.mocked(knowledgeCompilerService.compileObsidianRequirement)).toHaveBeenCalledWith(expect.objectContaining({
+        explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+      }));
+    });
+
+    it('operator.snapshot returns runtime snapshot output', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'operator.snapshot',
+        arguments: { guildId: 'guild-1', days: 14 },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.guildId).toBe('guild-1');
+      expect(data.runtime.schedulerPolicy.summary.total).toBe(4);
+      expect(data.obsidian.knowledgeControl.blueprint.model).toBe('4-plane-control-tower');
+      expect(data.obsidian.internalKnowledge.preferredPath).toBe('shared-mcp-internal');
+      expect(data.obsidian.decisionTrace.subject).toBe('active operator workset');
+      expect(data.obsidian.promotionBacklinks[0].targetPath).toBe('ops/services/knowledge-bundle-compile-spec/PROFILE.md');
+    });
+
+    it('workset.resolve returns active workset output', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'workset.resolve',
+        arguments: { guildId: 'guild-1', objective: 'active operator workset' },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.objective).toBe('active operator workset');
+      expect(data.lint.issueCount).toBe(2);
+      expect(data.objectRefs).toContain('ops/control-tower/BLUEPRINT.md');
+      expect(data.incidentGraph.incident).toBe('active operator workset incident');
+      expect(data.promotionBacklinks[0].targetPath).toBe('ops/services/knowledge-bundle-compile-spec/PROFILE.md');
+    });
+
+    it('decision.trace returns traced decision output', async () => {
+      const knowledgeCompilerService = await import('../services/obsidian/knowledgeCompilerService');
+      const result = await callObsidianMcpTool({
+        name: 'decision.trace',
+        arguments: {
+          subject: 'shared MCP routing policy',
+          explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.subject).toBe('shared MCP routing policy');
+      expect(data.trace[0].stepKind).toBe('artifact');
+      expect(data.contradictions[0].kind).toBe('runtime-doc-mismatch');
+      expect(vi.mocked(knowledgeCompilerService.traceObsidianDecision)).toHaveBeenCalledWith(expect.objectContaining({
+        explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+      }));
+    });
+
+    it('incident.graph.resolve returns compiled incident graph output', async () => {
+      const knowledgeCompilerService = await import('../services/obsidian/knowledgeCompilerService');
+      const result = await callObsidianMcpTool({
+        name: 'incident.graph.resolve',
+        arguments: {
+          incident: 'unified mcp routing outage',
+          serviceHints: ['unified-mcp'],
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.affectedServices).toContain('unified-mcp');
+      expect(data.relatedPlaybooks).toContain('ops/playbooks/unified-mcp-recovery.md');
+      expect(data.customerImpactLikely).toBe(true);
+      expect(vi.mocked(knowledgeCompilerService.resolveObsidianIncidentGraph)).toHaveBeenCalledWith(expect.objectContaining({
+        incident: 'unified mcp routing outage',
+      }));
+    });
+
+    it('wiki.change.capture returns classified wiki targets', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'wiki.change.capture',
+        arguments: {
+          changeSummary: 'operator routing policy update',
+          changeKind: 'development-slice',
+          changedPaths: ['docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md'],
+          promoteImmediately: true,
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.classification).toContain('development_slice');
+      expect(data.wikiTargets).toContain('plans/development/2026-04-11_operator-routing.md');
+      expect(data.writtenArtifacts).toHaveLength(1);
+    });
+
+    it('knowledge.promote writes a durable shared object', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'knowledge.promote',
+        arguments: {
+          artifactKind: 'note',
+          title: 'Shared Routing',
+          content: 'Promoted shared routing knowledge with provenance and stable ownership.',
+          sources: ['repo:docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md'],
+          confidence: 0.91,
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.status).toBe('written');
+      expect(data.writtenArtifacts[0]).toContain('ops/contexts/repos/shared-routing.md');
+    });
+
+    it('semantic.lint.audit returns semantic lint findings', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'semantic.lint.audit',
+        arguments: { maxIssues: 5 },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.healthy).toBe(false);
+      expect(data.issueCount).toBe(2);
+      expect(data.followUps[0]).toContain('Backfill missing shared wiki targets');
     });
   });
 });

@@ -8,6 +8,7 @@ import { getLastMigrationValidation } from '../utils/migrationRegistry';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { getObsidianAdapterRuntimeStatus } from '../services/obsidian/router';
 import { existsSync, readdirSync } from 'node:fs';
+import { summarizeRuntimeHealth } from './health';
 
 /* ─── HTML Template Helpers ──────────────────────────────────────── */
 
@@ -27,6 +28,21 @@ const formatUptime = (sec: number) => {
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+};
+
+const renderSyncModeBadge = (handler: string | null | undefined) => {
+  if (handler === 'remote-mcp') return '<span class="badge bg-blue">Remote MCP</span>';
+  if (handler === 'local-fs') return '<span class="badge bg-blue">Local FS</span>';
+  if (handler) return `<span class="badge bg-yellow">${esc(handler)}</span>`;
+  return badge('Not Syncing', false);
+};
+
+const renderAccessPostureBadge = (mode: string | null | undefined) => {
+  if (mode === 'shared-remote-ingress') return '<span class="badge bg-green">Shared Remote</span>';
+  if (mode === 'direct-vault-primary') return '<span class="badge bg-blue">Direct Vault</span>';
+  if (mode === 'mixed-routing') return '<span class="badge bg-yellow">Mixed Routing</span>';
+  if (mode === 'disconnected') return badge('Disconnected', false);
+  return '<span class="badge bg-yellow">Unknown</span>';
 };
 
 /* ─── Vault stats ────────────────────────────────────────────────── */
@@ -122,6 +138,12 @@ export function createDashboardRouter(): Router {
     const automation = getAutomationRuntimeSnapshot();
     const botEnabled = START_BOT;
     const automationEnabled = isAutomationEnabled();
+    const runtimeHealth = summarizeRuntimeHealth({
+      botEnabled,
+      botReady: bot.ready,
+      automationEnabled,
+      automationReady: automation.healthy,
+    });
     const botReady = botEnabled && bot.ready;
     const automationReady = automationEnabled && automation.healthy;
 
@@ -152,9 +174,16 @@ export function createDashboardRouter(): Router {
     // Migrations
     const migrations = getLastMigrationValidation();
 
-    const overallOk = botReady || automationReady;
-    const statusLabel = overallOk ? 'Healthy' : 'Degraded';
-    const statusClass = overallOk ? 'bg-green' : 'bg-yellow';
+    const statusLabel = runtimeHealth.botStatusGrade === 'offline'
+      ? 'Offline'
+      : runtimeHealth.status === 'ok'
+        ? 'Healthy'
+        : 'Degraded';
+    const statusClass = runtimeHealth.botStatusGrade === 'offline'
+      ? 'bg-red'
+      : runtimeHealth.status === 'ok'
+        ? 'bg-green'
+        : 'bg-yellow';
 
     const html = `<!DOCTYPE html>
 <html lang="ko">
@@ -176,7 +205,7 @@ export function createDashboardRouter(): Router {
 
     <!-- Runtime -->
     <div class="card">
-      <h2>${dot(overallOk)} Runtime</h2>
+      <h2>${dot(runtimeHealth.status === 'ok')} Runtime</h2>
       <div class="kv"><span class="k">Bot</span><span class="v">${badge(botReady ? 'Online' : botEnabled ? 'Starting' : 'Disabled', botReady)}</span></div>
       <div class="kv"><span class="k">Automation</span><span class="v">${badge(automationReady ? 'Online' : automationEnabled ? 'Starting' : 'Disabled', automationReady)}</span></div>
       <div class="kv"><span class="k">Uptime</span><span class="v">${formatUptime(uptimeSec)}</span></div>
@@ -203,10 +232,11 @@ export function createDashboardRouter(): Router {
       ${vault ? `
         <div class="kv"><span class="k">Path</span><span class="v" style="font-size:11px">${esc(vault.vaultPath)}</span></div>
         <div class="kv"><span class="k">Vault Ready</span><span class="v">${badge(vault.vaultReady ? 'Yes' : 'No', vault.vaultReady)}</span></div>
-        <div class="kv"><span class="k">Sync Mode</span><span class="v">${vault.vaultReady
-            ? '<span class="badge bg-blue">Remote MCP</span>'
-            : badge('Not Syncing', false)
-        }</span></div>
+        <div class="kv"><span class="k">Access Posture</span><span class="v">${renderAccessPostureBadge(obsAdapterStatus?.accessPosture.mode)}</span></div>
+        <div class="kv"><span class="k">Sync Mode</span><span class="v">${renderSyncModeBadge(obsAdapterStatus?.selectedByCapability.write_note)}</span></div>
+        ${obsAdapterStatus?.accessPosture?.summary
+          ? `<div class="kv"><span class="k">Routing Summary</span><span class="v" style="font-size:11px">${esc(obsAdapterStatus.accessPosture.summary)}</span></div>`
+          : ''}
         <div class="kv"><span class="k">Markdown Files</span><span class="v">${vault.fileCount.toLocaleString()}</span></div>
       ` : `<div style="color:var(--muted);font-size:13px">No vault configured</div>`}
 

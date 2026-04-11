@@ -56,6 +56,7 @@ export type ObsidianNoteWriteInput = {
   content: string;
   tags?: string[];
   properties?: Record<string, ObsidianFrontmatterValue | null>;
+  allowHighLinkDensity?: boolean;
 };
 
 export type ObsidianTask = {

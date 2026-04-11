@@ -21,6 +21,116 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-11 - Additional Planning Surface Closure For Autonomy And GCP Profiles
+
+- Why: two remaining planning docs still presented themselves as `ACTIVE` even though they no longer owned current execution state. One already mapped to a shared service-profile backfill lane, and the other had become a target-state strategy reference with implemented status now reflected in architecture/runtime surfaces instead of a standalone WIP plan.
+- Scope: planning status-header normalization, planning index alignment, and shared-vault backfill catalog expansion for the autonomy strategy doc
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md`, `docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. `AUTONOMOUS_AGENT_EVOLUTION_PLAN.md` now acts as a strategy/phase-intent reference instead of an implicit execution tracker, while `GCP_OSS_INTEGRATION_BLUEPRINT.md` now reads as a service-profile reference aligned to the operating baseline and shared OpenJarvis profile. Active rollout truth remains centralized in `EXECUTION_BOARD.md`, the roadmap, architecture index, and shared-vault coverage.
+- Validation: targeted markdown review; adapter-aware backfill coverage report verified remote shared-vault presence for the current planning-doc batch; `npx tsc --noEmit`
+
+## 2026-04-11 - Planning Execution Surface Convergence
+
+- Why: the 2026-04-11 planning batch had already been promoted into the shared vault and partially implemented, but several repo planning documents still advertised `Proposed` status in a way that could be misread as parallel active WIP. That ambiguity risked reintroducing multiple execution boards instead of one canonical control surface.
+- Scope: planning status-header normalization, execution-surface boundary clarification, and migration-note boundary tightening
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/README.md`, `docs/planning/MANAGED_AGENTS_FOUR_LAYER_MODEL.md`, `docs/planning/REPO_DOC_EXTERNALIZATION_PLAN.md`, `docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`, `docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`, `docs/planning/mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md`, `docs/planning/OBSIDIAN_SEED_OBJECTS_PRIORITY.md`, `docs/planning/LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. These docs now make a stricter distinction between active execution control and reference/control artifacts: current rollout state belongs in `EXECUTION_BOARD.md`, completed slices belong in changelog and development slices, and shared-vault coverage remains the promotion parity source. The LangGraph migration plan remains implementation-coupled, but no longer acts like an implicit second execution board.
+- Validation: targeted markdown review; shared knowledge bundle confirmed the affected docs are already present as shared control/reference artifacts; markdown diagnostics on touched docs passed; targeted overwrite backfill applied to the affected catalog entries
+
+## 2026-04-11 - Decision Trace And Incident Graph Surfaces Added
+
+- Why: compiled bundle, requirement, promotion, lint, and workset surfaces already existed, but there was still no first-class way to trace why a policy exists or to resolve an incident into service, playbook, contradiction, and next-action shape without manual archaeology.
+- Scope: Obsidian knowledge compiler semantic aggregation, MCP/admin route surface expansion, focused tests, and route smoke coverage
+- Impacted Routes: `GET /agent/obsidian/decision-trace`, `GET /agent/obsidian/incident-graph`
+- Impacted Services: `src/services/obsidian/knowledgeCompilerService.ts`, `src/mcp/obsidianToolAdapter.ts`, `src/routes/bot-agent/qualityPrivacyRoutes.ts`, `src/services/obsidian/knowledgeCompilerService.test.ts`, `src/mcp/obsidianToolAdapter.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `src/routes/botAgentRoutes.smoke.test.ts`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: adds `decision.trace` and `incident.graph.resolve` without changing existing tool inputs. Decision tracing now returns artifact/evidence steps, contradiction signals, and supersedes references; incident graph resolution now compiles affected services, blockers, next actions, and related operational objects from the same Obsidian-first control plane.
+- Validation: `npm exec tsc -- --noEmit`; focused Vitest coverage passed for `src/services/obsidian/knowledgeCompilerService.test.ts`, `src/mcp/obsidianToolAdapter.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, and `src/routes/botAgentRoutes.smoke.test.ts`
+
+## 2026-04-11 - Explicit Trigger Source Provenance Implemented In Runtime Knowledge Tools
+
+- Why: the planning and MCP contract docs had already declared that user-provided implementation-driving sources must stay human-visible, but the live `knowledge.bundle.compile` and `requirement.compile` surfaces still did not carry those trigger sources through runtime responses, admin routes, and promoted requirement notes.
+- Scope: Obsidian knowledge compiler provenance typing and merge logic, MCP/admin route input propagation, focused tests, and planning index alignment
+- Impacted Routes: `GET /agent/obsidian/knowledge-bundle`, `GET /agent/obsidian/requirement-compile`
+- Impacted Services: `src/services/obsidian/knowledgeCompilerService.ts`, `src/mcp/obsidianToolAdapter.ts`, `src/routes/bot-agent/qualityPrivacyRoutes.ts`, `src/services/obsidian/knowledgeCompilerService.test.ts`, `src/mcp/obsidianToolAdapter.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `docs/planning/README.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: `knowledge.bundle.compile` now preserves caller-supplied explicit sources as trigger artifacts, includes them in returned inputs/provenance, and emits a coverage gap when only trigger sources exist without supporting compiled knowledge. `requirement.compile` now returns `sourceArtifacts` and writes trigger/supporting labels into promoted requirement notes so the same causality trail remains visible to humans and agents.
+- Validation: focused Vitest coverage passed for `src/services/obsidian/knowledgeCompilerService.test.ts`, `src/mcp/obsidianToolAdapter.test.ts`, and `src/routes/botAgentObsidianRuntime.test.ts`
+
+## 2026-04-11 - Human-Visible Source Provenance For Shared Knowledge
+
+- Why: planning and knowledge externalization had already shifted toward shared Obsidian plus shared MCP, but the rules still did not explicitly say that user-supplied articles, URLs, and prior discussion references must remain visible as sources before implementation. That omission made it too easy to treat provenance as agent-private context instead of a human-visible organizational review surface.
+- Scope: planning policy clarification and MCP knowledge-contract provenance rules
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/REPO_DOC_EXTERNALIZATION_PLAN.md`, `docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`, `docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. Documentation now treats knowledge-panel provenance as a shared human-and-agent surface, requires implementation-driving user sources to remain visible in bundle provenance, and clarifies that `gcpCompute` plus shared Obsidian are organizational infrastructure for team review and handoff, not a single-user scratch layer.
+- Validation: targeted policy/contract review plus shared-vault backfill of the touched canonical notes
+
+## 2026-04-11 - Repo Doc Externalization And Delete-Ready Policy
+
+- Why: the planning tree had grown into an inefficient agent-facing working set. The repository already had Obsidian-first retrieval, backfill, and wikiization primitives, but it still lacked a canonical rule for which docs stay local, which docs become shared-Obsidian primary, and when a repo markdown file can shrink to a stub or disappear entirely.
+- Scope: documentation operating-model planning, planning index alignment, and shared-vault backfill catalog expansion
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/REPO_DOC_EXTERNALIZATION_PLAN.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. This slice defines a local control core, Obsidian-primary mirror rules, archive-first evidence lanes, and a six-condition delete-ready gate so repo markdown can be reduced without breaking MCP-first retrieval quality.
+- Validation: targeted planning and catalog review against current planning volume, existing backfill coverage, development-archaeology rules, and transition-plan constraints
+
+## 2026-04-11 - Managed Agents Four-Layer Architecture Overlay
+
+- Why: Anthropic's managed-agents framing made the missing separation explicit between the reasoning harness, execution surfaces, durable session memory, and semantic ownership. The repo needed a design memo that remaps the current assets and infra into those four layers without discarding the existing Obsidian operating-system work.
+- Scope: architecture planning memo, architecture index alignment, and shared-vault backfill catalog expansion
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/MANAGED_AGENTS_FOUR_LAYER_MODEL.md`, `docs/ARCHITECTURE_INDEX.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. This slice formalizes Render as the primary brain ingress, the GCP shared MCP and external adapters as the hands-heavy execution layer, Supabase as the session owner, and shared Obsidian as the semantic owner, while explicitly calling out current worker hybrid debt and the need for stronger session contracts.
+- Validation: targeted doc review against the operating baseline, Obsidian blueprint, transition plan, and MCP knowledge contracts; backfill catalog entry added for shared-vault promotion
+
+## 2026-04-11 - Second-Wave Semantic Control Plane Surfaces Implemented
+
+- Why: the first composite slice made shared knowledge queryable, but durable promotion, contradiction visibility, and active workset synthesis were still manual steps. The next bottleneck was not retrieval anymore, but turning answers, gaps, and runtime state into stable semantic objects and operator-facing worksets.
+- Scope: Obsidian promotion/lint services, runtime workset synthesis, MCP tool surface expansion, admin routes, focused tests, and route smoke coverage
+- Impacted Routes: `GET /agent/runtime/workset`, `POST /agent/obsidian/knowledge-promote`, `GET /agent/obsidian/semantic-lint-audit`
+- Impacted Services: `src/services/obsidian/authoring.ts`, `src/services/obsidian/knowledgeCompilerService.ts`, `src/services/obsidian/index.ts`, `src/mcp/obsidianToolAdapter.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/bot-agent/qualityPrivacyRoutes.ts`, `src/services/obsidian/knowledgeCompilerService.test.ts`, `src/mcp/obsidianToolAdapter.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `src/routes/botAgentRoutes.smoke.test.ts`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: adds three new semantic-control surfaces, `knowledge.promote`, `semantic.lint.audit`, and `workset.resolve`, without changing existing external contracts. Promotion now writes durable object pages with provenance/frontmatter, semantic lint makes negative knowledge explicit instead of silent drift, and workset synthesis ties compiled bundle evidence to current blockers and next actions.
+- Validation: focused Vitest coverage passed for Obsidian compiler, MCP adapter, admin routes, and route smoke tests; repo lint/typecheck (`tsc --noEmit`) passed after the slice
+
+## 2026-04-11 - First-Wave Obsidian Composite Tools Implemented
+
+- Why: the repo already had policy, planning, and backfill guidance for shared MCP plus shared Obsidian, but the highest-value composite capabilities were only partially implemented. Internal knowledge resolution and requirement compilation still required manual archaeology instead of first-class tool surfaces.
+- Scope: Obsidian knowledge compiler composites, MCP tool adapter surface, bot-agent admin routes, focused tests, and route smoke coverage
+- Impacted Routes: `GET /agent/runtime/operator-snapshot`, `GET /agent/obsidian/knowledge-bundle`, `GET /agent/obsidian/internal-knowledge`, `GET /agent/obsidian/requirement-compile`, `POST /agent/obsidian/wiki-change-capture`
+- Impacted Services: `src/services/obsidian/knowledgeCompilerService.ts`, `src/mcp/obsidianToolAdapter.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/bot-agent/qualityPrivacyRoutes.ts`, `src/services/obsidian/knowledgeCompilerService.test.ts`, `src/mcp/obsidianToolAdapter.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `src/routes/botAgentRoutes.smoke.test.ts`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: adds two new composite surfaces, `internal.knowledge.resolve` and `requirement.compile`, on top of the already added bundle/snapshot/wiki-capture path. The internal resolver now uses direct shared MCP-backed Obsidian retrieval before fallback and only keeps repo artifacts as supporting context when needed. Requirement compilation now emits structured problem, constraint, workflow, gap, and next-artifact output and can optionally promote a durable requirement note into the shared vault without changing existing runtime APIs. `operator.snapshot` can now include a compact internal knowledge summary so runtime readiness views surface the same shared-control-plane context instead of only raw runtime status.
+- Validation: targeted Vitest coverage for knowledge compiler, MCP adapter, admin routes, and route smoke coverage passed; repo lint/typecheck (`tsc --noEmit`) passed after this slice
+
+## 2026-04-11 - Obsidian Leverage Priorities, Knowledge Bundle Spec, And Seed Object Plan
+
+- Why: the routing and wikiization posture had already shifted toward shared MCP and shared Obsidian, but the repo still lacked a concrete top-five implementation order, a detailed `knowledge.bundle.compile` contract, and an explicit seed-object backlog for the shared wiki.
+- Scope: leverage-priority planning, detailed compiled-knowledge tool spec, wiki seed-object prioritization, planning index alignment, shared-vault backfill catalog expansion
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md`, `docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`, `docs/planning/OBSIDIAN_SEED_OBJECTS_PRIORITY.md`, `docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. This slice makes the next shared-MCP and shared-Obsidian implementation order explicit, defines a composite bundle contract with provenance and gap semantics, and identifies the first wiki objects that should be seeded to reduce repeated archaeology.
+- Validation: targeted markdown review of the new planning artifacts and backfill catalog structure review
+
+## 2026-04-11 - Shared MCP Internal Knowledge Routing And Obsidian Wikiization Policy
+
+- Why: the shared MCP server was already functioning as a common team surface, but agent guidance still risked treating it as a repo helper while durable repo memory and architecture-significant changes could still terminate in repo-local memory or changelog artifacts instead of converging into shared wiki objects.
+- Scope: global shared-MCP/internal-knowledge routing clarification, Obsidian wikiization policy for repo memory and changelog handling, development-archaeology/transition alignment, tool-first wiki change-capture contract, knowledge backfill catalog expansion
+- Impacted Routes: N/A
+- Impacted Services: `.github/copilot-instructions.md`, `.github/instructions/mcp-routing.instructions.md`, `.github/instructions/shared-knowledge-routing.instructions.md`, `.github/instructions/obsidian-wikiization.instructions.md`, `.github/instructions/tribal-knowledge.instructions.md`, `docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`, `docs/planning/OBSIDIAN_TRANSITION_PLAN.md`, `docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime code changed. Agent guidance now treats `gcpCompute` as a team/company internal knowledge ingress and shifts durable repo memory plus changelog-worthy change capture toward shared Obsidian wiki objects while keeping repo-local artifacts as compatibility mirrors or source material.
+- Validation: targeted markdown and instruction validation on touched files, plus backfill catalog structure review
+
 ## 2026-04-10 - Development Archaeology Seed Objects And Team Repeatability
 
 - Why: the development-archaeology contract had been defined, but the team still lacked concrete seed objects proving that repository-context and development-slice notes can be created from repo source and replayed into the shared vault.

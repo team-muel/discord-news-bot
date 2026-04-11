@@ -515,6 +515,7 @@ const writeNote = async (params: ObsidianNoteWriteInput): Promise<{ path: string
     fileName: params.fileName,
     content: params.content,
     guildId: params.guildId,
+    ...(params.allowHighLinkDensity === true ? { allowHighLinkDensity: true } : {}),
   });
 
   if (result.isError) {

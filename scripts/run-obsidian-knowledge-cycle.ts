@@ -11,10 +11,14 @@ type Step = {
   args?: string[];
 };
 
-const parseArgs = (): { guildId: string; skipSync: boolean } => {
+const defaultSystemFile = (): string => `ops/improvement/corrections/${new Date().toISOString().slice(0, 10)}_obsidian-live-verify`;
+
+const parseArgs = (): { guildId: string; systemFile: string; skipSync: boolean; skipAudit: boolean } => {
   const args = process.argv.slice(2);
   let guildId = String(process.env.OBSIDIAN_VERIFY_GUILD_ID || '').trim();
+  let systemFile = defaultSystemFile();
   let skipSync = false;
+  let skipAudit = false;
 
   for (let i = 0; i < args.length; i += 1) {
     const current = String(args[i] || '').trim();
@@ -27,22 +31,41 @@ const parseArgs = (): { guildId: string; skipSync: boolean } => {
       continue;
     }
 
+    if (current === '--system-file') {
+      const value = String(args[i + 1] || '').trim();
+      if (value) {
+        systemFile = value;
+      }
+      i += 1;
+      continue;
+    }
+
     if (current === '--skip-sync') {
       skipSync = true;
+      continue;
+    }
+
+    if (current === '--skip-audit') {
+      skipAudit = true;
     }
   }
 
-  return { guildId, skipSync };
+  return { guildId, systemFile, skipSync, skipAudit };
 };
 
 const runNpmStep = async (step: Step): Promise<void> => {
   await new Promise<void>((resolve, reject) => {
-    const args = ['run', step.script];
+    const npmArgs = ['run', step.script];
     if (step.args && step.args.length > 0) {
-      args.push('--', ...step.args);
+      npmArgs.push('--', ...step.args);
     }
 
-    const child = spawn(npmCommand, args, {
+    const command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : npmCommand;
+    const args = process.platform === 'win32'
+      ? ['/d', '/s', '/c', npmCommand, ...npmArgs]
+      : npmArgs;
+
+    const child = spawn(command, args, {
       cwd: process.cwd(),
       stdio: 'inherit',
       shell: false,
@@ -66,23 +89,25 @@ const runNpmStep = async (step: Step): Promise<void> => {
 };
 
 const main = async (): Promise<void> => {
-  const { guildId, skipSync } = parseArgs();
-  if (!guildId) {
-    console.error('[obsidian-cycle] guild id is required. Use --guild or OBSIDIAN_VERIFY_GUILD_ID');
-    process.exit(2);
-  }
+  const { guildId, systemFile, skipSync, skipAudit } = parseArgs();
+  const verifyArgs = guildId
+    ? ['--guild', guildId]
+    : ['--system-file', systemFile];
 
   const steps: Step[] = [
     {
       name: 'verify-write',
       script: 'obsidian:verify-write',
-      args: ['--guild', guildId],
-    },
-    {
-      name: 'graph-audit',
-      script: 'obsidian:audit-graph',
+      args: verifyArgs,
     },
   ];
+
+  if (!skipAudit) {
+    steps.push({
+      name: 'graph-audit',
+      script: 'obsidian:audit-graph',
+    });
+  }
 
   if (!skipSync) {
     steps.push({

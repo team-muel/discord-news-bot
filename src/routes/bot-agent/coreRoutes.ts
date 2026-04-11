@@ -8,6 +8,7 @@ import {
   listAgentDeadletters,
   listAgentSkills,
   listGuildAgentSessions,
+  resumeAgentSession,
   serializeAgentSessionForApi,
   startAgentSession,
 } from '../../services/multiAgentService';
@@ -182,6 +183,29 @@ export function registerBotAgentCoreRoutes(deps: BotAgentRouteDeps): void {
     const result = cancelAgentSession(sessionId);
     if (!result.ok) {
       return res.status(409).json({ ok: false, error: 'SESSION_CANCEL_FAILED', message: result.message });
+    }
+
+    return res.status(202).json({ ok: true, message: result.message });
+  });
+
+  router.post('/agent/sessions/:sessionId/resume', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const sessionId = toStringParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'sessionId is required' });
+    }
+
+    const rawDecision = toStringParam(req.body?.decision);
+    const decision = rawDecision && (['approve', 'reject', 'revise'] as const).includes(rawDecision as 'approve' | 'reject' | 'revise')
+      ? rawDecision as 'approve' | 'reject' | 'revise'
+      : undefined;
+    if (rawDecision && !decision) {
+      return res.status(400).json({ ok: false, error: 'INVALID_PAYLOAD', message: 'decision must be one of approve|reject|revise' });
+    }
+
+    const note = toStringParam(req.body?.note) || null;
+    const result = resumeAgentSession({ sessionId, decision, note });
+    if (!result.ok) {
+      return res.status(409).json({ ok: false, error: 'SESSION_RESUME_FAILED', message: result.message });
     }
 
     return res.status(202).json({ ok: true, message: result.message });

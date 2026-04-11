@@ -1,33 +1,8 @@
-# ADR-005: 맥락 압축 파이프라인 표준화
+# ADR-005 Context Compression Pipeline
 
-- 상태: Accepted
-- 날짜: 2026-03-12
-
-## 배경
-
-원문 대화를 계속 프롬프트에 넣는 방식은 비용/성능/안정성에 한계가 있다.
-
-## 결정
-
-맥락 압축 파이프라인을 3단계로 고정한다.
-
-1. short-window summary: 30~120분 단위 요약
-2. topic synthesis: 주제/이슈 단위 병합
-3. durable memory extraction: 장기 기억 후보 추출
-
-각 단계는 source_ids를 보존한다.
-
-## 근거
-
-- 비용 절감과 컨텍스트 길이 안정화에 유리하다.
-- 기억 충돌 시 원문 역추적이 가능하다.
-
-## 결과
-
-- 장시간 운영에서 응답 지연과 비용 급증 완화
-- 기억 품질의 지속적 개선 가능
-
-## 후속 작업
-
-- memory_jobs 스케줄러 구현
-- 압축 품질 평가셋 구축
+Status: Compatibility stub (2026-04-11)
+Canonical shared wiki object: plans/decisions/ADR-005-context-compression-pipeline.md
+Catalog entry: adr-005-context-compression-pipeline
+Role: Repo-local compatibility mirror only. The shared Obsidian note is the semantic owner.
+Backfill note: automated repo-to-vault promotion must not overwrite from this reduced source.
+Local continuity: keep this path only during the delete-candidate grace period, and use docs/ARCHITECTURE_INDEX.md plus docs/CHANGELOG-ARCH.md for rollout context.

@@ -38,6 +38,19 @@ const buildProgressSummaryForPersistence = (session: AgentSession) => {
     riskScore: Number.isFinite(session.riskScore) ? Number(session.riskScore) : 0,
     policyDecision: session.policyGate?.decision || 'allow',
     policyReasons: [...(session.policyGate?.reasons || [])],
+    trafficRoute: session.trafficRoute || 'main',
+    trafficRouteReason: session.trafficRoutingDecision?.reason || null,
+    trafficRouteResolvedAt: session.trafficRouteResolvedAt || null,
+    executionEngine: session.executionEngine || 'main',
+    graphCheckpoint: session.graphCheckpoint
+      ? {
+        ...session.graphCheckpoint,
+        state: session.graphCheckpoint.state,
+      }
+      : null,
+    hitlState: session.hitlState
+      ? { ...session.hitlState }
+      : null,
     ormScore: Number.isFinite(session.ormAssessment?.score) ? Number(session.ormAssessment?.score) : null,
     ormVerdict: session.ormAssessment?.verdict || null,
     ormReasons: [...(session.ormAssessment?.reasons || [])],

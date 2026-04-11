@@ -76,8 +76,14 @@
 | POST | /api/bot/agent/memory/retrieval-eval/sets | no | yes | yes | src/routes/bot-agent/memoryRoutes.ts:305 |
 | GET | /api/bot/agent/memory/search | no | yes | no | src/routes/bot-agent/memoryRoutes.ts:28 |
 | GET | /api/bot/agent/obsidian/knowledge-control | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:284 |
+| GET | /api/bot/agent/obsidian/knowledge-bundle | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:335 |
+| GET | /api/bot/agent/obsidian/internal-knowledge | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:366 |
 | GET | /api/bot/agent/obsidian/quality | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:275 |
+| GET | /api/bot/agent/obsidian/requirement-compile | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:397 |
 | GET | /api/bot/agent/obsidian/runtime | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:254 |
+| POST | /api/bot/agent/obsidian/knowledge-promote | no | yes | yes | src/routes/bot-agent/qualityPrivacyRoutes.ts:432 |
+| GET | /api/bot/agent/obsidian/semantic-lint-audit | no | yes | no | src/routes/bot-agent/qualityPrivacyRoutes.ts:461 |
+| POST | /api/bot/agent/obsidian/wiki-change-capture | no | yes | yes | src/routes/bot-agent/qualityPrivacyRoutes.ts:428 |
 | POST | /api/bot/agent/onboarding/run | no | yes | yes | src/routes/bot-agent/coreRoutes.ts:108 |
 | POST | /api/bot/agent/opencode/bootstrap-policy | no | yes | yes | src/routes/bot-agent/governanceRoutes.ts:297 |
 | GET | /api/bot/agent/opencode/change-requests | no | yes | no | src/routes/bot-agent/governanceRoutes.ts:437 |
@@ -115,8 +121,10 @@
 | GET | /api/bot/agent/runtime/knowledge-control-plane | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:422 |
 | GET | /api/bot/agent/runtime/lightweighting-plan | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:367 |
 | GET | /api/bot/agent/runtime/loops | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:411 |
+| GET | /api/bot/agent/runtime/operator-snapshot | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:528 |
 | GET | /api/bot/agent/runtime/readiness | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:490 |
 | GET | /api/bot/agent/runtime/role-workers | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:261 |
+| GET | /api/bot/agent/runtime/workset | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:715 |
 | POST | /api/bot/agent/runtime/sandbox-policy-sync | no | yes | yes | src/routes/bot-agent/runtimeRoutes.ts:684 |
 | GET | /api/bot/agent/runtime/scheduler-policy | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:376 |
 | GET | /api/bot/agent/runtime/self-improvement/convergence | no | yes | no | src/routes/bot-agent/runtimeRoutes.ts:704 |
@@ -140,6 +148,7 @@
 | POST | /api/bot/agent/sessions | no | yes | yes | src/routes/bot-agent/coreRoutes.ts:149 |
 | GET | /api/bot/agent/sessions/:sessionId | no | yes | no | src/routes/bot-agent/coreRoutes.ts:132 |
 | POST | /api/bot/agent/sessions/:sessionId/cancel | no | yes | yes | src/routes/bot-agent/coreRoutes.ts:176 |
+| POST | /api/bot/agent/sessions/:sessionId/resume | no | yes | yes | src/routes/bot-agent/coreRoutes.ts:191 |
 | GET | /api/bot/agent/shadow/divergence | no | yes | no | src/routes/bot-agent/rewardEvalRoutes.ts:180 |
 | GET | /api/bot/agent/shadow/divergence/:sessionId | no | yes | no | src/routes/bot-agent/rewardEvalRoutes.ts:201 |
 | GET | /api/bot/agent/shadow/stats | no | yes | no | src/routes/bot-agent/rewardEvalRoutes.ts:224 |

@@ -33,8 +33,10 @@ Primary operations entrypoint:
 - `docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md` (vault-first operating system target state)
 - `docs/planning/OBSIDIAN_OBJECT_MODEL.md` (canonical vault object families)
 - `docs/planning/OBSIDIAN_TRANSITION_PLAN.md` (migration from current mixed control plane)
-- `docs/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (LangGraph migration-ready state graph blueprint)
-- `docs/GOT_LANGGRAPH_EXECUTION_PLAN.md` (GoT reasoning + LangGraph execution rollout plan)
+- `docs/planning/MANAGED_AGENTS_FOUR_LAYER_MODEL.md` (brain, hands, session, semantic owner overlay across Render, GCP, Supabase, and shared Obsidian)
+- `docs/planning/LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md` (current agentGraph naming correction + actual LangGraph.js migration plan)
+- `docs/archive/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (historical LangGraph migration-ready state graph blueprint)
+- `docs/archive/GOT_LANGGRAPH_EXECUTION_PLAN.md` (historical GoT reasoning + LangGraph execution rollout plan)
 - `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` (local IDE lead+consult agent workflow)
 
 ## Runtime Entrypoints

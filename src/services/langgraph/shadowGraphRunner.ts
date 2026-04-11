@@ -16,15 +16,25 @@
 import logger from '../../logger';
 import { parseBooleanEnv, parseBoundedNumberEnv } from '../../utils/env';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import { buildCasualChatFallback, buildIntentClarificationFallback, buildPolicyBlockMessage } from '../agent/agentIntentClassifier';
 import {
   createInitialLangGraphState,
   appendTrace,
   type LangGraphNodeId,
   type LangGraphState,
 } from './stateContract';
-import { executeLangGraph, type LangGraphNodeHandler } from './executor';
+import { type LangGraphNodeHandler } from './executor';
+import { executeLangGraphWithLangGraphJs } from './langgraphjsAdapter';
 import { runCompilePromptNode, runRouteIntentNode, runPolicyGateNode } from './nodes/coreNodes';
+import {
+  runHydrateMemoryNode,
+  runNonTaskIntentNode,
+  runPersistAndEmitNode,
+  runTaskPolicyGateTransitionNode,
+} from './nodes/runtimeNodes';
+import { runSelectExecutionStrategyNode, type ExecutionStrategy } from './nodes/strategyNodes';
 import type { AgentPriority } from '../agent/agentRuntimeTypes';
+import type { SkillId } from '../skills/types';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const SHADOW_RUNNER_ENABLED = parseBooleanEnv(process.env.SHADOW_GRAPH_RUNNER_ENABLED, false);
@@ -44,12 +54,40 @@ type ShadowContext = {
   goal: string;
   requestedBy: string;
   priority: AgentPriority;
+  requestedSkillId: SkillId | null;
   loadMemoryHints: (params: {
     guildId: string;
     goal: string;
     maxItems: number;
     requesterUserId: string;
   }) => Promise<string[]>;
+};
+
+const getShadowExecutionStrategy = (state: LangGraphState, ctx: ShadowContext): ExecutionStrategy => {
+  return runSelectExecutionStrategyNode({
+    requestedSkillId: ctx.requestedSkillId,
+    priority: ctx.priority,
+    forceFullReview: state.policyDecision === 'review',
+  }).strategy;
+};
+
+const buildShadowTaskPreview = (state: LangGraphState): string => {
+  const summary = [
+    `[shadow-preview] ${state.executionGoal || state.originalGoal || 'task'}`,
+    `intent=${state.intent || 'task'}`,
+    `strategy=${state.executionStrategy || 'unknown'}`,
+    `memoryHints=${state.memoryHints.length}`,
+    `plans=${state.plans.length}`,
+  ];
+  return summary.join(' | ');
+};
+
+const hasPreviewOnlyShadowOutput = (state: LangGraphState): boolean => {
+  if (String(state.finalText || '').startsWith('[shadow-preview]')) {
+    return true;
+  }
+
+  return state.trace.some((entry) => String(entry.note || '').includes('shadow_preview'));
 };
 
 // ─── Node Handlers (real execution) ─────────────────────────────────
@@ -77,57 +115,198 @@ const createShadowNodeHandlers = (ctx: ShadowContext): Record<LangGraphNodeId, L
   },
 
   select_execution_strategy: async ({ state }) => {
-    return appendTrace(state, 'select_execution_strategy', ctx.priority);
+    const selection = runSelectExecutionStrategyNode({
+      requestedSkillId: ctx.requestedSkillId,
+      priority: ctx.priority,
+      forceFullReview: state.policyDecision === 'review',
+    });
+
+    return appendTrace({
+      ...state,
+      executionStrategy: selection.strategy,
+    }, 'select_execution_strategy', selection.traceNote);
   },
 
   hydrate_memory: async ({ state }) => {
-    const hints = await ctx.loadMemoryHints({
+    const hydrateMemory = await runHydrateMemoryNode({
       guildId: ctx.guildId,
       goal: state.executionGoal,
-      maxItems: ctx.priority === 'fast' ? 4 : ctx.priority === 'precise' ? 16 : 10,
-      requesterUserId: ctx.requestedBy,
+      priority: ctx.priority,
+      requestedBy: ctx.requestedBy,
+      loadHints: ctx.loadMemoryHints,
     });
-    return appendTrace({ ...state, memoryHints: hints }, 'hydrate_memory', `count=${hints.length}`);
+
+    return appendTrace({
+      ...state,
+      memoryHints: hydrateMemory.memoryHints,
+    }, 'hydrate_memory', `count=${hydrateMemory.memoryHints.length}`);
   },
 
   plan_actions: async ({ state }) => {
-    // Shadow: record plan intent without executing real planning
-    return appendTrace(state, 'plan_actions', `intent=${state.intent || 'unknown'}`);
+    return appendTrace({
+      ...state,
+      plans: [
+        ...state.plans,
+        {
+          actionName: 'shadow-plan',
+          args: {
+            strategy: state.executionStrategy || 'unknown',
+            intent: state.intent || 'unknown',
+          },
+          reason: String(state.executionGoal || state.originalGoal || '').slice(0, 240),
+        },
+      ],
+    }, 'plan_actions', `planner_preview:intent=${state.intent || 'unknown'}`);
+  },
+
+  requested_skill_run: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      executionDraft: buildShadowTaskPreview(state),
+    }, 'requested_skill_run', `requested_skill_preview:${ctx.requestedSkillId || 'none'}`);
+  },
+
+  requested_skill_refine: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      finalCandidate: buildShadowTaskPreview(state),
+      selectedFinalRaw: buildShadowTaskPreview(state),
+    }, 'requested_skill_refine', 'requested_skill_refine_preview');
+  },
+
+  fast_path_run: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      executionDraft: buildShadowTaskPreview(state),
+    }, 'fast_path_run', 'fast_path_preview');
+  },
+
+  fast_path_refine: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      finalCandidate: buildShadowTaskPreview(state),
+      selectedFinalRaw: buildShadowTaskPreview(state),
+    }, 'fast_path_refine', 'fast_path_refine_preview');
+  },
+
+  full_review_plan: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      planText: buildShadowTaskPreview(state),
+      subgoals: state.subgoals.length > 0 ? state.subgoals : ['shadow-subgoal'],
+    }, 'full_review_plan', 'full_review_plan_preview');
+  },
+
+  full_review_execute: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      executionDraft: buildShadowTaskPreview(state),
+    }, 'full_review_execute', 'full_review_execute_preview');
+  },
+
+  full_review_critique: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      critiqueText: 'shadow critique preview',
+    }, 'full_review_critique', 'full_review_critique_preview');
+  },
+
+  full_review_tot: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      totShadowBest: {
+        rawResult: buildShadowTaskPreview(state),
+        score: 0,
+        beamProbability: 0,
+        beamCorrectness: 0,
+        beamScore: 0,
+        beamProbabilitySource: 'fallback',
+        evidenceBundleId: 'shadow-preview',
+      },
+    }, 'full_review_tot', 'full_review_tot_preview');
+  },
+
+  hitl_review: async ({ state }) => {
+    return appendTrace(state, 'hitl_review', 'hitl_preview');
+  },
+
+  full_review_compose: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      finalCandidate: buildShadowTaskPreview(state),
+    }, 'full_review_compose', 'full_review_compose_preview');
+  },
+
+  full_review_promote: async ({ state }) => {
+    return appendTrace({
+      ...state,
+      selectedFinalRaw: buildShadowTaskPreview(state),
+    }, 'full_review_promote', 'full_review_promote_preview');
   },
 
   execute_actions: async ({ state }) => {
-    // Shadow: skip action execution but record the node
-    return appendTrace(state, 'execute_actions', 'shadow_skip');
+    return appendTrace(state, 'execute_actions', `execution_preview:${state.executionStrategy || 'unknown'}`);
   },
 
   critic_review: async ({ state }) => {
-    return appendTrace(state, 'critic_review', 'shadow_skip');
+    return appendTrace(state, 'critic_review', `critic_preview:plans=${state.plans.length}`);
   },
 
   policy_gate: async ({ state }) => {
-    const gate = runPolicyGateNode({
+    const transition = runTaskPolicyGateTransitionNode({
+      routedIntent: state.intent ?? 'uncertain',
       guildId: ctx.guildId,
-      goal: state.executionGoal,
+      taskGoal: state.executionGoal,
+      evaluateGate: runPolicyGateNode,
+      buildPolicyBlockMessage,
     });
+
     return appendTrace({
       ...state,
-      policyBlocked: gate.decision === 'block',
-    }, 'policy_gate', `decision=${gate.decision} score=${gate.score}`);
+      policyBlocked: transition.shouldBlock,
+      policyDecision: transition.policyGate.decision,
+      finalText: transition.blockResult ?? state.finalText,
+    }, 'policy_gate', transition.traceNote);
   },
 
   compose_response: async ({ state }) => {
-    // Shadow: compose a brief summary rather than full generation
-    const summary = state.policyBlocked
-      ? 'policy_blocked'
-      : `intent=${state.intent} hints=${state.memoryHints.length}`;
+    if (state.policyBlocked) {
+      return appendTrace({
+        ...state,
+        finalText: state.finalText || buildPolicyBlockMessage(['shadow_policy_blocked']),
+      }, 'compose_response', 'policy_blocked');
+    }
+
+    const nonTaskOutcome = await runNonTaskIntentNode({
+      routedIntent: state.intent === 'casual_chat' || state.intent === 'uncertain'
+        ? state.intent
+        : 'task',
+      goal: state.originalGoal,
+      intentHints: state.memoryHints,
+      generateCasualReply: async (goal) => buildCasualChatFallback(goal),
+      generateClarification: async (goal) => buildIntentClarificationFallback(goal),
+    });
+
+    if (nonTaskOutcome) {
+      return appendTrace({
+        ...state,
+        finalText: nonTaskOutcome.result,
+      }, 'compose_response', nonTaskOutcome.traceNote);
+    }
+
     return appendTrace({
       ...state,
-      finalText: `[shadow] ${summary}`,
-    }, 'compose_response', summary);
+      finalText: buildShadowTaskPreview(state),
+    }, 'compose_response', `shadow_preview:${state.executionStrategy || 'unknown'}`);
   },
 
   persist_and_emit: async ({ state }) => {
-    return appendTrace(state, 'persist_and_emit', 'shadow_complete');
+    return runPersistAndEmitNode({
+      shadowGraph: state,
+      status: state.errorCode ? 'failed' : 'completed',
+      currentResult: state.finalText,
+      currentError: state.errorCode,
+    }).shadowGraph;
   },
 });
 
@@ -136,33 +315,50 @@ const SHADOW_GRAPH_ORDER: LangGraphNodeId[] = [
   'ingest',
   'compile_prompt',
   'route_intent',
-  'select_execution_strategy',
+  'policy_gate',
   'hydrate_memory',
+  'select_execution_strategy',
   'plan_actions',
   'execute_actions',
   'critic_review',
-  'policy_gate',
   'compose_response',
   'persist_and_emit',
 ];
 
-const resolveShadowEdge = (params: { from: LangGraphNodeId; state: LangGraphState }): LangGraphNodeId | null => {
-  const { from, state } = params;
+const resolveShadowEdge = (params: { from: LangGraphNodeId; state: LangGraphState; context: ShadowContext }): LangGraphNodeId | null => {
+  const { from, state, context } = params;
 
-  // Intent-based short-circuiting
-  if (from === 'route_intent' && state.intent !== 'task') {
-    return 'compose_response';
+  switch (from) {
+    case 'ingest':
+      return 'compile_prompt';
+    case 'compile_prompt':
+      return 'route_intent';
+    case 'route_intent':
+      return 'policy_gate';
+    case 'policy_gate':
+      if (state.policyBlocked || state.intent !== 'task') {
+        return 'compose_response';
+      }
+      return 'hydrate_memory';
+    case 'hydrate_memory':
+      return 'select_execution_strategy';
+    case 'select_execution_strategy': {
+      const strategy = state.executionStrategy || getShadowExecutionStrategy(state, context);
+      return strategy === 'full_review' ? 'plan_actions' : 'execute_actions';
+    }
+    case 'plan_actions':
+      return 'execute_actions';
+    case 'execute_actions': {
+      const strategy = state.executionStrategy || getShadowExecutionStrategy(state, context);
+      return strategy === 'full_review' ? 'critic_review' : 'compose_response';
+    }
+    case 'critic_review':
+      return 'compose_response';
+    case 'compose_response':
+      return 'persist_and_emit';
+    default:
+      return null;
   }
-
-  // Policy block short-circuit
-  if (from === 'policy_gate' && state.policyBlocked) {
-    return 'compose_response';
-  }
-
-  // Default: follow linear order
-  const idx = SHADOW_GRAPH_ORDER.indexOf(from);
-  if (idx < 0 || idx >= SHADOW_GRAPH_ORDER.length - 1) return null;
-  return SHADOW_GRAPH_ORDER[idx + 1];
 };
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -177,6 +373,7 @@ export const runShadowGraph = async (params: {
   guildId: string;
   requestedBy: string;
   priority: AgentPriority;
+  requestedSkillId?: SkillId | null;
   goal: string;
   mainPathNodes: LangGraphNodeId[];
   loadMemoryHints: ShadowContext['loadMemoryHints'];
@@ -188,6 +385,7 @@ export const runShadowGraph = async (params: {
     goal: params.goal,
     requestedBy: params.requestedBy,
     priority: params.priority,
+    requestedSkillId: params.requestedSkillId ?? null,
     loadMemoryHints: params.loadMemoryHints,
   };
 
@@ -205,7 +403,7 @@ export const runShadowGraph = async (params: {
       timeoutId = setTimeout(() => reject(new Error('SHADOW_GRAPH_TIMEOUT')), SHADOW_TIMEOUT_MS);
     });
     const result = await Promise.race([
-      executeLangGraph({
+      executeLangGraphWithLangGraphJs({
         initialNode: 'ingest',
         initialState,
         handlers: createShadowNodeHandlers(ctx),
@@ -377,6 +575,34 @@ export type ShadowDivergenceStats = {
   avgElapsedMs: number;
 };
 
+type ShadowDivergenceStatsRow = {
+  diverge_at_index: number | null;
+  elapsed_ms: number | null;
+  shadow_error: string | null;
+  created_at?: string | null;
+};
+
+export const summarizeShadowDivergenceRows = (rows: ShadowDivergenceStatsRow[]): ShadowDivergenceStats => {
+  const totalRuns = rows.length;
+  const divergedRuns = rows.filter((row) => row.diverge_at_index != null).length;
+  const errorRuns = rows.filter((row) => Boolean(String(row.shadow_error || '').trim())).length;
+  const nonConvergedRuns = rows.filter((row) => {
+    const hasError = Boolean(String(row.shadow_error || '').trim());
+    return row.diverge_at_index != null || hasError;
+  }).length;
+  const avgElapsedMs = totalRuns > 0
+    ? rows.reduce((sum, row) => sum + Math.max(0, Number(row.elapsed_ms) || 0), 0) / totalRuns
+    : 0;
+
+  return {
+    totalRuns,
+    divergedRuns,
+    errorRuns,
+    convergenceRate: totalRuns > 0 ? ((totalRuns - nonConvergedRuns) / totalRuns) : null,
+    avgElapsedMs: Math.round(avgElapsedMs),
+  };
+};
+
 export const getShadowDivergenceStats = async (
   guildId: string,
 ): Promise<{ stats: ShadowDivergenceStats | null; error: string | null }> => {
@@ -393,22 +619,8 @@ export const getShadowDivergenceStats = async (
 
     if (error) return { stats: null, error: error.message };
 
-    const logs = data || [];
-    const totalRuns = logs.length;
-    const divergedRuns = logs.filter((l: any) => l.diverge_at_index != null).length;
-    const errorRuns = logs.filter((l: any) => !!l.shadow_error).length;
-    const avgElapsedMs = totalRuns > 0
-      ? logs.reduce((sum: number, l: any) => sum + (Number(l.elapsed_ms) || 0), 0) / totalRuns
-      : 0;
-
     return {
-      stats: {
-        totalRuns,
-        divergedRuns,
-        errorRuns,
-        convergenceRate: totalRuns > 0 ? ((totalRuns - divergedRuns) / totalRuns) : null,
-        avgElapsedMs: Math.round(avgElapsedMs),
-      },
+      stats: summarizeShadowDivergenceRows((data || []) as ShadowDivergenceStatsRow[]),
       error: null,
     };
   } catch {
@@ -443,6 +655,10 @@ export const isShadowResultPromotable = (
 
   if (result.shadowState.policyBlocked) {
     return { promotable: false, reason: 'shadow_policy_blocked' };
+  }
+
+  if (hasPreviewOnlyShadowOutput(result.shadowState)) {
+    return { promotable: false, reason: 'shadow_preview_only' };
   }
 
   const qualityDelta = computeQualityDelta(result, mainFinalStatus);

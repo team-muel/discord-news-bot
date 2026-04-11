@@ -15,7 +15,15 @@ const {
   mockGetObsidianKnowledgeCompilationStats,
   mockGetObsidianKnowledgeControlSurface,
   mockBuildObsidianKnowledgeReflectionBundle,
+  mockCompileObsidianKnowledgeBundle,
+  mockCompileObsidianRequirement,
+  mockCaptureObsidianWikiChange,
+  mockPromoteKnowledgeToObsidian,
+  mockResolveObsidianIncidentGraph,
+  mockResolveInternalKnowledge,
   mockResolveObsidianKnowledgeArtifactPath,
+  mockRunObsidianSemanticLintAudit,
+  mockTraceObsidianDecision,
   mockReadObsidianFileWithAdapter,
   mockGetObsidianVaultRoot,
   mockGetObsidianVaultRuntimeInfo,
@@ -26,6 +34,8 @@ const {
   mockGetObsidianInboxChatLoopStats,
   mockGetObsidianLoreSyncLoopStats,
   mockGetRetrievalEvalLoopStats,
+  mockGetRuntimeSchedulerPolicySnapshot,
+  mockGetPendingIntentCount,
   mockListAgentRoleWorkerSpecs,
   mockProbeHttpWorkerHealth,
   mockSummarizeOpencodeQueueReadiness,
@@ -42,7 +52,15 @@ const {
   mockGetObsidianKnowledgeCompilationStats: vi.fn(),
   mockGetObsidianKnowledgeControlSurface: vi.fn(),
   mockBuildObsidianKnowledgeReflectionBundle: vi.fn(),
+  mockCompileObsidianKnowledgeBundle: vi.fn(),
+  mockCompileObsidianRequirement: vi.fn(),
+  mockCaptureObsidianWikiChange: vi.fn(),
+  mockPromoteKnowledgeToObsidian: vi.fn(),
+  mockResolveObsidianIncidentGraph: vi.fn(),
+  mockResolveInternalKnowledge: vi.fn(),
   mockResolveObsidianKnowledgeArtifactPath: vi.fn(),
+  mockRunObsidianSemanticLintAudit: vi.fn(),
+  mockTraceObsidianDecision: vi.fn(),
   mockReadObsidianFileWithAdapter: vi.fn(),
   mockGetObsidianVaultRoot: vi.fn(),
   mockGetObsidianVaultRuntimeInfo: vi.fn(),
@@ -53,6 +71,8 @@ const {
   mockGetObsidianInboxChatLoopStats: vi.fn(),
   mockGetObsidianLoreSyncLoopStats: vi.fn(),
   mockGetRetrievalEvalLoopStats: vi.fn(),
+  mockGetRuntimeSchedulerPolicySnapshot: vi.fn(),
+  mockGetPendingIntentCount: vi.fn(),
   mockListAgentRoleWorkerSpecs: vi.fn(),
   mockProbeHttpWorkerHealth: vi.fn(),
   mockSummarizeOpencodeQueueReadiness: vi.fn(),
@@ -80,9 +100,21 @@ vi.mock('../services/obsidian/obsidianQualityService', () => ({
 
 vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
   buildObsidianKnowledgeReflectionBundle: mockBuildObsidianKnowledgeReflectionBundle,
+  compileObsidianKnowledgeBundle: mockCompileObsidianKnowledgeBundle,
+  compileObsidianRequirement: mockCompileObsidianRequirement,
+  captureObsidianWikiChange: mockCaptureObsidianWikiChange,
+  promoteKnowledgeToObsidian: mockPromoteKnowledgeToObsidian,
+  resolveObsidianIncidentGraph: mockResolveObsidianIncidentGraph,
   getObsidianKnowledgeCompilationStats: mockGetObsidianKnowledgeCompilationStats,
   getObsidianKnowledgeControlSurface: mockGetObsidianKnowledgeControlSurface,
+  resolveInternalKnowledge: mockResolveInternalKnowledge,
   resolveObsidianKnowledgeArtifactPath: mockResolveObsidianKnowledgeArtifactPath,
+  runObsidianSemanticLintAudit: mockRunObsidianSemanticLintAudit,
+  traceObsidianDecision: mockTraceObsidianDecision,
+}));
+
+vi.mock('../services/intent', () => ({
+  getPendingIntentCount: mockGetPendingIntentCount,
 }));
 
 vi.mock('../utils/obsidianEnv', () => ({
@@ -123,6 +155,10 @@ vi.mock('../services/opencode/opencodeGitHubQueueService', () => ({
 
 vi.mock('../services/runtime/operatingBaseline', () => ({
   loadOperatingBaseline: mockLoadOperatingBaseline,
+}));
+
+vi.mock('../services/runtime/runtimeSchedulerPolicyService', () => ({
+  getRuntimeSchedulerPolicySnapshot: mockGetRuntimeSchedulerPolicySnapshot,
 }));
 
 vi.mock('../services/llmClient', () => ({
@@ -232,6 +268,16 @@ describe('bot agent Obsidian runtime routes', () => {
     mockGetObsidianAdapterRuntimeStatus.mockReturnValue({
       selectedByCapability: { search_vault: 'remote-mcp', write_note: 'remote-mcp' },
       routingState: { remoteMcpCircuitOpen: false, remoteMcpCircuitReason: null },
+      accessPosture: {
+        mode: 'shared-remote-ingress',
+        summary: 'Remote MCP over the canonical shared ingress is the primary Obsidian path',
+        primaryWriteAdapter: 'remote-mcp',
+        primaryReadAdapter: 'remote-mcp',
+        primarySearchAdapter: 'remote-mcp',
+        remoteHttpIngressActive: true,
+        directVaultPathActive: false,
+        canonicalSharedIngressConfigured: true,
+      },
       remoteMcp: {
         remoteAdapterRuntime: {
           vaultRuntime: {
@@ -342,6 +388,103 @@ describe('bot agent Obsidian runtime routes', () => {
       customerImpact: false,
       notes: ['test bundle'],
     }));
+    mockCompileObsidianKnowledgeBundle.mockResolvedValue({
+      summary: 'Compiled 2 artifacts for operator routing.',
+      facts: [{ id: 'fact-1', statement: 'shared mcp first', confidence: 0.94, sourceRefs: ['repo:config/runtime/knowledge-backfill-catalog.json'], freshness: 'current', factType: 'decision' }],
+      artifacts: [{ id: 'artifact-1', artifactType: 'repo-doc', title: 'Knowledge Bundle Compile Spec', locator: 'docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md', whyIncluded: 'matched to goal', confidence: 0.72, preview: '# Knowledge Bundle Compile Spec', sourceRole: 'supporting' }],
+      gaps: [],
+      recommendedPromotions: [{ artifactKind: 'service_profile', title: 'Knowledge Bundle Compile Spec', reason: 'resolved from repo source fallback instead of shared vault content', sourceRefs: ['repo:docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md'] }],
+      resolutionTrace: ['repo-docs'],
+      confidence: 0.91,
+      inputs: { goal: 'operator routing', domains: ['architecture'], sourceHints: ['obsidian'], explicitSources: [], includeLocalOverlay: false, audience: 'engineering' },
+    });
+    mockResolveInternalKnowledge.mockResolvedValue({
+      summary: 'Resolved 2 internal knowledge artifacts for "operator routing" via shared-mcp-internal.',
+      facts: [{ id: 'fact-1', statement: 'shared mcp first', confidence: 0.94, sourceRefs: ['repo:config/runtime/knowledge-backfill-catalog.json'], freshness: 'current', factType: 'decision' }],
+      artifacts: [{ id: 'artifact-1', artifactType: 'repo-doc', title: 'Knowledge Bundle Compile Spec', locator: 'docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md', whyIncluded: 'matched to goal', confidence: 0.72, preview: '# Knowledge Bundle Compile Spec' }],
+      redactions: [],
+      accessNotes: ['Prefer the shared MCP internal knowledge surface before assuming repo-local context is complete.'],
+      gaps: [{ id: 'gap-access-internal-knowledge', gapType: 'access', description: 'Company-internal knowledge resolution is not yet compiled directly from the local repository runtime.', severity: 'medium', suggestedNextStep: 'Route this query through the shared MCP internal knowledge surface before assuming the repository is complete.' }],
+      preferredPath: 'shared-mcp-internal',
+      confidence: 0.88,
+    });
+    mockCompileObsidianRequirement.mockResolvedValue({
+      problem: 'Compile a requirement for shared MCP routing.',
+      constraints: ['Preserve existing runtime behavior'],
+      entities: ['Shared Knowledge Routing', 'Unified MCP'],
+      workflows: ['shared MCP routing and internal knowledge resolution', 'shared Obsidian wikiization and backfill'],
+      capabilityGaps: ['Company-internal knowledge resolution is not yet compiled directly from the local repository runtime.'],
+      openQuestions: ['Which shared MCP or internal surface should answer this access gap: Company-internal knowledge resolution is not yet compiled directly from the local repository runtime.'],
+      recommendedNextArtifacts: ['requirement: Shared Knowledge Routing'],
+      sourceArtifacts: [{ id: 'artifact-trigger-1', artifactType: 'internal-doc', title: 'anthropic.com/engineering/managed-agents', locator: 'https://www.anthropic.com/engineering/managed-agents', whyIncluded: 'explicit trigger source supplied by the caller', confidence: 0.68, preview: 'Explicit trigger source preserved for human-visible provenance.', sourceRole: 'trigger' }],
+      confidence: 0.87,
+      bundleSummary: 'Compiled 2 artifacts for operator routing.',
+    });
+    mockTraceObsidianDecision.mockResolvedValue({
+      subject: 'shared MCP routing policy',
+      summary: 'Traced "shared MCP routing policy" through 2 artifacts, 1 contradiction signals, and 1 explicit gaps.',
+      facts: [{ id: 'fact-1', statement: 'shared mcp first', confidence: 0.94, sourceRefs: ['repo:config/runtime/knowledge-backfill-catalog.json'], freshness: 'current', factType: 'decision' }],
+      artifacts: [{ id: 'artifact-1', artifactType: 'repo-doc', title: 'Knowledge Bundle Compile Spec', locator: 'docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md', whyIncluded: 'matched to goal', confidence: 0.72, preview: '# Knowledge Bundle Compile Spec', sourceRole: 'supporting' }],
+      gaps: [{ id: 'gap-1', gapType: 'promotion-needed', description: 'Repo mirror still needs shared promotion.', severity: 'medium', suggestedNextStep: 'Promote the repo mirror to shared vault.' }],
+      trace: [{ id: 'trace-1', stepKind: 'artifact', title: 'Knowledge Bundle Compile Spec', locator: 'docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md', reason: 'matched to goal', sourceRole: 'supporting' }],
+      contradictions: [{ id: 'issue-1', kind: 'runtime-doc-mismatch', severity: 'medium', message: 'Runtime routing still exposes a stale fallback.', evidenceRefs: ['docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md'], suggestedNextStep: 'Align runtime fallback behavior with the control-tower policy.' }],
+      supersedes: ['docs/archive/legacy-routing.md'],
+      confidence: 0.88,
+    });
+    mockResolveObsidianIncidentGraph.mockResolvedValue({
+      incident: 'unified mcp routing outage',
+      summary: 'Resolved incident graph for "unified mcp routing outage" from 3 artifacts across 1 services with 1 blockers and 2 next actions.',
+      facts: [{ id: 'fact-1', statement: 'shared mcp first', confidence: 0.94, sourceRefs: ['vault:ops/incidents/2026-04-11_unified-mcp-routing.md'], freshness: 'shared-vault', factType: 'runtime' }],
+      artifacts: [{ id: 'artifact-1', artifactType: 'obsidian-note', title: 'Unified MCP Routing Incident', locator: 'ops/incidents/2026-04-11_unified-mcp-routing.md', whyIncluded: 'incident evidence', confidence: 0.91, preview: '# Unified MCP Routing Incident', sourceRole: 'supporting' }],
+      gaps: [],
+      contradictions: [{ id: 'issue-1', kind: 'runtime-doc-mismatch', severity: 'medium', message: 'Recovery playbook has not been updated for the latest worker alias.', evidenceRefs: ['ops/playbooks/unified-mcp-recovery.md'], suggestedNextStep: 'Refresh the playbook mirror and promote the corrected object.' }],
+      affectedServices: ['unified-mcp'],
+      relatedIncidents: ['ops/incidents/2026-04-11_unified-mcp-routing.md'],
+      relatedPlaybooks: ['ops/playbooks/unified-mcp-recovery.md'],
+      relatedImprovements: ['ops/improvement/unified-mcp-routing-hardening.md'],
+      blockers: ['Recovery playbook has not been updated for the latest worker alias.'],
+      nextActions: ['Refresh the playbook mirror and promote the corrected object.', 'Promote the post-incident hardening improvement.'],
+      customerImpactLikely: true,
+      confidence: 0.86,
+    });
+    mockCaptureObsidianWikiChange.mockResolvedValue({
+      classification: ['development_slice'],
+      wikiTargets: ['plans/development/2026-04-11_operator-routing.md'],
+      writtenArtifacts: ['plans/development/2026-04-11_operator-routing.md'],
+      mirrorUpdates: ['CHANGELOG-ARCH'],
+      followUps: [],
+      gaps: [],
+      matchedCatalogEntries: ['service-mcp-tool-first-contracts'],
+    });
+    mockPromoteKnowledgeToObsidian.mockResolvedValue({
+      status: 'written',
+      writtenArtifacts: ['ops/contexts/repos/shared-routing.md'],
+      skippedReasons: [],
+      targetPath: 'ops/contexts/repos/shared-routing.md',
+      canonicalKey: 'repo/shared-routing',
+    });
+    mockRunObsidianSemanticLintAudit.mockResolvedValue({
+      summary: 'Detected 2 semantic lint issues across compiler lint, graph quality, shared coverage, or runtime-vs-doc alignment.',
+      healthy: false,
+      issueCount: 2,
+      issues: [{
+        id: 'coverage-missing-shared-targets',
+        kind: 'coverage-gap',
+        severity: 'high',
+        message: '2 shared wiki targets are still missing from the configured vault mirror.',
+        evidenceRefs: ['ops/control-tower/BLUEPRINT.md'],
+        suggestedNextStep: 'Backfill missing shared wiki targets before treating repo mirrors as canonical.',
+      }],
+      followUps: ['Backfill missing shared wiki targets before treating repo mirrors as canonical.'],
+      coverage: { totalEntries: 10, presentEntries: 8, missingEntries: 2 },
+      persistence: {
+        attempted: true,
+        summaryPath: 'ops/improvement/negative-knowledge/semantic-lint/CURRENT.md',
+        issuePaths: ['ops/improvement/negative-knowledge/semantic-lint/issues/coverage-gap-coverage-missing-shared-targets-2-shared-wiki-targets-are-still-missing-from-the-configured-vault-mirror.md'],
+        writtenArtifacts: ['ops/improvement/negative-knowledge/semantic-lint/CURRENT.md'],
+        skippedReasons: [],
+      },
+    });
     mockResolveObsidianKnowledgeArtifactPath.mockImplementation((artifact: string) => artifact === 'lint'
       ? 'ops/knowledge-control/LINT.md'
       : artifact === 'blueprint'
@@ -363,6 +506,13 @@ describe('bot agent Obsidian runtime routes', () => {
     mockGetObsidianInboxChatLoopStats.mockReturnValue({ enabled: true, started: true, running: false, intervalSec: 30, runOnStart: true, processedTotal: 4, lastFinishedAt: '2026-04-09T00:00:30.000Z', lastCandidateCount: 1, lastProcessedPaths: ['chat/inbox/2026-04-09/test-note.md'], lastSummary: 'candidates=1 processed=1' });
     mockGetObsidianLoreSyncLoopStats.mockReturnValue({ enabled: true, running: true });
     mockGetRetrievalEvalLoopStats.mockReturnValue({ enabled: true, running: false });
+    mockGetRuntimeSchedulerPolicySnapshot.mockResolvedValue({
+      generatedAt: '2026-04-11T00:00:00.000Z',
+      summary: { total: 4, appOwned: 4, dbOwned: 0, enabled: 4, running: 3 },
+      supabase: { configured: true, cronJobCount: 0 },
+      items: [{ id: 'obsidian-sync-loop', title: 'Obsidian lore sync loop', owner: 'app', startup: 'discord-ready', enabled: true, running: true, schedule: 'every 60m', source: ['src/services/obsidianLoreSyncService.ts'] }],
+    });
+    mockGetPendingIntentCount.mockResolvedValue(2);
     mockLoadOperatingBaseline.mockReturnValue({
       schemaVersion: 1,
       updatedAt: '2026-04-10',
@@ -422,6 +572,10 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({
       vaultPathConfigured: true,
+      accessPosture: {
+        mode: 'shared-remote-ingress',
+        remoteHttpIngressActive: true,
+      },
       vault: {
         root: '/vault',
         looksLikeDesktopVault: true,
@@ -485,6 +639,10 @@ describe('bot agent Obsidian runtime routes', () => {
             looksLikeDesktopVault: true,
             looksLikeRepoDocs: false,
           },
+          accessPosture: {
+            mode: 'shared-remote-ingress',
+            remoteHttpIngressActive: true,
+          },
           vaultParity: {
             compared: true,
             remoteSelectedForWrite: true,
@@ -500,6 +658,10 @@ describe('bot agent Obsidian runtime routes', () => {
             controlPaths: ['ops/control-tower/BLUEPRINT.md'],
             blueprint: { model: '4-plane-control-tower' },
           },
+          internalKnowledge: {
+            preferredPath: 'shared-mcp-internal',
+            gapCount: 1,
+          },
           retrievalBoundary: { supabaseBacked: { cacheAvailable: true } },
         },
         operatingBaseline: {
@@ -514,6 +676,79 @@ describe('bot agent Obsidian runtime routes', () => {
         },
       },
     });
+  });
+
+  it('returns operator snapshot without requiring guildId', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/operator-snapshot', {
+      query: { includePendingIntents: 'true', includeInternalKnowledge: 'true' },
+    });
+    const body = res.body as Record<string, any>;
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      snapshot: {
+        guildId: null,
+        runtime: {
+          schedulerPolicy: { summary: { total: 4 } },
+          loops: { memoryJobRunner: { running: true } },
+        },
+        obsidian: {
+          accessPosture: { mode: 'shared-remote-ingress' },
+          knowledgeControl: { blueprint: { model: '4-plane-control-tower' } },
+          internalKnowledge: { preferredPath: 'shared-mcp-internal' },
+          decisionTrace: { subject: 'shared MCP routing policy' },
+          incidentGraph: { incident: 'unified mcp routing outage' },
+        },
+      },
+    });
+    expect(body.snapshot.obsidian.promotionBacklinks[0]).toMatchObject({
+      artifactKind: 'service_profile',
+      targetPath: 'ops/services/knowledge-bundle-compile-spec/PROFILE.md',
+    });
+  });
+
+  it('returns active workset from the runtime route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/workset', {
+      query: { guildId: 'guild-1', objective: 'active operator workset' },
+    });
+    const body = res.body as Record<string, any>;
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      workset: {
+        objective: 'active operator workset',
+        lint: { issueCount: 2 },
+        decisionTrace: { subject: 'shared MCP routing policy' },
+        incidentGraph: { incident: 'unified mcp routing outage' },
+      },
+    });
+    expect(body.workset.promotionBacklinks[0]).toMatchObject({
+      artifactKind: 'service_profile',
+      targetPath: 'ops/services/knowledge-bundle-compile-spec/PROFILE.md',
+    });
+    expect(body.workset.objectRefs).toContain('ops/improvement/negative-knowledge/semantic-lint/CURRENT.md');
   });
 
   it('returns unattended health with llm runtime readiness snapshot', async () => {
@@ -665,6 +900,243 @@ describe('bot agent Obsidian runtime routes', () => {
         targetPath: 'ops/services/unified-mcp/PROFILE.md',
         plane: 'runtime',
         concern: 'service-memory',
+      },
+    });
+  });
+
+  it('returns compiled knowledge bundle from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/knowledge-bundle', {
+      query: {
+        goal: 'operator routing',
+        domains: 'architecture',
+        sourceHints: 'obsidian',
+        explicitSources: 'https://www.anthropic.com/engineering/managed-agents',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      bundle: {
+        summary: 'Compiled 2 artifacts for operator routing.',
+        resolutionTrace: ['repo-docs'],
+      },
+    });
+    expect(mockCompileObsidianKnowledgeBundle).toHaveBeenCalledWith(expect.objectContaining({
+      explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+    }));
+  });
+
+  it('returns internal knowledge resolution from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/internal-knowledge', {
+      query: { goal: 'operator routing', targets: 'shared MCP,company-context' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        preferredPath: 'shared-mcp-internal',
+        accessNotes: ['Prefer the shared MCP internal knowledge surface before assuming repo-local context is complete.'],
+      },
+    });
+  });
+
+  it('returns compiled requirement from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/requirement-compile', {
+      query: {
+        objective: 'Compile a requirement for shared MCP routing.',
+        desiredArtifact: 'requirement',
+        explicitSources: 'https://www.anthropic.com/engineering/managed-agents',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        problem: 'Compile a requirement for shared MCP routing.',
+        workflows: ['shared MCP routing and internal knowledge resolution', 'shared Obsidian wikiization and backfill'],
+      },
+    });
+    expect(mockCompileObsidianRequirement).toHaveBeenCalledWith(expect.objectContaining({
+      explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+    }));
+  });
+
+  it('returns decision trace from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/decision-trace', {
+      query: {
+        subject: 'shared MCP routing policy',
+        explicitSources: 'https://www.anthropic.com/engineering/managed-agents',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        subject: 'shared MCP routing policy',
+        contradictions: [{ kind: 'runtime-doc-mismatch' }],
+      },
+    });
+    expect(mockTraceObsidianDecision).toHaveBeenCalledWith(expect.objectContaining({
+      explicitSources: ['https://www.anthropic.com/engineering/managed-agents'],
+    }));
+  });
+
+  it('returns incident graph from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/incident-graph', {
+      query: {
+        incident: 'unified mcp routing outage',
+        serviceHints: 'unified-mcp',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        incident: 'unified mcp routing outage',
+        affectedServices: ['unified-mcp'],
+        relatedPlaybooks: ['ops/playbooks/unified-mcp-recovery.md'],
+      },
+    });
+    expect(mockResolveObsidianIncidentGraph).toHaveBeenCalledWith(expect.objectContaining({
+      incident: 'unified mcp routing outage',
+    }));
+  });
+
+  it('returns knowledge promotion result from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/obsidian/knowledge-promote', {
+      body: {
+        artifactKind: 'note',
+        title: 'Shared Routing',
+        content: 'Promoted shared routing knowledge with provenance and stable ownership.',
+        sources: ['repo:docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md'],
+        confidence: 0.91,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        status: 'written',
+        targetPath: 'ops/contexts/repos/shared-routing.md',
+      },
+    });
+  });
+
+  it('returns semantic lint audit from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/obsidian/semantic-lint-audit');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        healthy: false,
+        issueCount: 2,
+      },
+    });
+  });
+
+  it('returns wiki change capture result from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/obsidian/wiki-change-capture', {
+      body: {
+        changeSummary: 'operator routing update',
+        changeKind: 'development-slice',
+        changedPaths: ['docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md'],
+        promoteImmediately: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        classification: ['development_slice'],
+        wikiTargets: ['plans/development/2026-04-11_operator-routing.md'],
       },
     });
   });

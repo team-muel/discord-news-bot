@@ -26,6 +26,7 @@ vi.mock('../supabaseClient', () => ({
 // Dynamic import after mocks
 const {
   checkOpenClawGatewayHealth,
+  __resetGatewayHealthStateForTests,
   markGatewayUnhealthy,
   isGatewayHealthy,
   getGatewayHeaders,
@@ -54,10 +55,8 @@ const failResponse = () => ({ ok: false, json: async () => ({}) });
 describe('gatewayHealth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset module-level state by manipulating the cached health via markGatewayUnhealthy
-    // followed by clearing the checkedAt (we force check by waiting beyond TTL).
-    // In practice the TTL is 15s so we mock timers.
     vi.useFakeTimers();
+    __resetGatewayHealthStateForTests();
   });
 
   afterEach(() => {

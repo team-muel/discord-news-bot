@@ -65,10 +65,111 @@ const registry: Record<string, ObsidianVaultAdapter> = {
 };
 
 const CORE_CAPABILITIES: ObsidianCapability[] = ['read_lore', 'search_vault', 'read_file', 'graph_metadata', 'write_note', 'daily_note', 'task_management'];
+const DIRECT_VAULT_ADAPTER_IDS = new Set(['native-cli', 'script-cli', 'local-fs']);
+
+export type ObsidianVaultAccessPosture = {
+  mode: 'shared-remote-ingress' | 'direct-vault-primary' | 'mixed-routing' | 'disconnected';
+  summary: string;
+  primaryWriteAdapter: string | null;
+  primaryReadAdapter: string | null;
+  primarySearchAdapter: string | null;
+  remoteHttpIngressActive: boolean;
+  directVaultPathActive: boolean;
+  canonicalSharedIngressConfigured: boolean;
+};
+
+export type ObsidianAdapterRuntimeStatus = {
+  strictMode: boolean;
+  configuredOrder: string[];
+  configuredOrderByCapability: Record<string, string[]>;
+  effectiveOrderByCapability: Record<string, string[]>;
+  adapters: Array<{ id: string; available: boolean; capabilities: ReadonlyArray<ObsidianCapability>; deprioritized: boolean }>;
+  selectedByCapability: Record<string, string | null>;
+  routingState: { remoteMcpCircuitOpen: boolean; remoteMcpCircuitReason: string | null };
+  remoteMcp: RemoteMcpAdapterDiagnostics;
+  vault: ObsidianVaultRuntimeInfo;
+  accessPosture: ObsidianVaultAccessPosture;
+};
 
 const parseIsoMs = (value: string | null): number => {
   const timestamp = Date.parse(String(value || ''));
   return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const isDirectVaultAdapter = (adapterId: string | null | undefined): boolean => {
+  return Boolean(adapterId && DIRECT_VAULT_ADAPTER_IDS.has(adapterId));
+};
+
+const buildObsidianVaultAccessPosture = (params: {
+  selectedByCapability: Record<string, string | null>;
+  remoteMcp: RemoteMcpAdapterDiagnostics;
+  vault: ObsidianVaultRuntimeInfo;
+}): ObsidianVaultAccessPosture => {
+  const { selectedByCapability, remoteMcp, vault } = params;
+  const primaryWriteAdapter = selectedByCapability.write_note ?? null;
+  const primarySearchAdapter = selectedByCapability.search_vault ?? null;
+  const primaryReadAdapter = selectedByCapability.read_file ?? selectedByCapability.read_lore ?? null;
+  const activeAdapters = [...new Set([
+    primaryWriteAdapter,
+    primaryReadAdapter,
+    primarySearchAdapter,
+  ].filter((value): value is string => Boolean(value)))];
+  const remoteHttpIngressActive = activeAdapters.includes('remote-mcp');
+  const directVaultPathActive = activeAdapters.some((adapterId) => isDirectVaultAdapter(adapterId));
+
+  if (activeAdapters.length === 0) {
+    return {
+      mode: 'disconnected',
+      summary: 'No Obsidian read/write/search adapter is active',
+      primaryWriteAdapter,
+      primaryReadAdapter,
+      primarySearchAdapter,
+      remoteHttpIngressActive: false,
+      directVaultPathActive: false,
+      canonicalSharedIngressConfigured: remoteMcp.usesCanonicalSharedIngress,
+    };
+  }
+
+  if (remoteHttpIngressActive && directVaultPathActive) {
+    return {
+      mode: 'mixed-routing',
+      summary: `Remote MCP and direct vault adapters are mixed across capabilities (write=${primaryWriteAdapter || 'none'}, read=${primaryReadAdapter || 'none'}, search=${primarySearchAdapter || 'none'})`,
+      primaryWriteAdapter,
+      primaryReadAdapter,
+      primarySearchAdapter,
+      remoteHttpIngressActive,
+      directVaultPathActive,
+      canonicalSharedIngressConfigured: remoteMcp.usesCanonicalSharedIngress,
+    };
+  }
+
+  if (remoteHttpIngressActive) {
+    return {
+      mode: 'shared-remote-ingress',
+      summary: remoteMcp.usesCanonicalSharedIngress
+        ? 'Remote MCP over the canonical shared ingress is the primary Obsidian path'
+        : 'Remote MCP is the primary Obsidian path',
+      primaryWriteAdapter,
+      primaryReadAdapter,
+      primarySearchAdapter,
+      remoteHttpIngressActive,
+      directVaultPathActive,
+      canonicalSharedIngressConfigured: remoteMcp.usesCanonicalSharedIngress,
+    };
+  }
+
+  return {
+    mode: 'direct-vault-primary',
+    summary: vault.looksLikeDesktopVault
+      ? 'Direct vault adapters are primary; this can represent either local-only access or shared-host direct vault access'
+      : 'Direct vault adapters are primary',
+    primaryWriteAdapter,
+    primaryReadAdapter,
+    primarySearchAdapter,
+    remoteHttpIngressActive,
+    directVaultPathActive,
+    canonicalSharedIngressConfigured: remoteMcp.usesCanonicalSharedIngress,
+  };
 };
 
 const getRemoteMcpRoutingState = (): { remoteMcpCircuitOpen: boolean; remoteMcpCircuitReason: string | null } => {
@@ -198,17 +299,7 @@ export const isObsidianCapabilityAvailable = (capability: ObsidianCapability): b
   return pickAdapter(capability) !== null;
 };
 
-export const getObsidianAdapterRuntimeStatus = (): {
-  strictMode: boolean;
-  configuredOrder: string[];
-  configuredOrderByCapability: Record<string, string[]>;
-  effectiveOrderByCapability: Record<string, string[]>;
-  adapters: Array<{ id: string; available: boolean; capabilities: ReadonlyArray<ObsidianCapability>; deprioritized: boolean }>;
-  selectedByCapability: Record<string, string | null>;
-  routingState: { remoteMcpCircuitOpen: boolean; remoteMcpCircuitReason: string | null };
-  remoteMcp: RemoteMcpAdapterDiagnostics;
-  vault: ObsidianVaultRuntimeInfo;
-} => {
+export const getObsidianAdapterRuntimeStatus = (): ObsidianAdapterRuntimeStatus => {
   const routingState = getRemoteMcpRoutingState();
   const adapters = getOrderedAdapters().map((adapter) => ({
     id: adapter.id,
@@ -231,6 +322,13 @@ export const getObsidianAdapterRuntimeStatus = (): {
         .map((adapter) => adapter.id),
     ]),
   );
+  const remoteMcp = getRemoteMcpAdapterDiagnostics();
+  const vault = getObsidianVaultRuntimeInfo();
+  const accessPosture = buildObsidianVaultAccessPosture({
+    selectedByCapability,
+    remoteMcp,
+    vault,
+  });
 
   return {
     strictMode: OBSIDIAN_ADAPTER_STRICT,
@@ -240,8 +338,9 @@ export const getObsidianAdapterRuntimeStatus = (): {
     adapters,
     selectedByCapability,
     routingState,
-    remoteMcp: getRemoteMcpAdapterDiagnostics(),
-    vault: getObsidianVaultRuntimeInfo(),
+    remoteMcp,
+    vault,
+    accessPosture,
   };
 };
 
@@ -672,7 +771,7 @@ export const toggleObsidianTaskWithAdapter = async (filePath: string, line: numb
 export type ObsidianVaultHealthStatus = {
   healthy: boolean;
   issues: string[];
-  adapterStatus: ReturnType<typeof getObsidianAdapterRuntimeStatus>;
+  adapterStatus: ObsidianAdapterRuntimeStatus;
   writeCapable: boolean;
   readCapable: boolean;
   searchCapable: boolean;
@@ -702,9 +801,9 @@ export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
     issues.push('No Obsidian adapters available — vault is completely disconnected');
   }
 
-  if (adapterStatus.remoteMcp.enabled && adapterStatus.remoteMcp.configured && adapterStatus.selectedByCapability.write_note !== 'remote-mcp') {
+  if (adapterStatus.accessPosture.mode === 'mixed-routing') {
     issues.push(
-      `Remote MCP is configured but write_note routes to ${adapterStatus.selectedByCapability.write_note || 'none'} — shared/team vault writes are not active`,
+      adapterStatus.accessPosture.summary,
     );
   }
 
@@ -721,10 +820,10 @@ export const getObsidianVaultHealthStatus = (): ObsidianVaultHealthStatus => {
 
 export const getObsidianVaultLiveHealthStatus = async (): Promise<ObsidianVaultHealthStatus> => {
   const base = getObsidianVaultHealthStatus();
-  const remoteSelected = Object.values(base.adapterStatus.selectedByCapability).includes('remote-mcp');
-  const remoteAvailable = base.adapterStatus.adapters.some((adapter) => adapter.id === 'remote-mcp' && adapter.available);
+  const remoteRelevant = base.adapterStatus.accessPosture.mode === 'shared-remote-ingress'
+    || base.adapterStatus.accessPosture.mode === 'mixed-routing';
 
-  if (!remoteSelected && !remoteAvailable) {
+  if (!remoteRelevant) {
     return base;
   }
 

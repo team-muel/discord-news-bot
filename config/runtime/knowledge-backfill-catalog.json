@@ -1,13 +1,14 @@
 {
-  "schemaVersion": 2,
-  "updatedAt": "2026-04-10",
+  "schemaVersion": 3,
+  "updatedAt": "2026-04-11",
   "description": "Repository-source backfill catalog for canonical Obsidian system docs, operating-model docs, and retrieval-eval targets.",
   "policy": {
     "humanFirst": true,
     "rules": [
       "Start with operator-primary canonical docs before generated knowledge-control artifacts.",
       "Treat generated ops/knowledge-control pages as navigation aids and evidence support, not as the first semantic source.",
-      "When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries."
+      "When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries.",
+      "Treat repo memory and architecture changelog artifacts as promotion sources and compatibility mirrors; durable meaning should converge into shared wiki objects."
     ],
     "avoidAsPrimary": [
       "ops/knowledge-control/INDEX.md",
@@ -154,6 +155,7 @@
       "title": "MCP Tool Spec",
       "sourcePath": "docs/planning/mcp/MCP_TOOL_SPEC.md",
       "targetPath": "ops/services/unified-mcp/TOOL_SPEC.md",
+      "sourceMode": "compatibility-stub",
       "plane": "runtime",
       "concern": "service-memory",
       "audience": "shared",
@@ -166,6 +168,65 @@
         "mcp tool spec",
         "indexing overlap matrix",
         "local overlay indexing rules"
+      ]
+    },
+    {
+      "id": "service-mcp-tool-first-contracts",
+      "title": "Tool First Knowledge Contracts",
+      "sourcePath": "docs/planning/mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md",
+      "targetPath": "ops/services/unified-mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md",
+      "plane": "control",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "mcp", "tool-first"],
+      "intent": "architecture",
+      "queries": [
+        "tool first knowledge contracts",
+        "wiki change capture contract",
+        "high level mcp knowledge tools"
+      ]
+    },
+    {
+      "id": "service-mcp-knowledge-bundle-compile-spec",
+      "title": "Knowledge Bundle Compile Spec",
+      "sourcePath": "docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md",
+      "targetPath": "ops/services/unified-mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "mcp", "knowledge-bundle"],
+      "intent": "architecture",
+      "queries": [
+        "knowledge bundle compile spec",
+        "knowledge bundle contract",
+        "compiled shared knowledge bundle"
+      ]
+    },
+    {
+      "id": "service-mcp-obsidian-leverage-priorities",
+      "title": "Obsidian Agent Leverage Priorities",
+      "sourcePath": "docs/planning/mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md",
+      "targetPath": "ops/services/unified-mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "service-memory",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "mcp", "obsidian", "priorities"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian agent leverage priorities",
+        "top five mcp obsidian priorities",
+        "highest leverage obsidian tools"
       ]
     },
     {
@@ -192,6 +253,7 @@
       "title": "GCP OSS Integration Blueprint",
       "sourcePath": "docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md",
       "targetPath": "ops/services/openjarvis/PROFILE.md",
+      "sourceMode": "compatibility-stub",
       "plane": "runtime",
       "concern": "service-memory",
       "audience": "shared",
@@ -230,6 +292,7 @@
       "title": "Remote Only Autonomy Implementation",
       "sourcePath": "docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md",
       "targetPath": "plans/runtime/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "recursive-improvement",
       "audience": "shared",
@@ -249,6 +312,7 @@
       "title": "Local First Hybrid Autonomy",
       "sourcePath": "docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md",
       "targetPath": "plans/runtime/LOCAL_FIRST_HYBRID_AUTONOMY.md",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "recursive-improvement",
       "audience": "shared",
@@ -302,6 +366,26 @@
       ]
     },
     {
+      "id": "plan-autonomous-agent-evolution",
+      "title": "Autonomous Agent Evolution Plan",
+      "sourcePath": "docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md",
+      "targetPath": "plans/strategy/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "autonomy", "strategy"],
+      "intent": "architecture",
+      "queries": [
+        "autonomous agent evolution plan",
+        "autonomy target state roadmap",
+        "observer intent trust phase plan"
+      ]
+    },
+    {
       "id": "incident-comms-playbook",
       "title": "Oncall Comms Playbook",
       "sourcePath": "docs/ONCALL_COMMS_PLAYBOOK.md",
@@ -344,6 +428,7 @@
       "title": "Postmortem Template",
       "sourcePath": "docs/POSTMORTEM_TEMPLATE.md",
       "targetPath": "ops/improvement/POSTMORTEM_TEMPLATE.md",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "incident-learning",
       "audience": "shared",
@@ -363,6 +448,7 @@
       "title": "Obsidian Operating System Blueprint",
       "sourcePath": "docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md",
       "targetPath": "ops/control-tower/OBSIDIAN_OPERATING_SYSTEM.md",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "obsidian-operating-model",
       "audience": "operator-primary",
@@ -382,6 +468,7 @@
       "title": "Obsidian Object Model",
       "sourcePath": "docs/planning/OBSIDIAN_OBJECT_MODEL.md",
       "targetPath": "ops/control-tower/OBSIDIAN_OBJECT_MODEL.md",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "obsidian-operating-model",
       "audience": "shared",
@@ -401,6 +488,7 @@
       "title": "Obsidian Transition Plan",
       "sourcePath": "docs/planning/OBSIDIAN_TRANSITION_PLAN.md",
       "targetPath": "plans/runtime/OBSIDIAN_TRANSITION_PLAN.md",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "obsidian-operating-model",
       "audience": "shared",
@@ -416,10 +504,74 @@
       ]
     },
     {
+      "id": "langgraphjs-agentgraph-migration-plan",
+      "title": "Actual LangGraph.js + agentGraph Migration Plan",
+      "sourcePath": "docs/planning/LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md",
+      "targetPath": "plans/runtime/LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "learning",
+      "concern": "agentgraph-migration",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "langgraph", "agentgraph", "migration"],
+      "intent": "architecture",
+      "queries": [
+        "actual langgraph js migration plan",
+        "agentgraph migration plan",
+        "langgraphjs agentgraph rollout",
+        "checkpoint hitl graph migration"
+      ]
+    },
+    {
+      "id": "managed-agents-four-layer-model",
+      "title": "Managed Agents Four Layer Model",
+      "sourcePath": "docs/planning/MANAGED_AGENTS_FOUR_LAYER_MODEL.md",
+      "targetPath": "ops/control-tower/MANAGED_AGENTS_FOUR_LAYER_MODEL.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "managed-agents-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "managed-agents", "brain-hands-session", "semantic-owner"],
+      "intent": "architecture",
+      "queries": [
+        "managed agents four layer model",
+        "brain hands session semantic owner",
+        "render gcp supabase obsidian layering",
+        "managed agents architecture overlay"
+      ]
+    },
+    {
+      "id": "repo-doc-externalization-plan",
+      "title": "Repo Doc Externalization Plan",
+      "sourcePath": "docs/planning/REPO_DOC_EXTERNALIZATION_PLAN.md",
+      "targetPath": "ops/control-tower/REPO_DOC_EXTERNALIZATION_PLAN.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "documentation-externalization",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "docs", "externalization", "obsidian-first", "delete-ready"],
+      "intent": "architecture",
+      "queries": [
+        "repo doc externalization plan",
+        "planning markdown reduction",
+        "obsidian doc outsourcing plan",
+        "delete ready documentation gate"
+      ]
+    },
+    {
       "id": "obsidian-development-archaeology",
       "title": "Obsidian Development Archaeology",
       "sourcePath": "docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md",
       "targetPath": "ops/control-tower/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "obsidian-operating-model",
       "audience": "shared",
@@ -431,7 +583,29 @@
       "queries": [
         "obsidian development archaeology",
         "repo wikiization rules",
-        "repository context and development slice policy"
+        "repository context and development slice policy",
+        "repo memory wikiization",
+        "architecture changelog wikiization"
+      ]
+    },
+    {
+      "id": "obsidian-seed-objects-priority",
+      "title": "Obsidian Seed Objects Priority",
+      "sourcePath": "docs/planning/OBSIDIAN_SEED_OBJECTS_PRIORITY.md",
+      "targetPath": "plans/runtime/OBSIDIAN_SEED_OBJECTS_PRIORITY.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "learning",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "obsidian", "seed"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian seed objects priority",
+        "shared wiki seed backlog",
+        "highest leverage wiki seed objects"
       ]
     },
     {
@@ -439,6 +613,7 @@
       "title": "Repository Context - team-muel/discord-news-bot",
       "sourcePath": "docs/planning/contexts/team-muel_discord-news-bot.md",
       "targetPath": "ops/contexts/repos/team-muel_discord-news-bot.md",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "development-archaeology",
       "audience": "shared",
@@ -458,6 +633,7 @@
       "title": "Development Slice - Obsidian Development Archaeology Wikiization",
       "sourcePath": "docs/planning/development/2026-04-10_obsidian-development-archaeology-wikiization.md",
       "targetPath": "plans/development/2026-04-10_obsidian-development-archaeology-wikiization.md",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "development-archaeology",
       "audience": "shared",
@@ -470,6 +646,476 @@
         "development archaeology wikiization slice",
         "obsidian archaeology rollout",
         "repo context seed slice"
+      ]
+    },
+    {
+      "id": "reference-context-engineering-strategy",
+      "title": "Context Engineering Strategy",
+      "sourcePath": "docs/CONTEXT_ENGINEERING_STRATEGY.md",
+      "targetPath": "ops/control-tower/CONTEXT_ENGINEERING_STRATEGY.md",
+      "plane": "control",
+      "concern": "context-engineering",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "context", "strategy"],
+      "intent": "architecture",
+      "queries": [
+        "context engineering strategy",
+        "discord runtime context strategy",
+        "coding agent context save select summarize split"
+      ]
+    },
+    {
+      "id": "reference-context-isolation-guide",
+      "title": "Context Isolation Guide",
+      "sourcePath": "docs/CONTEXT_ISOLATION.md",
+      "targetPath": "ops/control-tower/CONTEXT_ISOLATION.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "context-isolation",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "context", "isolation"],
+      "intent": "architecture",
+      "queries": [
+        "context isolation guide",
+        "domain map focused edits",
+        "cross domain boundary contracts"
+      ]
+    },
+    {
+      "id": "reference-dependency-graph",
+      "title": "Dependency Graph",
+      "sourcePath": "docs/DEPENDENCY_GRAPH.md",
+      "targetPath": "ops/control-tower/DEPENDENCY_GRAPH.md",
+      "plane": "control",
+      "concern": "dependency-topology",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "dependency", "graph"],
+      "intent": "architecture",
+      "queries": [
+        "dependency graph",
+        "top fan in modules",
+        "runtime dependency topology"
+      ]
+    },
+    {
+      "id": "reference-frontend-integration-guide",
+      "title": "Frontend Integration Guide",
+      "sourcePath": "docs/FRONTEND_INTEGRATION.md",
+      "targetPath": "ops/services/frontend/INTEGRATION_GUIDE.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "runtime",
+      "concern": "frontend-integration",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "frontend", "integration"],
+      "intent": "operations",
+      "queries": [
+        "frontend integration guide",
+        "frontend backend contract endpoints",
+        "frontend required backend env"
+      ]
+    },
+    {
+      "id": "reference-harness-engineering-playbook",
+      "title": "Harness Engineering Playbook",
+      "sourcePath": "docs/HARNESS_ENGINEERING_PLAYBOOK.md",
+      "targetPath": "ops/playbooks/HARNESS_ENGINEERING.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "harness-operations",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["ops", "harness", "playbook"],
+      "intent": "operations",
+      "queries": [
+        "harness engineering playbook",
+        "harness operating playbook",
+        "evaluation harness workflow"
+      ]
+    },
+    {
+      "id": "reference-harness-release-gates",
+      "title": "Harness Release Gates",
+      "sourcePath": "docs/HARNESS_RELEASE_GATES.md",
+      "targetPath": "ops/quality/HARNESS_RELEASE_GATES.md",
+      "plane": "control",
+      "concern": "quality-control",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["quality", "harness", "release-gate"],
+      "intent": "operations",
+      "queries": [
+        "harness release gates",
+        "harness release checklist",
+        "evaluation harness gate rules"
+      ]
+    },
+    {
+      "id": "reference-multi-guild-operations-checklist",
+      "title": "Multi Guild Operations Checklist",
+      "sourcePath": "docs/MULTI_GUILD_OPERATIONS_CHECKLIST.md",
+      "targetPath": "ops/playbooks/MULTI_GUILD_OPERATIONS_CHECKLIST.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "multi-guild-operations",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["ops", "multi-guild", "checklist"],
+      "intent": "operations",
+      "queries": [
+        "multi guild operations checklist",
+        "multi guild operator checklist",
+        "guild rollout checklist"
+      ]
+    },
+    {
+      "id": "reference-obsidian-search-benchmark",
+      "title": "Obsidian Search Benchmark",
+      "sourcePath": "docs/OBSIDIAN_SEARCH_BENCHMARK.md",
+      "targetPath": "ops/services/obsidian/SEARCH_BENCHMARK.md",
+      "plane": "runtime",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "obsidian", "benchmark"],
+      "intent": "operations",
+      "queries": [
+        "obsidian search benchmark",
+        "vault search benchmark",
+        "obsidian retrieval benchmark"
+      ]
+    },
+    {
+      "id": "reference-obsidian-supabase-sync",
+      "title": "Obsidian Supabase Sync",
+      "sourcePath": "docs/OBSIDIAN_SUPABASE_SYNC.md",
+      "targetPath": "ops/services/obsidian/SUPABASE_SYNC.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "runtime",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "obsidian", "supabase", "sync"],
+      "intent": "operations",
+      "queries": [
+        "obsidian supabase sync",
+        "vault supabase synchronization",
+        "obsidian sync architecture"
+      ]
+    },
+    {
+      "id": "reference-render-agent-env-template",
+      "title": "Render Agent Env Template",
+      "sourcePath": "docs/RENDER_AGENT_ENV_TEMPLATE.md",
+      "targetPath": "ops/services/render/AGENT_ENV_TEMPLATE.md",
+      "plane": "runtime",
+      "concern": "deploy-environment",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "render", "env"],
+      "intent": "operations",
+      "queries": [
+        "render agent env template",
+        "render deployment env template",
+        "render agent environment variables"
+      ]
+    },
+    {
+      "id": "reference-role-rename-map",
+      "title": "Role Rename Map",
+      "sourcePath": "docs/ROLE_RENAME_MAP.md",
+      "targetPath": "ops/control-tower/ROLE_RENAME_MAP.md",
+      "plane": "control",
+      "concern": "runtime-surface",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "roles", "rename"],
+      "intent": "architecture",
+      "queries": [
+        "role rename map",
+        "worker role rename mapping",
+        "runtime role rename reference"
+      ]
+    },
+    {
+      "id": "reference-routes-inventory",
+      "title": "Routes Inventory",
+      "sourcePath": "docs/ROUTES_INVENTORY.md",
+      "targetPath": "ops/control-tower/ROUTES_INVENTORY.md",
+      "plane": "control",
+      "concern": "runtime-surface",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "routes", "inventory"],
+      "intent": "operations",
+      "queries": [
+        "routes inventory",
+        "api route inventory",
+        "operator control plane hotspots"
+      ]
+    },
+    {
+      "id": "reference-schema-service-map",
+      "title": "Schema Service Map",
+      "sourcePath": "docs/SCHEMA_SERVICE_MAP.md",
+      "targetPath": "ops/control-tower/SCHEMA_SERVICE_MAP.md",
+      "plane": "control",
+      "concern": "dependency-topology",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "schema", "service-map"],
+      "intent": "architecture",
+      "queries": [
+        "schema service map",
+        "supabase schema service map",
+        "table to service mapping"
+      ]
+    },
+    {
+      "id": "reference-skillset-layer",
+      "title": "Skillset Layer",
+      "sourcePath": "docs/SKILLSET_LAYER.md",
+      "targetPath": "ops/control-tower/SKILLSET_LAYER.md",
+      "plane": "control",
+      "concern": "agent-skill-topology",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "skills", "layering"],
+      "intent": "architecture",
+      "queries": [
+        "skillset layer",
+        "agent skill layering",
+        "skill topology"
+      ]
+    },
+    {
+      "id": "reference-sprint-env-vars",
+      "title": "Sprint Env Vars",
+      "sourcePath": "docs/SPRINT_ENV_VARS.md",
+      "targetPath": "ops/services/sprint/ENV_VARS.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "runtime",
+      "concern": "sprint-operations",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "sprint", "env"],
+      "intent": "operations",
+      "queries": [
+        "sprint env vars",
+        "sprint pipeline environment variables",
+        "sprint runtime env reference"
+      ]
+    },
+    {
+      "id": "reference-supabase-migration-checklist",
+      "title": "Supabase Migration Checklist",
+      "sourcePath": "docs/SUPABASE_MIGRATION_CHECKLIST.md",
+      "targetPath": "ops/services/supabase/MIGRATION_CHECKLIST.md",
+      "plane": "runtime",
+      "concern": "database-operations",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["runtime", "supabase", "migration"],
+      "intent": "operations",
+      "queries": [
+        "supabase migration checklist",
+        "database migration checklist",
+        "supabase schema rollout checklist"
+      ]
+    },
+    {
+      "id": "adr-001-memory-domain-model",
+      "title": "ADR-001 Memory Domain Model",
+      "sourcePath": "docs/adr/ADR-001-memory-domain-model.md",
+      "targetPath": "plans/decisions/ADR-001-memory-domain-model.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "memory"],
+      "intent": "architecture",
+      "queries": [
+        "adr 001 memory domain model",
+        "guild long term memory domain model",
+        "memory item types adr"
+      ]
+    },
+    {
+      "id": "adr-002-memory-retrieval-policy",
+      "title": "ADR-002 Memory Retrieval Policy",
+      "sourcePath": "docs/adr/ADR-002-memory-retrieval-policy.md",
+      "targetPath": "plans/decisions/ADR-002-memory-retrieval-policy.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "memory", "retrieval"],
+      "intent": "architecture",
+      "queries": [
+        "adr 002 memory retrieval policy",
+        "hybrid retrieval adr",
+        "memory retrieval policy decision"
+      ]
+    },
+    {
+      "id": "adr-003-admin-correction-loop",
+      "title": "ADR-003 Admin Correction Loop",
+      "sourcePath": "docs/adr/ADR-003-admin-correction-loop.md",
+      "targetPath": "plans/decisions/ADR-003-admin-correction-loop.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "admin", "correction"],
+      "intent": "architecture",
+      "queries": [
+        "adr 003 admin correction loop",
+        "administrator correction loop adr",
+        "admin correction first class feature"
+      ]
+    },
+    {
+      "id": "adr-004-citation-first-response",
+      "title": "ADR-004 Citation First Response",
+      "sourcePath": "docs/adr/ADR-004-citation-first-response.md",
+      "targetPath": "plans/decisions/ADR-004-citation-first-response.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "citations"],
+      "intent": "architecture",
+      "queries": [
+        "adr 004 citation first response",
+        "citation first response format",
+        "evidence first response adr"
+      ]
+    },
+    {
+      "id": "adr-005-context-compression-pipeline",
+      "title": "ADR-005 Context Compression Pipeline",
+      "sourcePath": "docs/adr/ADR-005-context-compression-pipeline.md",
+      "targetPath": "plans/decisions/ADR-005-context-compression-pipeline.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "context", "compression"],
+      "intent": "architecture",
+      "queries": [
+        "adr 005 context compression pipeline",
+        "context compression pipeline standard",
+        "compressed context adr"
+      ]
+    },
+    {
+      "id": "adr-006-intent-intelligence-layer",
+      "title": "ADR-006 Intent Intelligence Layer",
+      "sourcePath": "docs/adr/ADR-006-intent-intelligence-layer.md",
+      "targetPath": "plans/decisions/ADR-006-intent-intelligence-layer.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "intent", "classification"],
+      "intent": "architecture",
+      "queries": [
+        "adr 006 intent intelligence layer",
+        "intent intelligence layer adr",
+        "intent classifier decision"
+      ]
+    },
+    {
+      "id": "adr-006-memory-evolution-tiering",
+      "title": "ADR-006 Memory Evolution And Tiering",
+      "sourcePath": "docs/adr/ADR-006-memory-evolution-and-tiering.md",
+      "targetPath": "plans/decisions/ADR-006-memory-evolution-and-tiering.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "memory", "tiering"],
+      "intent": "architecture",
+      "queries": [
+        "adr 006 memory evolution and tiering",
+        "memory evolution tiering adr",
+        "memory lifecycle tiering decision"
+      ]
+    },
+    {
+      "id": "adr-007-multi-platform-surface-abstraction",
+      "title": "ADR-007 Multi-Platform Surface Abstraction",
+      "sourcePath": "docs/adr/ADR-007-multi-platform-surface-abstraction.md",
+      "targetPath": "plans/decisions/ADR-007-multi-platform-surface-abstraction.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "surface", "abstraction"],
+      "intent": "architecture",
+      "queries": [
+        "adr 007 multi platform surface abstraction",
+        "multi platform surface abstraction adr",
+        "surface abstraction decision"
       ]
     },
     {
@@ -490,6 +1136,25 @@
         "knowledge reflection pipeline",
         "reflection bundle rule",
         "knowledge control reflection guidance"
+      ]
+    },
+    {
+      "id": "architecture-changelog",
+      "title": "Architecture Changelog",
+      "sourcePath": "docs/CHANGELOG-ARCH.md",
+      "targetPath": "plans/development/ARCHITECTURE_CHANGELOG.md",
+      "plane": "learning",
+      "concern": "development-archaeology",
+      "audience": "shared",
+      "canonical": false,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["development", "architecture", "changelog"],
+      "intent": "architecture",
+      "queries": [
+        "architecture changelog",
+        "recent architecture significant changes",
+        "repo visible architecture change history"
       ]
     },
     {

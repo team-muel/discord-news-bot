@@ -72,7 +72,7 @@ Ship a production-safe MCP bridge for Muel with governance controls and observab
 
 ### Next Iteration Targets
 
-- `muelUnified` local entry in `.vscode/mcp.json` (currently only available via SSH gcpCompute)
+- Make `muelUnified` and `gcpCompute` the default agent discovery path in workspace instructions, so agents prefer MCP surfaces over local grep/file archaeology when equivalent tools exist
 - Auth context propagation for tenant-scoped tool calls
 - Per-tool rate limiting and quota enforcement
 - Tool call observability dashboard (success rate, p95 latency per tool)

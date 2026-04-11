@@ -293,6 +293,56 @@ export const getLlmRuntimeReadinessSnapshot = async (): Promise<LlmProviderRunti
 
 // ──── Fetch Helper ───────────────────────────────────────────────────────────
 
+const asRecord = (value: unknown): Record<string, unknown> => (
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+);
+
+const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const asString = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  return String(value);
+};
+
+export const extractOpenAiCompatibleText = (payload: unknown): string => {
+  const firstChoice = asRecord(asArray(asRecord(payload).choices)[0]);
+  const message = asRecord(firstChoice.message);
+  return asString(message.content).trim();
+};
+
+export const extractOpenAiTokenLogprobs = (payload: unknown): number[] => {
+  const firstChoice = asRecord(asArray(asRecord(payload).choices)[0]);
+  const logprobs = asRecord(firstChoice.logprobs);
+  return asArray(logprobs.content)
+    .map((item) => Number(asRecord(item).logprob))
+    .filter((value) => Number.isFinite(value));
+};
+
+export const extractGeminiResponseText = (payload: unknown): string => {
+  const firstCandidate = asRecord(asArray(asRecord(payload).candidates)[0]);
+  const content = asRecord(firstCandidate.content);
+  return asArray(content.parts)
+    .map((part) => asString(asRecord(part).text))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+};
+
+export const extractAnthropicResponseText = (payload: unknown): string => {
+  return asArray(asRecord(payload).content)
+    .map((block) => asRecord(block))
+    .filter((block) => asString(block.type) === 'text')
+    .map((block) => asString(block.text))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+};
+
+const isAbortErrorLike = (error: unknown): boolean => asString(asRecord(error).name) === 'AbortError';
+
 const redactUrlParams = (url: string): string => {
   try { const u = new URL(url); u.search = ''; return u.toString(); } catch { return url.split('?')[0] || url; }
 };
@@ -301,9 +351,9 @@ const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs?: nu
   const effectiveTimeout = timeoutMs ?? LLM_API_TIMEOUT_MS;
   try {
     return await baseFetchWithTimeout(input, init, effectiveTimeout);
-  } catch (error: any) {
+  } catch (error: unknown) {
     const safeUrl = redactUrlParams(input);
-    if (error?.name === 'AbortError') {
+    if (isAbortErrorLike(error)) {
       await logStructuredError({
         code: 'API_TIMEOUT',
         source: 'llmClient.fetchWithTimeout',
@@ -315,8 +365,8 @@ const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs?: nu
     await logStructuredError({
       code: 'LLM_NETWORK_ERROR',
       source: 'llmClient.fetchWithTimeout',
-      message: `LLM network error: ${String(error?.message || 'unknown')}`,
-      meta: { url: safeUrl, errorName: String(error?.name || '') },
+      message: `LLM network error: ${asString(asRecord(error).message || 'unknown')}`,
+      meta: { url: safeUrl, errorName: asString(asRecord(error).name) },
     }, error);
     throw error;
   }
@@ -375,13 +425,9 @@ export const requestOpenAiWithMeta = async (
     await throwProviderError('llmClient.requestOpenAi', 'openai', response);
   }
 
-  const data = (await response.json()) as Record<string, any>;
-  const text = String(data?.choices?.[0]?.message?.content || '').trim();
-  const tokenLogprobs = Array.isArray(data?.choices?.[0]?.logprobs?.content)
-    ? data.choices[0].logprobs.content
-        .map((item: Record<string, unknown>) => Number(item?.logprob))
-        .filter((n: number) => Number.isFinite(n))
-    : [];
+  const data = await response.json();
+  const text = extractOpenAiCompatibleText(data);
+  const tokenLogprobs = extractOpenAiTokenLogprobs(data);
   const avgLogprob = tokenLogprobs.length > 0
     ? tokenLogprobs.reduce((acc: number, n: number) => acc + n, 0) / tokenLogprobs.length
     : undefined;
@@ -415,9 +461,8 @@ export const requestGemini = async (params: LlmTextRequest): Promise<string> => 
     await throwProviderError('llmClient.requestGemini', 'gemini', response);
   }
 
-  const data = (await response.json()) as Record<string, any>;
-  const text = data?.candidates?.[0]?.content?.parts?.map((part: any) => String(part?.text || '')).join('\n') || '';
-  return text.trim();
+  const data = await response.json();
+  return extractGeminiResponseText(data);
 };
 
 export const requestAnthropic = async (params: LlmTextRequest): Promise<string> => {
@@ -446,13 +491,8 @@ export const requestAnthropic = async (params: LlmTextRequest): Promise<string> 
     await throwProviderError('llmClient.requestAnthropic', 'anthropic', response);
   }
 
-  const data = (await response.json()) as Record<string, any>;
-  const blocks = Array.isArray(data?.content) ? data.content : [];
-  return blocks
-    .filter((block: any) => String(block?.type || '') === 'text')
-    .map((block: any) => String(block?.text || ''))
-    .join('\n')
-    .trim();
+  const data = await response.json();
+  return extractAnthropicResponseText(data);
 };
 
 export const requestHuggingFace = async (params: LlmTextRequest): Promise<string> => {
@@ -483,8 +523,8 @@ export const requestHuggingFace = async (params: LlmTextRequest): Promise<string
     await throwProviderError('llmClient.requestHuggingFace', 'huggingface', response);
   }
 
-  const data = (await response.json()) as Record<string, any>;
-  return String(data?.choices?.[0]?.message?.content || '').trim();
+  const data = await response.json();
+  return extractOpenAiCompatibleText(data);
 };
 
 /**

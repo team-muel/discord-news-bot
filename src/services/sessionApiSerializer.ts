@@ -88,6 +88,11 @@ export const buildProgressSummary = (session: AgentSession): AgentSessionProgres
     runningSteps,
     pendingSteps,
     progressPercent,
+    checkpointNode: session.graphCheckpoint?.nextNode || session.graphCheckpoint?.currentNode || null,
+    checkpointSavedAt: session.graphCheckpoint?.savedAt || null,
+    checkpointResumable: session.graphCheckpoint?.resumable || false,
+    awaitingHumanInput: session.hitlState?.awaitingInput || false,
+    hitlDecision: session.hitlState?.decision || null,
   };
 };
 

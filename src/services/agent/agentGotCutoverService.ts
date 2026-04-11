@@ -48,7 +48,7 @@ const toPercent = (value: unknown, fallback: number): number => {
   return Math.max(0, Math.min(100, Math.trunc(parsed)));
 };
 
-const getStableBucket = (key: string): number => {
+export const getStableRolloutBucket = (key: string): number => {
   const digest = crypto.createHash('sha1').update(key).digest('hex').slice(0, 8);
   const n = Number.parseInt(digest, 16);
   if (!Number.isFinite(n)) {
@@ -107,7 +107,7 @@ export const getAgentGotCutoverDecision = async (params: {
       if (!params.sessionId) {
         return hit;
       }
-      const bucket = getStableBucket(`${guildId}:${params.sessionId}`);
+      const bucket = getStableRolloutBucket(`${guildId}:${params.sessionId}`);
       const selectedByRollout = bucket < hit.rolloutPercentage;
       return {
         ...hit,
@@ -133,7 +133,7 @@ export const getAgentGotCutoverDecision = async (params: {
     const readinessRecommended = readiness?.recommended === true;
     const rolloutPercentage = await resolveCutoverRolloutPercent(guildId);
     const selectedByRollout = params.sessionId
-      ? getStableBucket(`${guildId}:${params.sessionId}`) < rolloutPercentage
+      ? getStableRolloutBucket(`${guildId}:${params.sessionId}`) < rolloutPercentage
       : true;
     const allowed = readinessRecommended && selectedByRollout;
     const decision: AgentGotCutoverDecision = {

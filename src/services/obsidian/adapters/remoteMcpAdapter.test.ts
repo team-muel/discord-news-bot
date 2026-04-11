@@ -152,6 +152,36 @@ describe('remoteMcpObsidianAdapter', () => {
       });
     });
 
+    it('forwards allowHighLinkDensity for link-heavy internal writes', async () => {
+      const adapter = await loadAdapter();
+      respondWith = {
+        status: 200,
+        body: {
+          content: [{ type: 'text', text: JSON.stringify({ ok: true, path: 'ops/services/gcp-worker/PROFILE.md' }) }],
+          isError: false,
+        },
+      };
+
+      const result = await adapter.writeNote!({
+        fileName: 'ops/services/gcp-worker/PROFILE.md',
+        content: '# Link heavy profile',
+        guildId: '',
+        vaultPath: '/vault',
+        allowHighLinkDensity: true,
+      });
+
+      expect(result.path).toBe('ops/services/gcp-worker/PROFILE.md');
+      expect(lastRequestBody).toEqual({
+        name: 'obsidian.write',
+        arguments: {
+          fileName: 'ops/services/gcp-worker/PROFILE.md',
+          content: '# Link heavy profile',
+          guildId: '',
+          allowHighLinkDensity: true,
+        },
+      });
+    });
+
     it('throws when remote returns isError', async () => {
       const adapter = await loadAdapter();
       respondWith = {

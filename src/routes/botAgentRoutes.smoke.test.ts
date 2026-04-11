@@ -40,9 +40,12 @@ describe('bot agent route module smoke', () => {
     const routeKeys = new Set(routes.map((r) => `${r.method} ${r.path}`));
 
     expect(routeKeys.has('GET /agent/sessions')).toBe(true);
+    expect(routeKeys.has('POST /agent/sessions/:sessionId/resume')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/efficiency')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/worker-approval-gates')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/social-quality-snapshot')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/operator-snapshot')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/workset')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/knowledge-control-plane')).toBe(true);
     expect(routeKeys.has('GET /agent/got/policy')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/policy')).toBe(true);
@@ -51,6 +54,14 @@ describe('bot agent route module smoke', () => {
     expect(routeKeys.has('GET /agent/obsidian/runtime')).toBe(true);
     expect(routeKeys.has('GET /agent/obsidian/quality')).toBe(true);
     expect(routeKeys.has('GET /agent/obsidian/knowledge-control')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/knowledge-bundle')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/internal-knowledge')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/requirement-compile')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/decision-trace')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/incident-graph')).toBe(true);
+    expect(routeKeys.has('POST /agent/obsidian/knowledge-promote')).toBe(true);
+    expect(routeKeys.has('GET /agent/obsidian/semantic-lint-audit')).toBe(true);
+    expect(routeKeys.has('POST /agent/obsidian/wiki-change-capture')).toBe(true);
     expect(routeKeys.has('GET /agent/actions/catalog')).toBe(true);
     expect(routeKeys.has('GET /agent/actions/policies')).toBe(true);
     expect(routeKeys.has('POST /agent/actions/execute')).toBe(true);

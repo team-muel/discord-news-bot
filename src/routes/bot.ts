@@ -10,6 +10,7 @@ import { getAutomationRuntimeSnapshot, isAutomationEnabled, triggerAutomationJob
 import { createRateLimiter } from '../middleware/rateLimit';
 import { createIdempotencyGuard } from '../middleware/idempotency';
 import { toStringParam } from '../utils/validation';
+import { summarizeRuntimeHealth } from './health';
 import {
   BOT_STATUS_CACHE_TTL_MS,
   BOT_STATUS_RATE_WINDOW_MS,
@@ -21,6 +22,7 @@ import { getMultiAgentRuntimeSnapshot } from '../services/multiAgentService';
 import { getActionRunnerDiagnosticsSnapshot } from '../services/skills/actionRunner';
 import { getWorkerApprovalStoreSnapshot } from '../services/workerGeneration/workerApprovalStore';
 import { getWorkerProposalMetricsSnapshot } from '../services/workerGeneration/workerProposalMetrics';
+import { summarizeSourceUsageRows, type SourceUsageRow } from '../discord/runtime/botRuntimeState';
 import { registerBotAgentRoutes } from './botAgentRoutes';
 
 let lastBotStatusBenchmarkAt = 0;
@@ -64,13 +66,14 @@ const buildBotStatusPayload = async (): Promise<BotStatusApiResponse> => {
 
   const botEnabled = START_BOT;
   const automationEnabled = isAutomationEnabled();
-  const primaryHealthy = botEnabled && bot.ready;
-  const automationHealthy = automationEnabled && automation.healthy;
-  const healthy = primaryHealthy || automationHealthy;
-  const allEnabledHealthy = (!botEnabled || primaryHealthy) && (!automationEnabled || automationHealthy);
-  const anyEnabled = botEnabled || automationEnabled;
-
-  const statusGrade = !anyEnabled ? 'offline' : allEnabledHealthy ? 'healthy' : healthy ? 'degraded' : 'offline';
+  const runtimeHealth = summarizeRuntimeHealth({
+    botEnabled,
+    botReady: bot.ready,
+    automationEnabled,
+    automationReady: automation.healthy,
+  });
+  const healthy = runtimeHealth.healthy;
+  const statusGrade = runtimeHealth.botStatusGrade;
   const nextCheckInSec = healthy ? 15 : 45;
   const dynamicRestoreFailed = Number(bot.dynamicWorkerRestoreFailedCount || 0);
 
@@ -311,60 +314,17 @@ export function createBotRouter(): Router {
       return res.status(500).json({ ok: false, error: error.message || 'USAGE_QUERY_FAILED', message: 'Failed to query usage data' });
     }
 
-    const rows = data || [];
-    const byGuildMap = new Map<string, {
-      guildId: string;
-      total: number;
-      active: number;
-      youtube: number;
-      news: number;
-      newestCreatedAt: string | null;
-    }>();
-
-    for (const row of rows as Array<{ guild_id: string | null; is_active: boolean | null; name: string | null; created_at: string | null }>) {
-      const guildId = row.guild_id || 'unknown';
-      const stat = byGuildMap.get(guildId) || {
-        guildId,
-        total: 0,
-        active: 0,
-        youtube: 0,
-        news: 0,
-        newestCreatedAt: null,
-      };
-
-      stat.total += 1;
-      if (row.is_active) {
-        stat.active += 1;
-      }
-
-      if ((row.name || '').startsWith('youtube-')) {
-        stat.youtube += 1;
-      } else if (row.name === 'google-finance-news') {
-        stat.news += 1;
-      }
-
-      if (row.created_at && (!stat.newestCreatedAt || Date.parse(row.created_at) > Date.parse(stat.newestCreatedAt))) {
-        stat.newestCreatedAt = row.created_at;
-      }
-
-      byGuildMap.set(guildId, stat);
-    }
-
-    const byGuild = [...byGuildMap.values()].sort((a, b) => b.active - a.active || b.total - a.total);
-    const sourceTotal = rows.length;
-    const sourceActive = rows.filter((row: any) => Boolean(row.is_active)).length;
-    const youtubeTotal = rows.filter((row: any) => String(row.name || '').startsWith('youtube-')).length;
-    const newsTotal = rows.filter((row: any) => String(row.name || '') === 'google-finance-news').length;
+    const summary = summarizeSourceUsageRows((data || []) as SourceUsageRow[]);
 
     return res.json({
       discordGuildCount,
       sources: {
-        total: sourceTotal,
-        active: sourceActive,
-        youtube: youtubeTotal,
-        news: newsTotal,
+        total: summary.total,
+        active: summary.active,
+        youtube: summary.youtube,
+        news: summary.news,
       },
-      byGuild,
+      byGuild: summary.byGuild,
       generatedAt: new Date().toISOString(),
     });
   });

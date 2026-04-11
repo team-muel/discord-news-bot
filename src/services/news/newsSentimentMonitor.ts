@@ -88,6 +88,14 @@ type NewsHistoryRow = {
   created_at: string | null;
 };
 
+type NewsHistoryDbRow = {
+  guild_id: string | null;
+  title: string | null;
+  link: string | null;
+  event_signature: string | null;
+  created_at: string | null;
+};
+
 import { isSchemaUnavailableError } from '../../utils/supabaseErrors';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
@@ -297,6 +305,19 @@ const buildLexicalSignature = (title: string): string => {
   return tokens.join('|');
 };
 
+export const normalizeNewsHistoryRow = (row: NewsHistoryDbRow): NewsHistoryRow => {
+  const title = String(row.title || '');
+  const eventSignature = String(row.event_signature || '').trim() || buildLexicalSignature(title);
+
+  return {
+    guild_id: row.guild_id ? String(row.guild_id) : null,
+    title,
+    link: String(row.link || ''),
+    event_signature: eventSignature,
+    created_at: row.created_at ? String(row.created_at) : null,
+  };
+};
+
 const jaccardSimilarity = (a: string, b: string): number => {
   const setA = new Set(a.split('|').filter(Boolean));
   const setB = new Set(b.split('|').filter(Boolean));
@@ -415,13 +436,7 @@ const loadRecentNewsHistory = async (guildId: string | null): Promise<NewsHistor
     return [];
   }
 
-  return (data || []).map((row: any) => ({
-    guild_id: row.guild_id ? String(row.guild_id) : null,
-    title: String(row.title || ''),
-    link: String(row.link || ''),
-    event_signature: String(row.event_signature || ''),
-    created_at: row.created_at ? String(row.created_at) : null,
-  }));
+  return ((data || []) as NewsHistoryDbRow[]).map(normalizeNewsHistoryRow);
 };
 
 const storeNewsHistory = async (item: NewsItem, guildId: string | null) => {

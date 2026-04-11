@@ -13,7 +13,9 @@ export {
   getObsidianKnowledgeCompilationStats,
   getObsidianKnowledgeControlSurface,
   listObsidianKnowledgeArtifactPaths,
+  promoteKnowledgeToObsidian,
   resolveObsidianKnowledgeArtifactPath,
+  runObsidianSemanticLintAudit,
   runKnowledgeCompilationForNote,
 } from './knowledgeCompilerService';
 export type {
@@ -21,6 +23,11 @@ export type {
   ObsidianKnowledgeCompilationStats,
   ObsidianKnowledgeLintIssue,
   ObsidianKnowledgeLintSummary,
+  ObsidianKnowledgePromoteArtifactKind,
+  ObsidianKnowledgePromoteResult,
+  ObsidianSemanticLintAuditIssue,
+  ObsidianSemanticLintPersistenceResult,
+  ObsidianSemanticLintAuditResult,
 } from './knowledgeCompilerService';
 
 export { bootstrapObsidianGuildKnowledgeTree, autoBootstrapGuildKnowledgeOnJoin, DEFAULT_GUILD_MANIFEST } from './obsidianBootstrapService';

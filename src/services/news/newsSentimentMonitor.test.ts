@@ -76,4 +76,46 @@ describe('newsSentimentMonitor', () => {
       expect(() => mod.stopNewsSentimentMonitor()).not.toThrow();
     });
   });
+
+  describe('normalizeNewsHistoryRow', () => {
+    it('falls back to a lexical signature when legacy rows are missing event_signature', async () => {
+      const mod = await import('./newsSentimentMonitor');
+
+      const row = mod.normalizeNewsHistoryRow({
+        guild_id: 'g1',
+        title: 'Apple shares rise after earnings beat',
+        link: 'https://example.com/apple',
+        event_signature: null,
+        created_at: '2026-04-11T00:00:00.000Z',
+      });
+
+      expect(row).toEqual({
+        guild_id: 'g1',
+        title: 'Apple shares rise after earnings beat',
+        link: 'https://example.com/apple',
+        event_signature: 'after|apple|beat|earnings|rise|shares',
+        created_at: '2026-04-11T00:00:00.000Z',
+      });
+    });
+
+    it('preserves explicit event_signature values', async () => {
+      const mod = await import('./newsSentimentMonitor');
+
+      const row = mod.normalizeNewsHistoryRow({
+        guild_id: null,
+        title: 'NVIDIA unveils new model',
+        link: 'https://example.com/nvidia',
+        event_signature: 'custom|signature',
+        created_at: null,
+      });
+
+      expect(row).toEqual({
+        guild_id: null,
+        title: 'NVIDIA unveils new model',
+        link: 'https://example.com/nvidia',
+        event_signature: 'custom|signature',
+        created_at: null,
+      });
+    });
+  });
 });

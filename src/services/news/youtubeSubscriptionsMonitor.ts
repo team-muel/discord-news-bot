@@ -265,7 +265,7 @@ const processRow = async (sink: ChannelSink, row: SubscriptionRow, options?: Tic
       last_post_id: latest.id,
     });
     writeSubscriptionNote({ row, mode, latest }).catch((err) =>
-      logger.warn('[YT-MONITOR] obsidian note write failed source=%s: %s', String(row.id), getErrorMessage(err)),
+      logger.warn('[YT-MONITOR] subscription persistence failed source=%s: %s', String(row.id), getErrorMessage(err)),
     );
     return 'sent';
   }
@@ -279,7 +279,7 @@ const processRow = async (sink: ChannelSink, row: SubscriptionRow, options?: Tic
     last_post_signature: latest.id,
   });
   writeSubscriptionNote({ row, mode, latest }).catch((err) =>
-    logger.warn('[YT-MONITOR] obsidian note write failed source=%s: %s', String(row.id), getErrorMessage(err)),
+    logger.warn('[YT-MONITOR] subscription persistence failed source=%s: %s', String(row.id), getErrorMessage(err)),
   );
   return 'sent';
   } finally {

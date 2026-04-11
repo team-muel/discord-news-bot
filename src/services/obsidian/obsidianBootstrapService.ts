@@ -38,6 +38,12 @@ export const DEFAULT_GUILD_MANIFEST: GuildKnowledgeManifest = {
   sourcePrefix: 'knowledge',
 };
 
+type SeedDocument = {
+  filePath: string;
+  title: string;
+  category: string;
+};
+
 const validateGuildId = (value: string): string => {
   const trimmed = String(value || '').trim();
   if (!/^\d{6,30}$/.test(trimmed)) {
@@ -84,6 +90,51 @@ const buildSeedMarkdown = (title: string, guildId: string, category: string): st
   ].join('\n');
 };
 
+const buildSeedDocuments = (guildRoot: string, guildId: string): SeedDocument[] => {
+  return [
+    {
+      filePath: path.join(guildRoot, 'Guild_Lore.md'),
+      title: 'Guild Lore',
+      category: 'knowledge',
+    },
+    {
+      filePath: path.join(guildRoot, 'Server_History.md'),
+      title: 'Server History',
+      category: 'history',
+    },
+    {
+      filePath: path.join(guildRoot, 'Decision_Log.md'),
+      title: 'Decision Log',
+      category: 'policy',
+    },
+    {
+      filePath: path.join(guildRoot, 'customer', 'PROFILE.md'),
+      title: 'Customer Profile',
+      category: 'customer',
+    },
+    {
+      filePath: path.join(guildRoot, 'customer', 'REQUIREMENTS.md'),
+      title: 'Customer Requirements',
+      category: 'customer',
+    },
+    {
+      filePath: path.join(guildRoot, 'customer', 'ISSUES.md'),
+      title: 'Customer Issues',
+      category: 'customer',
+    },
+    {
+      filePath: path.join(guildRoot, 'customer', 'ESCALATIONS.md'),
+      title: 'Customer Escalations',
+      category: 'customer',
+    },
+    {
+      filePath: path.join(guildRoot, 'README.md'),
+      title: 'Guild Knowledge Root',
+      category: 'operations',
+    },
+  ];
+};
+
 export const bootstrapObsidianGuildKnowledgeTree = async (params: {
   guildId: string;
   vaultPath: string;
@@ -103,11 +154,14 @@ export const bootstrapObsidianGuildKnowledgeTree = async (params: {
   const guildRoot = path.join(path.resolve(vaultPath), 'guilds', guildId);
   const directories = [
     'events/ingest',
-    'memory/episodic',
-    'memory/semantic',
-    'policy',
+    'events/subscriptions',
+    'memory',
+    'customer',
     'playbooks',
     'experiments',
+    'retros',
+    'sprint-journal',
+    'chat/answers',
     'ops/state',
     'index',
   ];
@@ -123,28 +177,7 @@ export const bootstrapObsidianGuildKnowledgeTree = async (params: {
     force,
   );
 
-  const seeds = [
-    {
-      filePath: path.join(guildRoot, 'memory', 'semantic', 'Guild_Lore.md'),
-      title: 'Guild Lore',
-      category: 'knowledge',
-    },
-    {
-      filePath: path.join(guildRoot, 'memory', 'semantic', 'Server_History.md'),
-      title: 'Server History',
-      category: 'history',
-    },
-    {
-      filePath: path.join(guildRoot, 'policy', 'Decision_Log.md'),
-      title: 'Decision Log',
-      category: 'policy',
-    },
-    {
-      filePath: path.join(guildRoot, 'README.md'),
-      title: 'Guild Knowledge Root',
-      category: 'operations',
-    },
-  ];
+  const seeds = buildSeedDocuments(guildRoot, guildId);
 
   let createdFiles = 0;
   let updatedFiles = 0;

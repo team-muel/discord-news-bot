@@ -1,11 +1,19 @@
 ---
-description: "MCP tool routing rules — which server and tool to use for each task type. Prevents fragmented tool calls."
-applyTo: "src/**"
+description: "MCP-first routing rules — aggressively prefer MCP and MCP-mediated Obsidian shared surfaces over grep/read_file archaeology when equivalent tools exist."
+applyTo: "**"
 ---
 
 # MCP Tool Routing
 
 > One task → one server → one tool path. No fragmentation.
+
+## Default Stance
+
+- Default to MCP-first when a task can be satisfied by an MCP server already available in the workspace.
+- Treat `gcpCompute` / shared MCP as a team-shared and company-internal surface when the task may depend on internal knowledge, internal runbooks, operator notes, or intranet-adjacent context.
+- Default to MCP-mediated Obsidian-first for shared knowledge: operator docs, plans, requirements, retros, and shared memory should start from `gcpCompute`/shared MCP Obsidian tools.
+- Use local file archaeology (`grep_search`, `read_file`, `file_search`) only after checking the routing table, or when exact local text, local-only files, or dirty workspace overlays matter.
+- For understanding intent, history, or operational state, do not start with grep across markdown files if the shared Obsidian/MCP surface can answer first.
 
 ## IDE Agent Routing
 
@@ -24,6 +32,7 @@ When working in VS Code agent mode, use this decision tree:
 - **Use**: `gcpCompute` shared MCP surface for team/shared repository state
 - **Use**: `muelIndexing` only for dirty workspace or uncommitted local files
 - **Sequence**: if both shared state and local diff matter, query `gcpCompute` first, then compare with `muelIndexing`
+- **Default behavior**: start from MCP code-index/context tools before local grep or repeated file reads
 - **NOT**: `muelUnified` code-index tools when the shared surface is reachable
 - **NOT**: local-only `muelIndexing` as the default for shared/team context
 - **Examples**: `code-index-symbol_search`, `code-index-context_bundle`
@@ -33,6 +42,9 @@ When working in VS Code agent mode, use this decision tree:
 - **Shared/team vault (default)**: `gcpCompute` → `obsidian-*` tools
 - **Local-only vault overlay**: `muelUnified` → `obsidian-*` tools only when intentionally targeting a machine-specific local vault
 - **Read/write preference**: `gcpCompute` for operator docs, plans, requirements, retros, and any shared memory surface
+- **Meaning of Obsidian-first**: prefer MCP-backed shared Obsidian retrieval, not raw local vault/file reads
+- **NOT**: start with local markdown grep when the shared Obsidian/MCP surface is the authoritative source
+- **Fallback**: local markdown reads only for exact workspace text verification, local-only overlays, or MCP outages
 - **Examples**: `obsidian-search`, `obsidian-rag`, `obsidian-write`
 
 ### Sprint Pipeline (plan/implement/review/qa/ship)
@@ -66,5 +78,6 @@ For runtime (bot server) code, the MCP routing is:
 
 1. **Don't call GitHub REST directly** when `github` MCP is available in IDE context
 2. **Don't default to local-only `muelIndexing`** when the task is about shared/team repository state
-3. **Don't search for tools** across multiple servers — check the routing table first
-4. **Don't create new action files** for operations already covered by MCP tools
+3. **Don't start with grep/read_file archaeology** when `gcpCompute` or `muelUnified` can answer the task directly
+4. **Don't search for tools** across multiple servers — check the routing table first
+5. **Don't create new action files** for operations already covered by MCP tools

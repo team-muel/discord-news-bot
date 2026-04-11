@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import crypto from 'crypto';
 
 const mockInsertFn = vi.fn().mockResolvedValue({ error: null });
 const mockSelectChain = vi.fn();
@@ -46,6 +47,11 @@ const loadModule = async (envOverrides: Record<string, string> = {}) => {
   return mod;
 };
 
+const computeExpectedBucket = (key: string): number => {
+  const digest = crypto.createHash('sha1').update(key).digest('hex').slice(0, 8);
+  return Number.parseInt(digest, 16) % 100;
+};
+
 describe('trafficRoutingService', () => {
   it('resolveTrafficRoute returns main when disabled', async () => {
     const mod = await loadModule({ TRAFFIC_ROUTING_ENABLED: 'false' });
@@ -68,6 +74,7 @@ describe('trafficRoutingService', () => {
 
     expect(decision.route).toBe('main');
     expect(decision.reason).toBe('traffic_routing_disabled');
+    expect(decision.stableBucket).toBe(computeExpectedBucket('guild-1:test-session-1'));
   });
 
   it('resolveTrafficRoute returns shadow when dashboard not ready', async () => {
@@ -144,6 +151,51 @@ describe('trafficRoutingService', () => {
 
     expect(decision.route).toBe('shadow');
     expect(decision.reason).toContain('insufficient_shadow_samples');
+  });
+
+  it('resolveTrafficRoute treats error-only shadow runs as divergence', async () => {
+    const mod = await loadModule({
+      TRAFFIC_ROUTING_ENABLED: 'true',
+      TRAFFIC_ROUTING_MIN_SHADOW_SAMPLES: '10',
+      TRAFFIC_ROUTING_SHADOW_DIVERGE_THRESHOLD: '0.05',
+    });
+
+    mockSelectChain.mockResolvedValue({
+      data: [
+        { diverge_at_index: null, quality_delta: null, shadow_error: 'timeout' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+        { diverge_at_index: null, quality_delta: 0.1, shadow_error: '' },
+      ],
+      error: null,
+    });
+
+    const decision = await mod.resolveTrafficRoute({
+      sessionId: 'test-session-error-divergence',
+      guildId: 'guild-1',
+      priority: 'balanced',
+      gotCutoverDecision: {
+        guildId: 'guild-1',
+        allowed: true,
+        readinessRecommended: true,
+        rolloutPercentage: 100,
+        selectedByRollout: true,
+        reason: 'test',
+        failedReasons: [],
+        evaluatedAt: new Date().toISOString(),
+        windowDays: 14,
+      },
+    });
+
+    expect(decision.route).toBe('shadow');
+    expect(decision.reason).toContain('high_divergence_rate');
+    expect(decision.shadowDivergenceRate).toBe(0.1);
   });
 
   it('persistTrafficRoutingDecision calls supabase insert', async () => {

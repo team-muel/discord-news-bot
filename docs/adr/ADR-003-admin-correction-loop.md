@@ -1,34 +1,8 @@
-# ADR-003: 관리자 교정 루프를 1급 기능으로 채택
+# ADR-003 Admin Correction Loop
 
-- 상태: Accepted
-- 날짜: 2026-03-12
-
-## 배경
-
-자동 기억 생성은 누적 오차를 만든다. 교정 루프 없이는 장기적으로 품질이 하락한다.
-
-## 결정
-
-관리자 교정 루프를 정식 기능으로 도입한다.
-
-1. pin: 핵심 기억 고정
-2. edit: 기억 내용 수정
-3. deprecate: 기억 폐기
-4. resolve_conflict: 상충 기억 정리
-
-교정 액션은 감사 로그를 남긴다.
-
-## 근거
-
-- 운영 정책은 자동 추론보다 관리자 확정이 우선되어야 한다.
-- 잘못된 기억의 장기 누적을 방지해야 한다.
-
-## 결과
-
-- 품질 회복 속도 향상
-- 환각/오답의 반복 비율 감소
-
-## 후속 작업
-
-- Discord 관리자 명령 + REST API 동시 제공
-- 교정 반영 SLA 5분 이내 목표
+Status: Compatibility stub (2026-04-11)
+Canonical shared wiki object: plans/decisions/ADR-003-admin-correction-loop.md
+Catalog entry: adr-003-admin-correction-loop
+Role: Repo-local compatibility mirror only. The shared Obsidian note is the semantic owner.
+Backfill note: automated repo-to-vault promotion must not overwrite from this reduced source.
+Local continuity: keep this path only during the delete-candidate grace period, and use docs/ARCHITECTURE_INDEX.md plus docs/CHANGELOG-ARCH.md for rollout context.

@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-04-11",
+  "description": "Machine-readable classification for repository markdown externalization, stub conversion, and delete-ready audits.",
+  "defaults": {
+    "backfillRequiredFor": ["externalize", "delete-candidate"],
+    "deleteReadyRequiresCatalogCoverage": true,
+    "deleteReadyRequiresBackfilledTarget": true,
+    "deleteReadyRequiresZeroHighSeverityLint": true,
+    "deleteReadyRequiresNoHardLocalPathRefs": true,
+    "deleteReadyRequiresNoSoftLocalPathRefs": true
+  },
+  "families": [
+    {
+      "id": "github-agent-instructions",
+      "classification": "keep",
+      "description": "Agent instructions, prompts, and skills remain repo-resident inputs.",
+      "match": {
+        "prefixes": [".github/"]
+      },
+      "notes": [
+        "These files are execution inputs, not shared-Obsidian semantic owners."
+      ]
+    },
+    {
+      "id": "historical-evidence-and-archive",
+      "classification": "archive",
+      "description": "Historical evidence, retrospectives, and archived markdown should leave the active working set.",
+      "match": {
+        "prefixes": [
+          "docs/archive/",
+          "docs/planning/gate-runs/",
+          "docs/planning/memory-queue-observability/",
+          "retros/"
+        ]
+      },
+      "notes": [
+        "Archive or compact these families; do not keep them in the active planning surface."
+      ]
+    },
+    {
+      "id": "runtime-contracts-and-coupled-docs",
+      "classification": "keep",
+      "description": "Runtime-coupled contracts stay repo-resident even if mirrored elsewhere.",
+      "match": {
+        "prefixes": ["docs/contracts/"]
+      },
+      "notes": [
+        "These files are local control artifacts with hard coupling to implementation boundaries."
+      ]
+    },
+    {
+      "id": "source-local-navigation-markdown",
+      "classification": "keep",
+      "description": "Markdown files inside src are local code-navigation aids and should remain repo-resident.",
+      "match": {
+        "prefixes": ["src/"]
+      },
+      "notes": [
+        "These files document local directory shape or implementation navigation rather than shared semantic ownership."
+      ]
+    },
+    {
+      "id": "repo-control-core",
+      "classification": "keep",
+      "description": "Local control core stays in git-visible form for bootstrap, review, and operator execution.",
+      "match": {
+        "paths": [
+          "docs/ARCHITECTURE_INDEX.md",
+          "docs/CHANGELOG-ARCH.md",
+          "docs/OPERATIONS_24_7.md",
+          "docs/OPERATOR_SOP_DECISION_TABLE.md",
+          "docs/RUNBOOK_MUEL_PLATFORM.md",
+          "docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md",
+          "docs/planning/EXECUTION_BOARD.md",
+          "docs/planning/PLATFORM_CONTROL_TOWER.md",
+          "docs/planning/README.md",
+          "docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md",
+          "docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md"
+        ]
+      },
+      "notes": [
+        "Keep this surface intentionally small, explicit, and stable."
+      ]
+    },
+    {
+      "id": "stub-ready-delete-candidates",
+      "classification": "delete-candidate",
+      "description": "Reserved lane for docs that have already been shrunk to stubs and can graduate to deletion after the audit passes.",
+      "match": {
+        "paths": [
+          "docs/CONTEXT_ISOLATION.md",
+          "docs/FRONTEND_INTEGRATION.md",
+          "docs/HARNESS_ENGINEERING_PLAYBOOK.md",
+          "docs/MULTI_GUILD_OPERATIONS_CHECKLIST.md",
+          "docs/OBSIDIAN_SUPABASE_SYNC.md",
+          "docs/POSTMORTEM_TEMPLATE.md",
+          "docs/SPRINT_ENV_VARS.md",
+          "docs/adr/ADR-001-memory-domain-model.md",
+          "docs/adr/ADR-002-memory-retrieval-policy.md",
+          "docs/adr/ADR-003-admin-correction-loop.md",
+          "docs/adr/ADR-004-citation-first-response.md",
+          "docs/adr/ADR-005-context-compression-pipeline.md",
+          "docs/adr/ADR-006-intent-intelligence-layer.md",
+          "docs/adr/ADR-006-memory-evolution-and-tiering.md",
+          "docs/adr/ADR-007-multi-platform-surface-abstraction.md",
+          "docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md",
+          "docs/planning/contexts/team-muel_discord-news-bot.md",
+          "docs/planning/development/2026-04-10_obsidian-development-archaeology-wikiization.md",
+          "docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md",
+          "docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md",
+          "docs/planning/LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md",
+          "docs/planning/LOCAL_FIRST_HYBRID_AUTONOMY.md",
+          "docs/planning/MANAGED_AGENTS_FOUR_LAYER_MODEL.md",
+          "docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md",
+          "docs/planning/OBSIDIAN_OBJECT_MODEL.md",
+          "docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md",
+          "docs/planning/OBSIDIAN_SEED_OBJECTS_PRIORITY.md",
+          "docs/planning/OBSIDIAN_TRANSITION_PLAN.md",
+          "docs/planning/REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md",
+          "docs/planning/REPO_DOC_EXTERNALIZATION_PLAN.md",
+          "docs/planning/mcp/MCP_TOOL_SPEC.md",
+          "docs/planning/mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md",
+          "docs/planning/mcp/OBSIDIAN_AGENT_LEVERAGE_PRIORITIES.md"
+        ]
+      },
+      "notes": [
+        "This group tracks repo docs that were reduced to compatibility stubs and are now in the delete-ready observation lane."
+      ]
+    },
+    {
+      "id": "catalog-backed-shared-sources",
+      "classification": "externalize",
+      "description": "Catalog-backed docs should be treated as shared-Obsidian primary candidates before further repo growth.",
+      "match": {
+        "catalogSource": true
+      },
+      "notes": [
+        "These docs already have explicit shared target paths and should stay aligned with backfill coverage."
+      ]
+    },
+    {
+      "id": "planning-reference-surface",
+      "classification": "externalize",
+      "description": "Most planning markdown is reference/control prose that should converge into shared Obsidian objects.",
+      "match": {
+        "prefixes": ["docs/planning/"],
+        "excludePrefixes": [
+          "docs/planning/gate-runs/",
+          "docs/planning/memory-queue-observability/"
+        ],
+        "excludePaths": [
+          "docs/planning/EXECUTION_BOARD.md",
+          "docs/planning/PLATFORM_CONTROL_TOWER.md",
+          "docs/planning/README.md",
+          "docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md",
+          "docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md"
+        ]
+      },
+      "notes": [
+        "Use shared wiki ownership first, then shrink or stub the repo copy after the audit passes."
+      ]
+    },
+    {
+      "id": "top-level-reference-docs",
+      "classification": "externalize",
+      "description": "Top-level docs outside the local control core are semantic references that should be auditable for shared ownership.",
+      "match": {
+        "prefixes": ["docs/"],
+        "excludePrefixes": [
+          "docs/archive/",
+          "docs/contracts/",
+          "docs/planning/"
+        ],
+        "excludePaths": [
+          "docs/ARCHITECTURE_INDEX.md",
+          "docs/CHANGELOG-ARCH.md",
+          "docs/OPERATIONS_24_7.md",
+          "docs/OPERATOR_SOP_DECISION_TABLE.md",
+          "docs/RUNBOOK_MUEL_PLATFORM.md",
+          "docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md"
+        ]
+      },
+      "notes": [
+        "Keep only the minimum bootstrap surface local; the rest should become explicit shared objects or compatibility mirrors."
+      ]
+    }
+  ]
+}

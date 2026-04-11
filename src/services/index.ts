@@ -23,6 +23,7 @@ export * as automation from './automation';
 export * as discordSupport from './discord-support';
 export * as eval_ from './eval';
 export * as infra from './infra';
+export * as agentGraph from './langgraph';
 export * as langgraph from './langgraph';
 export * as llm from './llm';
 export * as memory from './memory';

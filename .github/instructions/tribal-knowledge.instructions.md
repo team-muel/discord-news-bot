@@ -163,7 +163,7 @@ The cost of querying is near-zero. The cost of building on wrong assumptions is 
 
 ## Knowledge Feedback Loop
 
-This file is the **team's shared knowledge base**. It should grow from real experience, not speculation.
+This file is the **repo-local compatibility knowledge source**. It should grow from real experience, not speculation, but durable team knowledge should also be promoted into the shared Obsidian wiki or a backfillable canonical repo doc.
 
 ### When to Add Here
 
@@ -182,7 +182,8 @@ During `/retro`, if a new gotcha is discovered:
 
 ### Relationship to IDE Agent Memory
 
-- **This file** = team knowledge (shared, versioned in git, reviewed)
+- **This file** = repo-local compatibility memory and source artifact for durable lessons
+- **Shared Obsidian wiki** = semantic owner for team-visible durable knowledge and archaeology
 - **IDE agent memory** (`/memories/`) = personal experience (per-user, not versioned)
-- Overlap is expected. When a personal memory proves universally useful, promote it here.
-- When this file is updated, relevant IDE agent memory should be checked for staleness.
+- Overlap is expected. When a personal or repo-local memory proves universally useful, promote it into the shared wiki and keep this file aligned as needed.
+- When this file is updated, relevant IDE agent memory and shared wiki notes should be checked for staleness.

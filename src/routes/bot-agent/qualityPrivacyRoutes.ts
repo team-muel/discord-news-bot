@@ -8,13 +8,37 @@ import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previ
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus, readObsidianFileWithAdapter } from '../../services/obsidian/router';
 import { getObsidianInboxChatLoopStats } from '../../services/obsidian/obsidianInboxChatLoopService';
 import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
-import { buildObsidianKnowledgeReflectionBundle, getObsidianKnowledgeCompilationStats, getObsidianKnowledgeControlSurface, resolveObsidianKnowledgeArtifactPath } from '../../services/obsidian/knowledgeCompilerService';
+import {
+  buildObsidianKnowledgeReflectionBundle,
+  captureObsidianWikiChange,
+  compileObsidianRequirement,
+  compileObsidianKnowledgeBundle,
+  getObsidianKnowledgeCompilationStats,
+  getObsidianKnowledgeControlSurface,
+  promoteKnowledgeToObsidian,
+  resolveObsidianIncidentGraph,
+  resolveInternalKnowledge,
+  resolveObsidianKnowledgeArtifactPath,
+  runObsidianSemanticLintAudit,
+  traceObsidianDecision,
+} from '../../services/obsidian/knowledgeCompilerService';
 import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agent/agentQualityReviewService';
 import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
+
+const parseCsvQueryValues = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => parseCsvQueryValues(entry));
+  }
+
+  return String(value || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
 
 export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): void {
   const { router, adminActionRateLimiter, adminIdempotency, opencodeIdempotency } = deps;
@@ -253,6 +277,7 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
 
   router.get('/agent/obsidian/runtime', requireAdmin, async (_req, res, next) => {
     try {
+      const adapterRuntime = getObsidianAdapterRuntimeStatus();
       const [vaultHealth, retrievalBoundary] = await Promise.all([
         getObsidianVaultLiveHealthStatus(),
         getObsidianRetrievalBoundarySnapshot(),
@@ -260,7 +285,8 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
       return res.json({
         vaultPathConfigured: Boolean(getObsidianVaultRoot()),
         vault: getObsidianVaultRuntimeInfo(),
-        adapterRuntime: getObsidianAdapterRuntimeStatus(),
+        adapterRuntime,
+        accessPosture: adapterRuntime.accessPosture,
         vaultHealth,
         cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
         compiler: getObsidianKnowledgeCompilationStats(),
@@ -318,6 +344,200 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
         artifact,
         bundle,
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/obsidian/knowledge-bundle', requireAdmin, async (req, res, next) => {
+    const goal = toStringParam(req.query?.goal);
+    if (!goal) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'goal is required' });
+    }
+
+    const domains = parseCsvQueryValues(req.query?.domains);
+    const sourceHints = parseCsvQueryValues(req.query?.sourceHints);
+    const explicitSources = parseCsvQueryValues(req.query?.explicitSources);
+
+    try {
+      const bundle = await compileObsidianKnowledgeBundle({
+        goal,
+        domains,
+        sourceHints,
+        explicitSources,
+        includeLocalOverlay: req.query?.includeLocalOverlay === 'true',
+        maxArtifacts: req.query?.maxArtifacts !== undefined ? toBoundedInt(req.query?.maxArtifacts, 8, { min: 1, max: 12 }) : undefined,
+        maxFacts: req.query?.maxFacts !== undefined ? toBoundedInt(req.query?.maxFacts, 12, { min: 1, max: 20 }) : undefined,
+        audience: toStringParam(req.query?.audience) || undefined,
+      });
+      return res.json({ ok: true, bundle });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/obsidian/internal-knowledge', requireAdmin, async (req, res, next) => {
+    const goal = toStringParam(req.query?.goal);
+    if (!goal) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'goal is required' });
+    }
+
+    const targets = parseCsvQueryValues(req.query?.targets);
+    const sourceHints = parseCsvQueryValues(req.query?.sourceHints);
+
+    try {
+      const result = await resolveInternalKnowledge({
+        goal,
+        targets,
+        sourceHints,
+        includeRelatedArtifacts: req.query?.includeRelatedArtifacts === 'true',
+        maxArtifacts: req.query?.maxArtifacts !== undefined ? toBoundedInt(req.query?.maxArtifacts, 8, { min: 1, max: 12 }) : undefined,
+        maxFacts: req.query?.maxFacts !== undefined ? toBoundedInt(req.query?.maxFacts, 10, { min: 1, max: 16 }) : undefined,
+        audience: toStringParam(req.query?.audience) || undefined,
+      });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/obsidian/requirement-compile', requireAdmin, async (req, res, next) => {
+    const objective = toStringParam(req.query?.objective);
+    if (!objective) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'objective is required' });
+    }
+
+    const targets = parseCsvQueryValues(req.query?.targets);
+    const sourceHints = parseCsvQueryValues(req.query?.sourceHints);
+    const explicitSources = parseCsvQueryValues(req.query?.explicitSources);
+
+    try {
+      const result = await compileObsidianRequirement({
+        objective,
+        targets,
+        sourceHints,
+        explicitSources,
+        maxArtifacts: req.query?.maxArtifacts !== undefined ? toBoundedInt(req.query?.maxArtifacts, 6, { min: 1, max: 12 }) : undefined,
+        maxFacts: req.query?.maxFacts !== undefined ? toBoundedInt(req.query?.maxFacts, 10, { min: 1, max: 16 }) : undefined,
+        audience: toStringParam(req.query?.audience) || undefined,
+        desiredArtifact: toStringParam(req.query?.desiredArtifact) || undefined,
+        promoteImmediately: req.query?.promoteImmediately === 'true',
+        allowOverwrite: req.query?.allowOverwrite === 'true',
+      });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/obsidian/decision-trace', requireAdmin, async (req, res, next) => {
+    const subject = toStringParam(req.query?.subject);
+    if (!subject) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'subject is required' });
+    }
+
+    try {
+      const result = await traceObsidianDecision({
+        subject,
+        targets: parseCsvQueryValues(req.query?.targets),
+        sourceHints: parseCsvQueryValues(req.query?.sourceHints),
+        explicitSources: parseCsvQueryValues(req.query?.explicitSources),
+        maxArtifacts: req.query?.maxArtifacts !== undefined ? toBoundedInt(req.query?.maxArtifacts, 6, { min: 1, max: 12 }) : undefined,
+        maxFacts: req.query?.maxFacts !== undefined ? toBoundedInt(req.query?.maxFacts, 10, { min: 1, max: 16 }) : undefined,
+        audience: toStringParam(req.query?.audience) || undefined,
+      });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/obsidian/incident-graph', requireAdmin, async (req, res, next) => {
+    const incident = toStringParam(req.query?.incident);
+    if (!incident) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'incident is required' });
+    }
+
+    try {
+      const result = await resolveObsidianIncidentGraph({
+        incident,
+        serviceHints: parseCsvQueryValues(req.query?.serviceHints),
+        sourceHints: parseCsvQueryValues(req.query?.sourceHints),
+        explicitSources: parseCsvQueryValues(req.query?.explicitSources),
+        maxArtifacts: req.query?.maxArtifacts !== undefined ? toBoundedInt(req.query?.maxArtifacts, 8, { min: 1, max: 12 }) : undefined,
+        maxFacts: req.query?.maxFacts !== undefined ? toBoundedInt(req.query?.maxFacts, 10, { min: 1, max: 16 }) : undefined,
+        includeImprovements: req.query?.includeImprovements === undefined ? true : req.query?.includeImprovements === 'true',
+        audience: toStringParam(req.query?.audience) || undefined,
+      });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/obsidian/knowledge-promote', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
+    const artifactKind = toStringParam(req.body?.artifactKind) as 'note' | 'requirement' | 'ops-note' | 'contract' | 'retrofit' | 'lesson';
+    const title = toStringParam(req.body?.title);
+    const content = toStringParam(req.body?.content);
+    if (!artifactKind || !title || !content) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'artifactKind, title, and content are required' });
+    }
+
+    try {
+      const result = await promoteKnowledgeToObsidian({
+        artifactKind,
+        title,
+        content,
+        sources: Array.isArray(req.body?.sources) ? req.body.sources : [],
+        confidence: typeof req.body?.confidence === 'number' ? req.body.confidence : undefined,
+        tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
+        owner: toStringParam(req.body?.owner) || undefined,
+        canonicalKey: toStringParam(req.body?.canonicalKey) || undefined,
+        nextAction: toStringParam(req.body?.nextAction) || undefined,
+        supersedes: Array.isArray(req.body?.supersedes) ? req.body.supersedes : [],
+        validAt: toStringParam(req.body?.validAt) || undefined,
+        allowOverwrite: req.body?.allowOverwrite === true,
+      });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/obsidian/semantic-lint-audit', requireAdmin, async (req, res, next) => {
+    try {
+      const result = await runObsidianSemanticLintAudit({
+        maxIssues: req.query?.maxIssues !== undefined ? toBoundedInt(req.query?.maxIssues, 12, { min: 1, max: 30 }) : undefined,
+        includeGraphAudit: req.query?.includeGraphAudit === undefined ? true : req.query?.includeGraphAudit === 'true',
+      });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/obsidian/wiki-change-capture', requireAdmin, adminActionRateLimiter, opencodeIdempotency, async (req, res, next) => {
+    const changeSummary = toStringParam(req.body?.changeSummary);
+    const changeKind = toStringParam(req.body?.changeKind).toLowerCase();
+    if (!changeSummary || !isOneOf(changeKind, ['repo-memory', 'architecture-delta', 'service-change', 'ops-change', 'development-slice', 'changelog-worthy'])) {
+      return res.status(400).json({
+        ok: false,
+        error: 'VALIDATION',
+        message: 'changeSummary and a valid changeKind are required',
+      });
+    }
+
+    try {
+      const result = await captureObsidianWikiChange({
+        changeSummary,
+        changeKind,
+        changedPaths: Array.isArray(req.body?.changedPaths) ? req.body.changedPaths : [],
+        validationRefs: Array.isArray(req.body?.validationRefs) ? req.body.validationRefs : [],
+        mirrorTargets: Array.isArray(req.body?.mirrorTargets) ? req.body.mirrorTargets : [],
+        promoteImmediately: req.body?.promoteImmediately === true,
+        allowOverwrite: req.body?.allowOverwrite === true,
+      });
+      return res.json({ ok: true, result });
     } catch (error) {
       next(error);
     }

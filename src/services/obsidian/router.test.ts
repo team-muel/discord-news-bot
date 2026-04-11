@@ -181,6 +181,7 @@ describe('Obsidian Router', () => {
       expect(status.selectedByCapability.read_lore).toBe('native-cli');
       expect(status.selectedByCapability.search_vault).toBe('native-cli');
       expect(status.effectiveOrderByCapability.read_lore).toEqual(['native-cli', 'script-cli', 'local-fs']);
+      expect(status.accessPosture.mode).toBe('direct-vault-primary');
       expect(status.routingState.remoteMcpCircuitOpen).toBe(false);
       expect(status.remoteMcp.enabled).toBe(false);
     });
@@ -229,7 +230,7 @@ describe('Obsidian Router', () => {
   });
 
   describe('getObsidianVaultHealthStatus', () => {
-    it('fails closed when remote MCP is configured but shared write is not selected', () => {
+    it('keeps direct vault routing healthy when remote MCP is configured but unused', () => {
       vi.mocked(remoteMcpModule.getRemoteMcpAdapterDiagnostics).mockReturnValue({
         enabled: true,
         configured: true,
@@ -257,8 +258,9 @@ describe('Obsidian Router', () => {
 
       const status = router.getObsidianVaultHealthStatus();
 
-      expect(status.healthy).toBe(false);
-      expect(status.issues).toContain('Remote MCP is configured but write_note routes to native-cli — shared/team vault writes are not active');
+      expect(status.healthy).toBe(true);
+      expect(status.adapterStatus.accessPosture.mode).toBe('direct-vault-primary');
+      expect(status.issues).toEqual([]);
     });
   });
 

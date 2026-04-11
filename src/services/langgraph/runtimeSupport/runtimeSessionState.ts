@@ -8,6 +8,29 @@ const cloneAgentOutcome = (outcome: AgentOutcome): AgentOutcome => ({
   reflection: outcome.reflection ? { ...outcome.reflection } : undefined,
 });
 
+const cloneCompiledPrompt = (compiledPrompt: LangGraphState['compiledPrompt']) => {
+  if (!compiledPrompt) {
+    return null;
+  }
+
+  return {
+    ...compiledPrompt,
+    directives: [...compiledPrompt.directives],
+    intentTags: [...compiledPrompt.intentTags],
+  };
+};
+
+export const cloneLangGraphState = (state: LangGraphState): LangGraphState => ({
+  ...state,
+  compiledPrompt: cloneCompiledPrompt(state.compiledPrompt),
+  memoryHints: [...state.memoryHints],
+  plans: state.plans.map((plan) => ({ ...plan, args: { ...plan.args } })),
+  outcomes: state.outcomes.map(cloneAgentOutcome),
+  subgoals: [...state.subgoals],
+  totShadowBest: state.totShadowBest ? { ...state.totShadowBest } : null,
+  trace: state.trace.map((entry) => ({ ...entry })),
+});
+
 export const cancelAllPendingSteps = (session: AgentSession, timestamp: string): void => {
   for (const step of session.steps) {
     if (step.status === 'pending' || step.status === 'running') {
@@ -25,14 +48,15 @@ export const touch = (session: AgentSession): void => {
 export const cloneSession = (session: AgentSession): AgentSession => ({
   ...session,
   steps: session.steps.map((step) => ({ ...step })),
-  shadowGraph: session.shadowGraph
+  shadowGraph: session.shadowGraph ? cloneLangGraphState(session.shadowGraph) : null,
+  graphCheckpoint: session.graphCheckpoint
     ? {
-      ...session.shadowGraph,
-      memoryHints: [...session.shadowGraph.memoryHints],
-      plans: session.shadowGraph.plans.map((plan) => ({ ...plan, args: { ...plan.args } })),
-      outcomes: session.shadowGraph.outcomes.map(cloneAgentOutcome),
-      trace: session.shadowGraph.trace.map((entry) => ({ ...entry })),
+      ...session.graphCheckpoint,
+      state: session.graphCheckpoint.state ? cloneLangGraphState(session.graphCheckpoint.state) : null,
     }
+    : null,
+  hitlState: session.hitlState
+    ? { ...session.hitlState }
     : null,
 });
 

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { upsertObsidianSystemDocument } from '../src/services/obsidian/authoring';
+import { getObsidianAdapterRuntimeStatus, readObsidianFileWithAdapter } from '../src/services/obsidian/router';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -14,6 +15,7 @@ type CatalogEntry = {
   title: string;
   sourcePath: string;
   targetPath: string;
+  sourceMode?: 'full-source' | 'compatibility-stub';
   sectionHeading?: string;
   tags?: string[];
   plane?: string;
@@ -52,6 +54,9 @@ type CliOptions = {
 
 type CatalogReport = {
   vaultPath: string;
+  existenceMode: string;
+  selectedReadAdapter: string | null;
+  selectedWriteAdapter: string | null;
   totalEntries: number;
   existingEntries: number;
   missingEntries: number;
@@ -73,10 +78,16 @@ const compact = (value: unknown): string => String(value || '').replace(/\s+/g, 
 
 const stripMarkdownExtension = (value: string): string => value.replace(/\.md$/i, '');
 
-const resolveVaultTargetPath = (vaultPath: string, targetPath: string): string => {
-  const normalized = stripMarkdownExtension(targetPath)
+const isCompatibilityStubEntry = (entry: CatalogEntry): boolean => entry.sourceMode === 'compatibility-stub';
+
+const normalizeVaultRelativePath = (targetPath: string): string => {
+  return `${stripMarkdownExtension(targetPath)
     .replace(/\\/g, '/')
-    .replace(/^\/+/, '');
+    .replace(/^\/+/, '')}.md`;
+};
+
+const resolveVaultTargetPath = (vaultPath: string, targetPath: string): string => {
+  const normalized = stripMarkdownExtension(normalizeVaultRelativePath(targetPath));
   const segments = normalized
     .split('/')
     .map((segment) => compact(segment))
@@ -85,8 +96,16 @@ const resolveVaultTargetPath = (vaultPath: string, targetPath: string): string =
   return path.join(path.resolve(vaultPath), ...segments) + '.md';
 };
 
-const targetExistsInVault = (vaultPath: string, targetPath: string): boolean => {
-  return fs.existsSync(resolveVaultTargetPath(vaultPath, targetPath));
+const targetExistsInVault = async (vaultPath: string, targetPath: string): Promise<boolean> => {
+  if (fs.existsSync(resolveVaultTargetPath(vaultPath, targetPath))) {
+    return true;
+  }
+
+  const content = await readObsidianFileWithAdapter({
+    vaultPath,
+    filePath: normalizeVaultRelativePath(targetPath),
+  });
+  return content !== null;
 };
 
 const parseArgs = (): CliOptions => {
@@ -179,7 +198,7 @@ const renderEntryContent = (entry: CatalogEntry, rawSource: string): string => {
   return lines.join('\n');
 };
 
-const buildCatalogReport = (options: CliOptions, catalog: CatalogDocument, entries: CatalogEntry[]): CatalogReport => {
+const buildCatalogReport = async (options: CliOptions, catalog: CatalogDocument, entries: CatalogEntry[]): Promise<CatalogReport> => {
   const missingTargetPaths: string[] = [];
   const operatorPrimaryMissingPaths: string[] = [];
   let existingEntries = 0;
@@ -188,9 +207,12 @@ const buildCatalogReport = (options: CliOptions, catalog: CatalogDocument, entri
   let startHereEntries = 0;
   let startHereMissing = 0;
   let agentReferenceEntries = 0;
+  const adapterStatus = getObsidianAdapterRuntimeStatus();
+  const selectedReadAdapter = adapterStatus.selectedByCapability.read_file ?? null;
+  const selectedWriteAdapter = adapterStatus.selectedByCapability.write_note ?? null;
 
   for (const entry of entries) {
-    const exists = targetExistsInVault(options.vaultPath, entry.targetPath);
+    const exists = await targetExistsInVault(options.vaultPath, entry.targetPath);
     if (exists) {
       existingEntries += 1;
     } else {
@@ -219,6 +241,9 @@ const buildCatalogReport = (options: CliOptions, catalog: CatalogDocument, entri
 
   return {
     vaultPath: options.vaultPath,
+    existenceMode: 'filesystem-or-adapter-read',
+    selectedReadAdapter,
+    selectedWriteAdapter,
     totalEntries: entries.length,
     existingEntries,
     missingEntries: entries.length - existingEntries,
@@ -244,6 +269,9 @@ const printCatalogReport = (report: CatalogReport, jsonOutput: boolean): void =>
   }
 
   console.log(`[obsidian-system-backfill] report vault=${report.vaultPath}`);
+  console.log(
+    `[obsidian-system-backfill] verification mode=${report.existenceMode} readAdapter=${report.selectedReadAdapter || 'none'} writeAdapter=${report.selectedWriteAdapter || 'none'}`,
+  );
   console.log(
     `[obsidian-system-backfill] coverage total=${report.totalEntries} existing=${report.existingEntries} missing=${report.missingEntries} operatorPrimary=${report.operatorPrimaryEntries} operatorPrimaryMissing=${report.operatorPrimaryMissing} startHere=${report.startHereEntries} startHereMissing=${report.startHereMissing} agentReference=${report.agentReferenceEntries}`,
   );
@@ -290,7 +318,7 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  const report = buildCatalogReport(options, catalog, entries);
+  const report = await buildCatalogReport(options, catalog, entries);
 
   if (options.reportOnly) {
     printCatalogReport(report, options.jsonOutput);
@@ -300,9 +328,12 @@ const main = async (): Promise<void> => {
   if (options.dryRun) {
     console.log(`[obsidian-system-backfill] dry-run entries=${entries.length} vault=${options.vaultPath}`);
     for (const entry of entries) {
-      const mode = targetExistsInVault(options.vaultPath, entry.targetPath)
-        ? (options.allowOverwrite ? 'overwrite' : 'skip-existing')
-        : 'create';
+      const exists = await targetExistsInVault(options.vaultPath, entry.targetPath);
+      const mode = isCompatibilityStubEntry(entry)
+        ? 'skip-compatibility-stub'
+        : exists
+          ? (options.allowOverwrite ? 'overwrite' : 'skip-existing')
+          : 'create';
       console.log(`- ${entry.id}: ${entry.sourcePath} -> ${entry.targetPath} [${mode}]`);
     }
     printCatalogReport(report, options.jsonOutput);
@@ -311,8 +342,16 @@ const main = async (): Promise<void> => {
 
   let successCount = 0;
   let skippedExisting = 0;
+  let skippedCompatibilityStubs = 0;
   for (const entry of entries) {
-    if (targetExistsInVault(options.vaultPath, entry.targetPath) && !options.allowOverwrite) {
+    if (isCompatibilityStubEntry(entry)) {
+      skippedCompatibilityStubs += 1;
+      console.log(`[obsidian-system-backfill] skip id=${entry.id} target=${entry.targetPath} reason=compatibility_stub_source`);
+      continue;
+    }
+
+    const exists = await targetExistsInVault(options.vaultPath, entry.targetPath);
+    if (exists && !options.allowOverwrite) {
       skippedExisting += 1;
       console.log(`[obsidian-system-backfill] skip id=${entry.id} target=${entry.targetPath} reason=exists`);
       continue;
@@ -345,8 +384,8 @@ const main = async (): Promise<void> => {
     console.log(`[obsidian-system-backfill] ok id=${entry.id} target=${entry.targetPath}`);
   }
 
-  console.log(`[obsidian-system-backfill] completed entries=${successCount} skippedExisting=${skippedExisting} vault=${options.vaultPath}`);
-  printCatalogReport(buildCatalogReport(options, catalog, entries), options.jsonOutput);
+  console.log(`[obsidian-system-backfill] completed entries=${successCount} skippedExisting=${skippedExisting} skippedCompatibilityStubs=${skippedCompatibilityStubs} vault=${options.vaultPath}`);
+  printCatalogReport(await buildCatalogReport(options, catalog, entries), options.jsonOutput);
 };
 
 main().catch((error) => {

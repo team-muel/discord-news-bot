@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-04-11T00:35:40.953Z",
+  "vaultPath": "C:\\Users\\fancy\\Documents\\Obsidian Vault",
+  "totals": {
+    "files": 130,
+    "unresolvedLinks": 26,
+    "ambiguousLinks": 0,
+    "orphanFiles": 95,
+    "deadendFiles": 93,
+    "missingRequiredPropertyFiles": 0
+  },
+  "topTags": [
+    {
+      "tag": "#⪻",
+      "count": 140
+    },
+    {
+      "tag": "#auto-snapshot",
+      "count": 36
+    },
+    {
+      "tag": "#operations",
+      "count": 34
+    },
+    {
+      "tag": "#오선의",
+      "count": 32
+    },
+    {
+      "tag": "#knowledge-control",
+      "count": 30
+    },
+    {
+      "tag": "#discord-topology",
+      "count": 26
+    },
+    {
+      "tag": "#ㆍ🌻：적응방",
+      "count": 25
+    },
+    {
+      "tag": "#ㆍ🎧：안내소",
+      "count": 25
+    },
+    {
+      "tag": "#ㆍ🐣：뉴페방",
+      "count": 25
+    },
+    {
+      "tag": "#auto-generated",
+      "count": 25
+    },
+    {
+      "tag": "#user",
+      "count": 22
+    },
+    {
+      "tag": "#topic",
+      "count": 21
+    },
+    {
+      "tag": "#라운지",
+      "count": 15
+    },
+    {
+      "tag": "#ㆍ📚：다인실",
+      "count": 15
+    },
+    {
+      "tag": "#channel",
+      "count": 15
+    },
+    {
+      "tag": "#┃ㆍ🌐︰서버링크",
+      "count": 14
+    },
+    {
+      "tag": "#롤",
+      "count": 14
+    },
+    {
+      "tag": "#control",
+      "count": 14
+    },
+    {
+      "tag": "#auto-captured",
+      "count": 13
+    },
+    {
+      "tag": "#discord-chat",
+      "count": 13
+    }
+  ],
+  "thresholds": {
+    "unresolvedLinks": 0,
+    "ambiguousLinks": 0,
+    "orphanFiles": 0,
+    "deadendFiles": 0,
+    "missingRequiredPropertyFiles": 0
+  },
+  "ambiguousLinkSamples": [],
+  "pass": false
+}

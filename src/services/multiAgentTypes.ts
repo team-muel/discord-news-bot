@@ -4,8 +4,9 @@
  * Extracted from multiAgentService.ts to reduce coupling and allow
  * consumers to import types without pulling in the full runtime.
  */
-import type { LangGraphState } from './langgraph/stateContract';
+import type { LangGraphNodeId, LangGraphState } from './langgraph/stateContract';
 import type { SkillId } from './skills/types';
+import type { TrafficRoute, TrafficRoutingDecision } from './workflow/trafficRoutingService';
 
 export type {
   AgentRole,
@@ -32,6 +33,27 @@ export type AgentStep = {
   error: string | null;
 };
 
+export type AgentSessionHitlDecision = 'approve' | 'reject' | 'revise';
+
+export type AgentSessionHitlState = {
+  awaitingInput: boolean;
+  gateNode: LangGraphNodeId | null;
+  prompt: string | null;
+  requestedAt: string | null;
+  resumedAt: string | null;
+  decision: AgentSessionHitlDecision | null;
+  note: string | null;
+};
+
+export type AgentSessionGraphCheckpoint = {
+  currentNode: LangGraphNodeId | null;
+  nextNode: LangGraphNodeId | null;
+  savedAt: string;
+  reason: 'transition' | 'hitl_pause' | 'resume_request';
+  resumable: boolean;
+  state: LangGraphState | null;
+};
+
 export type AgentSession = {
   id: string;
   guildId: string;
@@ -50,6 +72,12 @@ export type AgentSession = {
   result: string | null;
   error: string | null;
   cancelRequested: boolean;
+  trafficRoute?: TrafficRoute;
+  trafficRoutingDecision?: TrafficRoutingDecision | null;
+  trafficRouteResolvedAt?: string | null;
+  executionEngine?: 'main' | 'langgraphjs';
+  graphCheckpoint?: AgentSessionGraphCheckpoint | null;
+  hitlState?: AgentSessionHitlState | null;
   deliberationMode?: import('./agent/agentRuntimeTypes').AgentDeliberationMode;
   riskScore?: number;
   policyGate?: {
@@ -113,6 +141,11 @@ export type AgentSessionProgressSummary = {
   runningSteps: number;
   pendingSteps: number;
   progressPercent: number;
+  checkpointNode?: LangGraphNodeId | null;
+  checkpointSavedAt?: string | null;
+  checkpointResumable?: boolean;
+  awaitingHumanInput?: boolean;
+  hitlDecision?: AgentSessionHitlDecision | null;
 };
 
 export type AgentSessionApiView = Omit<AgentSession, 'shadowGraph'> & {
