@@ -1,7 +1,7 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 382
+- Nodes: 383
 
 ## Top Fan-In (Most Imported Modules)
 
@@ -266,12 +266,15 @@ graph LR
   "src/mcp/obsidianToolAdapter.ts" --> "src/utils/obsidianEnv.ts"
   "src/mcp/proxyAdapter.ts" --> "src/config.ts"
   "src/mcp/proxyAdapter.ts" --> "src/mcp/proxyRegistry.ts"
+  "src/mcp/proxyAdapter.ts" --> "src/mcp/schemaNormalization.ts"
   "src/mcp/proxyAdapter.ts" --> "src/mcp/types.ts"
   "src/mcp/proxyAdapter.ts" --> "src/utils/errorMessage.ts"
   "src/mcp/proxyAdapter.ts" --> "src/utils/network.ts"
   "src/mcp/proxyRegistry.ts" --> "src/config.ts"
   "src/mcp/proxyRegistry.ts" --> "src/utils/errorMessage.ts"
+  "src/mcp/schemaNormalization.ts" --> "src/mcp/types.ts"
   "src/mcp/toolAdapter.ts" --> "src/config.ts"
+  "src/mcp/toolAdapter.ts" --> "src/mcp/proxyAdapter.ts"
   "src/mcp/toolAdapter.ts" --> "src/mcp/types.ts"
   "src/mcp/toolAdapter.ts" --> "src/services/llmClient.ts"
   "src/mcp/toolAdapter.ts" --> "src/services/skills/actionRunner.ts"
@@ -282,6 +285,7 @@ graph LR
   "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/obsidianToolAdapter.ts"
   "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/proxyAdapter.ts"
   "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/proxyRegistry.ts"
+  "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/schemaNormalization.ts"
   "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/toolAdapter.ts"
   "src/mcp/unifiedToolAdapter.ts" --> "src/mcp/types.ts"
   "src/mcp/unifiedToolAdapter.ts" --> "src/services/tools/externalAdapterRegistry.ts"
