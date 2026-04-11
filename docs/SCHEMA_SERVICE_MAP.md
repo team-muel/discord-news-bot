@@ -70,7 +70,7 @@
 | memory_job_deadletters | - |
 | memory_jobs | src/services/agent/agentMemoryStore.ts<br/>src/services/finopsService.ts |
 | memory_retrieval_logs | src/services/agent/agentMemoryStore.ts<br/>src/services/finopsService.ts |
-| memory_sources | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/privacyForgetService.ts |
+| memory_sources | src/services/agent/agentMemoryService.ts<br/>src/services/agent/agentMemoryStore.ts<br/>src/services/news/subscriptionNoteWriter.ts<br/>src/services/privacyForgetService.ts |
 | news_sentiment | - |
 | observations | src/services/openclaw/gatewayHealth.ts |
 | retrieval_eval_cases | - |
