@@ -1,22 +1,22 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 391
+- Nodes: 408
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/utils/errorMessage.ts | 144 |
-| src/logger.ts | 139 |
-| src/utils/env.ts | 104 |
+| src/utils/errorMessage.ts | 147 |
+| src/logger.ts | 140 |
+| src/utils/env.ts | 107 |
 | src/services/supabaseClient.ts | 94 |
 | src/config.ts | 91 |
 | src/services/llmClient.ts | 42 |
 | src/services/skills/actions/types.ts | 41 |
 | src/services/infra/tableRegistry.ts | 26 |
 | src/services/infra/baseRepository.ts | 25 |
-| src/utils/obsidianEnv.ts | 22 |
+| src/utils/obsidianEnv.ts | 24 |
 | src/utils/network.ts | 19 |
 | src/utils/validation.ts | 19 |
 
@@ -31,6 +31,16 @@ graph LR
   "bot.ts" --> "src/services/sprint/sprintTriggers.ts"
   "config/runtime/discordCommandCatalog.js":::file
   "config/runtime/retrievalVariants.js":::file
+  "scripts/bootstrap-n8n-local.mjs" --> "scripts/lib/cliArgs.mjs"
+  "scripts/lib/automationActivationPack.mjs":::file
+  "scripts/lib/cliArgs.mjs":::file
+  "scripts/lib/openjarvisAutopilotCapacity.mjs":::file
+  "scripts/lib/supabaseClient.mjs":::file
+  "scripts/openjarvis-workflow-state.mjs" --> "scripts/lib/supabaseClient.mjs"
+  "scripts/run-openjarvis-goal-cycle.mjs" --> "scripts/lib/automationActivationPack.mjs"
+  "scripts/run-openjarvis-goal-cycle.mjs" --> "scripts/lib/cliArgs.mjs"
+  "scripts/run-openjarvis-goal-cycle.mjs" --> "scripts/lib/openjarvisAutopilotCapacity.mjs"
+  "scripts/run-openjarvis-goal-cycle.mjs" --> "scripts/openjarvis-workflow-state.mjs"
   "server.ts" --> "src/app.ts"
   "server.ts" --> "src/bot.ts"
   "server.ts" --> "src/config.ts"
@@ -270,6 +280,7 @@ graph LR
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/knowledgeCompilerService.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/obsidianCacheService.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
+  "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/obsidianMaintenanceControlService.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/obsidianQualityService.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/obsidianRagService.ts"
   "src/mcp/obsidianToolAdapter.ts" --> "src/services/obsidian/router.ts"
@@ -287,7 +298,12 @@ graph LR
   "src/mcp/toolAdapter.ts" --> "src/config.ts"
   "src/mcp/toolAdapter.ts" --> "src/mcp/proxyAdapter.ts"
   "src/mcp/toolAdapter.ts" --> "src/mcp/types.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/agent/agentPersonalizationService.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/automation/apiFirstAgentFallbackService.ts"
   "src/mcp/toolAdapter.ts" --> "src/services/llmClient.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/openjarvis/openjarvisAutopilotStatusService.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts"
+  "src/mcp/toolAdapter.ts" --> "src/services/openjarvis/openjarvisMemorySyncStatusService.ts"
   "src/mcp/toolAdapter.ts" --> "src/services/skills/actionRunner.ts"
   "src/mcp/toolAdapter.ts" --> "src/services/skills/actions/registry.ts"
   "src/mcp/toolAdapter.ts" --> "src/utils/errorMessage.ts"
@@ -386,6 +402,7 @@ graph LR
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/agent/agentRetentionPolicyService.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/obsidian/knowledgeCompilerService.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/obsidian/obsidianInboxChatLoopService.ts"
+  "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/obsidian/obsidianMaintenanceControlService.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/obsidian/obsidianQualityService.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/obsidian/obsidianRagService.ts"
   "src/routes/bot-agent/qualityPrivacyRoutes.ts" --> "src/services/obsidian/router.ts"
@@ -413,7 +430,10 @@ graph LR
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agent/agentSocialQualitySnapshotService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agent/agentTelemetryQueue.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/agent/agentWorkerApprovalGateSnapshotService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/eval/evalAutoPromoteLoopService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/eval/evalMaintenanceControlService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/eval/retrievalEvalLoopService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/eval/rewardSignalLoopService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/finopsService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/goNoGoService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/infra/supabaseExtensionOpsService.ts"
@@ -424,12 +444,16 @@ graph LR
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/knowledgeCompilerService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/obsidianInboxChatLoopService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/obsidianMaintenanceControlService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/obsidianQualityService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/obsidianRagService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/obsidian/router.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/opencode/opencodeGitHubQueueService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/openjarvis/openjarvisAutopilotStatusService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/openjarvis/openjarvisMemorySyncStatusService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/runtime/efficiencyOptimizationService.ts"
+  "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/runtime/hermesVsCodeBridgeService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/runtime/operatingBaseline.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/runtime/platformLightweightingService.ts"
   "src/routes/bot-agent/runtimeRoutes.ts" --> "src/services/runtime/runtimeSchedulerPolicyService.ts"
@@ -516,14 +540,12 @@ graph LR
   "src/routes/health.ts" --> "src/utils/obsidianEnv.ts"
   "src/routes/internal.ts" --> "src/config.ts"
   "src/routes/internal.ts" --> "src/services/agent/agentSloService.ts"
-  "src/routes/internal.ts" --> "src/services/eval/evalAutoPromoteLoopService.ts"
-  "src/routes/internal.ts" --> "src/services/eval/retrievalEvalLoopService.ts"
-  "src/routes/internal.ts" --> "src/services/eval/rewardSignalLoopService.ts"
+  "src/routes/internal.ts" --> "src/services/eval/evalMaintenanceControlService.ts"
   "src/routes/internal.ts" --> "src/services/infra/tableRegistry.ts"
   "src/routes/internal.ts" --> "src/services/intent/intentFormationEngine.ts"
   "src/routes/internal.ts" --> "src/services/memory/memoryConsolidationService.ts"
   "src/routes/internal.ts" --> "src/services/memory/memoryJobRunner.ts"
-  "src/routes/internal.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
+  "src/routes/internal.ts" --> "src/services/obsidian/obsidianMaintenanceControlService.ts"
   "src/routes/internal.ts" --> "src/services/supabaseClient.ts"
   "src/routes/internal.ts" --> "src/utils/errorMessage.ts"
   "src/routes/internal.ts" --> "src/utils/validation.ts"
@@ -690,6 +712,11 @@ graph LR
   "src/services/agent/index.ts" --> "src/services/agent/agentWorkflowService.ts"
   "src/services/authService.ts" --> "src/config.ts"
   "src/services/authService.ts" --> "src/types/auth.ts"
+  "src/services/automation/apiFirstAgentFallbackService.ts" --> "scripts/bootstrap-n8n-local.mjs"
+  "src/services/automation/apiFirstAgentFallbackService.ts" --> "scripts/lib/automationActivationPack.mjs"
+  "src/services/automation/apiFirstAgentFallbackService.ts" --> "src/mcp/proxyAdapter.ts"
+  "src/services/automation/apiFirstAgentFallbackService.ts" --> "src/services/automation/n8nDelegationService.ts"
+  "src/services/automation/apiFirstAgentFallbackService.ts" --> "src/services/tools/toolRouter.ts"
   "src/services/automation/config.ts" --> "src/services/automation/types.ts"
   "src/services/automation/config.ts" --> "src/utils/env.ts"
   "src/services/automation/health.ts" --> "src/services/automation/config.ts"
@@ -767,6 +794,9 @@ graph LR
   "src/services/eval/evalAutoPromoteService.ts" --> "src/services/supabaseClient.ts"
   "src/services/eval/evalAutoPromoteService.ts" --> "src/utils/env.ts"
   "src/services/eval/evalAutoPromoteService.ts" --> "src/utils/errorMessage.ts"
+  "src/services/eval/evalMaintenanceControlService.ts" --> "src/services/eval/evalAutoPromoteLoopService.ts"
+  "src/services/eval/evalMaintenanceControlService.ts" --> "src/services/eval/retrievalEvalLoopService.ts"
+  "src/services/eval/evalMaintenanceControlService.ts" --> "src/services/eval/rewardSignalLoopService.ts"
   "src/services/eval/retrievalEvalLoopService.ts" --> "src/logger.ts"
   "src/services/eval/retrievalEvalLoopService.ts" --> "src/services/eval/retrievalEvalService.ts"
   "src/services/eval/retrievalEvalLoopService.ts" --> "src/utils/backgroundLoop.ts"
@@ -1220,6 +1250,7 @@ graph LR
   "src/services/obsidian/authoring.ts" --> "src/logger.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/knowledgeCompilerService.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/obsidianDocBuilder.ts"
+  "src/services/obsidian/authoring.ts" --> "src/services/obsidian/obsidianMetadataUtils.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/router.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/obsidian/types.ts"
   "src/services/obsidian/authoring.ts" --> "src/services/tools/externalAdapterRegistry.ts"
@@ -1239,6 +1270,7 @@ graph LR
   "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/authoring.ts"
   "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/obsidianCacheService.ts"
   "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/obsidianDocBuilder.ts"
+  "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/obsidianMetadataUtils.ts"
   "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/obsidianQualityService.ts"
   "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/router.ts"
   "src/services/obsidian/knowledgeCompilerService.ts" --> "src/services/obsidian/types.ts"
@@ -1263,18 +1295,28 @@ graph LR
   "src/services/obsidian/obsidianLoreSyncService.ts" --> "src/logger.ts"
   "src/services/obsidian/obsidianLoreSyncService.ts" --> "src/utils/env.ts"
   "src/services/obsidian/obsidianLoreSyncService.ts" --> "src/utils/errorMessage.ts"
-  "src/services/obsidian/obsidianQualityService.ts":::file
+  "src/services/obsidian/obsidianMaintenanceControlService.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
+  "src/services/obsidian/obsidianMaintenanceControlService.ts" --> "src/services/obsidian/obsidianQualityService.ts"
+  "src/services/obsidian/obsidianMaintenanceControlService.ts" --> "src/services/skills/actions/mcpDelegate.ts"
+  "src/services/obsidian/obsidianMaintenanceControlService.ts" --> "src/utils/env.ts"
+  "src/services/obsidian/obsidianMetadataUtils.ts":::file
+  "src/services/obsidian/obsidianQualityService.ts" --> "src/logger.ts"
+  "src/services/obsidian/obsidianQualityService.ts" --> "src/utils/env.ts"
+  "src/services/obsidian/obsidianQualityService.ts" --> "src/utils/errorMessage.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/logger.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/llmClient.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/knowledgeCompilerService.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/obsidianCacheService.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/obsidianDocBuilder.ts"
+  "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/obsidianMetadataUtils.ts"
+  "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/obsidianRetrievalScoring.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/obsidian/router.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/services/supabaseClient.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/utils/env.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/utils/errorMessage.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/obsidian/obsidianRagService.ts" --> "src/utils/ttlCache.ts"
+  "src/services/obsidian/obsidianRetrievalScoring.ts" --> "src/services/obsidian/obsidianMetadataUtils.ts"
   "src/services/obsidian/obsidianSanitizationWorker.ts" --> "src/utils/env.ts"
   "src/services/obsidian/router.ts" --> "src/logger.ts"
   "src/services/obsidian/router.ts" --> "src/services/observability/outcomeSignal.ts"
@@ -1312,6 +1354,12 @@ graph LR
   "src/services/opencode/opencodeSdkClient.ts" --> "src/utils/env.ts"
   "src/services/opencode/opencodeSdkClient.ts" --> "src/utils/errorMessage.ts"
   "src/services/opencode/opencodeSdkClient.ts" --> "src/utils/network.ts"
+  "src/services/openjarvis/openjarvisAutopilotStatusService.ts" --> "scripts/run-openjarvis-goal-cycle.mjs"
+  "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts" --> "src/routes/chat.ts"
+  "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts" --> "src/services/obsidian/router.ts"
+  "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts" --> "src/services/openjarvis/openjarvisAutopilotStatusService.ts"
+  "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts" --> "src/services/runtime/hermesVsCodeBridgeService.ts"
+  "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/openjarvis/openjarvisMemorySyncStatusService.ts":::file
   "src/services/privacyForgetService.ts" --> "src/config.ts"
   "src/services/privacyForgetService.ts" --> "src/logger.ts"
@@ -1340,6 +1388,7 @@ graph LR
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/services/eval/retrievalEvalLoopService.ts"
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/services/eval/rewardSignalLoopService.ts"
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
+  "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/services/obsidian/obsidianQualityService.ts"
   "src/services/runtime/bootstrapDiscordLoops.ts" --> "src/utils/errorMessage.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/config.ts"
   "src/services/runtime/bootstrapServerInfra.ts" --> "src/logger.ts"
@@ -1369,6 +1418,9 @@ graph LR
   "src/services/runtime/efficiencyOptimizationService.ts" --> "src/services/runtime/platformLightweightingService.ts"
   "src/services/runtime/efficiencyOptimizationService.ts" --> "src/services/runtime/runtimeSchedulerPolicyService.ts"
   "src/services/runtime/efficiencyOptimizationService.ts" --> "src/utils/errorMessage.ts"
+  "src/services/runtime/hermesVsCodeBridgeService.ts" --> "src/services/obsidian/router.ts"
+  "src/services/runtime/hermesVsCodeBridgeService.ts" --> "src/utils/errorMessage.ts"
+  "src/services/runtime/hermesVsCodeBridgeService.ts" --> "src/utils/obsidianEnv.ts"
   "src/services/runtime/operatingBaseline.ts":::file
   "src/services/runtime/platformLightweightingService.ts" --> "src/services/infra/supabaseExtensionOpsService.ts"
   "src/services/runtime/platformLightweightingService.ts" --> "src/services/runtime/runtimeSchedulerPolicyService.ts"
@@ -1404,6 +1456,7 @@ graph LR
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/infra/supabaseExtensionOpsService.ts"
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/memory/memoryJobRunner.ts"
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/obsidian/obsidianLoreSyncService.ts"
+  "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/obsidian/obsidianQualityService.ts"
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/opencode/opencodePublishWorker.ts"
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/runtime/runtimeAlertService.ts"
   "src/services/runtime/runtimeSchedulerPolicyService.ts" --> "src/services/runtime/runtimeBootstrap.ts"
@@ -1531,6 +1584,7 @@ graph LR
   "src/services/skills/actions/mcpDelegatedAction.ts" --> "src/services/skills/actions/mcpDelegate.ts"
   "src/services/skills/actions/mcpDelegatedAction.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/mcpDelegatedAction.ts" --> "src/utils/errorMessage.ts"
+  "src/services/skills/actions/n8n.ts" --> "scripts/bootstrap-n8n-local.mjs"
   "src/services/skills/actions/n8n.ts" --> "src/services/automation/n8nDelegationService.ts"
   "src/services/skills/actions/n8n.ts" --> "src/services/skills/actions/types.ts"
   "src/services/skills/actions/n8n.ts" --> "src/services/tools/toolRouter.ts"
@@ -1641,6 +1695,7 @@ graph LR
   "src/services/skills/modules/opsCritique.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/services/agent/agentOutcomeContract.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/actionRunner.ts"
+  "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/actionRunnerDiagnostics.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/modules/common.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/services/skills/types.ts"
   "src/services/skills/modules/opsExecution.ts" --> "src/utils/env.ts"
@@ -1889,6 +1944,9 @@ graph LR
   "src/services/tools/adapters/renderAdapter.ts" --> "src/utils/errorMessage.ts"
   "src/services/tools/adapters/renderAdapter.ts" --> "src/utils/network.ts"
   "src/services/tools/adapters/scriptCliToolAdapter.ts" --> "src/services/tools/types.ts"
+  "src/services/tools/adapters/workstationAdapter.ts" --> "src/services/tools/externalAdapterTypes.ts"
+  "src/services/tools/adapters/workstationAdapter.ts" --> "src/utils/env.ts"
+  "src/services/tools/adapters/workstationAdapter.ts" --> "src/utils/errorMessage.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/logger.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/deepwikiAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/litellmAdminAdapter.ts"
@@ -1901,6 +1959,7 @@ graph LR
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openjarvisAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/openshellCliAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/renderAdapter.ts"
+  "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/adapters/workstationAdapter.ts"
   "src/services/tools/externalAdapterRegistry.ts" --> "src/services/tools/externalAdapterTypes.ts"
   "src/services/tools/externalAdapterTypes.ts":::file
   "src/services/tools/externalToolProbe.ts" --> "src/config.ts"
@@ -1983,7 +2042,9 @@ graph LR
   "src/services/workflow/trafficRoutingService.ts" --> "src/utils/ttlCache.ts"
   "src/services/workflow/workflowPersistenceService.ts" --> "src/logger.ts"
   "src/services/workflow/workflowPersistenceService.ts" --> "src/services/supabaseClient.ts"
+  "src/services/workflow/workflowPersistenceService.ts" --> "src/services/workflow/workflowPersistenceTransforms.ts"
   "src/services/workflow/workflowPersistenceService.ts" --> "src/utils/errorMessage.ts"
+  "src/services/workflow/workflowPersistenceTransforms.ts":::file
   "src/types/auth.ts":::file
   "src/utils/async.ts":::file
   "src/utils/atomicWrite.ts":::file
