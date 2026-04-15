@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { checkOpenClawGatewayHealthMock, checkOpenClawGatewayChatSupportMock } = vi.hoisted(() => ({
+  checkOpenClawGatewayHealthMock: vi.fn(async () => false),
+  checkOpenClawGatewayChatSupportMock: vi.fn(async () => false),
+}));
+
 // Mock child_process before importing the adapter
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
@@ -9,12 +14,29 @@ vi.mock('../../../utils/env', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../utils/env')>();
   return {
     ...actual,
-    parseBooleanEnv: (_v: unknown, fallback: boolean) => fallback,
+    parseBooleanEnv: (value: unknown, fallback: boolean) => {
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+          return true;
+        }
+        if (['0', 'false', 'no', 'off'].includes(normalized)) {
+          return false;
+        }
+      }
+      return fallback;
+    },
   };
 });
 
 vi.mock('../../../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock('../../openclaw/gatewayHealth', () => ({
+  checkOpenClawGatewayHealth: checkOpenClawGatewayHealthMock,
+  checkOpenClawGatewayChatSupport: checkOpenClawGatewayChatSupportMock,
+  getGatewayHeaders: () => ({ 'Content-Type': 'application/json' }),
 }));
 
 vi.mock('../../llmClient', () => ({
@@ -38,6 +60,8 @@ const makeExecCallback = (stdout: string, stderr = '') => {
 describe('openclawAdapter.execute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    checkOpenClawGatewayHealthMock.mockResolvedValue(false);
+    checkOpenClawGatewayChatSupportMock.mockResolvedValue(false);
   });
 
   it('agent.chat requires message', async () => {
@@ -132,6 +156,17 @@ describe('openclawAdapter.execute', () => {
     expect(result.adapterId).toBe('openclaw');
   });
 
+  it('agent.health reports control-only gateway explicitly', async () => {
+    checkOpenClawGatewayHealthMock.mockResolvedValue(true);
+    checkOpenClawGatewayChatSupportMock.mockResolvedValue(false);
+
+    const result = await openclawAdapter.execute('agent.health', {});
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('CHAT_API_UNAVAILABLE');
+    expect(result.output).toContain('gateway=control-only');
+  });
+
   it('has liteCapabilities defined', () => {
     expect(openclawAdapter.liteCapabilities).toBeDefined();
     expect(openclawAdapter.liteCapabilities).toContain('agent.chat');
@@ -164,5 +199,18 @@ describe('bootstrapOpenClawSession', () => {
     const result = await bootstrapOpenClawSession('test-session');
     // No gateway or CLI available in test env
     expect(result.ok).toBe(false);
+  });
+
+  it('returns { ok: false } when gateway health is ok but chat API is unavailable', async () => {
+    vi.resetModules();
+    vi.stubEnv('OPENCLAW_ENABLED', 'true');
+    checkOpenClawGatewayHealthMock.mockResolvedValue(true);
+    checkOpenClawGatewayChatSupportMock.mockResolvedValue(false);
+
+    const { bootstrapOpenClawSession } = await import('./openclawCliAdapter');
+    const result = await bootstrapOpenClawSession('test-session');
+
+    expect(result.ok).toBe(false);
+    expect(checkOpenClawGatewayChatSupportMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,7 +7,8 @@ import { getAgentRetentionPolicySnapshot, upsertAgentRetentionPolicy } from '../
 import { forgetGuildRagData, forgetUserRagData, previewForgetGuildRagData, previewForgetUserRagData } from '../../services/privacyForgetService';
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus, readObsidianFileWithAdapter } from '../../services/obsidian/router';
 import { getObsidianInboxChatLoopStats } from '../../services/obsidian/obsidianInboxChatLoopService';
-import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
+import { executeObsidianGraphAudit } from '../../services/obsidian/obsidianMaintenanceControlService';
+import { getLatestObsidianGraphAuditSnapshot, getObsidianGraphAuditLoopStats } from '../../services/obsidian/obsidianQualityService';
 import {
   buildObsidianKnowledgeReflectionBundle,
   captureObsidianWikiChange,
@@ -23,6 +24,7 @@ import {
   traceObsidianDecision,
 } from '../../services/obsidian/knowledgeCompilerService';
 import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
+import { getOpenJarvisMemorySyncStatus } from '../../services/openjarvis/openjarvisMemorySyncStatusService';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 import { getAgentAnswerQualityReviewSummary, listAgentAnswerQualityReviews, recordAgentAnswerQualityReview } from '../../services/agent/agentQualityReviewService';
 import { isOneOf, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
@@ -302,7 +304,9 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
         vaultHealth,
         cacheStats: retrievalBoundary.supabaseBacked.cacheStats,
         compiler: getObsidianKnowledgeCompilationStats(),
+        openjarvisMemorySync: getOpenJarvisMemorySyncStatus(),
         inboxChatLoop: getObsidianInboxChatLoopStats(),
+        graphAuditLoop: getObsidianGraphAuditLoopStats(),
         retrievalBoundary,
       });
     } catch (error) {
@@ -315,8 +319,22 @@ export function registerBotAgentQualityPrivacyRoutes(deps: BotAgentRouteDeps): v
     return res.json({
       vaultPathConfigured: Boolean(getObsidianVaultRoot()),
       vault: getObsidianVaultRuntimeInfo(),
+      loop: getObsidianGraphAuditLoopStats(),
       snapshot,
     });
+  });
+
+  router.post('/agent/obsidian/quality/audit', requireAdmin, adminActionRateLimiter, adminIdempotency, async (_req, res, next) => {
+    try {
+      const { result, snapshot } = await executeObsidianGraphAudit();
+      const responseBody = { ok: result.lastStatus === 'success', result, snapshot };
+      if (result.lastStatus !== 'success') {
+        return res.status(500).json(responseBody);
+      }
+      return res.status(202).json(responseBody);
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.get('/agent/obsidian/knowledge-control', requireAdmin, async (req, res, next) => {

@@ -103,9 +103,9 @@ describe('sprintOrchestrator', () => {
   });
 
   describe('getPhaseExternalAdapterMap', () => {
-    it('모든 핵심 단계에 외부 어댑터가 매핑되어 있다 (ship 제외)', () => {
+    it('implement와 ship을 제외한 핵심 단계에 외부 어댑터가 매핑되어 있다', () => {
       const map = getPhaseExternalAdapterMap();
-      const requiredPhases = ['plan', 'implement', 'review', 'qa', 'security-audit', 'ops-validate', 'retro'] as const;
+      const requiredPhases = ['plan', 'review', 'qa', 'security-audit', 'ops-validate', 'retro'] as const;
       for (const phase of requiredPhases) {
         expect(map[phase], `phase "${phase}" should have an adapter mapping`).toBeDefined();
         expect(map[phase]!.adapterId).toBeTruthy();
@@ -113,10 +113,9 @@ describe('sprintOrchestrator', () => {
       }
     });
 
-    it('implement 단계에 openclaw이 매핑되어 있다', () => {
+    it('implement 단계는 외부 어댑터 성공으로 끝내지 않고 canonical executor로 수렴한다', () => {
       const map = getPhaseExternalAdapterMap();
-      expect(map['implement']!.adapterId).toBe('openclaw');
-      expect(map['implement']!.action).toBe('agent.chat');
+      expect(map['implement']).toBeUndefined();
     });
 
     it('qa 단계에 openjarvis가 매핑되어 있다', () => {
@@ -130,15 +129,13 @@ describe('sprintOrchestrator', () => {
       // plan has deepwiki primary + openjarvis secondary
       expect(map['plan']!.secondary).toBeDefined();
       expect(map['plan']!.secondary!.adapterId).toBe('openjarvis');
-      // review keeps NemoClaw primary + DeepWiki diagnostics secondary
+      // review keeps canonical review primary + DeepWiki diagnostics secondary
       expect(map['review']!.secondary).toBeDefined();
       expect(map['review']!.secondary!.adapterId).toBe('deepwiki');
       expect(map['review']!.secondary!.action).toBe('wiki.diagnose');
       // qa has openjarvis primary + openshell secondary
       expect(map['qa']!.secondary).toBeDefined();
       expect(map['qa']!.secondary!.adapterId).toBe('openshell');
-      // implement has no secondary (OpenClaw handles everything via session)
-      expect(map['implement']!.secondary).toBeUndefined();
     });
 
     it('ship 단계는 외부 어댑터 없이 local fallback만 사용한다', () => {
@@ -186,7 +183,7 @@ describe('sprintOrchestrator', () => {
 
     it('adapterMeta 필드가 올바른 구조를 가진다', () => {
       const result = {
-        phase: 'implement' as const,
+        phase: 'qa' as const,
         status: 'success' as const,
         output: 'test',
         artifacts: [],
@@ -194,28 +191,28 @@ describe('sprintOrchestrator', () => {
         completedAt: new Date().toISOString(),
         iterationCount: 1,
         adapterMeta: {
-          adapterId: 'openclaw',
-          action: 'agent.chat',
+          adapterId: 'openjarvis',
+          action: 'jarvis.ask',
           durationMs: 1234,
           ok: true,
-          secondary: { adapterId: 'openjarvis', action: 'jarvis.research' },
+          secondary: { adapterId: 'openshell', action: 'sandbox.exec' },
         },
       };
-      expect(result.adapterMeta.adapterId).toBe('openclaw');
+      expect(result.adapterMeta.adapterId).toBe('openjarvis');
       expect(result.adapterMeta.durationMs).toBe(1234);
       expect(result.adapterMeta.ok).toBe(true);
-      expect(result.adapterMeta.secondary!.adapterId).toBe('openjarvis');
+      expect(result.adapterMeta.secondary!.adapterId).toBe('openshell');
     });
   });
 
   describe('buildExternalAdapterArgs', () => {
     const pipeline = { sprintId: 'sp-1', objective: 'Fix auth bug', changedFiles: ['src/auth.ts'] };
 
-    it('implement phase에 stateful OpenClaw args를 생성한다', () => {
+    it('implement phase는 generic fallback args만 유지한다', () => {
       const args = buildExternalAdapterArgs('implement', pipeline);
-      expect(args.message).toContain('Fix auth bug');
-      expect(args.sessionId).toBe('sprint-sp-1');
-      expect(args.message).toContain('sandbox.exec'); // tool awareness
+      expect(args.goal).toBe('Fix auth bug');
+      expect(args.question).toContain('Fix auth bug');
+      expect(args.code).toContain('src/auth.ts');
     });
 
     it('plan phase에 wiki.ask args를 생성한다', () => {
@@ -232,6 +229,12 @@ describe('sprintOrchestrator', () => {
     it('ops-validate phase에 telemetry window를 설정한다', () => {
       const args = buildExternalAdapterArgs('ops-validate', pipeline);
       expect(args.window).toBe('1h');
+    });
+
+    it('qa phase는 OpenJarvis orchestrator agent를 우선 사용한다', () => {
+      const args = buildExternalAdapterArgs('qa', pipeline);
+      expect(args.question).toContain('Analyze test coverage gaps');
+      expect(args.agent).toBe('orchestrator');
     });
   });
 
@@ -262,6 +265,12 @@ describe('sprintOrchestrator', () => {
       const args = buildSecondaryAdapterArgs('security-audit', pipeline, 'review output');
       expect(args.query).toContain('security');
       expect(args.limit).toBe(5);
+    });
+
+    it('ops-validate secondary는 OpenJarvis orchestrator로 metrics를 해석한다', () => {
+      const args = buildSecondaryAdapterArgs('ops-validate', pipeline, 'latency=120ms');
+      expect(args.question).toContain('Interpret these operational metrics');
+      expect(args.agent).toBe('orchestrator');
     });
   });
 });

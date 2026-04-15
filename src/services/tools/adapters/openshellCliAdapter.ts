@@ -16,9 +16,15 @@ const IS_WINDOWS = process.platform === 'win32';
 const sanitizeArg = (value: string, maxLen = 200): string =>
   String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[;&|`$(){}]/g, '').trim().slice(0, maxLen);
 
+const quoteShellArg = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
+
+const buildSandboxExecArgs = (sandboxId: string, command: string): string[] => {
+  return ['sandbox', 'exec', '-n', sandboxId, '--no-tty', '--', 'bash', '-lc', command];
+};
+
 const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
   if (IS_WINDOWS) {
-    const shellCmd = `export PATH=/root/.local/bin:$PATH; openshell ${args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ')}`;
+    const shellCmd = `export PATH="$HOME/.local/bin:$PATH"; openshell ${args.map(quoteShellArg).join(' ')}`;
     return execFileAsync(
       'wsl',
       ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
@@ -26,6 +32,19 @@ const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string 
     );
   }
   return execFileAsync('openshell', args, { timeout: TIMEOUT_MS, windowsHide: true });
+};
+
+const runSandboxExecCli = async (sandboxId: string, command: string): Promise<{ stdout: string; stderr: string }> => {
+  const cliArgs = buildSandboxExecArgs(sandboxId, command);
+  if (IS_WINDOWS) {
+    const shellCmd = `export PATH="$HOME/.local/bin:$PATH"; openshell ${cliArgs.map(quoteShellArg).join(' ')} </dev/null`;
+    return execFileAsync(
+      'wsl',
+      ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
+      { timeout: TIMEOUT_MS, windowsHide: true },
+    );
+  }
+  return execFileAsync('openshell', cliArgs, { timeout: TIMEOUT_MS, windowsHide: true });
 };
 
 export const openshellAdapter: ExternalToolAdapter = {
@@ -59,14 +78,22 @@ export const openshellAdapter: ExternalToolAdapter = {
       switch (action) {
         case 'sandbox.create': {
           const from = sanitizeArg(String(args.from || 'ollama'));
+          const name = sanitizeArg(String(args.name || ''), 80);
+          const cliArgs = ['sandbox', 'create', '--from', from];
+          if (name) cliArgs.push('--name', name);
           try {
-            const { stdout } = await runCli(['sandbox', 'create', '--from', from]);
-            return makeResult(true, `Sandbox created from ${from}`, stdout.trim().split('\n'));
+            const { stdout } = await runCli(cliArgs);
+            return makeResult(true, `Sandbox created from ${from}${name ? ` as ${name}` : ''}`, stdout.trim().split('\n'));
           } catch (localErr) {
+            const localMessage = getErrorMessage(localErr);
+            if (name && /already exists/i.test(localMessage)) {
+              return makeResult(true, `Sandbox ${name} already exists`, [localMessage]);
+            }
             // D-04: Fallback to remote gateway when local Docker/WSL fails
             if (REMOTE_GATEWAY) {
-              const { stdout } = await runCli(['sandbox', 'create', '--from', from, '--remote', REMOTE_GATEWAY]);
-              return makeResult(true, `Sandbox created from ${from} via remote ${REMOTE_GATEWAY}`, stdout.trim().split('\n'));
+              const remoteArgs = [...cliArgs, '--remote', REMOTE_GATEWAY];
+              const { stdout } = await runCli(remoteArgs);
+              return makeResult(true, `Sandbox created from ${from}${name ? ` as ${name}` : ''} via remote ${REMOTE_GATEWAY}`, stdout.trim().split('\n'));
             }
             throw localErr;
           }
@@ -80,10 +107,7 @@ export const openshellAdapter: ExternalToolAdapter = {
           const command = sanitizeArg(String(args.command || ''), 2000);
           if (!sandboxId) return makeResult(false, 'Sandbox ID required', [], 'MISSING_SANDBOX_ID');
           if (!command) return makeResult(false, 'Command required', [], 'MISSING_COMMAND');
-          const mode = sanitizeArg(String(args.mode || 'read_only'), 20);
-          const cliArgs = ['sandbox', 'exec', sandboxId, '--', command];
-          if (mode === 'workspace_write') cliArgs.splice(3, 0, '--write');
-          const { stdout } = await runCli(cliArgs);
+          const { stdout } = await runSandboxExecCli(sandboxId, command);
           return makeResult(true, `Sandbox ${sandboxId} exec completed`, stdout.trim().split('\n'));
         }
         case 'sandbox.destroy': {

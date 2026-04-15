@@ -5,11 +5,15 @@ import { getLoginSessionCleanupLoopStats } from '../../discord/auth';
 import { getAgentOpsSnapshot } from '../agent/agentOpsService';
 import { getMemoryJobRunnerStats } from '../memory/memoryJobRunner';
 import { getObsidianLoreSyncLoopStats } from '../obsidian/obsidianLoreSyncService';
+import { getObsidianGraphAuditLoopStats } from '../obsidian/obsidianQualityService';
+import { getEvalAutoPromoteLoopStatus } from '../eval/evalAutoPromoteLoopService';
 import { getRetrievalEvalLoopStats } from '../eval/retrievalEvalLoopService';
+import { getRewardSignalLoopStatus } from '../eval/rewardSignalLoopService';
 import { listSupabaseCronJobs } from '../infra/supabaseExtensionOpsService';
 import { getRuntimeAlertsStats } from './runtimeAlertService';
 import { getOpencodePublishWorkerStats } from '../opencode/opencodePublishWorker';
 import { getRuntimeBootstrapState } from './runtimeBootstrap';
+import { INTENT_FORMATION_ENABLED } from '../../config';
 
 type SchedulerOwner = 'app' | 'db';
 
@@ -45,7 +49,10 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
   const agentOps = getAgentOpsSnapshot();
   const memoryJobs = getMemoryJobRunnerStats();
   const obsidianSync = getObsidianLoreSyncLoopStats();
+  const obsidianGraphAudit = getObsidianGraphAuditLoopStats();
+  const evalAutoPromote = getEvalAutoPromoteLoopStatus();
   const retrievalEval = getRetrievalEvalLoopStats();
+  const rewardSignal = getRewardSignalLoopStatus();
   const agentSloAlerts = getAgentSloAlertLoopStats();
   const loginCleanup = getLoginSessionCleanupLoopStats();
   const runtimeAlerts = getRuntimeAlertsStats();
@@ -59,8 +66,9 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
 
   let cronJobCount = 0;
   let supabaseConfigured = true;
+  let cronJobs: Array<{ jobName: string; schedule: string; active: boolean }> = [];
   try {
-    const cronJobs = await listSupabaseCronJobs();
+    cronJobs = await listSupabaseCronJobs();
     cronJobCount = cronJobs.length;
   } catch (error) {
     if ((error instanceof Error ? error.message : String(error)) === 'SUPABASE_NOT_CONFIGURED') {
@@ -70,17 +78,24 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
     }
   }
 
+  const cronJobByName = new Map(cronJobs.map((job) => [job.jobName, job]));
+  const hasActiveCronJob = (jobName: string): boolean => Boolean(cronJobByName.get(jobName)?.active);
+  const getCronJobSchedule = (jobName: string, fallback = 'pg_cron'): string =>
+    cronJobByName.get(jobName)?.schedule || fallback;
+  const pgCronOwnedLoops = new Set(runtimeBootstrap.pgCronReplacedLoops || []);
+  const isDbOwnedLoop = (loopName: string): boolean => pgCronOwnedLoops.has(loopName);
+
   const items: RuntimeSchedulerPolicyItem[] = [
     {
       id: 'login-session-cleanup',
       title: 'Discord login-session cleanup',
       owner: loginCleanup.owner,
       startup: loginCleanup.owner === 'app' ? 'discord-ready' : 'database',
-      enabled: loginCleanup.owner === 'app' ? true : cronJobCount > 0,
-      running: loginCleanup.owner === 'app' ? loginCleanup.running : cronJobCount > 0,
+      enabled: loginCleanup.owner === 'app' ? true : hasActiveCronJob('muel_login_session_cleanup'),
+      running: loginCleanup.owner === 'app' ? loginCleanup.running : hasActiveCronJob('muel_login_session_cleanup'),
       schedule: loginCleanup.owner === 'app'
         ? `every ${Math.max(1, Math.round(loginCleanup.intervalMs / 60000))}m`
-        : 'daily (pg_cron)',
+        : getCronJobSchedule('muel_login_session_cleanup', 'daily (pg_cron)'),
       source: ['src/discord/auth.ts', 'docs/SUPABASE_SCHEMA.sql', 'src/discord/runtime/readyWorkloads.ts'],
     },
     {
@@ -154,29 +169,75 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
       title: 'Obsidian lore sync loop',
       owner: obsidianSync.owner === 'db' ? 'db' : 'app',
       startup: obsidianSync.owner === 'db' ? 'database' : 'discord-ready',
-      enabled: Boolean(obsidianSync.enabled),
-      running: Boolean(obsidianSync.running),
-      schedule: obsidianSync.owner === 'db' ? 'pg_cron' : `every ${obsidianSync.intervalMin}m`,
+      enabled: obsidianSync.owner === 'db' ? hasActiveCronJob('muel_obsidian_lore_sync') : Boolean(obsidianSync.enabled),
+      running: obsidianSync.owner === 'db' ? hasActiveCronJob('muel_obsidian_lore_sync') : Boolean(obsidianSync.running),
+      schedule: obsidianSync.owner === 'db' ? getCronJobSchedule('muel_obsidian_lore_sync') : `every ${obsidianSync.intervalMin}m`,
       source: ['src/services/obsidianLoreSyncService.ts', 'src/discord/runtime/readyWorkloads.ts'],
+    },
+    {
+      id: 'obsidian-graph-audit-loop',
+      title: 'Obsidian graph audit loop',
+      owner: obsidianGraphAudit.owner === 'db' ? 'db' : 'app',
+      startup: obsidianGraphAudit.owner === 'db' ? 'database' : 'discord-ready',
+      enabled: obsidianGraphAudit.owner === 'db'
+        ? hasActiveCronJob('muel_obsidian_graph_audit')
+        : Boolean(obsidianGraphAudit.enabled),
+      running: obsidianGraphAudit.owner === 'db'
+        ? hasActiveCronJob('muel_obsidian_graph_audit')
+        : Boolean(obsidianGraphAudit.running),
+      schedule: obsidianGraphAudit.owner === 'db'
+        ? getCronJobSchedule('muel_obsidian_graph_audit')
+        : `every ${obsidianGraphAudit.intervalMin}m`,
+      source: ['src/services/obsidian/obsidianQualityService.ts', 'src/discord/runtime/readyWorkloads.ts'],
     },
     {
       id: 'retrieval-eval-loop',
       title: 'Retrieval eval auto loop',
-      owner: 'app',
-      startup: 'discord-ready',
-      enabled: Boolean(retrievalEval.enabled),
-      running: Boolean(retrievalEval.running),
-      schedule: `every ${retrievalEval.intervalHours}h`,
+      owner: isDbOwnedLoop('retrievalEvalLoop') ? 'db' : 'app',
+      startup: isDbOwnedLoop('retrievalEvalLoop') ? 'database' : 'discord-ready',
+      enabled: isDbOwnedLoop('retrievalEvalLoop') ? hasActiveCronJob('muel_retrieval_eval') : Boolean(retrievalEval.enabled),
+      running: isDbOwnedLoop('retrievalEvalLoop') ? hasActiveCronJob('muel_retrieval_eval') : Boolean(retrievalEval.running),
+      schedule: isDbOwnedLoop('retrievalEvalLoop') ? getCronJobSchedule('muel_retrieval_eval') : `every ${retrievalEval.intervalHours}h`,
       source: ['src/services/retrievalEvalLoopService.ts', 'src/discord/runtime/readyWorkloads.ts'],
+    },
+    {
+      id: 'reward-signal-loop',
+      title: 'Reward signal loop',
+      owner: isDbOwnedLoop('rewardSignalLoop') ? 'db' : 'app',
+      startup: isDbOwnedLoop('rewardSignalLoop') ? 'database' : 'discord-ready',
+      enabled: isDbOwnedLoop('rewardSignalLoop') ? hasActiveCronJob('muel_reward_signal') : Boolean(rewardSignal.enabled),
+      running: isDbOwnedLoop('rewardSignalLoop') ? hasActiveCronJob('muel_reward_signal') : Boolean(rewardSignal.running),
+      schedule: isDbOwnedLoop('rewardSignalLoop') ? getCronJobSchedule('muel_reward_signal') : `every ${rewardSignal.intervalHours}h`,
+      source: ['src/services/rewardSignalLoopService.ts', 'src/discord/runtime/readyWorkloads.ts'],
+    },
+    {
+      id: 'eval-auto-promote-loop',
+      title: 'Eval auto-promote loop',
+      owner: isDbOwnedLoop('evalAutoPromoteLoop') ? 'db' : 'app',
+      startup: isDbOwnedLoop('evalAutoPromoteLoop') ? 'database' : 'discord-ready',
+      enabled: isDbOwnedLoop('evalAutoPromoteLoop') ? hasActiveCronJob('muel_eval_auto_promote') : Boolean(evalAutoPromote.enabled),
+      running: isDbOwnedLoop('evalAutoPromoteLoop') ? hasActiveCronJob('muel_eval_auto_promote') : Boolean(evalAutoPromote.running),
+      schedule: isDbOwnedLoop('evalAutoPromoteLoop') ? getCronJobSchedule('muel_eval_auto_promote') : `every ${evalAutoPromote.intervalHours}h`,
+      source: ['src/services/evalAutoPromoteLoopService.ts', 'src/discord/runtime/readyWorkloads.ts'],
+    },
+    {
+      id: 'intent-formation',
+      title: 'Intent formation evaluation loop',
+      owner: isDbOwnedLoop('intentEvalLoop') ? 'db' : 'app',
+      startup: isDbOwnedLoop('intentEvalLoop') ? 'database' : 'service-init',
+      enabled: isDbOwnedLoop('intentEvalLoop') ? hasActiveCronJob('muel_intent_eval') : Boolean(INTENT_FORMATION_ENABLED),
+      running: isDbOwnedLoop('intentEvalLoop') ? hasActiveCronJob('muel_intent_eval') : Boolean(INTENT_FORMATION_ENABLED),
+      schedule: isDbOwnedLoop('intentEvalLoop') ? getCronJobSchedule('muel_intent_eval') : 'event-driven + startup gated',
+      source: ['src/services/intentFormationEngine.ts', 'src/services/runtime/bootstrapServerInfra.ts'],
     },
     {
       id: 'agent-slo-alert-loop',
       title: 'Agent SLO alert loop',
       owner: agentSloAlerts.owner === 'db' ? 'db' : 'app',
       startup: agentSloAlerts.owner === 'db' ? 'database' : 'discord-ready',
-      enabled: Boolean(agentSloAlerts.enabled),
-      running: Boolean(agentSloAlerts.running || agentSloAlerts.inFlight),
-      schedule: agentSloAlerts.owner === 'db' ? 'pg_cron' : `every ${agentSloAlerts.intervalMin}m`,
+      enabled: agentSloAlerts.owner === 'db' ? hasActiveCronJob('muel_slo_check') : Boolean(agentSloAlerts.enabled),
+      running: agentSloAlerts.owner === 'db' ? hasActiveCronJob('muel_slo_check') : Boolean(agentSloAlerts.running || agentSloAlerts.inFlight),
+      schedule: agentSloAlerts.owner === 'db' ? getCronJobSchedule('muel_slo_check') : `every ${agentSloAlerts.intervalMin}m`,
       source: ['src/services/agentSloService.ts', 'src/services/runtimeBootstrap.ts', 'src/discord/runtime/readyWorkloads.ts'],
     },
     {

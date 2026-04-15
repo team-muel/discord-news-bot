@@ -21,7 +21,7 @@ model_list:
 
   - model_name: muel-local
     litellm_params:
-      model: ollama/qwen2.5:7b-instruct
+      model: ollama/hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M
       api_base: os.environ/OLLAMA_BASE_URL
 
   - model_name: muel-nemotron

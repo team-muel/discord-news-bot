@@ -111,6 +111,52 @@ describe('n8nAdapter — enabled path', () => {
       expect(result.error).toBe('HTTP_500');
     });
 
+    it('falls back to webhook execution when /api/v1/executions is not supported', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 405,
+          json: async () => ({ message: 'Method not allowed' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 'wf-123',
+            nodes: [{
+              type: 'n8n-nodes-base.webhook',
+              parameters: {
+                path: 'muel/news-rss-fetch',
+                httpMethod: 'POST',
+              },
+            }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [{ title: 'news item' }] }),
+        });
+
+      const { n8nAdapter } = await import('./n8nAdapter');
+      const result = await n8nAdapter.execute('workflow.execute', { workflowId: 'wf-123', data: { query: 'bitcoin' } });
+
+      expect(result.ok).toBe(true);
+      expect(result.summary).toContain('webhook fallback');
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        'http://n8n.test:5678/api/v1/workflows/wf-123',
+        expect.objectContaining({ method: 'GET' }),
+        30000,
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        'http://n8n.test:5678/webhook/muel/news-rss-fetch',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ query: 'bitcoin' }) }),
+        30000,
+      );
+    });
+
     it('returns EXECUTION_ERROR on exception', async () => {
       mockFetch.mockRejectedValueOnce(new Error('Network down'));
       const { n8nAdapter } = await import('./n8nAdapter');

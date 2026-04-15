@@ -63,13 +63,21 @@
 
 ## Document Ownership Matrix
 
+- `../TEAM_SHARED_OBSIDIAN_START_HERE.md`: 팀 공용 시작점과 shared Obsidian 우선 사용 원칙의 정본
 - `../RUNTIME_NAME_AND_SURFACE_MATRIX.md`: 이름 충돌 해석과 실제 런타임 surface availability의 정본
 - `../ARCHITECTURE_INDEX.md`: 현재 코드와 런타임 경계의 정본
 - `../OPERATIONS_24_7.md`: 운영 절차, 배포, 상태 확인의 정본
 - `MANAGED_AGENTS_FOUR_LAYER_MODEL.md`: brain / hands / session / semantic owner 역할 분리의 정본
 - `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`: 옵시디언 중심 운영체계 목표 상태의 정본
+- `OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md`: 디지털 트윈으로서의 옵시디언 쓰기 경계와 변환 원칙의 정본
 - `OBSIDIAN_OBJECT_MODEL.md`: 볼트 객체 스키마의 정본
+- `OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md`: 디지털 트윈용 최소 frontmatter, note family, upsert 계약의 정본
+- `OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md`: 디지털 트윈 노트 skeleton과 section contract의 정본
 - `OBSIDIAN_TRANSITION_PLAN.md`: 현행 구조에서 목표 상태로 가는 이행 계획의 정본
+- `OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md`: source에서 digest, canonical, workspace로 수렴하는 ingest loop의 정본
+- `HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md`: Hermes hands-layer의 최소 로컬 부트스트랩과 첫 ingest loop의 정본
+- `HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md`: bounded GPT reasoning과 persistent Hermes continuity 사이의 handoff, progress, recall 계약의 정본
+- `GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`: Hermes를 진짜 두 번째 로컬 assistant로 승격하는 목표 상태와 hot-state plane 분리의 정본
 - `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`: repo 전반에 흩어진 개발 과정과 cross-repo 맥락을 wiki object로 수렴하는 규칙의 정본
 - `mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`: shared MCP와 shared Obsidian을 위한 고수준 지식 계약의 정본
 - `mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`: `knowledge.bundle.compile` 세부 계약의 정본
@@ -83,11 +91,17 @@
 
 읽기 순서 규칙:
 
-1. 현재 시스템이 실제로 어떻게 동작하는지 확인할 때는 먼저 `../ARCHITECTURE_INDEX.md`를 읽는다.
-2. 이름이 실제 구현을 뜻하는지 헷갈리면 `../RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 바로 확인한다.
-3. 운영/배포/장애 대응은 `../OPERATIONS_24_7.md`를 우선한다.
-4. IDE 협업 규칙 수정은 `LOCAL_COLLAB_AGENT_WORKFLOW.md`와 `.github` 커스터마이징 파일을 함께 본다.
-5. 아직 구현되지 않은 로컬 외부 도구 통합은 `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`에서 별도 설계로 다룬다.
+1. 팀 공용 시작점이나 로컬 도구 전제조건이 헷갈리면 먼저 `../TEAM_SHARED_OBSIDIAN_START_HERE.md`를 읽는다.
+2. 현재 시스템이 실제로 어떻게 동작하는지 확인할 때는 `../ARCHITECTURE_INDEX.md`를 읽는다.
+3. 이름이 실제 구현을 뜻하는지 헷갈리면 `../RUNTIME_NAME_AND_SURFACE_MATRIX.md`를 바로 확인한다.
+4. 운영/배포/장애 대응은 `../OPERATIONS_24_7.md`를 우선한다.
+5. 옵시디언을 디지털 트윈으로 어떻게 다뤄야 하는지 정할 때는 `OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md`와 `OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md`를 먼저 본다.
+6. 실제 note shape는 `OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md`, 실제 source ingest loop는 `OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md`에서 확인한다.
+7. Hermes를 hands-layer로 붙이는 최소 조건은 `HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md`에서 확인한다.
+8. bounded GPT 세션과 persistent Hermes 사이의 ongoing continuity 계약은 `HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md`에서 확인한다.
+9. Hermes를 숨은 sidecar가 아니라 first-class local assistant로 올리는 목표 상태는 `GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`에서 확인한다.
+10. IDE 협업 규칙 수정은 `LOCAL_COLLAB_AGENT_WORKFLOW.md`와 `.github` 커스터마이징 파일을 함께 본다.
+11. 아직 구현되지 않은 로컬 외부 도구 통합은 `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`에서 별도 설계로 다룬다.
 
 ## 문서 목록
 
@@ -102,9 +116,16 @@
 - OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md
 - LOCAL_FIRST_HYBRID_AUTONOMY.md
 - OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md
+- OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md
 - OBSIDIAN_OBJECT_MODEL.md
+- OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md
+- OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md
 - OBSIDIAN_TRANSITION_PLAN.md
+- OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md
 - MANAGED_AGENTS_FOUR_LAYER_MODEL.md
+- HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md
+- HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md
+- GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md
 - OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md
 - OBSIDIAN_SEED_OBJECTS_PRIORITY.md
 - REPO_DOC_EXTERNALIZATION_PLAN.md
@@ -237,9 +258,16 @@ Moved to [docs/archive/](../archive/README.md).
 ### Obsidian Operating Model Reference
 
 - `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`
+- `OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md`
 - `OBSIDIAN_OBJECT_MODEL.md`
+- `OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md`
+- `OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md`
 - `OBSIDIAN_TRANSITION_PLAN.md`
+- `OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md`
 - `MANAGED_AGENTS_FOUR_LAYER_MODEL.md`
+- `HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md`
+- `HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md`
+- `GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`
 - `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`
 - `OBSIDIAN_SEED_OBJECTS_PRIORITY.md`
 - `REPO_DOC_EXTERNALIZATION_PLAN.md`

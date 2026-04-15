@@ -1,0 +1,85 @@
+{
+  "hardware_info": {
+    "platform": "windows",
+    "cpu_brand": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "cpu_count": 12,
+    "ram_gb": 0.0,
+    "gpu": {
+      "vendor": "nvidia",
+      "name": "NVIDIA GeForce RTX 4060 Ti",
+      "vram_gb": 8.0,
+      "count": 1
+    }
+  },
+  "benchmark": "supergpqa",
+  "category": "reasoning",
+  "backend": "jarvis-agent",
+  "model": "qwen2.5:7b-instruct",
+  "total_samples": 1,
+  "scored_samples": 1,
+  "correct": 0,
+  "accuracy": 0.0,
+  "errors": 0,
+  "mean_latency_seconds": 20.8428,
+  "total_cost_usd": 0.0,
+  "per_subject": {
+    "Pharmaceutics": {
+      "accuracy": 0.0,
+      "total": 1.0,
+      "scored": 1.0,
+      "correct": 0.0
+    }
+  },
+  "started_at": 1775932723.355327,
+  "ended_at": 1775932751.1318858,
+  "accuracy_stats": {
+    "mean": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "max": 0.0,
+    "std": 0.0,
+    "p90": 0.0,
+    "p95": 0.0,
+    "p99": 0.0
+  },
+  "latency_stats": {
+    "mean": 20.84284369996749,
+    "median": 20.84284369996749,
+    "min": 20.84284369996749,
+    "max": 20.84284369996749,
+    "std": 0.0,
+    "p90": 20.84284369996749,
+    "p95": 20.84284369996749,
+    "p99": 20.84284369996749
+  },
+  "ttft_stats": null,
+  "energy_stats": null,
+  "power_stats": null,
+  "gpu_utilization_stats": null,
+  "throughput_stats": null,
+  "mfu_stats": null,
+  "mbu_stats": null,
+  "ipw_stats": null,
+  "ipj_stats": null,
+  "energy_per_output_token_stats": null,
+  "throughput_per_watt_stats": null,
+  "itl_stats": null,
+  "input_token_stats": null,
+  "output_token_stats": null,
+  "total_energy_joules": 0.0,
+  "warmup_samples_excluded": 0,
+  "steady_state_reached": false,
+  "energy_method": "",
+  "avg_power_watts": 0.0,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "efficiency": {
+    "accuracy": 0.0,
+    "total_energy_joules": 0.0,
+    "avg_power_watts": 0.0,
+    "ipj": null,
+    "ipw": null
+  },
+  "normalized_statistics": null,
+  "normalized_efficiency": null
+}

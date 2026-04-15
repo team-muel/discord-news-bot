@@ -284,12 +284,20 @@ const requestPlanCandidate = async (params: {
   goal: string;
   prompt: string;
   temperature: number;
+  guildId?: string;
+  requestedBy?: string;
+  providerProfile?: import('../../llmClient').LlmProviderProfile;
+  sessionId?: string;
 }): Promise<ActionPlan[] | null> => {
   try {
     const raw = await generateText({
       system: '너는 액션 체인 플래너다. 지정 스키마 JSON만 출력한다.',
       user: params.prompt,
       actionName: 'planner.action_chain',
+      guildId: params.guildId,
+      requestedBy: params.requestedBy,
+      providerProfile: params.providerProfile,
+      sessionId: params.sessionId,
       temperature: params.temperature,
       maxTokens: 260,
     });
@@ -308,7 +316,12 @@ const requestPlanCandidate = async (params: {
   }
 };
 
-export const planActions = async (goal: string): Promise<ActionChainPlan> => {
+export const planActions = async (goal: string, options?: {
+  guildId?: string;
+  requestedBy?: string;
+  providerProfile?: import('../../llmClient').LlmProviderProfile;
+  sessionId?: string;
+}): Promise<ActionChainPlan> => {
   const goalTerms = toGoalTerms(goal);
 
   // Pattern cache fast-path: reuse plan from a similar recent goal
@@ -360,7 +373,15 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
   const prompt = promptLines.join('\n');
 
   if (!PLANNER_CONFIG.selfConsistency.enabled || PLANNER_CONFIG.selfConsistency.samples <= 1) {
-    const single = await requestPlanCandidate({ goal, prompt, temperature: 0 });
+    const single = await requestPlanCandidate({
+      goal,
+      prompt,
+      temperature: 0,
+      guildId: options?.guildId,
+      requestedBy: options?.requestedBy,
+      providerProfile: options?.providerProfile,
+      sessionId: options?.sessionId,
+    });
     if (!single || single.length === 0) {
       return { actions: await fallbackPlan(goal) };
     }
@@ -370,7 +391,15 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
 
   const k = resolveAdaptiveSamples(goal);
   if (k <= 1) {
-    const single = await requestPlanCandidate({ goal, prompt, temperature: 0 });
+    const single = await requestPlanCandidate({
+      goal,
+      prompt,
+      temperature: 0,
+      guildId: options?.guildId,
+      requestedBy: options?.requestedBy,
+      providerProfile: options?.providerProfile,
+      sessionId: options?.sessionId,
+    });
     if (!single || single.length === 0) {
       return { actions: await fallbackPlan(goal) };
     }
@@ -381,7 +410,15 @@ export const planActions = async (goal: string): Promise<ActionChainPlan> => {
   const temperatures = Array.from({ length: k }, (_, index) => (
     index === 0 ? 0 : PLANNER_CONFIG.selfConsistency.temperature
   ));
-  const candidates = await Promise.all(temperatures.map((temperature) => requestPlanCandidate({ goal, prompt, temperature })));
+  const candidates = await Promise.all(temperatures.map((temperature) => requestPlanCandidate({
+    goal,
+    prompt,
+    temperature,
+    guildId: options?.guildId,
+    requestedBy: options?.requestedBy,
+    providerProfile: options?.providerProfile,
+    sessionId: options?.sessionId,
+  })));
   const validCandidates = candidates.filter((candidate): candidate is ActionPlan[] => Boolean(candidate && candidate.length > 0));
   const consensus = selectConsensusActions(validCandidates);
   if (consensus.length === 0) {

@@ -19,6 +19,14 @@ Keep the platform stable while shipping fast improvements for Discord operations
 - Keep docs in sync when changing behavior that impacts operators.
 - Keep workflows and scripts idempotent for unattended runs.
 
+## Team Collaboration Stance
+
+- Any agent operating with this repository's instructions and source context should act as a temporary team contributor bound to the repo's operating model, not as a detached generic assistant.
+- Prefer registering durable behavior policies, workflow contracts, and prompt conventions in repo-shared instructions or canonical planning docs so the rest of the team can reuse them.
+- If a workflow already exists in this repository, extend or refine that canonical path instead of inventing a parallel ad hoc process.
+- When a collaboration rule becomes stable, land it in both the always-on agent instruction surface and a share-safe or backfillable repo doc in the same change window.
+- Do not assume every teammate or agent has local OpenJarvis or Hermes available. Treat those as optional local continuity or acceleration lanes unless runtime docs explicitly mark a shared deployed surface, and keep shared Obsidian plus repo-backed runtime surfaces as the required team entrypoint.
+
 ## Tech Stack
 
 - TypeScript + Node.js (ESM — `"type": "module"`)

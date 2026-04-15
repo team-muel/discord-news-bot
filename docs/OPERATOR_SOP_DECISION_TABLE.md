@@ -42,9 +42,14 @@ Runtime control-plane 보조 규칙:
 
 Runtime loop 인벤토리(현재 코드 기준, `scheduler-policy` ID):
 
-- `service-init`: `memory-job-runner`, `opencode-publish-worker`, `trading-engine`, `runtime-alerts`
-- `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `login-session-cleanup`(app-owned), `obsidian-sync-loop`, `retrieval-eval-loop`, `agent-slo-alert-loop`
-- `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned)
+- `service-init`: `memory-job-runner`, `opencode-publish-worker`, `runtime-alerts`, `intent-formation`(app-owned)
+- `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `login-session-cleanup`(app-owned), `obsidian-sync-loop`, `retrieval-eval-loop`, `reward-signal-loop`, `eval-auto-promote-loop`, `agent-slo-alert-loop`
+- `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned), `obsidian-sync-loop`(db-owned), `retrieval-eval-loop`(db-owned), `reward-signal-loop`(db-owned), `eval-auto-promote-loop`(db-owned), `agent-slo-alert-loop`(db-owned), `intent-formation`(db-owned)
+
+DB-owned 판정 규칙:
+
+- `scheduler-policy`의 db-owned loop는 generic cron count가 아니라 해당 pg_cron job 이름 존재 여부로 확인한다.
+- 확인 대상 job 이름: `muel_login_session_cleanup`, `muel_obsidian_lore_sync`, `muel_retrieval_eval`, `muel_reward_signal`, `muel_eval_auto_promote`, `muel_slo_check`, `muel_intent_eval`.
 
 ## 4) FinOps 자동 의사결정표
 
@@ -109,6 +114,7 @@ Runtime triage rule:
 - `discord-ready` 루프 이상은 Discord ready, OAuth, gateway, bot token 상태를 먼저 분리한다.
 - `database` 소유 이상은 Supabase cron 설치 여부와 DB 자격 증명을 먼저 확인한다.
 - `login-session-cleanup` 이상은 먼저 owner(`app|db`)를 확인한 뒤 app loop 문제인지 DB cron 문제인지 분기한다.
+- `retrieval-eval-loop`, `reward-signal-loop`, `eval-auto-promote-loop`, `agent-slo-alert-loop`, `intent-formation`이 db-owned로 보이면 대응하는 `muel_*` pg_cron job 실제 존재를 먼저 확인한다.
 
 ## 8) 운영 규칙
 

@@ -286,6 +286,11 @@ export const buildSocialContextHints = async (params: {
     return [];
   }
 
+  const hasConsent = await hasSocialGraphConsent({ guildId, userId: requesterUserId });
+  if (!hasConsent) {
+    return [];
+  }
+
   const client = getSupabaseClient();
 
   const [outboundRes, inboundRes] = await Promise.all([

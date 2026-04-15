@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mockRunExternalAction = vi.fn();
 const mockGetExternalAdaptersStatus = vi.fn();
 const mockGetDelegationStatus = vi.fn();
+const mockListN8nLocalWorkflowsViaDockerCli = vi.fn();
 
 vi.mock('../../tools/toolRouter', () => ({
   runExternalAction: (...args: unknown[]) => mockRunExternalAction(...args),
@@ -13,6 +14,10 @@ vi.mock('../../tools/toolRouter', () => ({
 
 vi.mock('../../automation/n8nDelegationService', () => ({
   getDelegationStatus: () => mockGetDelegationStatus(),
+}));
+
+vi.mock('../../../../scripts/bootstrap-n8n-local.mjs', () => ({
+  listN8nLocalWorkflowsViaDockerCli: (...args: unknown[]) => mockListN8nLocalWorkflowsViaDockerCli(...args),
 }));
 
 // ─── Default mock returns ─────────────────────────────────────────────────────
@@ -46,6 +51,7 @@ describe('n8n agent actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetDelegationStatus.mockReturnValue(DEFAULT_DELEGATION_STATUS);
+    mockListN8nLocalWorkflowsViaDockerCli.mockReset();
     mockGetExternalAdaptersStatus.mockResolvedValue([
       { id: 'n8n', available: true, capabilities: ['workflow.execute', 'workflow.list', 'workflow.trigger', 'workflow.status'] },
     ]);
@@ -101,6 +107,32 @@ describe('n8n agent actions', () => {
       expect(text).toContain('news-rss-fetch: 설정됨');
       expect(text).toContain('news-monitor-candidates: 미설정');
     });
+
+    it('surfaces missing REST API auth when adapter is reachable but workflow list returns 401', async () => {
+      mockRunExternalAction.mockResolvedValue(adapterResult(false, [], 'HTTP_401'));
+
+      const { n8nStatusAction } = await import('./n8n');
+      const result = await n8nStatusAction.execute({ goal: 'check auth' });
+
+      expect(result.ok).toBe(true);
+      expect(result.summary).toContain('정상 연결');
+      expect(result.artifacts.join('\n')).toContain('REST API auth required');
+      expect(result.artifacts.join('\n')).toContain('N8N_API_KEY');
+    });
+
+    it('falls back to local container CLI when REST API auth is missing', async () => {
+      mockRunExternalAction.mockResolvedValue(adapterResult(false, [], 'HTTP_401'));
+      mockListN8nLocalWorkflowsViaDockerCli.mockReturnValue([
+        { id: '10', name: 'News Pipeline' },
+      ]);
+
+      const { n8nStatusAction } = await import('./n8n');
+      const result = await n8nStatusAction.execute({ goal: 'check auth fallback' });
+
+      expect(result.ok).toBe(true);
+      expect(result.artifacts.join('\n')).toContain('News Pipeline');
+      expect(result.artifacts.join('\n')).toContain('local container CLI fallback');
+    });
   });
 
   // ─── n8n.workflow.list ──────────────────────────────────────────────────
@@ -146,6 +178,22 @@ describe('n8n agent actions', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('ADAPTER_UNAVAILABLE');
+    });
+
+    it('falls back to local container CLI when REST API auth is missing', async () => {
+      mockRunExternalAction.mockResolvedValue(adapterResult(false, [], 'HTTP_401'));
+      mockListN8nLocalWorkflowsViaDockerCli.mockReturnValue([
+        { id: '10', name: 'News Pipeline' },
+        { id: '11', name: 'Alert Sender' },
+      ]);
+
+      const { n8nWorkflowListAction } = await import('./n8n');
+      const result = await n8nWorkflowListAction.execute({ goal: 'list' });
+
+      expect(result.ok).toBe(true);
+      expect(result.summary).toContain('CLI fallback');
+      expect(result.artifacts.join('\n')).toContain('News Pipeline');
+      expect(result.artifacts.join('\n')).toContain('N8N_API_KEY');
     });
   });
 

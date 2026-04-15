@@ -159,6 +159,14 @@ const ensureProviderRuntimeState = (provider: LlmProvider): ProviderRuntimeState
 
 const joinHealthUrl = (baseUrl: string, suffix: string): string => `${baseUrl.replace(/\/+$/g, '')}${suffix}`;
 
+const getOpenClawProbeHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (OPENCLAW_API_KEY) {
+    headers.Authorization = `Bearer ${OPENCLAW_API_KEY}`;
+  }
+  return headers;
+};
+
 const getProviderProbeUrl = (provider: LlmProvider): string | null => {
   if (provider === 'ollama') return joinHealthUrl(OLLAMA_BASE_URL, '/api/tags');
   if (provider === 'openjarvis') return joinHealthUrl(OPENJARVIS_SERVE_URL, '/health');
@@ -237,6 +245,52 @@ export const getProviderRuntimeReadiness = async (provider: LlmProvider): Promis
 
   if (state.cooldownUntil > now) {
     return buildProviderReadiness(provider, now);
+  }
+
+  if (provider === 'openclaw') {
+    if (state.checkedAt > 0 && (now - state.checkedAt) < PROVIDER_READINESS_CACHE_TTL_MS) {
+      return buildProviderReadiness(provider, now);
+    }
+
+    try {
+      const response = await baseFetchWithTimeout(joinHealthUrl(OPENCLAW_BASE_URL, '/v1/models'), {
+        method: 'GET',
+        headers: getOpenClawProbeHeaders(),
+      }, PROVIDER_READINESS_PROBE_TIMEOUT_MS);
+
+      state.checkedAt = now;
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      if (!response.ok) {
+        state.probeStatus = 'unreachable';
+        state.probeReason = `PROBE_HTTP_${response.status}`;
+        state.cooldownUntil = now + PROVIDER_READINESS_CACHE_TTL_MS;
+        state.lastFailureAt = now;
+        return buildProviderReadiness(provider, now);
+      }
+
+      if (!contentType.includes('application/json')) {
+        state.probeStatus = 'unreachable';
+        state.probeReason = contentType.includes('text/html')
+          ? 'OPENCLAW_CONTROL_UI_ONLY'
+          : `OPENCLAW_NON_JSON_${contentType || 'UNKNOWN'}`;
+          state.cooldownUntil = 0;
+        state.lastFailureAt = now;
+        return buildProviderReadiness(provider, now);
+      }
+
+      state.probeStatus = 'ready';
+      state.probeReason = null;
+      state.cooldownUntil = 0;
+      state.lastSuccessAt = now;
+      return buildProviderReadiness(provider, now);
+    } catch (error) {
+      state.checkedAt = now;
+      state.probeStatus = 'unreachable';
+      state.probeReason = getErrorMessage(error);
+      state.cooldownUntil = now + PROVIDER_READINESS_CACHE_TTL_MS;
+      state.lastFailureAt = now;
+      return buildProviderReadiness(provider, now);
+    }
   }
 
   const probeUrl = getProviderProbeUrl(provider);

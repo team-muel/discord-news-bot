@@ -9,6 +9,19 @@ import crypto from 'crypto';
 import { isSupabaseConfigured, getSupabaseClient } from '../supabaseClient';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
+import {
+  buildWorkflowArtifactRefEvent,
+  buildWorkflowCapabilityDemandEvent,
+  buildWorkflowDecisionDistillatePayload,
+  buildWorkflowRecallRequestPayload,
+  DEFAULT_WORKFLOW_RUNTIME_LANE as RAW_DEFAULT_WORKFLOW_RUNTIME_LANE,
+  inferWorkflowRuntimeLane as rawInferWorkflowRuntimeLane,
+  normalizeWorkflowRuntimeLane as rawNormalizeWorkflowRuntimeLane,
+  parseWorkflowArtifactRefSummaries,
+  parseWorkflowCapabilityDemandSummaries,
+  parseWorkflowDecisionDistillateSummary,
+  parseWorkflowRecallRequestSummary,
+} from './workflowPersistenceTransforms';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +37,8 @@ export type WorkflowStatus =
   | 'failed';
 
 export type WorkflowStepStatus = 'queued' | 'running' | 'passed' | 'failed' | 'skipped';
+
+export type WorkflowRuntimeLane = 'operator-personal' | 'public-guild' | 'system-internal' | 'system-sprint' | (string & {});
 
 export type WorkflowSession = {
   sessionId: string;
@@ -56,15 +71,145 @@ export type WorkflowEvent = {
   payload?: Record<string, unknown>;
 };
 
+export type WorkflowRecallRequest = {
+  sessionId: string;
+  decisionReason: string;
+  evidenceId?: string;
+  blockedAction?: string;
+  nextAction?: string;
+  requestedBy?: string;
+  runtimeLane?: WorkflowRuntimeLane;
+  failedStepNames?: string[];
+  payload?: Record<string, unknown>;
+};
+
+export type WorkflowRecallRequestSummary = {
+  createdAt: string | null;
+  decisionReason: string | null;
+  evidenceId: string | null;
+  blockedAction: string | null;
+  nextAction: string | null;
+  requestedBy: string | null;
+  runtimeLane: WorkflowRuntimeLane;
+  failedStepNames: string[];
+};
+
+export type WorkflowArtifactRefKind = 'repo-file' | 'vault-note' | 'log' | 'url' | 'git-ref' | 'workflow-session' | 'other';
+
+export type WorkflowArtifactRef = {
+  locator: string;
+  refKind: WorkflowArtifactRefKind;
+  title?: string;
+};
+
+export type WorkflowArtifactRefBatch = {
+  sessionId: string;
+  refs: WorkflowArtifactRef[];
+  runtimeLane?: WorkflowRuntimeLane;
+  sourceStepName?: string;
+  sourceEvent?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type WorkflowArtifactRefSummary = {
+  createdAt: string | null;
+  locator: string;
+  refKind: WorkflowArtifactRefKind;
+  title: string | null;
+  runtimeLane: WorkflowRuntimeLane;
+  sourceStepName: string | null;
+  sourceEvent: string | null;
+};
+
+export type WorkflowDecisionDistillate = {
+  sessionId: string;
+  summary: string;
+  evidenceId?: string;
+  nextAction?: string;
+  runtimeLane?: WorkflowRuntimeLane;
+  sourceEvent?: string;
+  promoteAs?: string;
+  tags?: string[];
+  payload?: Record<string, unknown>;
+};
+
+export type WorkflowDecisionDistillateSummary = {
+  createdAt: string | null;
+  summary: string | null;
+  evidenceId: string | null;
+  nextAction: string | null;
+  runtimeLane: WorkflowRuntimeLane;
+  sourceEvent: string | null;
+  promoteAs: string | null;
+  tags: string[];
+};
+
+export type WorkflowCapabilityDemand = {
+  summary: string;
+  objective?: string;
+  missingCapability?: string;
+  missingSource?: string;
+  failedOrInsufficientRoute?: string;
+  cheapestEnablementPath?: string;
+  proposedOwner?: string;
+  evidenceRefs?: string[];
+  recallCondition?: string;
+  runtimeLane?: WorkflowRuntimeLane;
+  sourceEvent?: string;
+  tags?: string[];
+};
+
+export type WorkflowCapabilityDemandBatch = {
+  sessionId: string;
+  demands: WorkflowCapabilityDemand[];
+  runtimeLane?: WorkflowRuntimeLane;
+  sourceEvent?: string;
+  tags?: string[];
+  payload?: Record<string, unknown>;
+};
+
+export type WorkflowCapabilityDemandSummary = {
+  createdAt: string | null;
+  summary: string | null;
+  objective: string | null;
+  missingCapability: string | null;
+  missingSource: string | null;
+  failedOrInsufficientRoute: string | null;
+  cheapestEnablementPath: string | null;
+  proposedOwner: string | null;
+  evidenceRefs: string[];
+  recallCondition: string | null;
+  runtimeLane: WorkflowRuntimeLane;
+  sourceEvent: string | null;
+  tags: string[];
+};
+
 export type WorkflowSessionSummary = {
   sessionId: string;
   workflowName: string;
   status: WorkflowStatus;
+  runtimeLane: WorkflowRuntimeLane;
+  lastRecallRequest: WorkflowRecallRequestSummary | null;
+  lastDecisionDistillate: WorkflowDecisionDistillateSummary | null;
+  lastCapabilityDemands: WorkflowCapabilityDemandSummary[];
+  lastArtifactRefs: WorkflowArtifactRefSummary[];
   stepCount: number;
   passedSteps: number;
   failedSteps: number;
   totalDurationMs: number;
 };
+
+export const DEFAULT_WORKFLOW_RUNTIME_LANE: WorkflowRuntimeLane = RAW_DEFAULT_WORKFLOW_RUNTIME_LANE as WorkflowRuntimeLane;
+
+export const normalizeWorkflowRuntimeLane = (value: unknown): WorkflowRuntimeLane =>
+  rawNormalizeWorkflowRuntimeLane(value, DEFAULT_WORKFLOW_RUNTIME_LANE) as WorkflowRuntimeLane;
+
+export const inferWorkflowRuntimeLane = (params: {
+  workflowName?: string;
+  scope?: string;
+  metadata?: Record<string, unknown>;
+}): WorkflowRuntimeLane =>
+  rawInferWorkflowRuntimeLane(params, DEFAULT_WORKFLOW_RUNTIME_LANE) as WorkflowRuntimeLane;
 
 // ─── Session ID Generation ────────────────────────────────────────────────────
 
@@ -82,13 +227,21 @@ export const createWorkflowSession = async (session: WorkflowSession): Promise<{
   }
   try {
     const client = getSupabaseClient();
+    const metadata = {
+      ...(session.metadata || {}),
+      runtime_lane: inferWorkflowRuntimeLane({
+        workflowName: session.workflowName,
+        scope: session.scope,
+        metadata: session.metadata,
+      }),
+    };
     const { error } = await client.from('workflow_sessions').insert({
       session_id: session.sessionId,
       workflow_name: session.workflowName,
       stage: session.stage,
       scope: session.scope || null,
       status: session.status,
-      metadata: session.metadata || {},
+      metadata,
     });
     if (error) {
       logger.warn('[WORKFLOW-PERSIST] createSession failed: %s', error.message);
@@ -193,6 +346,74 @@ export const updateWorkflowStep = async (
 
 // ─── Event Recording ──────────────────────────────────────────────────────────
 
+type WorkflowEventSummaryRow = {
+  created_at?: unknown;
+  decision_reason?: unknown;
+  evidence_id?: unknown;
+  payload?: unknown;
+};
+
+const WORKFLOW_EVENT_SELECT_WITH_EVIDENCE = 'created_at, decision_reason, evidence_id, payload';
+const WORKFLOW_EVENT_SELECT_WITH_REASON = 'created_at, decision_reason, payload';
+const WORKFLOW_EVENT_SELECT_PAYLOAD_ONLY = 'created_at, payload';
+
+const recordBuiltWorkflowEvent = async (
+  sessionId: string,
+  eventType: string,
+  event: { payload: Record<string, unknown>; decisionReason: string } | null,
+): Promise<{ ok: boolean; error?: string }> => {
+  if (!event) {
+    return { ok: true };
+  }
+
+  return recordWorkflowEvent({
+    sessionId,
+    eventType,
+    decisionReason: event.decisionReason,
+    payload: event.payload,
+  });
+};
+
+const getLatestWorkflowEventRow = async (
+  sessionId: string,
+  eventType: string,
+  selectClause: string,
+): Promise<WorkflowEventSummaryRow | null> => {
+  const client = getSupabaseClient();
+  const { data } = await client
+    .from('workflow_events')
+    .select(selectClause)
+    .eq('session_id', sessionId)
+    .eq('event_type', eventType)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data && typeof data === 'object'
+    ? data as WorkflowEventSummaryRow
+    : null;
+};
+
+const getParsedLatestWorkflowEvent = async <T>(params: {
+  sessionId: string;
+  eventType: string;
+  selectClause: string;
+  fallbackValue: T;
+  fallbackLane: WorkflowRuntimeLane;
+  parser: (row: WorkflowEventSummaryRow | null, fallbackLane: WorkflowRuntimeLane) => T;
+}): Promise<T> => {
+  if (!isSupabaseConfigured()) {
+    return params.fallbackValue;
+  }
+
+  try {
+    const row = await getLatestWorkflowEventRow(params.sessionId, params.eventType, params.selectClause);
+    return params.parser(row, params.fallbackLane);
+  } catch {
+    return params.fallbackValue;
+  }
+};
+
 export const recordWorkflowEvent = async (event: WorkflowEvent): Promise<{ ok: boolean; error?: string }> => {
   if (!isSupabaseConfigured()) {
     return { ok: false, error: 'SUPABASE_NOT_CONFIGURED' };
@@ -221,6 +442,118 @@ export const recordWorkflowEvent = async (event: WorkflowEvent): Promise<{ ok: b
   }
 };
 
+export const recordWorkflowRecallRequest = async (
+  request: WorkflowRecallRequest,
+): Promise<{ ok: boolean; error?: string }> => {
+  return recordWorkflowEvent({
+    sessionId: request.sessionId,
+    eventType: 'recall_request',
+    decisionReason: request.decisionReason,
+    evidenceId: request.evidenceId,
+    payload: buildWorkflowRecallRequestPayload(request),
+  });
+};
+
+export const recordWorkflowDecisionDistillate = async (
+  distillate: WorkflowDecisionDistillate,
+): Promise<{ ok: boolean; error?: string }> => {
+  return recordWorkflowEvent({
+    sessionId: distillate.sessionId,
+    eventType: 'decision_distillate',
+    decisionReason: distillate.summary,
+    evidenceId: distillate.evidenceId,
+    payload: buildWorkflowDecisionDistillatePayload(distillate),
+  });
+};
+
+export const recordWorkflowCapabilityDemands = async (
+  batch: WorkflowCapabilityDemandBatch,
+): Promise<{ ok: boolean; error?: string }> => {
+  return recordBuiltWorkflowEvent(
+    batch.sessionId,
+    'capability_demand',
+    buildWorkflowCapabilityDemandEvent({
+      payload: batch.payload,
+      demands: batch.demands as Array<Record<string, unknown>>,
+      runtimeLane: batch.runtimeLane,
+      sourceEvent: batch.sourceEvent,
+      tags: batch.tags,
+    }),
+  );
+};
+
+export const recordWorkflowArtifactRefs = async (
+  batch: WorkflowArtifactRefBatch,
+): Promise<{ ok: boolean; error?: string }> => {
+  return recordBuiltWorkflowEvent(
+    batch.sessionId,
+    'artifact_ref',
+    buildWorkflowArtifactRefEvent({
+      payload: batch.payload,
+      refs: batch.refs as Array<Record<string, unknown>>,
+      runtimeLane: batch.runtimeLane,
+      sourceStepName: batch.sourceStepName,
+      sourceEvent: batch.sourceEvent,
+    }),
+  );
+};
+
+export const getLatestWorkflowRecallRequest = async (
+  sessionId: string,
+  fallbackLane: WorkflowRuntimeLane = DEFAULT_WORKFLOW_RUNTIME_LANE,
+): Promise<WorkflowRecallRequestSummary | null> => {
+  return getParsedLatestWorkflowEvent({
+    sessionId,
+    eventType: 'recall_request',
+    selectClause: WORKFLOW_EVENT_SELECT_WITH_EVIDENCE,
+    fallbackValue: null,
+    fallbackLane,
+    parser: (row, lane) => (parseWorkflowRecallRequestSummary(row, lane) || null) as WorkflowRecallRequestSummary | null,
+  });
+};
+
+export const getLatestWorkflowDecisionDistillate = async (
+  sessionId: string,
+  fallbackLane: WorkflowRuntimeLane = DEFAULT_WORKFLOW_RUNTIME_LANE,
+): Promise<WorkflowDecisionDistillateSummary | null> => {
+  return getParsedLatestWorkflowEvent({
+    sessionId,
+    eventType: 'decision_distillate',
+    selectClause: WORKFLOW_EVENT_SELECT_WITH_EVIDENCE,
+    fallbackValue: null,
+    fallbackLane,
+    parser: (row, lane) => (parseWorkflowDecisionDistillateSummary(row, lane) || null) as WorkflowDecisionDistillateSummary | null,
+  });
+};
+
+export const getLatestWorkflowCapabilityDemands = async (
+  sessionId: string,
+  fallbackLane: WorkflowRuntimeLane = DEFAULT_WORKFLOW_RUNTIME_LANE,
+): Promise<WorkflowCapabilityDemandSummary[]> => {
+  return getParsedLatestWorkflowEvent({
+    sessionId,
+    eventType: 'capability_demand',
+    selectClause: WORKFLOW_EVENT_SELECT_WITH_REASON,
+    fallbackValue: [],
+    fallbackLane,
+    parser: (row, lane) => parseWorkflowCapabilityDemandSummaries(row, lane) as WorkflowCapabilityDemandSummary[],
+  });
+};
+
+export const getLatestWorkflowArtifactRefs = async (
+  sessionId: string,
+  fallbackLane: WorkflowRuntimeLane = DEFAULT_WORKFLOW_RUNTIME_LANE,
+): Promise<WorkflowArtifactRefSummary[]> => {
+  return getParsedLatestWorkflowEvent({
+    sessionId,
+    eventType: 'artifact_ref',
+    selectClause: WORKFLOW_EVENT_SELECT_PAYLOAD_ONLY,
+    fallbackValue: [],
+    fallbackLane,
+    parser: (row, lane) => parseWorkflowArtifactRefSummaries(row, lane) as WorkflowArtifactRefSummary[],
+  });
+};
+
 // ─── Query / Summary ──────────────────────────────────────────────────────────
 
 export const getWorkflowSessionSummary = async (sessionId: string): Promise<WorkflowSessionSummary | null> => {
@@ -229,7 +562,7 @@ export const getWorkflowSessionSummary = async (sessionId: string): Promise<Work
     const client = getSupabaseClient();
     const { data: session } = await client
       .from('workflow_sessions')
-      .select('session_id, workflow_name, status')
+      .select('session_id, workflow_name, status, scope, metadata')
       .eq('session_id', sessionId)
       .single();
     if (!session) return null;
@@ -240,10 +573,26 @@ export const getWorkflowSessionSummary = async (sessionId: string): Promise<Work
       .eq('session_id', sessionId);
 
     const stepList = steps || [];
+    const runtimeLane = inferWorkflowRuntimeLane({
+      workflowName: session.workflow_name,
+      scope: session.scope as string | undefined,
+      metadata: session.metadata as Record<string, unknown> | undefined,
+    });
+    const [lastRecallRequest, lastDecisionDistillate, lastCapabilityDemands, lastArtifactRefs] = await Promise.all([
+      getLatestWorkflowRecallRequest(sessionId, runtimeLane),
+      getLatestWorkflowDecisionDistillate(sessionId, runtimeLane),
+      getLatestWorkflowCapabilityDemands(sessionId, runtimeLane),
+      getLatestWorkflowArtifactRefs(sessionId, runtimeLane),
+    ]);
     return {
       sessionId: session.session_id,
       workflowName: session.workflow_name,
       status: session.status as WorkflowStatus,
+      runtimeLane,
+      lastRecallRequest,
+      lastDecisionDistillate,
+      lastCapabilityDemands,
+      lastArtifactRefs,
       stepCount: stepList.length,
       passedSteps: stepList.filter((s: { status: string }) => s.status === 'passed').length,
       failedSteps: stepList.filter((s: { status: string }) => s.status === 'failed').length,

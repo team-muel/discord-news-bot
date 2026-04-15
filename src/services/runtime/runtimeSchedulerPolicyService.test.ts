@@ -1,6 +1,65 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const listSupabaseCronJobs = vi.fn(async () => []);
+type MockCronJob = {
+  jobId: number;
+  jobName: string;
+  schedule: string;
+  command: string;
+  active: boolean;
+};
+
+const {
+  mockListSupabaseCronJobs,
+  mockGetRewardSignalLoopStatus,
+  mockGetEvalAutoPromoteLoopStatus,
+  mockGetObsidianGraphAuditLoopStats,
+  mockGetRuntimeBootstrapState,
+} = vi.hoisted(() => ({
+  mockListSupabaseCronJobs: vi.fn(async (): Promise<MockCronJob[]> => []),
+  mockGetRewardSignalLoopStatus: vi.fn(() => ({
+    enabled: true,
+    running: false,
+    lastRunAt: null,
+    lastSummary: null,
+    intervalHours: 6,
+  })),
+  mockGetEvalAutoPromoteLoopStatus: vi.fn(() => ({
+    enabled: true,
+    running: false,
+    lastRunAt: null,
+    lastSummary: null,
+    intervalHours: 6,
+  })),
+  mockGetObsidianGraphAuditLoopStats: vi.fn(() => ({
+    enabled: true,
+    owner: 'app',
+    running: false,
+    intervalMin: 360,
+    runOnStart: true,
+    timeoutMs: 600000,
+    lastRunAt: null,
+    lastFinishedAt: null,
+    lastStatus: 'idle',
+    lastExitCode: null,
+    lastSummary: null,
+    snapshotPath: '/repo/.runtime/obsidian-graph-audit.json',
+  })),
+  mockGetRuntimeBootstrapState: vi.fn(() => ({
+    serverStarted: true,
+    discordReadyStarted: false,
+    sharedLoopsStarted: true,
+    sharedLoopsSource: 'server-process',
+    pgCronReplacedLoops: [] as string[],
+    pgCron: {
+      status: 'not-required',
+      startedAt: null as string | null,
+      completedAt: null as string | null,
+      lastError: null as string | null,
+      summary: null,
+      deferredTaskCount: 0,
+    },
+  })),
+}));
 
 vi.mock('../agent/agentRoleWorkerService', () => ({
   listAgentRoleWorkerSpecs: vi.fn(() => ([
@@ -57,8 +116,13 @@ vi.mock('../obsidian/obsidianLoreSyncService', () => ({
   getObsidianLoreSyncLoopStats: vi.fn(() => ({
     enabled: true,
     running: true,
+    owner: 'app',
     intervalMin: 30,
   })),
+}));
+
+vi.mock('../obsidian/obsidianQualityService', () => ({
+  getObsidianGraphAuditLoopStats: mockGetObsidianGraphAuditLoopStats,
 }));
 
 vi.mock('../eval/retrievalEvalLoopService', () => ({
@@ -67,6 +131,14 @@ vi.mock('../eval/retrievalEvalLoopService', () => ({
     running: false,
     intervalHours: 12,
   })),
+}));
+
+vi.mock('../eval/rewardSignalLoopService', () => ({
+  getRewardSignalLoopStatus: mockGetRewardSignalLoopStatus,
+}));
+
+vi.mock('../eval/evalAutoPromoteLoopService', () => ({
+  getEvalAutoPromoteLoopStatus: mockGetEvalAutoPromoteLoopStatus,
 }));
 
 vi.mock('../agent/agentSloService', () => ({
@@ -100,20 +172,59 @@ vi.mock('../opencode/opencodePublishWorker', () => ({
 }));
 
 vi.mock('./runtimeBootstrap', () => ({
-  getRuntimeBootstrapState: vi.fn(() => ({
-    serverStarted: true,
-    discordReadyStarted: false,
-    sharedLoopsStarted: true,
-    sharedLoopsSource: 'server-process',
-  })),
+  getRuntimeBootstrapState: mockGetRuntimeBootstrapState,
 }));
 
-vi.mock('../infra/supabaseExtensionOpsService', () => ({ listSupabaseCronJobs }));
+vi.mock('../infra/supabaseExtensionOpsService', () => ({ listSupabaseCronJobs: mockListSupabaseCronJobs }));
 
 describe('getRuntimeSchedulerPolicySnapshot', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mockListSupabaseCronJobs.mockResolvedValue([]);
+    mockGetRewardSignalLoopStatus.mockReturnValue({
+      enabled: true,
+      running: false,
+      lastRunAt: null,
+      lastSummary: null,
+      intervalHours: 6,
+    });
+    mockGetEvalAutoPromoteLoopStatus.mockReturnValue({
+      enabled: true,
+      running: false,
+      lastRunAt: null,
+      lastSummary: null,
+      intervalHours: 6,
+    });
+    mockGetObsidianGraphAuditLoopStats.mockReturnValue({
+      enabled: true,
+      owner: 'app',
+      running: false,
+      intervalMin: 360,
+      runOnStart: true,
+      timeoutMs: 600000,
+      lastRunAt: null,
+      lastFinishedAt: null,
+      lastStatus: 'idle',
+      lastExitCode: null,
+      lastSummary: null,
+      snapshotPath: '/repo/.runtime/obsidian-graph-audit.json',
+    });
+    mockGetRuntimeBootstrapState.mockReturnValue({
+      serverStarted: true,
+      discordReadyStarted: false,
+      sharedLoopsStarted: true,
+      sharedLoopsSource: 'server-process',
+      pgCronReplacedLoops: [] as string[],
+      pgCron: {
+        status: 'not-required',
+        startedAt: null as string | null,
+        completedAt: null as string | null,
+        lastError: null as string | null,
+        summary: null,
+        deferredTaskCount: 0,
+      },
+    });
   });
 
   it('앱 소유 login cleanup은 실제 loop running 상태를 반영한다', async () => {
@@ -135,17 +246,19 @@ describe('getRuntimeSchedulerPolicySnapshot', () => {
     const opencode = snapshot.items.find((item) => item.id === 'opencode-publish-worker');
     const alerts = snapshot.items.find((item) => item.id === 'runtime-alerts');
     const sloAlerts = snapshot.items.find((item) => item.id === 'agent-slo-alert-loop');
+    const graphAudit = snapshot.items.find((item) => item.id === 'obsidian-graph-audit-loop');
 
     expect(memory?.startup).toBe('service-init');
     expect(opencode?.running).toBe(true);
     expect(alerts?.running).toBe(true);
     expect(sloAlerts?.startup).toBe('discord-ready');
     expect(sloAlerts?.running).toBe(true);
+    expect(graphAudit).toMatchObject({ owner: 'app', schedule: 'every 360m' });
     expect(snapshot.items.find((item) => item.id === 'trading-engine')).toBeUndefined();
   });
 
   it('supabase 미설정 환경에서도 스냅샷 생성이 실패하지 않는다', async () => {
-    listSupabaseCronJobs.mockRejectedValueOnce(new Error('SUPABASE_NOT_CONFIGURED'));
+    mockListSupabaseCronJobs.mockRejectedValueOnce(new Error('SUPABASE_NOT_CONFIGURED'));
     const { getRuntimeSchedulerPolicySnapshot } = await import('./runtimeSchedulerPolicyService');
     const snapshot = await getRuntimeSchedulerPolicySnapshot();
 
@@ -163,5 +276,57 @@ describe('getRuntimeSchedulerPolicySnapshot', () => {
     expect(opendevWorker?.enabled).toBe(true);
     expect(opendevWorker?.running).toBe(true);
     expect(localOrchestratorWorker?.running).toBe(true);
+  });
+
+  it('confirmed pg_cron-owned loops use exact cron job presence instead of generic counts', async () => {
+    mockGetObsidianGraphAuditLoopStats.mockReturnValue({
+      enabled: false,
+      owner: 'db',
+      running: false,
+      intervalMin: 360,
+      runOnStart: true,
+      timeoutMs: 600000,
+      lastRunAt: null,
+      lastFinishedAt: null,
+      lastStatus: 'idle',
+      lastExitCode: null,
+      lastSummary: null,
+      snapshotPath: '/repo/.runtime/obsidian-graph-audit.json',
+    });
+    mockGetRuntimeBootstrapState.mockReturnValue({
+      serverStarted: true,
+      discordReadyStarted: true,
+      sharedLoopsStarted: true,
+      sharedLoopsSource: 'discord-ready',
+      pgCronReplacedLoops: ['obsidianGraphAuditLoop', 'retrievalEvalLoop', 'rewardSignalLoop', 'evalAutoPromoteLoop', 'intentEvalLoop'],
+      pgCron: {
+        status: 'ready',
+        startedAt: '2026-04-11T00:00:00.000Z',
+        completedAt: '2026-04-11T00:00:05.000Z',
+        lastError: null,
+        summary: null,
+        deferredTaskCount: 0,
+      },
+    });
+    mockListSupabaseCronJobs.mockResolvedValueOnce([
+      { jobId: 10, jobName: 'muel_obsidian_graph_audit', schedule: '30 */6 * * *', command: 'select 1', active: true },
+      { jobId: 1, jobName: 'muel_retrieval_eval', schedule: '0 */24 * * *', command: 'select 1', active: true },
+      { jobId: 2, jobName: 'muel_slo_check', schedule: '*/15 * * * *', command: 'select 1', active: true },
+    ]);
+
+    const { getRuntimeSchedulerPolicySnapshot } = await import('./runtimeSchedulerPolicyService');
+    const snapshot = await getRuntimeSchedulerPolicySnapshot();
+
+    const retrieval = snapshot.items.find((item) => item.id === 'retrieval-eval-loop');
+  const graphAudit = snapshot.items.find((item) => item.id === 'obsidian-graph-audit-loop');
+    const reward = snapshot.items.find((item) => item.id === 'reward-signal-loop');
+    const autoPromote = snapshot.items.find((item) => item.id === 'eval-auto-promote-loop');
+    const intent = snapshot.items.find((item) => item.id === 'intent-formation');
+
+  expect(graphAudit).toMatchObject({ owner: 'db', enabled: true, running: true, schedule: '30 */6 * * *' });
+    expect(retrieval).toMatchObject({ owner: 'db', enabled: true, running: true, schedule: '0 */24 * * *' });
+    expect(reward).toMatchObject({ owner: 'db', enabled: false, running: false });
+    expect(autoPromote).toMatchObject({ owner: 'db', enabled: false, running: false });
+    expect(intent).toMatchObject({ owner: 'db', enabled: false, running: false });
   });
 });

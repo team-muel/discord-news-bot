@@ -1,3 +1,4 @@
+import type { LlmProviderProfile } from '../llmClient';
 import type { AgentOutcome } from '../agent/agentOutcomeContract';
 
 export type SkillId = string;
@@ -7,6 +8,8 @@ export type SkillContext = {
   requestedBy: string;
   goal: string;
   actionName?: string;
+  sessionId?: string;
+  providerProfile?: LlmProviderProfile;
   memoryHints?: string[];
   priorOutput?: string;
   generationOptions?: {

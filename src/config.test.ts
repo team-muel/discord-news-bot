@@ -40,4 +40,15 @@ describe('config', () => {
     const config = await import('./config');
     expect(config.JWT_SECRET).toBe('session-secret-only');
   });
+
+  it('OBSIDIAN_VAULT_PATH는 OBSIDIAN_SYNC_VAULT_PATH를 legacy alias로 받아들인다', async () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.OBSIDIAN_VAULT_PATH;
+    process.env.OBSIDIAN_SYNC_VAULT_PATH = 'C:/vault-sync';
+
+    const config = await import('./config');
+
+    expect(config.OBSIDIAN_VAULT_PATH).toBe('C:/vault-sync');
+    expect(config.OBSIDIAN_SYNC_VAULT_PATH).toBe('C:/vault-sync');
+  });
 });

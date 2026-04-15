@@ -9,11 +9,12 @@ import {
 } from '../config';
 import logger from '../logger';
 import { buildAgentMemoryHints } from './agent/agentMemoryService';
+import { resolveAgentPersonalizationSnapshot } from './agent/agentPersonalizationService';
 import { TtlCache } from '../utils/ttlCache';
 import { getAgentPolicySnapshot, primeAgentPolicyCache, validateAgentSessionRequest } from './agent/agentPolicyService';
 import { persistAgentSession } from './agent/agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn, fetchRecentTurnsForUser } from './conversationTurnService';
-import { isAnyLlmConfigured } from './llmClient';
+import { getGateProviderProfileOverride, isAnyLlmConfigured } from './llmClient';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { ensureSessionBudget, getErrorMessage, withTimeout } from './langgraph/runtimeSupport/runtimeBudget';
 import {
@@ -198,6 +199,33 @@ const toPriority = (value?: string | null): AgentPriority => {
 };
 
 const nowIso = () => new Date().toISOString();
+
+const resolveEffectiveSessionProviderProfile = (session: AgentSession) => {
+  return getGateProviderProfileOverride(session.guildId) || session.personalization?.effective.providerProfile || undefined;
+};
+
+const applySessionPersonalization = async (session: AgentSession): Promise<void> => {
+  if (session.personalization !== undefined) {
+    return;
+  }
+
+  const snapshot = await resolveAgentPersonalizationSnapshot({
+    guildId: session.guildId,
+    userId: session.requestedBy,
+    requestedPriority: session.priority,
+    requestedSkillId: session.requestedSkillId,
+  }).catch(() => null);
+
+  session.personalization = snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  if (session.priority === 'balanced' && snapshot.effective.priority !== session.priority) {
+    session.priority = snapshot.effective.priority;
+    session.steps = buildInitialSteps(session.guildId, session.requestedSkillId, session.priority, nowIso());
+  }
+};
 
 const buildInitialSteps = (
   guildId: string,
@@ -594,7 +622,10 @@ const markSessionTerminal = (session: AgentSession, status: AgentSessionStatus, 
       requestedSkillId: session.requestedSkillId,
       goal: session.goal,
       mainPathNodes: shadowTraceNodes,
-      loadMemoryHints: (input) => withTimeout(buildAgentMemoryHints(input), AGENT_MEMORY_HINT_TIMEOUT_MS, 'SHADOW_MEMORY_HINT_TIMEOUT').catch(() => []),
+      loadMemoryHints: (input) => withTimeout(buildAgentMemoryHints({
+        ...input,
+        personalizationSnapshot: session.personalization,
+      }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'SHADOW_MEMORY_HINT_TIMEOUT').catch(() => []),
     }).then((result: ShadowRunResult) => {
       void persistShadowDivergence({
         sessionId: session.id,
@@ -651,6 +682,8 @@ const runStep = async (
     const result = await withTimeout(executeSkill(skillId, {
       guildId: session.guildId,
       requestedBy: session.requestedBy,
+      sessionId: session.id,
+      providerProfile: resolveEffectiveSessionProviderProfile(session),
       actionName: `skill.${String(skillId || '').replace(/\s+/g, '_')}`,
       goal: buildInput(priorOutput),
       memoryHints: session.memoryHints,
@@ -697,6 +730,7 @@ const runSessionIntentClassification = async (params: {
     goal: taskGoal,
     maxItems: 4,
     requesterUserId: session.requestedBy,
+    personalizationSnapshot: session.personalization,
   }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'INTENT_HINT_TIMEOUT').catch((): string[] => []);
 
   const outcomes = getRecentSessionOutcomes(session.guildId);
@@ -721,6 +755,9 @@ const runSessionIntentClassification = async (params: {
     intentHints,
     signals: intentSignals,
     guildId: session.guildId,
+    requestedBy: session.requestedBy,
+    sessionId: session.id,
+    providerProfile: resolveEffectiveSessionProviderProfile(session),
   });
 
   session.routedIntent = intentClassification.legacyIntent;
@@ -839,7 +876,11 @@ const executeSessionWithMainPipeline = async (
   session: AgentSession,
   sessionStartedAtMs: number,
 ): Promise<AgentSessionStatus> => {
-  traceShadowNode(session, 'ingest', `priority=${session.priority}`);
+  traceShadowNode(
+    session,
+    'ingest',
+    `priority=${session.priority}|provider=${resolveEffectiveSessionProviderProfile(session) || 'default'}`,
+  );
 
   const compiledPrompt = runCompilePromptNode(session.goal);
   const taskGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || session.goal;
@@ -889,7 +930,10 @@ const executeSessionWithMainPipeline = async (
     goal: taskGoal,
     priority: session.priority,
     requestedBy: session.requestedBy,
-    loadHints: (input) => withTimeout(buildAgentMemoryHints(input), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []),
+    loadHints: (input) => withTimeout(buildAgentMemoryHints({
+      ...input,
+      personalizationSnapshot: session.personalization,
+    }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []),
   });
   session.memoryHints = hydrateMemory.memoryHints;
   session.shadowGraph = {
@@ -979,7 +1023,11 @@ const executeSessionWithLangGraphPrimary = async (
 
   const handlers: Record<LangGraphNodeId, LangGraphNodeHandler<PrimaryLangGraphRuntimeContext>> = {
     ingest: async () => {
-      traceShadowNode(session, 'ingest', `priority=${session.priority}`);
+      traceShadowNode(
+        session,
+        'ingest',
+        `priority=${session.priority}|provider=${resolveEffectiveSessionProviderProfile(session) || 'default'}`,
+      );
       return ensureShadowGraph(session);
     },
     compile_prompt: async () => {
@@ -1026,7 +1074,10 @@ const executeSessionWithLangGraphPrimary = async (
         goal: context.taskGoal,
         priority: session.priority,
         requestedBy: session.requestedBy,
-        loadHints: (input) => withTimeout(buildAgentMemoryHints(input), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []),
+        loadHints: (input) => withTimeout(buildAgentMemoryHints({
+          ...input,
+          personalizationSnapshot: session.personalization,
+        }), AGENT_MEMORY_HINT_TIMEOUT_MS, 'MEMORY_HINT_TIMEOUT').catch(() => []),
       });
       session.memoryHints = hydrateMemory.memoryHints;
       session.shadowGraph = {
@@ -1532,6 +1583,7 @@ const executeSession = async (sessionId: string): Promise<AgentSessionStatus> =>
   const sessionStartedAtMs = Date.now();
 
   try {
+    await applySessionPersonalization(session);
     const routeDecision = isResumableLangGraphSession(session)
       ? session.trafficRoutingDecision || null
       : await resolveSessionTrafficRoute(session);
@@ -1709,6 +1761,7 @@ export const startAgentSession = (params: {
     policyGate: privacyPolicy.modeDefault === 'guarded'
       ? { decision: 'review', reasons: ['privacy_guarded_default'] }
       : { decision: 'allow', reasons: ['legacy_default'] },
+    personalization: undefined,
     memoryHints: [],
     steps: buildInitialSteps(params.guildId, requestedSkillId, priority, timestamp),
     shadowGraph: null,
@@ -1928,6 +1981,7 @@ const rehydrateActiveSessionsInner = async (): Promise<number> => {
         executionEngine: 'main',
         graphCheckpoint: null,
         hitlState: null,
+        personalization: undefined,
         memoryHints: [],
         steps: stepsBySession.get(id) || [],
         shadowGraph: null,

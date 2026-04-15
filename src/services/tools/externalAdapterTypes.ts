@@ -18,7 +18,7 @@ export const ADAPTER_ID_PATTERN = /^[a-z][a-z0-9-]{1,49}$/;
 export const KNOWN_ADAPTER_IDS = new Set<string>([
   'openshell', 'nemoclaw', 'openclaw', 'openjarvis',
   'n8n', 'deepwiki', 'obsidian', 'render',
-  'ollama', 'litellm-admin', 'mcp-indexing',
+  'ollama', 'litellm-admin', 'mcp-indexing', 'workstation',
 ]);
 
 /** Validate and narrow a string to ExternalAdapterId. Returns null on invalid. */
@@ -30,6 +30,17 @@ export const validateAdapterId = (id: unknown): ExternalAdapterId | null => {
 };
 
 export type ExternalAdapterCapability =
+  | 'workstation.health'
+  | 'command.exec'
+  | 'browser.open'
+  | 'app.launch'
+  | 'app.activate'
+  | 'input.text'
+  | 'input.hotkey'
+  | 'screen.capture'
+  | 'file.list'
+  | 'file.read'
+  | 'file.write'
   | 'sandbox.create'
   | 'sandbox.list'
   | 'sandbox.exec'
@@ -43,6 +54,25 @@ export type ExternalAdapterCapability =
   | 'agent.session.relay'
   | 'code.review'
   | 'jarvis.ask'
+  | 'jarvis.server.info'
+  | 'jarvis.models.list'
+  | 'jarvis.tools.list'
+  | 'jarvis.agents.health'
+  | 'jarvis.recommended-model'
+  | 'jarvis.agent.list'
+  | 'jarvis.agent.get'
+  | 'jarvis.agent.create'
+  | 'jarvis.agent.delete'
+  | 'jarvis.agent.pause'
+  | 'jarvis.agent.resume'
+  | 'jarvis.agent.run'
+  | 'jarvis.agent.recover'
+  | 'jarvis.agent.message'
+  | 'jarvis.agent.state'
+  | 'jarvis.agent.messages.list'
+  | 'jarvis.agent.tasks.list'
+  | 'jarvis.agent.traces.list'
+  | 'jarvis.agent.trace.get'
   | 'jarvis.serve'
   | 'jarvis.optimize'
   | 'jarvis.bench'

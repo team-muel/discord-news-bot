@@ -23,6 +23,19 @@ export const parseBool = (value, fallback = false) => {
 };
 
 /**
+ * Read the first explicitly configured boolean-like env var from a priority list.
+ * Later aliases are only considered when earlier keys are unset.
+ */
+export const parseBoolEnvAny = (envKeys, fallback = false) => {
+  for (const key of Array.isArray(envKeys) ? envKeys : []) {
+    const raw = String(process.env[key] ?? '').trim();
+    if (!raw) continue;
+    return parseBool(raw, fallback);
+  }
+  return fallback;
+};
+
+/**
  * Parse sink list from a comma/semicolon-separated string.
  * @param {string} raw - Raw sink string (e.g. 'supabase,markdown')
  * @param {string[]} validSinks - Allowed sink names

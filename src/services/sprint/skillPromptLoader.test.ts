@@ -19,7 +19,7 @@ describe('skillPromptLoader', () => {
       expect(getPhaseActionName('implement')).toBe('implement.execute');
     });
 
-    it('review → nemoclaw.review', () => {
+    it('review → review.review', () => {
       expect(getPhaseActionName('review')).toBe('review.review');
     });
 
@@ -49,7 +49,7 @@ describe('skillPromptLoader', () => {
       expect(getPhaseLeadAgent('implement')).toBe('Implement');
     });
 
-    it('review → NemoClaw', () => {
+    it('review → Review', () => {
       expect(getPhaseLeadAgent('review')).toBe('Review');
     });
 

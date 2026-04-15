@@ -49,15 +49,104 @@ const makeResult = (
   durationMs: Date.now() - startMs,
 });
 
-const buildHeaders = (): Record<string, string> => {
+const buildHeaders = (includeApiKey = true): Record<string, string> => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
-  if (N8N_API_KEY) {
+  if (includeApiKey && N8N_API_KEY) {
     headers['X-N8N-API-KEY'] = N8N_API_KEY;
   }
   return headers;
+};
+
+const sanitizeWebhookPath = (value: string): string => value.replace(/[^a-zA-Z0-9\-\/]/g, '');
+
+const extractWorkflowData = (value: unknown): Record<string, unknown> | null => {
+  if (value && typeof value === 'object') {
+    const nested = value as Record<string, unknown>;
+    if (nested.data && typeof nested.data === 'object' && !Array.isArray(nested.data)) {
+      return nested.data as Record<string, unknown>;
+    }
+    return nested;
+  }
+  return null;
+};
+
+const resolveWebhookExecutionTarget = (workflowData: unknown): { webhookPath: string; method: 'GET' | 'POST' } | null => {
+  const workflow = extractWorkflowData(workflowData);
+  const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
+    const typedNode = node as { type?: unknown; parameters?: unknown };
+    const nodeType = String(typedNode.type || '').trim();
+    if (!nodeType.endsWith('.webhook')) {
+      continue;
+    }
+    const parameters = typedNode.parameters && typeof typedNode.parameters === 'object'
+      ? typedNode.parameters as Record<string, unknown>
+      : {};
+    const rawWebhookPath = String(parameters.path || '').trim();
+    if (!rawWebhookPath) {
+      continue;
+    }
+    const sanitized = sanitizeWebhookPath(rawWebhookPath);
+    if (sanitized !== rawWebhookPath) {
+      continue;
+    }
+    const method = String(parameters.httpMethod || 'POST').toUpperCase() === 'GET' ? 'GET' : 'POST';
+    return { webhookPath: sanitized, method };
+  }
+  return null;
+};
+
+const executeWorkflowViaWebhookFallback = async (
+  action: string,
+  workflowId: string,
+  inputData: Record<string, unknown>,
+  startMs: number,
+): Promise<ExternalAdapterResult> => {
+  try {
+    const detailsResp = await fetchWithTimeout(
+      `${N8N_BASE_URL}/api/v1/workflows/${encodeURIComponent(workflowId)}`,
+      {
+        method: 'GET',
+        headers: buildHeaders(),
+      },
+      N8N_TIMEOUT_MS,
+    );
+    const detailsData = await safeJson(detailsResp);
+    if (!detailsResp.ok) {
+      return makeResult(false, action, `Workflow execution fallback lookup failed (HTTP ${detailsResp.status})`, [JSON.stringify(detailsData)], startMs, `HTTP_${detailsResp.status}`);
+    }
+
+    const webhookTarget = resolveWebhookExecutionTarget(detailsData);
+    if (!webhookTarget) {
+      return makeResult(false, action, 'Workflow execution fallback requires a webhook node path', [JSON.stringify(detailsData).slice(0, 3000)], startMs, 'UNSUPPORTED_WEBHOOK_FALLBACK');
+    }
+
+    const webhookResp = await fetchWithTimeout(
+      `${N8N_BASE_URL}/webhook/${webhookTarget.webhookPath}`,
+      {
+        method: webhookTarget.method,
+        headers: buildHeaders(false),
+        body: webhookTarget.method === 'POST' ? JSON.stringify(inputData) : undefined,
+      },
+      N8N_TIMEOUT_MS,
+    );
+    const webhookData = await safeJson(webhookResp);
+    if (!webhookResp.ok) {
+      return makeResult(false, action, `Workflow execution fallback failed (HTTP ${webhookResp.status})`, [JSON.stringify(webhookData)], startMs, `HTTP_${webhookResp.status}`);
+    }
+
+    return makeResult(true, action, `Workflow ${workflowId} executed via webhook fallback`, [JSON.stringify(webhookData)], startMs);
+  } catch (err) {
+    const msg = getErrorMessage(err);
+    logger.warn('[N8N] workflow.execute webhook fallback error: %s', msg);
+    return makeResult(false, action, `workflow.execute fallback failed: ${msg}`, [], startMs, 'EXECUTION_ERROR');
+  }
 };
 
 const safeJson = async (resp: Response): Promise<unknown> => {
@@ -122,13 +211,15 @@ export const n8nAdapter: ExternalToolAdapter = {
         }
 
         try {
-          const body = args.data != null ? JSON.stringify(args.data) : '{}';
+          const inputData = args.data && typeof args.data === 'object'
+            ? args.data as Record<string, unknown>
+            : {};
           const resp = await fetchWithTimeout(
             `${N8N_BASE_URL}/api/v1/executions`,
             {
               method: 'POST',
               headers: buildHeaders(),
-              body: JSON.stringify({ workflowId, data: JSON.parse(body) }),
+              body: JSON.stringify({ workflowId, data: inputData }),
             },
             N8N_TIMEOUT_MS,
           );
@@ -136,6 +227,10 @@ export const n8nAdapter: ExternalToolAdapter = {
           const output = [JSON.stringify(data)];
 
           if (!resp.ok) {
+            if (resp.status === 404 || resp.status === 405) {
+              logger.info('[N8N] workflow.execute switching to webhook fallback: workflowId=%s status=%d', workflowId, resp.status);
+              return executeWorkflowViaWebhookFallback(action, workflowId, inputData, start);
+            }
             logger.warn('[N8N] workflow.execute failed: status=%d workflowId=%s', resp.status, workflowId);
             return makeResult(false, action, `Workflow execution failed (HTTP ${resp.status})`, output, start, `HTTP_${resp.status}`);
           }

@@ -99,7 +99,7 @@ Runtime/control-plane verification baseline:
 - Treat `config/runtime/operating-baseline.json` as the canonical source for current machine profile, always-on required services, canonical worker endpoints, and local-only acceleration lanes.
 - Use public `GET /health` and `/dashboard` for startup summary state only. Detailed startup error text and loop ownership diagnostics are shown only to signed-in admins; use `GET /api/bot/agent/runtime/scheduler-policy` and `GET /api/bot/agent/runtime/loops` for the full operator view.
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
-- Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze. Inspect the `llmRuntime` block to see the selected provider, action policy providers, workflow binding, effective provider profile, resolved chain, readiness-pruned chain, and per-provider health.
+- Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze. `runtime/loops` is also the quickest place to confirm reward-signal and eval-auto-promote loop state plus the current repo-owned Obsidian and eval maintenance control surfaces. Inspect the `llmRuntime` block to see the selected provider, action policy providers, workflow binding, effective provider profile, resolved chain, readiness-pruned chain, and per-provider health.
 - Use `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` when validating A-003 gate -> approval -> model fallback state for a specific guild.
 - Use `GET /api/bot/agent/obsidian/runtime` for shared-vault health, remote-mcp diagnostics, cache boundary, and inbox chat loop state.
 - Use `GET /api/bot/agent/obsidian/knowledge-control?artifact=lint` and `GET /api/bot/agent/runtime/knowledge-control-plane?guildId=<id>` when validating knowledge freshness, grounding, and compiler health.
@@ -162,8 +162,12 @@ Sync rule:
 ### 3.2 Render (backend + bot)
 
 1. Configure build/start commands:
-   - Build: `npm ci; npm run build`
-   - Start: `npm run start`
+
+    - Build: `npm ci; npm run build`
+    - Start: `npm run start`
+    - Health check: `/ready`
+    - Keep `/health` as a diagnostics endpoint only; do not use it as the restart signal.
+
 2. Set required env values:
 
     - `NODE_ENV=production`
@@ -184,6 +188,7 @@ Sync rule:
     - `MCP_SHARED_MCP_URL=https://34.56.232.61.sslip.io/mcp`
     - `OBSIDIAN_REMOTE_MCP_URL=https://34.56.232.61.sslip.io/mcp` (legacy alias, `/obsidian` compatibility path retained)
     - `MCP_OPENCODE_TOOL_NAME=opencode.run`
+    - `RENDER_API_KEY` (optional but recommended for internal deploy trigger, rollback, and one-off job operations)
 
 3. Set web integration env values:
    - `PUBLIC_BASE_URL=https://<render-domain>`
@@ -260,15 +265,27 @@ Sync rule:
 
 - `config/env/local.profile.env`
 - `config/env/local-first-hybrid.profile.env`
+- `config/env/local-openclaw-stack.profile.env`
+- `config/env/local-nemoclaw-stack.profile.env`
+- `config/env/local-nemoclaw-max-delegation.profile.env`
+- `config/env/local-first-hybrid-gemma4.profile.env`
 - `config/env/production.profile.env`
 
 적용 명령:
 
 - 로컬 개발형 적용: `npm run env:profile:local`
 - 로컬 추론 우선형 적용: `npm run env:profile:local-first-hybrid`
+- OpenClaw daemon 중심 로컬 스택 적용: `npm run env:profile:local-openclaw-stack`
+- NemoClaw hardened 로컬 스택 적용: `npm run env:profile:local-nemoclaw-stack`
+- NemoClaw 로컬 최대 위임형 적용: `npm run env:profile:local-nemoclaw-max-delegation`
+- Hermes Gemma 4 A/B 적용: `npm run env:profile:local-first-hybrid:gemma4`
 - 운영형 적용: `npm run env:profile:production`
 - 사전 미리보기(dry-run): `npm run env:profile:local:dry`
 - 사전 미리보기(dry-run): `npm run env:profile:local-first-hybrid:dry`
+- 사전 미리보기(dry-run): `npm run env:profile:local-openclaw-stack:dry`
+- 사전 미리보기(dry-run): `npm run env:profile:local-nemoclaw-stack:dry`
+- 사전 미리보기(dry-run): `npm run env:profile:local-nemoclaw-max-delegation:dry`
+- 사전 미리보기(dry-run): `npm run env:profile:local-first-hybrid:gemma4:dry`
 - 사전 미리보기(dry-run): `npm run env:profile:production:dry`
 
 가드레일:
@@ -278,10 +295,114 @@ Sync rule:
 - 운영형 적용 후에는 `MCP_IMPLEMENT_WORKER_URL`이 실제 원격 워커 URL인지 별도 확인한다. legacy `MCP_OPENCODE_WORKER_URL` 는 호환 alias 로만 본다.
 - 적용 직후 `npm run env:check`와 `npm run openjarvis:autonomy:run:dry`로 검증한다.
 - local-first hybrid 적용 직후에는 `npm run env:check:local-hybrid`로 Ollama/worker 공존 readiness를 추가 확인한다.
+- `local-openclaw-stack` 프로필은 `OPENCLAW_GATEWAY_URL`과 `OPENCLAW_BASE_URL`을 `http://127.0.0.1:18789`로 맞추고 gateway/API 토큰은 기본적으로 비운다. 로컬 또는 공유 gateway가 보호되어 있으면 적용 직후 토큰 값을 다시 채운다.
+- `local-openclaw-stack` 프로필은 OpenClaw local ingress를 기본값으로 두고 `MCP_IMPLEMENT_WORKER_URL`은 로컬 worker(`http://127.0.0.1:8787`)로 둔다. 완전 로컬 구현 경로가 필요하면 `npm run worker:opencode:local`을 먼저 띄우고, 원격 fail-closed 구현 경로를 유지하려면 적용 후 `MCP_IMPLEMENT_WORKER_URL`을 GCP worker URL로 덮어쓴다.
+- `local-nemoclaw-stack` 프로필은 direct Ollama lane과 NemoClaw sandbox lane을 같은 Nemotron Nano 8B GGUF로 맞추되, OpenJarvis serve/model binding은 검증된 Qwen lane에 그대로 둔다. 또한 host OpenClaw ingress를 dev-profile 포트 `http://127.0.0.1:19001`로 함께 찍어, NemoClaw dashboard 기본 포트 `18789`와 충돌하지 않게 한다. 목적은 Windows + WSL 환경에서 Ollama 8B -> OpenJarvis -> OpenClaw/Hermes -> NemoClaw/OpenShell 순서를 실제로 성립시키는 것이다.
+- `local-nemoclaw-max-delegation` 프로필은 위 구조를 유지한 채 `MCP_IMPLEMENT_WORKER_URL`을 로컬 worker(`http://127.0.0.1:8787`)로 고정하고 `N8N_DELEGATION_ENABLED=true`를 켠다. 목적은 Discord를 장기 고정 ingress로 보지 않고, 로컬에서 위임 가능한 작업을 최대한 local worker + local n8n으로 먼저 밀어 넣는 것이다.
+- NemoClaw 계열 프로필은 `OPENSHELL_SANDBOX_DELEGATION=true`, `OPENSHELL_DEFAULT_SANDBOX_ID=muel-assistant`, `OPENSHELL_DEFAULT_SANDBOX_IMAGE=ollama`를 함께 찍는다. 이렇게 해야 implement fast-path와 OpenShell auto-create가 같은 sandbox 이름을 사용한다.
+- Windows Docker Desktop + WSL에서 NemoClaw sandbox inference를 쓰는 로컬 프로필은 `NEMOCLAW_SANDBOX_OLLAMA_URL=http://host.docker.internal:11434`를 명시해야 한다. sandbox 내부 `localhost`는 호스트 Ollama를 가리키지 않는다.
+- local OpenClaw 2026.3.13 dev gateway는 `healthz`와 control UI는 살아 있어도 `/v1/chat/completions` 같은 OpenAI-compatible chat surface가 비어 있을 수 있다. 따라서 `OPENCLAW_GATEWAY_URL` health만으로 chat-ready를 판단하지 말고, JSON을 돌려주는 `/v1/models` 확인이나 CLI fallback readiness를 별도로 본다.
+- `local-nemoclaw-stack` 프로필은 NemoClaw non-interactive onboarding 힌트(`NEMOCLAW_PROVIDER`, `NEMOCLAW_MODEL`)까지 함께 찍어 WSL install/onboard와 repo runtime 설정이 같은 모델을 보게 한다.
+- `local-nemoclaw-max-delegation` 프로필은 `N8N_DELEGATION_FIRST=true`를 사용해, webhook이 설정된 뉴스 RSS/뉴스 후보/기사 컨텍스트/유튜브 feed/community/뉴스 요약 경로에서 inline fetch/scrape/summary fallback을 건너뛴다. 또한 `NEWS_MONITOR_LOCAL_FALLBACK_ENABLED=false`, `YOUTUBE_MONITOR_LOCAL_FALLBACK_ENABLED=false`를 함께 찍어 legacy local scraper lane도 명시적으로 꺼 둔다. 목적은 로컬 코드베이스를 orchestration 중심으로 더 얇게 유지하는 것이다.
+- host OpenClaw와 NemoClaw onboard를 같은 머신에서 함께 쓸 때는 포트 소유권을 분리한다. pure OpenClaw local stack은 기본 포트 `18789`를 계속 쓰고, NemoClaw 계열 프로필은 host OpenClaw를 dev-profile 포트 `19001`로 옮긴다. NemoClaw onboard는 upstream 기본값상 dashboard `18789`를 강하게 가정한다.
+- 로컬 OpenJarvis API key는 별도 발급 절차가 아니라 operator가 정하는 정적 bearer token이다. 로컬에서는 `.env`의 `OPENJARVIS_SERVE_API_KEY`를 채우고 `npm run openjarvis:serve:local`로 시작한다. helper가 런타임에서 `OPENJARVIS_API_KEY`로 자동 매핑한다.
+- 현재 local-nemoclaw-stack의 OpenJarvis lane은 LiteLLM(`http://127.0.0.1:4000`) 뒤의 검증된 Qwen 모델을 쓴다. `NVIDIA_API_KEY`나 `NVIDIA_NIM_API_KEY`는 NemoClaw/OpenJarvis의 로컬 Ollama/LiteLLM lane을 올리는 데 필수는 아니고, NVIDIA cloud/NIM inference를 직접 쓰려는 경우에만 필요하다.
+- Gemma 4 A/B 프로필은 direct Ollama lane만 `gemma4:e4b`로 바꾸고 OpenJarvis, optimize judge, NemoClaw inference는 기존 qwen lane에 유지한다. 목적은 Hermes-side local reasoning 실험이지 unattended worker 전체 교체가 아니다.
 - `npm run env:check:local-hybrid` 통과는 로컬 추론 readiness만 의미한다. 항상-온 운영 readiness는 `GET /api/bot/agent/runtime/unattended-health`와 원격 worker/LiteLLM/remote-mcp health로 별도 판단한다.
 - 로컬 worker를 사용하는 경우 `npm run worker:opencode:local`을 먼저 실행한 뒤 hybrid 검증을 수행한다.
 - 원격 worker가 GCP VM일 경우 외부 IP는 정적 IP로 예약하고, `sslip.io`는 임시 도메인으로만 사용한다.
 - shared Supabase MCP가 필요하면 `supabase_ro` 같은 filtered read-only namespace만 공유 표면에 올리고, write/DDL/extension mutation은 별도 operator-only surface로 둔다.
+
+Docker Desktop hybrid stance for this repo:
+
+- Use Docker Desktop for local infra sidecars, not for the primary Hermes edit loop or host-native Ollama inference lane.
+- Good Docker Desktop targets here: local LiteLLM proxy and local n8n.
+- Keep Hermes, repo editing, test loops, and Obsidian-heavy file I/O native or WSL-native.
+- If Linux-side execution is needed, keep the working tree on the WSL filesystem, not under `/mnt/c/...`.
+- For container state such as n8n data or cache-like service state, prefer Docker-managed volumes over broad repo bind mounts.
+- For containers that need the host model runtime, use `host.docker.internal` rather than hard-coding a host IP.
+
+Tracked Docker Desktop helper commands:
+
+- Validate tracked local infra compose: `npm run docker:local:infra:config`
+- Start local LiteLLM sidecar in Docker Desktop: `npm run docker:local:infra:up`
+- Tail local LiteLLM sidecar logs: `npm run docker:local:infra:logs`
+- Stop tracked local infra sidecar: `npm run docker:local:infra:down`
+
+Tracked Docker Desktop helper files:
+
+- LiteLLM sidecar compose: [compose.local-infra.yaml](compose.local-infra.yaml)
+- LiteLLM image build: [Dockerfile.litellm](Dockerfile.litellm)
+- n8n bootstrap and generated compose remain separate: [scripts/bootstrap-n8n-local.mjs](scripts/bootstrap-n8n-local.mjs)
+
+### 3.6.0 Quick Local NemoClaw + OpenJarvis + n8n Bring-Up
+
+목표: Windows + WSL + Docker Desktop에서 NemoClaw review lane, OpenJarvis control surface, local n8n delegation lane을 같은 순서로 재현한다.
+
+빠른 표준 제어면:
+
+- 전체 doctor: `npm run local:stack:max:doctor`
+- 상태판(status): `npm run local:stack:max:status`
+- 표준 프로필 적용 + managed local services bring-up: `npm run local:stack:max:up`
+- 사전 미리보기: `npm run local:stack:max:up:dry`
+
+이 제어면은 `local-nemoclaw-max-delegation` 프로필을 표준 기준으로 보고, repo가 직접 관리할 수 있는 deterministic local surfaces만 자동으로 다룬다.
+
+- 자동 관리 대상: local LiteLLM sidecar, local n8n, local OpenJarvis serve, local opencode worker
+- 상태 요약 포함: Obsidian access posture, OpenJarvis memory projection freshness, latest workflow hot-state summary
+- 수동 유지 대상: OpenClaw, NemoClaw, OpenShell 같은 WSL/dashboard/operator-managed lanes
+
+1. Apply the hardened local profile: `npm run env:profile:local-nemoclaw-stack`
+2. Start host OpenClaw on the non-conflicting dev port: `npm run openclaw:gateway:dev`
+3. Start the tracked local infra sidecar: `npm run docker:local:infra:up`
+4. If `muel-assistant` does not exist yet, create or onboard the sandbox before proceeding. The key rule is: keep port `18789` free for NemoClaw dashboard bootstrap, and keep host OpenClaw on dev port `19001` while using this profile.
+5. In WSL, confirm the NemoClaw sandbox is healthy before proceeding: `nemoclaw muel-assistant status`
+6. Start local OpenJarvis serve: `npm run openjarvis:serve:local`
+7. If startup warns `Failed to resolve memory backend: No module named 'openjarvis_rust'`, repair the upstream checkout and restart serve.
+
+```powershell
+Set-Location C:\Muel_S\OpenJarvis
+uv sync --extra server --extra dev
+Remove-Item Env:CONDA_PREFIX -ErrorAction SilentlyContinue
+Remove-Item Env:CONDA_DEFAULT_ENV -ErrorAction SilentlyContinue
+Remove-Item Env:CONDA_SHLVL -ErrorAction SilentlyContinue
+uv run maturin develop -m rust/crates/openjarvis-python/Cargo.toml
+```
+
+After the repair, restart `npm run openjarvis:serve:local` and confirm the log prints `Memory: active`.
+
+Then complete the local delegation lane:
+
+1. Bootstrap local n8n runtime files: `npm run n8n:local:bootstrap`
+2. Start and seed local n8n: `npm run n8n:local:start` then `npm run n8n:local:seed`
+3. If you want the workstation to delegate as much as possible locally after the workflows are ready, switch profiles now: `npm run env:profile:local-nemoclaw-max-delegation`
+4. Run readiness checks in this order.
+
+```powershell
+npm run env:check:local-hybrid
+npm run n8n:local:doctor
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap-external-tools.ps1
+```
+
+Operator notes:
+
+- `npm run openclaw:gateway:dev:health` should return healthy on `19001` before you treat OpenClaw/Hermes as an active ingress in the NemoClaw profiles.
+- `npm run openclaw:gateway:dev:health`는 control ingress 확인일 뿐, chat-capable 확인은 아니다. local OpenClaw 2026.3.13 dev gateway에서는 `/v1/models`가 JSON을 돌려주는지까지 보거나, repo가 CLI/other-lane fallback으로 내려가는지 함께 검증한다.
+- The Windows OpenJarvis probe should hit `/v1/models` with an Authorization header sourced from `OPENJARVIS_API_KEY` or `OPENJARVIS_SERVE_API_KEY`. The repo readiness script now does this automatically.
+- `Memory: active` means local OpenJarvis is no longer running in the degraded no-Rust memory-backend mode.
+- `npm run env:check:local-hybrid` and the PowerShell readiness script certify the local hybrid lane only. Always-on GCP readiness is still a separate check.
+- `npm run local:stack:max:up` applies the max-delegation profile before start-up by default, hydrates the current process from the rewritten `.env`, and writes detached local process logs under `tmp/local-ai-stack/processes/`.
+- `npm run local:stack:max:doctor` is intended to be the first-stop status surface before broad archaeology: it reports deterministic local service reachability, current direct-vault posture, OpenJarvis memory feed freshness, and the latest hot-state workstream summary for the operator lane.
+
+### 3.6.1 GCP-Native Hardening Priorities
+
+현재 GCP worker는 단순 VM이 아니라 shared MCP, role worker, OpenJarvis serve를 묶는 control-plane 노드다. 그래서 다음 우선순위는 새 역할 추가보다 GCP-native 운영 기능을 더 쓰는 쪽이 맞다.
+
+- custom domain: `sslip.io`는 임시 ingress로만 보고, broader rollout 전에 Cloud DNS 또는 동등한 정식 도메인으로 교체한다.
+- snapshot schedule: boot disk에 Compute Engine snapshot schedule 또는 resource policy를 붙여 재배포 이전 복구 지점을 확보한다.
+- access hardening: default Compute Engine service account 대신 dedicated least-privilege service account를 사용하고, SSH는 가능하면 OS Login 기준으로 고정한다.
+- instance hardening: automatic restart와 Shielded VM 항목(secure boot, vTPM, integrity monitoring)을 운영 baseline으로 본다.
+- visibility: `npm run ops:gcp:report:weekly`와 `npm run ops:gcp:report:monthly`는 health만이 아니라 위 hardening 항목이 실제로 붙었는지도 같이 확인하는 체크로 취급한다.
 
 ### 3.7 Bootstrap Profiles and Startup DAG
 
@@ -291,7 +412,7 @@ Sync rule:
 
 - `server.ts`는 항상 `startServerProcessRuntime()`를 먼저 실행한다.
 - `START_BOT=true`이고 토큰이 있을 때만 `src/bot.ts`가 로드되고 Discord ready 워크로드가 시작된다.
-- `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `config/env/production.profile.env`는 OpenJarvis 라우팅/worker 강제 정책과 LLM provider 우선순위만 바꾸며, runtime bootstrap DAG 자체는 바꾸지 않는다.
+- `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `config/env/local-openclaw-stack.profile.env`, `config/env/local-nemoclaw-stack.profile.env`, `config/env/local-nemoclaw-max-delegation.profile.env`, `config/env/local-first-hybrid-gemma4.profile.env`, `config/env/production.profile.env`는 OpenJarvis 라우팅/worker 강제 정책과 LLM provider 우선순위만 바꾸며, runtime bootstrap DAG 자체는 바꾸지 않는다.
 
 Profile A: server-only (`START_BOT=false`)
 
@@ -367,10 +488,32 @@ Primary files:
   - Notes: mutable runtime state; DB backend is preferred in production.
 - `tmp/autonomy/openjarvis-unattended-last-run.json`
   - Role: latest unattended workflow summary pointer.
-  - Producer: `scripts/run-openjarvis-unattended.mjs`
+  - Producer: `scripts/run-openjarvis-unattended.mjs`, `scripts/run-openjarvis-goal-cycle.mjs`
 - `tmp/autonomy/workflow-sessions/*.json`
   - Role: per-run state transitions and handoff evidence timeline.
   - Producer: `scripts/openjarvis-workflow-state.mjs`
+
+Interactive goal-cycle commands:
+
+- `npm run openjarvis:goal:run -- --objective="<goal>" --dryRun=true|false --routeMode=auto|delivery|operations`
+- `npm run openjarvis:goal:run:hidden -- --objective="<goal>" --dryRun=true|false --routeMode=auto|delivery|operations`
+- `npm run openjarvis:autopilot:start -- --objective="<goal>" --dryRun=false --routeMode=auto|delivery|operations`
+- `npm run openjarvis:autopilot:resume`
+- `npm run openjarvis:autopilot:loop -- --objective="<goal>" --dryRun=false --routeMode=operations`
+- `npm run openjarvis:goal:status`
+- `npm run openjarvis:packets:sync`
+- `npm run agent:context:audit`
+
+Operational intent:
+
+- `openjarvis:goal:run` reuses the unattended engine but stamps the run as `interactive:goal`, which makes user-driven objective cycles inspectable through the same workflow artifact paths instead of inventing a second orchestration surface.
+- On Windows, `openjarvis:goal:run` and `openjarvis:autopilot:start` open a visible PowerShell window by default so Hermes activity is operator-visible instead of silently hidden behind a background process.
+- The visible PowerShell is a monitor surface, not the continuity runner itself. The actual runner is detached, writes logs under `tmp/autonomy/launches/*.log`, and its latest launch metadata is mirrored to `tmp/autonomy/launches/latest-interactive-goal.json` so the session can continue even if the monitor window closes.
+- The continuity runner now syncs one stable handoff packet and one stable progress packet into Obsidian at session start and completion, and mirrors them into the local vault path so packet recovery does not depend on remote adapter auth. `openjarvis:packets:sync` can be used to repair or refresh that packet state from the latest workflow session.
+- Packet resume and the bounded supervisor loop now live in the same launcher surface: resume derives the next cycle from the local packet mirror, while the supervisor loop keeps polling packet state after the monitor closes and only launches again when the packet is explicitly resumable.
+- `openjarvis:goal:status` now exposes packet resumability, loop supervisor state, and the last auto-open VS Code CLI bridge result, so operators can tell whether the editor control plane was actually exercised.
+- `openjarvis:goal:run:hidden` and `--visibleTerminal=false` preserve headless validation for CI, dry checks, or editor-driven inline debugging.
+- `agent:context:audit` is the fast path for finding large always-on instructions, broad `applyTo` instructions, and oversized SKILL/workflow files before adding more prompt surface area.
 
 VCS policy:
 
@@ -385,6 +528,8 @@ VCS policy:
   - `/health`
   - `/ready`
   - `/api/bot/status`
+- Treat `/ready` as the deployment and restart gate. `/health` stays intentionally informative even when Discord or automation readiness is still catching up.
+- When `RENDER_API_KEY` is configured, internal Render tooling can use `deploy.trigger`, `deploy.rollback`, `job.list`, `job.details`, `job.create`, and `job.cancel` for ad-hoc operations without changing the permanent service definition.
 - `GET /api/bot/agent/runtime/loops` now includes `obsidianInboxChatLoop`; treat it like a first-class background loop during rollout and rollback decisions.
 - Review Render logs for restart loops, auth failures, and upstream timeouts.
 
@@ -631,6 +776,12 @@ Decision:
 - Route traffic back to previous stable path
 - freeze new stage writes until incident review closes
 
+1. Render deploy rollback
+
+- Identify the candidate deploy from Render deploy history before restarting the whole service.
+- Prefer a targeted rollback to a known deploy ID when only the latest Render deploy is bad.
+- If `RENDER_API_KEY` is configured, internal tooling can use `deploy.list`, `deploy.details`, and `deploy.rollback` for this step.
+
 1. Queue rollback
 
 - stop enqueue for impacted task type
@@ -762,13 +913,48 @@ MCP delegation controls:
 - `NEWS_MONITOR_MCP_TIMEOUT_MS`
 - `NEWS_MONITOR_MCP_STRICT`
 - `NEWS_MONITOR_LOCAL_FALLBACK_ENABLED`
+- `N8N_DISABLED`
+- `N8N_ENABLED`
+- `N8N_BASE_URL`
+- `N8N_TIMEOUT_MS`
 - `N8N_DELEGATION_ENABLED`
+- `N8N_DELEGATION_FIRST`
+- `N8N_API_KEY`
 - `N8N_WEBHOOK_NEWS_MONITOR_CANDIDATES`
 - `OBSIDIAN_INBOX_CHAT_LOOP_ENABLED`
 - `OBSIDIAN_INBOX_CHAT_LOOP_INTERVAL_SEC`
 - `OBSIDIAN_INBOX_CHAT_LOOP_RUN_ON_START`
 - `OBSIDIAN_INBOX_CHAT_LOOP_MAX_NOTES_PER_RUN`
 - `OBSIDIAN_INBOX_CHAT_LOOP_SEARCH_LIMIT`
+
+Local n8n bootstrap:
+
+1. Generate local-only runtime files: `npm run n8n:local:bootstrap`
+2. Review `tmp/n8n-local/.env` and change `N8N_BASIC_AUTH_PASSWORD`
+3. Start the container: `npm run n8n:local:start`
+4. Review `tmp/n8n-local/starter-workflows.manifest.json` and the generated starter bundle under `tmp/n8n-local/workflows/`
+5. Generate or repair the repo-managed local public API key when you want public API CRUD/update support: `npm run n8n:local:api-key:ensure`
+6. Seed the full starter bundle: `npm run n8n:local:seed`
+7. If `N8N_API_KEY` is absent but the local container is running, the seed command first tries local public API auto-provision and then falls back to container CLI import automatically.
+8. Review the seeded workflows you want to keep. The starter bundle now imports active by default so localhost webhook execution works immediately.
+9. Re-apply the repo env profile if needed: `npm run env:profile:local`, `npm run env:profile:local-first-hybrid`, `npm run env:profile:local-openclaw-stack`, `npm run env:profile:local-nemoclaw-stack`, or `npm run env:profile:local-nemoclaw-max-delegation`
+10. Verify readiness: `npm run n8n:local:doctor`
+
+Operator notes:
+
+- In this repo, local self-hosted n8n means the OSS Docker image is downloaded into Docker Desktop on this machine, the `muel-local-n8n` container is running locally, and state is persisted under `tmp/n8n-local/data`.
+- Webhook delegation can work before `N8N_API_KEY` is configured.
+- `N8N_API_KEY` is not the installation itself. It only unlocks repo-driven public API CRUD/update behavior.
+- For local n8n 2.15.x in this repo, `npm run n8n:local:api-key:ensure` can generate or repair a working repo-managed public API key without a manual UI step.
+- Local, local-first-hybrid, local-openclaw-stack, local-nemoclaw-stack, and local-nemoclaw-max-delegation env profiles now stamp concrete `N8N_WEBHOOK_*` defaults and force direct-vault-first Obsidian routing (`local-fs`/`native-cli` first, `remote-mcp` fallback). Keep delegation off until the matching workflows are seeded or imported; the starter bundle now marks them active by default.
+- `npm run n8n:local:seed` now tries local public API auto-provision first, then uses the dedicated activate/deactivate routes so the starter bundle really comes up active on localhost, and still performs initial local starter import without `N8N_API_KEY` by using the running container CLI when public API CRUD is unavailable.
+- `n8n.workflow.list` and the `n8n.status` skill surface can fall back to the running local container CLI when the public API returns `401`, so local workflow discovery is still possible before `N8N_API_KEY` is configured.
+- `n8n.workflow.execute` now retries through the workflow's webhook path when local n8n 2.15 rejects `POST /api/v1/executions`, and the seeded starter workflows now import active by default so that fallback works locally without a manual activation toggle.
+- `n8n.workflow.status` and updateExisting/public-API workflow CRUD still require `N8N_API_KEY`, but the repo can provision that key locally with `npm run n8n:local:api-key:ensure`.
+- The starter bundle now covers `news-rss-fetch`, `news-summarize`, `news-monitor-candidates`, `youtube-feed-fetch`, `youtube-community-scrape`, `alert-dispatch`, and `article-context-fetch`.
+- The `alert-dispatch` starter intentionally fails unless you provide a real sink, so inline fallback remains intact until you wire one.
+- `local-nemoclaw-max-delegation` is the explicit opt-in profile for “delegate locally as much as possible”: it enables n8n delegation, turns on delegation-first for configured news/youtube/article-context tasks so inline fallbacks stay off, explicitly disables the legacy local news and YouTube fallback lanes, points implement work at the local opencode worker, and leaves `N8N_WEBHOOK_ALERT_DISPATCH` blank so runtime alerts stay on the inline webhook path until a real n8n sink exists.
+- Generated files live under `tmp/n8n-local/`, which is git-ignored in this repo.
 
 Worker-first lightweight split status:
 

@@ -9,6 +9,8 @@
   .\scripts\publish-gcp-shared-mcp.ps1 -RestartServices
 .EXAMPLE
   .\scripts\publish-gcp-shared-mcp.ps1 -IncludePath src/utils -RestartServices
+.EXAMPLE
+  .\scripts\publish-gcp-shared-mcp.ps1 -SyncProfile openjarvis-shared-control -RestartServices
 #>
 param(
   [string]$GcpHost = 'fancy@34.56.232.61',
@@ -16,6 +18,8 @@ param(
   [string]$RuntimeDir = '/opt/muel/shared-mcp-runtime',
   [string]$LegacyRepoDir = '/opt/muel/discord-news-bot',
   [string]$KeyPath = (Join-Path $env:USERPROFILE '.ssh\google_compute_engine'),
+  [ValidateSet('full', 'openjarvis-shared-control')]
+  [string]$SyncProfile = 'full',
   [string[]]$IncludePath = @(),
   [switch]$RestartServices,
   [switch]$SkipCaddyReload,
@@ -48,6 +52,32 @@ $defaultPaths = @(
   'vitest.config.ts'
 )
 
+$openJarvisSharedControlPaths = @(
+  'package.json',
+  'package-lock.json',
+  'config/runtime/operating-baseline.json',
+  'docs/planning/EXECUTION_BOARD.md',
+  'scripts/bootstrap-n8n-local.mjs',
+  'scripts/openjarvis-workflow-state.mjs',
+  'scripts/run-hermes-vscode-bridge.ts',
+  'scripts/run-openjarvis-goal-cycle.mjs',
+  'scripts/sync-openjarvis-memory.ts',
+  'scripts/lib/automationActivationPack.mjs',
+  'scripts/lib/cliArgs.mjs',
+  'scripts/lib/openjarvisAutopilotCapacity.mjs',
+  'src/mcp/toolAdapter.ts',
+  'src/services/automation/apiFirstAgentFallbackService.ts',
+  'src/services/openjarvis/openjarvisAutopilotStatusService.ts',
+  'src/services/openjarvis/openjarvisHermesRuntimeControlService.ts',
+  'src/services/openjarvis/openjarvisMemorySyncStatusService.ts',
+  'src/services/runtime/hermesVsCodeBridgeService.ts'
+)
+
+$profilePaths = switch ($SyncProfile) {
+  'openjarvis-shared-control' { $openJarvisSharedControlPaths }
+  default { $defaultPaths }
+}
+
 function Write-Step($n, $msg) { Write-Host "`n[$n] $msg" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "  OK  $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "  WARN  $msg" -ForegroundColor Yellow }
@@ -62,7 +92,7 @@ $remoteHome = "/home/$remoteUser"
 $archivePath = Join-Path $repoRoot 'tmp\shared-mcp-rollout.tar'
 
 $syncPaths = New-Object System.Collections.Generic.List[string]
-foreach ($relPath in ($defaultPaths + $IncludePath)) {
+foreach ($relPath in ($profilePaths + $IncludePath)) {
   if (-not $syncPaths.Contains($relPath)) {
     $syncPaths.Add($relPath)
   }
@@ -78,6 +108,7 @@ Push-Location $repoRoot
 try {
   Write-Host "`n=== Publish GCP Shared MCP ===" -ForegroundColor Magenta
   Write-Host "Repo: $repoRoot" -ForegroundColor Gray
+  Write-Host "Sync profile: $SyncProfile" -ForegroundColor Gray
   Write-Host "Runtime target: ${GcpHost}:$RuntimeDir" -ForegroundColor Gray
   Write-Host "Legacy source checkout: ${GcpHost}:$LegacyRepoDir" -ForegroundColor DarkGray
 

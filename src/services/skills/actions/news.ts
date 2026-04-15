@@ -1,7 +1,7 @@
 import type { ActionDefinition } from './types';
 import { runDelegatedAction } from './mcpDelegatedAction';
 import { extractQuery } from './queryUtils';
-import { delegateNewsRssFetch } from '../../automation/n8nDelegationService';
+import { delegateNewsRssFetch, shouldSkipInlineFallback } from '../../automation/n8nDelegationService';
 
 const stripCdata = (value: string): string => value.replace(/<!\[CDATA\[|\]\]>/g, '').trim();
 
@@ -74,6 +74,7 @@ export const newsGoogleSearchAction: ActionDefinition = {
 
     // n8n delegation: try delegating RSS fetch to n8n before inline fallback
     const n8nResult = await delegateNewsRssFetch(query, limit);
+    const skipInlineFallback = shouldSkipInlineFallback('news-rss-fetch');
     if (n8nResult.delegated && n8nResult.ok && n8nResult.data?.items) {
       const items = n8nResult.data.items
         .filter((item) => item.title && item.link)
@@ -91,6 +92,32 @@ export const newsGoogleSearchAction: ActionDefinition = {
           verification: ['n8n delegation path', `durationMs=${n8nResult.durationMs}`],
         };
       }
+
+      if (skipInlineFallback) {
+        return {
+          ok: false,
+          name: 'news.google.search',
+          summary: 'n8n delegation-first 모드에서 RSS 위임 결과가 비어 있어 inline fallback을 건너뛰었습니다.',
+          artifacts: [query],
+          verification: ['n8n delegation-first', `durationMs=${n8nResult.durationMs}`],
+          error: 'N8N_DELEGATION_EMPTY',
+        };
+      }
+    }
+
+    if (skipInlineFallback) {
+      const verification = ['n8n delegation-first', `durationMs=${n8nResult.durationMs}`];
+      if (n8nResult.error) {
+        verification.push(`n8nError=${n8nResult.error}`);
+      }
+      return {
+        ok: false,
+        name: 'news.google.search',
+        summary: 'n8n delegation-first 모드가 활성화되어 inline RSS fallback을 실행하지 않았습니다.',
+        artifacts: [query],
+        verification,
+        error: 'N8N_DELEGATION_FAILED',
+      };
     }
 
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ko&gl=KR&ceid=KR:ko`;

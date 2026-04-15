@@ -45,6 +45,18 @@ describe('localFsObsidianAdapter', () => {
 
     expect(tagResults.some((entry) => entry.filePath === 'chat/inbox/2026-04-09_note.md')).toBe(true);
     expect(keywordResults.some((entry) => entry.filePath === 'chat/inbox/2026-04-09_note.md')).toBe(true);
+    expect(keywordResults[0]?.filePath).toBe('chat/inbox/2026-04-09_note.md');
+  });
+
+  it('supports mixed tag and multi-token queries without requiring exact phrase match', async () => {
+    const results = await localFsObsidianAdapter.searchVault!({
+      vaultPath: vaultDir,
+      query: 'tag:chat inbox graph memory',
+      limit: 10,
+    });
+
+    expect(results[0]?.filePath).toBe('chat/inbox/2026-04-09_note.md');
+    expect(results.every((entry) => entry.filePath !== 'memory/reference.md' || entry.score <= results[0]!.score)).toBe(true);
   });
 
   it('computes backlinks across nested files', async () => {

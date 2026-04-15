@@ -2,49 +2,124 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { parseArg, parseBool, parseSinks } from './lib/cliArgs.mjs';
+import { execFile } from 'child_process';
+import { promisify } from 'node:util';
+import { parseArg, parseBool, parseBoolEnvAny, parseSinks } from './lib/cliArgs.mjs';
+import { buildOpenjarvisOptimizeInvocation, formatOpenjarvisOptimizeProfile } from './lib/openjarvisOptimizeProfile.mjs';
 import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
+import { RETRIEVAL_VARIANT_KEYS } from '../config/runtime/retrievalVariants.js';
 
 const ROOT = process.cwd();
+const execFileAsync = promisify(execFile);
+const IS_WINDOWS = process.platform === 'win32';
 const OUTPUT_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'self-improvement');
 const ROLLBACK_WEEKLY_MARKDOWN = path.join(ROOT, 'docs', 'planning', 'gate-runs', 'rollback-rehearsals', 'WEEKLY_SUMMARY.md');
 const MEMORY_QUEUE_OBSERVABILITY_DIR = path.join(ROOT, 'docs', 'planning', 'memory-queue-observability');
 const VALID_SINKS = new Set(['markdown', 'stdout']);
 
 const ACTION_APPROVAL_TABLE = String(process.env.ACTION_APPROVAL_TABLE || 'agent_action_approval_requests').trim();
+const OPENJARVIS_OPTIMIZE_ENABLED = parseBoolEnvAny([
+  'OPENJARVIS_OPTIMIZE_ENABLED',
+  'JARVIS_OPTIMIZE_AFTER_GATE_ENABLED',
+  'OPENJARVIS_LEARNING_LOOP_ENABLED',
+], false);
+const OPENJARVIS_OPTIMIZE_BENCHMARK = String(process.env.OPENJARVIS_OPTIMIZE_BENCHMARK || '').trim();
+const OPENJARVIS_OPTIMIZE_CONFIG = String(process.env.OPENJARVIS_OPTIMIZE_CONFIG || '').trim();
+const OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED = parseBoolEnvAny(['OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED'], false);
+const OPENJARVIS_OPTIMIZE_MODEL = String(process.env.OPENJARVIS_OPTIMIZE_MODEL || process.env.OPENJARVIS_MODEL || '').trim();
+const OPENJARVIS_OPTIMIZE_ENGINE = String(process.env.OPENJARVIS_OPTIMIZE_ENGINE || '').trim();
+const OPENJARVIS_OPTIMIZE_JUDGE_MODEL = String(process.env.OPENJARVIS_OPTIMIZE_JUDGE_MODEL || '').trim();
+const OPENJARVIS_OPTIMIZE_JUDGE_ENGINE = String(process.env.OPENJARVIS_OPTIMIZE_JUDGE_ENGINE || '').trim();
+const OPENJARVIS_OPTIMIZE_TRIALS = Math.max(1, Number(process.env.OPENJARVIS_OPTIMIZE_TRIALS || '1') || 1);
+const OPENJARVIS_OPTIMIZE_MAX_SAMPLES = Math.max(1, Number(process.env.OPENJARVIS_OPTIMIZE_MAX_SAMPLES || '1') || 1);
 
-const OPENJARVIS_SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
-const OPENJARVIS_OPTIMIZE_ENABLED = parseBool(process.env.OPENJARVIS_OPTIMIZE_ENABLED, false);
+const runJarvisCli = async (args, timeoutMs = 30_000) => {
+  if (IS_WINDOWS) {
+    return execFileAsync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'jarvis', ...args], {
+      timeout: timeoutMs,
+      windowsHide: true,
+    });
+  }
+  return execFileAsync('jarvis', args, {
+    timeout: timeoutMs,
+    windowsHide: true,
+  });
+};
+
+const runRepoScript = async (scriptName, timeoutMs = 120_000) => {
+  if (IS_WINDOWS) {
+    return execFileAsync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm', 'run', '-s', scriptName], {
+      timeout: timeoutMs,
+      windowsHide: true,
+      cwd: ROOT,
+      env: process.env,
+    });
+  }
+  return execFileAsync('npm', ['run', '-s', scriptName], {
+    timeout: timeoutMs,
+    windowsHide: true,
+    cwd: ROOT,
+    env: process.env,
+  });
+};
+
+const syncMemoryBeforeOptimize = async () => {
+  if (!OPENJARVIS_OPTIMIZE_ENABLED) {
+    return;
+  }
+  try {
+    const { stdout, stderr } = await runRepoScript('openjarvis:memory:sync');
+    const preview = String(stdout || stderr || '').trim().split(/\r?\n/).slice(0, 3).join(' | ');
+    console.log(`[SELF-IMPROVEMENT] memory sync completed before optimize${preview ? `: ${preview}` : ''}`);
+  } catch (err) {
+    console.log(`[SELF-IMPROVEMENT] memory sync before optimize failed (non-blocking): ${err?.message || err}`);
+  }
+};
 
 /**
  * D-02: Trigger jarvis.optimize after weekly self-improvement patterns are persisted.
  * Sends pattern summary to OpenJarvis serve endpoint for model/prompt optimization.
  * Graceful no-op when disabled or unreachable.
  */
-const triggerJarvisOptimize = async (patterns) => {
+const triggerJarvisOptimize = async (_patterns, context = {}) => {
   if (!OPENJARVIS_OPTIMIZE_ENABLED) {
     console.log('[SELF-IMPROVEMENT] jarvis.optimize trigger skipped (OPENJARVIS_OPTIMIZE_ENABLED=false)');
     return;
   }
+  if (!OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED && !OPENJARVIS_OPTIMIZE_CONFIG && !OPENJARVIS_OPTIMIZE_BENCHMARK) {
+    console.log('[SELF-IMPROVEMENT] jarvis.optimize skipped: set OPENJARVIS_OPTIMIZE_BENCHMARK or OPENJARVIS_OPTIMIZE_CONFIG to enable CLI optimization');
+    return;
+  }
   try {
-    const hints = patterns.slice(0, 10).map((p) => ({
-      id: p.id,
-      severity: p.severity,
-      signal: p.signal,
-      patchProposal: p.patchProposal,
-    }));
-    const resp = await fetch(`${OPENJARVIS_SERVE_URL}/v1/optimize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hints, source: 'weekly-self-improvement' }),
-      signal: AbortSignal.timeout(30_000),
+    await syncMemoryBeforeOptimize();
+    const { optimizeArgs, profile } = buildOpenjarvisOptimizeInvocation({
+      rootDir: ROOT,
+      source: 'self-improvement',
+      dynamicProfileEnabled: OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED,
+      benchmark: OPENJARVIS_OPTIMIZE_BENCHMARK,
+      configPath: OPENJARVIS_OPTIMIZE_CONFIG,
+      optimizerModel: OPENJARVIS_OPTIMIZE_MODEL,
+      optimizerEngine: OPENJARVIS_OPTIMIZE_ENGINE,
+      judgeModel: OPENJARVIS_OPTIMIZE_JUDGE_MODEL,
+      judgeEngine: OPENJARVIS_OPTIMIZE_JUDGE_ENGINE,
+      trials: OPENJARVIS_OPTIMIZE_TRIALS,
+      maxSamples: OPENJARVIS_OPTIMIZE_MAX_SAMPLES,
+      retrievalHitAtK: context.qualitySignals?.retrieval?.byVariant?.baseline?.recallAtKAvg,
+      retrievalDeltaGotVsBaseline: context.qualitySignals?.retrieval?.deltaActiveVsBaseline
+        ?? context.qualitySignals?.retrieval?.deltaBestVsBaseline
+        ?? context.qualitySignals?.retrieval?.deltaGotVsBaseline,
+      hallucinationDeltaGotVsBaselinePct: context.qualitySignals?.hallucination?.deltaGotVsBaselinePct,
+      p95LatencyMs: context.reports?.llmLatency?.candidate_summary?.p95LatencyMs
+        ?? context.reports?.llmLatency?.delta_summary?.p95_latency_ms,
+      qualitySignals: context.qualitySignals,
+      providerProfileHint: 'quality-optimized',
+      qualityGateOverride: 'fail',
     });
-    if (resp.ok) {
-      const data = await resp.json();
-      console.log(`[SELF-IMPROVEMENT] jarvis.optimize triggered: ${JSON.stringify(data).slice(0, 200)}`);
-    } else {
-      console.log(`[SELF-IMPROVEMENT] jarvis.optimize returned ${resp.status}`);
-    }
+    console.log(`[SELF-IMPROVEMENT] optimize profile: ${formatOpenjarvisOptimizeProfile(profile)}`);
+
+    const { stdout, stderr } = await runJarvisCli(optimizeArgs, 120_000);
+    const trimmed = String(stdout || stderr || '').trim();
+    console.log(`[SELF-IMPROVEMENT] jarvis.optimize CLI completed: ${trimmed.slice(0, 200) || 'no output'}`);
   } catch (err) {
     console.log(`[SELF-IMPROVEMENT] jarvis.optimize failed (non-blocking): ${err?.message || err}`);
   }
@@ -93,15 +168,31 @@ const pickPreferredReport = (rows, kind, guildId) => {
   return matches[0] || null;
 };
 
+const pickMostFrequentKey = (counts) => {
+  const ranked = Object.entries(counts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]) || String(a[0]).localeCompare(String(b[0])));
+  return ranked[0]?.[0] || null;
+};
+
 const fetchLabeledQualitySignals = async (client, params) => {
   const empty = {
     retrieval: {
       sampleRuns: 0,
       byVariant: {
         baseline: { samples: 0, recallAtKAvg: null },
+        graph_lore: { samples: 0, recallAtKAvg: null },
+        intent_prefix: { samples: 0, recallAtKAvg: null },
+        keyword_expansion: { samples: 0, recallAtKAvg: null },
         tot: { samples: 0, recallAtKAvg: null },
         got: { samples: 0, recallAtKAvg: null },
       },
+      activeVariant: null,
+      activeVariantRecallAtKAvg: null,
+      bestVariant: null,
+      bestVariantRecallAtKAvg: null,
+      deltaActiveVsBaseline: null,
+      deltaBestVsBaseline: null,
       deltaGotVsBaseline: null,
     },
     hallucination: {
@@ -153,21 +244,36 @@ const fetchLabeledQualitySignals = async (client, params) => {
     }
   }
 
-  const recallByVariant = {
-    baseline: [],
-    tot: [],
-    got: [],
-  };
+  const recallByVariant = Object.fromEntries(RETRIEVAL_VARIANT_KEYS.map((variant) => [variant, []]));
+  const activeVariantVotes = {};
+  const bestVariantVotes = {};
   for (const row of retrievalRows) {
-    const variants = row?.summary?.variants && typeof row.summary.variants === 'object'
-      ? row.summary.variants
+    const summary = row?.summary && typeof row.summary === 'object'
+      ? row.summary
+      : null;
+    const variants = summary?.variants && typeof summary.variants === 'object'
+      ? summary.variants
       : null;
     if (!variants) {
       continue;
     }
 
-    for (const variant of ['baseline', 'tot', 'got']) {
-      const recallAtK = Number(variants?.[variant]?.recallAtK);
+    const activeVariant = String(summary?.activeVariant || '').trim();
+    if (activeVariant) {
+      activeVariantVotes[activeVariant] = (activeVariantVotes[activeVariant] || 0) + 1;
+    }
+    const bestVariant = String(summary?.bestVariant || '').trim();
+    if (bestVariant) {
+      bestVariantVotes[bestVariant] = (bestVariantVotes[bestVariant] || 0) + 1;
+    }
+
+    for (const [variantName, variantSummary] of Object.entries(variants)) {
+      const variant = String(variantName || '').trim().toLowerCase();
+      if (!variant) continue;
+      if (!recallByVariant[variant]) {
+        recallByVariant[variant] = [];
+      }
+      const recallAtK = Number(variantSummary?.recallAtK);
       if (Number.isFinite(recallAtK)) {
         recallByVariant[variant].push(recallAtK);
       }
@@ -179,21 +285,41 @@ const fetchLabeledQualitySignals = async (client, params) => {
     samples: recallByVariant.baseline.length,
     recallAtKAvg: avgOrNull(recallByVariant.baseline),
   };
-  empty.retrieval.byVariant.tot = {
-    samples: recallByVariant.tot.length,
-    recallAtKAvg: avgOrNull(recallByVariant.tot),
-  };
-  empty.retrieval.byVariant.got = {
-    samples: recallByVariant.got.length,
-    recallAtKAvg: avgOrNull(recallByVariant.got),
-  };
+  for (const variant of RETRIEVAL_VARIANT_KEYS.filter((variant) => variant !== 'baseline')) {
+    empty.retrieval.byVariant[variant] = {
+      samples: recallByVariant[variant]?.length || 0,
+      recallAtKAvg: avgOrNull(recallByVariant[variant] || []),
+    };
+  }
 
-  const gotRecall = empty.retrieval.byVariant.got.recallAtKAvg;
   const baselineRecall = empty.retrieval.byVariant.baseline.recallAtKAvg;
-  empty.retrieval.deltaGotVsBaseline =
-    gotRecall !== null && baselineRecall !== null
-      ? Number((gotRecall - baselineRecall).toFixed(4))
+  const rankedRetrievalVariants = RETRIEVAL_VARIANT_KEYS
+    .filter((variant) => variant !== 'baseline')
+    .map((variant) => ({
+      variant,
+      recallAtKAvg: empty.retrieval.byVariant[variant]?.recallAtKAvg,
+      samples: empty.retrieval.byVariant[variant]?.samples || 0,
+    }))
+    .filter((item) => item.samples > 0 && item.recallAtKAvg !== null)
+    .sort((a, b) => Number(b.recallAtKAvg) - Number(a.recallAtKAvg) || String(a.variant).localeCompare(String(b.variant)));
+
+  empty.retrieval.bestVariant = pickMostFrequentKey(bestVariantVotes) || rankedRetrievalVariants[0]?.variant || null;
+  empty.retrieval.bestVariantRecallAtKAvg = empty.retrieval.bestVariant
+    ? empty.retrieval.byVariant[empty.retrieval.bestVariant]?.recallAtKAvg ?? null
+    : null;
+  empty.retrieval.activeVariant = pickMostFrequentKey(activeVariantVotes) || null;
+  empty.retrieval.activeVariantRecallAtKAvg = empty.retrieval.activeVariant
+    ? empty.retrieval.byVariant[empty.retrieval.activeVariant]?.recallAtKAvg ?? null
+    : null;
+  empty.retrieval.deltaBestVsBaseline =
+    empty.retrieval.bestVariantRecallAtKAvg !== null && baselineRecall !== null
+      ? Number((empty.retrieval.bestVariantRecallAtKAvg - baselineRecall).toFixed(4))
       : null;
+  empty.retrieval.deltaActiveVsBaseline =
+    empty.retrieval.activeVariantRecallAtKAvg !== null && baselineRecall !== null
+      ? Number((empty.retrieval.activeVariantRecallAtKAvg - baselineRecall).toFixed(4))
+      : null;
+  empty.retrieval.deltaGotVsBaseline = empty.retrieval.deltaActiveVsBaseline ?? empty.retrieval.deltaBestVsBaseline;
 
   let reviewRows = [];
   try {
@@ -785,13 +911,23 @@ const toPatterns = (reports, qualitySignals, opencodeSignals, agentRoleKpi) => {
     });
   }
 
-  const recallDelta = asNumber(qualitySignals?.retrieval?.deltaGotVsBaseline, null);
+  const retrievalDeltaVariant = String(
+    qualitySignals?.retrieval?.activeVariant
+    || qualitySignals?.retrieval?.bestVariant
+    || 'best_nonbaseline',
+  ).trim();
+  const recallDelta = asNumber(
+    qualitySignals?.retrieval?.deltaActiveVsBaseline
+      ?? qualitySignals?.retrieval?.deltaBestVsBaseline
+      ?? qualitySignals?.retrieval?.deltaGotVsBaseline,
+    null,
+  );
   if (recallDelta !== null && recallDelta < -0.03) {
     patterns.push({
       id: 'pattern-labeled-recall-regression',
       severity: recallDelta < -0.08 ? 'high' : 'medium',
-      signal: `labeled recall@k delta(got-baseline)=${recallDelta}`,
-      detail: '라벨 기반 retrieval 평가에서 got 품질이 baseline 대비 하락',
+      signal: `labeled recall@k delta(${retrievalDeltaVariant}-baseline)=${recallDelta}`,
+      detail: `라벨 기반 retrieval 평가에서 ${retrievalDeltaVariant} 품질이 baseline 대비 하락`,
       patchProposal: 'retrieval ranker active profile을 baseline 우선으로 임시 회귀하고, eval set/variant를 재실행해 recall@k delta가 0 이상으로 복귀하는지 검증한다.',
       regressionChecks: ['npm run -s gates:weekly-report:self-improvement:dry', 'npm run -s gates:weekly-report:all:dry'],
     });
@@ -924,9 +1060,9 @@ const buildMarkdown = (params) => {
   const retrievalAvailability = params.qualitySignals?.availability?.retrievalEvalRuns || 'ok';
   const reviewAvailability = params.qualitySignals?.availability?.answerQualityReviews || 'ok';
 
-  const retrievalBaselineAvg = retrieval?.byVariant?.baseline?.recallAtKAvg;
-  const retrievalTotAvg = retrieval?.byVariant?.tot?.recallAtKAvg;
-  const retrievalGotAvg = retrieval?.byVariant?.got?.recallAtKAvg;
+  const retrievalVariantLines = RETRIEVAL_VARIANT_KEYS
+    .map((variant) => `- recall_at_k_avg_${variant}: ${retrieval?.byVariant?.[variant]?.recallAtKAvg ?? 'n/a'} (samples=${asNumber(retrieval?.byVariant?.[variant]?.samples, 0)})`)
+    .join('\n');
 
   const hallucinationBaselineRate = hallucination?.byStrategy?.baseline?.failRatePct;
   const hallucinationTotRate = hallucination?.byStrategy?.tot?.failRatePct;
@@ -942,7 +1078,7 @@ const buildMarkdown = (params) => {
     .map(([role, row]) => `- ${role}: total=${asNumber(row?.total, 0)}, failed=${asNumber(row?.failed, 0)}, fail_rate=${row?.failRate ?? 'n/a'}, retry_rate=${row?.retryRate ?? 'n/a'}, p95_duration_ms=${asNumber(row?.p95DurationMs, 0)}`)
     .join('\n');
 
-  return `# Self-Improvement Weekly Proposals\n\n- generated_at: ${params.generatedAt}\n- window_days: ${params.windowDays}\n- guild_id: ${params.guildId || '*'}\n- provider: ${params.provider || '*'}\n- action_prefix: ${params.actionPrefix || '*'}\n\n## Source Snapshots\n\n- go_no_go_weekly: ${goKey}\n- llm_latency_weekly: ${llmKey}\n- hybrid_weekly: ${hybridKey}\n- rollback_rehearsal_weekly: ${rollbackKey}\n- memory_queue_weekly: ${memoryQueueKey}\n\n## Labeled Quality Signals (M-07)\n\n- retrieval_eval_runs_availability: ${retrievalAvailability}\n- retrieval_eval_runs_samples: ${asNumber(retrieval.sampleRuns, 0)}\n- recall_at_k_avg_baseline: ${retrievalBaselineAvg ?? 'n/a'}\n- recall_at_k_avg_tot: ${retrievalTotAvg ?? 'n/a'}\n- recall_at_k_avg_got: ${retrievalGotAvg ?? 'n/a'}\n- recall_at_k_delta_got_vs_baseline: ${retrieval.deltaGotVsBaseline ?? 'n/a'}\n\n- answer_quality_reviews_availability: ${reviewAvailability}\n- answer_quality_reviews_samples: ${asNumber(hallucination.sampleReviews, 0)}\n- hallucination_fail_rate_pct_baseline: ${hallucinationBaselineRate ?? 'n/a'}\n- hallucination_fail_rate_pct_tot: ${hallucinationTotRate ?? 'n/a'}\n- hallucination_fail_rate_pct_got: ${hallucinationGotRate ?? 'n/a'}\n- hallucination_delta_pct_got_vs_baseline: ${hallucination.deltaGotVsBaselinePct ?? 'n/a'}\n\n## Opencode Pilot Signals (M-05)\n\n- action_logs_availability: ${opencode?.availability?.actionLogs || 'ok'}\n- approvals_availability: ${opencode?.availability?.approvals || 'ok'}\n- opencode_executions_total: ${asNumber(opencode?.executions?.total, 0)}\n- opencode_executions_success: ${asNumber(opencode?.executions?.success, 0)}\n- opencode_executions_failed: ${asNumber(opencode?.executions?.failed, 0)}\n- opencode_approval_required_rate: ${opencodeApprovalRate ?? 'n/a'}\n- opencode_approvals_pending: ${asNumber(opencode?.approvals?.pending, 0)}\n- opencode_approvals_approved: ${asNumber(opencode?.approvals?.approved, 0)}\n- opencode_approvals_rejected: ${asNumber(opencode?.approvals?.rejected, 0)}\n- opencode_approvals_expired: ${asNumber(opencode?.approvals?.expired, 0)}\n\n## No-Go Root Cause and Action Completion
+  return `# Self-Improvement Weekly Proposals\n\n- generated_at: ${params.generatedAt}\n- window_days: ${params.windowDays}\n- guild_id: ${params.guildId || '*'}\n- provider: ${params.provider || '*'}\n- action_prefix: ${params.actionPrefix || '*'}\n\n## Source Snapshots\n\n- go_no_go_weekly: ${goKey}\n- llm_latency_weekly: ${llmKey}\n- hybrid_weekly: ${hybridKey}\n- rollback_rehearsal_weekly: ${rollbackKey}\n- memory_queue_weekly: ${memoryQueueKey}\n\n## Labeled Quality Signals (M-07)\n\n- retrieval_eval_runs_availability: ${retrievalAvailability}\n- retrieval_eval_runs_samples: ${asNumber(retrieval.sampleRuns, 0)}\n${retrievalVariantLines}\n- retrieval_best_variant: ${retrieval?.bestVariant ?? 'n/a'}\n- retrieval_best_variant_recall_at_k_avg: ${retrieval?.bestVariantRecallAtKAvg ?? 'n/a'}\n- retrieval_active_variant: ${retrieval?.activeVariant ?? 'n/a'}\n- retrieval_active_variant_recall_at_k_avg: ${retrieval?.activeVariantRecallAtKAvg ?? 'n/a'}\n- retrieval_delta_best_vs_baseline: ${retrieval?.deltaBestVsBaseline ?? 'n/a'}\n- retrieval_delta_active_vs_baseline: ${retrieval?.deltaActiveVsBaseline ?? 'n/a'}\n\n- answer_quality_reviews_availability: ${reviewAvailability}\n- answer_quality_reviews_samples: ${asNumber(hallucination.sampleReviews, 0)}\n- hallucination_fail_rate_pct_baseline: ${hallucinationBaselineRate ?? 'n/a'}\n- hallucination_fail_rate_pct_tot: ${hallucinationTotRate ?? 'n/a'}\n- hallucination_fail_rate_pct_got: ${hallucinationGotRate ?? 'n/a'}\n- hallucination_delta_pct_got_vs_baseline: ${hallucination.deltaGotVsBaselinePct ?? 'n/a'}\n\n## Opencode Pilot Signals (M-05)\n\n- action_logs_availability: ${opencode?.availability?.actionLogs || 'ok'}\n- approvals_availability: ${opencode?.availability?.approvals || 'ok'}\n- opencode_executions_total: ${asNumber(opencode?.executions?.total, 0)}\n- opencode_executions_success: ${asNumber(opencode?.executions?.success, 0)}\n- opencode_executions_failed: ${asNumber(opencode?.executions?.failed, 0)}\n- opencode_approval_required_rate: ${opencodeApprovalRate ?? 'n/a'}\n- opencode_approvals_pending: ${asNumber(opencode?.approvals?.pending, 0)}\n- opencode_approvals_approved: ${asNumber(opencode?.approvals?.approved, 0)}\n- opencode_approvals_rejected: ${asNumber(opencode?.approvals?.rejected, 0)}\n- opencode_approvals_expired: ${asNumber(opencode?.approvals?.expired, 0)}\n\n## No-Go Root Cause and Action Completion
 
 - no_go_root_reliability_quality_dual_fail: ${asNumber(rootCause?.reliability_quality_dual_fail, 0)}
 - no_go_root_reliability_only_fail: ${asNumber(rootCause?.reliability_only_fail, 0)}
@@ -1126,7 +1262,7 @@ async function main() {
     await persistSelfImprovementPatterns(client, { generatedAt, guildId, patterns, regression });
 
     // D-02: Trigger jarvis.optimize after weekly self-improvement patterns are persisted
-    await triggerJarvisOptimize(patterns);
+    await triggerJarvisOptimize(patterns, { qualitySignals, reports });
   }
 
   const context = {

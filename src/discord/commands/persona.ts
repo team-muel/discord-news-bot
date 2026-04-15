@@ -10,6 +10,10 @@ import {
 import { ensureFeatureAccess } from '../auth';
 import { buildUserCard, EMBED_ERROR, EMBED_INFO, EMBED_SUCCESS, EMBED_WARN } from '../ui';
 import { createUserPersonalComment, getUserPersonaSnapshot } from '../../services/userPersonaService';
+import {
+  resolveAgentPersonalizationSnapshot,
+  type AgentPersonalizationSnapshot,
+} from '../../services/agent/agentPersonalizationService';
 
 type PersonaDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
@@ -51,6 +55,66 @@ const ensureContextAccess = async (
   return { ok: true };
 };
 
+const describeReason = (reason: string): string => {
+  if (reason.startsWith('active_retrieval_profile:')) {
+    return `현재 활성 retrieval profile 유지 (${reason.split(':')[1] || 'unknown'})`;
+  }
+
+  const labels: Record<string, string> = {
+    concise_style_signal: '간결 응답 선호 신호',
+    deep_context_signal: '깊은 분석/근거 선호 신호',
+    learning_disabled: '학습 비활성',
+    profiling_disabled: '프로파일링 비활성',
+    requested_priority_fast: '요청 우선순위 fast 존중',
+    requested_priority_precise: '요청 우선순위 precise 존중',
+    persona_available: '프로필/메모 신호 존재',
+    default_runtime_profile: '기본 런타임 프로필',
+  };
+
+  return labels[reason] || reason;
+};
+
+const formatPersonalizationLines = (snapshot: AgentPersonalizationSnapshot, targetUserId: string): string[] => {
+  const reasons = snapshot.recommendations.reasons.map(describeReason).slice(0, 3);
+  return [
+    '[개인화 런타임]',
+    `대상: <@${targetUserId}>`,
+    `적용 우선순위: ${snapshot.effective.priority} (${snapshot.effective.prioritySource})`,
+    `적용 provider profile: ${snapshot.effective.providerProfile} (${snapshot.effective.providerProfileSource})`,
+    `적용 retrieval profile: ${snapshot.effective.retrievalProfile} (${snapshot.effective.retrievalProfileSource})`,
+    `추천 우선순위: ${snapshot.recommendations.priority}`,
+    `추천 provider profile: ${snapshot.recommendations.providerProfile}`,
+    `추천 retrieval profile: ${snapshot.recommendations.retrievalProfile}`,
+    `학습/동의: learning=${snapshot.learning.enabled ? 'on' : 'off'}, profiling=${snapshot.consent.profilingEnabled ? 'on' : 'off'}, social=${snapshot.consent.socialGraphEnabled ? 'on' : 'off'}`,
+    reasons.length > 0 ? `근거: ${reasons.join(' / ')}` : '근거: 기본값',
+  ];
+};
+
+const formatPersonalizationComparison = (leftUserId: string, left: AgentPersonalizationSnapshot, rightUserId: string, right: AgentPersonalizationSnapshot): string[] => {
+  const differences = [
+    left.effective.priority !== right.effective.priority
+      ? `우선순위: <@${leftUserId}>=${left.effective.priority}, <@${rightUserId}>=${right.effective.priority}`
+      : null,
+    left.effective.providerProfile !== right.effective.providerProfile
+      ? `provider: <@${leftUserId}>=${left.effective.providerProfile}, <@${rightUserId}>=${right.effective.providerProfile}`
+      : null,
+    left.effective.retrievalProfile !== right.effective.retrievalProfile
+      ? `retrieval: <@${leftUserId}>=${left.effective.retrievalProfile}, <@${rightUserId}>=${right.effective.retrievalProfile}`
+      : null,
+  ].filter((line): line is string => Boolean(line));
+
+  const leftReasons = left.recommendations.reasons.map(describeReason).slice(0, 2).join(' / ');
+  const rightReasons = right.recommendations.reasons.map(describeReason).slice(0, 2).join(' / ');
+
+  return [
+    '[개인화 비교]',
+    `기준: <@${leftUserId}> vs <@${rightUserId}>`,
+    differences.length > 0 ? differences.join('\n') : '적용 런타임 선택은 동일합니다.',
+    leftReasons ? `<@${leftUserId}> 근거: ${leftReasons}` : '',
+    rightReasons ? `<@${rightUserId}> 근거: ${rightReasons}` : '',
+  ].filter(Boolean);
+};
+
 export const createPersonaHandlers = (deps: PersonaDeps) => {
   const handleUserProfileCommand = async (interaction: ChatInputCommandInteraction) => {
     const access = await ensureFeatureAccess(interaction);
@@ -73,20 +137,26 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
     }
 
     try {
-      const snapshot = await getUserPersonaSnapshot({
-        guildId: interaction.guildId,
-        targetUserId: target.id,
-        requesterUserId: interaction.user.id,
-        isAdmin: await deps.hasAdminPermission(interaction),
-        relationLimit: 4,
-        noteLimit: 4,
-      });
-
       const isAdmin = await deps.hasAdminPermission(interaction);
       if (!isAdmin && target.id !== interaction.user.id) {
         await interaction.editReply(buildUserCard('유저 프로필', '다른 유저 프로필 조회는 관리자만 가능합니다.', EMBED_WARN));
         return;
       }
+
+      const [snapshot, personalization] = await Promise.all([
+        getUserPersonaSnapshot({
+          guildId: interaction.guildId,
+          targetUserId: target.id,
+          requesterUserId: interaction.user.id,
+          isAdmin,
+          relationLimit: 4,
+          noteLimit: 4,
+        }),
+        resolveAgentPersonalizationSnapshot({
+          guildId: interaction.guildId,
+          userId: target.id,
+        }),
+      ]);
 
       const profile = snapshot.profile;
       const outbound = snapshot.relations.outbound.slice(0, 3)
@@ -112,6 +182,8 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
         '[개인화 코멘트]',
         notes.length > 0 ? notes.join('\n') : '저장된 코멘트 없음',
         snapshot.noteVisibility.hidden > 0 ? `숨김 코멘트: ${snapshot.noteVisibility.hidden}개` : '',
+        '',
+        ...formatPersonalizationLines(personalization, target.id),
       ].filter(Boolean).join('\n');
 
       await interaction.editReply(buildUserCard('유저 프로필 스냅샷', lines, EMBED_INFO));
@@ -230,14 +302,20 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
       }
 
       try {
-        const snapshot = await getUserPersonaSnapshot({
-          guildId: interaction.guildId,
-          targetUserId,
-          requesterUserId: interaction.user.id,
-          isAdmin,
-          relationLimit: 4,
-          noteLimit: 4,
-        });
+        const [snapshot, personalization] = await Promise.all([
+          getUserPersonaSnapshot({
+            guildId: interaction.guildId,
+            targetUserId,
+            requesterUserId: interaction.user.id,
+            isAdmin,
+            relationLimit: 4,
+            noteLimit: 4,
+          }),
+          resolveAgentPersonalizationSnapshot({
+            guildId: interaction.guildId,
+            userId: targetUserId,
+          }),
+        ]);
 
         const profile = snapshot.profile;
         const noteLines = snapshot.notes.length > 0
@@ -252,6 +330,8 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
           '[개인화 코멘트]',
           ...noteLines,
           snapshot.noteVisibility.hidden > 0 ? `숨김 코멘트: ${snapshot.noteVisibility.hidden}개` : '',
+          '',
+          ...formatPersonalizationLines(personalization, targetUserId),
         ].filter(Boolean).join('\n');
 
         await interaction.reply({ ...buildUserCard('유저 프로필 스냅샷', lines, EMBED_INFO), ephemeral: true });
@@ -379,6 +459,7 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
     }
 
     const target = interaction.options.getUser('유저', false) ?? interaction.user;
+    const compareTarget = interaction.options.getUser('비교유저', false);
     const shared = deps.getReplyVisibility(interaction) === 'public';
     await interaction.deferReply({ ephemeral: !shared });
 
@@ -392,16 +473,35 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
       await interaction.editReply(buildUserCard('프로필', '다른 유저 프로필 조회는 관리자만 가능합니다.', EMBED_WARN));
       return;
     }
+    if (compareTarget && !isAdmin) {
+      await interaction.editReply(buildUserCard('프로필', '개인화 비교는 관리자만 가능합니다.', EMBED_WARN));
+      return;
+    }
 
     try {
-      const snapshot = await getUserPersonaSnapshot({
+      const targetPersonalizationPromise = resolveAgentPersonalizationSnapshot({
         guildId: interaction.guildId,
-        targetUserId: target.id,
-        requesterUserId: interaction.user.id,
-        isAdmin,
-        relationLimit: 4,
-        noteLimit: 4,
+        userId: target.id,
       });
+      const comparePersonalizationPromise = compareTarget && compareTarget.id !== target.id
+        ? resolveAgentPersonalizationSnapshot({
+          guildId: interaction.guildId,
+          userId: compareTarget.id,
+        })
+        : Promise.resolve<AgentPersonalizationSnapshot | null>(null);
+
+      const [snapshot, personalization, comparePersonalization] = await Promise.all([
+        getUserPersonaSnapshot({
+          guildId: interaction.guildId,
+          targetUserId: target.id,
+          requesterUserId: interaction.user.id,
+          isAdmin,
+          relationLimit: 4,
+          noteLimit: 4,
+        }),
+        targetPersonalizationPromise,
+        comparePersonalizationPromise,
+      ]);
 
       const profile = snapshot.profile;
       const outbound = snapshot.relations.outbound.slice(0, 3)
@@ -427,6 +527,12 @@ export const createPersonaHandlers = (deps: PersonaDeps) => {
         '[메모]',
         notes.length > 0 ? notes.join('\n') : '저장된 메모 없음',
         snapshot.noteVisibility.hidden > 0 ? `숨김 메모: ${snapshot.noteVisibility.hidden}개` : '',
+        '',
+        ...formatPersonalizationLines(personalization, target.id),
+        compareTarget && comparePersonalization ? '' : '',
+        ...(compareTarget && comparePersonalization
+          ? formatPersonalizationComparison(target.id, personalization, compareTarget.id, comparePersonalization)
+          : []),
       ].filter(Boolean).join('\n');
 
       await interaction.editReply(buildUserCard('프로필', lines, EMBED_INFO));

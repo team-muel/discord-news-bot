@@ -1,6 +1,6 @@
 # Hybrid Weekly Decision Snapshot
 
-- generated_at: 2026-04-11T09:57:15.000Z
+- generated_at: 2026-04-11T18:11:49.450Z
 - window_days: 7
 - guild_id: *
 - provider: *
@@ -9,10 +9,10 @@
 
 ## Go/No-Go Summary
 
-- total_runs: 2
+- total_runs: 9
 - go: 0
 - no_go: 0
-- pending: 2
+- pending: 9
 
 ## LLM Latency Summary
 
@@ -40,6 +40,6 @@
 ## Inputs
 
 - go_no_go_report_key: go_no_go_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*
-- llm_latency_report_key: llm_latency_weekly|*|*|*|2026-04-01T09:57:14.457Z|2026-04-01T09:57:14.457Z|2026-04-08T09:57:14.458Z|2026-04-11T09:57:14.458Z
+- llm_latency_report_key: llm_latency_weekly|*|*|*|2026-04-01T18:11:48.860Z|2026-04-01T18:11:48.861Z|2026-04-08T18:11:48.861Z|2026-04-11T18:11:48.861Z
 - rollback_rehearsal_report_key: rollback_rehearsal_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*
 - memory_queue_report_key: memory_queue_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*

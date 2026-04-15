@@ -288,6 +288,11 @@ Provider fallback controls:
 
 운영형 Render baseline에서는 아래 값을 명시하는 편이 안전하다.
 
+- `RENDER_API_KEY=[secret]` (optional, internal Render adapter deploy trigger/rollback and one-off job ops)
+- `RENDER_TIMEOUT_MS=15000` (optional, Render API timeout override)
+- `RENDER_WORKSPACE_ID=[workspace-id]` (optional, Render log owner/workspace filter)
+- Render Blueprint health check should target `/ready`; keep `/health` for diagnostics only.
+
 ## Local CLI Tool Example
 
 예시 목적:
@@ -364,6 +369,7 @@ Provider fallback controls:
 ## Notes
 
 - `AUTOMATION_NEWS_ENABLED=true` keeps Render production aligned with the current news monitor rollout. Disable it explicitly when staging or during rollback.
+- Render restart/deploy health should follow `/ready`, not `/health`, because `/health` remains informative during partial readiness.
 - If multiple providers are configured, `AI_PROVIDER` selects priority.
 - If no provider configuration exists, `/뮤엘`, `/해줘`, and `/시작` session creation fails by design.
 - 비용 최소화가 목표라면 `AI_PROVIDER=ollama`와 소형 모델(예: qwen2.5:3b-instruct) 조합을 권장합니다.
@@ -436,3 +442,58 @@ Use this profile when 로컬 머신이 켜져 있을 때는 Ollama를 우선 사
 - 로컬 Ollama는 추론 우선 경로이지만 단일 장애점으로 두지 않는다.
 - 원격 fallback provider를 최소 1개 이상 유지한다.
 - unattended automation은 worker fail-closed를 유지한다. 로컬 worker를 쓰는 경우 PC가 꺼지면 autonomy도 함께 중단된다.
+
+## OpenClaw-Centered Local Stack Profile (Daemon-First Local Assistant)
+
+Use this profile when OpenClaw Gateway should be the always-on local ingress, while Ollama remains the host-local fallback lane and OpenJarvis stays on the worker-grade Qwen path:
+
+- AI_PROVIDER=openclaw
+- OPENCLAW_ENABLED=true
+- OPENCLAW_GATEWAY_ENABLED=true
+- OPENCLAW_GATEWAY_URL=`http://127.0.0.1:18789`
+- OPENCLAW_BASE_URL=`http://127.0.0.1:18789`
+- OLLAMA_MODEL=[required fallback model]
+- OLLAMA_BASE_URL=`http://127.0.0.1:11434`
+- LLM_PROVIDER_BASE_ORDER=openclaw,ollama,litellm,openjarvis,anthropic,openai,gemini,huggingface
+- LLM_PROVIDER_FALLBACK_CHAIN=ollama,litellm,openjarvis,anthropic,openai,gemini,huggingface
+- OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
+- MCP_IMPLEMENT_WORKER_URL=`http://127.0.0.1:8787` (fully local) or the real remote worker URL
+- ACTION_MCP_DELEGATION_ENABLED=true
+- ACTION_MCP_STRICT_ROUTING=true
+
+Operating rules:
+
+- OpenClaw owns the local session ingress, not the durable knowledge plane.
+- Leave `OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_API_KEY` blank only if the local gateway is intentionally unauthenticated.
+- If you want remote fail-closed implement execution while keeping local OpenClaw ingress, override `MCP_IMPLEMENT_WORKER_URL` after applying the profile.
+
+## NemoClaw-Centered Local Stack Profile (Hardened Review Lane First)
+
+Use this profile when the target is a Windows + WSL local stack with NemoClaw/OpenShell as the hardened review lane, a host Ollama Nemotron 8B model as the primary direct reasoning lane, and OpenJarvis still pinned to the validated Qwen workflow lane:
+
+- AI_PROVIDER=ollama
+- OLLAMA_MODEL=`hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M`
+- OLLAMA_BASE_URL=`http://127.0.0.1:11434`
+- OPENJARVIS_MODEL=`qwen2.5:7b-instruct`
+- OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
+- OPENSHELL_ENABLED=true
+- NEMOCLAW_ENABLED=true
+- NEMOCLAW_SANDBOX_NAME=`muel-assistant`
+- NEMOCLAW_INFERENCE_MODEL=`hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M`
+- NEMOCLAW_SANDBOX_OLLAMA_URL=`http://host.docker.internal:11434`
+- NEMOCLAW_PROVIDER=ollama (installer/onboard hint)
+- NEMOCLAW_MODEL=`hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M` (installer/onboard hint)
+- ACTION_MCP_DELEGATION_ENABLED=true
+- ACTION_MCP_STRICT_ROUTING=true
+
+Operating rules:
+
+- On Windows Docker Desktop + WSL, the sandbox must use `host.docker.internal` to reach the host Ollama API. Do not leave `NEMOCLAW_SANDBOX_OLLAMA_URL` on `localhost` unless Ollama actually runs inside the same Linux/container network namespace.
+- Treat the Nemotron 8B lane as the first local reasoning and hardened review step, not as proof that the unattended OpenJarvis worker lane is ready to migrate off Qwen.
+- Keep Docker Desktop engine healthy before onboarding. A Docker CLI-only state is not enough for NemoClaw or OpenShell.
+
+Gemma 4 Hermes-side A/B variant:
+
+- If the goal is to strengthen the Hermes-side local reasoning lane without replacing the full Qwen-based unattended stack, keep `OPENJARVIS_MODEL`, `NEMOCLAW_INFERENCE_MODEL`, and the optimize judge on the current Qwen model.
+- Only the direct Ollama lane should move first, for example `OLLAMA_MODEL=gemma4:e4b` as the safe default and `gemma4:26b` only after workstation memory and latency headroom are verified.
+- Treat this as a local continuity and packet-discipline experiment, not a production-wide model swap.

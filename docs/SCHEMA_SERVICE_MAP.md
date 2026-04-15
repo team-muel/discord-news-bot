@@ -78,7 +78,7 @@
 | retrieval_eval_runs | src/services/agent/agentRuntimeReadinessService.ts |
 | retrieval_eval_sets | - |
 | retrieval_eval_targets | - |
-| retrieval_ranker_active_profiles | src/services/entityNervousSystem.ts |
+| retrieval_ranker_active_profiles | src/services/agent/agentPersonalizationService.ts<br/>src/services/entityNervousSystem.ts |
 | retrieval_ranker_experiments | - |
 | reward_signal_snapshots | - |
 | settings | - |

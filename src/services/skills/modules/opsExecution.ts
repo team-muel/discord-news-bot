@@ -1,6 +1,7 @@
 import type { SkillExecutionResult, SkillContext } from '../types';
 import { runSkillText } from './common';
-import { runGoalActions } from '../actionRunner';
+import { runGoalPipeline } from '../actionRunner';
+import type { SkillActionResult } from '../actionRunnerDiagnostics';
 import { toAgentOutcome } from '../../agent/agentOutcomeContract';
 import { parseBooleanEnv } from '../../../utils/env';
 
@@ -41,7 +42,7 @@ const maybeBuildYouTubeResult = (goal: string): string | null => {
   ].join('\n');
 };
 
-const buildSkillOutcomes = (actionResult: Awaited<ReturnType<typeof runGoalActions>>): SkillExecutionResult['outcomes'] => {
+const buildSkillOutcomes = (actionResult: SkillActionResult): SkillExecutionResult['outcomes'] => {
   if (!Array.isArray(actionResult.actionResults) || actionResult.actionResults.length === 0) {
     return undefined;
   }
@@ -51,10 +52,13 @@ const buildSkillOutcomes = (actionResult: Awaited<ReturnType<typeof runGoalActio
 
 export const executeOpsExecutionSkill = async (context: SkillContext): Promise<SkillExecutionResult> => {
   if (shouldAttemptActionRunner(context.goal)) {
-    const actionResult = await runGoalActions({
+    const actionResult = await runGoalPipeline({
       goal: context.goal,
       guildId: context.guildId,
       requestedBy: context.requestedBy,
+      providerProfile: context.providerProfile,
+      sessionId: context.sessionId,
+      runtimeLane: 'public-guild',
     });
     const outcomes = buildSkillOutcomes(actionResult);
 

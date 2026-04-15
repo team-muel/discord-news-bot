@@ -14,6 +14,10 @@ export type FullReviewRuntimeDependencies = {
   decomposeGoalLeastToMost: (params: {
     taskGoal: string;
     priority: AgentSession['priority'];
+    guildId?: string;
+    requestedBy?: string;
+    sessionId?: string;
+    providerProfile?: import('../../llmClient').LlmProviderProfile;
   }) => Promise<string[]>;
   runLeastToMostExecutionDraft: (params: {
     session: AgentSession;
@@ -43,6 +47,10 @@ export const runPlanTaskNode = async (params: {
   const subgoals = await dependencies.decomposeGoalLeastToMost({
     taskGoal,
     priority: session.priority,
+    guildId: session.guildId,
+    requestedBy: session.requestedBy,
+    sessionId: session.id,
+    providerProfile: session.personalization?.effective.providerProfile,
   });
   if (subgoals.length >= 2) {
     dependencies.traceShadowNode(session, 'plan_actions', `least_to_most:subgoals=${subgoals.length}`);

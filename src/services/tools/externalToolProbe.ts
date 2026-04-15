@@ -1,6 +1,16 @@
 import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { WSL_DISTRO, NEMOCLAW_SANDBOX_NAME, OLLAMA_BASE_URL, OPENJARVIS_ENABLED, OPENJARVIS_SERVE_URL, LITELLM_BASE_URL } from '../../config';
+import {
+  WSL_DISTRO,
+  NEMOCLAW_SANDBOX_NAME,
+  OLLAMA_BASE_URL,
+  OPENCLAW_BASE_URL,
+  OPENCLAW_GATEWAY_URL,
+  OPENCLAW_GATEWAY_TOKEN,
+  OPENJARVIS_ENABLED,
+  OPENJARVIS_SERVE_URL,
+  LITELLM_BASE_URL,
+} from '../../config';
 import { parseStringEnv } from '../../utils/env';
 import { fetchWithTimeout } from '../../utils/network';
 
@@ -14,6 +24,7 @@ export type ExternalToolId =
   | 'openclaw'
   | 'openjarvis'
   | 'uv'
+  | 'workstation'
   | 'litellm';
 
 export type ExternalToolStatus = {
@@ -74,12 +85,48 @@ const probeWslCommand = async (
     return probeCommand(command, args);
   }
   try {
-    const shellCmd = `export HOME=/root; export NVM_DIR=/root/.nvm; source /root/.nvm/nvm.sh 2>/dev/null; export PATH=/root/.local/bin:$PATH; ${command} ${args.join(' ')}`;
+    const shellCmd = [
+      'export NVM_DIR="$HOME/.nvm"',
+      '[ -f "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1',
+      'export PATH="$HOME/.local/bin:$PATH"',
+      `${command} ${args.join(' ')}`,
+    ].join('; ');
     const result = await execAsync(
       `wsl -d ${WSL_DISTRO} -e bash -c "${shellCmd.replace(/"/g, '\\"')}"`,
       { timeout: PROBE_TIMEOUT_MS * 2, windowsHide: true },
     );
     const fullOutput = (result.stdout || result.stderr || '').trim();
+    const output = fullOutput.split('\n')[0] || 'unknown';
+    return { ok: true, output, fullOutput };
+  } catch {
+    return { ok: false, output: '' };
+  }
+};
+
+const probeCommandFull = async (
+  command: string,
+  args: string[] = [],
+): Promise<{ ok: boolean; output: string; fullOutput?: string }> => {
+  try {
+    let stdout: string;
+    let stderr: string;
+    if (IS_WINDOWS) {
+      const safeCmd = [command, ...args].join(' ');
+      const result = await execAsync(safeCmd, {
+        timeout: PROBE_TIMEOUT_MS * 2,
+        windowsHide: true,
+      });
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } else {
+      const result = await execFileAsync(command, args, {
+        timeout: PROBE_TIMEOUT_MS * 2,
+        windowsHide: true,
+      });
+      stdout = result.stdout;
+      stderr = result.stderr;
+    }
+    const fullOutput = (stdout || stderr || '').trim();
     const output = fullOutput.split('\n')[0] || 'unknown';
     return { ok: true, output, fullOutput };
   } catch {
@@ -93,6 +140,75 @@ const probeHttp = async (url: string): Promise<boolean> => {
     return resp.ok;
   } catch {
     return false;
+  }
+};
+
+const stripAnsi = (value: string): string => String(value || '').replace(/\u001b\[[0-9;]*m/gu, '').trim();
+
+const parseSandboxState = (rawOutput: string, sandboxName: string): { exists: boolean; phase: string | null } => {
+  for (const line of String(rawOutput || '').split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || /^name\s+/iu.test(trimmed)) {
+      continue;
+    }
+    const parts = trimmed.split(/\s+/u);
+    if (parts[0] !== sandboxName) {
+      continue;
+    }
+    return {
+      exists: true,
+      phase: stripAnsi(parts[parts.length - 1] || ''),
+    };
+  }
+  return { exists: false, phase: null };
+};
+
+const probeOpenShellSandboxState = async (sandboxName: string): Promise<{ exists: boolean; phase: string | null } | null> => {
+  const sandboxProbe = IS_WINDOWS
+    ? await probeWslCommand('openshell', ['sandbox', 'list'])
+    : await probeCommandFull('openshell', ['sandbox', 'list']);
+  if (!sandboxProbe.ok) {
+    return null;
+  }
+  return parseSandboxState(sandboxProbe.fullOutput ?? sandboxProbe.output, sandboxName);
+};
+
+const probeOpenClawModelStatus = async (): Promise<{ defaultModel: string | null } | null> => {
+  const status = await probeCommandFull('openclaw', ['models', 'status', '--json']);
+  if (!status.ok || !status.fullOutput) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(status.fullOutput) as { defaultModel?: string | null };
+    return { defaultModel: parsed.defaultModel || null };
+  } catch {
+    return null;
+  }
+};
+
+const probeOpenClawChatApi = async (baseUrl: string): Promise<{ ok: boolean; detail: string }> => {
+  try {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (OPENCLAW_GATEWAY_TOKEN) {
+      headers.Authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+    }
+
+    const resp = await fetchWithTimeout(`${baseUrl}/v1/models`, {
+      method: 'GET',
+      headers,
+    }, PROBE_TIMEOUT_MS);
+    const contentType = String(resp.headers?.get?.('content-type') || '').toLowerCase();
+
+    if (!resp.ok) {
+      return { ok: false, detail: `chat api http ${resp.status}` };
+    }
+    if (!contentType.includes('application/json')) {
+      return { ok: false, detail: `chat api unavailable (${contentType || 'non-json'})` };
+    }
+
+    return { ok: true, detail: 'chat api ready' };
+  } catch {
+    return { ok: false, detail: 'chat api unreachable' };
   }
 };
 
@@ -126,6 +242,7 @@ const probeOllama = async (): Promise<ExternalToolStatus> => {
 
 const probeOpenShell = async (): Promise<ExternalToolStatus> => {
   const cmd = await probeWslCommand('openshell', ['--version']);
+  const sandboxState = cmd.ok ? await probeOpenShellSandboxState(NEMOCLAW_SANDBOX_NAME) : null;
   return {
     id: 'openshell',
     name: 'NVIDIA OpenShell',
@@ -134,6 +251,7 @@ const probeOpenShell = async (): Promise<ExternalToolStatus> => {
     apiReachable: null,
     details: [
       ...(cmd.ok ? [IS_WINDOWS ? `via WSL ${WSL_DISTRO}` : 'native Linux'] : ['install: curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh']),
+      ...(sandboxState?.exists ? [`sandbox: ${NEMOCLAW_SANDBOX_NAME}${sandboxState.phase ? ` (${sandboxState.phase})` : ''}`] : cmd.ok ? ['no sandbox registered'] : []),
     ],
   };
 };
@@ -142,8 +260,7 @@ const probeNemoClaw = async (): Promise<ExternalToolStatus> => {
   const cmd = await probeWslCommand('nemoclaw', ['help']);
   const hasKey = parseStringEnv(process.env.NVIDIA_API_KEY, '') !== '';
   const sandboxName = NEMOCLAW_SANDBOX_NAME;
-  const sandbox = cmd.ok ? await probeWslCommand('nemoclaw', ['list']) : { ok: false, output: '', fullOutput: '' };
-  const hasSandbox = sandbox.ok && (sandbox.fullOutput ?? sandbox.output).includes(sandboxName);
+  const sandboxState = cmd.ok ? await probeOpenShellSandboxState(sandboxName) : null;
   return {
     id: 'nemoclaw',
     name: 'NVIDIA NemoClaw',
@@ -153,20 +270,35 @@ const probeNemoClaw = async (): Promise<ExternalToolStatus> => {
     details: [
       ...(!cmd.ok ? ['install: curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash'] : [IS_WINDOWS ? `via WSL ${WSL_DISTRO}` : 'native Linux']),
       ...(cmd.ok && !hasKey ? ['NVIDIA_API_KEY not set'] : []),
-      ...(hasSandbox ? [`sandbox: ${sandboxName}`] : cmd.ok ? ['no sandbox registered'] : []),
+      ...(sandboxState?.exists ? [`sandbox: ${sandboxName}${sandboxState.phase ? ` (${sandboxState.phase})` : ''}`] : cmd.ok ? ['no sandbox registered'] : []),
     ],
   };
 };
 
 const probeOpenClaw = async (): Promise<ExternalToolStatus> => {
   const cmd = await probeCommand('openclaw', ['--version']);
+  const gatewayUrl = OPENCLAW_GATEWAY_URL || OPENCLAW_BASE_URL;
+  const gatewayHealthy = cmd.ok && gatewayUrl ? await probeHttp(`${gatewayUrl}/healthz`) : null;
+  const chatApi = cmd.ok && gatewayUrl && gatewayHealthy ? await probeOpenClawChatApi(gatewayUrl) : null;
+  const modelStatus = cmd.ok ? await probeOpenClawModelStatus() : null;
+  const apiReachable = cmd.ok && gatewayUrl
+    ? (gatewayHealthy && chatApi ? chatApi.ok : false)
+    : null;
   return {
     id: 'openclaw',
     name: 'OpenClaw',
     available: cmd.ok,
     version: cmd.ok ? cmd.output : null,
-    apiReachable: null,
-    details: cmd.ok ? [] : ['install: irm https://openclaw.ai/install.ps1 | iex (Windows)'],
+    apiReachable,
+    details: cmd.ok
+      ? [
+        ...(gatewayUrl ? [`gateway: ${gatewayUrl}`] : []),
+        ...(gatewayUrl && gatewayHealthy === true ? ['gateway healthz: ok'] : []),
+        ...(gatewayUrl && gatewayHealthy === false ? ['gateway healthz: unreachable'] : []),
+        ...(chatApi ? [chatApi.detail] : []),
+        ...(modelStatus?.defaultModel ? [`default model: ${modelStatus.defaultModel}`] : []),
+      ]
+      : ['install: irm https://openclaw.ai/install.ps1 | iex (Windows)'],
   };
 };
 
@@ -220,6 +352,48 @@ const probeLitellm = async (): Promise<ExternalToolStatus> => {
   };
 };
 
+const probeWorkstation = async (): Promise<ExternalToolStatus> => {
+  if (!IS_WINDOWS) {
+    return {
+      id: 'workstation',
+      name: 'Local Workstation Executor',
+      available: false,
+      version: null,
+      apiReachable: null,
+      details: ['Windows desktop automation unavailable on this platform', 'guard: workspace-scoped files only'],
+    };
+  }
+
+  try {
+    const result = await execFileAsync('powershell', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Write-Output $PSVersionTable.PSVersion.ToString()'], {
+      timeout: PROBE_TIMEOUT_MS,
+      windowsHide: true,
+    });
+    const version = (result.stdout || result.stderr || '').trim().split('\n')[0] || 'unknown';
+    return {
+      id: 'workstation',
+      name: 'Local Workstation Executor',
+      available: true,
+      version: `PowerShell ${version}`,
+      apiReachable: null,
+      details: [
+        `workspace: ${process.cwd()}`,
+        'guard: workspace-scoped files only',
+        'actions: command.exec, browser.open, app.launch, app.activate, input.text, input.hotkey, screen.capture',
+      ],
+    };
+  } catch {
+    return {
+      id: 'workstation',
+      name: 'Local Workstation Executor',
+      available: false,
+      version: null,
+      apiReachable: null,
+      details: ['PowerShell unavailable for local desktop execution'],
+    };
+  }
+};
+
 export const probeAllExternalTools = async (): Promise<ExternalToolProbeResult> => {
   const tools = await Promise.all([
     probeOllama(),
@@ -228,6 +402,7 @@ export const probeAllExternalTools = async (): Promise<ExternalToolProbeResult> 
     probeOpenClaw(),
     probeOpenJarvis(),
     probeUv(),
+    probeWorkstation(),
     probeLitellm(),
   ]);
 
@@ -250,6 +425,7 @@ export const getExternalToolById = async (id: ExternalToolId): Promise<ExternalT
     openclaw: probeOpenClaw,
     openjarvis: probeOpenJarvis,
     uv: probeUv,
+    workstation: probeWorkstation,
     litellm: probeLitellm,
   };
   return probeMap[id]();

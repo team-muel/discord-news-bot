@@ -289,6 +289,8 @@ export const runSelfRefineLite = async (params: {
       const critique = await withTimeout(executeSkill('ops-critique', {
         guildId: params.session.guildId,
         requestedBy: params.session.requestedBy,
+        sessionId: params.session.id,
+        providerProfile: params.session.personalization?.effective.providerProfile,
         goal: [
           '역할: 품질 검토기',
           `목표: ${params.taskGoal}`,
@@ -321,6 +323,8 @@ export const runSelfRefineLite = async (params: {
       const rewrite = await withTimeout(executeSkill('ops-execution', {
         guildId: params.session.guildId,
         requestedBy: params.session.requestedBy,
+        sessionId: params.session.id,
+        providerProfile: params.session.personalization?.effective.providerProfile,
         goal: [
           '역할: self-refine 재작성기',
           `목표: ${params.taskGoal}`,
@@ -536,6 +540,8 @@ export const runToTShadowExploration = async (params: {
       const candidate = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
+        sessionId: session.id,
+        providerProfile: session.personalization?.effective.providerProfile,
         actionName: 'tot.shadow.branch',
         goal: [
           `역할: Tree-of-Thought shadow branch ${index + 1}/${selectedAngles.length}`,
@@ -576,6 +582,8 @@ export const runToTShadowExploration = async (params: {
           const mutated = await withTimeout(executeSkill('ops-execution', {
             guildId: session.guildId,
             requestedBy: session.requestedBy,
+            sessionId: session.id,
+            providerProfile: session.personalization?.effective.providerProfile,
             actionName: 'tot.shadow.local_search',
             goal: [
               `역할: ToT local-search mutation ${mutateIndex + 1}/${dynamicBudget.localSearchMutations}`,
@@ -623,6 +631,8 @@ export const runToTShadowExploration = async (params: {
       const replayCandidate = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
+        sessionId: session.id,
+        providerProfile: session.personalization?.effective.providerProfile,
         actionName: 'tot.shadow.replay',
         goal: [
           `역할: ToT replay branch ${replayIndex + 1}/${replaySeeds.length}`,
@@ -771,6 +781,10 @@ export const finalizeTaskResult = (params: {
 export const decomposeGoalLeastToMost = async (params: {
   taskGoal: string;
   priority: AgentPriority;
+  guildId?: string;
+  requestedBy?: string;
+  sessionId?: string;
+  providerProfile?: import('./llmClient').LlmProviderProfile;
 }): Promise<string[]> => {
   if (!LEAST_TO_MOST_ENABLED) {
     return [];
@@ -794,6 +808,10 @@ export const decomposeGoalLeastToMost = async (params: {
         `제약: 하위목표는 ${LEAST_TO_MOST_MAX_SUBGOALS}개 이하, 각 항목은 실행 가능한 짧은 문장`,
       ].join('\n'),
       actionName: 'ltm.decompose',
+      guildId: params.guildId,
+      requestedBy: params.requestedBy,
+      sessionId: params.sessionId,
+      providerProfile: params.providerProfile,
       temperature: 0,
       maxTokens: 260,
     });
@@ -847,6 +865,8 @@ export const runLeastToMostExecutionDraft = async (params: {
       const result: SkillExecutionResult = await withTimeout(executeSkill('ops-execution', {
         guildId: session.guildId,
         requestedBy: session.requestedBy,
+        sessionId: session.id,
+        providerProfile: session.personalization?.effective.providerProfile,
         actionName: 'ltm.execute_subgoal',
         goal: [
           session.priority === 'precise' ? '우선순위: 정밀 (하위목표별 근거/가드레일 포함)' : '우선순위: 균형',

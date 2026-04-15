@@ -6,6 +6,7 @@ import {
   OPENCLAW_GATEWAY_URL,
   OPENCLAW_GATEWAY_TOKEN,
   OPENCLAW_GATEWAY_ENABLED,
+  OPENCLAW_MODEL,
   OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS,
 } from '../../config';
 import { fetchWithTimeout } from '../../utils/network';
@@ -18,6 +19,8 @@ const HEALTH_CACHE_TTL_MS = 15_000;
 
 let healthy: boolean | null = null;
 let checkedAt = 0;
+let chatCapable: boolean | null = null;
+let chatCheckedAt = 0;
 
 /** Record gateway health transition to Supabase observations (best-effort). */
 const recordHealthTransition = (prev: boolean | null, next: boolean): void => {
@@ -61,6 +64,8 @@ export const markGatewayUnhealthy = (): void => {
   const prev = healthy;
   healthy = false;
   checkedAt = Date.now();
+  chatCapable = false;
+  chatCheckedAt = Date.now();
   recordHealthTransition(prev, false);
 };
 
@@ -72,11 +77,40 @@ export const getGatewayHeaders = (): Record<string, string> => {
   return h;
 };
 
+export const checkOpenClawGatewayChatSupport = async (): Promise<boolean> => {
+  const gatewayOk = await checkOpenClawGatewayHealth();
+  if (!gatewayOk || !OPENCLAW_GATEWAY_URL) return false;
+
+  const now = Date.now();
+  if (chatCapable === false && (now - chatCheckedAt) < HEALTH_CACHE_TTL_MS) return false;
+  if (chatCapable === true && (now - chatCheckedAt) < HEALTH_CACHE_TTL_MS) return true;
+
+  try {
+    const resp = await fetchWithTimeout(`${OPENCLAW_GATEWAY_URL}/v1/models`, {
+      method: 'GET',
+      headers: getGatewayHeaders(),
+    }, 5_000);
+    const contentType = String(resp?.headers?.get?.('content-type') || '').toLowerCase();
+    if (!resp.ok || !contentType.includes('application/json')) {
+      chatCapable = false;
+    } else {
+      const data = (await resp.json().catch(() => null)) as Record<string, unknown> | null;
+      chatCapable = Boolean(data && typeof data === 'object');
+    }
+  } catch {
+    chatCapable = false;
+  }
+
+  chatCheckedAt = now;
+  return !!chatCapable;
+};
+
 // ──── Session-Aware Gateway Chat ─────────────────────────────────────────────
 
 export type GatewayChatParams = {
   user: string;
   system: string;
+  model?: string;
   sessionId?: string;
   guildId?: string;
   actionName?: string;
@@ -89,8 +123,8 @@ export type GatewayChatParams = {
  * Returns null if the gateway is unavailable or returns an error.
  */
 export const sendGatewayChat = async (params: GatewayChatParams): Promise<string | null> => {
-  const gatewayOk = await checkOpenClawGatewayHealth();
-  if (!gatewayOk) return null;
+  const gatewayChatOk = await checkOpenClawGatewayChatSupport();
+  if (!gatewayChatOk) return null;
 
   const headers = getGatewayHeaders();
 
@@ -103,6 +137,7 @@ export const sendGatewayChat = async (params: GatewayChatParams): Promise<string
       method: 'POST',
       headers,
       body: JSON.stringify({
+        model: params.model || OPENCLAW_MODEL,
         messages,
         temperature: params.temperature ?? 0.2,
         max_tokens: params.maxTokens ?? 1000,
@@ -150,5 +185,7 @@ export const getModelCooldownSnapshot = (): Array<{ model: string; untilMs: numb
 export const __resetGatewayHealthStateForTests = (): void => {
   healthy = null;
   checkedAt = 0;
+  chatCapable = null;
+  chatCheckedAt = 0;
   modelCooldownUntilMs.clear();
 };

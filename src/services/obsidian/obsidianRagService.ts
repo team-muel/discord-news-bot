@@ -31,6 +31,23 @@ import {
 import { TtlCache } from '../../utils/ttlCache';
 import logger from '../../logger';
 import { doc } from './obsidianDocBuilder';
+import {
+  applyGuildScopeRanking,
+  buildFrontmatterContextSummary,
+  buildDocumentIdentitySet,
+  type GuildScopeMode,
+  normalizeMetadataReference,
+  normalizeResultPath,
+  readFrontmatterString,
+  readFrontmatterStringArray,
+  readFrontmatterTimestamp,
+  stripFrontmatterBlock,
+} from './obsidianMetadataUtils';
+import {
+  assessRetrievalMetadata,
+  rankDocumentsForRetrieval,
+  type RetrievedDocumentCandidate,
+} from './obsidianRetrievalScoring';
 import { buildObsidianKnowledgeReflectionBundle, type ObsidianKnowledgeReflectionBundle } from './knowledgeCompilerService';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
@@ -171,11 +188,6 @@ export interface RAGQueryResult {
   };
 }
 
-type RetrievedDocumentCandidate = {
-  filePath: string;
-  score: number;
-};
-
 export type ObsidianRetrievalBoundarySnapshot = {
   metadataOnly: {
     available: boolean;
@@ -190,8 +202,6 @@ export type ObsidianRetrievalBoundarySnapshot = {
     responsibilities: string[];
   };
 };
-
-type GuildScopeMode = 'off' | 'prefer' | 'strict';
 
 const DEFAULT_CONTEXT_MODE: 'full' | 'metadata_first' =
   parseStringEnv(process.env.OBSIDIAN_RAG_CONTEXT_MODE, 'metadata_first').toLowerCase() === 'full'
@@ -491,7 +501,7 @@ async function findRelatedDocuments(
     const rankedCandidates = [...scoredResults.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([filePath, score]) => ({ filePath, score }));
-    const paths = applyGuildScopeRanking(rankedCandidates, guildId, limit);
+    const paths = applyGuildScopeRanking(rankedCandidates, guildId, limit, DEFAULT_GUILD_SCOPE_MODE);
     
     logger.debug('[OBSIDIAN-RAG] Found %d documents (incl. 2-hop) for intent, returning %d', scoredResults.size, paths.length);
     return paths;
@@ -499,216 +509,6 @@ async function findRelatedDocuments(
     logger.warn('[OBSIDIAN-RAG] Document search failed: %s', getErrorMessage(error));
     return [];
   }
-}
-
-function normalizeResultPath(filePath: unknown): string {
-  return String(filePath || '').trim().replace(/\\/g, '/');
-}
-
-function normalizeMetadataReference(value: unknown): string {
-  return normalizeResultPath(value).replace(/\.md$/i, '').toLowerCase();
-}
-
-function stripFrontmatterBlock(content: string): string {
-  return String(content || '').replace(/^---\n[\s\S]*?\n---\n?/m, '').trim();
-}
-
-function readFrontmatterString(frontmatter: Record<string, any> | undefined, key: string): string {
-  return String(frontmatter?.[key] || '').trim();
-}
-
-function readFrontmatterStringArray(frontmatter: Record<string, any> | undefined, key: string): string[] {
-  const value = frontmatter?.[key];
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
-  }
-  const single = String(value || '').trim();
-  if (!single) {
-    return [];
-  }
-  if (single.includes(',')) {
-    return single.split(',').map((entry) => entry.trim()).filter(Boolean);
-  }
-  return [single];
-}
-
-function readFrontmatterTimestamp(frontmatter: Record<string, any> | undefined, key: string): number | null {
-  const rawValue = readFrontmatterString(frontmatter, key);
-  if (!rawValue) {
-    return null;
-  }
-  const parsed = Date.parse(rawValue);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function buildDocumentIdentitySet(filePath: string, frontmatter: Record<string, any> | undefined): Set<string> {
-  const identities = new Set<string>([normalizeMetadataReference(filePath)]);
-  const canonicalKey = readFrontmatterString(frontmatter, 'canonical_key');
-  if (canonicalKey) {
-    identities.add(normalizeMetadataReference(canonicalKey));
-  }
-  return identities;
-}
-
-function assessRetrievalMetadata(
-  documents: Map<string, { content: string; frontmatter?: Record<string, any> }>,
-): {
-  adjustments: Map<string, number>;
-  summary: {
-    activeDocs: number;
-    invalidDocs: number;
-    supersededDocs: number;
-    sourcedDocs: number;
-  };
-} {
-  const now = Date.now();
-  const adjustments = new Map<string, number>();
-  const summary = {
-    activeDocs: 0,
-    invalidDocs: 0,
-    supersededDocs: 0,
-    sourcedDocs: 0,
-  };
-  const identities = new Map<string, Set<string>>();
-  const supersededPaths = new Set<string>();
-
-  for (const [filePath, document] of documents.entries()) {
-    identities.set(filePath, buildDocumentIdentitySet(filePath, document.frontmatter));
-  }
-
-  for (const [filePath, document] of documents.entries()) {
-    const supersedesRefs = readFrontmatterStringArray(document.frontmatter, 'supersedes')
-      .map((entry) => normalizeMetadataReference(entry))
-      .filter(Boolean);
-    if (supersedesRefs.length === 0) {
-      continue;
-    }
-
-    for (const [candidatePath, candidateIdentities] of identities.entries()) {
-      if (candidatePath === filePath) {
-        continue;
-      }
-      if (supersedesRefs.some((entry) => candidateIdentities.has(entry))) {
-        supersededPaths.add(candidatePath);
-      }
-    }
-  }
-
-  for (const [filePath, document] of documents.entries()) {
-    const frontmatter = document.frontmatter;
-    const status = readFrontmatterString(frontmatter, 'status').toLowerCase();
-    const invalidAt = readFrontmatterTimestamp(frontmatter, 'invalid_at');
-    const validAt = readFrontmatterTimestamp(frontmatter, 'valid_at');
-    const sourceRefs = readFrontmatterStringArray(frontmatter, 'source_refs');
-    const supersedesRefs = readFrontmatterStringArray(frontmatter, 'supersedes');
-    let adjustment = 0;
-
-    if (status === 'active' || status === 'open' || status === 'answered') {
-      adjustment += 0.08;
-      summary.activeDocs += 1;
-    }
-
-    if (status === 'invalid' || status === 'superseded' || status === 'archived') {
-      adjustment -= 0.9;
-    }
-
-    if (invalidAt && invalidAt <= now) {
-      adjustment -= 1.1;
-      summary.invalidDocs += 1;
-    }
-
-    if (validAt && validAt > now) {
-      adjustment -= 0.35;
-    }
-
-    if (sourceRefs.length > 0) {
-      adjustment += Math.min(0.18, Math.log2(1 + sourceRefs.length) * 0.08);
-      summary.sourcedDocs += 1;
-    }
-
-    if (supersedesRefs.length > 0) {
-      adjustment += 0.12;
-    }
-
-    if (supersededPaths.has(filePath)) {
-      adjustment -= 0.8;
-      summary.supersededDocs += 1;
-    }
-
-    adjustments.set(filePath, adjustment);
-  }
-
-  return { adjustments, summary };
-}
-
-function rankDocumentsForRetrieval(params: {
-  documents: Map<string, { content: string; frontmatter?: Record<string, any> }>;
-  candidates: RetrievedDocumentCandidate[];
-  graphMetadata: Record<string, any>;
-  metadataAdjustments: Map<string, number>;
-  limit: number;
-}): Map<string, { content: string; frontmatter?: Record<string, any> }> {
-  const candidateScores = new Map(params.candidates.map((candidate) => [candidate.filePath, candidate.score]));
-  const rankedEntries = [...params.documents.entries()]
-    .map(([filePath, document]) => {
-      const graphMeta = params.graphMetadata[filePath];
-      const backlinkCount = Array.isArray(graphMeta?.backlinks) ? graphMeta.backlinks.length : 0;
-      const linkCount = Array.isArray(graphMeta?.links) ? graphMeta.links.length : 0;
-      const connectivityBoost = Math.min(0.25, Math.log2(1 + backlinkCount + linkCount) * 0.04);
-      const orphanPenalty = backlinkCount === 0 && linkCount === 0 ? -0.12 : 0;
-      const score = (candidateScores.get(filePath) ?? 0) + connectivityBoost + orphanPenalty + (params.metadataAdjustments.get(filePath) ?? 0);
-      return { filePath, document, score };
-    })
-    .sort((left, right) => right.score - left.score)
-    .slice(0, params.limit);
-
-  return new Map(rankedEntries.map((entry) => [entry.filePath, entry.document]));
-}
-
-function sanitizeGuildId(guildId: unknown): string {
-  const value = String(guildId || '').trim();
-  if (!/^\d{6,30}$/.test(value)) {
-    return '';
-  }
-  return value;
-}
-
-function applyGuildScopeRanking(candidates: RetrievedDocumentCandidate[], guildId: string | undefined, limit: number): RetrievedDocumentCandidate[] {
-  const safeGuildId = sanitizeGuildId(guildId);
-  const mode = DEFAULT_GUILD_SCOPE_MODE;
-  if (!safeGuildId || mode === 'off') {
-    return candidates.slice(0, limit);
-  }
-
-  const guildPrefix = `guilds/${safeGuildId}/`;
-  const guildPaths = candidates.filter((candidate) => candidate.filePath.startsWith(guildPrefix));
-  if (mode === 'strict') {
-    return guildPaths.slice(0, limit);
-  }
-
-  const globalPaths = candidates.filter((candidate) => !candidate.filePath.startsWith(guildPrefix));
-  return [...guildPaths, ...globalPaths].slice(0, limit);
-}
-
-function buildFrontmatterContextSummary(frontmatter?: Record<string, any>): string {
-  if (!frontmatter) {
-    return '';
-  }
-
-  const parts: string[] = [];
-  const status = readFrontmatterString(frontmatter, 'status');
-  const validAt = readFrontmatterString(frontmatter, 'valid_at');
-  const invalidAt = readFrontmatterString(frontmatter, 'invalid_at');
-  const sourceRefs = readFrontmatterStringArray(frontmatter, 'source_refs');
-  const supersedesRefs = readFrontmatterStringArray(frontmatter, 'supersedes');
-
-  if (status) parts.push(`status=${status}`);
-  if (validAt) parts.push(`valid_at=${validAt.slice(0, 19)}`);
-  if (invalidAt) parts.push(`invalid_at=${invalidAt.slice(0, 19)}`);
-  if (sourceRefs.length > 0) parts.push(`source_refs=${sourceRefs.length}`);
-  if (supersedesRefs.length > 0) parts.push(`supersedes=${supersedesRefs.length}`);
-
-  return parts.join(' | ');
 }
 
 /**

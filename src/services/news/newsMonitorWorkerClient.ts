@@ -1,6 +1,6 @@
 import { parseBooleanEnv, parseMinIntEnv, parseStringEnv, parseUrlEnv } from '../../utils/env';
 import { callMcpTool, parseMcpTextBlocks } from '../mcpWorkerClient';
-import { delegateNewsMonitorCandidates, shouldDelegate } from '../automation/n8nDelegationService';
+import { delegateNewsMonitorCandidates, shouldDelegate, shouldSkipInlineFallback } from '../automation/n8nDelegationService';
 import { fetchWithTimeout } from '../../utils/network';
 
 export type WorkerNewsItem = {
@@ -331,10 +331,18 @@ export const getNewsMonitorCandidateSourceStatus = (): NewsMonitorCandidateSourc
 };
 
 export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise<WorkerNewsItem[] | null> => {
+  const skipInlineFallback = shouldSkipInlineFallback('news-monitor-candidates');
+  const tryInlineFallbackIfAllowed = async (): Promise<WorkerNewsItem[] | null> => {
+    if (skipInlineFallback) {
+      return null;
+    }
+    return tryLocalFallback(limit);
+  };
+
   // n8n delegation: try fetching news candidates via n8n first
   if (shouldDelegate('news-monitor-candidates')) {
     const n8n = await delegateNewsMonitorCandidates(limit);
-    if (n8n.delegated && n8n.ok && n8n.data?.items?.length) {
+    if (n8n.delegated && n8n.ok && n8n.data?.items) {
       return mapWorkerItems(n8n.data.items);
     }
     // Fall through to MCP worker
@@ -343,11 +351,14 @@ export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise
   const workerUrl = readWorkerUrl();
 
   if (!workerUrl) {
-    const fallback = await tryLocalFallback(limit);
+    const fallback = await tryInlineFallbackIfAllowed();
     if (fallback) {
       return fallback;
     }
     if (WORKER_STRICT) {
+      if (skipInlineFallback) {
+        throw new Error('NEWS_MONITOR_N8N_DELEGATION_REQUIRED');
+      }
       throw new Error('NEWS_MONITOR_WORKER_NOT_CONFIGURED');
     }
     return null;
@@ -362,7 +373,7 @@ export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise
       timeoutMs: WORKER_TIMEOUT_MS,
     });
   } catch {
-    const fallback = await tryLocalFallback(limit);
+    const fallback = await tryInlineFallbackIfAllowed();
     if (fallback) {
       return fallback;
     }
@@ -373,7 +384,7 @@ export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise
   }
 
   if (payload?.isError) {
-    const fallback = await tryLocalFallback(limit);
+    const fallback = await tryInlineFallbackIfAllowed();
     if (fallback) {
       return fallback;
     }
@@ -383,7 +394,7 @@ export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise
 
   const text = parseMcpTextBlocks(payload)[0] || '';
   if (!text) {
-    const fallback = await tryLocalFallback(limit);
+    const fallback = await tryInlineFallbackIfAllowed();
     if (fallback) {
       return fallback;
     }
@@ -401,7 +412,7 @@ export const fetchNewsMonitorCandidatesByWorker = async (limit: number): Promise
     const rows = Array.isArray(parsed.items) ? parsed.items : [];
     return mapWorkerItems(rows);
   } catch {
-    const fallback = await tryLocalFallback(limit);
+    const fallback = await tryInlineFallbackIfAllowed();
     if (fallback) {
       return fallback;
     }

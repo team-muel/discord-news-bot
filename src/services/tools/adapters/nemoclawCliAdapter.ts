@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ExternalToolAdapter, ExternalAdapterResult } from '../externalAdapterTypes';
 import logger from '../../../logger';
-import { generateText, isAnyLlmConfigured } from '../../llmClient';
+import { isAnyLlmConfigured } from '../../llmClient';
 import { sendGatewayChat } from '../../openclaw/gatewayHealth';
 import {
   NEMOCLAW_ENABLED as ENABLED,
@@ -13,6 +13,7 @@ import {
   WSL_DISTRO,
 } from '../../../config';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { runAdapterLlmFallback } from './llmFallback';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 15_000;
@@ -32,7 +33,12 @@ const sanitizeArg = (value: string, maxLen = 300): string =>
 const runCli = async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
   if (IS_WINDOWS) {
     const escaped = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-    const shellCmd = `export HOME=/root; export NVM_DIR=/root/.nvm; source /root/.nvm/nvm.sh 2>/dev/null; nemoclaw ${escaped}`;
+    const shellCmd = [
+      'export NVM_DIR="$HOME/.nvm"',
+      '[ -f "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1',
+      'export PATH="$HOME/.local/bin:$PATH"',
+      `nemoclaw ${escaped}`,
+    ].join('; ');
     return execFileAsync(
       'wsl',
       ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
@@ -46,14 +52,19 @@ const runSandboxCmd = async (name: string, cmd: string[]): Promise<{ stdout: str
   const safeName = sanitizeArg(name, 80);
   if (IS_WINDOWS) {
     const escaped = cmd.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-    const shellCmd = `export HOME=/root; source /root/.nvm/nvm.sh 2>/dev/null; ssh openshell-${safeName} ${escaped}`;
+    const shellCmd = [
+      'export NVM_DIR="$HOME/.nvm"',
+      '[ -f "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1',
+      'export PATH="$HOME/.local/bin:$PATH"',
+      `openshell sandbox exec -n '${safeName.replace(/'/g, "'\\''")}' -- ${escaped}`,
+    ].join('; ');
     return execFileAsync(
       'wsl',
       ['-d', WSL_DISTRO, '-e', 'bash', '-c', shellCmd],
       { timeout: REVIEW_TIMEOUT_MS, windowsHide: true },
     );
   }
-  return execFileAsync('ssh', [`openshell-${safeName}`, ...cmd], { timeout: REVIEW_TIMEOUT_MS, windowsHide: true });
+  return execFileAsync('openshell', ['sandbox', 'exec', '-n', safeName, '--', ...cmd], { timeout: REVIEW_TIMEOUT_MS, windowsHide: true });
 };
 
 export const nemoclawAdapter: ExternalToolAdapter = {
@@ -150,22 +161,19 @@ export const nemoclawAdapter: ExternalToolAdapter = {
           }
 
           // Fallback 3: use llmClient pipeline (routing, retry, telemetry all handled centrally)
-          if (isAnyLlmConfigured()) {
-            try {
-              const content = await generateText({
-                system: 'You are a thorough code reviewer. Identify bugs, security issues, and test gaps.',
-                user: prompt.slice(0, 6000),
-                temperature: 0.2,
-                maxTokens: 1500,
-                actionName: 'code.review',
-              });
-              if (content.length > 10) {
-                const mode = cliAvailable === false ? ' (lite mode)' : '';
-                return makeResult(true, `Code review via llmClient${mode}`, content.split('\n').slice(0, 40));
-              }
-            } catch (llmErr) {
-              logger.debug('[NEMOCLAW] llmClient fallback failed: %s', getErrorMessage(llmErr));
-            }
+          const fallbackLines = await runAdapterLlmFallback({
+            actionName: 'code.review',
+            system: 'You are a thorough code reviewer. Identify bugs, security issues, and test gaps.',
+            user: prompt.slice(0, 6000),
+            temperature: 0.2,
+            maxTokens: 1500,
+            lineLimit: 40,
+            minContentLength: 10,
+            debugLabel: '[NEMOCLAW]',
+          });
+          if (fallbackLines) {
+            const mode = cliAvailable === false ? ' (lite mode)' : '';
+            return makeResult(true, `Code review via llmClient${mode}`, fallbackLines);
           }
 
           return makeResult(false, `Code review failed: no inference endpoint available`, [], 'INFERENCE_UNAVAILABLE');

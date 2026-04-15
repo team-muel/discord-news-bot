@@ -1,0 +1,79 @@
+# Baseline fallback profile when adaptive optimize generation is disabled.
+[optimize]
+benchmark = "supergpqa"
+max_trials = 1
+max_samples = 1
+optimizer_model = "hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M"
+optimizer_engine = "ollama"
+judge_model = "hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M"
+judge_engine = "ollama"
+output_dir = "results/optimize/local-first"
+early_stop_patience = 1
+
+[[optimize.objectives]]
+metric = "accuracy"
+direction = "maximize"
+weight = 1.0
+
+[[optimize.objectives]]
+metric = "mean_latency_seconds"
+direction = "minimize"
+weight = 0.35
+
+[[optimize.objectives]]
+metric = "total_cost_usd"
+direction = "minimize"
+weight = 0.15
+
+[[optimize.search]]
+name = "intelligence.temperature"
+type = "continuous"
+low = 0.0
+high = 0.35
+description = "Keep local Ollama reasoning stable while leaving room for small quality gains."
+
+[[optimize.search]]
+name = "intelligence.max_tokens"
+type = "integer"
+low = 768
+high = 2048
+description = "Search a local quality-latency envelope that still fits unattended weekly runs."
+
+[[optimize.search]]
+name = "intelligence.top_p"
+type = "continuous"
+low = 0.7
+high = 1.0
+description = "Search a stable local sampling envelope for grounded answers."
+
+[[optimize.search]]
+name = "agent.max_turns"
+type = "integer"
+low = 2
+high = 10
+description = "Allow enough reasoning and tool turns without stalling unattended weekly runs."
+
+[[optimize.search]]
+name = "tools.tool_set"
+type = "subset"
+values = ["think", "file_read", "web_search", "http_request", "code_interpreter"]
+description = "Delegate weekly tool selection to OpenJarvis instead of pinning a manual tool mix."
+
+[[optimize.search]]
+name = "intelligence.system_prompt"
+type = "text"
+description = "Search a system prompt that preserves graph-first retrieval and grounded answers."
+
+[optimize.fixed]
+"engine.backend" = "ollama"
+"intelligence.model" = "hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M"
+"agent.type" = "orchestrator"
+
+[optimize.constraints]
+rules = [
+  "Use local Ollama for optimizer, judge, and trial execution.",
+  "Preserve graph-first retrieval and grounded answers in the unattended weekly loop.",
+  "Prefer candidates that can use think and file_read before final answers when evidence is thin.",
+  "Do not require cloud-only judge backends in the local-first weekly loop.",
+  "Keep the resulting candidate suitable for unattended weekly validation runs.",
+]

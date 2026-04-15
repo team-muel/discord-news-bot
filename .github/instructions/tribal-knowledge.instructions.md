@@ -25,6 +25,10 @@ applyTo: "src/**"
 - `litellm.config.yaml`: Korean (non-ASCII) comments cause `UnicodeDecodeError: 'cp949'` on Windows Python. Use ASCII/English only.
 - OpenJarvis `/v1/chat/completions` requires `model` field (returns 422 if missing). Use actual Ollama model name, NOT `'default'`.
 
+## OpenJarvis Adapter Surface
+
+- Managed-agent control should reuse upstream routes directly: `/v1/managed-agents/{agent_id}`, `/pause`, `/resume`, `/run`, `/recover`, `/state`, `/messages`, `/tasks`, `/traces`, `/traces/{trace_id}`, plus `/v1/agents/health` and `/v1/recommended-model`. Do not invent a parallel control abstraction when the upstream serve router already exposes the canonical surface.
+
 ## Windows / Cross-Platform
 
 - `winget` may report a CLI package as installed while the command is unavailable in PATH. Verify with `where`.

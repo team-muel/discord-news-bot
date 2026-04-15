@@ -3,6 +3,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import {
   beginWorkflowStep,
   createWorkflowSession,
@@ -16,6 +17,7 @@ const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
 const TMP_DIR = path.join(ROOT, 'tmp', 'autonomy');
 const SUMMARY_PATH = path.join(TMP_DIR, 'openjarvis-unattended-last-run.json');
+const CONTINUITY_PACKET_SYNC_SCRIPT = path.join(ROOT, 'scripts', 'sync-openjarvis-continuity-packets.ts');
 const DRY_RUN_MISSING_SOURCE_ENV_DEFAULTS = Object.freeze({
   LLM_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_TABLE: 'true',
   HYBRID_WEEKLY_REPORT_ALLOW_MISSING_SOURCE_REPORTS: 'true',
@@ -25,6 +27,16 @@ const DRY_RUN_MISSING_SOURCE_ENV_DEFAULTS = Object.freeze({
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const VALID_ROUTE_MODES = new Set(['auto', 'delivery', 'operations']);
+const GCP_WORKER_HEALTH_STEP = Object.freeze({
+  id: 'gcp-worker-cost-health',
+  script: 'ops:gcp:report:weekly',
+  scriptDry: 'ops:gcp:report:weekly',
+  classification: 'discover',
+  agentRole: 'openjarvis',
+  handoffFrom: 'openjarvis',
+  handoffTo: 'openjarvis',
+  reason: 'capture canonical GCP worker health before deciding whether the unattended loop should keep investing in the remote always-on lane',
+});
 
 const normalizeRouteMode = (value) => {
   const mode = String(value || '').trim().toLowerCase();
@@ -52,6 +64,43 @@ const inferRouteMode = (params) => {
   ];
   const source = `${scope} ${objective}`;
   return operationsHints.some((token) => source.includes(token)) ? 'operations' : 'delivery';
+};
+
+const cloneWorkflowStep = (step) => ({
+  id: String(step.id || '').trim(),
+  script: String(step.script || '').trim(),
+  scriptDry: String(step.scriptDry || step.script || '').trim(),
+  classification: String(step.classification || '').trim(),
+  agentRole: String(step.agentRole || '').trim(),
+  handoffFrom: String(step.handoffFrom || '').trim(),
+  handoffTo: String(step.handoffTo || '').trim(),
+  reason: String(step.reason || '').trim(),
+});
+
+export const buildWorkflowStepsForRun = (policy, params = {}) => {
+  const baseSteps = Array.isArray(policy?.workflowSteps)
+    ? policy.workflowSteps.map((step) => cloneWorkflowStep(step))
+    : [];
+  const objective = String(params.objective || '').trim().toLowerCase();
+  const routeMode = String(params.routeMode || '').trim().toLowerCase();
+  const shouldIncludeGcpHealth = routeMode === 'operations'
+    || Boolean(params.gcpCapacityRecoveryRequested)
+    || objective.includes('gcp')
+    || objective.includes('render');
+
+  if (!shouldIncludeGcpHealth || baseSteps.some((step) => step.id === GCP_WORKER_HEALTH_STEP.id)) {
+    return baseSteps;
+  }
+
+  const gcpStep = cloneWorkflowStep(GCP_WORKER_HEALTH_STEP);
+  const memorySyncIndex = baseSteps.findIndex((step) => step.id === 'openjarvis-memory-sync');
+  if (memorySyncIndex >= 0) {
+    baseSteps.splice(memorySyncIndex, 0, gcpStep);
+  } else {
+    baseSteps.unshift(gcpStep);
+  }
+
+  return baseSteps;
 };
 
 const npmCmd = 'npm';
@@ -88,8 +137,108 @@ const runNpmScript = (scriptName, args = []) => {
   }
 };
 
-const runNpmScriptAsWorkflowStep = (sessionPath, params) => {
-  const stepOrder = beginWorkflowStep(sessionPath, {
+const findBalancedJsonEnd = (text, startIndex) => {
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escapeNext) {
+        escapeNext = false;
+      } else if (char === '\\') {
+        escapeNext = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1;
+};
+
+const parseJsonCommandOutput = (raw, fallback = null) => {
+  const text = String(raw || '').trim();
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Fall through to mixed-output parsing.
+  }
+
+  let lastParsed = fallback;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char !== '{' && char !== '[') {
+      continue;
+    }
+
+    const endIndex = findBalancedJsonEnd(text, index);
+    if (endIndex < 0) {
+      continue;
+    }
+
+    const candidate = text.slice(index, endIndex + 1);
+    try {
+      lastParsed = JSON.parse(candidate);
+      index = endIndex;
+    } catch {
+      // Keep scanning for the final JSON payload.
+    }
+  }
+
+  return lastParsed;
+};
+
+const syncContinuityPackets = (sessionPath, reason) => {
+  try {
+    const stdout = execFileSync(process.execPath, ['--import', 'tsx', CONTINUITY_PACKET_SYNC_SCRIPT, `--sessionPath=${path.relative(ROOT, sessionPath)}`, `--reason=${reason}`], {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString('utf8').trim();
+    return parseJsonCommandOutput(stdout, { ok: true });
+  } catch (error) {
+    const stdout = error && typeof error === 'object' && 'stdout' in error
+      ? String(error.stdout || '').trim()
+      : '';
+    const stderr = error && typeof error === 'object' && 'stderr' in error
+      ? String(error.stderr || '').trim()
+      : '';
+    const message = stderr || stdout || (error instanceof Error ? error.message : String(error));
+    console.warn('[OPENJARVIS][PACKETS] sync failed:', message);
+    return {
+      ok: false,
+      error: message,
+    };
+  }
+};
+
+const runNpmScriptAsWorkflowStep = async (sessionPath, params) => {
+  const stepOrder = await beginWorkflowStep(sessionPath, {
     stepName: params.stepName,
     agentRole: params.agentRole || 'openjarvis',
     reason: params.reason,
@@ -111,7 +260,7 @@ const runNpmScriptAsWorkflowStep = (sessionPath, params) => {
     classification: params.classification || null,
     route_mode: params.routeMode || null,
   };
-  finishWorkflowStep(sessionPath, {
+  await finishWorkflowStep(sessionPath, {
     stepOrder,
     status: result.status === 'pass' ? 'passed' : 'failed',
     reason: result.status === 'pass' ? `${params.stepName} completed` : `${params.stepName} failed`,
@@ -286,8 +435,11 @@ async function main() {
     }
   }
   const objective = String(parseArg('objective', process.env.OPENJARVIS_OBJECTIVE || 'weekly unattended autonomy cycle')).trim();
-  const scope = String(process.env.OPENJARVIS_SCOPE || 'weekly:auto').trim() || 'weekly:auto';
-  const stage = String(process.env.OPENJARVIS_STAGE || 'A').trim() || 'A';
+  const scope = String(parseArg('scope', process.env.OPENJARVIS_SCOPE || 'weekly:auto')).trim() || 'weekly:auto';
+  const stage = String(parseArg('stage', process.env.OPENJARVIS_STAGE || 'A')).trim() || 'A';
+  const runtimeLane = String(parseArg('runtimeLane', process.env.OPENJARVIS_RUNTIME_LANE || 'operator-personal')).trim() || 'operator-personal';
+  const autoRestartOnRelease = parseBool(parseArg('autoRestartOnRelease', process.env.OPENJARVIS_AUTO_RESTART_ON_RELEASE || 'false'), false);
+  const gcpCapacityRecoveryRequested = parseBool(parseArg('gcpCapacityRecovery', process.env.HERMES_AUTOPILOT_GCP_CAPACITY_RECOVERY || 'false'), false);
   const routeMode = inferRouteMode({
     requestedMode: parseArg('routeMode', process.env.OPENJARVIS_ROUTE_MODE || 'auto'),
     scope,
@@ -296,20 +448,27 @@ async function main() {
   const requireOpencodeWorker = parseBool(parseArg('requireOpencodeWorker', process.env.OPENJARVIS_REQUIRE_OPENCODE_WORKER || 'true'), true);
   const policyLoaded = loadOpenjarvisRoutingPolicy(process.env.OPENJARVIS_ROUTING_POLICY_PATH);
   const policy = policyLoaded.policy;
-  const sessionState = createWorkflowSession({
+  const workflowSteps = buildWorkflowStepsForRun(policy, {
+    routeMode,
+    objective,
+    gcpCapacityRecoveryRequested,
+  });
+  const sessionState = await createWorkflowSession({
     dryRun,
     autoDeploy,
     strict,
     stage,
     scope,
+    runtimeLane,
     routeMode,
     objective,
+    autoRestartOnRelease,
   });
   const sessionPath = sessionState.sessionPath;
 
   const implementWorkerUrl = String(process.env.MCP_IMPLEMENT_WORKER_URL || process.env.MCP_OPENCODE_WORKER_URL || '').trim();
   if (requireOpencodeWorker && !implementWorkerUrl) {
-    transitionWorkflow(sessionPath, {
+    await transitionWorkflow(sessionPath, {
       toState: 'failed',
       eventType: 'state.failed',
       handoffFrom: 'openjarvis',
@@ -320,7 +479,7 @@ async function main() {
     throw new Error('MCP_IMPLEMENT_WORKER_URL is required by OPENJARVIS_REQUIRE_OPENCODE_WORKER (legacy alias MCP_OPENCODE_WORKER_URL is also accepted)');
   }
 
-  transitionWorkflow(sessionPath, {
+  await transitionWorkflow(sessionPath, {
     toState: 'classified',
     eventType: 'state.classified',
     handoffFrom: 'openjarvis',
@@ -335,7 +494,7 @@ async function main() {
     },
   });
 
-  transitionWorkflow(sessionPath, {
+  await transitionWorkflow(sessionPath, {
     toState: 'routed',
     eventType: 'state.routed',
     handoffFrom: 'openjarvis',
@@ -346,10 +505,11 @@ async function main() {
       autoDeploy,
       strict,
       route_mode: routeMode,
+      auto_restart_on_release: autoRestartOnRelease,
       objective,
       routing_policy_loaded: policyLoaded.loaded,
       routing_policy_path: path.relative(ROOT, policyLoaded.policyPath),
-      workflow_step_count: policy.workflowSteps.length,
+      workflow_step_count: workflowSteps.length,
     },
   });
 
@@ -358,6 +518,10 @@ async function main() {
     workflow: {
       session_id: sessionState.sessionId,
       session_path: path.relative(ROOT, sessionPath),
+      runtime_lane: runtimeLane,
+      workstream_source: sessionState.source,
+      remote_persisted: Boolean(sessionState.remote?.ok),
+      remote_reason: sessionState.remote?.reason || null,
       routing_policy_path: path.relative(ROOT, policyLoaded.policyPath),
       routing_policy_loaded: policyLoaded.loaded,
     },
@@ -366,11 +530,17 @@ async function main() {
       auto_deploy: autoDeploy,
       strict,
       route_mode: routeMode,
+      auto_restart_on_release: autoRestartOnRelease,
+      gcp_capacity_recovery_requested: gcpCapacityRecoveryRequested,
     },
     steps: [],
     latest_gate_run: null,
     deploy: null,
     final_status: 'pass',
+    continuity_packets: {
+      startup_sync: null,
+      final_sync: null,
+    },
     role_kpi: {
       by_agent_role: {},
       overall: {
@@ -381,7 +551,7 @@ async function main() {
     },
   };
 
-  transitionWorkflow(sessionPath, {
+  await transitionWorkflow(sessionPath, {
     toState: 'executing',
     eventType: 'state.executing',
     handoffFrom: 'openjarvis',
@@ -390,7 +560,9 @@ async function main() {
     evidenceId: path.relative(ROOT, policyLoaded.policyPath),
   });
 
-  for (const step of policy.workflowSteps) {
+  result.continuity_packets.startup_sync = syncContinuityPackets(sessionPath, 'session-executing');
+
+  for (const step of workflowSteps) {
     const scriptName = dryRun
       ? String(step.scriptDry || step.script || '').trim()
       : String(step.script || '').trim();
@@ -399,7 +571,7 @@ async function main() {
       continue;
     }
 
-    result.steps.push(runNpmScriptAsWorkflowStep(sessionPath, {
+    result.steps.push(await runNpmScriptAsWorkflowStep(sessionPath, {
       stepName: step.id,
       scriptName,
       agentRole: step.agentRole,
@@ -411,7 +583,7 @@ async function main() {
     }));
   }
 
-  transitionWorkflow(sessionPath, {
+  await transitionWorkflow(sessionPath, {
     toState: 'verifying',
     eventType: 'state.verifying',
     handoffFrom: 'nemoclaw',
@@ -424,7 +596,7 @@ async function main() {
   const failedStep = result.steps.find((step) => step.status !== 'pass');
   if (failedStep) {
     result.final_status = 'fail';
-    transitionWorkflow(sessionPath, {
+    await transitionWorkflow(sessionPath, {
       toState: 'recovering',
       eventType: 'state.recovering',
       handoffFrom: 'opendev',
@@ -438,7 +610,7 @@ async function main() {
   }
 
   if (!failedStep) {
-    transitionWorkflow(sessionPath, {
+    await transitionWorkflow(sessionPath, {
       toState: 'approving',
       eventType: 'state.approving',
       handoffFrom: 'openjarvis',
@@ -473,7 +645,7 @@ async function main() {
   }
 
   if (result.final_status === 'pass') {
-    transitionWorkflow(sessionPath, {
+    await transitionWorkflow(sessionPath, {
       toState: 'released',
       eventType: 'state.released',
       handoffFrom: 'opendev',
@@ -484,7 +656,7 @@ async function main() {
       },
     });
   } else {
-    transitionWorkflow(sessionPath, {
+    await transitionWorkflow(sessionPath, {
       toState: 'failed',
       eventType: 'state.failed',
       handoffFrom: 'openjarvis',
@@ -552,6 +724,9 @@ async function main() {
   fs.mkdirSync(TMP_DIR, { recursive: true });
   fs.writeFileSync(SUMMARY_PATH, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
 
+  result.continuity_packets.final_sync = syncContinuityPackets(sessionPath, result.final_status === 'pass' ? 'session-finished-pass' : 'session-finished-fail');
+  fs.writeFileSync(SUMMARY_PATH, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+
   console.log('[OPENJARVIS][UNATTENDED] summary path:', path.relative(ROOT, SUMMARY_PATH));
   console.log('[OPENJARVIS][UNATTENDED] final status:', result.final_status);
 
@@ -560,7 +735,12 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[OPENJARVIS][UNATTENDED] FAIL', error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+const directExecutionPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+const modulePath = fileURLToPath(import.meta.url);
+
+if (directExecutionPath === modulePath) {
+  main().catch((error) => {
+    console.error('[OPENJARVIS][UNATTENDED] FAIL', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

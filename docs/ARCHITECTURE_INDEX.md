@@ -9,12 +9,97 @@
 This document is the external analysis entrypoint for the backend repository.
 It provides a stable map of runtime flow, domain boundaries, and data boundaries.
 
+Shared team entry rule:
+
+- `docs/TEAM_SHARED_OBSIDIAN_START_HERE.md` is the first shared knowledge entrypoint when onboarding or when local tool ownership is unclear.
+- Team collaboration must remain usable without local OpenJarvis or Hermes Agent installs.
+- References to OpenJarvis or Hermes in this repository often describe optional local continuity or acceleration lanes unless a runtime surface is explicitly marked as shared and deployed.
+- Shared Obsidian is the first human and agent collaboration surface; local personal stacks are overlays, not the team default.
+
 Control-plane ownership rule:
 
 - shared Obsidian is the semantic cockpit: human-visible operations control, durable context, wiki, decision history, and graph-first navigation
 - Supabase is the operational substrate: sessions, events, policy enforcement, cron, vector and hybrid retrieval, extension ops, structured analytics, and runtime diagnostics
 - the design goal is not "Obsidian instead of Supabase" but "Obsidian explains and controls; Supabase executes and measures"
 - future Supabase capability growth should happen by expanding the operational substrate, not by pushing semantic ownership out of Obsidian
+- ACP, VS Code chat launch, continuity packets, and other transport surfaces do not become state owners by themselves; mutable workflow truth stays in Supabase, while durable semantic packet mirrors and distillates live in Obsidian.
+
+## OpenJarvis-Centered Local-First Boundary
+
+- OpenJarvis is the control surface for orchestration, retrieval coordination, telemetry, evaluation, and learning-loop policy.
+- Obsidian remains the semantic owner for durable notes, decisions, operator context, and graph-first knowledge navigation.
+- Supabase remains the operational substrate for structured runtime state, reports, analytics, gates, logs, and automation evidence.
+- OpenClaw is optional session ingress. It can help with conversational or channel-facing flows, but it is not the canonical owner of the control loop.
+- `implement.execute` remains the hands-layer execution contract for code changes, tests, and diagnostics.
+- The local workstation executor is the bounded machine-actuation surface for explicit local command execution, browser and desktop control, window input, screenshot capture, and workspace-scoped file operations on the operator machine.
+- OpenJarvis memory should be treated as an ingestion and retrieval projection over authoritative sources, not as the primary owner of Obsidian or Supabase content.
+
+## OpenJarvis-Centered Transition Order
+
+1. Reconfirm runtime truth before changing ownership assumptions. Treat `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, this file, and `config/runtime/operating-baseline.json` as the gate for runtime claims.
+2. Stabilize responsibility boundaries first. Keep Obsidian as semantic owner, Supabase as operational substrate, OpenJarvis as control surface, OpenClaw as optional ingress, and `implement.execute` as the hands layer.
+3. Add one authoritative ingestion path into OpenJarvis memory. Feed selected Obsidian and Supabase artifacts into OpenJarvis as a projection instead of duplicating ownership.
+4. Tighten retrieval and provenance. Distinguish true OpenJarvis serve or CLI results from generic LLM fallback success so operator diagnostics remain honest.
+5. Converge the learning loop last. Align bench, optimize, trace, and weekly reporting flags so one active path owns self-improvement behavior instead of multiple partial paths.
+
+## Local Quality Acceleration Path
+
+- The local-first quality loop is allowed to use shared Obsidian and Supabase as authoritative inputs, but only through projection into OpenJarvis memory.
+- The canonical path is: shared Obsidian plus weekly Supabase reports -> `openjarvis:memory:sync` -> local OpenJarvis memory index -> local Ollama-backed `jarvis optimize run` -> weekly gate artifacts.
+- Local optimize runs should be provider-aware and explicit. In this repository that means using a tracked optimize config with local Ollama for the optimizer, judge, and trial backend instead of silently falling back to cloud-only judge defaults.
+- This acceleration path improves local evaluation and tuning without changing the always-on ownership contract. Obsidian remains semantic owner, Supabase remains operational owner, and OpenJarvis remains the control surface over those sources.
+- Operating baseline can acknowledge this loop as a local acceleration check, but it must not be mistaken for always-on production readiness.
+
+## Obsidian Digital Twin Operating Slice
+
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md` defines the write-side boundary for arbitrary document ingestion and durable knowledge formation.
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md` defines the minimum note families, frontmatter, and upsert rules needed to keep the vault machine-usable.
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md` provides the concrete note skeletons that operationalize the schema.
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md` defines the first safe source-to-canonical ingest loop.
+- `docs/planning/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md` defines the smallest safe hands-layer rollout for Hermes before wider autonomy or OpenJarvis projection is expanded.
+- `docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md` defines the ongoing cross-session contract once Hermes is already live locally and GPT reasoning remains bounded in time.
+- `docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md` defines the target state where GPT and Hermes share a structured hot-state plane, n8n is orchestration glue, and Obsidian remains the semantic owner instead of the hot-path bus.
+
+## Local GPT-Hermes Continuity Overlay
+
+- This overlay is for local knowledge-work operation, not for replacing repository runtime truth.
+- GPT-5.4 is the primary high-reasoning brain during bounded sessions.
+- Hermes plus Ollama is the persistent local continuity and execution layer between those sessions.
+- Obsidian remains the semantic owner that both layers write toward.
+- The concrete handoff packet, progress snapshot, and recall boundary live in `docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md`.
+- The future target where Hermes becomes a first-class second assistant over a structured Supabase or n8n hot-state plane lives in `docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`.
+
+## API-First And Agent-Fallback Hybrid Slice
+
+- Default automation stance: start from deterministic API or DB handling, not from agent reasoning.
+- Canonical router surface: n8n or another explicit workflow router owns webhook, schedule, wait, retry, and IF or Switch branching.
+- Canonical fallback surface: shared MCP and Hermes only activate after the API path misses, returns low confidence, or needs non-deterministic reasoning.
+- Canonical hot-state plane: Supabase workflow sessions and workflow events keep the route outcome, recall boundary, artifact refs, and runtime lane.
+- Canonical semantic owner: Obsidian receives durable distillates after execution settles; it does not need to carry every wake-up or retry heartbeat.
+
+Provider-wrapping rule:
+
+- local or repo-owned wrappers should expose stable provider capabilities as `ext.<adapterId>.<capability>`
+- shared or remote wrappers should expose shared capabilities as `upstream.<namespace>.<tool>`
+- provider-native auth, versioning, and monitoring stay in the underlying API or CLI layer rather than leaking into prompt logic
+- bounded local computer-use on the operator machine should prefer `ext.workstation.*` over ad hoc shell glue so command, browser, input, screenshot, and workspace file actions stay observable
+
+Operator diagnostic surface:
+
+- `automation.capability.catalog` summarizes which API-first, MCP wrapping, Hermes fallback, and remote execution surfaces are currently wired
+- `automation.route.preview` computes the recommended path for a candidate workflow before implementation or n8n graph changes
+
+Current concrete handoff example:
+
+- the reverse-engineered YouTube community post workflow is already a live example of the new contract
+- deterministic first path: n8n or local worker scrapes the community page and returns structured JSON even without an official API
+- explicit fallback: when the page shape drifts, Hermes or shared MCP is used for diagnosis and repair rather than silently mixing that work back into the cheap deterministic path
+
+Observability stance:
+
+- OpenJarvis covers telemetry, eval, bench, optimize, memory search, and scheduler visibility well enough to act as an observability adjunct
+- it is not yet the sole observer for end-to-end hybrid automation
+- Supabase hot-state remains the canonical route-event ledger, n8n remains the workflow-router execution log, and Obsidian remains the durable semantic audit surface
 
 Document Role:
 
@@ -24,6 +109,7 @@ Document Role:
 
 Primary operations entrypoint:
 
+- `docs/TEAM_SHARED_OBSIDIAN_START_HERE.md` (team-shared onboarding and Obsidian-first collaboration entrypoint)
 - `docs/RUNBOOK_MUEL_PLATFORM.md` (unified DevOps/SRE runbook)
 - `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md` (social mapping + autonomous ops canonical roadmap)
 - `docs/planning/EXECUTION_BOARD.md` (milestone-bound now/next/later execution board)
@@ -38,9 +124,16 @@ Primary operations entrypoint:
 - `docs/planning/mcp/MCP_ROLLOUT_1W.md` (MCP rollout plan)
 - `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md` (core-worker split)
 - `docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md` (vault-first operating system target state)
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md` (write-side constitution for the digital twin vault)
 - `docs/planning/OBSIDIAN_OBJECT_MODEL.md` (canonical vault object families)
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md` (minimum note metadata and upsert contract for durable vault writes)
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md` (concrete note skeletons for source, digest, canonical, workspace, and decision notes)
 - `docs/planning/OBSIDIAN_TRANSITION_PLAN.md` (migration from current mixed control plane)
+- `docs/planning/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md` (repeatable source-to-canonical ingest loop for arbitrary material)
 - `docs/planning/MANAGED_AGENTS_FOUR_LAYER_MODEL.md` (brain, hands, session, semantic owner overlay across Render, GCP, Supabase, and shared Obsidian)
+- `docs/planning/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md` (minimum local hands-layer bootstrap for vault-first work)
+- `docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md` (bounded GPT reasoning plus persistent Hermes continuity contract for local operator work)
+- `docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md` (target local orchestration model where Hermes becomes a first-class second assistant over shared hot-state workstreams)
 - `docs/planning/LANGGRAPHJS_AGENTGRAPH_MIGRATION_PLAN.md` (current agentGraph naming correction + actual LangGraph.js migration plan)
 - `docs/archive/LANGGRAPH_STATEGRAPH_BLUEPRINT.md` (historical LangGraph migration-ready state graph blueprint)
 - `docs/archive/GOT_LANGGRAPH_EXECUTION_PLAN.md` (historical GoT reasoning + LangGraph execution rollout plan)
@@ -205,7 +298,7 @@ Base provider resolution (when request provider is omitted):
 
 1. `AI_PROVIDER` preferred value if configured
 2. `LLM_PROVIDER_BASE_ORDER` if configured
-3. default fallback priority: `openai` -> `anthropic` -> `gemini` -> `huggingface` -> `openclaw` -> `ollama`
+3. default fallback priority: `openjarvis` -> `litellm` -> `ollama` -> `openclaw` -> `anthropic` -> `openai` -> `gemini` -> `kimi` -> `huggingface`
 
 Fallback chain composition:
 
@@ -214,8 +307,8 @@ Fallback chain composition:
 3. workflow model binding/profile defaults (`LLM_WORKFLOW_MODEL_BINDINGS`, `LLM_WORKFLOW_PROFILE_DEFAULTS`) for action-scoped provider/model and quality posture
 4. `LLM_PROVIDER_FALLBACK_CHAIN`
 5. base resolver provider
-6. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openclaw`, `openai`, `anthropic`, `gemini`, `huggingface`, `ollama`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
-7. capability-aware reorder derived from `actionName` (chat/code/memory/review/ops). `operations` lanes now prioritize OpenJarvis ahead of raw inference providers when available.
+6. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openjarvis`, `litellm`, `ollama`, `openclaw`, `anthropic`, `openai`, `gemini`, `kimi`, `huggingface`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
+7. capability-aware reorder derived from `actionName` (chat/code/memory/review/ops). When `OPENJARVIS_ENABLED=true`, OpenJarvis is treated as the preferred control surface and lower-level inference providers remain fallback engines.
 8. runtime readiness pruning for probeable local providers (`ollama`, `litellm`, `openjarvis`) before live call attempts
 
 Guardrails:
@@ -275,7 +368,7 @@ flowchart TD
 
 Profile note:
 
-- `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `config/env/production.profile.env` tune OpenJarvis routing/worker strictness and LLM provider preference only.
+- `config/env/local.profile.env`, `config/env/local-first-hybrid.profile.env`, `config/env/local-openclaw-stack.profile.env`, `config/env/local-nemoclaw-stack.profile.env`, `config/env/local-first-hybrid-gemma4.profile.env`, `config/env/production.profile.env` tune OpenJarvis routing/worker strictness and LLM provider preference only.
 - Runtime startup DAG is controlled by entrypoint + `START_BOT` + Discord token presence.
 
 ## Request Flow (HTTP)

@@ -103,12 +103,19 @@
 
 권장 구조는 기존 role runtime 위에 일반화된 tool adapter 레이어를 추가하는 것이다.
 
+이제 여기에 하나의 운영 원칙을 더 고정한다.
+
+- API-first: 먼저 정형 API, DB, RPC, webhook path를 탄다.
+- agent-fallback: API path가 실패하거나 비정형 reasoning이 필요할 때만 MCP 또는 Hermes를 호출한다.
+- MCP wrapping layer: 기존 API를 없애지 않고, provider-native auth/versioning을 유지한 채 MCP callable surface로 감싼다.
+
 ### Layering
 
 1. discovery layer
 2. adapter registry layer
 3. execution transport layer
 4. action exposure layer
+5. routing policy layer
 
 ### Discovery Layer
 
@@ -165,6 +172,46 @@
 - `src/services/skills/actionRunner.ts`
 - `src/routes/bot-agent/governanceRoutes.ts`
 
+### Routing Policy Layer
+
+책임:
+
+- API-first 여부 판단
+- n8n router에서 IF or Switch 분기 기준 고정
+- MCP fallback과 Hermes local fallback 순서 명시
+- hot-state plane와 semantic owner 사이의 승격 규칙 고정
+
+권장 기본 순서:
+
+1. trigger 진입: webhook, schedule, event
+2. API path: REST, GraphQL, Supabase RPC, FAQ lookup, deterministic transforms
+3. router decision: 성공 시 종료, 실패 또는 ambiguity 시 fallback
+4. MCP path: `upstream.<namespace>.<tool>` 또는 `ext.<adapterId>.<capability>` 호출
+5. Hermes path: 로컬 IDE, shell, git, bounded reasoning이 필요할 때만 machine-local fallback
+6. semantic promotion: durable outcome만 Obsidian으로 승격
+
+이 레이어는 새 런타임을 만드는 것이 아니라, 이미 있는 `n8nDelegationService`, `ext.*`, `upstream.*`, `workflow_events`, Hermes goal-cycle 사이의 경계를 하나의 계약으로 묶는 역할이다.
+
+## MCP Wrapping Layer Pattern
+
+기존 API Layer는 그대로 유지한다.
+
+- REST, GraphQL, gRPC, Supabase RPC, webhook API
+- 인증, 권한, 버전, 모니터링은 provider-native 방식 유지
+
+MCP Provider Layer는 그 위를 얇게 감싼다.
+
+- 로컬 또는 repo-owned wrapper: `ext.<adapterId>.<capability>`
+- shared or remote wrapper: `upstream.<namespace>.<tool>`
+- 입력과 출력은 LLM-friendly JSON schema로 정규화
+
+이 패턴의 장점:
+
+1. 기존 API를 버리지 않는다.
+2. 에이전트는 안정된 MCP surface만 보게 된다.
+3. 운영자는 auth/version 문제를 prompt가 아니라 provider layer에서 해결한다.
+4. n8n router와 Hermes fallback 모두 같은 wrapping 규칙을 공유할 수 있다.
+
 ## Design Rules
 
 1. 커스터마이징 역할명과 도구 통합 레이어를 혼동하지 않는다.
@@ -189,9 +236,11 @@
 
 1. 다중 tool allowlist registry로 확장
 2. tool별 capability 구분 도입
-3. 실행 이력/비용/실패 사유 관측성 강화
-4. worker delegation 또는 HTTP adapter 확장
-5. 문서와 운영 템플릿의 예제 확장
+3. `automation.capability.catalog` 같은 진단 surface로 현재 배치를 가시화
+4. `automation.route.preview` 같은 routing preview surface로 API-first와 fallback 결정을 구현 전에 계산
+5. 실행 이력/비용/실패 사유 관측성 강화
+6. worker delegation 또는 HTTP adapter 확장
+7. 문서와 운영 템플릿의 예제 확장
 
 ## Concrete External Tool Adapters
 

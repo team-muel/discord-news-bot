@@ -14,6 +14,8 @@ vi.mock('node:child_process', () => {
 
 const fetchMock = vi.fn().mockResolvedValue({
   ok: true,
+  status: 200,
+  headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null },
   json: async () => ({ models: [], status: 'ok' }),
   text: async () => 'ok',
 });
@@ -22,10 +24,13 @@ vi.stubGlobal('fetch', fetchMock);
 // Probe functions are side-effect-heavy (exec, fetch); test the structure and types
 describe('externalToolProbe', () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.unstubAllEnvs();
     vi.clearAllMocks();
     fetchMock.mockResolvedValue({
       ok: true,
+      status: 200,
+      headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null },
       json: async () => ({ models: [], status: 'ok' }),
       text: async () => 'ok',
     });
@@ -39,7 +44,7 @@ describe('externalToolProbe', () => {
     expect(result).toHaveProperty('tools');
     expect(result).toHaveProperty('summary');
     expect(Array.isArray(result.tools)).toBe(true);
-    expect(result.tools.length).toBe(7);
+    expect(result.tools.length).toBe(8);
 
     for (const tool of result.tools) {
       expect(tool).toHaveProperty('id');
@@ -51,7 +56,7 @@ describe('externalToolProbe', () => {
       expect(Array.isArray(tool.details)).toBe(true);
     }
 
-    expect(result.summary.total).toBe(7);
+    expect(result.summary.total).toBe(8);
     expect(typeof result.summary.available).toBe('number');
     expect(typeof result.summary.apiReachable).toBe('number');
   });
@@ -71,6 +76,67 @@ describe('externalToolProbe', () => {
     const ids = result.tools.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it('reports OpenClaw gateway reachability when a gateway URL is configured', async () => {
+    vi.stubEnv('OPENCLAW_GATEWAY_URL', 'http://127.0.0.1:19001');
+
+    const { getExternalToolById } = await import('./externalToolProbe');
+    const tool = await getExternalToolById('openclaw');
+
+    expect(tool.id).toBe('openclaw');
+    expect(tool.apiReachable).toBe(true);
+    expect(tool.details).toContain('gateway: http://127.0.0.1:19001');
+    expect(tool.details).toContain('chat api ready');
+  });
+
+  it('reports a control-only OpenClaw gateway as not API reachable', async () => {
+    vi.stubEnv('OPENCLAW_GATEWAY_URL', 'http://127.0.0.1:19001');
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ ok: true }),
+        text: async () => 'ok',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/html; charset=utf-8' },
+        json: async () => ({}),
+        text: async () => '<html>control</html>',
+      });
+
+    const { getExternalToolById } = await import('./externalToolProbe');
+    const tool = await getExternalToolById('openclaw');
+
+    expect(tool.apiReachable).toBe(false);
+    expect(tool.details).toContain('chat api unavailable (text/html; charset=utf-8)');
+  });
+
+  it('reports the configured OpenClaw default model when model status is available', async () => {
+    const { exec } = await import('node:child_process');
+    const execMock = vi.mocked(exec);
+    execMock.mockImplementation(((command: string, _opts: unknown, callback?: ((err: Error | null, result: { stdout: string; stderr: string }) => void)) => {
+      const cb = typeof _opts === 'function' ? _opts : callback;
+      if (command.includes('openclaw models status --json')) {
+        cb?.(null, {
+          stdout: JSON.stringify({ defaultModel: 'ollama/qwen2.5:7b' }),
+          stderr: '',
+        });
+        return { stdout: '', stderr: '' } as never;
+      }
+      cb?.(null, { stdout: 'OpenClaw 2026.3.13\n', stderr: '' });
+      return { stdout: '', stderr: '' } as never;
+    }) as never);
+
+    vi.stubEnv('OPENCLAW_GATEWAY_URL', 'http://127.0.0.1:19001');
+
+    const { getExternalToolById } = await import('./externalToolProbe');
+    const tool = await getExternalToolById('openclaw');
+
+    expect(tool.details).toContain('default model: ollama/qwen2.5:7b');
+  });
 });
 
 describe('externalAdapterTypes', () => {
@@ -82,10 +148,10 @@ describe('externalAdapterTypes', () => {
 });
 
 describe('externalAdapterRegistry', () => {
-  it('listExternalAdapters returns all 11 adapters', async () => {
+  it('listExternalAdapters returns all 12 adapters', async () => {
     const { listExternalAdapters } = await import('./externalAdapterRegistry');
     const adapters = listExternalAdapters();
-    expect(adapters.length).toBe(11);
+    expect(adapters.length).toBe(12);
 
     const ids = adapters.map((a) => a.id);
     expect(ids).toContain('openshell');
@@ -99,6 +165,7 @@ describe('externalAdapterRegistry', () => {
     expect(ids).toContain('ollama');
     expect(ids).toContain('litellm-admin');
     expect(ids).toContain('mcp-indexing');
+    expect(ids).toContain('workstation');
   });
 
   it('getExternalAdapter returns undefined for unknown ID', async () => {
@@ -107,12 +174,24 @@ describe('externalAdapterRegistry', () => {
     expect(adapter).toBeUndefined();
   });
 
+  it('getExternalAdapter resolves the canonical review alias to the NemoClaw adapter', async () => {
+    const { getExternalAdapter } = await import('./externalAdapterRegistry');
+    const adapter = getExternalAdapter('review');
+    expect(adapter?.id).toBe('nemoclaw');
+  });
+
   it('executeExternalAction returns ADAPTER_NOT_FOUND for unknown adapter', async () => {
     const { executeExternalAction } = await import('./externalAdapterRegistry');
     const result = await executeExternalAction('nonexistent', 'test');
     expect(result.ok).toBe(false);
     expect(result.error).toBe('ADAPTER_NOT_FOUND');
   });
+
+  it('executeExternalAction resolves the canonical review alias', async () => {
+    const { executeExternalAction } = await import('./externalAdapterRegistry');
+    const result = await executeExternalAction('review', 'code.review', { code: 'const x = 1;', goal: 'review' });
+    expect(result.error).not.toBe('ADAPTER_NOT_FOUND');
+  }, 30_000);
 
   it('executeExternalAction returns ADAPTER_UNAVAILABLE when adapter cannot reach its dependency', async () => {
     // Adapters are enabled by default (opt-out), but their probes will fail
@@ -127,7 +206,7 @@ describe('externalAdapterRegistry', () => {
   it('getExternalAdapterStatus returns availability for all adapters', async () => {
     const { getExternalAdapterStatus } = await import('./externalAdapterRegistry');
     const statuses = await getExternalAdapterStatus();
-    expect(statuses.length).toBe(11);
+    expect(statuses.length).toBe(12);
     for (const s of statuses) {
       expect(s).toHaveProperty('id');
       expect(s).toHaveProperty('available');
@@ -204,7 +283,7 @@ describe('externalAdapterTypes — M-15 schema validation', () => {
     expect(validateAdapterId('MyAdapter')).toBe('myadapter');
   });
 
-  it('KNOWN_ADAPTER_IDS contains the 11 built-ins', async () => {
+  it('KNOWN_ADAPTER_IDS contains the 12 built-ins', async () => {
     const { KNOWN_ADAPTER_IDS } = await import('./externalAdapterTypes');
     expect(KNOWN_ADAPTER_IDS.has('openshell')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('nemoclaw')).toBe(true);
@@ -217,7 +296,8 @@ describe('externalAdapterTypes — M-15 schema validation', () => {
     expect(KNOWN_ADAPTER_IDS.has('ollama')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('litellm-admin')).toBe(true);
     expect(KNOWN_ADAPTER_IDS.has('mcp-indexing')).toBe(true);
-    expect(KNOWN_ADAPTER_IDS.size).toBe(11);
+    expect(KNOWN_ADAPTER_IDS.has('workstation')).toBe(true);
+    expect(KNOWN_ADAPTER_IDS.size).toBe(12);
   });
 });
 

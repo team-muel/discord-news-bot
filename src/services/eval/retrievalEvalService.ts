@@ -1,19 +1,21 @@
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { searchObsidianVaultWithAdapter } from '../obsidian/router';
+import { queryObsidianLoreHints } from '../obsidian/obsidianRagService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { getClient } from '../infra/baseRepository';
 import { T_RETRIEVAL_EVAL_SETS, T_RETRIEVAL_EVAL_CASES, T_RETRIEVAL_EVAL_TARGETS, T_RETRIEVAL_EVAL_RUNS, T_RETRIEVAL_EVAL_RESULTS, T_RETRIEVAL_RANKER_EXPERIMENTS, T_RETRIEVAL_RANKER_ACTIVE_PROFILES } from '../infra/tableRegistry';
 import { parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseMinNumberEnv } from '../../utils/env';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { RETRIEVAL_NON_BASELINE_VARIANTS, RETRIEVAL_VARIANT_KEYS, isRetrievalVariant } from '../../../config/runtime/retrievalVariants.js';
 
 const RETRIEVAL_EVAL_DEFAULT_TOP_K = parseBoundedNumberEnv(process.env.RETRIEVAL_EVAL_DEFAULT_TOP_K, 5, 1, 20);
 const RETRIEVAL_TUNING_MIN_CASES = parseMinIntEnv(process.env.RETRIEVAL_TUNING_MIN_CASES, 30, 10);
 const RETRIEVAL_TUNING_MIN_NDCG_DELTA = parseMinNumberEnv(process.env.RETRIEVAL_TUNING_MIN_NDCG_DELTA, 0.03, 0.001);
-const RETRIEVAL_SHADOW_VARIANTS = parseCsvList(process.env.RETRIEVAL_SHADOW_VARIANTS || 'intent_prefix,keyword_expansion');
+const RETRIEVAL_SHADOW_VARIANTS = parseCsvList(process.env.RETRIEVAL_SHADOW_VARIANTS || RETRIEVAL_NON_BASELINE_VARIANTS.join(','));
 
-export type RetrievalShadowVariant = 'baseline' | 'intent_prefix' | 'keyword_expansion';
+export type RetrievalShadowVariant = 'baseline' | 'intent_prefix' | 'keyword_expansion' | 'graph_lore';
 
-const SUPPORTED_VARIANTS = new Set<RetrievalShadowVariant>(['baseline', 'intent_prefix', 'keyword_expansion']);
+const SUPPORTED_VARIANTS = new Set<RetrievalShadowVariant>(RETRIEVAL_VARIANT_KEYS as RetrievalShadowVariant[]);
 
 type EvalCaseInput = {
   evalSetId: number;
@@ -77,6 +79,59 @@ function buildVariantQuery(query: string, intent: string, variant: RetrievalShad
   }
 
   return cleanQuery;
+}
+
+async function executeVariantRetrieval(params: {
+  guildId: string;
+  vaultPath: string;
+  query: string;
+  intent: string;
+  variant: RetrievalShadowVariant;
+  topK: number;
+}): Promise<{ executedQuery: string; retrievedPaths: string[]; latencyMs: number }> {
+  if (params.variant === 'graph_lore') {
+    const graphQuery = buildVariantQuery(params.query, params.intent, 'keyword_expansion');
+    const startedAt = Date.now();
+    const hints = await queryObsidianLoreHints(graphQuery, {
+      maxDocs: params.topK,
+      guildId: params.guildId,
+    });
+    return {
+      executedQuery: `graph_lore:${graphQuery}`,
+      retrievedPaths: uniqueArray(hints.map((row) => normalizePath(row.filePath))),
+      latencyMs: Date.now() - startedAt,
+    };
+  }
+
+  const queryText = buildVariantQuery(params.query, params.intent, params.variant);
+  const startedAt = Date.now();
+  const results = await searchObsidianVaultWithAdapter({
+    vaultPath: params.vaultPath,
+    query: queryText,
+    limit: params.topK,
+  });
+  return {
+    executedQuery: queryText,
+    retrievedPaths: results.map((row) => normalizePath(row.filePath)),
+    latencyMs: Date.now() - startedAt,
+  };
+}
+
+async function readActiveRetrievalVariant(client: ReturnType<typeof ensureSupabase>, guildId: string): Promise<RetrievalShadowVariant | null> {
+  const { data, error } = await client
+    .from(T_RETRIEVAL_RANKER_ACTIVE_PROFILES)
+    .select('active_variant')
+    .eq('guild_id', guildId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'RETRIEVAL_ACTIVE_PROFILE_READ_FAILED');
+  }
+
+  const activeVariant = String(data?.active_variant || '').trim();
+  return isRetrievalVariant(activeVariant) && SUPPORTED_VARIANTS.has(activeVariant as RetrievalShadowVariant)
+    ? activeVariant as RetrievalShadowVariant
+    : null;
 }
 
 function computeDcg(paths: string[], gainByPath: Map<string, number>, topK: number): number {
@@ -335,15 +390,14 @@ export async function runRetrievalEval(params: {
       );
 
       for (const variant of requestedVariants) {
-        const queryText = buildVariantQuery(evalCase.query, evalCase.intent, variant);
-        const startedAt = Date.now();
-        const results = await searchObsidianVaultWithAdapter({
+        const { executedQuery, retrievedPaths, latencyMs } = await executeVariantRetrieval({
+          guildId: params.guildId,
           vaultPath,
-          query: queryText,
-          limit: topK,
+          query: evalCase.query,
+          intent: evalCase.intent,
+          variant,
+          topK,
         });
-        const latencyMs = Date.now() - startedAt;
-        const retrievedPaths = results.map((row) => normalizePath(row.filePath));
         const metrics = computeMetrics({
           retrievedPaths,
           gainByPath,
@@ -356,7 +410,7 @@ export async function runRetrievalEval(params: {
           case_id: evalCase.id,
           variant,
           query: evalCase.query,
-          executed_query: queryText,
+          executed_query: executedQuery,
           top_k: topK,
           recall_at_k: metrics.recallAtK,
           mrr: metrics.mrr,
@@ -474,6 +528,51 @@ export async function summarizeRetrievalEvalRun(params: { runId: number; guildId
   for (const [variant, variantRows] of byVariant.entries()) {
     (summary.variants as Record<string, unknown>)[variant] = summarize(variantRows);
   }
+
+  const variantStats = (summary.variants || {}) as Record<string, {
+    count?: number;
+    recallAtK?: number;
+    ndcg?: number;
+  }>;
+  const baselineStats = variantStats.baseline && typeof variantStats.baseline === 'object'
+    ? variantStats.baseline
+    : null;
+  const bestVariantEntry = Object.entries(variantStats)
+    .filter(([variant, stats]) => variant !== 'baseline' && Number(stats?.count || 0) > 0)
+    .sort((a, b) => {
+      const ndcgDelta = Number(b[1]?.ndcg || 0) - Number(a[1]?.ndcg || 0);
+      if (Math.abs(ndcgDelta) > 0.0001) {
+        return ndcgDelta;
+      }
+      return Number(b[1]?.recallAtK || 0) - Number(a[1]?.recallAtK || 0);
+    })[0] || null;
+  const bestVariant = bestVariantEntry?.[0] || null;
+  const bestVariantStats = bestVariant ? variantStats[bestVariant] : null;
+  const activeVariant = await readActiveRetrievalVariant(client, params.guildId).catch(() => null);
+  const activeVariantStats = activeVariant ? variantStats[activeVariant] : null;
+
+  Object.assign(summary as Record<string, unknown>, {
+    bestVariant,
+    bestVariantRecallAtK: bestVariantStats && Number.isFinite(Number(bestVariantStats.recallAtK))
+      ? Number(bestVariantStats.recallAtK)
+      : null,
+    bestVariantNdcg: bestVariantStats && Number.isFinite(Number(bestVariantStats.ndcg))
+      ? Number(bestVariantStats.ndcg)
+      : null,
+    bestVariantDeltaVsBaseline: bestVariantStats && baselineStats
+      ? Number((Number(bestVariantStats.recallAtK || 0) - Number(baselineStats.recallAtK || 0)).toFixed(4))
+      : null,
+    activeVariant,
+    activeVariantRecallAtK: activeVariantStats && Number.isFinite(Number(activeVariantStats.recallAtK))
+      ? Number(activeVariantStats.recallAtK)
+      : null,
+    activeVariantNdcg: activeVariantStats && Number.isFinite(Number(activeVariantStats.ndcg))
+      ? Number(activeVariantStats.ndcg)
+      : null,
+    activeVariantDeltaVsBaseline: activeVariantStats && baselineStats
+      ? Number((Number(activeVariantStats.recallAtK || 0) - Number(baselineStats.recallAtK || 0)).toFixed(4))
+      : null,
+  });
 
   return summary;
 }

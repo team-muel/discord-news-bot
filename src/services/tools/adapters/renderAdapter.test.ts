@@ -12,26 +12,34 @@ describe('renderAdapter', () => {
       expect(renderAdapter.id).toBe('render');
     });
 
-    it('exposes all 9 capabilities', () => {
+    it('exposes all 15 capabilities', () => {
       expect(renderAdapter.capabilities).toContain('service.list');
       expect(renderAdapter.capabilities).toContain('service.details');
       expect(renderAdapter.capabilities).toContain('deploy.list');
       expect(renderAdapter.capabilities).toContain('deploy.details');
+      expect(renderAdapter.capabilities).toContain('deploy.trigger');
+      expect(renderAdapter.capabilities).toContain('deploy.rollback');
       expect(renderAdapter.capabilities).toContain('log.query');
       expect(renderAdapter.capabilities).toContain('metrics.get');
+      expect(renderAdapter.capabilities).toContain('job.list');
+      expect(renderAdapter.capabilities).toContain('job.details');
+      expect(renderAdapter.capabilities).toContain('job.create');
+      expect(renderAdapter.capabilities).toContain('job.cancel');
       expect(renderAdapter.capabilities).toContain('env.list');
       expect(renderAdapter.capabilities).toContain('env.update');
       expect(renderAdapter.capabilities).toContain('postgres.query');
-      expect(renderAdapter.capabilities).toHaveLength(9);
+      expect(renderAdapter.capabilities).toHaveLength(15);
     });
 
-    it('exposes 5 lite capabilities', () => {
+    it('exposes 7 lite capabilities', () => {
       expect(renderAdapter.liteCapabilities).toContain('service.list');
       expect(renderAdapter.liteCapabilities).toContain('service.details');
       expect(renderAdapter.liteCapabilities).toContain('deploy.list');
+      expect(renderAdapter.liteCapabilities).toContain('job.list');
+      expect(renderAdapter.liteCapabilities).toContain('job.details');
       expect(renderAdapter.liteCapabilities).toContain('log.query');
       expect(renderAdapter.liteCapabilities).toContain('metrics.get');
-      expect(renderAdapter.liteCapabilities).toHaveLength(5);
+      expect(renderAdapter.liteCapabilities).toHaveLength(7);
     });
   });
 
@@ -74,8 +82,55 @@ describe('renderAdapter', () => {
       expect(result.error).toBe('INVALID_ID');
     });
 
+    it('deploy.trigger rejects empty service ID', async () => {
+      const result = await renderAdapter.execute('deploy.trigger', {});
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('INVALID_ID');
+    });
+
+    it('deploy.rollback rejects invalid deploy ID', async () => {
+      const result = await renderAdapter.execute('deploy.rollback', {
+        serviceId: 'srv-abc123',
+        deployId: 'invalid deploy id',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('INVALID_ID');
+    });
+
     it('log.query rejects invalid service ID', async () => {
       const result = await renderAdapter.execute('log.query', { serviceId: '!@#$' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('INVALID_ID');
+    });
+
+    it('job.list rejects empty service ID', async () => {
+      const result = await renderAdapter.execute('job.list', {});
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('INVALID_ID');
+    });
+
+    it('job.details rejects invalid job ID', async () => {
+      const result = await renderAdapter.execute('job.details', {
+        serviceId: 'srv-abc123',
+        jobId: 'invalid job id',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('INVALID_ID');
+    });
+
+    it('job.create rejects missing startCommand', async () => {
+      const result = await renderAdapter.execute('job.create', {
+        serviceId: 'srv-abc123',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('EMPTY_START_COMMAND');
+    });
+
+    it('job.cancel rejects invalid job ID', async () => {
+      const result = await renderAdapter.execute('job.cancel', {
+        serviceId: 'srv-abc123',
+        jobId: 'invalid job id',
+      });
       expect(result.ok).toBe(false);
       expect(result.error).toBe('INVALID_ID');
     });

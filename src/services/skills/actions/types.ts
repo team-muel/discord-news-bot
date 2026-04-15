@@ -31,6 +31,23 @@ export const EXECUTOR_ACTION_LEGACY_NAME = 'opencode.execute' as const;
 export const EXECUTOR_ACTION_ALIASES = [EXECUTOR_ACTION_CANONICAL_NAME, EXECUTOR_ACTION_LEGACY_NAME] as const;
 export type ExecutorActionName = (typeof EXECUTOR_ACTION_ALIASES)[number];
 
+const ACTION_NAME_ALIAS_GROUPS = {
+  [EXECUTOR_ACTION_CANONICAL_NAME]: EXECUTOR_ACTION_ALIASES,
+  'architect.plan': ['architect.plan', 'opendev.plan'],
+  'review.review': ['review.review', 'nemoclaw.review'],
+  'operate.ops': ['operate.ops', 'openjarvis.ops'],
+  'coordinate.route': ['coordinate.route', 'local.orchestrator.route'],
+  'coordinate.all': ['coordinate.all', 'local.orchestrator.all'],
+} as const;
+
+type CanonicalActionName = keyof typeof ACTION_NAME_ALIAS_GROUPS;
+
+const ACTION_NAME_CANONICAL_BY_ALIAS = new Map<string, CanonicalActionName>(
+  Object.entries(ACTION_NAME_ALIAS_GROUPS).flatMap(([canonical, aliases]) =>
+    aliases.map((alias) => [alias, canonical as CanonicalActionName]),
+  ),
+);
+
 const LEGACY_TO_NEUTRAL_ROLE: Record<LegacyAgentRole, AgentRoleName> = {
   openjarvis: 'operate',
   opencode: 'implement',
@@ -63,9 +80,7 @@ export const canonicalizeActionName = (value: unknown): string => {
   if (!actionName) {
     return '';
   }
-  return isExecutorActionName(actionName)
-    ? EXECUTOR_ACTION_CANONICAL_NAME
-    : actionName;
+  return ACTION_NAME_CANONICAL_BY_ALIAS.get(actionName.toLowerCase()) || actionName;
 };
 
 export const expandActionNameAliases = (value: unknown): string[] => {
@@ -73,8 +88,9 @@ export const expandActionNameAliases = (value: unknown): string[] => {
   if (!actionName) {
     return [];
   }
-  return isExecutorActionName(actionName)
-    ? [...EXECUTOR_ACTION_ALIASES]
+  const canonicalActionName = ACTION_NAME_CANONICAL_BY_ALIAS.get(actionName.toLowerCase());
+  return canonicalActionName
+    ? [...ACTION_NAME_ALIAS_GROUPS[canonicalActionName]]
     : [actionName];
 };
 

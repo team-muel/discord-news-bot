@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
-const { mockCallMcpTool, mockParseMcpTextBlocks, mockShouldDelegate, mockDelegateNewsMonitorCandidates } = vi.hoisted(() => ({
+const { mockCallMcpTool, mockParseMcpTextBlocks, mockShouldDelegate, mockShouldSkipInlineFallback, mockDelegateNewsMonitorCandidates } = vi.hoisted(() => ({
   mockCallMcpTool: vi.fn(),
   mockParseMcpTextBlocks: vi.fn(() => ['']),
   mockShouldDelegate: vi.fn(() => false),
+  mockShouldSkipInlineFallback: vi.fn(() => false),
   mockDelegateNewsMonitorCandidates: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('../mcpWorkerClient', () => ({
 
 vi.mock('../automation/n8nDelegationService', () => ({
   shouldDelegate: mockShouldDelegate,
+  shouldSkipInlineFallback: mockShouldSkipInlineFallback,
   delegateNewsMonitorCandidates: mockDelegateNewsMonitorCandidates,
 }));
 
@@ -35,6 +37,7 @@ describe('newsMonitorWorkerClient', () => {
     mockCallMcpTool.mockReset();
     mockParseMcpTextBlocks.mockReset().mockReturnValue(['']);
     mockShouldDelegate.mockReset().mockReturnValue(false);
+    mockShouldSkipInlineFallback.mockReset().mockReturnValue(false);
     mockDelegateNewsMonitorCandidates.mockReset();
     mockFetchWithTimeout.mockReset();
 
@@ -91,6 +94,29 @@ describe('newsMonitorWorkerClient', () => {
       const { fetchNewsMonitorCandidatesByWorker } = await import('./newsMonitorWorkerClient');
       const result = await fetchNewsMonitorCandidatesByWorker(5);
       expect(result).toBeNull();
+    });
+
+    it('skips local fallback when delegation-first is enabled', async () => {
+      mockShouldDelegate.mockReturnValue(true);
+      mockShouldSkipInlineFallback.mockReturnValue(true);
+      mockDelegateNewsMonitorCandidates.mockResolvedValue({
+        delegated: true,
+        ok: false,
+        data: null,
+        error: 'HTTP_500',
+      });
+
+      process.env.NEWS_MONITOR_LOCAL_FALLBACK_ENABLED = 'true';
+      process.env.NEWS_MONITOR_MCP_STRICT = 'true';
+      mockFetchWithTimeout.mockResolvedValue({
+        ok: true,
+        text: async () => '<a href="https://example.com/news-1">Example</a>',
+      });
+      vi.resetModules();
+
+      const { fetchNewsMonitorCandidatesByWorker } = await import('./newsMonitorWorkerClient');
+      await expect(fetchNewsMonitorCandidatesByWorker(5)).rejects.toThrow('NEWS_MONITOR_N8N_DELEGATION_REQUIRED');
+      expect(mockFetchWithTimeout).not.toHaveBeenCalled();
     });
   });
 

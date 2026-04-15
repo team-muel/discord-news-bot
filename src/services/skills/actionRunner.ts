@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import path from 'node:path';
 // Cross-domain imports via barrel exports (domain boundary contracts)
 import { buildNewsFingerprint, isNewsFingerprinted, recordNewsFingerprint } from '../news';
 import { getDynamicAction } from '../workerGeneration';
@@ -8,7 +9,7 @@ import { compilePromptGoal } from '../infra';
 import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
 import { logStructuredError } from '../structuredErrorLogService';
 import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
-import { setGateProviderProfileOverride, type LlmProviderProfile } from '../llmClient';
+import { getGateProviderProfileOverride, setGateProviderProfileOverride, type LlmProviderProfile } from '../llmClient';
 // Within-domain imports
 import { getAction } from './actions/registry';
 import { planActions } from './actions/planner';
@@ -113,6 +114,9 @@ type GoalActionInput = {
   goal: string;
   guildId: string;
   requestedBy: string;
+  providerProfile?: LlmProviderProfile;
+  sessionId?: string;
+  runtimeLane?: string;
 };
 
 const ACTION_RUNNER_ENABLED = parseBooleanEnv(process.env.ACTION_RUNNER_ENABLED, true);
@@ -325,6 +329,137 @@ export const formatActionArtifactsForDisplay = (artifacts: string[]): {
     artifactLines,
     reflectionLines,
   };
+};
+
+const normalizeArtifactLocator = (value: string): string => String(value || '').trim().replace(/\\/g, '/');
+
+const looksLikePathArtifact = (value: string): boolean => {
+  const normalized = normalizeArtifactLocator(value);
+  if (!normalized || /\r|\n/.test(normalized)) {
+    return false;
+  }
+  if (/^https?:\/\//i.test(normalized)) {
+    return false;
+  }
+  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('/') || normalized.startsWith('./') || normalized.startsWith('../')) {
+    return true;
+  }
+  return /^(src|docs|plans|ops|guilds|chat|retros|tmp|config|scripts)\/.+/.test(normalized)
+    || /^[^\s]+\/(?:[^\s].*)\.[A-Za-z0-9]{1,10}$/.test(normalized);
+};
+
+const inferWorkflowArtifactRefKind = (locator: string): import('../workflow').WorkflowArtifactRefKind => {
+  const normalized = normalizeArtifactLocator(locator).toLowerCase();
+  if (/^https?:\/\//.test(normalized)) {
+    return 'url';
+  }
+  if (normalized.startsWith('workflow session:') || normalized.startsWith('supabase:') || normalized.startsWith('local-file:')) {
+    return 'workflow-session';
+  }
+  if (normalized.endsWith('.log') || /(^|\/)(logs?|tmp)\//.test(normalized)) {
+    return 'log';
+  }
+  if (normalized.endsWith('.md') && (/^\/vault\//.test(normalized) || /^(chat|guilds|ops|plans|retros)\//.test(normalized))) {
+    return 'vault-note';
+  }
+  if (/^[0-9a-f]{7,40}$/i.test(normalized) || normalized.startsWith('branch:')) {
+    return 'git-ref';
+  }
+  if (looksLikePathArtifact(normalized)) {
+    return 'repo-file';
+  }
+  return 'other';
+};
+
+export const extractWorkflowArtifactRefs = (artifacts: string[]): import('../workflow').WorkflowArtifactRef[] => {
+  const refs: import('../workflow').WorkflowArtifactRef[] = [];
+  const seen = new Set<string>();
+
+  const pushRef = (ref: import('../workflow').WorkflowArtifactRef | null) => {
+    if (!ref || !ref.locator) {
+      return;
+    }
+    const locator = normalizeArtifactLocator(ref.locator);
+    if (!locator) {
+      return;
+    }
+    const dedupeKey = `${ref.refKind}:${locator}`;
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    refs.push({
+      locator,
+      refKind: ref.refKind,
+      title: ref.title ? String(ref.title).trim() || undefined : undefined,
+    });
+  };
+
+  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
+    const text = String(artifact || '').trim();
+    if (!text) {
+      continue;
+    }
+
+    const reflection = parseActionReflectionArtifact(text);
+    if (reflection) {
+      pushRef({
+        locator: reflection.nextPath,
+        refKind: inferWorkflowArtifactRefKind(reflection.nextPath),
+        title: `${reflection.concern} reflection target`,
+      });
+      continue;
+    }
+
+    const newsArtifact = parseNewsArtifact(text);
+    if (newsArtifact) {
+      pushRef({
+        locator: newsArtifact.canonicalUrl,
+        refKind: 'url',
+        title: newsArtifact.title,
+      });
+      continue;
+    }
+
+    const branchMatch = text.match(/^branch:\s*(.+)$/i);
+    if (branchMatch) {
+      const branchName = branchMatch[1].trim();
+      pushRef({ locator: `branch:${branchName}`, refKind: 'git-ref', title: branchName });
+      continue;
+    }
+
+    const commitMatch = text.match(/^commit:\s*([0-9a-f]{7,40})$/i);
+    if (commitMatch) {
+      pushRef({ locator: commitMatch[1], refKind: 'git-ref', title: `commit ${commitMatch[1].slice(0, 12)}` });
+      continue;
+    }
+
+    const workflowSessionMatch = text.match(/^workflow session:\s*(.+)$/i);
+    if (workflowSessionMatch) {
+      const locator = workflowSessionMatch[1].trim();
+      pushRef({ locator, refKind: 'workflow-session', title: locator });
+      continue;
+    }
+
+    const pathCandidate = text.split(/\r?\n/, 1)[0].trim();
+    if (looksLikePathArtifact(pathCandidate)) {
+      const locator = normalizeArtifactLocator(pathCandidate);
+      pushRef({
+        locator,
+        refKind: inferWorkflowArtifactRefKind(locator),
+        title: path.posix.basename(locator) || locator,
+      });
+      continue;
+    }
+
+    const url = extractUrlFromArtifact(text);
+    if (url) {
+      const canonicalUrl = canonicalizeUrl(url);
+      pushRef({ locator: canonicalUrl, refKind: 'url' });
+    }
+  }
+
+  return refs.slice(0, 8);
 };
 
 const pushActionArtifactSections = (lines: string[], artifacts: string[]): void => {
@@ -686,8 +821,14 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
   const compiledPrompt = compilePromptGoal(input.goal);
   const planningGoal = compiledPrompt.compiledGoal || input.goal;
   const executionGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || input.goal;
+  const effectiveProviderProfile = getGateProviderProfileOverride(input.guildId) || input.providerProfile;
 
-  const chain = await planActions(planningGoal);
+  const chain = await planActions(planningGoal, {
+    guildId: input.guildId,
+    requestedBy: input.requestedBy,
+    providerProfile: effectiveProviderProfile || undefined,
+    sessionId: input.sessionId,
+  });
   if (!chain.actions || chain.actions.length === 0) {
     return finish({
       handled: false,
@@ -1261,6 +1402,7 @@ import {
   createPipelineContext,
   type PipelineResult,
   type PipelineStep,
+  type PipelineStepResult,
   type PipelineContext as PipelineCtx,
   type StepExecutor,
 } from './pipelineEngine';
@@ -1268,14 +1410,175 @@ import {
 import {
   generateSessionId,
   createWorkflowSession,
+  inferWorkflowRuntimeLane,
+  recordWorkflowArtifactRefs,
+  recordWorkflowCapabilityDemands,
+  recordWorkflowDecisionDistillate,
+  recordWorkflowRecallRequest,
   updateWorkflowSessionStatus,
   insertWorkflowStep,
   updateWorkflowStep,
   recordWorkflowEvent,
+  type WorkflowCapabilityDemandBatch,
+  type WorkflowDecisionDistillate,
 } from '../workflow';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const PIPELINE_MODE_ENABLED = parseBooleanEnv(process.env.PIPELINE_MODE_ENABLED, false);
+
+type WorkflowCloseoutArtifacts = {
+  decisionDistillate: Omit<WorkflowDecisionDistillate, 'sessionId' | 'runtimeLane'>;
+  capabilityDemands: WorkflowCapabilityDemandBatch['demands'];
+  capabilityDemandPayload: Record<string, unknown>;
+};
+
+const buildCapabilityDemandEvidenceRefs = (steps: Pick<PipelineStepResult, 'artifacts'>[]): string[] => {
+  const seen = new Set<string>();
+  const refs: string[] = [];
+
+  for (const step of steps) {
+    for (const ref of extractWorkflowArtifactRefs(step.artifacts || [])) {
+      const locator = compact(ref.locator);
+      if (!locator || seen.has(locator)) {
+        continue;
+      }
+      seen.add(locator);
+      refs.push(locator);
+      if (refs.length >= 4) {
+        return refs;
+      }
+    }
+  }
+
+  return refs;
+};
+
+const inferCloseoutCapabilityDemandOwner = (step: Pick<PipelineStepResult, 'error'> | null): string => {
+  const error = compact(step?.error).toUpperCase();
+  if (error === 'ACTION_NOT_ALLOWED' || error === 'CIRCUIT_OPEN') {
+    return 'operator';
+  }
+  return 'gpt';
+};
+
+export const buildWorkflowCloseoutArtifacts = (params: {
+  goal: string;
+  guildId: string;
+  finalStatus: 'released' | 'failed';
+  sourceEvent: 'recall_request' | 'session_complete';
+  plannerActionCount?: number;
+  stepCount?: number;
+  failedSteps?: PipelineStepResult[];
+  replanned?: boolean;
+  replanCount?: number;
+}): WorkflowCloseoutArtifacts => {
+  const normalizedGoal = compact(params.goal).slice(0, 500);
+  const failedSteps = Array.isArray(params.failedSteps) ? params.failedSteps.filter((step) => !step.ok) : [];
+  const isPlannerEmpty = Number(params.plannerActionCount ?? -1) === 0;
+
+  if (isPlannerEmpty) {
+    return {
+      decisionDistillate: {
+        summary: 'Planner could not produce any executable actions inside the current boundary.',
+        nextAction: 'clarify the goal or expand the approved action surface before retrying',
+        sourceEvent: params.sourceEvent,
+        promoteAs: 'requirement',
+        tags: ['goal-pipeline', 'planner-empty'],
+        payload: {
+          goal: normalizedGoal,
+          guild_id: params.guildId,
+          planner_action_count: 0,
+        },
+      },
+      capabilityDemands: [{
+        summary: 'Planner produced no executable actions inside the current boundary.',
+        objective: normalizedGoal,
+        missingCapability: 'executable plan inside current boundary',
+        missingSource: 'planner',
+        failedOrInsufficientRoute: 'planActions',
+        cheapestEnablementPath: 'clarify the goal or expand the approved action surface before retrying',
+        proposedOwner: 'gpt',
+        recallCondition: 'Planner produced no executable actions; GPT recall required',
+        tags: ['goal-pipeline', 'planner-empty'],
+      }],
+      capabilityDemandPayload: {
+        goal: normalizedGoal,
+        guild_id: params.guildId,
+        planner_action_count: 0,
+      },
+    };
+  }
+
+  const nextAction = params.finalStatus === 'released'
+    ? 'promote durable operator-visible outcomes into Obsidian if the result should persist'
+    : 'inspect the failed steps and revise the objective, policy boundary, or execution plan';
+  const recallCondition = params.replanned
+    ? 'Pipeline failed after replanning; GPT recall required'
+    : 'Pipeline failed; GPT recall required';
+  const failureTags = params.replanned ? ['goal-pipeline', 'failed', 'replanned'] : ['goal-pipeline', 'failed'];
+  const capabilityDemands = params.finalStatus === 'released'
+    ? []
+    : failedSteps.length > 0
+      ? failedSteps.slice(0, 3).map((step) => ({
+        summary: compact(step.error) === 'ACTION_NOT_ALLOWED'
+          ? `Pipeline step ${step.stepName} was blocked by policy and needs a narrower route or approval.`
+          : compact(step.error) === 'ACTION_NOT_IMPLEMENTED'
+            ? `Pipeline step ${step.stepName} has no executable implementation on the current action surface.`
+            : `Pipeline step ${step.stepName} failed before release and still needs enablement.`,
+        objective: normalizedGoal,
+        missingCapability: compact(step.error) || step.stepName,
+        missingSource: compact(step.error) === 'ACTION_NOT_IMPLEMENTED' ? 'action-surface' : undefined,
+        failedOrInsufficientRoute: step.stepName,
+        cheapestEnablementPath: nextAction,
+        proposedOwner: inferCloseoutCapabilityDemandOwner(step),
+        evidenceRefs: buildCapabilityDemandEvidenceRefs([step]),
+        recallCondition,
+        tags: failureTags,
+      }))
+      : [{
+        summary: 'Pipeline failed before release and still needs a narrower or better enabled route.',
+        objective: normalizedGoal,
+        missingCapability: 'bounded route stability',
+        failedOrInsufficientRoute: 'goal-pipeline',
+        cheapestEnablementPath: nextAction,
+        proposedOwner: 'gpt',
+        recallCondition,
+        tags: failureTags,
+      }];
+
+  return {
+    decisionDistillate: {
+      summary: params.finalStatus === 'released'
+        ? `Pipeline released after ${params.stepCount ?? 0} bounded steps.`
+        : params.replanned
+          ? 'Pipeline failed after replanning and now needs GPT boundary review.'
+          : 'Pipeline failed before release and now needs GPT boundary review.',
+      nextAction,
+      sourceEvent: params.sourceEvent,
+      promoteAs: 'development_slice',
+      tags: params.finalStatus === 'released' ? ['goal-pipeline', 'released'] : ['goal-pipeline', 'failed'],
+      payload: {
+        goal: normalizedGoal,
+        guild_id: params.guildId,
+        final_status: params.finalStatus,
+        replanned: Boolean(params.replanned),
+        replan_count: params.replanCount ?? 0,
+        step_count: params.stepCount ?? 0,
+        failed_step_names: failedSteps.map((step) => step.stepName),
+      },
+    },
+    capabilityDemands,
+    capabilityDemandPayload: {
+      goal: normalizedGoal,
+      guild_id: params.guildId,
+      final_status: params.finalStatus,
+      replanned: Boolean(params.replanned),
+      replan_count: params.replanCount ?? 0,
+      step_count: params.stepCount ?? 0,
+      failed_step_names: failedSteps.map((step) => step.stepName),
+    },
+  };
+};
 
 /**
  * Pipeline-aware goal execution — upgrade of `runGoalActions` with:
@@ -1305,6 +1608,11 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
   }
 
   const sessionId = generateSessionId();
+  const workflowRuntimeLane = inferWorkflowRuntimeLane({
+    workflowName: 'goal-pipeline',
+    scope: input.guildId,
+    metadata: input.runtimeLane ? { runtime_lane: input.runtimeLane } : undefined,
+  });
 
   // Persist workflow session
   await createWorkflowSession({
@@ -1313,6 +1621,10 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
     stage: 'planning',
     scope: input.guildId,
     status: 'proposed',
+    metadata: {
+      runtime_lane: workflowRuntimeLane,
+      requested_by: input.requestedBy,
+    },
   });
 
   await recordWorkflowEvent({
@@ -1320,17 +1632,55 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
     eventType: 'session_start',
     toState: 'proposed',
     decisionReason: `Goal: ${input.goal.slice(0, 200)}`,
-    payload: { guildId: input.guildId, requestedBy: input.requestedBy },
+    payload: { guildId: input.guildId, requestedBy: input.requestedBy, runtime_lane: workflowRuntimeLane },
   });
 
   // Plan actions
   const compiledPrompt = compilePromptGoal(input.goal);
   const planningGoal = compiledPrompt.compiledGoal || input.goal;
   const executionGoal = compiledPrompt.executionGoal || compiledPrompt.normalizedGoal || input.goal;
+  const effectiveProviderProfile = getGateProviderProfileOverride(input.guildId) || input.providerProfile;
 
-  const chain = await planActions(planningGoal);
+  const chain = await planActions(planningGoal, {
+    guildId: input.guildId,
+    requestedBy: input.requestedBy,
+    providerProfile: effectiveProviderProfile || undefined,
+    sessionId,
+  });
   if (!chain.actions || chain.actions.length === 0) {
+    const closeoutArtifacts = buildWorkflowCloseoutArtifacts({
+      goal: planningGoal,
+      guildId: input.guildId,
+      finalStatus: 'failed',
+      sourceEvent: 'recall_request',
+      plannerActionCount: 0,
+    });
     await updateWorkflowSessionStatus(sessionId, 'failed', true);
+    await recordWorkflowRecallRequest({
+      sessionId,
+      decisionReason: 'Planner produced no executable actions; GPT recall required',
+      blockedAction: 'planActions',
+      nextAction: 'clarify the goal or expand the approved action surface before retrying',
+      requestedBy: input.requestedBy,
+      runtimeLane: workflowRuntimeLane,
+      payload: {
+        goal: planningGoal.slice(0, 500),
+        guild_id: input.guildId,
+        planner_action_count: 0,
+      },
+    });
+    await recordWorkflowDecisionDistillate({
+      sessionId,
+      runtimeLane: workflowRuntimeLane,
+      ...closeoutArtifacts.decisionDistillate,
+    });
+    await recordWorkflowCapabilityDemands({
+      sessionId,
+      runtimeLane: workflowRuntimeLane,
+      sourceEvent: closeoutArtifacts.decisionDistillate.sourceEvent,
+      demands: closeoutArtifacts.capabilityDemands,
+      payload: closeoutArtifacts.capabilityDemandPayload,
+    });
     return {
       handled: false,
       output: '',
@@ -1434,7 +1784,12 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
   // Replanner: re-invokes the LLM planner with context about what failed
   const replanner = async (replanGoal: string, _pipeCtx: PipelineCtx): Promise<PipelineStep[]> => {
     try {
-      const replanChain = await planActions(replanGoal);
+      const replanChain = await planActions(replanGoal, {
+        guildId: input.guildId,
+        requestedBy: input.requestedBy,
+        providerProfile: effectiveProviderProfile || undefined,
+        sessionId,
+      });
       if (!replanChain.actions || replanChain.actions.length === 0) return [];
 
       await recordWorkflowEvent({
@@ -1464,6 +1819,7 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
   // Persist each step result
   for (let i = 0; i < pipelineResult.steps.length; i++) {
     const step = pipelineResult.steps[i];
+    const artifactRefs = extractWorkflowArtifactRefs(step.artifacts);
     await insertWorkflowStep({
       sessionId,
       stepOrder: i + 1,
@@ -1497,7 +1853,31 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
       finopsMode: 'normal',
       agentRole: step.agentRole,
     });
+
+    await recordWorkflowArtifactRefs({
+      sessionId,
+      refs: artifactRefs,
+      runtimeLane: workflowRuntimeLane,
+      sourceStepName: step.stepName,
+      sourceEvent: step.ok ? 'step_passed' : 'step_failed',
+      payload: {
+        step_type: step.stepType,
+        agent_role: step.agentRole,
+      },
+    });
   }
+
+  const failedSteps = pipelineResult.steps.filter((s) => !s.ok);
+  const closeoutArtifacts = buildWorkflowCloseoutArtifacts({
+    goal: executionGoal,
+    guildId: input.guildId,
+    finalStatus: pipelineResult.ok ? 'released' : 'failed',
+    sourceEvent: 'session_complete',
+    stepCount: pipelineResult.steps.length,
+    failedSteps,
+    replanned: pipelineResult.replanned,
+    replanCount: pipelineResult.replanCount,
+  });
 
   // Finalize session
   const finalStatus = pipelineResult.ok ? 'released' : 'failed';
@@ -1516,6 +1896,43 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
       replanCount: pipelineResult.replanCount,
     },
   });
+
+  await recordWorkflowDecisionDistillate({
+    sessionId,
+    runtimeLane: workflowRuntimeLane,
+    ...closeoutArtifacts.decisionDistillate,
+  });
+  await recordWorkflowCapabilityDemands({
+    sessionId,
+    runtimeLane: workflowRuntimeLane,
+    sourceEvent: closeoutArtifacts.decisionDistillate.sourceEvent,
+    demands: closeoutArtifacts.capabilityDemands,
+    payload: closeoutArtifacts.capabilityDemandPayload,
+  });
+
+  if (!pipelineResult.ok) {
+    await recordWorkflowRecallRequest({
+      sessionId,
+      decisionReason: pipelineResult.replanned
+        ? 'Pipeline failed after replanning; GPT recall required'
+        : 'Pipeline failed; GPT recall required',
+      blockedAction: failedSteps[0]?.stepName,
+      nextAction: 'inspect the failed steps and revise the objective, policy boundary, or execution plan',
+      requestedBy: input.requestedBy,
+      runtimeLane: workflowRuntimeLane,
+      failedStepNames: failedSteps.map((step) => step.stepName),
+      payload: {
+        goal: executionGoal.slice(0, 500),
+        guild_id: input.guildId,
+        replanned: pipelineResult.replanned,
+        replan_count: pipelineResult.replanCount,
+        failed_steps: failedSteps.map((step) => ({
+          step_name: step.stepName,
+          error: step.error || null,
+        })),
+      },
+    });
+  }
 
   // Build output
   const lines: string[] = ['파이프라인 실행 결과'];
@@ -1537,7 +1954,6 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
   }
 
   const hasSuccess = pipelineResult.steps.some((s) => s.ok);
-  const failedSteps = pipelineResult.steps.filter((s) => !s.ok);
   for (const f of failedSteps) {
     diagnostics.totalFailures += 1;
     const key = classifyFailureCode(f.error);

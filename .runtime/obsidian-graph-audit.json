@@ -1,25 +1,37 @@
 {
-  "generatedAt": "2026-04-11T00:35:40.953Z",
+  "generatedAt": "2026-04-12T18:31:32.705Z",
   "vaultPath": "C:\\Users\\fancy\\Documents\\Obsidian Vault",
   "totals": {
-    "files": 130,
-    "unresolvedLinks": 26,
+    "files": 213,
+    "unresolvedLinks": 33,
     "ambiguousLinks": 0,
-    "orphanFiles": 95,
-    "deadendFiles": 93,
+    "orphanFiles": 156,
+    "deadendFiles": 143,
     "missingRequiredPropertyFiles": 0
   },
   "topTags": [
     {
       "tag": "#⪻",
-      "count": 140
+      "count": 168
     },
     {
       "tag": "#auto-snapshot",
-      "count": 36
+      "count": 51
+    },
+    {
+      "tag": "#knowledge-control",
+      "count": 48
+    },
+    {
+      "tag": "#auto-generated",
+      "count": 45
     },
     {
       "tag": "#operations",
+      "count": 39
+    },
+    {
+      "tag": "#topic",
       "count": 34
     },
     {
@@ -27,68 +39,56 @@
       "count": 32
     },
     {
-      "tag": "#knowledge-control",
-      "count": 30
-    },
-    {
       "tag": "#discord-topology",
-      "count": 26
+      "count": 31
     },
     {
       "tag": "#ㆍ🌻：적응방",
-      "count": 25
+      "count": 30
     },
     {
       "tag": "#ㆍ🎧：안내소",
-      "count": 25
+      "count": 30
     },
     {
       "tag": "#ㆍ🐣：뉴페방",
-      "count": 25
-    },
-    {
-      "tag": "#auto-generated",
-      "count": 25
+      "count": 30
     },
     {
       "tag": "#user",
-      "count": 22
+      "count": 29
     },
     {
-      "tag": "#topic",
-      "count": 21
-    },
-    {
-      "tag": "#라운지",
-      "count": 15
-    },
-    {
-      "tag": "#ㆍ📚：다인실",
-      "count": 15
+      "tag": "#obsidian",
+      "count": 27
     },
     {
       "tag": "#channel",
-      "count": 15
-    },
-    {
-      "tag": "#┃ㆍ🌐︰서버링크",
-      "count": 14
-    },
-    {
-      "tag": "#롤",
-      "count": 14
-    },
-    {
-      "tag": "#control",
-      "count": 14
+      "count": 23
     },
     {
       "tag": "#auto-captured",
-      "count": 13
+      "count": 21
     },
     {
       "tag": "#discord-chat",
-      "count": 13
+      "count": 21
+    },
+    {
+      "tag": "#discord-activity",
+      "count": 20
+    },
+    {
+      "tag": "#telemetry",
+      "count": 20
+    },
+    {
+      "tag": "#라운지",
+      "count": 18
+    },
+    {
+      "tag": "#ㆍ📚：다인실",
+      "count": 18
     }
   ],
   "thresholds": {

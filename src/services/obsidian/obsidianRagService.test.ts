@@ -206,6 +206,43 @@ describe('obsidianRagService advanced features', () => {
       expect(result.documentContext).not.toContain('invalid_at=2024-01-01T00:00:00');
     });
 
+    it('keeps guild-scoped candidates inside the retrieval window when guildId is provided', async () => {
+      mockSearchVault.mockResolvedValue([
+        { filePath: 'docs/global-high.md', title: 'Global High', score: 0.95 },
+        { filePath: 'docs/global-mid.md', title: 'Global Mid', score: 0.9 },
+        { filePath: 'guilds/123456789012345678/Guild_Lore.md', title: 'Guild Lore', score: 0.2 },
+      ]);
+      mockGraphMetadata.mockResolvedValue({
+        'docs/global-high.md': { title: 'Global High', tags: ['memory'], backlinks: ['a'], links: [] },
+        'guilds/123456789012345678/Guild_Lore.md': { title: 'Guild Lore', tags: ['memory'], backlinks: [], links: [] },
+      });
+      mockLoadDocumentsWithCache.mockResolvedValue(new Map([
+        ['docs/global-high.md', {
+          filePath: 'docs/global-high.md',
+          content: '# Global High\n\nshared global note',
+          frontmatter: { title: 'Global High', status: 'active' },
+        }],
+        ['guilds/123456789012345678/Guild_Lore.md', {
+          filePath: 'guilds/123456789012345678/Guild_Lore.md',
+          content: '# Guild Lore\n\nserver-specific lore',
+          frontmatter: { title: 'Guild Lore', status: 'active', source_refs: ['discord://guild/123456789012345678'] },
+        }],
+      ]));
+
+      const result = await queryObsidianRAG('memory retrieval context', {
+        maxDocs: 1,
+        guildId: '123456789012345678',
+        contextMode: 'metadata_first',
+      });
+
+      const loadedPaths = mockLoadDocumentsWithCache.mock.calls.at(-1)?.[0];
+      expect(loadedPaths).toEqual([
+        'guilds/123456789012345678/Guild_Lore.md',
+        'docs/global-high.md',
+      ]);
+      expect(result.sourceFiles).toHaveLength(1);
+    });
+
     it('reports retrieval boundary between metadata-only and Supabase-backed layers', async () => {
       mockGetCacheStats.mockResolvedValue({
         totalDocs: 12,

@@ -64,10 +64,50 @@ GitHub Actions Secrets:
 로컬 점검:
 
 - `npm run openjarvis:autonomy:run:dry`
+- `npm run openjarvis:goal:run:hidden -- --objective="<goal>" --dryRun=true`
 
 실행:
 
 - `npm run openjarvis:autonomy:run`
+- `npm run openjarvis:goal:run -- --objective="<goal>" --dryRun=false --routeMode=auto`
+- `npm run openjarvis:autopilot:start -- --objective="<goal>" --dryRun=false --routeMode=auto`
+- `npm run openjarvis:autopilot:resume`
+- `npm run openjarvis:autopilot:loop -- --objective="<goal>" --dryRun=false --routeMode=operations`
+- `npm run openjarvis:autopilot:queue`
+- `npm run openjarvis:autopilot:queue:hidden`
+- `npm run openjarvis:autopilot:queue:chat`
+- `npm run openjarvis:autopilot:gcp-recovery:overnight`
+- `npm run openjarvis:autopilot:gcp-recovery:overnight:hidden`
+
+Hermes runtime control:
+
+- `npm run openjarvis:hermes:runtime:queue-objective -- --objective="<goal>"`
+- `npm run openjarvis:hermes:runtime:chat-launch -- --objective="<goal>"`
+
+상태 확인:
+
+- `npm run openjarvis:goal:status`
+- `npm run openjarvis:packets:sync`
+
+운영 메모:
+
+- goal wrapper는 기존 unattended engine을 재사용하되 `scope=interactive:goal`, `stage=interactive` 로 세션을 분리해 저장한다.
+- Windows interactive launch 기본값은 visible PowerShell 이며, Hermes 가 실제 goal-cycle 을 시작할 때 새 창을 띄워 작업을 눈에 보이게 한다.
+- visible PowerShell 은 이제 detached runner 의 monitor 창이다. 창을 닫아도 실제 runner 는 `tmp/autonomy/launches/*.log` 에 로그를 남기며 계속 진행되고, 최신 launch manifest 는 `tmp/autonomy/launches/latest-interactive-goal.json` 에 기록된다.
+- interactive goal runner 는 실행 시작과 종료 시점에 active continuity handoff/progress packet 을 자동 갱신한다. shared adapter write 와 별도로 local vault mirror 도 유지해서 다음 GPT 세션이 로컬 packet state 로 복구할 수 있게 한다. 필요하면 `npm run openjarvis:packets:sync` 로 최신 세션 기준 수동 동기화도 가능하다.
+- `openjarvis:autopilot:resume` 는 local continuity packet 을 읽고 one-shot resume 가능 여부를 판정한다. progress packet 이 resumable 상태면 같은 objective 로 즉시 새 cycle 을 붙이고, 아니면 왜 멈췄는지 `resume_state` 로 반환한다.
+- `openjarvis:autopilot:loop` 는 bounded supervisor 로 동작한다. visible monitor 를 닫아도 숨겨진 loop runner 는 남아 있고, packet 이 `wait for the next GPT objective or human approval boundary` 상태가 아니고 escalation 이 없을 때만 다음 cycle 을 자동 launch 한다.
+- `openjarvis:autopilot:queue` 는 Safe Autonomous Queue 와 `docs/planning/EXECUTION_BOARD.md` 의 `Queued Now` 를 읽어서 승인된 다음 objective 후보를 고른다. 우선순위는 packet safe queue, 그 다음 execution board queued item 이며, 같은 fingerprint 는 같은 supervisor run 안에서 재선택하지 않는다.
+- `openjarvis:autopilot:queue:chat` 는 위 queue selection 에 더해 `autoLaunchQueuedChat=true` 를 켠 bounded handoff profile 이다. 승인된 다음 objective 를 continuity packet safe queue 에 다시 기록하고, native VS Code `code chat` surface 로 새 GPT turn 을 연 뒤 stop reason 을 `queued_chat_launched` 로 남기고 supervisor 를 종료한다.
+- `openjarvis:hermes:runtime:queue-objective` 와 `openjarvis:hermes:runtime:chat-launch` 는 같은 runtime control service 를 직접 호출하는 low-level operator entrypoint 다. queue write 와 chat launch 를 분리해서 진단하거나 수동 재시도할 때 사용한다.
+- `openjarvis:autopilot:gcp-recovery:overnight` 는 GCP capacity recovery 를 explicit operations route 로 고정하고, `maxCycles=0`, `maxIdleChecks=0` 를 unbounded sentinel 로 사용해서 capacity target, escalation, wait boundary, 또는 explicit failure 가 나올 때까지 overnight loop 를 유지한다. 현재 objective 가 닫힌 뒤에는 `autoSelectQueuedObjective=true` 로 승인된 다음 objective 를 이어서 선택할 수 있다.
+- `openjarvis:goal:status` 는 현재 workflow 상태 외에 `resume_state`, `continuity_packets`, `supervisor`, 마지막 auto-open VS Code CLI bridge 결과도 보여준다.
+- `openjarvis:goal:status` 와 compact session-open bundle 은 이제 `autonomous_goal_candidates` 를 함께 노출해서 GPT 와 Hermes 가 같은 next-objective shortlist 를 본다.
+- visible resume/loop launch 에서는 필요하면 local progress packet 을 VS Code CLI allowlist bridge 로 열어서 editor control plane 이 실제로 호출되었는지 manifest 와 status 에 남긴다.
+- headless 검증이나 CI 성격의 실행은 `openjarvis:goal:run:hidden` 또는 `--visibleTerminal=false` 를 사용한다.
+- latest summary는 여전히 `tmp/autonomy/openjarvis-unattended-last-run.json` 에 기록되고, 상세 타임라인은 `tmp/autonomy/workflow-sessions/*.json` 에 남는다.
+- live run 전에 prompt/instruction/skill 병목을 보고 싶다면 `npm run agent:context:audit` 로 항상-로드 instruction과 큰 skill/workflow 파일을 먼저 확인한다.
+- operations route 나 explicit GCP recovery objective 에서는 unattended engine 이 `ops:gcp:report:weekly` 를 memory sync 앞에 추가해, remote always-on lane 상태를 먼저 기록한 뒤 나머지 gate and deploy flow 로 넘어간다.
 
 ## 6) 완전 무인 운영 권장값
 

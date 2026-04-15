@@ -6,10 +6,12 @@ import {
   OPENCLAW_ENABLED as ENABLED,
   OPENCLAW_DISABLED as EXPLICITLY_DISABLED,
   OPENCLAW_GATEWAY_URL as GATEWAY_URL,
+  OPENCLAW_MODEL,
 } from '../../../config';
-import { checkOpenClawGatewayHealth, getGatewayHeaders } from '../../openclaw/gatewayHealth';
-import { generateText, isAnyLlmConfigured } from '../../llmClient';
+import { checkOpenClawGatewayHealth, checkOpenClawGatewayChatSupport, getGatewayHeaders } from '../../openclaw/gatewayHealth';
+import { isAnyLlmConfigured } from '../../llmClient';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { runAdapterLlmFallback } from './llmFallback';
 
 const execFileAsync = promisify(execFile);
 const CLI_TIMEOUT_MS = 15_000;
@@ -32,6 +34,11 @@ const gatewayPost = async (path: string, body: Record<string, unknown>): Promise
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
+    const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
+    if (!resp.ok || !contentType.includes('application/json')) {
+      logger.debug('[OPENCLAW] gatewayPost %s returned non-JSON response: status=%s contentType=%s', path, resp.status, contentType || 'unknown');
+      return { ok: false, data: null };
+    }
     const data = await resp.json().catch(() => null);
     return { ok: resp.ok, data };
   } catch (err) {
@@ -60,7 +67,7 @@ export const openclawAdapter: ExternalToolAdapter = {
 
     // Prefer Gateway HTTP transport
     const gatewayOk = await checkOpenClawGatewayHealth();
-    if (gatewayOk) {
+    if (gatewayOk && await checkOpenClawGatewayChatSupport()) {
       transport = 'gateway';
       return true;
     }
@@ -100,7 +107,19 @@ export const openclawAdapter: ExternalToolAdapter = {
       switch (action) {
         case 'agent.health': {
           const gatewayOk = await checkOpenClawGatewayHealth();
-          if (gatewayOk) return makeResult(true, 'Gateway healthy', [`url=${GATEWAY_URL}`, 'transport=gateway']);
+          if (gatewayOk) {
+            const gatewayChatOk = await checkOpenClawGatewayChatSupport();
+            if (gatewayChatOk) {
+              return makeResult(true, 'Gateway healthy', [`url=${GATEWAY_URL}`, 'transport=gateway']);
+            }
+            if (transport === 'cli') {
+              return makeResult(true, 'Gateway control surface only; CLI available', [`url=${GATEWAY_URL}`, 'gateway=control-only', 'transport=cli']);
+            }
+            if (isAnyLlmConfigured()) {
+              return makeResult(true, 'Gateway control surface only; LLM lite mode active', [`url=${GATEWAY_URL}`, 'gateway=control-only', 'transport=llm-lite']);
+            }
+            return makeResult(false, 'Gateway control surface only', [`url=${GATEWAY_URL}`, 'gateway=control-only'], 'CHAT_API_UNAVAILABLE');
+          }
           if (transport === 'cli') return makeResult(true, 'CLI available', ['transport=cli']);
           if (isAnyLlmConfigured()) return makeResult(true, 'LLM lite mode active', ['transport=llm-lite']);
           return makeResult(false, 'No transport available', [], 'NO_TRANSPORT');
@@ -112,11 +131,11 @@ export const openclawAdapter: ExternalToolAdapter = {
 
           // Gateway HTTP: use OpenAI-compatible /v1/chat/completions
           if (transport === 'gateway') {
-            const model = typeof args.model === 'string' ? args.model : undefined;
+            const model = typeof args.model === 'string' ? args.model : OPENCLAW_MODEL;
             const body: Record<string, unknown> = {
+              model,
               messages: [{ role: 'user', content: message }],
             };
-            if (model) body.model = model;
             const { ok, data } = await gatewayPost('/v1/chat/completions', body);
             if (ok && data) {
               const resp = data as { choices?: Array<{ message?: { content?: string } }> };
@@ -145,20 +164,16 @@ export const openclawAdapter: ExternalToolAdapter = {
           }
 
           // Lite mode: central LLM pipeline when gateway and CLI are both unavailable
-          if (isAnyLlmConfigured()) {
-            try {
-              const content = await generateText({
-                system: 'You are a helpful always-on AI assistant (OpenClaw lite mode).',
-                user: message,
-                actionName: 'agent.chat',
-              });
-              if (content) {
-                logger.debug('[OPENCLAW] agent.chat served via LLM lite mode');
-                return makeResult(true, 'Chat response via LLM (lite mode)', content.split('\n').slice(0, 40));
-              }
-            } catch (liteErr) {
-              logger.debug('[OPENCLAW] LLM lite mode failed: %s', getErrorMessage(liteErr));
-            }
+          const liteLines = await runAdapterLlmFallback({
+            actionName: 'agent.chat',
+            system: 'You are a helpful always-on AI assistant (OpenClaw lite mode).',
+            user: message,
+            lineLimit: 40,
+            debugLabel: '[OPENCLAW]',
+          });
+          if (liteLines) {
+            logger.debug('[OPENCLAW] agent.chat served via LLM lite mode');
+            return makeResult(true, 'Chat response via LLM (lite mode)', liteLines);
           }
 
           return makeResult(false, 'No transport available for agent.chat', [], 'NO_TRANSPORT');
@@ -240,7 +255,7 @@ export const bootstrapOpenClawSession = async (sessionId: string): Promise<{ ok:
   }
 
   const gatewayOk = await checkOpenClawGatewayHealth();
-  if (!gatewayOk) return { ok: false, toolCount: 0 };
+  if (!gatewayOk || !(await checkOpenClawGatewayChatSupport())) return { ok: false, toolCount: 0 };
 
   try {
     const tools = await buildToolCatalog();

@@ -128,6 +128,27 @@ describe('n8nDelegationService', () => {
     });
   });
 
+  describe('shouldSkipInlineFallback', () => {
+    it('returns false when the task is not configured', async () => {
+      setEnvVars({
+        N8N_DELEGATION_ENABLED: 'true',
+        N8N_DELEGATION_FIRST: 'true',
+      });
+      const { shouldSkipInlineFallback } = await import('./n8nDelegationService');
+      expect(shouldSkipInlineFallback('news-rss-fetch')).toBe(false);
+    });
+
+    it('returns true when delegation-first is enabled for the task', async () => {
+      setEnvVars({
+        N8N_DELEGATION_ENABLED: 'true',
+        N8N_DELEGATION_FIRST: 'true',
+        N8N_WEBHOOK_NEWS_RSS_FETCH: 'muel/news-rss',
+      });
+      const { shouldSkipInlineFallback } = await import('./n8nDelegationService');
+      expect(shouldSkipInlineFallback('news-rss-fetch')).toBe(true);
+    });
+  });
+
   // ─── delegateToN8n ──────────────────────────────────────────────────────
 
   describe('delegateToN8n', () => {

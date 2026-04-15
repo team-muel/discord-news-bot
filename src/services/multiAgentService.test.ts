@@ -6,12 +6,14 @@ const {
   isShadowRunnerEnabledMock,
   runShadowGraphMock,
   getAgentGotCutoverDecisionMock,
+  resolveAgentPersonalizationSnapshotMock,
 } = vi.hoisted(() => ({
   resolveTrafficRouteMock: vi.fn(),
   persistTrafficRoutingDecisionMock: vi.fn(),
   isShadowRunnerEnabledMock: vi.fn(),
   runShadowGraphMock: vi.fn(),
   getAgentGotCutoverDecisionMock: vi.fn(),
+  resolveAgentPersonalizationSnapshotMock: vi.fn(),
 }));
 
 // ──────────────────────────────────────────────────────────
@@ -20,6 +22,11 @@ const {
 vi.mock('./llmClient', () => ({
   isAnyLlmConfigured: vi.fn(() => false),
   generateText: vi.fn().mockResolvedValue('mocked response'),
+  getGateProviderProfileOverride: vi.fn(() => null),
+}));
+
+vi.mock('./agent/agentPersonalizationService', () => ({
+  resolveAgentPersonalizationSnapshot: resolveAgentPersonalizationSnapshotMock,
 }));
 
 vi.mock('./agent/agentMemoryService', () => ({
@@ -126,6 +133,60 @@ beforeEach(() => {
     evaluatedAt: '2026-04-11T00:00:00.000Z',
     windowDays: 14,
   });
+  resolveAgentPersonalizationSnapshotMock.mockReset();
+  resolveAgentPersonalizationSnapshotMock.mockResolvedValue(null);
+});
+
+const buildPersonalizationSnapshot = (overrides?: Partial<{
+  priority: 'balanced' | 'fast' | 'precise';
+  providerProfile: 'cost-optimized' | 'quality-optimized';
+  retrievalProfile: 'baseline' | 'intent_prefix' | 'keyword_expansion' | 'graph_lore';
+}>) => ({
+  guildId: 'test-guild',
+  userId: 'test-user',
+  requestedPriority: 'balanced',
+  requestedSkillId: null,
+  consent: {
+    memoryEnabled: true,
+    socialGraphEnabled: true,
+    profilingEnabled: true,
+    actionAuditDisclosureEnabled: true,
+    source: 'stored',
+    updatedAt: null,
+  },
+  learning: { enabled: true },
+  persona: {
+    available: true,
+    summary: 'prefers concise delivery',
+    communicationStyle: 'concise',
+    roleTags: ['operator'],
+    preferredTopics: ['ops'],
+    visibleNoteCount: 1,
+    hiddenNoteCount: 0,
+    relationCount: 0,
+    notes: [],
+  },
+  workflow: {
+    priority: 'balanced',
+    stepTitles: [],
+    stepCount: 0,
+  },
+  recommendations: {
+    priority: overrides?.priority || 'fast',
+    providerProfile: overrides?.providerProfile || 'cost-optimized',
+    retrievalProfile: overrides?.retrievalProfile || 'intent_prefix',
+    activeRetrievalProfile: null,
+    reasons: ['concise_style_signal'],
+  },
+  effective: {
+    priority: overrides?.priority || 'fast',
+    prioritySource: 'personalization',
+    providerProfile: overrides?.providerProfile || 'cost-optimized',
+    providerProfileSource: 'personalization',
+    retrievalProfile: overrides?.retrievalProfile || 'intent_prefix',
+    retrievalProfileSource: 'personalization',
+  },
+  promptHints: ['[personalization:runtime] pace=fast provider_profile=cost-optimized retrieval_profile=intent_prefix'],
 });
 
 // ──────────────────────────────────────────────────────────
@@ -509,6 +570,33 @@ describe('executeSession integration path', () => {
     expect(completed?.status).toBe('completed');
     // shadowGraph is released after terminal persistence for memory optimization
     expect(completed?.shadowGraph).toBeNull();
+  });
+
+  it('balanced 세션은 개인화 스냅샷에 따라 실행 우선순위를 조정한다', async () => {
+    resolveAgentPersonalizationSnapshotMock.mockResolvedValue(buildPersonalizationSnapshot({
+      priority: 'fast',
+      providerProfile: 'cost-optimized',
+      retrievalProfile: 'intent_prefix',
+    }));
+
+    const created = startAgentSession({
+      guildId: 'guild-personalized-priority',
+      requestedBy: 'user-personalized-priority',
+      goal: '빠르게 운영 요약을 정리해줘',
+      skillId: 'ops-execution',
+      priority: 'balanced',
+      isAdmin: true,
+    });
+
+    for (let i = 0; i < 6; i += 1) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+    }
+
+    const completed = getAgentSession(created.id);
+    expect(completed?.status).toBe('completed');
+    expect(completed?.priority).toBe('fast');
+    expect(completed?.personalization?.effective.providerProfile).toBe('cost-optimized');
   });
 
   it('langgraph route 세션은 primary graph engine으로 실행하고 최종 라우팅 결정을 기록한다', async () => {

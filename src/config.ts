@@ -67,7 +67,7 @@ export const BOT_STATUS_VIEW_BENCHMARK_INTERVAL_MS = parseIntegerEnv(process.env
 
 // ──── Obsidian Vault (RAG Integration) ────
 export const OBSIDIAN_LOCAL_FS_ENABLED = parseBooleanEnv(process.env.OBSIDIAN_LOCAL_FS_ENABLED, false);
-export const OBSIDIAN_VAULT_PATH = parseStringEnv(process.env.OBSIDIAN_VAULT_PATH, '');
+export const OBSIDIAN_VAULT_PATH = parseStringEnv(process.env.OBSIDIAN_VAULT_PATH ?? process.env.OBSIDIAN_SYNC_VAULT_PATH, '');
 export const OBSIDIAN_VAULT_NAME = parseStringEnv(process.env.OBSIDIAN_VAULT_NAME, 'docs');
 export const OBSIDIAN_RAG_CACHE_TTL_MS = parseIntegerEnv(process.env.OBSIDIAN_RAG_CACHE_TTL_MS, 3600000);
 export const OBSIDIAN_RAG_MAX_DOCS = parseIntegerEnv(process.env.OBSIDIAN_RAG_MAX_DOCS, 10);

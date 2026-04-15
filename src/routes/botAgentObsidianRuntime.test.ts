@@ -8,10 +8,24 @@ const {
   mockGetAgentRoleWorkersHealthSnapshot,
   mockGetAgentTelemetryQueueSnapshot,
   mockGetLlmRuntimeSnapshot,
+  mockGetHermesVsCodeBridgeStatus,
+  mockGetOpenJarvisAutopilotStatus,
+  mockGetOpenJarvisSessionOpenBundle,
+  mockGetOpenJarvisMemorySyncStatus,
+  mockCreateOpenJarvisHermesRuntimeChatNote,
+  mockEnqueueOpenJarvisHermesRuntimeObjectives,
+  mockLaunchOpenJarvisHermesChatSession,
+  mockPrepareOpenJarvisHermesSessionStart,
+  mockRunOpenJarvisHermesRuntimeRemediation,
+  mockRunHermesVsCodeBridge,
+  mockRunOpenJarvisMemorySync,
   mockGetObsidianAdapterRuntimeStatus,
   mockGetObsidianVaultLiveHealthStatus,
   mockGetObsidianRetrievalBoundarySnapshot,
   mockGetLatestObsidianGraphAuditSnapshot,
+  mockGetObsidianGraphAuditLoopStats,
+  mockGetObsidianMaintenanceControlSurface,
+  mockExecuteObsidianGraphAudit,
   mockGetObsidianKnowledgeCompilationStats,
   mockGetObsidianKnowledgeControlSurface,
   mockBuildObsidianKnowledgeReflectionBundle,
@@ -34,10 +48,14 @@ const {
   mockGetObsidianInboxChatLoopStats,
   mockGetObsidianLoreSyncLoopStats,
   mockGetRetrievalEvalLoopStats,
+  mockGetRewardSignalLoopStatus,
+  mockGetEvalAutoPromoteLoopStatus,
+  mockGetEvalMaintenanceControlSurface,
   mockGetRuntimeSchedulerPolicySnapshot,
   mockGetPendingIntentCount,
   mockListAgentRoleWorkerSpecs,
   mockProbeHttpWorkerHealth,
+  mockResolveAgentPersonalizationSnapshot,
   mockSummarizeOpencodeQueueReadiness,
   mockLoadOperatingBaseline,
 } = vi.hoisted(() => ({
@@ -45,10 +63,24 @@ const {
   mockGetAgentRoleWorkersHealthSnapshot: vi.fn(),
   mockGetAgentTelemetryQueueSnapshot: vi.fn(),
   mockGetLlmRuntimeSnapshot: vi.fn(),
+  mockGetHermesVsCodeBridgeStatus: vi.fn(),
+  mockGetOpenJarvisAutopilotStatus: vi.fn(),
+  mockGetOpenJarvisSessionOpenBundle: vi.fn(),
+  mockGetOpenJarvisMemorySyncStatus: vi.fn(),
+  mockCreateOpenJarvisHermesRuntimeChatNote: vi.fn(),
+  mockEnqueueOpenJarvisHermesRuntimeObjectives: vi.fn(),
+  mockLaunchOpenJarvisHermesChatSession: vi.fn(),
+  mockPrepareOpenJarvisHermesSessionStart: vi.fn(),
+  mockRunOpenJarvisHermesRuntimeRemediation: vi.fn(),
+  mockRunHermesVsCodeBridge: vi.fn(),
+  mockRunOpenJarvisMemorySync: vi.fn(),
   mockGetObsidianAdapterRuntimeStatus: vi.fn(),
   mockGetObsidianVaultLiveHealthStatus: vi.fn(),
   mockGetObsidianRetrievalBoundarySnapshot: vi.fn(),
   mockGetLatestObsidianGraphAuditSnapshot: vi.fn(),
+  mockGetObsidianGraphAuditLoopStats: vi.fn(),
+  mockGetObsidianMaintenanceControlSurface: vi.fn(),
+  mockExecuteObsidianGraphAudit: vi.fn(),
   mockGetObsidianKnowledgeCompilationStats: vi.fn(),
   mockGetObsidianKnowledgeControlSurface: vi.fn(),
   mockBuildObsidianKnowledgeReflectionBundle: vi.fn(),
@@ -71,10 +103,14 @@ const {
   mockGetObsidianInboxChatLoopStats: vi.fn(),
   mockGetObsidianLoreSyncLoopStats: vi.fn(),
   mockGetRetrievalEvalLoopStats: vi.fn(),
+  mockGetRewardSignalLoopStatus: vi.fn(),
+  mockGetEvalAutoPromoteLoopStatus: vi.fn(),
+  mockGetEvalMaintenanceControlSurface: vi.fn(),
   mockGetRuntimeSchedulerPolicySnapshot: vi.fn(),
   mockGetPendingIntentCount: vi.fn(),
   mockListAgentRoleWorkerSpecs: vi.fn(),
   mockProbeHttpWorkerHealth: vi.fn(),
+  mockResolveAgentPersonalizationSnapshot: vi.fn(),
   mockSummarizeOpencodeQueueReadiness: vi.fn(),
   mockLoadOperatingBaseline: vi.fn(),
 }));
@@ -96,6 +132,12 @@ vi.mock('../services/obsidian/obsidianRagService', () => ({
 
 vi.mock('../services/obsidian/obsidianQualityService', () => ({
   getLatestObsidianGraphAuditSnapshot: mockGetLatestObsidianGraphAuditSnapshot,
+  getObsidianGraphAuditLoopStats: mockGetObsidianGraphAuditLoopStats,
+}));
+
+vi.mock('../services/obsidian/obsidianMaintenanceControlService', () => ({
+  getObsidianMaintenanceControlSurface: mockGetObsidianMaintenanceControlSurface,
+  executeObsidianGraphAudit: mockExecuteObsidianGraphAudit,
 }));
 
 vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
@@ -141,6 +183,10 @@ vi.mock('../services/agent/agentRoleWorkerService', () => ({
   probeHttpWorkerHealth: mockProbeHttpWorkerHealth,
 }));
 
+vi.mock('../services/agent/agentPersonalizationService', () => ({
+  resolveAgentPersonalizationSnapshot: mockResolveAgentPersonalizationSnapshot,
+}));
+
 vi.mock('../services/agent/agentTelemetryQueue', async () => {
   const actual = await vi.importActual('../services/agent/agentTelemetryQueue');
   return {
@@ -161,6 +207,29 @@ vi.mock('../services/runtime/runtimeSchedulerPolicyService', () => ({
   getRuntimeSchedulerPolicySnapshot: mockGetRuntimeSchedulerPolicySnapshot,
 }));
 
+vi.mock('../services/openjarvis/openjarvisMemorySyncStatusService', () => ({
+  getOpenJarvisMemorySyncStatus: mockGetOpenJarvisMemorySyncStatus,
+  runOpenJarvisMemorySync: mockRunOpenJarvisMemorySync,
+}));
+
+vi.mock('../services/openjarvis/openjarvisHermesRuntimeControlService', () => ({
+  createOpenJarvisHermesRuntimeChatNote: mockCreateOpenJarvisHermesRuntimeChatNote,
+  enqueueOpenJarvisHermesRuntimeObjectives: mockEnqueueOpenJarvisHermesRuntimeObjectives,
+  launchOpenJarvisHermesChatSession: mockLaunchOpenJarvisHermesChatSession,
+  prepareOpenJarvisHermesSessionStart: mockPrepareOpenJarvisHermesSessionStart,
+  runOpenJarvisHermesRuntimeRemediation: mockRunOpenJarvisHermesRuntimeRemediation,
+}));
+
+vi.mock('../services/openjarvis/openjarvisAutopilotStatusService', () => ({
+  getOpenJarvisAutopilotStatus: mockGetOpenJarvisAutopilotStatus,
+  getOpenJarvisSessionOpenBundle: mockGetOpenJarvisSessionOpenBundle,
+}));
+
+vi.mock('../services/runtime/hermesVsCodeBridgeService', () => ({
+  getHermesVsCodeBridgeStatus: mockGetHermesVsCodeBridgeStatus,
+  runHermesVsCodeBridge: mockRunHermesVsCodeBridge,
+}));
+
 vi.mock('../services/llmClient', () => ({
   getLlmRuntimeSnapshot: mockGetLlmRuntimeSnapshot,
 }));
@@ -179,6 +248,18 @@ vi.mock('../services/obsidian/obsidianLoreSyncService', () => ({
 
 vi.mock('../services/eval/retrievalEvalLoopService', () => ({
   getRetrievalEvalLoopStats: mockGetRetrievalEvalLoopStats,
+}));
+
+vi.mock('../services/eval/rewardSignalLoopService', () => ({
+  getRewardSignalLoopStatus: mockGetRewardSignalLoopStatus,
+}));
+
+vi.mock('../services/eval/evalAutoPromoteLoopService', () => ({
+  getEvalAutoPromoteLoopStatus: mockGetEvalAutoPromoteLoopStatus,
+}));
+
+vi.mock('../services/eval/evalMaintenanceControlService', () => ({
+  getEvalMaintenanceControlSurface: mockGetEvalMaintenanceControlSurface,
 }));
 
 type RouteLayer = {
@@ -298,6 +379,38 @@ describe('bot agent Obsidian runtime routes', () => {
       healthy: true,
       issues: [],
       remoteMcp: { enabled: true, configured: true },
+    });
+    mockResolveAgentPersonalizationSnapshot.mockResolvedValue({
+      guildId: 'guild-1',
+      userId: 'user-1',
+      requestedPriority: 'balanced',
+      requestedSkillId: null,
+      consent: {
+        memoryEnabled: true,
+        socialGraphEnabled: true,
+        profilingEnabled: true,
+        actionAuditDisclosureEnabled: true,
+        source: 'stored',
+        updatedAt: null,
+      },
+      learning: { enabled: true },
+      persona: {
+        available: true,
+        summary: 'prefers concise delivery',
+        communicationStyle: 'concise',
+        roleTags: ['analyst'],
+        preferredTopics: ['ops'],
+        visibleNoteCount: 1,
+        hiddenNoteCount: 0,
+        relationCount: 0,
+        notes: [{ title: 'persona', summary: 'use concise delivery', visibility: 'guild' }],
+      },
+      workflow: {
+        priority: 'balanced',
+        stepTitles: ['plan', 'research', 'critique'],
+        stepCount: 3,
+      },
+      promptHints: ['[personalization:profile] style=concise'],
     });
     mockGetObsidianRetrievalBoundarySnapshot.mockResolvedValue({
       metadataOnly: {
@@ -505,7 +618,67 @@ describe('bot agent Obsidian runtime routes', () => {
     mockGetMemoryJobRunnerStats.mockReturnValue({ running: true });
     mockGetObsidianInboxChatLoopStats.mockReturnValue({ enabled: true, started: true, running: false, intervalSec: 30, runOnStart: true, processedTotal: 4, lastFinishedAt: '2026-04-09T00:00:30.000Z', lastCandidateCount: 1, lastProcessedPaths: ['chat/inbox/2026-04-09/test-note.md'], lastSummary: 'candidates=1 processed=1' });
     mockGetObsidianLoreSyncLoopStats.mockReturnValue({ enabled: true, running: true });
+    mockGetObsidianGraphAuditLoopStats.mockReturnValue({
+      enabled: true,
+      owner: 'app',
+      running: false,
+      intervalMin: 360,
+      runOnStart: true,
+      timeoutMs: 600000,
+      lastRunAt: '2026-04-10T00:00:00.000Z',
+      lastFinishedAt: '2026-04-10T00:02:00.000Z',
+      lastStatus: 'success',
+      lastExitCode: 0,
+      lastSummary: 'durationMs=120000 exitCode=0 tail=[obsidian-audit] pass=true',
+      snapshotPath: '/repo/.runtime/obsidian-graph-audit.json',
+    });
+    mockGetObsidianMaintenanceControlSurface.mockReturnValue({
+      executor: 'repo-runtime',
+      tasks: ['lore-sync', 'graph-audit'],
+      delegation: {
+        preferredExecutor: 'repo-runtime',
+        fallbackExecutor: 'repo-runtime',
+        workerKind: 'operate',
+        workerConfigured: false,
+        strict: false,
+      },
+    });
+    mockExecuteObsidianGraphAudit.mockResolvedValue({
+      result: {
+        enabled: true,
+        owner: 'app',
+        running: false,
+        intervalMin: 360,
+        runOnStart: true,
+        timeoutMs: 600000,
+        lastRunAt: '2026-04-11T00:00:00.000Z',
+        lastFinishedAt: '2026-04-11T00:02:00.000Z',
+        lastStatus: 'success',
+        lastExitCode: 0,
+        lastSummary: 'durationMs=120000 exitCode=0 tail=[obsidian-audit] pass=true',
+        snapshotPath: '/repo/.runtime/obsidian-graph-audit.json',
+      },
+      snapshot: { pass: true, totals: { files: 12 } },
+    });
     mockGetRetrievalEvalLoopStats.mockReturnValue({ enabled: true, running: false });
+    mockGetRewardSignalLoopStatus.mockReturnValue({
+      enabled: true,
+      running: false,
+      lastRunAt: '2026-04-10T00:00:00.000Z',
+      lastSummary: 'attempted=2 completed=2 failed=0',
+      intervalHours: 6,
+    });
+    mockGetEvalAutoPromoteLoopStatus.mockReturnValue({
+      enabled: true,
+      running: false,
+      lastRunAt: '2026-04-10T00:10:00.000Z',
+      lastSummary: 'guilds=2/2 collected=4 judged=4 promoted=1 rejected=0',
+      intervalHours: 6,
+    });
+    mockGetEvalMaintenanceControlSurface.mockReturnValue({
+      executor: 'repo-runtime',
+      tasks: ['retrieval-eval', 'reward-signal', 'auto-promote'],
+    });
     mockGetRuntimeSchedulerPolicySnapshot.mockResolvedValue({
       generatedAt: '2026-04-11T00:00:00.000Z',
       summary: { total: 4, appOwned: 4, dbOwned: 0, enabled: 4, running: 3 },
@@ -534,6 +707,438 @@ describe('bot agent Obsidian runtime routes', () => {
     mockProbeHttpWorkerHealth.mockResolvedValue({ ok: true, status: 200, latencyMs: 12, endpoint: 'http://worker/health' });
     mockGetAgentTelemetryQueueSnapshot.mockReturnValue({ pending: 0, processed: 3, dropped: 0 });
     mockSummarizeOpencodeQueueReadiness.mockResolvedValue({ ready: true, queueDepth: 0 });
+    mockGetOpenJarvisMemorySyncStatus.mockReturnValue({
+      configured: true,
+      summaryPath: 'C:/repo/tmp/openjarvis-memory-feed/summary.json',
+      exists: true,
+      status: 'fresh',
+      healthy: true,
+      generatedAt: '2026-04-11T00:10:00.000Z',
+      ageMinutes: 10,
+      staleAfterMinutes: 1440,
+      dryRun: false,
+      forced: false,
+      vaultPath: '/vault',
+      obsidianAdapterSummary: 'Remote MCP over the canonical shared ingress is the primary Obsidian path',
+      supabaseAvailability: 'ok',
+      counts: {
+        total: 5,
+        obsidian: 2,
+        repo: 2,
+        supabase: 1,
+      },
+      docs: [
+        {
+          section: 'obsidian',
+          fileName: 'runtime-name-and-surface-matrix.md',
+          sourceRef: 'vault:ops/control-tower/CANONICAL_MAP.md',
+        },
+      ],
+      memoryIndex: {
+        attempted: true,
+        status: 'completed',
+        completedAt: '2026-04-11T00:10:05.000Z',
+        outputSummary: 'indexed 5 docs',
+        reason: null,
+      },
+      issues: [],
+    });
+    mockGetOpenJarvisAutopilotStatus.mockResolvedValue({
+      ok: true,
+      summary_path: 'tmp/autonomy/openjarvis-unattended-last-run.json',
+      workflow: {
+        session_id: 'openjarvis-1',
+        session_path: null,
+        source: 'supabase',
+        runtime_lane: 'operator-personal',
+        workflow_name: 'openjarvis.unattended',
+        status: 'released',
+        scope: 'interactive:goal',
+        stage: 'interactive',
+        objective: 'recover GCP native leverage',
+        route_mode: 'operations',
+        started_at: '2026-04-12T00:00:00.000Z',
+        completed_at: '2026-04-12T00:01:00.000Z',
+        execution_health: null,
+        lastRecallRequest: {
+          createdAt: '2026-04-12T00:00:30.000Z',
+          decisionReason: 'need gpt re-entry',
+          evidenceId: 'wf-evidence-1',
+          blockedAction: 'planActions',
+          nextAction: 'resume bounded GCP capacity recovery until capacity reaches 90',
+          requestedBy: 'goal-pipeline',
+          runtimeLane: 'operator-personal',
+          failedStepNames: ['gate-check'],
+        },
+        lastDecisionDistillate: {
+          createdAt: '2026-04-12T00:00:45.000Z',
+          summary: 'Pipeline released after 1 bounded step.',
+          evidenceId: 'wf-distillate-1',
+          nextAction: 'promote durable operator-visible outcomes into Obsidian if the result should persist',
+          runtimeLane: 'operator-personal',
+          sourceEvent: 'session_complete',
+          promoteAs: 'development_slice',
+          tags: ['goal-pipeline', 'released'],
+        },
+        lastArtifactRefs: [
+          {
+            createdAt: '2026-04-12T00:00:20.000Z',
+            locator: 'docs/CHANGELOG-ARCH.md',
+            refKind: 'repo-file',
+            title: 'Architecture changelog',
+            runtimeLane: 'operator-personal',
+            sourceStepName: 'gate-check',
+            sourceEvent: 'step_passed',
+          },
+        ],
+      },
+      launch: null,
+      supervisor: {
+        status: 'running',
+        supervisor_pid: 20960,
+        supervisor_alive: true,
+        auto_select_queued_objective: true,
+        auto_launch_queued_chat: true,
+        started_at: '2026-04-12T00:00:00.000Z',
+        stopped_at: null,
+        stop_reason: null,
+        launches_completed: 2,
+        idle_checks: 0,
+        last_reason: 'launched',
+        objective_seed: null,
+        resume_from_packets: true,
+        last_launch: null,
+        vscode_bridge: null,
+      },
+      result: {
+        final_status: 'released',
+        step_count: 1,
+        failed_steps: 0,
+        latest_gate_decision: null,
+        deploy_status: null,
+        stale_execution_suspected: false,
+      },
+      capacity: {
+        target: 90,
+        score: 82,
+        gap: 8,
+        reached: false,
+        state: 'recovering',
+        loop_action: 'continue',
+        primary_reason: 'gcp_openjarvis_serve_not_remote',
+      },
+      resume_state: {
+        source: 'supabase-workstream',
+        next_action: 'resume bounded GCP capacity recovery until capacity reaches 90',
+      },
+      continuity_packets: null,
+      gcp_capacity_recovery_requested: true,
+      gcp_native: {
+        score: 64,
+        wired_surfaces: 2,
+        required_surfaces: 6,
+        primary_reason: 'gcp_openjarvis_serve_not_remote',
+      },
+      hermes_runtime: {
+        target_role: 'persistent-local-operator',
+        current_role: 'continuity-sidecar',
+        readiness: 'partial',
+        can_continue_without_gpt_session: true,
+        queue_enabled: false,
+        supervisor_alive: false,
+        has_hot_state: true,
+        local_operator_surface: true,
+        ide_handoff_observed: false,
+        queued_objectives_available: false,
+        strengths: ['Hermes can continue bounded work after the GPT session releases.'],
+        blockers: ['No live supervisor is holding the local continuity loop open right now.'],
+        next_actions: ['Run the continuous goal-cycle supervisor so Hermes remains attached after release instead of stopping at the last bounded cycle.'],
+        remediation_actions: [
+          {
+            action_id: 'start-supervisor-loop',
+            label: 'Start Hermes queue supervisor',
+          },
+        ],
+      },
+      vscode_cli: {
+        last_auto_open: null,
+      },
+      steps: [
+        {
+          step_name: 'gate-check',
+          status: 'passed',
+        },
+      ],
+    });
+    mockGetOpenJarvisSessionOpenBundle.mockResolvedValue({
+      bundle_version: 1,
+      generated_at: '2026-04-12T00:01:05.000Z',
+      summary_path: 'tmp/autonomy/openjarvis-unattended-last-run.json',
+      objective: 'recover GCP native leverage',
+      route_mode: 'operations',
+      runtime_lane: 'operator-personal',
+      workflow: {
+        session_id: 'openjarvis-1',
+        source: 'supabase',
+        status: 'released',
+        scope: 'interactive:goal',
+        stage: 'interactive',
+        started_at: '2026-04-12T00:00:00.000Z',
+        completed_at: '2026-04-12T00:01:00.000Z',
+        execution_health: null,
+      },
+      continuity: {
+        owner: 'hermes',
+        mode: 'observing',
+        next_action: 'restart the next bounded automation cycle from the active objective',
+        resumable: true,
+        reason: 'workstream_auto_restart_ready',
+        escalation_status: 'none',
+        auto_restart_on_release: true,
+        safe_queue: ['keep workflow session, launch state, and summary aligned'],
+        progress_packet: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md',
+        handoff_packet: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
+      },
+      routing: {
+        recommended_mode: 'api-first-with-agent-fallback',
+        primary_path_type: 'api-path',
+        primary_surfaces: ['n8n-router', 'supabase-hot-state'],
+        fallback_surfaces: ['hermes-local-operator'],
+        candidate_apis: ['youtube-community-scrape'],
+        matched_examples: ['youtube-community-post-handoff'],
+        escalation_required: false,
+        escalation_target: 'none',
+      },
+      hermes_runtime: {
+        target_role: 'persistent-local-operator',
+        current_role: 'continuity-sidecar',
+        readiness: 'partial',
+        can_continue_without_gpt_session: true,
+        queue_enabled: false,
+        supervisor_alive: false,
+        has_hot_state: true,
+        local_operator_surface: true,
+        ide_handoff_observed: false,
+        queued_objectives_available: false,
+        strengths: ['Hermes can continue bounded work after the GPT session releases.'],
+        blockers: ['No live supervisor is holding the local continuity loop open right now.'],
+        next_actions: ['Run the continuous goal-cycle supervisor so Hermes remains attached after release instead of stopping at the last bounded cycle.'],
+        remediation_actions: [
+          {
+            action_id: 'start-supervisor-loop',
+            label: 'Start Hermes queue supervisor',
+          },
+        ],
+      },
+      orchestration: {
+        current_priority: 'compact-bootstrap-first',
+        advisor_strategy: {
+          posture: 'conditional-escalation',
+          reason: 'Use advisor-style escalation only if the cheaper executor reaches a hard reasoning checkpoint after starting from the compact session-open bundle and existing route guidance.',
+          max_advisor_uses: 1,
+        },
+        context_economics: {
+          current_bottleneck: 'startup-context-footprint',
+          optimization_order: ['compact session-open bundle first'],
+        },
+      },
+      decision: {
+        summary: 'Pipeline released after 1 bounded step.',
+        next_action: 'promote durable operator-visible outcomes into Obsidian if the result should persist',
+        promote_as: 'development_slice',
+        tags: ['goal-pipeline', 'released'],
+      },
+      recall: {
+        decision_reason: null,
+        blocked_action: null,
+        next_action: null,
+        failed_step_names: [],
+      },
+      evidence_refs: [
+        {
+          locator: 'docs/CHANGELOG-ARCH.md',
+          refKind: 'repo-file',
+          title: 'Architecture changelog',
+          sourceStepName: 'gate-check',
+        },
+      ],
+      capacity: {
+        score: 82,
+        target: 90,
+        state: 'recovering',
+        loop_action: 'continue',
+        primary_reason: 'gcp_openjarvis_serve_not_remote',
+        continue_recommended: true,
+      },
+      supervisor: {
+        status: 'stopped',
+        launches_completed: 2,
+        stop_reason: 'max_cycles_reached',
+        last_launch_source: 'packet-resume',
+        last_launch_at: '2026-04-12T00:01:05.000Z',
+      },
+      result: {
+        final_status: 'released',
+        step_count: 1,
+        failed_steps: 0,
+        latest_gate_decision: null,
+        deploy_status: null,
+        stale_execution_suspected: false,
+      },
+      personalization: {
+        priority: 'balanced',
+        provider_profile: 'quality-optimized',
+        retrieval_profile: 'graph_lore',
+        communication_style: 'concise',
+        preferred_topics: ['ops'],
+        prompt_hints: ['[personalization:profile] style=concise'],
+      },
+      read_first: ['progress-packet:plans/execution/HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md'],
+      recall_triggers: [],
+    });
+    mockRunOpenJarvisHermesRuntimeRemediation.mockResolvedValue({
+      ok: true,
+      actionId: 'start-supervisor-loop',
+      dryRun: false,
+      completion: 'queued',
+      command: 'node scripts/run-openjarvis-goal-cycle.mjs --resumeFromPackets=true',
+      pid: 54321,
+      startedAt: '2026-04-11T00:00:00.000Z',
+      finishedAt: '2026-04-11T00:00:01.000Z',
+      durationMs: 1000,
+      stdoutLines: [],
+      stderrLines: [],
+      errorCode: null,
+      error: null,
+    });
+    mockCreateOpenJarvisHermesRuntimeChatNote.mockResolvedValue({
+      ok: true,
+      completion: 'created',
+      fileName: 'chat/inbox/2026-04-13/010203_hermes-runtime-handoff.md',
+      notePath: 'chat/inbox/2026-04-13/010203_hermes-runtime-handoff.md',
+      requestTitle: 'Hermes Runtime Handoff',
+      requestMessage: 'Review the current Hermes runtime state below.',
+      startedAt: '2026-04-11T00:00:00.000Z',
+      finishedAt: '2026-04-11T00:00:00.100Z',
+      durationMs: 100,
+      errorCode: null,
+      error: null,
+    });
+    mockEnqueueOpenJarvisHermesRuntimeObjectives.mockResolvedValue({
+      ok: true,
+      completion: 'updated',
+      requestedObjectives: ['stabilize the next GPT relaunch objective'],
+      queuedObjectives: ['stabilize the next GPT relaunch objective'],
+      handoffPacketPath: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
+      startedAt: '2026-04-13T00:00:00.000Z',
+      finishedAt: '2026-04-13T00:00:00.100Z',
+      durationMs: 100,
+      errorCode: null,
+      error: null,
+    });
+    mockLaunchOpenJarvisHermesChatSession.mockResolvedValue({
+      ok: true,
+      completion: 'queued',
+      objective: 'stabilize the next GPT relaunch objective',
+      prompt: 'Continue the next bounded local autonomy task.',
+      addFilePaths: ['/vault/plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md'],
+      command: 'code chat Continue the next bounded local autonomy task.',
+      pid: 4321,
+      startedAt: '2026-04-13T00:00:00.000Z',
+      finishedAt: '2026-04-13T00:00:00.100Z',
+      durationMs: 100,
+      errorCode: null,
+      error: null,
+    });
+    mockPrepareOpenJarvisHermesSessionStart.mockResolvedValue({
+      ok: true,
+      completion: 'prepared',
+      startedAt: '2026-04-13T00:00:00.000Z',
+      finishedAt: '2026-04-13T00:00:00.100Z',
+      durationMs: 100,
+      sharedObsidianPreferred: true,
+      statusSummary: {
+        readiness: 'partial',
+        currentRole: 'continuity-sidecar',
+        supervisorAlive: false,
+        queuedObjectivesAvailable: false,
+      },
+      bundle: {
+        objective: 'recover GCP native leverage',
+        continuity: {
+          next_action: 'restart the next bounded automation cycle from the active objective',
+        },
+      },
+      chatNote: {
+        ok: true,
+        completion: 'created',
+        notePath: 'chat/inbox/2026-04-13/010203_hermes-runtime-handoff.md',
+      },
+      queueObjective: null,
+      remediation: {
+        ok: true,
+        actionId: 'start-supervisor-loop',
+        dryRun: false,
+        completion: 'queued',
+      },
+      errorCode: null,
+      error: null,
+    });
+    mockRunOpenJarvisMemorySync.mockResolvedValue({
+      ok: true,
+      dryRun: true,
+      force: false,
+      guildId: null,
+      scriptName: 'openjarvis:memory:sync:dry',
+      command: 'node --import tsx scripts/sync-openjarvis-memory.ts --dryRun=true',
+      completion: 'queued',
+      pid: 4321,
+      startedAt: '2026-04-11T00:00:00.000Z',
+      finishedAt: '2026-04-11T00:00:01.000Z',
+      durationMs: 1000,
+      stdoutLines: ['[OPENJARVIS-MEMORY-SYNC] dry-run only: tmp/openjarvis-memory-feed'],
+      stderrLines: [],
+      statusBefore: mockGetOpenJarvisMemorySyncStatus(),
+      statusAfter: mockGetOpenJarvisMemorySyncStatus(),
+      error: null,
+    });
+    mockGetHermesVsCodeBridgeStatus.mockReturnValue({
+      configured: true,
+      repoRoot: 'C:/Muel_S/discord-news-bot',
+      codeCliPath: 'C:/Users/fancy/AppData/Local/Programs/Microsoft VS Code/bin/code.cmd',
+      codeCliExists: true,
+      vaultPath: '/vault',
+      packetPath: '/vault/plans/execution/HERMES_LOCAL_BOOTSTRAP_NEXT_ACTIONS.md',
+      packetRelativePath: 'plans/execution/HERMES_LOCAL_BOOTSTRAP_NEXT_ACTIONS.md',
+      packetExists: true,
+      allowedActions: ['open-agents', 'goto', 'diff', 'open', 'wait', 'chat'],
+      issues: [],
+    });
+    mockRunHermesVsCodeBridge.mockResolvedValue({
+      ok: true,
+      action: 'goto',
+      dryRun: false,
+      completion: 'completed',
+      command: '"C:/Users/fancy/AppData/Local/Programs/Microsoft VS Code/bin/code.cmd" -r -g C:/Muel_S/discord-news-bot/docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md:56',
+      pid: null,
+      startedAt: '2026-04-12T00:00:00.000Z',
+      finishedAt: '2026-04-12T00:00:00.050Z',
+      durationMs: 50,
+      stdoutLines: [],
+      stderrLines: [],
+      statusBefore: mockGetHermesVsCodeBridgeStatus(),
+      statusAfter: mockGetHermesVsCodeBridgeStatus(),
+      packetLog: {
+        attempted: true,
+        packetPath: '/vault/plans/execution/HERMES_LOCAL_BOOTSTRAP_NEXT_ACTIONS.md',
+        packetRelativePath: 'plans/execution/HERMES_LOCAL_BOOTSTRAP_NEXT_ACTIONS.md',
+        logged: true,
+        entry: '- hermes_vscode_bridge: 2026-04-12T00:00:00.000Z | action=goto',
+        error: null,
+      },
+      errorCode: null,
+      error: null,
+    });
     mockGetLlmRuntimeSnapshot.mockResolvedValue({
       selectedProvider: 'ollama',
       actionName: null,
@@ -584,8 +1189,37 @@ describe('bot agent Obsidian runtime routes', () => {
       vaultHealth: { healthy: true },
       cacheStats: { activeDocs: 8, staleDocs: 2 },
       compiler: { runs: 3, lastIndexedNotes: 10 },
+      openjarvisMemorySync: {
+        status: 'fresh',
+        healthy: true,
+        counts: { total: 5, obsidian: 2, repo: 2, supabase: 1 },
+        memoryIndex: { status: 'completed' },
+      },
       inboxChatLoop: { enabled: true, intervalSec: 30, processedTotal: 4 },
+      graphAuditLoop: { enabled: true, intervalMin: 360, lastStatus: 'success' },
       retrievalBoundary: { metadataOnly: { available: true } },
+    });
+  });
+
+  it('triggers obsidian graph audit from the admin route', async () => {
+    const { registerBotAgentQualityPrivacyRoutes } = await import('./bot-agent/qualityPrivacyRoutes');
+    const router = Router();
+
+    registerBotAgentQualityPrivacyRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/obsidian/quality/audit');
+
+    expect(res.statusCode).toBe(202);
+    expect(mockExecuteObsidianGraphAudit).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: { lastStatus: 'success', snapshotPath: '/repo/.runtime/obsidian-graph-audit.json' },
+      snapshot: { pass: true, totals: { files: 12 } },
     });
   });
 
@@ -608,7 +1242,12 @@ describe('bot agent Obsidian runtime routes', () => {
       memoryJobRunner: { running: true },
       obsidianInboxChatLoop: { enabled: true, intervalSec: 30, processedTotal: 4 },
       obsidianLoreSyncLoop: { enabled: true, running: true },
+      obsidianGraphAuditLoop: { enabled: true, intervalMin: 360, lastStatus: 'success' },
       retrievalEvalLoop: { enabled: true, running: false },
+      rewardSignalLoop: { enabled: true, intervalHours: 6, running: false },
+      evalAutoPromoteLoop: { enabled: true, intervalHours: 6, running: false },
+      obsidianMaintenanceControl: { executor: 'repo-runtime', tasks: ['lore-sync', 'graph-audit'] },
+      evalMaintenanceControl: { executor: 'repo-runtime', tasks: ['retrieval-eval', 'reward-signal', 'auto-promote'] },
     });
   });
 
@@ -632,6 +1271,13 @@ describe('bot agent Obsidian runtime routes', () => {
       ok: true,
       snapshot: {
         guildId: 'guild-1',
+        openjarvis: {
+          memorySync: {
+            status: 'fresh',
+            healthy: true,
+            counts: { total: 5, obsidian: 2 },
+          },
+        },
         obsidian: {
           vaultPathConfigured: true,
           vault: {
@@ -672,7 +1318,14 @@ describe('bot agent Obsidian runtime routes', () => {
           memoryJobRunner: { running: true },
           obsidianInboxChatLoop: { enabled: true, intervalSec: 30, processedTotal: 4 },
           obsidianLoreSyncLoop: { enabled: true, running: true },
+          obsidianGraphAuditLoop: { enabled: true, intervalMin: 360, lastStatus: 'success' },
           retrievalEvalLoop: { enabled: true, running: false },
+          rewardSignalLoop: { enabled: true, intervalHours: 6, running: false },
+          evalAutoPromoteLoop: { enabled: true, intervalHours: 6, running: false },
+        },
+        controlSurfaces: {
+          obsidianMaintenance: { executor: 'repo-runtime', tasks: ['lore-sync', 'graph-audit'] },
+          evalMaintenance: { executor: 'repo-runtime', tasks: ['retrieval-eval', 'reward-signal', 'auto-promote'] },
         },
       },
     });
@@ -699,9 +1352,18 @@ describe('bot agent Obsidian runtime routes', () => {
       ok: true,
       snapshot: {
         guildId: null,
+        openjarvis: {
+          memorySync: {
+            status: 'fresh',
+            memoryIndex: { status: 'completed' },
+          },
+        },
         runtime: {
           schedulerPolicy: { summary: { total: 4 } },
-          loops: { memoryJobRunner: { running: true } },
+          loops: {
+            memoryJobRunner: { running: true },
+            obsidianGraphAuditLoop: { enabled: true, intervalMin: 360, lastStatus: 'success' },
+          },
         },
         obsidian: {
           accessPosture: { mode: 'shared-remote-ingress' },
@@ -772,6 +1434,41 @@ describe('bot agent Obsidian runtime routes', () => {
       ok: true,
       executorReadiness: { ready: true, queueDepth: 0 },
       opencodeReadiness: { ready: true, queueDepth: 0 },
+      openjarvisMemorySync: {
+        status: 'fresh',
+        healthy: true,
+        memoryIndex: { status: 'completed' },
+      },
+      openjarvisAutopilot: {
+        workflow: {
+          session_id: 'openjarvis-1',
+          runtime_lane: 'operator-personal',
+          lastRecallRequest: {
+            blockedAction: 'planActions',
+            runtimeLane: 'operator-personal',
+          },
+          lastDecisionDistillate: {
+            summary: 'Pipeline released after 1 bounded step.',
+            promoteAs: 'development_slice',
+          },
+          lastArtifactRefs: [
+            {
+              locator: 'docs/CHANGELOG-ARCH.md',
+              refKind: 'repo-file',
+            },
+          ],
+        },
+        capacity: {
+          score: 82,
+          state: 'recovering',
+          loop_action: 'continue',
+        },
+        gcp_native: {
+          score: 64,
+          primary_reason: 'gcp_openjarvis_serve_not_remote',
+        },
+        gcp_capacity_recovery_requested: true,
+      },
       workerHealth: {
         reachable: true,
         status: 200,
@@ -800,6 +1497,377 @@ describe('bot agent Obsidian runtime routes', () => {
           persistedActionName: 'opencode.execute',
           legacyActionName: 'opencode.execute',
         },
+      },
+    });
+  });
+
+  it('returns OpenJarvis autopilot status from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/openjarvis/autopilot', {
+      query: {
+        capacityTarget: '95',
+        gcpCapacityRecovery: 'true',
+        runtimeLane: 'operator-personal',
+      },
+    });
+
+    expect(mockGetOpenJarvisAutopilotStatus).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: 95,
+      gcpCapacityRecoveryRequested: true,
+      runtimeLane: 'operator-personal',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      status: {
+        workflow: {
+          session_id: 'openjarvis-1',
+          lastRecallRequest: {
+            nextAction: 'resume bounded GCP capacity recovery until capacity reaches 90',
+          },
+          lastDecisionDistillate: {
+            summary: 'Pipeline released after 1 bounded step.',
+            promoteAs: 'development_slice',
+          },
+          lastArtifactRefs: [
+            {
+              locator: 'docs/CHANGELOG-ARCH.md',
+              refKind: 'repo-file',
+            },
+          ],
+        },
+        capacity: {
+          score: 82,
+        },
+        supervisor: {
+          auto_select_queued_objective: true,
+          auto_launch_queued_chat: true,
+        },
+      },
+    });
+  });
+
+  it('returns OpenJarvis session-open bundle from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/openjarvis/session-open-bundle', {
+      query: {
+        capacityTarget: '95',
+        gcpCapacityRecovery: 'false',
+        runtimeLane: 'operator-personal',
+        guildId: 'guild-1',
+        userId: 'user-1',
+        priority: 'precise',
+        skillId: 'review',
+      },
+    });
+
+    expect(mockResolveAgentPersonalizationSnapshot).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      userId: 'user-1',
+      requestedPriority: 'precise',
+      requestedSkillId: 'review',
+    });
+    expect(mockGetOpenJarvisSessionOpenBundle).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: 95,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      personalizationSnapshot: expect.objectContaining({
+        guildId: 'guild-1',
+        userId: 'user-1',
+      }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      bundle: {
+        objective: 'recover GCP native leverage',
+        continuity: {
+          auto_restart_on_release: true,
+          next_action: 'restart the next bounded automation cycle from the active objective',
+        },
+        hermes_runtime: {
+          readiness: 'partial',
+          current_role: 'continuity-sidecar',
+          can_continue_without_gpt_session: true,
+        },
+        orchestration: {
+          current_priority: 'compact-bootstrap-first',
+          advisor_strategy: {
+            posture: 'conditional-escalation',
+          },
+        },
+        personalization: {
+          communication_style: 'concise',
+        },
+      },
+    });
+  });
+
+  it('returns the Hermes runtime readiness block directly', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/openjarvis/hermes-runtime', {
+      query: {
+        runtimeLane: 'operator-personal',
+      },
+    });
+
+    expect(mockGetOpenJarvisAutopilotStatus).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeLane: 'operator-personal',
+    }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      hermesRuntime: {
+        readiness: 'partial',
+        current_role: 'continuity-sidecar',
+        remediation_actions: [
+          {
+            action_id: 'start-supervisor-loop',
+          },
+        ],
+      },
+    });
+  });
+
+  it('prepares the OpenJarvis session-start state through the admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/session-start', {
+      body: {
+        objective: 'stabilize the next GPT relaunch objective',
+        runtimeLane: 'operator-personal',
+        startSupervisor: true,
+        createChatNote: true,
+      },
+      user: { id: 'admin-user' },
+    });
+
+    expect(mockPrepareOpenJarvisHermesSessionStart).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: null,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      objective: 'stabilize the next GPT relaunch objective',
+      objectives: [],
+      title: null,
+      guildId: null,
+      createChatNote: true,
+      startSupervisor: true,
+      dryRun: false,
+      visibleTerminal: true,
+      requesterId: 'admin-user',
+      requesterKind: 'session',
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'prepared',
+        sharedObsidianPreferred: true,
+        remediation: {
+          actionId: 'start-supervisor-loop',
+          completion: 'queued',
+        },
+      },
+    });
+  });
+
+  it('creates an Obsidian chat note seeded with the Hermes runtime state', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/hermes-runtime/chat-note', {
+      body: {
+        title: 'Hermes Runtime Follow-up',
+        runtimeLane: 'operator-personal',
+      },
+      user: { id: 'admin-user' },
+    });
+
+    expect(mockCreateOpenJarvisHermesRuntimeChatNote).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: null,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      title: 'Hermes Runtime Follow-up',
+      guildId: null,
+      requesterId: 'admin-user',
+      requesterKind: 'session',
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'created',
+        fileName: 'chat/inbox/2026-04-13/010203_hermes-runtime-handoff.md',
+      },
+    });
+  });
+
+  it('queues the next bounded objective into the Hermes continuity packet', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/hermes-runtime/queue-objective', {
+      body: {
+        objective: 'stabilize the next GPT relaunch objective',
+        runtimeLane: 'operator-personal',
+      },
+    });
+
+    expect(mockEnqueueOpenJarvisHermesRuntimeObjectives).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: null,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      objective: 'stabilize the next GPT relaunch objective',
+      objectives: [],
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'updated',
+        queuedObjectives: ['stabilize the next GPT relaunch objective'],
+      },
+    });
+  });
+
+  it('launches the next bounded Hermes objective into VS Code chat', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/hermes-runtime/chat-launch', {
+      body: {
+        objective: 'stabilize the next GPT relaunch objective',
+        runtimeLane: 'operator-personal',
+        addFilePaths: ['docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md'],
+      },
+    });
+
+    expect(mockLaunchOpenJarvisHermesChatSession).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: null,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      objective: 'stabilize the next GPT relaunch objective',
+      prompt: null,
+      chatMode: null,
+      addFilePaths: ['docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md'],
+      maximize: true,
+      newWindow: false,
+      reuseWindow: true,
+      dryRun: false,
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'queued',
+        objective: 'stabilize the next GPT relaunch objective',
+      },
+    });
+  });
+
+  it('runs a Hermes runtime remediation action', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/hermes-runtime/remediate', {
+      body: {
+        actionId: 'start-supervisor-loop',
+        runtimeLane: 'operator-personal',
+        visibleTerminal: true,
+      },
+    });
+
+    expect(mockRunOpenJarvisHermesRuntimeRemediation).toHaveBeenCalledWith({
+      sessionPath: null,
+      vaultPath: null,
+      capacityTarget: null,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      actionId: 'start-supervisor-loop',
+      dryRun: false,
+      visibleTerminal: true,
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        actionId: 'start-supervisor-loop',
+        completion: 'queued',
       },
     });
   });
@@ -838,6 +1906,136 @@ describe('bot agent Obsidian runtime routes', () => {
           canonicalWorkerEnvKey: 'MCP_IMPLEMENT_WORKER_URL',
           legacyWorkerEnvKey: 'MCP_OPENCODE_WORKER_URL',
         },
+      },
+    });
+  });
+
+  it('runs OpenJarvis memory sync from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    mockRunOpenJarvisMemorySync.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      force: true,
+      guildId: 'guild-1',
+      scriptName: 'openjarvis:memory:sync',
+      command: 'node --import tsx scripts/sync-openjarvis-memory.ts --force=true --guildId=guild-1',
+      completion: 'queued',
+      pid: 9876,
+      startedAt: '2026-04-11T00:00:00.000Z',
+      finishedAt: '2026-04-11T00:00:00.100Z',
+      durationMs: 100,
+      stdoutLines: [],
+      stderrLines: [],
+      statusBefore: mockGetOpenJarvisMemorySyncStatus(),
+      statusAfter: mockGetOpenJarvisMemorySyncStatus(),
+      error: null,
+    });
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/memory-sync', {
+      body: {
+        dryRun: false,
+        force: true,
+        guildId: 'guild-1',
+      },
+    });
+
+    expect(mockRunOpenJarvisMemorySync).toHaveBeenCalledWith({
+      dryRun: false,
+      force: true,
+      guildId: 'guild-1',
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'queued',
+        pid: 9876,
+        command: 'node --import tsx scripts/sync-openjarvis-memory.ts --force=true --guildId=guild-1',
+      },
+    });
+  });
+
+  it('returns Hermes VS Code bridge status from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/hermes/vscode-bridge');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      status: {
+        configured: true,
+        codeCliExists: true,
+        packetExists: true,
+        allowedActions: ['open-agents', 'goto', 'diff', 'open', 'wait', 'chat'],
+      },
+    });
+  });
+
+  it('runs Hermes VS Code bridge from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/hermes/vscode-bridge', {
+      body: {
+        action: 'goto',
+        filePath: 'docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md',
+        line: 56,
+        reason: 'inspect allowlist section',
+      },
+    });
+
+    expect(mockRunHermesVsCodeBridge).toHaveBeenCalledWith({
+      action: 'goto',
+      filePath: 'docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md',
+      targetPath: null,
+      leftPath: null,
+      rightPath: null,
+      line: 56,
+      column: null,
+      reason: 'inspect allowlist section',
+      packetPath: null,
+      codeCliPath: null,
+      vaultPath: null,
+      prompt: null,
+      chatMode: null,
+      addFilePaths: [],
+      maximize: false,
+      newWindow: false,
+      reuseWindow: true,
+      dryRun: false,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        action: 'goto',
+        completion: 'completed',
+        packetLog: { logged: true },
       },
     });
   });
@@ -1192,6 +2390,42 @@ describe('bot agent Obsidian runtime routes', () => {
       result: {
         healthy: false,
         issueCount: 2,
+      },
+    });
+  });
+
+  it('returns personalization snapshot from the runtime route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/personalization', {
+      query: {
+        guildId: 'guild-1',
+        userId: 'user-1',
+        priority: 'precise',
+        skillId: 'incident-review',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockResolveAgentPersonalizationSnapshot).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      userId: 'user-1',
+      requestedPriority: 'precise',
+      requestedSkillId: 'incident-review',
+    });
+    expect(res.body).toMatchObject({
+      ok: true,
+      snapshot: {
+        userId: 'user-1',
+        promptHints: ['[personalization:profile] style=concise'],
       },
     });
   });

@@ -1,10 +1,11 @@
 {
   "schemaVersion": 3,
-  "updatedAt": "2026-04-11",
+  "updatedAt": "2026-04-15",
   "description": "Repository-source backfill catalog for canonical Obsidian system docs, operating-model docs, and retrieval-eval targets.",
   "policy": {
     "humanFirst": true,
     "rules": [
+      "Start with the team-shared Obsidian onboarding doc before optional local acceleration lanes or personal runtime assumptions.",
       "Start with operator-primary canonical docs before generated knowledge-control artifacts.",
       "Treat generated ops/knowledge-control pages as navigation aids and evidence support, not as the first semantic source.",
       "When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries.",
@@ -17,6 +18,29 @@
     ]
   },
   "entries": [
+    {
+      "id": "control-team-shared-obsidian-start-here",
+      "title": "Team Shared Obsidian Start Here",
+      "sourcePath": "docs/TEAM_SHARED_OBSIDIAN_START_HERE.md",
+      "targetPath": "ops/control-tower/TEAM_SHARED_OBSIDIAN_START_HERE.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "onboarding", "obsidian", "team-shared", "collaboration"],
+      "intent": "architecture",
+      "queries": [
+        "team shared obsidian start here",
+        "team does not have openjarvis hermes",
+        "obsidian first collaboration entrypoint",
+        "shared onboarding no local agents required",
+        "how do we share packets with the team",
+        "supabase vs obsidian packet ownership",
+        "acp packet handoff team sharing"
+      ]
+    },
     {
       "id": "control-blueprint",
       "title": "Platform Control Tower Blueprint",
@@ -149,6 +173,44 @@
         "operator sop decision table",
         "runtime decision thresholds",
         "operator decision table"
+      ]
+    },
+    {
+      "id": "context-team-shareable-user-memory",
+      "title": "Team Shareable User Memory",
+      "sourcePath": "docs/planning/TEAM_SHAREABLE_USER_MEMORY.md",
+      "targetPath": "ops/contexts/repos/team-muel_discord-news-bot/TEAM_SHAREABLE_USER_MEMORY.md",
+      "plane": "control",
+      "concern": "repository-context",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "collaboration", "agent-behavior", "team-shared", "discord-news-bot"],
+      "intent": "architecture",
+      "queries": [
+        "team shareable user memory",
+        "shared agent behavior alignment",
+        "discord news bot collaboration preferences"
+      ]
+    },
+    {
+      "id": "context-local-collab-workflow",
+      "title": "Local Collaborative Agent Workflow",
+      "sourcePath": "docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md",
+      "targetPath": "ops/contexts/repos/team-muel_discord-news-bot/LOCAL_COLLAB_AGENT_WORKFLOW.md",
+      "plane": "control",
+      "concern": "repository-context",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "workflow", "local-collab", "agent-routing", "discord-news-bot"],
+      "intent": "architecture",
+      "queries": [
+        "local collaborative agent workflow",
+        "lead consult workflow",
+        "discord news bot local collab"
       ]
     },
     {
@@ -504,6 +566,66 @@
       ]
     },
     {
+      "id": "obsidian-digital-twin-constitution",
+      "title": "Obsidian Digital Twin Constitution",
+      "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md",
+      "targetPath": "ops/control-tower/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md",
+      "sourceMode": "full-source",
+      "plane": "control",
+      "concern": "obsidian-operating-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "obsidian", "digital-twin", "constitution"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian digital twin constitution",
+        "vault write side constitution",
+        "digital twin note transformation rules"
+      ]
+    },
+    {
+      "id": "obsidian-digital-twin-note-schema",
+      "title": "Obsidian Digital Twin Note Schema",
+      "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md",
+      "targetPath": "ops/control-tower/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md",
+      "sourceMode": "full-source",
+      "plane": "control",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["control", "obsidian", "digital-twin", "schema"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian digital twin note schema",
+        "vault frontmatter contract",
+        "digital twin note families"
+      ]
+    },
+    {
+      "id": "obsidian-digital-twin-note-templates",
+      "title": "Obsidian Digital Twin Note Templates",
+      "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md",
+      "targetPath": "ops/control-tower/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md",
+      "sourceMode": "full-source",
+      "plane": "control",
+      "concern": "obsidian-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "obsidian", "digital-twin", "template"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian digital twin note templates",
+        "digital twin note skeletons",
+        "vault source digest canonical templates"
+      ]
+    },
+    {
       "id": "obsidian-transition-plan",
       "title": "Obsidian Transition Plan",
       "sourcePath": "docs/planning/OBSIDIAN_TRANSITION_PLAN.md",
@@ -521,6 +643,26 @@
         "obsidian transition plan",
         "vault operating model transition",
         "obsidian operating system migration plan"
+      ]
+    },
+    {
+      "id": "obsidian-digital-twin-ingest-workflow",
+      "title": "Obsidian Digital Twin Ingest Workflow",
+      "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md",
+      "targetPath": "plans/runtime/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "obsidian-operating-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "obsidian", "digital-twin", "ingest"],
+      "intent": "architecture",
+      "queries": [
+        "obsidian digital twin ingest workflow",
+        "source to canonical ingest loop",
+        "vault ingest workflow"
       ]
     },
     {
@@ -563,6 +705,110 @@
         "brain hands session semantic owner",
         "render gcp supabase obsidian layering",
         "managed agents architecture overlay"
+      ]
+    },
+    {
+      "id": "hermes-obsidian-minimum-bootstrap",
+      "title": "Hermes Obsidian Minimum Bootstrap",
+      "sourcePath": "docs/planning/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md",
+      "targetPath": "plans/runtime/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "managed-agents-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "hermes", "obsidian", "bootstrap"],
+      "intent": "architecture",
+      "queries": [
+        "hermes obsidian minimum bootstrap",
+        "hermes hands layer bootstrap",
+        "minimum vault first hermes rollout"
+      ]
+    },
+    {
+      "id": "hermes-gpt-dual-agent-runtime-contract",
+      "title": "Hermes GPT Dual-Agent Runtime Contract",
+      "sourcePath": "docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md",
+      "targetPath": "plans/runtime/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "managed-agents-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "hermes", "gpt", "dual-agent", "session-continuity"],
+      "intent": "architecture",
+      "queries": [
+        "hermes gpt dual agent runtime contract",
+        "bounded gpt persistent hermes continuity",
+        "obsidian handoff packet contract",
+        "hermes recall triggers and progress snapshot"
+      ]
+    },
+    {
+      "id": "gpt-hermes-single-ingress-operating-plan",
+      "title": "GPT Hermes Single-Ingress Operating Plan",
+      "sourcePath": "docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md",
+      "targetPath": "plans/runtime/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "managed-agents-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "gpt", "hermes", "single-ingress", "gcp-worker", "session-continuity"],
+      "intent": "architecture",
+      "queries": [
+        "gpt hermes single ingress operating plan",
+        "single ingress gpt hermes operating model",
+        "gcp native leverage target for hermes continuity",
+        "bounded gpt ingress persistent hermes sidecar"
+      ]
+    },
+    {
+      "id": "gpt-hermes-dual-agent-local-orchestration-plan",
+      "title": "GPT Hermes Dual-Agent Local Orchestration Plan",
+      "sourcePath": "docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md",
+      "targetPath": "plans/runtime/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "managed-agents-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "gpt", "hermes", "dual-agent", "n8n", "supabase", "orchestration"],
+      "intent": "architecture",
+      "queries": [
+        "gpt hermes dual agent local orchestration plan",
+        "hermes first class second assistant target state",
+        "n8n supabase hot state plane for hermes and gpt",
+        "obsidian semantic owner not hot path bus"
+      ]
+    },
+    {
+      "id": "openjarvis-unattended-autonomy-setup",
+      "title": "OpenJarvis Unattended Autonomy Setup",
+      "sourcePath": "docs/planning/OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md",
+      "targetPath": "plans/runtime/OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "managed-agents-model",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "openjarvis", "autonomy", "supervisor", "queue-chat", "operations"],
+      "intent": "operations",
+      "queries": [
+        "openjarvis unattended autonomy setup",
+        "queue chat supervisor setup",
+        "queued chat launched stop reason",
+        "hermes queue chat operator entrypoint"
       ]
     },
     {
@@ -1175,6 +1421,26 @@
         "architecture changelog",
         "recent architecture significant changes",
         "repo visible architecture change history"
+      ]
+    },
+    {
+      "id": "workflow-capability-demand-ledger",
+      "title": "Workflow Capability Demand Ledger",
+      "sourcePath": "docs/planning/development/WORKFLOW_CAPABILITY_DEMAND_LEDGER.md",
+      "targetPath": "plans/development/WORKFLOW_CAPABILITY_DEMAND_LEDGER.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": false,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["workflow", "capability-demand", "development", "autonomy"],
+      "intent": "memory",
+      "queries": [
+        "workflow capability demand ledger",
+        "latest persisted workflow demands",
+        "repeated capability demand patterns",
+        "workflow autonomy gaps"
       ]
     },
     {

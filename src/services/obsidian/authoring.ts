@@ -2,18 +2,11 @@ import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { getObsidianVaultRoot } from '../../utils/obsidianEnv';
 import { doc } from './obsidianDocBuilder';
+import { sanitizeGuildId } from './obsidianMetadataUtils';
 import { writeObsidianNoteWithAdapter } from './router';
 import { getToolCatalog } from '../tools/externalAdapterRegistry';
 import type { ObsidianKnowledgeReflectionBundle } from './knowledgeCompilerService';
 import type { ObsidianFrontmatterValue } from './types';
-
-const sanitizeGuildId = (value: unknown): string => {
-  const candidate = String(value || '').trim();
-  if (!/^\d{6,30}$/.test(candidate)) {
-    return '';
-  }
-  return candidate;
-};
 
 const sanitizeFileName = (value: unknown): string => {
   const candidate = String(value || '').trim().replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ');

@@ -18,6 +18,7 @@ import {
   delegateAlertDispatch,
   delegateArticleContextFetch,
 } from '../../automation/n8nDelegationService';
+import { listN8nLocalWorkflowsViaDockerCli } from '../../../../scripts/bootstrap-n8n-local.mjs';
 import type { ActionDefinition, ActionExecutionResult } from './types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -34,6 +35,32 @@ const withOperateRouting = (
     reason,
   },
 });
+
+type N8nWorkflowListItem = { id: string; name: string; active?: boolean };
+
+const parseWorkflowListOutput = (raw: string): N8nWorkflowListItem[] => {
+  try {
+    const parsed = JSON.parse(raw) as { data?: Array<{ id: string; name: string; active?: boolean }> };
+    return Array.isArray(parsed.data) ? parsed.data : [];
+  } catch {
+    return [];
+  }
+};
+
+const formatWorkflowListArtifacts = (workflows: N8nWorkflowListItem[]): string[] => workflows.map((workflow) => (
+  typeof workflow.active === 'boolean'
+    ? `[${workflow.id}] ${workflow.name} (active=${workflow.active})`
+    : `[${workflow.id}] ${workflow.name}`
+));
+
+const tryListLocalWorkflowsViaCli = (): N8nWorkflowListItem[] | null => {
+  try {
+    return listN8nLocalWorkflowsViaDockerCli()
+      .filter((workflow): workflow is N8nWorkflowListItem => Boolean(workflow));
+  } catch {
+    return null;
+  }
+};
 
 // ─── n8n.status ───────────────────────────────────────────────────────────────
 
@@ -54,15 +81,23 @@ export const n8nStatusAction: ActionDefinition = {
     if (n8nAdapter?.available) {
       const listResult = await runExternalAction('n8n' as never, 'workflow.list', { limit: 25 });
       if (listResult.ok && listResult.output.length > 0) {
-        try {
-          const parsed = JSON.parse(listResult.output[0]) as { data?: Array<{ id: string; name: string; active: boolean }> };
-          const workflows = parsed.data || [];
-          workflowSummary = workflows.length > 0
-            ? workflows.map((w) => `[${w.id}] ${w.name} (active=${w.active})`).join('\n')
-            : '활성 워크플로 없음';
-        } catch {
+        const workflows = parseWorkflowListOutput(listResult.output[0]);
+        if (workflows.length > 0) {
+          workflowSummary = formatWorkflowListArtifacts(workflows).join('\n');
+        } else {
           workflowSummary = listResult.output[0].slice(0, 500);
         }
+      } else if (listResult.error === 'HTTP_401') {
+        const cliFallback = tryListLocalWorkflowsViaCli();
+        if (cliFallback) {
+          workflowSummary = cliFallback.length > 0
+            ? `${formatWorkflowListArtifacts(cliFallback).join('\n')}\n(local container CLI fallback; public API CRUD still needs N8N_API_KEY)`
+            : '활성 워크플로 없음\n(local container CLI fallback; public API CRUD still needs N8N_API_KEY)';
+        } else {
+          workflowSummary = 'REST API auth required: set N8N_API_KEY for workflow.list/status/execute. Webhook delegation can still work without it.';
+        }
+      } else if (!listResult.ok) {
+        workflowSummary = `workflow.list unavailable: ${listResult.error || listResult.summary}`;
       }
     }
 
@@ -105,6 +140,23 @@ export const n8nWorkflowListAction: ActionDefinition = {
 
     const result = await runExternalAction('n8n' as never, 'workflow.list', { limit });
 
+    if (!result.ok && result.error === 'HTTP_401') {
+      const cliFallback = tryListLocalWorkflowsViaCli();
+      if (cliFallback) {
+        const artifacts = formatWorkflowListArtifacts(cliFallback);
+        return withOperateRouting({
+          ok: true,
+          name: 'n8n.workflow.list',
+          summary: `로컬 CLI fallback으로 워크플로 ${cliFallback.length}건 조회됨`,
+          artifacts: artifacts.length > 0
+            ? [...artifacts, 'local container CLI fallback used; public API CRUD still needs N8N_API_KEY.']
+            : ['활성 워크플로 없음', 'local container CLI fallback used; public API CRUD still needs N8N_API_KEY.'],
+          verification: ['workflow.list local-cli fallback'],
+          durationMs: result.durationMs,
+        }, 'n8n workflow list local-cli fallback');
+      }
+    }
+
     if (!result.ok) {
       return withOperateRouting({
         ok: false,
@@ -120,14 +172,11 @@ export const n8nWorkflowListAction: ActionDefinition = {
     const artifacts: string[] = [];
 
     if (result.output.length > 0) {
-      try {
-        const parsed = JSON.parse(result.output[0]) as { data?: Array<{ id: string; name: string; active: boolean }> };
-        const workflows = parsed.data || [];
+      const workflows = parseWorkflowListOutput(result.output[0]);
+      if (workflows.length > 0) {
         summary = `활성 워크플로 ${workflows.length}건 조회됨`;
-        for (const w of workflows) {
-          artifacts.push(`[${w.id}] ${w.name} (active=${w.active})`);
-        }
-      } catch {
+        artifacts.push(...formatWorkflowListArtifacts(workflows));
+      } else {
         artifacts.push(result.output[0].slice(0, 1000));
       }
     }

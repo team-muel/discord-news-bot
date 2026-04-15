@@ -63,6 +63,7 @@ MCP_UPSTREAM_SERVERS=[{"id":"supabase-ro","label":"Shared Supabase Read Plane","
 3. 팀 리드는 `scripts/register-team-ssh.ps1`로 키를 등록한다.
 4. VS Code를 재시작하고 `MCP: List Servers`에서 `gcpCompute`를 Enable 또는 Start 한다.
 5. shared MCP 쪽 도구를 바꿨다면 `scripts/publish-gcp-shared-mcp.ps1 -RestartServices`로 GCP VM에 반영한다.
+   OpenJarvis shared-control slice만 바꿨다면 `scripts/publish-gcp-shared-mcp.ps1 -SyncProfile openjarvis-shared-control -RestartServices`를 우선 사용하고, 그 preset에 없는 추가 touched dependency만 `-IncludePath`로 덧붙인다.
 
 ### shared-only 구조
 

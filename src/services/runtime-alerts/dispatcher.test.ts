@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
-const { mockShouldDelegate, mockDelegateAlertDispatch, mockFetch } = vi.hoisted(() => ({
+const { mockShouldDelegate, mockShouldSkipInlineFallback, mockDelegateAlertDispatch, mockFetch } = vi.hoisted(() => ({
   mockShouldDelegate: vi.fn(() => false),
+  mockShouldSkipInlineFallback: vi.fn(() => false),
   mockDelegateAlertDispatch: vi.fn(),
   mockFetch: vi.fn(),
 }));
 
 vi.mock('../automation/n8nDelegationService', () => ({
   shouldDelegate: mockShouldDelegate,
+  shouldSkipInlineFallback: mockShouldSkipInlineFallback,
   delegateAlertDispatch: mockDelegateAlertDispatch,
 }));
 
@@ -32,6 +34,7 @@ vi.mock('@sentry/node', () => ({
 describe('alert dispatcher', () => {
   beforeEach(() => {
     mockShouldDelegate.mockReset().mockReturnValue(false);
+    mockShouldSkipInlineFallback.mockReset().mockReturnValue(false);
     mockDelegateAlertDispatch.mockReset();
     mockFetch.mockReset();
     vi.stubGlobal('fetch', mockFetch);
@@ -64,6 +67,18 @@ describe('alert dispatcher', () => {
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toBe('https://hooks.test/alert');
     expect(JSON.parse(init.body)).toHaveProperty('text');
+  });
+
+  it('skips inline webhook fallback when delegation-first is enabled', async () => {
+    mockShouldDelegate.mockReturnValue(true);
+    mockShouldSkipInlineFallback.mockReturnValue(true);
+    mockDelegateAlertDispatch.mockResolvedValue({ delegated: true, ok: false, data: null });
+
+    const { createAlertDispatcher } = await import('./dispatcher');
+    const emit = createAlertDispatcher();
+    await emit({ key: 'test-2b', title: 'Alert', message: 'test' });
+
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('uses inline webhook when n8n delegation is disabled', async () => {

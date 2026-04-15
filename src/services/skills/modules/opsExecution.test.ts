@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockRunGoalActions, mockRunSkillText } = vi.hoisted(() => ({
-  mockRunGoalActions: vi.fn(),
+const { mockRunGoalPipeline, mockRunSkillText } = vi.hoisted(() => ({
+  mockRunGoalPipeline: vi.fn(),
   mockRunSkillText: vi.fn(),
 }));
 
 vi.mock('../actionRunner', () => ({
-  runGoalActions: mockRunGoalActions,
+  runGoalPipeline: mockRunGoalPipeline,
 }));
 
 vi.mock('./common', () => ({
@@ -28,7 +28,7 @@ const emptyDiagnostics = {
 
 describe('executeOpsExecutionSkill', () => {
   beforeEach(() => {
-    mockRunGoalActions.mockReset();
+    mockRunGoalPipeline.mockReset();
     mockRunSkillText.mockReset();
   });
 
@@ -39,7 +39,7 @@ describe('executeOpsExecutionSkill', () => {
       nextPath: 'guilds/123/Guild_Lore.md',
       customerImpact: false,
     });
-    mockRunGoalActions.mockResolvedValue({
+    mockRunGoalPipeline.mockResolvedValue({
       handled: true,
       output: '요청 결과',
       hasSuccess: true,
@@ -71,10 +71,13 @@ describe('executeOpsExecutionSkill', () => {
         }),
       }),
     ]);
+    expect(mockRunGoalPipeline).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeLane: 'public-guild',
+    }));
   });
 
   it('반성 fallback 경로에서도 action outcome을 유지한다', async () => {
-    mockRunGoalActions.mockResolvedValue({
+    mockRunGoalPipeline.mockResolvedValue({
       handled: true,
       output: '실패 로그',
       hasSuccess: false,
@@ -108,5 +111,8 @@ describe('executeOpsExecutionSkill', () => {
         code: 'ACTION_NOT_ALLOWED',
       }),
     ]);
+    expect(mockRunGoalPipeline).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeLane: 'public-guild',
+    }));
   });
 });

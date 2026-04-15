@@ -5,6 +5,7 @@
  * consumers to import types without pulling in the full runtime.
  */
 import type { LangGraphNodeId, LangGraphState } from './langgraph/stateContract';
+import type { AgentPersonalizationSnapshot } from './agent/agentPersonalizationService';
 import type { SkillId } from './skills/types';
 import type { TrafficRoute, TrafficRoutingDecision } from './workflow/trafficRoutingService';
 
@@ -101,6 +102,7 @@ export type AgentSession = {
     selectedByRouter?: boolean;
     scoreGainVsBaseline?: number;
   };
+  personalization?: AgentPersonalizationSnapshot | null;
   memoryHints: string[];
   intentClassification?: import('./agent/agentRuntimeTypes').IntentClassification | null;
   steps: AgentStep[];

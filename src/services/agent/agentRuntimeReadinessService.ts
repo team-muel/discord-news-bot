@@ -1,6 +1,7 @@
 import { getActionRunnerDiagnosticsSnapshot } from '../skills/actionRunner';
 import { getWorkerProposalMetricsSnapshot } from '../workerGeneration/workerProposalMetrics';
 import { buildGoNoGoReport } from '../goNoGoService';
+import { getOpenJarvisMemorySyncStatus } from '../openjarvis/openjarvisMemorySyncStatusService';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv } from '../../utils/env';
 import { getAgentTelemetryQueueSnapshot } from './agentTelemetryQueue';
@@ -120,6 +121,7 @@ export const buildAgentRuntimeReadinessReport = async (params: {
 
   const action = getActionRunnerDiagnosticsSnapshot();
   const worker = getWorkerProposalMetricsSnapshot();
+  const openjarvisMemorySync = getOpenJarvisMemorySyncStatus();
   const telemetryQueue = getAgentTelemetryQueueSnapshot();
   const telemetryAttempted = Math.max(1, telemetryQueue.processed + telemetryQueue.dropped);
   const telemetryDropRate = safeRate(telemetryQueue.dropped, telemetryAttempted);
@@ -201,6 +203,18 @@ export const buildAgentRuntimeReadinessReport = async (params: {
     detail: `processed=${telemetryQueue.processed}, dropped=${telemetryQueue.dropped}`,
   });
 
+  const openjarvisMemorySyncRequired = openjarvisMemorySync.configured;
+  const openjarvisMemorySyncHealthy = openjarvisMemorySync.status === 'fresh';
+  checks.push({
+    id: 'observability-openjarvis-memory-sync',
+    category: 'observability',
+    status: openjarvisMemorySyncHealthy ? 'pass' : openjarvisMemorySyncRequired ? 'fail' : 'warn',
+    label: 'OpenJarvis memory sync freshness',
+    actual: openjarvisMemorySync.status,
+    threshold: openjarvisMemorySyncRequired ? 'fresh' : 'fresh (recommended)',
+    detail: openjarvisMemorySync.issues[0] || openjarvisMemorySync.generatedAt || 'no OpenJarvis memory sync summary available',
+  });
+
   checks.push({
     id: 'safety-action-missing-implementation',
     category: 'safety',
@@ -272,6 +286,7 @@ export const buildAgentRuntimeReadinessReport = async (params: {
       workerProposal: worker,
       retrievalLatest: retrieval,
       telemetryQueue,
+      openjarvisMemorySync,
     },
   };
 };

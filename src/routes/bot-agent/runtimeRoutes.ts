@@ -15,7 +15,11 @@ import { summarizeOpencodeQueueReadiness } from '../../services/opencode/opencod
 import { getMemoryJobRunnerStats, getMemoryQueueHealthSnapshot } from '../../services/memory/memoryJobRunner';
 import { getObsidianInboxChatLoopStats } from '../../services/obsidian/obsidianInboxChatLoopService';
 import { getObsidianLoreSyncLoopStats } from '../../services/obsidian/obsidianLoreSyncService';
+import { getObsidianMaintenanceControlSurface } from '../../services/obsidian/obsidianMaintenanceControlService';
 import { getRetrievalEvalLoopStats } from '../../services/eval/retrievalEvalLoopService';
+import { getRewardSignalLoopStatus } from '../../services/eval/rewardSignalLoopService';
+import { getEvalAutoPromoteLoopStatus } from '../../services/eval/evalAutoPromoteLoopService';
+import { getEvalMaintenanceControlSurface } from '../../services/eval/evalMaintenanceControlService';
 import { buildAgentRuntimeReadinessReport } from '../../services/agent/agentRuntimeReadinessService';
 import { evaluateGuildSloAndPersistAlerts, evaluateGuildSloReport, listGuildSloAlertEvents } from '../../services/agent/agentSloService';
 import { getFinopsBudgetStatus, getFinopsSummary } from '../../services/finopsService';
@@ -23,6 +27,17 @@ import { getLlmExperimentSummary } from '../../services/llmExperimentAnalyticsSe
 import { getLlmRuntimeSnapshot } from '../../services/llmClient';
 import { buildSocialQualityOperationalSnapshot } from '../../services/agent/agentSocialQualitySnapshotService';
 import { buildWorkerApprovalGateSnapshot } from '../../services/agent/agentWorkerApprovalGateSnapshotService';
+import { resolveAgentPersonalizationSnapshot } from '../../services/agent/agentPersonalizationService';
+import { getOpenJarvisAutopilotStatus, getOpenJarvisSessionOpenBundle } from '../../services/openjarvis/openjarvisAutopilotStatusService';
+import {
+  createOpenJarvisHermesRuntimeChatNote,
+  enqueueOpenJarvisHermesRuntimeObjectives,
+  launchOpenJarvisHermesChatSession,
+  prepareOpenJarvisHermesSessionStart,
+  runOpenJarvisHermesRuntimeRemediation,
+} from '../../services/openjarvis/openjarvisHermesRuntimeControlService';
+import { getOpenJarvisMemorySyncStatus, runOpenJarvisMemorySync } from '../../services/openjarvis/openjarvisMemorySyncStatusService';
+import { getHermesVsCodeBridgeStatus, runHermesVsCodeBridge } from '../../services/runtime/hermesVsCodeBridgeService';
 import { buildGoNoGoReport } from '../../services/goNoGoService';
 import { buildToolLearningWeeklyReport } from '../../services/toolLearningService';
 import {
@@ -38,7 +53,7 @@ import {
   type ObsidianKnowledgePromotionCandidate,
   type ObsidianKnowledgePromotionKind,
 } from '../../services/obsidian/knowledgeCompilerService';
-import { getLatestObsidianGraphAuditSnapshot } from '../../services/obsidian/obsidianQualityService';
+import { getLatestObsidianGraphAuditSnapshot, getObsidianGraphAuditLoopStats } from '../../services/obsidian/obsidianQualityService';
 import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus } from '../../services/obsidian/router';
 import { loadOperatingBaseline } from '../../services/runtime/operatingBaseline';
@@ -84,6 +99,13 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   return fallback;
 };
 
+const toOptionalBoundedInt = (value: unknown, max: number): number | null => {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
+  }
+  return toBoundedInt(value, 1, { min: 1, max });
+};
+
 const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -97,6 +119,25 @@ const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
   }
   return result;
 };
+
+const toStringArrayParam = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return dedupeStrings(value.map((entry) => toStringParam(entry)));
+  }
+  const normalized = toStringParam(value);
+  if (!normalized) {
+    return [];
+  }
+  return dedupeStrings(normalized.split(',').map((entry) => entry.trim()));
+};
+
+const buildOpenJarvisAutopilotStatusParams = (query: Record<string, unknown> | null | undefined) => ({
+  sessionPath: toStringParam(query?.sessionPath) || null,
+  vaultPath: toStringParam(query?.vaultPath) || null,
+  capacityTarget: toOptionalBoundedInt(query?.capacityTarget, 100),
+  gcpCapacityRecoveryRequested: parseBool(toStringParam(query?.gcpCapacityRecovery) || undefined, false),
+  runtimeLane: toStringParam(query?.runtimeLane) || null,
+});
 
 const CHANNEL_ROUTING_KEY_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
 
@@ -401,6 +442,7 @@ export const buildOperatorSnapshot = async (params: {
 
   const localVault = getObsidianVaultRuntimeInfo();
   const adapterRuntime = getObsidianAdapterRuntimeStatus();
+  const openjarvisMemorySync = getOpenJarvisMemorySyncStatus();
   const vaultParity = buildVaultParitySnapshot({
     localVault,
     adapterRuntime: adapterRuntime as Record<string, unknown>,
@@ -423,7 +465,14 @@ export const buildOperatorSnapshot = async (params: {
         memoryJobRunner: getMemoryJobRunnerStats(),
         obsidianInboxChatLoop: getObsidianInboxChatLoopStats(),
         obsidianLoreSyncLoop: getObsidianLoreSyncLoopStats(),
+        obsidianGraphAuditLoop: getObsidianGraphAuditLoopStats(),
         retrievalEvalLoop: getRetrievalEvalLoopStats(),
+        rewardSignalLoop: getRewardSignalLoopStatus(),
+        evalAutoPromoteLoop: getEvalAutoPromoteLoopStatus(),
+      },
+      controlSurfaces: {
+        obsidianMaintenance: getObsidianMaintenanceControlSurface(),
+        evalMaintenance: getEvalMaintenanceControlSurface(),
       },
     }
     : undefined;
@@ -436,6 +485,11 @@ export const buildOperatorSnapshot = async (params: {
     guildId: guildId || null,
     windowDays: days,
     operatingBaseline: loadOperatingBaseline(),
+    openjarvis: includeDocs || includeRuntime
+      ? {
+        memorySync: openjarvisMemorySync,
+      }
+      : undefined,
     obsidian: includeDocs
       ? {
         vaultPathConfigured: Boolean(getObsidianVaultRoot()),
@@ -469,6 +523,7 @@ export const buildOperatorSnapshot = async (params: {
     schedulerPolicy: runtimeSummary?.schedulerPolicy,
     workers: runtimeSummary?.workers,
     loops: runtimeSummary?.loops,
+    controlSurfaces: runtimeSummary?.controlSurfaces,
   });
 
   if (!guildId) {
@@ -758,6 +813,28 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
+  router.get('/agent/runtime/personalization', requireAdmin, async (req, res, next) => {
+    const guildId = toStringParam(req.query?.guildId);
+    const userId = toStringParam(req.query?.userId);
+    const priority = toStringParam(req.query?.priority) || 'balanced';
+    const requestedSkillId = toStringParam(req.query?.skillId || req.query?.requestedSkillId) || null;
+    if (!guildId || !userId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and userId are required' });
+    }
+
+    try {
+      const snapshot = await resolveAgentPersonalizationSnapshot({
+        guildId,
+        userId,
+        requestedPriority: priority,
+        requestedSkillId,
+      });
+      return res.json({ ok: true, snapshot });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get('/agent/runtime/telemetry-queue', requireAdmin, async (_req, res, next) => {
     return res.json({ ok: true, queue: getAgentTelemetryQueueSnapshot() });
   });
@@ -783,6 +860,10 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const workerHealth = await probeOpencodeWorkerHealth();
       const advisoryWorkersHealth = await getAgentRoleWorkersHealthSnapshot();
       const llmRuntime = await getLlmRuntimeSnapshot({ guildId: guildId || undefined, actionName });
+      const openjarvisMemorySync = getOpenJarvisMemorySyncStatus();
+      const openjarvisAutopilot = await getOpenJarvisAutopilotStatus(buildOpenJarvisAutopilotStatusParams(
+        sanitizeRecord(req.query),
+      ));
       return res.json({
         ok: true,
         timestamp: new Date().toISOString(),
@@ -792,6 +873,8 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         workerHealth,
         advisoryWorkersHealth,
         llmRuntime,
+        openjarvisMemorySync,
+        openjarvisAutopilot,
         notes: {
           guildScoped: Boolean(guildId),
           actionName: actionName || null,
@@ -808,6 +891,255 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
           },
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/runtime/openjarvis/autopilot', requireAdmin, async (req, res, next) => {
+    try {
+      const status = await getOpenJarvisAutopilotStatus(buildOpenJarvisAutopilotStatusParams(
+        sanitizeRecord(req.query),
+      ));
+      return res.json({ ok: true, status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/runtime/openjarvis/hermes-runtime', requireAdmin, async (req, res, next) => {
+    try {
+      const status = await getOpenJarvisAutopilotStatus(buildOpenJarvisAutopilotStatusParams(
+        sanitizeRecord(req.query),
+      ));
+      return res.json({ ok: true, hermesRuntime: status.hermes_runtime });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/session-start', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    try {
+      const requesterId = toStringParam((req as { user?: { id?: string } }).user?.id) || 'admin-route';
+      const result = await prepareOpenJarvisHermesSessionStart({
+        ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
+        objective: toStringParam(req.body?.objective) || null,
+        objectives: toStringArrayParam(req.body?.objectives),
+        title: toStringParam(req.body?.title) || null,
+        guildId: toStringParam(req.body?.guildId) || null,
+        createChatNote: parseBool(String(req.body?.createChatNote ?? 'true'), true),
+        startSupervisor: parseBool(String(req.body?.startSupervisor ?? 'true'), true),
+        dryRun: parseBool(String(req.body?.dryRun ?? 'false'), false),
+        visibleTerminal: parseBool(String(req.body?.visibleTerminal ?? 'true'), true),
+        requesterId,
+        requesterKind: (req as { user?: unknown }).user ? 'session' : 'bearer',
+      });
+
+      if (!result.ok) {
+        const statusCode = result.errorCode === 'VAULT_PATH_REQUIRED' ? 503 : 500;
+        return res.status(statusCode).json({ ok: false, result });
+      }
+
+      const statusCode = result.remediation?.completion === 'queued' ? 202 : 201;
+      return res.status(statusCode).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/hermes-runtime/chat-note', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    try {
+      const requesterId = toStringParam((req as { user?: { id?: string } }).user?.id) || 'admin-route';
+      const result = await createOpenJarvisHermesRuntimeChatNote({
+        ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
+        title: toStringParam(req.body?.title) || null,
+        guildId: toStringParam(req.body?.guildId) || null,
+        requesterId,
+        requesterKind: (req as { user?: unknown }).user ? 'session' : 'bearer',
+      });
+
+      if (!result.ok) {
+        const statusCode = result.errorCode === 'VAULT_PATH_REQUIRED' ? 503 : 500;
+        return res.status(statusCode).json({ ok: false, result });
+      }
+
+      return res.status(201).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/hermes-runtime/queue-objective', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    try {
+      const result = await enqueueOpenJarvisHermesRuntimeObjectives({
+        ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
+        objective: toStringParam(req.body?.objective) || null,
+        objectives: toStringArrayParam(req.body?.objectives),
+      });
+
+      if (!result.ok) {
+        const statusCode = result.errorCode === 'VALIDATION'
+          ? 400
+          : result.errorCode === 'VAULT_PATH_REQUIRED'
+            ? 503
+            : 500;
+        return res.status(statusCode).json({ ok: false, result });
+      }
+
+      return res.status(result.completion === 'updated' ? 201 : 200).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/hermes-runtime/chat-launch', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    try {
+      const result = await launchOpenJarvisHermesChatSession({
+        ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
+        objective: toStringParam(req.body?.objective) || null,
+        prompt: toStringParam(req.body?.prompt) || null,
+        chatMode: toStringParam(req.body?.chatMode) || null,
+        addFilePaths: toStringArrayParam(req.body?.addFilePaths),
+        maximize: parseBool(String(req.body?.maximize ?? 'true'), true),
+        newWindow: parseBool(String(req.body?.newWindow ?? 'false'), false),
+        reuseWindow: parseBool(String(req.body?.reuseWindow ?? 'true'), true),
+        dryRun: parseBool(String(req.body?.dryRun ?? 'false'), false),
+      });
+
+      if (!result.ok) {
+        const statusCode = result.errorCode === 'VALIDATION'
+          ? 400
+          : ['CODE_CLI_MISSING', 'PACKET_PATH_MISSING'].includes(String(result.errorCode || ''))
+            ? 503
+            : 500;
+        return res.status(statusCode).json({ ok: false, result });
+      }
+
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/runtime/openjarvis/session-open-bundle', requireAdmin, async (req, res, next) => {
+    const guildId = toStringParam(req.query?.guildId) || null;
+    const userId = toStringParam(req.query?.userId) || null;
+    const requestedPriority = toStringParam(req.query?.priority || req.query?.requestedPriority) || 'balanced';
+    const requestedSkillId = toStringParam(req.query?.skillId || req.query?.requestedSkillId) || null;
+    if ((guildId && !userId) || (!guildId && userId)) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guildId and userId must be provided together for personalization' });
+    }
+
+    try {
+      const statusParams = buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.query));
+      const personalizationSnapshot = guildId && userId
+        ? await resolveAgentPersonalizationSnapshot({
+          guildId,
+          userId,
+          requestedPriority,
+          requestedSkillId,
+        })
+        : null;
+      const bundle = await getOpenJarvisSessionOpenBundle({
+        ...statusParams,
+        personalizationSnapshot,
+      });
+      return res.json({ ok: true, bundle });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/memory-sync', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    const dryRun = parseBool(String(req.body?.dryRun ?? 'true'), true);
+    const force = parseBool(String(req.body?.force ?? 'false'), false);
+    const guildId = toStringParam(req.body?.guildId) || undefined;
+
+    try {
+      const result = await runOpenJarvisMemorySync({
+        dryRun,
+        force,
+        guildId,
+      });
+      if (!result.ok) {
+        return res.status(500).json({ ok: false, result });
+      }
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/hermes-runtime/remediate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    try {
+      const result = await runOpenJarvisHermesRuntimeRemediation({
+        ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
+        actionId: toStringParam(req.body?.actionId || req.body?.action_id) || null,
+        dryRun: parseBool(String(req.body?.dryRun ?? 'false'), false),
+        visibleTerminal: parseBool(String(req.body?.visibleTerminal ?? 'true'), true),
+      });
+
+      if (!result.ok) {
+        const statusCode = result.errorCode === 'VALIDATION'
+          ? 400
+          : result.errorCode === 'PACKET_PATH_MISSING'
+            ? 503
+            : 500;
+        return res.status(statusCode).json({ ok: false, result });
+      }
+
+      return res.status(result.completion === 'queued' ? 202 : 200).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/runtime/hermes/vscode-bridge', requireAdmin, async (req, res, next) => {
+    try {
+      const status = getHermesVsCodeBridgeStatus({
+        packetPath: toStringParam(req.query?.packetPath) || null,
+        codeCliPath: toStringParam(req.query?.codeCliPath) || null,
+        vaultPath: toStringParam(req.query?.vaultPath) || null,
+      });
+      return res.json({ ok: true, status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/hermes/vscode-bridge', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    try {
+      const result = await runHermesVsCodeBridge({
+        action: toStringParam(req.body?.action),
+        filePath: toStringParam(req.body?.filePath) || null,
+        targetPath: toStringParam(req.body?.targetPath) || null,
+        leftPath: toStringParam(req.body?.leftPath) || null,
+        rightPath: toStringParam(req.body?.rightPath) || null,
+        line: toOptionalBoundedInt(req.body?.line, 200_000),
+        column: toOptionalBoundedInt(req.body?.column, 5_000),
+        reason: toStringParam(req.body?.reason) || null,
+        packetPath: toStringParam(req.body?.packetPath) || null,
+        codeCliPath: toStringParam(req.body?.codeCliPath) || null,
+        vaultPath: toStringParam(req.body?.vaultPath) || null,
+        prompt: toStringParam(req.body?.prompt) || null,
+        chatMode: toStringParam(req.body?.chatMode) || null,
+        addFilePaths: toStringArrayParam(req.body?.addFilePaths),
+        maximize: parseBool(String(req.body?.maximize ?? 'false'), false),
+        newWindow: parseBool(String(req.body?.newWindow ?? 'false'), false),
+        reuseWindow: parseBool(String(req.body?.reuseWindow ?? 'true'), true),
+        dryRun: parseBool(String(req.body?.dryRun ?? 'false'), false),
+      });
+
+      if (!result.ok) {
+        const statusCode = result.errorCode === 'VALIDATION'
+          ? 400
+          : ['CODE_CLI_MISSING', 'PACKET_PATH_MISSING', 'PACKET_NOT_FOUND'].includes(String(result.errorCode || ''))
+            ? 503
+            : 500;
+        return res.status(statusCode).json({ ok: false, result });
+      }
+
+      return res.status(result.completion === 'queued' ? 202 : 200).json({ ok: true, result });
     } catch (error) {
       next(error);
     }
@@ -918,7 +1250,12 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       memoryJobRunner: getMemoryJobRunnerStats(),
       obsidianInboxChatLoop: getObsidianInboxChatLoopStats(),
       obsidianLoreSyncLoop: getObsidianLoreSyncLoopStats(),
+      obsidianGraphAuditLoop: getObsidianGraphAuditLoopStats(),
       retrievalEvalLoop: getRetrievalEvalLoopStats(),
+      rewardSignalLoop: getRewardSignalLoopStatus(),
+      evalAutoPromoteLoop: getEvalAutoPromoteLoopStatus(),
+      obsidianMaintenanceControl: getObsidianMaintenanceControlSurface(),
+      evalMaintenanceControl: getEvalMaintenanceControlSurface(),
       generatedAt: new Date().toISOString(),
     });
   });

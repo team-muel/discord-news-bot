@@ -1,11 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { DISCORD_CHAT_INPUT_COMMAND_NAMES } from '../config/runtime/discordCommandCatalog.js';
 
 const ROOT = process.cwd();
 const SCHEMA_PATH = path.join(ROOT, 'docs', 'planning', 'AUTONOMY_CONTRACT_SCHEMAS.json');
 const CORE_INTERFACE_DOC_PATH = path.join(ROOT, 'docs', 'planning', 'CORE_COMMAND_INTERFACE_V1.md');
 const ADAPTER_MAPPING_DOC_PATH = path.join(ROOT, 'docs', 'planning', 'DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md');
-const BOT_DISPATCH_PATH = path.join(ROOT, 'src', 'discord', 'runtime', 'commandRouter.ts');
 
 const fail = (message) => {
   console.error(`[AUTONOMY-CONTRACTS] ${message}`);
@@ -162,24 +162,12 @@ validateEvidenceBundle(sample.evidenceBundle);
 
 const coreInterfaceDoc = readText(CORE_INTERFACE_DOC_PATH);
 const adapterMappingDoc = readText(ADAPTER_MAPPING_DOC_PATH);
-const botDispatchSource = readText(BOT_DISPATCH_PATH);
 
 assert(coreInterfaceDoc.includes('Core Command v1 Contract'), 'core interface doc missing required contract section');
 assert(adapterMappingDoc.includes('Chat Input Command Mapping'), 'adapter mapping doc missing command mapping section');
 
-const caseRegex = /case\s+'([^']+)'\s*:/g;
-const dispatchCommands = [];
-let match = caseRegex.exec(botDispatchSource);
-while (match) {
-  const command = String(match[1] || '').trim();
-  if (command) {
-    dispatchCommands.push(command);
-  }
-  match = caseRegex.exec(botDispatchSource);
-}
-
-const uniqueDispatchCommands = [...new Set(dispatchCommands)];
-assert(uniqueDispatchCommands.length > 0, 'failed to collect command dispatch cases from src/discord/runtime/commandRouter.ts');
+const uniqueDispatchCommands = [...new Set(DISCORD_CHAT_INPUT_COMMAND_NAMES)];
+assert(uniqueDispatchCommands.length > 0, 'discord command catalog must include at least one chat input command');
 
 const missingFromMapping = uniqueDispatchCommands.filter((command) => {
   const pattern = new RegExp(`\\|\\s*${escapeRegExp(command)}\\s*\\|`, 'u');

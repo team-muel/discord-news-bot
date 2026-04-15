@@ -88,7 +88,7 @@ export const requestCrossModelReview = async (params: {
   ].join('\n');
 
   try {
-    // ── NemoClaw sandbox path: fault-isolated independent review ──
+    // ── Review sandbox path: fault-isolated independent review ──
     if (SPRINT_CROSS_MODEL_NEMOCLAW_ENABLED) {
       try {
         const codePayload = [
@@ -97,7 +97,7 @@ export const requestCrossModelReview = async (params: {
           `## Primary Review Output\n${params.primaryOutput.slice(0, 3000)}`,
         ].join('\n\n');
 
-        const adapterResult = await executeExternalAction('nemoclaw', 'code.review', {
+        const adapterResult = await executeExternalAction('review', 'code.review', {
           code: codePayload,
           goal: `Independent cross-model review for phase "${params.phase}": assess, agree/disagree with primary review.`,
         });
@@ -108,7 +108,7 @@ export const requestCrossModelReview = async (params: {
           const disagreements = extractSection(raw, 'Disagreements');
 
           logger.info(
-            '[CROSS-MODEL] nemoclaw sandbox review: phase=%s duration=%dms',
+            '[CROSS-MODEL] review sandbox review: phase=%s duration=%dms',
             params.phase, adapterResult.durationMs,
           );
 
@@ -121,9 +121,9 @@ export const requestCrossModelReview = async (params: {
             durationMs: adapterResult.durationMs,
           };
         }
-        logger.info('[CROSS-MODEL] nemoclaw adapter unavailable or empty, falling through to LLM path');
+        logger.info('[CROSS-MODEL] review adapter unavailable or empty, falling through to LLM path');
       } catch (nemoclawErr) {
-        logger.warn('[CROSS-MODEL] nemoclaw sandbox failed (non-fatal): %s', getErrorMessage(nemoclawErr));
+        logger.warn('[CROSS-MODEL] review sandbox failed (non-fatal): %s', getErrorMessage(nemoclawErr));
       }
     }
 

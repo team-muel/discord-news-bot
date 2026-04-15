@@ -1,0 +1,85 @@
+{
+  "hardware_info": {
+    "platform": "windows",
+    "cpu_brand": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "cpu_count": 12,
+    "ram_gb": 0.0,
+    "gpu": {
+      "vendor": "nvidia",
+      "name": "NVIDIA GeForce RTX 4060 Ti",
+      "vram_gb": 8.0,
+      "count": 1
+    }
+  },
+  "benchmark": "supergpqa",
+  "category": "reasoning",
+  "backend": "jarvis-agent",
+  "model": "qwen2.5:7b-instruct",
+  "total_samples": 1,
+  "scored_samples": 1,
+  "correct": 1,
+  "accuracy": 1.0,
+  "errors": 0,
+  "mean_latency_seconds": 13.896,
+  "total_cost_usd": 0.0,
+  "per_subject": {
+    "Pharmaceutics": {
+      "accuracy": 1.0,
+      "total": 1.0,
+      "scored": 1.0,
+      "correct": 1.0
+    }
+  },
+  "started_at": 1775931129.805907,
+  "ended_at": 1775931150.3151913,
+  "accuracy_stats": {
+    "mean": 1.0,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.0,
+    "std": 0.0,
+    "p90": 1.0,
+    "p95": 1.0,
+    "p99": 1.0
+  },
+  "latency_stats": {
+    "mean": 13.8960104000289,
+    "median": 13.8960104000289,
+    "min": 13.8960104000289,
+    "max": 13.8960104000289,
+    "std": 0.0,
+    "p90": 13.8960104000289,
+    "p95": 13.8960104000289,
+    "p99": 13.8960104000289
+  },
+  "ttft_stats": null,
+  "energy_stats": null,
+  "power_stats": null,
+  "gpu_utilization_stats": null,
+  "throughput_stats": null,
+  "mfu_stats": null,
+  "mbu_stats": null,
+  "ipw_stats": null,
+  "ipj_stats": null,
+  "energy_per_output_token_stats": null,
+  "throughput_per_watt_stats": null,
+  "itl_stats": null,
+  "input_token_stats": null,
+  "output_token_stats": null,
+  "total_energy_joules": 0.0,
+  "warmup_samples_excluded": 0,
+  "steady_state_reached": false,
+  "energy_method": "",
+  "avg_power_watts": 0.0,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "efficiency": {
+    "accuracy": 1.0,
+    "total_energy_joules": 0.0,
+    "avg_power_watts": 0.0,
+    "ipj": null,
+    "ipw": null
+  },
+  "normalized_statistics": null,
+  "normalized_efficiency": null
+}

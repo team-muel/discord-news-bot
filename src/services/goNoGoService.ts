@@ -10,6 +10,7 @@ import {
 } from '../config';
 import { getMemoryJobQueueStats } from './memory/memoryJobRunner';
 import { getMemoryQualityMetrics } from './memory/memoryQualityMetricsService';
+import { getOpenJarvisMemorySyncStatus } from './openjarvis/openjarvisMemorySyncStatusService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAgentTelemetryQueueSnapshot } from './agent/agentTelemetryQueue';
 
@@ -35,8 +36,10 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
   const metrics = await getMemoryQualityMetrics({ guildId: params.guildId, days: params.days });
   const queue = await getMemoryJobQueueStats(params.guildId);
   const telemetryQueue = getAgentTelemetryQueueSnapshot();
+  const openjarvisMemorySync = getOpenJarvisMemorySyncStatus();
   const telemetryAttempted = Math.max(1, telemetryQueue.processed + telemetryQueue.dropped);
   const telemetryDropRate = Number((telemetryQueue.dropped / telemetryAttempted).toFixed(4));
+  const requireOpenJarvisMemorySync = openjarvisMemorySync.configured;
 
   let pilotGuilds = 0;
   if (isSupabaseConfigured()) {
@@ -122,6 +125,14 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
       threshold: DEFAULT_THRESHOLDS.maxTelemetryQueueDropRate,
       status: toStatus(telemetryDropRate <= DEFAULT_THRESHOLDS.maxTelemetryQueueDropRate),
     },
+    {
+      id: 'openjarvis-memory-sync',
+      label: 'openjarvis memory sync should be fresh when configured',
+      actual: openjarvisMemorySync.status,
+      threshold: requireOpenJarvisMemorySync ? 'fresh' : 'optional',
+      status: toStatus(!requireOpenJarvisMemorySync || openjarvisMemorySync.status === 'fresh'),
+      detail: openjarvisMemorySync.issues[0] || undefined,
+    },
   ];
 
   const failed = checks.filter((check) => check.status === 'fail');
@@ -150,6 +161,7 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
     metrics,
     queue,
     telemetryQueue,
+    openjarvisMemorySync,
     assumptions: [
       'recall@k is computed as proxy from retrieval logs (no human-labeled relevance set).',
       'pilot guild count is estimated from active sources by distinct guild_id.',

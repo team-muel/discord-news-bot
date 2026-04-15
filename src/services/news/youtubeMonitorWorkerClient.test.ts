@@ -4,13 +4,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const {
   mockCallMcpTool, mockParseMcpTextBlocks,
   mockFetchWithTimeout, mockScrape,
-  mockShouldDelegate, mockDelegateYoutubeFeedFetch, mockDelegateYoutubeCommunityScrape,
+  mockShouldDelegate, mockShouldSkipInlineFallback, mockDelegateYoutubeFeedFetch, mockDelegateYoutubeCommunityScrape,
 } = vi.hoisted(() => ({
   mockCallMcpTool: vi.fn(),
   mockParseMcpTextBlocks: vi.fn(() => ['']),
   mockFetchWithTimeout: vi.fn(),
   mockScrape: vi.fn(),
   mockShouldDelegate: vi.fn(() => false),
+  mockShouldSkipInlineFallback: vi.fn(() => false),
   mockDelegateYoutubeFeedFetch: vi.fn(),
   mockDelegateYoutubeCommunityScrape: vi.fn(),
 }));
@@ -30,6 +31,7 @@ vi.mock('./youtubeCommunityScraper', () => ({
 
 vi.mock('../automation/n8nDelegationService', () => ({
   shouldDelegate: mockShouldDelegate,
+  shouldSkipInlineFallback: mockShouldSkipInlineFallback,
   delegateYoutubeFeedFetch: mockDelegateYoutubeFeedFetch,
   delegateYoutubeCommunityScrape: mockDelegateYoutubeCommunityScrape,
 }));
@@ -44,11 +46,12 @@ describe('youtubeMonitorWorkerClient', () => {
   beforeEach(() => {
     vi.resetModules();
     for (const fn of [mockCallMcpTool, mockParseMcpTextBlocks, mockFetchWithTimeout, mockScrape,
-      mockShouldDelegate, mockDelegateYoutubeFeedFetch, mockDelegateYoutubeCommunityScrape]) {
+      mockShouldDelegate, mockShouldSkipInlineFallback, mockDelegateYoutubeFeedFetch, mockDelegateYoutubeCommunityScrape]) {
       fn.mockReset();
     }
     mockParseMcpTextBlocks.mockReturnValue(['']);
     mockShouldDelegate.mockReturnValue(false);
+    mockShouldSkipInlineFallback.mockReturnValue(false);
 
     envSnapshot = {};
     for (const k of ENV_KEYS) {
@@ -88,6 +91,25 @@ describe('youtubeMonitorWorkerClient', () => {
       expect(result!.entry!.id).toBe('vid1');
       expect(mockCallMcpTool).not.toHaveBeenCalled();
     });
+
+    it('skips local XML fallback when delegation-first is enabled', async () => {
+      mockShouldDelegate.mockImplementation(((task: string) => task === 'youtube-feed-fetch') as any);
+      mockShouldSkipInlineFallback.mockImplementation(((task: string) => task === 'youtube-feed-fetch') as any);
+      mockDelegateYoutubeFeedFetch.mockResolvedValue({
+        delegated: true,
+        ok: false,
+        data: null,
+      });
+
+      process.env.YOUTUBE_MONITOR_LOCAL_FALLBACK_ENABLED = 'true';
+      vi.resetModules();
+
+      const { fetchYouTubeLatestByWorker } = await import('./youtubeMonitorWorkerClient');
+      const result = await fetchYouTubeLatestByWorker({ sourceUrl: VIDEO_SOURCE_URL, mode: 'videos' });
+
+      expect(result).toEqual({ found: false, channelId: 'UCsXVk37bltHxD1rDPwtNM8Q' });
+      expect(mockFetchWithTimeout).not.toHaveBeenCalled();
+    });
   });
 
   // ── n8n delegation — posts ───────────────────────────────────────────
@@ -109,6 +131,26 @@ describe('youtubeMonitorWorkerClient', () => {
       expect(result).not.toBeNull();
       expect(result!.found).toBe(true);
       expect(result!.entry!.id).toBe('post1');
+    });
+
+    it('skips local post scraping when delegation-first is enabled', async () => {
+      mockShouldDelegate.mockImplementation(((task: string) => task === 'youtube-community-scrape') as any);
+      mockShouldSkipInlineFallback.mockImplementation(((task: string) => task === 'youtube-community-scrape') as any);
+      mockDelegateYoutubeCommunityScrape.mockResolvedValue({
+        delegated: true,
+        ok: false,
+        data: null,
+      });
+
+      process.env.YOUTUBE_MONITOR_LOCAL_FALLBACK_ENABLED = 'true';
+      vi.resetModules();
+
+      const { fetchYouTubeLatestByWorker } = await import('./youtubeMonitorWorkerClient');
+      const result = await fetchYouTubeLatestByWorker({ sourceUrl: POST_SOURCE_URL, mode: 'posts' });
+
+      expect(result).toEqual({ found: false, channelId: 'UCsXVk37bltHxD1rDPwtNM8Q' });
+      expect(mockScrape).not.toHaveBeenCalled();
+      expect(mockFetchWithTimeout).not.toHaveBeenCalled();
     });
   });
 

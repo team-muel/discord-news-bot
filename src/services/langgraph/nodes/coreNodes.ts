@@ -1,6 +1,6 @@
 import { getAgentPrivacyPolicySnapshot } from '../../agent/agentPrivacyPolicyService';
 import { toLegacyIntent, type AgentDeliberationMode, type AgentIntent, type AgentPolicyGateDecision, type IntentClassification, type IntentTaxonomy } from '../../agent/agentRuntimeTypes';
-import { generateText } from '../../llmClient';
+import { generateText, type LlmProviderProfile } from '../../llmClient';
 import { parseLlmStructuredRecord } from '../../llmStructuredParseService';
 import { compilePromptGoal, type PromptCompileResult } from '../../infra/promptCompiler';
 import type { IntentSignalBundle } from './intentSignalEnricher';
@@ -189,6 +189,12 @@ const classifyByLlm = async (
   text: string,
   signals: IntentSignalBundle | null,
   intentHints: string[],
+  options?: {
+    guildId?: string | null;
+    requestedBy?: string;
+    sessionId?: string;
+    providerProfile?: LlmProviderProfile;
+  },
 ): Promise<IntentClassification> => {
   const hintLines = intentHints
     .filter((line) => !line.startsWith('현재 목표:'))
@@ -247,6 +253,10 @@ const classifyByLlm = async (
         '출력: {"primary":"...","confidence":0.0,"secondary":"..."|null,"latentNeeds":["..."],"reasoning":"..."}',
       ].join('\n'),
       actionName: 'intent.route',
+      guildId: options?.guildId ?? undefined,
+      requestedBy: options?.requestedBy,
+      sessionId: options?.sessionId,
+      providerProfile: options?.providerProfile,
       temperature: 0,
       maxTokens: 150,
     });
@@ -388,6 +398,9 @@ export const classifyIntent = async (params: {
   intentHints: string[];
   signals: IntentSignalBundle | null;
   guildId?: string | null;
+  requestedBy?: string;
+  sessionId?: string;
+  providerProfile?: LlmProviderProfile;
 }): Promise<IntentClassification> => {
   const { goal, requestedSkillId, intentHints, signals, guildId } = params;
 
@@ -430,7 +443,12 @@ export const classifyIntent = async (params: {
   }
 
   // Stage 3: LLM classification with enriched signals
-  const llmResult = await classifyByLlm(text, signals, intentHints);
+  const llmResult = await classifyByLlm(text, signals, intentHints, {
+    guildId,
+    requestedBy: params.requestedBy,
+    sessionId: params.sessionId,
+    providerProfile: params.providerProfile,
+  });
 
   // If rule had a low-confidence result, merge with LLM for better decision
   if (ruleResult && ruleResult.confidence >= 0.5) {
@@ -482,6 +500,9 @@ export const runClassifyIntentNode = async (params: {
   intentHints: string[];
   signals: IntentSignalBundle | null;
   guildId?: string | null;
+  requestedBy?: string;
+  sessionId?: string;
+  providerProfile?: LlmProviderProfile;
 }): Promise<IntentClassification> => {
   return classifyIntent(params);
 };

@@ -92,6 +92,10 @@
       "command": "npm run env:check:local-hybrid",
       "meaning": "Verifies local Ollama and worker coexistence only. It does not assert always-on readiness."
     },
+    "localLearningLoopCheck": {
+      "command": "npm run openjarvis:memory:sync && npm run openjarvis:autonomy:run",
+      "meaning": "Verifies the local-first OpenJarvis learning loop with shared Obsidian and Supabase projection plus Ollama-backed optimization. Keep this as local acceleration, not as an always-on readiness signal."
+    },
     "alwaysOnChecks": [
       "GET /api/bot/agent/runtime/unattended-health",
       "GET /api/bot/agent/runtime/role-workers",
@@ -100,9 +104,9 @@
     ]
   },
   "externalOssRoles": {
-    "opencode": "Canonical implementation executor for code changes and tests.",
-    "openjarvis": "Operations, eval, and learning lane on the always-on path.",
-    "openclaw": "Conversational and session ingress, not the canonical always-on executor.",
+    "opencode": "Hands layer for code changes, patch extraction, tests, and diagnostics under the canonical implement.execute contract.",
+    "openjarvis": "Canonical control surface for orchestration, agents, memory, learning, and telemetry on the always-on path.",
+    "openclaw": "Optional conversational and session ingress. It is not part of the default OpenJarvis-centered control loop.",
     "nemoclaw": "Review and sandbox lane; prefer lite mode or a separate node.",
     "openshell": "Sandbox runtime; prefer a separate node from the always-on control plane."
   }

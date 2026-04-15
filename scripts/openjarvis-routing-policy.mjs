@@ -32,6 +32,16 @@ const defaultPolicy = {
       reason: 'collect weekly artifacts',
     },
     {
+      id: 'openjarvis-memory-sync',
+      script: 'openjarvis:memory:sync',
+      scriptDry: 'openjarvis:memory:sync:dry',
+      classification: 'discover',
+      agentRole: 'openjarvis',
+      handoffFrom: 'opencode',
+      handoffTo: 'openjarvis',
+      reason: 'project authoritative Obsidian and Supabase context into OpenJarvis memory',
+    },
+    {
       id: 'validate-gates-strict',
       script: 'gates:validate:strict',
       scriptDry: 'gates:validate:strict',

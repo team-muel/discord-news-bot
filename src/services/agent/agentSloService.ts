@@ -614,17 +614,24 @@ const listTargetGuildIds = async (): Promise<string[]> => {
   return [...set].slice(0, SLO_LOOP_MAX_GUILDS);
 };
 
-const runSloLoopTick = async () => {
+const normalizeGuildIds = (guildIds: Iterable<string>): string[] => {
+  const normalized = Array.from(guildIds)
+    .map((guildId) => String(guildId || '').trim())
+    .filter(Boolean);
+  return [...new Set(normalized)].slice(0, SLO_LOOP_MAX_GUILDS);
+};
+
+const runSloLoopTick = async (guildIds?: Iterable<string>) => {
   if (sloLoopRunning) {
-    return;
+    return { processedGuilds: 0, emittedAlerts: 0, skipped: 'already_running' };
   }
   sloLoopRunning = true;
 
   try {
-    const guildIds = await listTargetGuildIds();
+    const targetGuildIds = guildIds ? normalizeGuildIds(guildIds) : await listTargetGuildIds();
     let emittedTotal = 0;
 
-    await runWithConcurrency(guildIds, async (guildId) => {
+    await runWithConcurrency(targetGuildIds, async (guildId) => {
       try {
         const result = await evaluateGuildSloAndPersistAlerts({ guildId, actorId: 'system:slo-loop' });
         emittedTotal += result.emittedAlerts;
@@ -633,9 +640,11 @@ const runSloLoopTick = async () => {
       }
     }, SLO_LOOP_CONCURRENCY);
 
-    logger.info('[AGENT-SLO] loop tick completed guilds=%d emittedAlerts=%d', guildIds.length, emittedTotal);
+    logger.info('[AGENT-SLO] loop tick completed guilds=%d emittedAlerts=%d', targetGuildIds.length, emittedTotal);
+    return { processedGuilds: targetGuildIds.length, emittedAlerts: emittedTotal };
   } catch (error) {
     logger.warn('[AGENT-SLO] loop tick failed error=%s', getErrorMessage(error));
+    return { processedGuilds: 0, emittedAlerts: 0, skipped: 'failed' };
   } finally {
     sloLoopRunning = false;
   }
@@ -671,3 +680,6 @@ export const stopAgentSloAlertLoop = () => {
     sloLoopTimer = null;
   }
 };
+
+export const runAgentSloAlertLoopOnce = async (guildIds?: Iterable<string>) =>
+  runSloLoopTick(guildIds);

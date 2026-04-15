@@ -4,7 +4,7 @@
  * Previously a 1,500+ line God File. Now split into domain-scoped modules:
  * - agentCollabHelpers.ts    — shared utilities
  * - agentCollabOrchestrator.ts — local.orchestrator.route / .all
- * - agentCollabRoles.ts       — opendev.plan, nemoclaw.review, openjarvis.ops
+ * - agentCollabRoles.ts       — opendev.plan, review.review, openjarvis.ops
  * - agentCollabSprint.ts      — qa.test, cso.audit, release.ship, retro.summarize, sop.update
  * - agentCollabJarvis.ts      — jarvis.* extended capabilities
  *

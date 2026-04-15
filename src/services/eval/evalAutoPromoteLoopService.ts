@@ -32,7 +32,14 @@ type LoopStats = {
   totalRejected: number;
 };
 
-const runOnce = async (client: Client): Promise<LoopStats> => {
+const normalizeGuildIds = (guildIds: Iterable<string>): string[] => {
+  const normalized = Array.from(guildIds)
+    .map((guildId) => String(guildId || '').trim())
+    .filter(Boolean);
+  return [...new Set(normalized)].slice(0, EVAL_LOOP_MAX_GUILDS);
+};
+
+const runOnce = async (guildIds: Iterable<string>): Promise<LoopStats> => {
   if (running) {
     return {
       attemptedGuilds: 0, completedGuilds: 0, failedGuilds: 0,
@@ -54,12 +61,12 @@ const runOnce = async (client: Client): Promise<LoopStats> => {
   };
 
   try {
-    const guildIds = [...client.guilds.cache.keys()].slice(0, EVAL_LOOP_MAX_GUILDS);
-    stats.attemptedGuilds = guildIds.length;
+    const selectedGuildIds = normalizeGuildIds(guildIds);
+    stats.attemptedGuilds = selectedGuildIds.length;
 
     // Process guilds in concurrent batches
-    for (let i = 0; i < guildIds.length; i += EVAL_LOOP_CONCURRENCY) {
-      const batch = guildIds.slice(i, i + EVAL_LOOP_CONCURRENCY);
+    for (let i = 0; i < selectedGuildIds.length; i += EVAL_LOOP_CONCURRENCY) {
+      const batch = selectedGuildIds.slice(i, i + EVAL_LOOP_CONCURRENCY);
       const results = await Promise.allSettled(
         batch.map(async (guildId) => {
           const pipelineResult = await runEvalPipeline(guildId);
@@ -112,7 +119,7 @@ export const startEvalAutoPromoteLoop = (client: Client): void => {
 
   loop = new BackgroundLoop(
     async () => {
-      const s = await runOnce(client);
+      const s = await runOnce(client.guilds.cache.keys());
       return `guilds=${s.completedGuilds}/${s.attemptedGuilds} collected=${s.totalCollected} judged=${s.totalJudged} promoted=${s.totalPromoted} rejected=${s.totalRejected}`;
     },
     {
@@ -129,6 +136,9 @@ export const stopEvalAutoPromoteLoop = (): void => {
   loop?.stop();
   loop = null;
 };
+
+export const runEvalAutoPromoteLoopOnce = async (guildIds: Iterable<string>): Promise<LoopStats> =>
+  runOnce(guildIds);
 
 export const getEvalAutoPromoteLoopStatus = (): {
   enabled: boolean;

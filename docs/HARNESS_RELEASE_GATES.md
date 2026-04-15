@@ -21,9 +21,10 @@ Required:
 2. `GET /ready` reports ready state
 3. `GET /api/bot/status` returns active runtime snapshot
 4. `GET /api/bot/agent/runtime/scheduler-policy` matches expected runtime ownership:
-   - `service-init`: `memory-job-runner`, `opencode-publish-worker`, `trading-engine`, `runtime-alerts`
-   - `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `obsidian-sync-loop`, `retrieval-eval-loop`, `login-session-cleanup`(app-owned), `agent-slo-alert-loop`
-   - `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned)
+   - `service-init`: `memory-job-runner`, `opencode-publish-worker`, `runtime-alerts`, `intent-formation`(app-owned)
+   - `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `obsidian-sync-loop`, `retrieval-eval-loop`, `reward-signal-loop`, `eval-auto-promote-loop`, `login-session-cleanup`(app-owned), `agent-slo-alert-loop`
+   - `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned), `obsidian-sync-loop`(db-owned), `retrieval-eval-loop`(db-owned), `reward-signal-loop`(db-owned), `eval-auto-promote-loop`(db-owned), `agent-slo-alert-loop`(db-owned), `intent-formation`(db-owned)
+   - db-owned state must match the exact pg_cron job name instead of a generic cron-job count
 5. `GET /api/bot/agent/runtime/loops` reports loop stats without unexpected stopped state for enabled loops
 6. `GET /api/bot/agent/runtime/unattended-health` shows healthy telemetry/opencode readiness for unattended paths when enabled
 
@@ -33,6 +34,7 @@ Runtime topology note:
 - `src/services/runtimeBootstrap.ts` starts `service-init` loops before Discord ready.
 - `src/discord/runtime/readyWorkloads.ts` starts `discord-ready` workloads only after bot ready.
 - `src/services/runtimeSchedulerPolicyService.ts` is the canonical runtime loop inventory surface for operator checks.
+- `src/routes/internal.ts` must stay mounted because pg_cron HTTP jobs call `/api/internal/*` directly.
 - Release validation must confirm that docs, runtime snapshot, and actual startup ownership agree.
 - Recommended automation command: `npm run ops:runtime:check -- --cookie=<admin-session-cookie> --guildId=<guild-id>`
 - `--cookie` supports `name=value` or raw token (normalized with `AUTH_COOKIE_NAME`, default `muel_session`).

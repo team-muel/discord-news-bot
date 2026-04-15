@@ -19,6 +19,12 @@
 - consult는 ownership transfer가 아니라 decision-quality 향상을 위한 짧은 개입이다.
 - release-sensitive 변경은 `delivery`로, incident/release/recovery는 `operations`로 승격한다.
 
+팀 공용 채택 원칙:
+
+- 이 workflow는 개인 프롬프트 요령이 아니라 repo-shared collaboration contract로 취급한다.
+- 현재 작업 방식이 이 구조와 맞으면 `.github` instructions와 canonical planning docs에 그대로 등록해 팀 전체가 재사용하게 한다.
+- 이 workflow를 읽고 수행하는 agent는 lead, consult, handoff, escalation 계약 안에서 동료처럼 동작하고, 이탈이 필요하면 이유를 명시한다.
+
 ## Modes
 
 ### local-collab

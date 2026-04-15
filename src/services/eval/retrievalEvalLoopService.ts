@@ -33,7 +33,14 @@ type EvalRunStats = {
   appliedTunings: number;
 };
 
-const runOnce = async (client: Client): Promise<EvalRunStats> => {
+const normalizeGuildIds = (guildIds: Iterable<string>): string[] => {
+  const normalized = Array.from(guildIds)
+    .map((guildId) => String(guildId || '').trim())
+    .filter(Boolean);
+  return [...new Set(normalized)].slice(0, RETRIEVAL_AUTO_EVAL_MAX_GUILDS);
+};
+
+const runOnce = async (guildIds: Iterable<string>): Promise<EvalRunStats> => {
   if (running) {
     return {
       attemptedGuilds: 0,
@@ -54,8 +61,8 @@ const runOnce = async (client: Client): Promise<EvalRunStats> => {
   };
 
   try {
-    const guildIds = [...client.guilds.cache.keys()].slice(0, RETRIEVAL_AUTO_EVAL_MAX_GUILDS);
-    for (const guildId of guildIds) {
+    const selectedGuildIds = normalizeGuildIds(guildIds);
+    for (const guildId of selectedGuildIds) {
       stats.attemptedGuilds += 1;
       try {
         const evalRun = await runRetrievalEval({
@@ -98,7 +105,7 @@ export const startRetrievalEvalLoop = (client: Client) => {
 
   loop = new BackgroundLoop(
     async () => {
-      const s = await runOnce(client);
+      const s = await runOnce(client.guilds.cache.keys());
       return `attempted=${s.attemptedGuilds} completed=${s.completedGuilds} failed=${s.failedGuilds} appliedTunings=${s.appliedTunings}`;
     },
     {
@@ -115,6 +122,9 @@ export const stopRetrievalEvalLoop = () => {
   loop?.stop();
   loop = null;
 };
+
+export const runRetrievalEvalLoopOnce = async (guildIds: Iterable<string>): Promise<EvalRunStats> =>
+  runOnce(guildIds);
 
 export const getRetrievalEvalLoopStats = () => ({
   enabled: RETRIEVAL_AUTO_EVAL_ENABLED,

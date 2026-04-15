@@ -44,6 +44,7 @@ import {
 import { getObsidianRetrievalBoundarySnapshot, queryObsidianRAG } from '../services/obsidian/obsidianRagService';
 import { getCacheStats } from '../services/obsidian/obsidianCacheService';
 import { getObsidianLoreSyncLoopStats } from '../services/obsidian/obsidianLoreSyncService';
+import { executeObsidianGraphAudit, executeObsidianLoreSync } from '../services/obsidian/obsidianMaintenanceControlService';
 import { getLatestObsidianGraphAuditSnapshot } from '../services/obsidian/obsidianQualityService';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo } from '../utils/obsidianEnv';
 import { isOneOf } from '../utils/validation';
@@ -146,6 +147,15 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
     },
   },
   {
+    name: 'obsidian.sync.run',
+    description: 'Obsidian Lore 동기화를 repo runtime에서 한 번 실행합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'obsidian.cache.stats',
     description: 'Obsidian 문서 캐시 통계(적중률, TTL, 문서 수)를 조회합니다.',
     inputSchema: {
@@ -157,6 +167,15 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
   {
     name: 'obsidian.quality.audit',
     description: '최근 그래프 품질 감사 스냅샷을 조회합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'obsidian.quality.audit.run',
+    description: 'Obsidian 그래프 품질 감사를 repo runtime에서 한 번 실행합니다.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -624,6 +643,12 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
     return toJsonResult(getObsidianLoreSyncLoopStats());
   }
 
+  // ── obsidian.sync.run ─────────────────────────────────────────────────
+  if (name === 'obsidian.sync.run') {
+    const result = await executeObsidianLoreSync({ forceLocal: true });
+    return toTextResult(JSON.stringify(result, null, 2), result.lastStatus !== 'success');
+  }
+
   // ── obsidian.cache.stats ────────────────────────────────────────────────
   if (name === 'obsidian.cache.stats') {
     const stats = await getCacheStats();
@@ -640,6 +665,12 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
       return toTextResult('No audit snapshot available. Run `npm run obsidian:audit` first.');
     }
     return toJsonResult(snapshot);
+  }
+
+  // ── obsidian.quality.audit.run ────────────────────────────────────────
+  if (name === 'obsidian.quality.audit.run') {
+    const result = await executeObsidianGraphAudit({ forceLocal: true });
+    return toTextResult(JSON.stringify(result, null, 2), result.result.lastStatus !== 'success');
   }
 
   // ── obsidian.adapter.status ─────────────────────────────────────────────

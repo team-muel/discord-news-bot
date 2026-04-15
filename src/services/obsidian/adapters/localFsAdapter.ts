@@ -80,9 +80,12 @@ type VaultEntry = {
   content: string;
   tags: string[];
   links: string[];
+  modifiedAt: number;
 };
 
 const normalizeRelativePath = (value: string): string => value.replace(/\\/g, '/');
+
+const uniqueStrings = (values: string[]): string[] => [...new Set(values.filter(Boolean))];
 
 const extractTitle = (content: string, filePath: string): string => {
   const heading = content.split('\n').find((line) => line.startsWith('#'));
@@ -122,6 +125,52 @@ const extractLinks = (content: string): string[] => {
     .filter(Boolean);
 };
 
+const extractSearchDirectives = (query: string): { tagFilters: string[]; textQuery: string } => {
+  const normalizedQuery = String(query || '').toLowerCase();
+  const tagFilters = uniqueStrings(
+    Array.from(normalizedQuery.matchAll(/tag:([^\s]+)/g))
+      .map((match) => String(match[1] || '').trim().replace(/^#/, '')),
+  );
+  const textQuery = normalizedQuery.replace(/tag:[^\s]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return { tagFilters, textQuery };
+};
+
+const tokenizeSearchTerms = (query: string): string[] => {
+  return uniqueStrings(
+    String(query || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣/_-]+/g, ' ')
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 2),
+  );
+};
+
+const buildAliases = (entries: VaultEntry[]): Map<string, string> => {
+  const aliases = new Map<string, string>();
+  for (const entry of entries) {
+    const fileStem = entry.filePath.replace(/\.md$/i, '').toLowerCase();
+    aliases.set(fileStem, entry.filePath);
+    aliases.set(path.posix.basename(fileStem), entry.filePath);
+  }
+  return aliases;
+};
+
+const buildBacklinkCounts = (entries: VaultEntry[]): Map<string, number> => {
+  const aliases = buildAliases(entries);
+  const backlinkCounts = new Map<string, number>(entries.map((entry) => [entry.filePath, 0]));
+
+  for (const entry of entries) {
+    for (const rawLink of entry.links) {
+      const target = resolveLinkTarget(rawLink, aliases);
+      if (!target) continue;
+      backlinkCounts.set(target, (backlinkCounts.get(target) || 0) + 1);
+    }
+  }
+
+  return backlinkCounts;
+};
+
 const collectMarkdownFiles = async (vaultDir: string, relativeDir = ''): Promise<string[]> => {
   const currentDir = path.join(vaultDir, relativeDir);
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
@@ -148,13 +197,18 @@ const loadVaultEntries = async (vaultDir: string): Promise<VaultEntry[]> => {
 
   for (const filePath of files) {
     try {
-      const content = await fs.readFile(path.join(vaultDir, filePath), 'utf-8');
+      const absolutePath = path.join(vaultDir, filePath);
+      const [content, stat] = await Promise.all([
+        fs.readFile(absolutePath, 'utf-8'),
+        fs.stat(absolutePath),
+      ]);
       entries.push({
         filePath,
         title: extractTitle(content, filePath),
         content,
         tags: extractTags(content),
         links: extractLinks(content),
+        modifiedAt: stat.mtimeMs,
       });
     } catch {
       // Skip unreadable files.
@@ -200,22 +254,68 @@ const searchVault = async (params: ObsidianSearchQuery): Promise<ObsidianSearchR
   const vaultDir = resolveVaultPath(params.vaultPath);
   const results: ObsidianSearchResult[] = [];
   const limit = Math.min(params.limit || 10, 50);
-  const query = (params.query || '').toLowerCase();
-  const tagQuery = query.startsWith('tag:') ? query.slice(4).replace(/^#/, '').trim() : '';
+  const normalizedQuery = String(params.query || '').trim().toLowerCase();
+  const { tagFilters, textQuery } = extractSearchDirectives(normalizedQuery);
+  const tokens = tokenizeSearchTerms(textQuery);
 
   try {
     const entries = await loadVaultEntries(vaultDir);
+    const backlinkCounts = buildBacklinkCounts(entries);
 
     for (const entry of entries) {
-      if (results.length >= limit) break;
       let score = 0;
+      const title = entry.title.toLowerCase();
+      const filePath = entry.filePath.toLowerCase();
+      const content = entry.content.toLowerCase();
 
-      if (tagQuery) {
-        if (entry.tags.includes(tagQuery)) score += 3;
-      } else {
-        if (entry.title.toLowerCase().includes(query)) score += 1.2;
-        if (entry.filePath.toLowerCase().includes(query)) score += 0.8;
-        if (entry.content.toLowerCase().includes(query)) score += 1;
+      if (tagFilters.length > 0) {
+        const matchedTagFilters = tagFilters.filter((tag) => entry.tags.includes(tag)).length;
+        if (matchedTagFilters !== tagFilters.length) {
+          continue;
+        }
+        score += matchedTagFilters * 2.5;
+      }
+
+      if (textQuery) {
+        if (title.includes(textQuery)) score += 2.2;
+        if (filePath.includes(textQuery)) score += 1.4;
+        if (content.includes(textQuery)) score += 1.6;
+      }
+
+      let matchedTokenCount = 0;
+      for (const token of tokens) {
+        let matched = false;
+        if (entry.tags.includes(token)) {
+          score += 2.5;
+          matched = true;
+        }
+        if (title.includes(token)) {
+          score += 1.2;
+          matched = true;
+        }
+        if (filePath.includes(token)) {
+          score += 0.8;
+          matched = true;
+        }
+        if (content.includes(token)) {
+          score += 1.0;
+          matched = true;
+        }
+        if (matched) {
+          matchedTokenCount += 1;
+        }
+      }
+
+      if (tokens.length > 1 && matchedTokenCount === tokens.length) {
+        score += 1.5;
+      } else if (tokens.length > 0 && matchedTokenCount > 0) {
+        score += Number(((matchedTokenCount / tokens.length) * 0.6).toFixed(4));
+      }
+
+      const backlinkCount = backlinkCounts.get(entry.filePath) || 0;
+      const connectivityCount = backlinkCount + entry.links.length;
+      if (connectivityCount > 0) {
+        score += Math.min(0.45, Math.log2(1 + connectivityCount) * 0.09);
       }
 
       if (score > 0) {
@@ -225,7 +325,9 @@ const searchVault = async (params: ObsidianSearchQuery): Promise<ObsidianSearchR
   } catch {
     // Vault not readable
   }
-  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+  return results
+    .sort((a, b) => b.score - a.score || a.filePath.localeCompare(b.filePath))
+    .slice(0, limit);
 };
 
 const readFile = async (params: ObsidianReadFileQuery): Promise<string | null> => {

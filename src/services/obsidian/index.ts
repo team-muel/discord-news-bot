@@ -37,8 +37,14 @@ export { initObsidianCache, getCachedDocument, getCachedDocumentsBatch, cacheDoc
 
 export { startObsidianLoreSyncLoop, stopObsidianLoreSyncLoop, getObsidianLoreSyncLoopStats } from './obsidianLoreSyncService';
 
-export { getLatestObsidianGraphAuditSnapshot } from './obsidianQualityService';
-export type { ObsidianGraphAuditSnapshot } from './obsidianQualityService';
+export {
+  getLatestObsidianGraphAuditSnapshot,
+  getObsidianGraphAuditLoopStats,
+  runObsidianGraphAuditOnce,
+  startObsidianGraphAuditLoop,
+  stopObsidianGraphAuditLoop,
+} from './obsidianQualityService';
+export type { ObsidianGraphAuditSnapshot, ObsidianGraphAuditLoopStats } from './obsidianQualityService';
 
 export { initObsidianRAG, queryObsidianRAG, queryObsidianLoreHints, inferIntent, resetDynamicIntentState, flushKnowledgeGaps, getKnowledgeGapCount, appendToDailyNote, readDailyNote, writeRetroToVault } from './obsidianRagService';
 export type { RAGQueryResult, LoreHint } from './obsidianRagService';

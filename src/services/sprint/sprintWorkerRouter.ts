@@ -31,10 +31,9 @@ export type PhaseAdapterMapping = {
 
 export const PHASE_EXTERNAL_ADAPTER: Partial<Record<SprintPhase, PhaseAdapterMapping>> = {
   plan: { adapterId: 'deepwiki', action: 'wiki.ask', secondary: { adapterId: 'openjarvis', action: 'jarvis.research' } },
-  implement: { adapterId: 'openclaw', action: 'agent.chat' },
-  review: { adapterId: 'nemoclaw', action: 'code.review', secondary: { adapterId: 'deepwiki', action: 'wiki.diagnose' } },
+  review: { adapterId: 'review', action: 'code.review', secondary: { adapterId: 'deepwiki', action: 'wiki.diagnose' } },
   qa: { adapterId: 'openjarvis', action: 'jarvis.ask', secondary: { adapterId: 'openshell', action: 'sandbox.exec' } },
-  'security-audit': { adapterId: 'nemoclaw', action: 'code.review', secondary: { adapterId: 'openjarvis', action: 'jarvis.memory.search' } },
+  'security-audit': { adapterId: 'review', action: 'code.review', secondary: { adapterId: 'openjarvis', action: 'jarvis.memory.search' } },
   'ops-validate': { adapterId: 'openjarvis', action: 'jarvis.telemetry', secondary: { adapterId: 'openjarvis', action: 'jarvis.ask' } },
   retro: { adapterId: 'deepwiki', action: 'wiki.ask', secondary: { adapterId: 'openjarvis', action: 'jarvis.digest' } },
 };
@@ -95,15 +94,10 @@ export const buildExternalAdapterArgs = (
         repo: 'team-muel/discord-news-bot',
         question: `Architecture analysis for: ${pipeline.objective}. Files: ${pipeline.changedFiles.join(', ')}`,
       };
-    case 'implement':
-      // openclaw.agent.chat: stateful session with tool awareness
-      return {
-        message: `Implement the following objective: ${pipeline.objective}\n\nChanged files: ${pipeline.changedFiles.join(', ')}\n\nYou have access to tools: sandbox.exec (run code in isolation), memory.search (search knowledge base), wiki.read (reference library docs).`,
-        sessionId: `sprint-${pipeline.sprintId}`,
-      };
     case 'qa':
       return {
         question: `Analyze test coverage gaps and suggest missing test cases for: ${pipeline.objective}. Changed files: ${pipeline.changedFiles.join(', ')}\n\nCode:\n${codeSnippet.slice(0, 4000)}`,
+        agent: 'orchestrator',
       };
     case 'review':
       return { code: codeSnippet, goal: pipeline.objective };
@@ -159,7 +153,10 @@ export const buildSecondaryAdapterArgs = (
       return { query: `security vulnerabilities: ${pipeline.objective}`, limit: 5 };
     case 'ops-validate':
       // jarvis.ask: interpret telemetry results
-      return { question: `Interpret these operational metrics and identify risks:\n${primaryOutput.slice(0, 2000)}\n\nObjective: ${pipeline.objective}` };
+      return {
+        question: `Interpret these operational metrics and identify risks:\n${primaryOutput.slice(0, 2000)}\n\nObjective: ${pipeline.objective}`,
+        agent: 'orchestrator',
+      };
     case 'retro':
       // jarvis.digest: auto-generate sprint summary
       return { topic: `Sprint retro: ${pipeline.objective}`, sources: ['traces'] };

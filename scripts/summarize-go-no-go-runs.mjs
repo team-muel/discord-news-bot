@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { parseArg, parseBool, parseSinks } from './lib/cliArgs.mjs';
 import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
+import { RETRIEVAL_VARIANT_KEYS } from '../config/runtime/retrievalVariants.js';
 
 const ROOT = process.cwd();
 const RUNS_DIR = path.join(ROOT, 'docs', 'planning', 'gate-runs');
@@ -66,6 +67,13 @@ const clamp01 = (value) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.max(0, Math.min(1, n));
+};
+
+const pickMostFrequentKey = (counts) => {
+  const ranked = Object.entries(counts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]) || String(a[0]).localeCompare(String(b[0])));
+  return ranked[0]?.[0] || null;
 };
 
 const normalizeOverall = (value) => {
@@ -662,6 +670,15 @@ const fetchStrategyQualityNormalization = async () => {
       tot_vs_baseline: null,
       got_vs_baseline: null,
     },
+    retrieval_variant_summary: {
+      by_variant: {},
+      best_variant: null,
+      best_recall_at_k_avg: null,
+      active_variant: null,
+      active_recall_at_k_avg: null,
+      delta_best_vs_baseline: null,
+      delta_active_vs_baseline: null,
+    },
   };
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -709,16 +726,42 @@ const fetchStrategyQualityNormalization = async () => {
     tot: [],
     got: [],
   };
+  const recallByVariant = Object.fromEntries(RETRIEVAL_VARIANT_KEYS.map((variant) => [variant, []]));
+  const ndcgByVariant = Object.fromEntries(RETRIEVAL_VARIANT_KEYS.map((variant) => [variant, []]));
+  const activeVariantVotes = {};
+  const bestVariantVotes = {};
   for (const row of retrievalRows) {
-    const variants = row?.summary?.variants && typeof row.summary.variants === 'object'
-      ? row.summary.variants
+    const summary = row?.summary && typeof row.summary === 'object'
+      ? row.summary
+      : null;
+    const variants = summary?.variants && typeof summary.variants === 'object'
+      ? summary.variants
       : null;
     if (!variants) continue;
 
-    for (const strategy of ['baseline', 'tot', 'got']) {
-      const recall = toNumber(variants?.[strategy]?.recallAtK);
-      if (recall !== null) {
-        recallByStrategy[strategy].push(recall);
+    const activeVariant = String(summary?.activeVariant || '').trim();
+    if (activeVariant) {
+      activeVariantVotes[activeVariant] = (activeVariantVotes[activeVariant] || 0) + 1;
+    }
+    const bestVariant = String(summary?.bestVariant || '').trim();
+    if (bestVariant) {
+      bestVariantVotes[bestVariant] = (bestVariantVotes[bestVariant] || 0) + 1;
+    }
+
+    for (const [variantName, variantSummary] of Object.entries(variants)) {
+      const variant = String(variantName || '').trim().toLowerCase();
+      const recall = toNumber(variantSummary?.recallAtK);
+      const ndcg = toNumber(variantSummary?.ndcg);
+      if (recall !== null && recallByVariant[variant]) {
+        recallByVariant[variant].push(recall);
+      }
+      if (ndcg !== null && ndcgByVariant[variant]) {
+        ndcgByVariant[variant].push(ndcg);
+      }
+      if (variant === 'baseline') {
+        if (recall !== null) {
+          recallByStrategy.baseline.push(recall);
+        }
       }
     }
   }
@@ -732,6 +775,48 @@ const fetchStrategyQualityNormalization = async () => {
     result.by_strategy[strategy].retrieval_samples = values.length;
     result.by_strategy[strategy].recall_at_k_avg = recallAvg;
   }
+
+  for (const variant of RETRIEVAL_VARIANT_KEYS) {
+    const recallValues = recallByVariant[variant] || [];
+    const ndcgValues = ndcgByVariant[variant] || [];
+    result.retrieval_variant_summary.by_variant[variant] = {
+      samples: recallValues.length,
+      recall_at_k_avg: recallValues.length > 0
+        ? Number((recallValues.reduce((acc, value) => acc + value, 0) / recallValues.length).toFixed(4))
+        : null,
+      ndcg_avg: ndcgValues.length > 0
+        ? Number((ndcgValues.reduce((acc, value) => acc + value, 0) / ndcgValues.length).toFixed(4))
+        : null,
+    };
+  }
+
+  const rankedVariants = RETRIEVAL_VARIANT_KEYS
+    .filter((variant) => variant !== 'baseline')
+    .map((variant) => ({
+      variant,
+      recallAtKAvg: result.retrieval_variant_summary.by_variant[variant]?.recall_at_k_avg,
+      ndcgAvg: result.retrieval_variant_summary.by_variant[variant]?.ndcg_avg,
+      samples: result.retrieval_variant_summary.by_variant[variant]?.samples || 0,
+    }))
+    .filter((item) => item.samples > 0)
+    .sort((a, b) => Number(b.ndcgAvg ?? -1) - Number(a.ndcgAvg ?? -1) || Number(b.recallAtKAvg ?? -1) - Number(a.recallAtKAvg ?? -1));
+
+  const bestVariant = pickMostFrequentKey(bestVariantVotes) || rankedVariants[0]?.variant || null;
+  const baselineRecall = result.retrieval_variant_summary.by_variant.baseline?.recall_at_k_avg;
+  const bestRecall = bestVariant ? result.retrieval_variant_summary.by_variant[bestVariant]?.recall_at_k_avg ?? null : null;
+  const activeVariant = pickMostFrequentKey(activeVariantVotes) || null;
+  const activeRecall = activeVariant ? result.retrieval_variant_summary.by_variant[activeVariant]?.recall_at_k_avg ?? null : null;
+
+  result.retrieval_variant_summary.best_variant = bestVariant;
+  result.retrieval_variant_summary.best_recall_at_k_avg = bestRecall;
+  result.retrieval_variant_summary.active_variant = activeVariant;
+  result.retrieval_variant_summary.active_recall_at_k_avg = activeRecall;
+  result.retrieval_variant_summary.delta_best_vs_baseline = bestRecall !== null && baselineRecall !== null
+    ? Number((bestRecall - baselineRecall).toFixed(4))
+    : null;
+  result.retrieval_variant_summary.delta_active_vs_baseline = activeRecall !== null && baselineRecall !== null
+    ? Number((activeRecall - baselineRecall).toFixed(4))
+    : null;
 
   let reviewRows = [];
   try {
@@ -812,12 +897,23 @@ const fetchStrategyQualityNormalization = async () => {
 
 const strategyQualityNormalization = await fetchStrategyQualityNormalization();
 
+const retrievalVariantLines = RETRIEVAL_VARIANT_KEYS
+  .map((variant) => {
+    const summary = strategyQualityNormalization.retrieval_variant_summary?.by_variant?.[variant] || {};
+    return `- retrieval_${variant}_recall_at_k_avg: ${summary.recall_at_k_avg ?? 'n/a'} (samples=${summary.samples ?? 0}, ndcg_avg=${summary.ndcg_avg ?? 'n/a'})`;
+  })
+  .join('\n');
+
 const body = `# Go/No-Go Weekly Summary\n\n- window_days: ${days}\n- generated_at: ${generatedAt}\n- total_runs: ${runsForKpi.length}\n- go: ${goCount}\n- no_go: ${noGoCount}\n- pending: ${pendingCount}\n- legacy_pending_no_go_excluded: ${excludeLegacyPendingNoGo ? legacyPendingNoGoExcludedCount : 0}\n- legacy_pending_cutoff: ${legacyPendingCutoffRaw || 'n/a'}\n\n## Stage Distribution\n\n| Stage | Count |\n| --- | ---: |\n${stageRows || '| - | 0 |'}\n\n## No-Go Root Cause Breakdown\n\n- reliability_quality_dual_fail: ${noGoRootCause.reliability_quality_dual_fail}\n- reliability_only_fail: ${noGoRootCause.reliability_only_fail}\n- quality_only_fail: ${noGoRootCause.quality_only_fail}\n- all_gates_pending: ${noGoRootCause.all_gates_pending}\n- other: ${noGoRootCause.other}\n\n## Required Action Completion (Estimated)\n\n- no_go_runs: ${requiredActionCompletion.no_go_runs}\n- required_actions_total: ${requiredActionCompletion.required_actions_total}\n- required_actions_estimated_completed: ${requiredActionCompletion.required_actions_estimated_completed}\n- required_action_completion_rate: ${requiredActionCompletion.required_action_completion_rate ?? 'n/a'}\n- checklist_complete_runs: ${requiredActionCompletion.checklist_complete_runs}\n- checklist_incomplete_runs: ${requiredActionCompletion.checklist_incomplete_runs}\n\n## Runtime Loop Evidence Completion\n\n- runs_with_evidence: ${runtimeLoopEvidenceCompletion.runs_with_evidence}\n- complete_runs: ${runtimeLoopEvidenceCompletion.complete_runs}\n- incomplete_runs: ${runtimeLoopEvidenceCompletion.incomplete_runs}\n- missing_runs: ${runtimeLoopEvidenceCompletion.missing_runs}\n- known_runs: ${runtimeLoopEvidenceCompletion.known_runs}\n- completion_rate: ${runtimeLoopEvidenceCompletion.completion_rate ?? 'n/a'}\n\n## A-003 Operator Surface Completion\n\n- canonical_endpoint: ${A003_OPERATOR_SURFACE_ENDPOINT}\n- runs_with_surface: ${a003OperatorSurfaceCompletion.runs_with_surface}\n- complete_runs: ${a003OperatorSurfaceCompletion.complete_runs}\n- incomplete_runs: ${a003OperatorSurfaceCompletion.incomplete_runs}\n- missing_runs: ${a003OperatorSurfaceCompletion.missing_runs}\n- known_runs: ${a003OperatorSurfaceCompletion.known_runs}\n- runtime_evidence_backfilled_runs: ${a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs}\n- completion_rate: ${a003OperatorSurfaceCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary\n\n- citation_rate_avg: ${qualitySummary.averages.citation_rate ?? 'n/a'} (samples=${qualitySummary.samples.citation_rate})\n- retrieval_hit_at_k_avg: ${qualitySummary.averages.retrieval_hit_at_k ?? 'n/a'} (samples=${qualitySummary.samples.retrieval_hit_at_k})\n- hallucination_review_fail_rate_avg: ${qualitySummary.averages.hallucination_review_fail_rate ?? 'n/a'} (samples=${qualitySummary.samples.hallucination_review_fail_rate})\n- session_success_rate_avg: ${qualitySummary.averages.session_success_rate ?? 'n/a'} (samples=${qualitySummary.samples.session_success_rate})\n\n## Strategy Quality Normalization (M-07)\n\n- retrieval_eval_runs_availability: ${strategyQualityNormalization.availability.retrieval_eval_runs}\n- answer_quality_reviews_availability: ${strategyQualityNormalization.availability.answer_quality_reviews}\n- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}\n- tot_normalized_quality_score: ${strategyQualityNormalization.by_strategy.tot.normalized_quality_score ?? 'n/a'}\n- got_normalized_quality_score: ${strategyQualityNormalization.by_strategy.got.normalized_quality_score ?? 'n/a'}\n- delta_tot_vs_baseline: ${strategyQualityNormalization.delta.tot_vs_baseline ?? 'n/a'}\n- delta_got_vs_baseline: ${strategyQualityNormalization.delta.got_vs_baseline ?? 'n/a'}\n\n## Recent Runs\n\n| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | File |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${recentRows || '| - | - | - | - | - | - | - | - | - |'}\n`;
 
 const bodyWithSandboxDelegation = body
   .replace(
     `- runtime_evidence_backfilled_runs: ${a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs}\n- completion_rate: ${a003OperatorSurfaceCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary`,
     `- runtime_evidence_backfilled_runs: ${a003OperatorSurfaceCompletion.runtime_evidence_backfilled_runs}\n- completion_rate: ${a003OperatorSurfaceCompletion.completion_rate ?? 'n/a'}\n\n## Sandbox Delegation Completion\n\n- verified_runs: ${sandboxDelegationCompletion.verified_runs}\n- incomplete_runs: ${sandboxDelegationCompletion.incomplete_runs}\n- missing_runs: ${sandboxDelegationCompletion.missing_runs}\n- known_runs: ${sandboxDelegationCompletion.known_runs}\n- completion_rate: ${sandboxDelegationCompletion.completion_rate ?? 'n/a'}\n\n## Quality Signal Summary`,
+  )
+  .replace(
+    `- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}`,
+    `- retrieval_eval_runs_samples: ${strategyQualityNormalization.retrieval_eval_runs_samples}\n- answer_quality_review_samples: ${strategyQualityNormalization.answer_quality_review_samples}\n${retrievalVariantLines}\n- retrieval_best_variant: ${strategyQualityNormalization.retrieval_variant_summary.best_variant ?? 'n/a'}\n- retrieval_best_variant_recall_at_k_avg: ${strategyQualityNormalization.retrieval_variant_summary.best_recall_at_k_avg ?? 'n/a'}\n- retrieval_active_variant: ${strategyQualityNormalization.retrieval_variant_summary.active_variant ?? 'n/a'}\n- retrieval_active_variant_recall_at_k_avg: ${strategyQualityNormalization.retrieval_variant_summary.active_recall_at_k_avg ?? 'n/a'}\n- retrieval_delta_best_vs_baseline: ${strategyQualityNormalization.retrieval_variant_summary.delta_best_vs_baseline ?? 'n/a'}\n- retrieval_delta_active_vs_baseline: ${strategyQualityNormalization.retrieval_variant_summary.delta_active_vs_baseline ?? 'n/a'}\n- baseline_normalized_quality_score: ${strategyQualityNormalization.by_strategy.baseline.normalized_quality_score ?? 'n/a'}`,
   )
   .replace(
     '| Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | File |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |',

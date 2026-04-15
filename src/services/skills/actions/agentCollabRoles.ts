@@ -1,5 +1,5 @@
 /**
- * Lead agent role actions — opendev.plan, nemoclaw.review, openjarvis.ops.
+ * Lead agent role actions — opendev.plan, review.review, openjarvis.ops.
  * Extracted from agentCollab.ts for domain-scoped cohesion.
  */
 import { buildAgentRuntimeReadinessReport } from '../../agent/agentRuntimeReadinessService';
@@ -118,16 +118,18 @@ export const opendevPlanAction: ActionDefinition = {
   },
 };
 
-export const nemoclawReviewAction: ActionDefinition = {
-  name: 'nemoclaw.review',
-  description: 'NemoClaw 역할로 목표나 코드 스니펫을 리뷰하고 리스크와 테스트 갭을 반환합니다.',
+const REVIEW_ACTION_NAME = 'review.review';
+
+export const reviewReviewAction: ActionDefinition = {
+  name: REVIEW_ACTION_NAME,
+  description: 'Review 역할로 목표나 코드 스니펫을 검토하고 리스크와 테스트 갭을 반환합니다. 필요하면 NemoClaw sandbox를 보조로 사용합니다.',
   category: 'agent',
   execute: async ({ goal, args, guildId }) => {
     const query = resolveGoal(goal, args);
     if (!query) {
       return withRouting({
         ok: false,
-        name: 'nemoclaw.review',
+        name: REVIEW_ACTION_NAME,
         summary: '리뷰할 objective가 비어 있습니다.',
         artifacts: [],
         verification: ['objective required'],
@@ -137,9 +139,9 @@ export const nemoclawReviewAction: ActionDefinition = {
     }
 
     const delegated = await maybeDelegateAgentAction({
-      actionName: 'nemoclaw.review',
+      actionName: REVIEW_ACTION_NAME,
       workerKind: 'review',
-      toolName: 'nemoclaw.review',
+      toolName: REVIEW_ACTION_NAME,
       goal: query,
       args,
       guildId,
@@ -150,23 +152,23 @@ export const nemoclawReviewAction: ActionDefinition = {
 
     const code = typeof args?.code === 'string' ? args.code.trim() : '';
 
-    // Try external NemoClaw sandbox review if available
+    // Try the external review sandbox if available
     if (code) {
-      const sandboxReview = await runExternalAction('nemoclaw', 'code.review', { code, goal: query });
+      const sandboxReview = await runExternalAction('review', 'code.review', { code, goal: query });
       if (sandboxReview.ok && sandboxReview.output.length > 0) {
         return withRouting({
           ok: true,
-          name: 'nemoclaw.review',
-          summary: 'NemoClaw sandbox 리뷰 완료',
+          name: REVIEW_ACTION_NAME,
+          summary: 'Review sandbox 리뷰 완료',
           artifacts: [sandboxReview.output.join('\n')],
-          verification: ['sandbox code.review executed', `adapter: nemoclaw, duration: ${sandboxReview.durationMs}ms`],
+          verification: ['sandbox code.review executed', `adapter: review, duration: ${sandboxReview.durationMs}ms`],
           agentRole: 'review',
-        }, 'review', 'nemoclaw sandbox review completed');
+        }, 'review', 'review sandbox completed');
       }
     }
 
     const discover = code
-      ? runNemoClawDiscoverExecutor({ goal: query, actionName: 'nemoclaw.review', code })
+      ? runNemoClawDiscoverExecutor({ goal: query, actionName: REVIEW_ACTION_NAME, code })
       : null;
     const recommendation = recommendSuperAgent(createTaskInput({
       goal: query,
@@ -201,9 +203,9 @@ export const nemoclawReviewAction: ActionDefinition = {
 
     const synthesized = await maybeGenerateRoleText({
       enabled: isAnyLlmConfigured(),
-      actionName: 'action.nemoclaw.review',
+      actionName: 'action.review.review',
       system: [
-        '너는 NemoClaw 리뷰 에이전트다.',
+        '너는 Review 에이전트다.',
         '출력은 Findings, Open Questions, Required Gates 순서만 사용한다.',
         '구체적 근거가 없으면 추정이라고 밝힌다.',
       ].join('\n'),
@@ -218,18 +220,20 @@ export const nemoclawReviewAction: ActionDefinition = {
 
     return withRouting({
       ok: discover ? discover.ok : true,
-      name: 'nemoclaw.review',
-      summary: discover?.ok === false ? 'NemoClaw 리뷰에서 차단 사유가 발견되었습니다.' : 'NemoClaw 리뷰 완료',
+      name: REVIEW_ACTION_NAME,
+      summary: discover?.ok === false ? 'Review에서 차단 사유가 발견되었습니다.' : 'Review 완료',
       artifacts: [clip(synthesized), discover ? clip(toJson(discover)) : clip(toJson(recommendation.route))],
       verification: [
         ...(discover ? ['sandbox validation executed'] : []),
-        'nemoclaw review emitted',
+        'review emitted',
       ],
       error: discover?.ok === false ? 'NEMOCLAW_REVIEW_BLOCKED' : undefined,
       agentRole: 'review',
-    }, 'review', 'nemoclaw review completed', discover?.evidenceId || recommendation.route.mode);
+    }, 'review', 'review completed', discover?.evidenceId || recommendation.route.mode);
   },
 };
+
+export const nemoclawReviewAction: ActionDefinition = reviewReviewAction;
 
 export const openjarvisOpsAction: ActionDefinition = {
   name: 'openjarvis.ops',
@@ -264,6 +268,7 @@ export const openjarvisOpsAction: ActionDefinition = {
     // Try external OpenJarvis adapter (jarvis serve API)
     const jarvisResult = await runExternalAction('openjarvis', 'jarvis.ask', {
       question: `Ops review: ${query}`,
+      agent: 'orchestrator',
     });
     if (jarvisResult.ok && jarvisResult.output.length > 0) {
       return withRouting({

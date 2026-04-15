@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../config', () => ({
   AI_PROVIDER: 'openai',
@@ -49,6 +49,12 @@ vi.mock('../openclaw/gatewayHealth', () => ({
 }));
 
 describe('llm providers normalization helpers', () => {
+  beforeEach(async () => {
+    const { resetProviderRuntimeReadiness } = await import('./providers');
+    resetProviderRuntimeReadiness();
+    vi.clearAllMocks();
+  });
+
   it('extracts OpenAI-compatible text and numeric logprobs', async () => {
     const { extractOpenAiCompatibleText, extractOpenAiTokenLogprobs } = await import('./providers');
 
@@ -91,5 +97,36 @@ describe('llm providers normalization helpers', () => {
     };
 
     expect(extractAnthropicResponseText(payload)).toBe('alpha\nbeta');
+  });
+
+  it('marks openclaw unreachable when the configured base URL is control-only html', async () => {
+    const { fetchWithTimeout } = await import('../../utils/network');
+    const mockFetch = vi.mocked(fetchWithTimeout);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null },
+    } as Response);
+
+    const { getProviderRuntimeReadiness } = await import('./providers');
+    const readiness = await getProviderRuntimeReadiness('openclaw');
+
+    expect(readiness.configured).toBe(true);
+    expect(readiness.status).toBe('unreachable');
+    expect(readiness.reason).toBe('OPENCLAW_CONTROL_UI_ONLY');
+  });
+
+  it('marks openclaw ready when the configured base URL returns json models', async () => {
+    const { fetchWithTimeout } = await import('../../utils/network');
+    const mockFetch = vi.mocked(fetchWithTimeout);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null },
+    } as Response);
+
+    const { getProviderRuntimeReadiness } = await import('./providers');
+    const readiness = await getProviderRuntimeReadiness('openclaw');
+
+    expect(readiness.status).toBe('ready');
+    expect(readiness.reason).toBeNull();
   });
 });

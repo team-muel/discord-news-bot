@@ -16,6 +16,19 @@ describe('unifiedToolAdapter', () => {
     expect(names).toContain('code.index.symbol_search');
     expect(names).toContain('code.index.file_outline');
     expect(names).toContain('security.candidates_list');
+
+    // Expanded OpenJarvis lite tools
+    expect(names).toContain('ext.openjarvis.jarvis.ask');
+    expect(names).toContain('ext.openjarvis.jarvis.server.info');
+    expect(names).toContain('ext.openjarvis.jarvis.models.list');
+    expect(names).toContain('ext.openjarvis.jarvis.tools.list');
+    expect(names).toContain('ext.openjarvis.jarvis.agents.health');
+    expect(names).toContain('ext.openjarvis.jarvis.recommended-model');
+    expect(names).toContain('ext.openjarvis.jarvis.agent.list');
+    expect(names).toContain('ext.openjarvis.jarvis.memory.search');
+    expect(names).toContain('ext.openjarvis.jarvis.telemetry');
+    expect(names).toContain('ext.openjarvis.jarvis.scheduler.list');
+    expect(names).toContain('ext.openjarvis.jarvis.skill.search');
   });
 
   it('returns no duplicate tool names', async () => {

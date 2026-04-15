@@ -124,6 +124,11 @@ export const stopObsidianLoreSyncLoop = () => {
   }
 };
 
+export const runObsidianLoreSyncOnce = async () => {
+  await runSyncOnce();
+  return getObsidianLoreSyncLoopStats();
+};
+
 export const getObsidianLoreSyncLoopStats = () => ({
   enabled: OBSIDIAN_SYNC_LOOP_ENABLED,
   owner: OBSIDIAN_SYNC_LOOP_OWNER,

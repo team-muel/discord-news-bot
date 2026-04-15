@@ -20,6 +20,10 @@ import {
   CODING_INTENT_PATTERN as RUNTIME_CODING_INTENT_PATTERN,
   SIMPLE_COMMAND_ALLOWLIST,
 } from './runtimePolicy';
+import {
+  DISCORD_CHAT_COMMAND_NAMES,
+  DISCORD_CONTEXT_MENU_COMMAND_NAMES,
+} from '../../config/runtime/discordCommandCatalog.js';
 
 export const SIMPLE_COMMANDS_ENABLED = CFG_SIMPLE_COMMANDS_ENABLED;
 export { SIMPLE_COMMAND_ALLOWLIST };
@@ -42,12 +46,59 @@ const createAskSlashCommand = (name: string, description: string) => new SlashCo
       .setRequired(false),
   );
 
+const createAgentStartCommand = () => new SlashCommandBuilder()
+  .setName(DISCORD_CHAT_COMMAND_NAMES.START)
+  .setDescription('관리자: AI 에이전트 세션을 시작합니다')
+  .setDMPermission(false)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .addStringOption((o) =>
+    o.setName('목표').setDescription('실행 목표').setRequired(true),
+  )
+  .addStringOption((o) =>
+    o.setName('스킬').setDescription('선택 스킬 ID').setRequired(false),
+  )
+  .addStringOption((o) =>
+    o.setName('우선순위').setDescription('실행 우선순위')
+      .addChoices(
+        { name: '빠르게', value: 'fast' },
+        { name: '균형', value: 'balanced' },
+        { name: '정밀', value: 'precise' },
+      )
+      .setRequired(false),
+  )
+  .addStringOption((o) =>
+    o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
+      .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
+      .setRequired(false),
+  );
+
+const createAgentSkillListCommand = () => new SlashCommandBuilder()
+  .setName(DISCORD_CHAT_COMMAND_NAMES.SKILL_LIST)
+  .setDescription('관리자: 사용 가능한 에이전트 스킬 목록을 조회합니다')
+  .setDMPermission(false)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+
+const createAgentOnboardingCommand = () => new SlashCommandBuilder()
+  .setName(DISCORD_CHAT_COMMAND_NAMES.ONBOARDING)
+  .setDescription('관리자: 길드 온보딩 세션을 시작합니다')
+  .setDMPermission(false)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+
+const createAgentStopCommand = () => new SlashCommandBuilder()
+  .setName(DISCORD_CHAT_COMMAND_NAMES.STOP)
+  .setDescription('관리자: 실행 중인 에이전트 세션을 중지합니다')
+  .setDMPermission(false)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .addStringOption((o) =>
+    o.setName('세션아이디').setDescription('중지할 세션 ID').setRequired(true),
+  );
+
 const ALL_COMMANDS = [
   new SlashCommandBuilder()
-    .setName('도움말')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.HELP)
     .setDescription('사용 가능한 명령어를 한눈에 안내합니다'),
   new SlashCommandBuilder()
-    .setName('주가')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.STOCK_PRICE)
     .setDescription('주식 현재 가격을 조회합니다')
     .addStringOption((o) =>
       o.setName('symbol').setDescription('예: AAPL, TSLA, MSFT').setRequired(true),
@@ -58,7 +109,7 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('차트')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.STOCK_CHART)
     .setDescription('주식 30일 차트를 조회합니다')
     .addStringOption((o) =>
       o.setName('symbol').setDescription('예: AAPL, TSLA, MSFT').setRequired(true),
@@ -69,7 +120,7 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('분석')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.ANALYZE)
     .setDescription('AI 투자 관점 분석')
     .addStringOption((o) =>
       o.setName('query').setDescription('기업/종목/테마 입력').setRequired(true),
@@ -80,7 +131,7 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('구독')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.SUBSCRIBE)
     .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다 (현재 채널에 등록)')
     .addStringOption((o) =>
       o.setName('동작').setDescription('조회 / 추가 / 제거').setRequired(false)
@@ -101,10 +152,10 @@ const ALL_COMMANDS = [
     .addStringOption((o) =>
       o.setName('링크').setDescription('영상/게시글일 때 YouTube 채널 링크 또는 UC... 채널 ID').setRequired(false),
     ),
-  createAskSlashCommand('뮤엘', '뮤엘에게 질문합니다 — 문서·메모·지식 기반으로 답변합니다'),
-  createAskSlashCommand('해줘', '호환 명령입니다 — /뮤엘과 같은 질문 응답을 수행합니다'),
+  createAskSlashCommand(DISCORD_CHAT_COMMAND_NAMES.MUEL, '뮤엘에게 질문합니다 — 문서·메모·지식 기반으로 답변합니다'),
+  createAskSlashCommand(DISCORD_CHAT_COMMAND_NAMES.ASK_COMPAT, '호환 명령입니다 — /뮤엘과 같은 질문 응답을 수행합니다'),
   new SlashCommandBuilder()
-    .setName('만들어줘')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.MAKE)
     .setDescription('코드·스크립트·자동화를 스레드로 협업 생성합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
@@ -117,11 +168,11 @@ const ALL_COMMANDS = [
     ),
 
   new SlashCommandBuilder()
-    .setName('상태')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.STATUS)
     .setDescription('봇과 자동화 런타임 상태를 확인합니다')
     .setDMPermission(false),
   new SlashCommandBuilder()
-    .setName('정책')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.POLICY)
     .setDescription('서버 운영 정책을 조회하고 설정합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -144,8 +195,12 @@ const ALL_COMMANDS = [
           o.setName('도메인').setDescription('삭제할 도메인').setRequired(true),
         ),
     ),
+  createAgentStartCommand(),
+  createAgentSkillListCommand(),
+  createAgentOnboardingCommand(),
+  createAgentStopCommand(),
   new SlashCommandBuilder()
-    .setName('관리설정')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.MANAGE_SETTINGS)
     .setDescription('서버 데이터 학습 허용(on/off)을 설정합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -158,7 +213,7 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('잊어줘')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.FORGET)
     .setDescription('잊혀질 권리: 유저/길드 데이터 삭제를 요청합니다')
     .setDMPermission(false)
     .addStringOption((o) =>
@@ -184,11 +239,14 @@ const ALL_COMMANDS = [
       o.setName('확인문구').setDescription('실행 시: FORGET_USER / FORGET_USER_ADMIN / FORGET_GUILD').setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('프로필')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.PROFILE)
     .setDescription('유저의 관계/기억 기반 프로필 스냅샷을 조회합니다')
     .setDMPermission(false)
     .addUserOption((o) =>
       o.setName('유저').setDescription('조회할 유저 (생략 시 내 프로필)').setRequired(false),
+    )
+    .addUserOption((o) =>
+      o.setName('비교유저').setDescription('관리자 전용: 개인화 스냅샷 비교 대상').setRequired(false),
     )
     .addStringOption((o) =>
       o.setName('공개범위').setDescription('응답 공개 범위')
@@ -196,7 +254,7 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('메모')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.MEMO)
     .setDescription('유저 메모를 추가하거나 조회합니다')
     .setDMPermission(false)
     .addUserOption((o) =>
@@ -211,20 +269,20 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new ContextMenuCommandBuilder()
-    .setName('유저 프로필 보기')
+    .setName(DISCORD_CONTEXT_MENU_COMMAND_NAMES.USER_PROFILE)
     .setType(ApplicationCommandType.User),
   new ContextMenuCommandBuilder()
-    .setName('유저 메모 추가')
+    .setName(DISCORD_CONTEXT_MENU_COMMAND_NAMES.USER_NOTE)
     .setType(ApplicationCommandType.User),
   new SlashCommandBuilder()
-    .setName('변경사항')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.CHANGELOG)
     .setDescription('뮤엘 최근 업데이트 내역을 확인합니다')
     .setDMPermission(false)
     .addIntegerOption((o) =>
       o.setName('개수').setDescription('표시할 항목 수 (기본 3, 최대 5)').setMinValue(1).setMaxValue(5).setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('관리자')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.ADMIN)
     .setDescription('관리자 도구 모음')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -265,11 +323,11 @@ const ALL_COMMANDS = [
       sub.setName('세션이력').setDescription('최근 완료된 AI 세션 산출물 이력 조회'),
     ),
   new SlashCommandBuilder()
-    .setName('유저')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.USER)
     .setDescription('내 프로필과 활동 통계를 확인합니다')
     .setDMPermission(false),
   new SlashCommandBuilder()
-    .setName('통계')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.STATS)
     .setDescription('관리자: 특정 유저의 CRM 프로필과 활동 정보를 조회합니다')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -282,7 +340,7 @@ const ALL_COMMANDS = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
-    .setName('지표리뷰')
+    .setName(DISCORD_CHAT_COMMAND_NAMES.METRIC_REVIEW)
     .setDescription('관리자: Metric Review — KR별 지표 현황, 리스크, 활성 Intent 요약')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),

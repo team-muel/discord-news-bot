@@ -1,5 +1,6 @@
 import type { Client } from 'discord.js';
 import { startObsidianLoreSyncLoop } from '../obsidian/obsidianLoreSyncService';
+import { startObsidianGraphAuditLoop } from '../obsidian/obsidianQualityService';
 import { startRetrievalEvalLoop } from '../eval/retrievalEvalLoopService';
 import { startRewardSignalLoop } from '../eval/rewardSignalLoopService';
 import { startEvalAutoPromoteLoop } from '../eval/evalAutoPromoteLoopService';
@@ -31,6 +32,12 @@ export const bootstrapDiscordLoops = (
     logger.info('[RUNTIME] obsidianLoreSyncLoop skipped — pg_cron owns it');
   } else {
     startObsidianLoreSyncLoop();
+  }
+
+  if (isPgCronOwned('obsidianGraphAuditLoop')) {
+    logger.info('[RUNTIME] obsidianGraphAuditLoop skipped — pg_cron owns it');
+  } else {
+    startObsidianGraphAuditLoop();
   }
 
   if (isPgCronOwned('retrievalEvalLoop')) {

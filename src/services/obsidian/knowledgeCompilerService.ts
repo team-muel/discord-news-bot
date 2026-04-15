@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import logger from '../../logger';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { stripMarkdownExtension, upsertObsidianSystemDocument } from './authoring';
+import { stripFrontmatterBlock } from './obsidianMetadataUtils';
 import { parseObsidianFrontmatter } from './obsidianCacheService';
 import { doc } from './obsidianDocBuilder';
 import {
@@ -3044,8 +3045,6 @@ const parseDateMs = (...values: Array<unknown>): number => {
   }
   return 0;
 };
-
-const stripFrontmatterBlock = (markdown: string): string => String(markdown || '').replace(/^---\n[\s\S]*?\n---\n?/m, '').trim();
 
 const extractTitle = (content: string, filePath: string, frontmatter: Record<string, unknown>): string => {
   const frontmatterTitle = toText(frontmatter.title);

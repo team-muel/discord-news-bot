@@ -114,6 +114,7 @@ export default defineConfig({
         test: {
           name: 'core',
           include: [
+            'scripts/**/*.test.ts',
             'src/services/*.test.ts',
             'src/services/intent/**/*.test.ts',
             'src/services/llm/**/*.test.ts',

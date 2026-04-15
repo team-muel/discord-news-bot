@@ -1,17 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { commandDefinitions } from './commandDefinitions';
+import { commandDefinitions, SIMPLE_COMMAND_ALLOWLIST } from './commandDefinitions';
 import { DISCORD_MESSAGES } from './messages';
 import { hasVibeMessagePrefix, stripVibeMessagePrefix } from './commands/vibe';
 
 describe('Discord Muel entry surface', () => {
-  it('keeps /뮤엘, preserves /해줘 compatibility, and exposes /메모 surface', () => {
+  it('keeps /뮤엘, preserves /해줘 compatibility, restores agent slash commands, and exposes /메모 surface', () => {
     const commandNames = commandDefinitions.map((definition) => String((definition as { name?: string }).name || ''));
 
     expect(commandNames).toContain('뮤엘');
     expect(commandNames).toContain('해줘');
+    expect(commandNames).toContain('시작');
+    expect(commandNames).toContain('스킬목록');
+    expect(commandNames).toContain('온보딩');
+    expect(commandNames).toContain('중지');
     expect(commandNames).toContain('프로필');
     expect(commandNames).toContain('메모');
     expect(commandNames).toContain('만들어줘');
+    expect(SIMPLE_COMMAND_ALLOWLIST.has('시작')).toBe(true);
+    expect(SIMPLE_COMMAND_ALLOWLIST.has('스킬목록')).toBe(true);
+    expect(SIMPLE_COMMAND_ALLOWLIST.has('온보딩')).toBe(true);
+    expect(SIMPLE_COMMAND_ALLOWLIST.has('중지')).toBe(true);
   });
 
   it('recognizes Muel-prefixed message requests', () => {

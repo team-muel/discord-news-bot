@@ -114,6 +114,7 @@ export const opencodeExecuteAction: ActionDefinition = {
             logger.info('[OPENCODE] sandbox=%s not found, attempting auto-create', OPENSHELL_DEFAULT_SANDBOX_ID);
             const createResult = await runExternalAction('openshell', 'sandbox.create', {
               from: OPENSHELL_DEFAULT_SANDBOX_IMAGE,
+              name: OPENSHELL_DEFAULT_SANDBOX_ID,
             });
             if (!createResult.ok) {
               logger.warn('[OPENCODE] sandbox auto-create failed: %s, falling through to MCP', createResult.error);

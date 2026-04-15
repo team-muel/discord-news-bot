@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   getSupabaseClient: vi.fn(),
   searchMemoryHybrid: vi.fn(async () => []),
   searchMemoryTiered: vi.fn(async (): Promise<SearchRow[]> => []),
+  resolveAgentPersonalizationSnapshot: vi.fn<(params?: { userId?: string }) => Promise<unknown>>(async (_params?: { userId?: string }) => null),
 }));
 
 vi.mock('../../logger', () => ({
@@ -56,6 +57,10 @@ vi.mock('../supabaseClient', () => ({
 vi.mock('./agentMemoryStore', () => ({
   searchMemoryHybrid: mocks.searchMemoryHybrid,
   searchMemoryTiered: mocks.searchMemoryTiered,
+}));
+
+vi.mock('./agentPersonalizationService', () => ({
+  resolveAgentPersonalizationSnapshot: mocks.resolveAgentPersonalizationSnapshot,
 }));
 
 describe('agentMemoryService', () => {
@@ -134,6 +139,7 @@ describe('agentMemoryService', () => {
         tags: ['preference'],
       } satisfies SearchRow,
     ]);
+    mocks.resolveAgentPersonalizationSnapshot.mockResolvedValue(null);
   });
 
   it('normalizes lore rows and keeps pinned memory hints even at low confidence', async () => {
@@ -198,5 +204,83 @@ describe('agentMemoryService', () => {
     const memoryHints = hints.filter((hint) => hint.includes('[memory:'));
     expect(memoryHints[0]).toContain('mem-market');
     expect(memoryHints[1]).toContain('mem-generic');
+  });
+
+  it('separates cache entries by requester and prepends personalization hints', async () => {
+    mocks.getSupabaseClient.mockReturnValue(createSupabaseMockClientByTable({
+      guild_lore_docs: { data: [], error: null },
+      memory_sources: { data: [], error: null },
+    }));
+    mocks.searchMemoryTiered.mockResolvedValue([]);
+    mocks.resolveAgentPersonalizationSnapshot.mockImplementation(async (input?: { userId?: string }) => {
+      const userId = input?.userId || '';
+      return {
+      guildId: '12345678',
+      userId,
+      requestedPriority: 'balanced',
+      requestedSkillId: null,
+      consent: {
+        memoryEnabled: true,
+        socialGraphEnabled: true,
+        profilingEnabled: true,
+        actionAuditDisclosureEnabled: true,
+        source: 'stored',
+        updatedAt: null,
+      },
+      learning: { enabled: true },
+      persona: {
+        available: true,
+        summary: null,
+        communicationStyle: userId === 'user-a' ? 'concise' : 'detailed',
+        roleTags: [],
+        preferredTopics: [],
+        visibleNoteCount: 0,
+        hiddenNoteCount: 0,
+        relationCount: 0,
+        notes: [],
+      },
+      workflow: {
+        priority: 'balanced',
+        stepTitles: [],
+        stepCount: 0,
+      },
+      recommendations: {
+        priority: userId === 'user-a' ? 'fast' : 'precise',
+        providerProfile: userId === 'user-a' ? 'cost-optimized' : 'quality-optimized',
+        retrievalProfile: userId === 'user-a' ? 'intent_prefix' : 'graph_lore',
+        activeRetrievalProfile: null,
+        reasons: [userId === 'user-a' ? 'concise_style_signal' : 'deep_context_signal'],
+      },
+      effective: {
+        priority: userId === 'user-a' ? 'fast' : 'precise',
+        prioritySource: 'personalization',
+        providerProfile: userId === 'user-a' ? 'cost-optimized' : 'quality-optimized',
+        providerProfileSource: 'personalization',
+        retrievalProfile: userId === 'user-a' ? 'intent_prefix' : 'graph_lore',
+        retrievalProfileSource: 'personalization',
+      },
+      promptHints: [`[personalization:profile] style=${userId === 'user-a' ? 'concise' : 'detailed'}`],
+      };
+    });
+
+    const { buildAgentMemoryHints } = await import('./agentMemoryService');
+
+    const first = await buildAgentMemoryHints({
+      guildId: '12345678',
+      goal: 'same goal',
+      requesterUserId: 'user-a',
+      maxItems: 5,
+    });
+    const second = await buildAgentMemoryHints({
+      guildId: '12345678',
+      goal: 'same goal',
+      requesterUserId: 'user-b',
+      maxItems: 5,
+    });
+
+    expect(first.some((hint) => hint.includes('style=concise'))).toBe(true);
+    expect(first.some((hint) => hint.includes('style=detailed'))).toBe(false);
+    expect(second.some((hint) => hint.includes('style=detailed'))).toBe(true);
+    expect(mocks.resolveAgentPersonalizationSnapshot).toHaveBeenCalledTimes(2);
   });
 });

@@ -3,23 +3,82 @@ import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 import { execFileSync, execFile } from 'child_process';
 import { promisify } from 'node:util';
-import { parseArg as _parseArg, parseBool as _parseBool } from './lib/cliArgs.mjs';
+import { parseArg as _parseArg, parseBool as _parseBool, parseBoolEnvAny } from './lib/cliArgs.mjs';
+import { buildOpenjarvisOptimizeInvocation, formatOpenjarvisOptimizeProfile } from './lib/openjarvisOptimizeProfile.mjs';
 import { SUPABASE_URL, SUPABASE_KEY, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = process.cwd();
+const IS_WINDOWS = process.platform === 'win32';
 
 // D-01: OpenJarvis bench integration
-const JARVIS_BENCH_ENABLED = ['1', 'true', 'yes', 'on'].includes(
-  String(process.env.JARVIS_BENCH_GATE_FEED_ENABLED || 'false').trim().toLowerCase(),
-);
+const JARVIS_BENCH_ENABLED = parseBoolEnvAny([
+  'JARVIS_BENCH_GATE_FEED_ENABLED',
+  'OPENJARVIS_BENCH_ENABLED',
+  'OPENJARVIS_LEARNING_LOOP_ENABLED',
+], false);
 const JARVIS_BENCH_TIMEOUT_MS = Math.max(5000, Number(process.env.JARVIS_BENCH_TIMEOUT_MS || '60000') || 60000);
+const JARVIS_BENCH_BENCHMARK = String(process.env.JARVIS_BENCH_BENCHMARK || 'latency').trim() || 'latency';
+const JARVIS_BENCH_SAMPLES = Math.max(1, Number(process.env.JARVIS_BENCH_SAMPLES || '1') || 1);
 
 // D-02: jarvis.optimize auto trigger after weekly gate
-const JARVIS_OPTIMIZE_AFTER_GATE_ENABLED = ['1', 'true', 'yes', 'on'].includes(
-  String(process.env.JARVIS_OPTIMIZE_AFTER_GATE_ENABLED || 'false').trim().toLowerCase(),
-);
-const OPENJARVIS_SERVE_URL = String(process.env.OPENJARVIS_SERVE_URL || 'http://127.0.0.1:8000').trim();
+const JARVIS_OPTIMIZE_AFTER_GATE_ENABLED = parseBoolEnvAny([
+  'JARVIS_OPTIMIZE_AFTER_GATE_ENABLED',
+  'OPENJARVIS_OPTIMIZE_ENABLED',
+  'OPENJARVIS_LEARNING_LOOP_ENABLED',
+], false);
+const OPENJARVIS_OPTIMIZE_BENCHMARK = String(process.env.OPENJARVIS_OPTIMIZE_BENCHMARK || '').trim();
+const OPENJARVIS_OPTIMIZE_CONFIG = String(process.env.OPENJARVIS_OPTIMIZE_CONFIG || '').trim();
+const OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED = parseBoolEnvAny(['OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED'], false);
+const OPENJARVIS_OPTIMIZE_MODEL = String(process.env.OPENJARVIS_OPTIMIZE_MODEL || process.env.OPENJARVIS_MODEL || '').trim();
+const OPENJARVIS_OPTIMIZE_ENGINE = String(process.env.OPENJARVIS_OPTIMIZE_ENGINE || '').trim();
+const OPENJARVIS_OPTIMIZE_JUDGE_MODEL = String(process.env.OPENJARVIS_OPTIMIZE_JUDGE_MODEL || '').trim();
+const OPENJARVIS_OPTIMIZE_JUDGE_ENGINE = String(process.env.OPENJARVIS_OPTIMIZE_JUDGE_ENGINE || '').trim();
+const OPENJARVIS_OPTIMIZE_TRIALS = Math.max(1, Number(process.env.OPENJARVIS_OPTIMIZE_TRIALS || '1') || 1);
+const OPENJARVIS_OPTIMIZE_MAX_SAMPLES = Math.max(1, Number(process.env.OPENJARVIS_OPTIMIZE_MAX_SAMPLES || '1') || 1);
+
+const runJarvisCli = async (args, timeoutMs = 30_000) => {
+  if (IS_WINDOWS) {
+    return execFileAsync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'jarvis', ...args], {
+      timeout: timeoutMs,
+      windowsHide: true,
+    });
+  }
+  return execFileAsync('jarvis', args, {
+    timeout: timeoutMs,
+    windowsHide: true,
+  });
+};
+
+const runRepoScript = async (scriptName, timeoutMs = 120_000) => {
+  if (IS_WINDOWS) {
+    return execFileAsync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm', 'run', '-s', scriptName], {
+      timeout: timeoutMs,
+      windowsHide: true,
+      cwd: ROOT,
+      env: process.env,
+    });
+  }
+  return execFileAsync('npm', ['run', '-s', scriptName], {
+    timeout: timeoutMs,
+    windowsHide: true,
+    cwd: ROOT,
+    env: process.env,
+  });
+};
+
+const syncMemoryBeforeOptimize = async () => {
+  if (!JARVIS_OPTIMIZE_AFTER_GATE_ENABLED) {
+    return;
+  }
+  try {
+    const { stdout, stderr } = await runRepoScript('openjarvis:memory:sync');
+    const preview = String(stdout || stderr || '').trim().split(/\r?\n/).slice(0, 3).join(' | ');
+    console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] memory sync completed before optimize${preview ? `: ${preview}` : ''}`);
+  } catch (err) {
+    console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] memory sync before optimize failed (non-blocking): ${err?.message || err}`);
+  }
+};
 
 const parseArg = (name, fallback = '') => _parseArg(name, fallback);
 
@@ -47,6 +106,42 @@ const resolveMetric = (cliArgName, dataSource, fallback = null) => {
     return Number.isFinite(n) ? n : fallback;
   }
   return fallback;
+};
+
+const parseJarvisBenchJson = (rawText) => {
+  const text = String(rawText || '').trim();
+  if (!text) {
+    return { benchScore: null, latencyMs: null };
+  }
+
+  const jsonStart = text.indexOf('{');
+  const jsonEnd = text.lastIndexOf('}');
+  const candidate = jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text;
+  try {
+    const parsed = JSON.parse(candidate);
+    const directScore = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : null;
+    const directLatency = typeof parsed.latency_ms === 'number' && Number.isFinite(parsed.latency_ms) ? parsed.latency_ms : null;
+    if (directScore !== null || directLatency !== null) {
+      return { benchScore: directScore, latencyMs: directLatency };
+    }
+
+    const benchmarks = Array.isArray(parsed.benchmarks) ? parsed.benchmarks : [];
+    const first = benchmarks[0] && typeof benchmarks[0] === 'object' ? benchmarks[0] : null;
+    const metrics = first && typeof first.metrics === 'object' ? first.metrics : null;
+    const nestedLatency = metrics && typeof metrics.p95_latency === 'number' && Number.isFinite(metrics.p95_latency)
+      ? metrics.p95_latency
+      : metrics && typeof metrics.mean_latency === 'number' && Number.isFinite(metrics.mean_latency)
+        ? metrics.mean_latency
+        : null;
+    return { benchScore: directScore, latencyMs: nestedLatency };
+  } catch {
+    const scoreMatch = text.match(/score[:\s]+([0-9]+(?:\.[0-9]+)?)/i);
+    const latencyMatch = text.match(/(?:p95_latency|mean_latency|latency_ms)[:\s]+([0-9]+(?:\.[0-9]+)?)/i);
+    return {
+      benchScore: scoreMatch ? Number(scoreMatch[1]) : null,
+      latencyMs: latencyMatch ? Number(latencyMatch[1]) : null,
+    };
+  }
 };
 
 const parseBoolArg = (name, fallback = false) => _parseBool(parseArg(name, fallback ? 'true' : 'false'));
@@ -199,15 +294,20 @@ const collectLiveRuntimeEvidence = async (params) => {
 const collectJarvisBenchScore = async () => {
   if (!JARVIS_BENCH_ENABLED) return null;
   try {
-    const { stdout } = await execFileAsync('jarvis', ['bench', '--json'], {
-      timeout: JARVIS_BENCH_TIMEOUT_MS,
-      windowsHide: true,
-    });
+    const { stdout } = await runJarvisCli([
+      'bench',
+      'run',
+      '--json',
+      '--benchmark',
+      JARVIS_BENCH_BENCHMARK,
+      '--samples',
+      String(JARVIS_BENCH_SAMPLES),
+    ], JARVIS_BENCH_TIMEOUT_MS);
     const joined = stdout.trim();
     if (!joined) return null;
-    const parsed = JSON.parse(joined);
-    const score = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : null;
-    const latencyMs = typeof parsed.latency_ms === 'number' && Number.isFinite(parsed.latency_ms) ? parsed.latency_ms : null;
+    const parsed = parseJarvisBenchJson(joined);
+    const score = parsed.benchScore;
+    const latencyMs = parsed.latencyMs;
     console.log(`[GO-NO-GO][JARVIS-BENCH] score=${score} latencyMs=${latencyMs}`);
     return { benchScore: score, latencyMs };
   } catch (err) {
@@ -227,7 +327,35 @@ const triggerJarvisOptimizeAfterGate = async (gateArgs) => {
     console.log('[GO-NO-GO][JARVIS-OPTIMIZE] trigger skipped (JARVIS_OPTIMIZE_AFTER_GATE_ENABLED=false)');
     return;
   }
+  if (gateArgs?.dryRun) {
+    console.log('[GO-NO-GO][JARVIS-OPTIMIZE] skipped during dry-run');
+    return;
+  }
+  if (!OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED && !OPENJARVIS_OPTIMIZE_CONFIG && !OPENJARVIS_OPTIMIZE_BENCHMARK) {
+    console.log('[GO-NO-GO][JARVIS-OPTIMIZE] skipped: set OPENJARVIS_OPTIMIZE_BENCHMARK or OPENJARVIS_OPTIMIZE_CONFIG to enable CLI optimization');
+    return;
+  }
   try {
+    await syncMemoryBeforeOptimize();
+    const { optimizeArgs, profile } = buildOpenjarvisOptimizeInvocation({
+      rootDir: ROOT,
+      source: 'weekly-auto-judge',
+      dynamicProfileEnabled: OPENJARVIS_OPTIMIZE_DYNAMIC_PROFILE_ENABLED,
+      benchmark: OPENJARVIS_OPTIMIZE_BENCHMARK,
+      configPath: OPENJARVIS_OPTIMIZE_CONFIG,
+      optimizerModel: OPENJARVIS_OPTIMIZE_MODEL,
+      optimizerEngine: OPENJARVIS_OPTIMIZE_ENGINE,
+      judgeModel: OPENJARVIS_OPTIMIZE_JUDGE_MODEL,
+      judgeEngine: OPENJARVIS_OPTIMIZE_JUDGE_ENGINE,
+      trials: OPENJARVIS_OPTIMIZE_TRIALS,
+      maxSamples: OPENJARVIS_OPTIMIZE_MAX_SAMPLES,
+      retrievalHitAtK: gateArgs.retrievalHitAtK,
+      citationRate: gateArgs.citationRate,
+      p95LatencyMs: gateArgs.p95LatencyMs,
+      benchScore: gateArgs.benchScore,
+      providerProfileHint: gateArgs.providerProfileHint,
+      qualityGateOverride: gateArgs.qualityGateOverride,
+    });
     const hints = {
       source: 'weekly-auto-judge',
       stage: gateArgs.stage,
@@ -238,51 +366,34 @@ const triggerJarvisOptimizeAfterGate = async (gateArgs) => {
       citationRate: gateArgs.citationRate,
       retrievalHitAtK: gateArgs.retrievalHitAtK,
       benchScore: gateArgs.benchScore,
+      optimizeProfile: profile,
     };
-    const resp = await fetch(`${OPENJARVIS_SERVE_URL}/v1/optimize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hints }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (resp.ok) {
-      let optimizeOutput = null;
-      try {
-        optimizeOutput = await resp.json();
-      } catch { /* non-json response */ }
-      const improved = optimizeOutput?.improved === true || optimizeOutput?.status === 'optimized';
-      console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] triggered successfully improved=${improved} status=${optimizeOutput?.status || 'unknown'}`);
+    console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] optimize profile: ${formatOpenjarvisOptimizeProfile(profile)}`);
 
-      // Persist optimize result to Supabase for trace→learning→bench loop (D-03)
-      if (SUPABASE_URL && SUPABASE_KEY && optimizeOutput) {
-        try {
-          const client = createScriptClient();
-          await client.from('agent_weekly_reports').upsert({
-            report_key: `jarvis_optimize:${new Date().toISOString().slice(0, 10)}`,
-            report_kind: 'jarvis_optimize_result',
-            guild_id: null,
-            baseline_summary: {
-              hints,
-              result: optimizeOutput,
-              improved,
-              triggeredAt: new Date().toISOString(),
-            },
-            created_at: new Date().toISOString(),
-          }, { onConflict: 'report_key' }).then(() => {}, () => {});
-        } catch { /* best-effort persistence */ }
-      }
-    } else {
-      console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] response ${resp.status} (non-blocking)`);
-      // Fallback: try CLI if HTTP serve returned non-OK
+    const { stdout, stderr } = await runJarvisCli(optimizeArgs, 120_000);
+    const trimmed = String(stdout || stderr || '').trim();
+    const optimizeOutput = trimmed
+      ? { status: 'completed', raw: trimmed }
+      : { status: 'completed', raw: '' };
+    const improved = null;
+    console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] CLI completed status=${optimizeOutput.status} output=${trimmed.slice(0, 200) || 'n/a'}`);
+
+    if (SUPABASE_URL && SUPABASE_KEY) {
       try {
-        const { stdout } = await execFileAsync('jarvis', ['optimize', '--json'], {
-          timeout: 30_000,
-          windowsHide: true,
-        });
-        console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] CLI fallback output: ${stdout.trim().slice(0, 200)}`);
-      } catch (cliErr) {
-        console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] CLI fallback failed (non-blocking): ${cliErr?.message || cliErr}`);
-      }
+        const client = createScriptClient();
+        await client.from('agent_weekly_reports').upsert({
+          report_key: `jarvis_optimize:${new Date().toISOString().slice(0, 10)}`,
+          report_kind: 'jarvis_optimize_result',
+          guild_id: null,
+          baseline_summary: {
+            hints,
+            result: optimizeOutput,
+            improved,
+            triggeredAt: new Date().toISOString(),
+          },
+          created_at: new Date().toISOString(),
+        }, { onConflict: 'report_key' }).then(() => {}, () => {});
+      } catch { /* best-effort persistence */ }
     }
   } catch (err) {
     console.log(`[GO-NO-GO][JARVIS-OPTIMIZE] failed (non-blocking): ${err?.message || err}`);
@@ -397,8 +508,15 @@ async function main() {
   // --- Strategy quality normalization fallback (M-07: retrieval eval + answer quality reviews) ---
   const strategyNorm = go?.strategy_quality_normalization || {};
   const strategyBaseline = strategyNorm?.by_strategy?.baseline || {};
+  const retrievalVariantSummary = strategyNorm?.retrieval_variant_summary || {};
   const retrievalEvalSamples = asNumber(strategyNorm.retrieval_eval_runs_samples, 0);
-  const normRecallAtK = asOptionalNumber(strategyBaseline.recall_at_k_avg, null);
+  const activeVariantRecallAtK = asOptionalNumber(retrievalVariantSummary.active_recall_at_k_avg, null);
+  const bestVariantRecallAtK = asOptionalNumber(retrievalVariantSummary.best_recall_at_k_avg, null);
+  const baselineVariantRecallAtK = asOptionalNumber(strategyBaseline.recall_at_k_avg, null);
+  const retrievalEvalFallbackVariant = retrievalVariantSummary.active_variant
+    || retrievalVariantSummary.best_variant
+    || 'baseline';
+  const normRecallAtK = activeVariantRecallAtK ?? bestVariantRecallAtK ?? baselineVariantRecallAtK;
   const normHallucinationFailRate = strategyBaseline.hallucination_fail_rate_pct !== null
     && strategyBaseline.hallucination_fail_rate_pct !== undefined
     ? Number((strategyBaseline.hallucination_fail_rate_pct / 100).toFixed(4))
@@ -500,7 +618,7 @@ async function main() {
 
   const args = buildArgs(baseArgs);
 
-  console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] profile=${thresholdProfile} stage=${stage} snapshots=go_no_go_weekly,llm_latency_weekly,rollback_rehearsal_weekly,memory_queue_weekly minQualitySamples=${minQualitySamples} insufficientQualitySamples=${insufficientQualitySamples} hasRetrievalEvalFallback=${hasRetrievalEvalFallback} retrievalEvalSamples=${retrievalEvalSamples}`);
+  console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] profile=${thresholdProfile} stage=${stage} snapshots=go_no_go_weekly,llm_latency_weekly,rollback_rehearsal_weekly,memory_queue_weekly minQualitySamples=${minQualitySamples} insufficientQualitySamples=${insufficientQualitySamples} hasRetrievalEvalFallback=${hasRetrievalEvalFallback} retrievalEvalSamples=${retrievalEvalSamples} retrievalEvalFallbackVariant=${retrievalEvalFallbackVariant} retrievalEvalFallbackRecall=${normRecallAtK ?? 'n/a'}`);
   if (guildId) {
     console.log(`[GO-NO-GO][AUTO-JUDGE-WEEKLY] live_runtime_evidence=${liveRuntimeEvidence ? 'attached' : 'unavailable'} base=${base || 'n/a'}`);
   }

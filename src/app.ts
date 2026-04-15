@@ -11,6 +11,7 @@ import { createBotRouter } from './routes/bot';
 import { createChatRouter } from './routes/chat';
 import { createFredRouter } from './routes/fred';
 import { createHealthRouter } from './routes/health';
+import { createInternalRouter } from './routes/internal';
 import { createDashboardRouter } from './routes/dashboard';
 import { createMcpRouter } from './routes/mcp';
 import { createResearchRouter } from './routes/research';
@@ -57,6 +58,7 @@ export function createApp(): Express {
 
   app.use(createHealthRouter());
   app.use(createDashboardRouter());
+  app.use('/api/internal', createInternalRouter());
   app.use('/api/auth', createAuthRouter());
   app.use('/api/research', createResearchRouter());
   app.use('/api/fred', createFredRouter());

@@ -1,6 +1,6 @@
 # Self-Improvement Weekly Proposals
 
-- generated_at: 2026-04-11T09:57:16.577Z
+- generated_at: 2026-04-11T18:39:43.032Z
 - window_days: 7
 - guild_id: *
 - provider: *
@@ -9,7 +9,7 @@
 ## Source Snapshots
 
 - go_no_go_weekly: go_no_go_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*
-- llm_latency_weekly: llm_latency_weekly|*|*|*|2026-04-01T09:57:14.457Z|2026-04-01T09:57:14.457Z|2026-04-08T09:57:14.458Z|2026-04-11T09:57:14.458Z
+- llm_latency_weekly: llm_latency_weekly|*|*|*|2026-04-01T18:11:48.860Z|2026-04-01T18:11:48.861Z|2026-04-08T18:11:48.861Z|2026-04-11T18:11:48.861Z
 - hybrid_weekly: hybrid_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*
 - rollback_rehearsal_weekly: rollback_rehearsal_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*
 - memory_queue_weekly: memory_queue_weekly|2026-04-11|days:7|guild:*|provider:*|prefix:*
@@ -18,10 +18,16 @@
 
 - retrieval_eval_runs_availability: ok
 - retrieval_eval_runs_samples: 200
-- recall_at_k_avg_baseline: 0.0776
-- recall_at_k_avg_tot: n/a
-- recall_at_k_avg_got: n/a
-- recall_at_k_delta_got_vs_baseline: n/a
+- recall_at_k_avg_baseline: 0.0796 (samples=38)
+- recall_at_k_avg_graph_lore: n/a (samples=0)
+- recall_at_k_avg_intent_prefix: 0.0224 (samples=38)
+- recall_at_k_avg_keyword_expansion: 0.009 (samples=38)
+- retrieval_best_variant: intent_prefix
+- retrieval_best_variant_recall_at_k_avg: 0.0224
+- retrieval_active_variant: n/a
+- retrieval_active_variant_recall_at_k_avg: n/a
+- retrieval_delta_best_vs_baseline: -0.0572
+- retrieval_delta_active_vs_baseline: n/a
 
 - answer_quality_reviews_availability: ok
 - answer_quality_reviews_samples: 0
@@ -72,6 +78,24 @@
 - regression_checks:
   - npm run -s gates:validate:strict
   - npm run -s gates:weekly-report -- --days=7
+
+### P-02 pattern-provider-profile-quality-fallback
+- severity: high
+- signal: quality gate fail 7건
+- detail: quality gate fail 감지로 quality-optimized profile 회귀가 필요
+- patch_proposal: runtime profile을 quality-first로 회귀하고, 회귀 기간 동안 citation/retrieval/hallucination 지표를 재측정해 fail count가 0으로 복귀하는지 검증한다.
+- regression_checks:
+  - npm run -s gates:auto-judge:weekly:pending
+  - npm run -s gates:weekly-report:all:dry
+
+### P-03 pattern-labeled-recall-regression
+- severity: medium
+- signal: labeled recall@k delta(intent_prefix-baseline)=-0.0572
+- detail: 라벨 기반 retrieval 평가에서 intent_prefix 품질이 baseline 대비 하락
+- patch_proposal: retrieval ranker active profile을 baseline 우선으로 임시 회귀하고, eval set/variant를 재실행해 recall@k delta가 0 이상으로 복귀하는지 검증한다.
+- regression_checks:
+  - npm run -s gates:weekly-report:self-improvement:dry
+  - npm run -s gates:weekly-report:all:dry
 
 ## Regression Verification (vs Previous Week)
 

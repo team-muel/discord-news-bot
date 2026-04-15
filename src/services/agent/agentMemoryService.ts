@@ -9,6 +9,11 @@ import { queryObsidianLoreHints, readObsidianLoreWithAdapter, type LoreHint } fr
 import { buildSocialContextHints, getRelationshipStrengths } from '../communityGraphService';
 import { loadSelfNotes } from '../entityNervousSystem';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
+import {
+  resolveAgentPersonalizationSnapshot,
+  type AgentPersonalizationRetrievalProfile,
+  type AgentPersonalizationSnapshot,
+} from './agentPersonalizationService';
 // Within-domain imports
 import { searchMemoryHybrid, searchMemoryTiered } from './agentMemoryStore';
 import { cosineSimilarity } from '../../utils/vectorMath';
@@ -58,6 +63,8 @@ const MARKET_SOURCE_TAGS = new Set(['youtube', 'subscription', 'posts', 'communi
 const MARKET_SOURCE_BOOST = 0.06;
 
 const toSingleLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+
+const uniqueStrings = (values: string[]): string[] => [...new Set(values.map((value) => toSingleLine(value)).filter(Boolean))];
 
 const normalizeTagList = (value: unknown): string[] => {
   if (Array.isArray(value)) {
@@ -191,6 +198,42 @@ const safeGoalTerms = (goal: string): string[] =>
     .filter((term) => term.length >= 2 && !term.includes('_'))
     .slice(0, 6);
 
+const inferRetrievalIntentLabel = (goal: string): string => {
+  const normalized = sanitizeUntrustedText(goal, 320).toLowerCase();
+  if (/(deploy|run|execute|fix|implement|배포|실행|구현|수정|설정)/i.test(normalized)) {
+    return 'action';
+  }
+  if (/(compare|analysis|why|evidence|risk|review|비교|분석|근거|리스크|검토)/i.test(normalized)) {
+    return 'analysis';
+  }
+  return 'info';
+};
+
+const buildLoreGoalForProfile = (params: {
+  goal: string;
+  retrievalProfile?: AgentPersonalizationRetrievalProfile;
+  personalizationSnapshot?: AgentPersonalizationSnapshot | null;
+}): string => {
+  const baseGoal = sanitizeUntrustedText(params.goal, 480);
+  const profile = params.retrievalProfile || 'graph_lore';
+  if (!baseGoal) {
+    return baseGoal;
+  }
+
+  const topicHint = (params.personalizationSnapshot?.persona.preferredTopics || []).slice(0, 2).join(' ');
+  if (profile === 'intent_prefix') {
+    return `${inferRetrievalIntentLabel(baseGoal)} ${baseGoal}`.trim();
+  }
+  if (profile === 'keyword_expansion') {
+    const expanded = uniqueStrings([...safeGoalTerms(baseGoal), ...safeGoalTerms(topicHint)]).slice(0, 6).join(' ');
+    return expanded ? `${baseGoal} ${expanded}`.trim() : baseGoal;
+  }
+  if (profile === 'graph_lore') {
+    return topicHint ? `${baseGoal} ${topicHint}`.trim() : baseGoal;
+  }
+  return baseGoal;
+};
+
 const isMarketGoal = (goal: string): boolean => {
   const normalizedGoal = sanitizeUntrustedText(goal, 480).toLowerCase();
   return MARKET_GOAL_TERMS.some((term) => normalizedGoal.includes(term));
@@ -207,9 +250,18 @@ const marketSourceBoost = (goal: string, tags: string[]): number => {
   return MARKET_SOURCE_BOOST;
 };
 
-const readObsidianLore = async (params: { guildId: string; goal: string }): Promise<string[]> => {
+const readObsidianLore = async (params: {
+  guildId: string;
+  goal: string;
+  retrievalProfile?: AgentPersonalizationRetrievalProfile;
+  personalizationSnapshot?: AgentPersonalizationSnapshot | null;
+}): Promise<string[]> => {
   const safeGuildId = sanitizeGuildId(params.guildId);
-  const safeGoal = sanitizeUntrustedText(params.goal);
+  const safeGoal = buildLoreGoalForProfile({
+    goal: params.goal,
+    retrievalProfile: params.retrievalProfile,
+    personalizationSnapshot: params.personalizationSnapshot,
+  });
   if (!safeGuildId || !safeGoal) {
     logger.warn('[AGENT-MEMORY] obsidian file read skipped due to invalid untrusted input');
     return [];
@@ -320,6 +372,7 @@ export const buildAgentMemoryHints = async (params: {
   goal: string;
   maxItems?: number;
   requesterUserId?: string;
+  personalizationSnapshot?: AgentPersonalizationSnapshot | null;
 }): Promise<string[]> => {
   const maxItems = Math.max(1, Math.min(20, Math.trunc(params.maxItems ?? 10)));
   const safeGuildId = sanitizeGuildId(params.guildId);
@@ -329,7 +382,7 @@ export const buildAgentMemoryHints = async (params: {
   }
 
   // Session-level dedup: same guild+goal within TTL returns cached hints
-  const cacheKey = `${safeGuildId}::${safeGoal.slice(0, 120)}`;
+  const cacheKey = `${safeGuildId}::${String(params.requesterUserId || '').trim() || '*'}::${safeGoal.slice(0, 120)}`;
   const cached = memoryHintCache.get(cacheKey);
   if (cached) {
     return cached.slice(0, maxItems);
@@ -340,11 +393,23 @@ export const buildAgentMemoryHints = async (params: {
     return [`현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`].slice(0, maxItems);
   }
 
+  const personalization = params.personalizationSnapshot ?? (params.requesterUserId
+    ? await resolveAgentPersonalizationSnapshot({
+      guildId: safeGuildId,
+      userId: params.requesterUserId,
+    }).catch(() => null)
+    : null);
+
   const [socialHints, memoryHints, supabaseLoreHints, obsidianHints, selfNotes] = await Promise.all([
     buildSocialContextHints({ guildId: safeGuildId, requesterUserId: params.requesterUserId, maxItems: 4 }),
     readSupabaseMemoryItems(safeGuildId, safeGoal),
     readSupabaseLore(safeGuildId),
-    readObsidianLore({ guildId: safeGuildId, goal: safeGoal }),
+    readObsidianLore({
+      guildId: safeGuildId,
+      goal: safeGoal,
+      retrievalProfile: personalization?.effective.retrievalProfile,
+      personalizationSnapshot: personalization,
+    }),
     loadSelfNotes(safeGuildId),
   ]);
 
@@ -527,7 +592,13 @@ export const buildAgentMemoryHints = async (params: {
   const rankedHintTexts = dedupedHints.map((h) => h.text);
 
   const goalHint = `현재 목표: ${toSingleLine(safeGoal).slice(0, 180)}`;
-  const merged = [goalHint, ...selfNotes, ...socialHints, ...rankedHintTexts].filter(Boolean);
+  const merged = [
+    goalHint,
+    ...(personalization?.promptHints || []),
+    ...selfNotes,
+    ...socialHints,
+    ...rankedHintTexts,
+  ].filter(Boolean);
   memoryHintCache.set(cacheKey, merged, MEMORY_HINT_CACHE_TTL_MS);
   return merged.slice(0, maxItems);
 };

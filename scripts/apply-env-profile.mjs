@@ -9,11 +9,15 @@ const BACKUP_PATH = path.join(ROOT, '.env.profile-backup');
 const PROFILE_FILES = {
   local: path.join(ROOT, 'config', 'env', 'local.profile.env'),
   'local-first-hybrid': path.join(ROOT, 'config', 'env', 'local-first-hybrid.profile.env'),
+  'local-openclaw-stack': path.join(ROOT, 'config', 'env', 'local-openclaw-stack.profile.env'),
+  'local-nemoclaw-stack': path.join(ROOT, 'config', 'env', 'local-nemoclaw-stack.profile.env'),
+  'local-nemoclaw-max-delegation': path.join(ROOT, 'config', 'env', 'local-nemoclaw-max-delegation.profile.env'),
+  'local-first-hybrid-gemma4': path.join(ROOT, 'config', 'env', 'local-first-hybrid-gemma4.profile.env'),
   production: path.join(ROOT, 'config', 'env', 'production.profile.env'),
 };
 
 const usage = () => {
-  console.log('Usage: node scripts/apply-env-profile.mjs <local|local-first-hybrid|production> [--dry-run]');
+  console.log('Usage: node scripts/apply-env-profile.mjs <local|local-first-hybrid|local-openclaw-stack|local-nemoclaw-stack|local-nemoclaw-max-delegation|local-first-hybrid-gemma4|production> [--dry-run]');
 };
 
 const parseAssignments = (text) => {

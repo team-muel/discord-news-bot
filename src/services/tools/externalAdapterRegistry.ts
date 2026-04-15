@@ -9,6 +9,7 @@ import { renderAdapter } from './adapters/renderAdapter';
 import { ollamaAdapter } from './adapters/ollamaAdapter';
 import { litellmAdminAdapter } from './adapters/litellmAdminAdapter';
 import { mcpIndexingAdapter } from './adapters/mcpIndexingAdapter';
+import { workstationAdapter } from './adapters/workstationAdapter';
 import { validateAdapterId, type ExternalAdapterId, type ExternalToolAdapter, type ExternalAdapterResult } from './externalAdapterTypes';
 import logger from '../../logger';
 
@@ -25,12 +26,32 @@ const BUILTIN_ADAPTERS: ReadonlyArray<ExternalToolAdapter> = [
   ollamaAdapter,
   litellmAdminAdapter,
   mcpIndexingAdapter,
+  workstationAdapter,
 ];
 
 /** Mutable map — built-ins + dynamically registered adapters. */
 const adapterMap = new Map<string, ExternalToolAdapter>(
   BUILTIN_ADAPTERS.map((a) => [a.id, a]),
 );
+
+const ADAPTER_ALIASES = new Map<string, string>([
+  ['review', 'nemoclaw'],
+]);
+
+const resolveAdapterLookupId = (id: ExternalAdapterId): ExternalAdapterId => {
+  const normalized = validateAdapterId(id);
+  if (!normalized) {
+    return id;
+  }
+  if (adapterMap.has(normalized)) {
+    return normalized;
+  }
+  const aliasTarget = ADAPTER_ALIASES.get(normalized);
+  if (!aliasTarget) {
+    return normalized;
+  }
+  return (validateAdapterId(aliasTarget) || normalized) as ExternalAdapterId;
+};
 
 /**
  * M-15 / F-01: Register a dynamic adapter at runtime.
@@ -61,7 +82,7 @@ export const unregisterExternalAdapter = (id: ExternalAdapterId): boolean => {
 };
 
 export const getExternalAdapter = (id: ExternalAdapterId): ExternalToolAdapter | undefined =>
-  adapterMap.get(id);
+  adapterMap.get(resolveAdapterLookupId(id));
 
 export const listExternalAdapters = (): ReadonlyArray<ExternalToolAdapter> => [...adapterMap.values()];
 
@@ -70,7 +91,7 @@ export const executeExternalAction = async (
   action: string,
   args: Record<string, unknown> = {},
 ): Promise<ExternalAdapterResult> => {
-  const adapter = adapterMap.get(adapterId);
+  const adapter = adapterMap.get(resolveAdapterLookupId(adapterId));
   if (!adapter) {
     return {
       ok: false,

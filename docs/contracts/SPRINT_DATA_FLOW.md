@@ -11,7 +11,7 @@
 
 ## Pipeline Architecture
 
-```
+```text
 /plan → /implement → /review → /qa → /security-audit → /ops-validate → /ship → /retro
   │         │           │        │          │                │            │        │
   │         │           │        │          │                │            │        └→ Obsidian retro note
@@ -39,7 +39,7 @@ Phase transitions are governed by `PHASE_TRANSITIONS` in `sprintOrchestrator.ts`
 Actions are scoped to phases via `PHASE_TOOL_CATEGORIES` in `sprintPreamble.ts`:
 
 | Phase | Allowed Action Categories |
-|---|---|
+| --- | --- |
 | plan | research, document |
 | implement | code, test, document |
 | review | analysis, code (auto-fix only) |
@@ -105,7 +105,7 @@ Sprint pipeline enforces a maximum changed file count per sprint to prevent scop
 
 Each phase can have a **primary** and optional **secondary** external adapter defined in `PHASE_EXTERNAL_ADAPTER` (`sprintWorkerRouter.ts`):
 
-```
+```text
 Phase dispatch → MCP worker → External Adapter (primary) → External Adapter (secondary, optional) → Local action fallback
 ```
 
@@ -130,9 +130,9 @@ type PhaseAdapterMapping = {
 ### Current Phase Mappings
 
 | Phase | Primary Adapter | Secondary Adapter |
-|---|---|---|
+| --- | --- | --- |
 | plan | deepwiki (wiki.ask) | openjarvis (jarvis.research) |
-| implement | openclaw (agent.chat) | — |
+| implement | — | — |
 | review | nemoclaw (code.review) | deepwiki (wiki.diagnose) |
 | qa | openjarvis (jarvis.ask) | openshell (sandbox.exec) |
 | security-audit | nemoclaw (code.review) | openjarvis (jarvis.memory.search) |
@@ -149,13 +149,13 @@ type PhaseAdapterMapping = {
 - Enrichment failures are non-blocking (context injection is best-effort)
 - DeepWiki enrichment is now used beyond plan/retro to surface repo-specific regression, QA, security, and operational diagnostic risks.
 
-### OpenClaw Session Bootstrap
+### DeepWiki Drift Note
 
-Before the `implement` phase, `bootstrapOpenClawSession()` registers all `ext.*` tools as OpenClaw session skills:
+DeepWiki indexed this repository before the current sprint-worker routing cleanup. Older DeepWiki snapshots may still describe `implement` as an OpenClaw-backed external adapter phase. Local code and tests are now authoritative:
 
-- Sends tool catalog as system message to OpenClaw session endpoint
-- Idempotent per `sessionId` (tracked via `registeredSkills` Set)
-- Requires `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN`
+- `implement` has no phase-level external adapter mapping in `sprintWorkerRouter.ts`
+- `ship` also remains unmapped at the phase-adapter layer
+- regression coverage for this contract lives in `sprintOrchestrator.test.ts`
 
 ### ext.* MCP Bridge
 

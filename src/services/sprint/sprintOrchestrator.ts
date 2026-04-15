@@ -655,17 +655,6 @@ const executePhaseAction = async (
       if (isAdapterCircuitOpen(externalMapping.adapterId)) {
         logger.info('[SPRINT] skipping adapter %s for phase=%s (circuit breaker open)', externalMapping.adapterId, phase);
       } else {
-        // Bootstrap OpenClaw session with tool catalog for implement phase
-        if (phase === 'implement' && externalMapping.adapterId === 'openclaw') {
-          try {
-            const { bootstrapOpenClawSession } = await import('../tools/adapters/openclawCliAdapter');
-            const sessionId = `sprint-${pipeline.sprintId}`;
-            await raceWithTimeout(bootstrapOpenClawSession(sessionId), 5_000, 'OpenClaw bootstrap timeout');
-          } catch (err) {
-            logger.debug('[SPRINT] OpenClaw bootstrap failed: %s', getErrorMessage(err));
-          }
-        }
-
         const adapterArgs = buildExternalAdapterArgs(phase, pipeline);
         const attemptAdapter = async (): Promise<{ ok: boolean; output: string; durationMs: number; error?: string } | null> => {
           try {

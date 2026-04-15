@@ -124,6 +124,53 @@ const toMachineType = (value) => {
   return parts[parts.length - 1] || raw;
 };
 
+const lastPathSegment = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return '';
+  }
+  const parts = raw.split('/').filter(Boolean);
+  return parts[parts.length - 1] || raw;
+};
+
+const getUrlHost = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return '';
+  }
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+const isSslipHost = (value) => String(value || '').trim().toLowerCase().endsWith('.sslip.io');
+
+const parseBooleanLike = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'true') {
+    return true;
+  }
+  if (normalized === 'false') {
+    return false;
+  }
+  return null;
+};
+
+const readMetadataValue = (items, key) => {
+  if (!Array.isArray(items)) {
+    return '';
+  }
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (String(item?.key || '').trim() === key) {
+      return String(item?.value || '').trim();
+    }
+  }
+  return '';
+};
+
 const joinHealthUrl = (baseUrl, healthPath) => {
   const base = String(baseUrl || '').trim().replace(/\/+$/, '');
   const suffix = `/${String(healthPath || '/health').trim().replace(/^\/+/, '')}`;
@@ -192,12 +239,28 @@ const getProjectId = () => {
 const formatMarkdown = (report) => {
   const expectedMachineType = report.baseline.machineType || 'e2-medium';
   const expectedMemoryGb = report.baseline.memoryGb || 4;
+  const formatFlag = (value) => {
+    if (value === true) {
+      return 'true';
+    }
+    if (value === false) {
+      return 'false';
+    }
+    return 'unknown';
+  };
   const formatUrlValue = (value) => {
     const trimmed = String(value || '').trim();
     if (!trimmed || trimmed === 'unset' || trimmed === 'unknown') {
       return trimmed || 'unset';
     }
     return /^https?:\/\//i.test(trimmed) ? `<${trimmed}>` : trimmed;
+  };
+  const formatInlineValue = (value) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed || trimmed === 'unknown') {
+      return trimmed || 'unknown';
+    }
+    return `\`${trimmed}\``;
   };
   const lines = [];
   lines.push('# GCP Worker Cost/Health Report');
@@ -241,6 +304,16 @@ const formatMarkdown = (report) => {
   lines.push(`- foundDisplayName: ${report.budget.foundDisplayName || 'not-found'}`);
   lines.push(`- expectedDisplayName: ${report.budget.expectedDisplayName}`);
   lines.push('');
+  lines.push('## GCP-Native Hardening');
+  lines.push('');
+  lines.push(`- ingressMode: ${report.hardening.ingressMode || 'unknown'}`);
+  lines.push(`- customDomainConfigured: ${formatFlag(report.hardening.customDomainConfigured)}`);
+  lines.push(`- automaticRestart: ${formatFlag(report.hardening.automaticRestart)}`);
+  lines.push(`- osLoginEnabled: ${formatFlag(report.hardening.osLoginEnabled)}`);
+  lines.push(`- shieldedVm: secureBoot=${formatFlag(report.hardening.shieldedVm.secureBoot)} vTpm=${formatFlag(report.hardening.shieldedVm.vTpm)} integrityMonitoring=${formatFlag(report.hardening.shieldedVm.integrityMonitoring)}`);
+  lines.push(`- bootDiskSnapshotPolicies: ${report.hardening.bootDiskSnapshotPolicies.length > 0 ? report.hardening.bootDiskSnapshotPolicies.join(', ') : 'none'}`);
+  lines.push(`- serviceAccount: ${formatInlineValue(report.hardening.serviceAccountEmail || 'unknown')} dedicated=${formatFlag(report.hardening.dedicatedServiceAccount)} cloudPlatformScope=${formatFlag(report.hardening.cloudPlatformScope)}`);
+  lines.push('');
   if (report.failures.length > 0) {
     lines.push('## Failures');
     lines.push('');
@@ -262,6 +335,7 @@ const formatMarkdown = (report) => {
   lines.push(`- Baseline manifest: ${report.baseline.manifestPath || 'config/runtime/operating-baseline.json'}`);
   lines.push('- If static IP is kept for endpoint stability, expect small recurring IP cost.');
   lines.push(`- Worker baseline is ${expectedMachineType} (${expectedMemoryGb}GB). Keep disk around ${report.baseline.bootDiskGb || 30}GB where possible.`);
+  lines.push('- Treat custom domain, snapshot schedule, OS Login, Shielded VM, and least-privilege service accounts as the current GCP hardening backlog on this worker lane.');
   return `${lines.join('\n')}\n`;
 };
 
@@ -317,6 +391,21 @@ const main = async () => {
       expectedDisplayName: budgetDisplayName,
       foundDisplayName: '',
     },
+    hardening: {
+      ingressMode: '',
+      customDomainConfigured: null,
+      automaticRestart: null,
+      osLoginEnabled: null,
+      shieldedVm: {
+        secureBoot: null,
+        vTpm: null,
+        integrityMonitoring: null,
+      },
+      bootDiskSnapshotPolicies: [],
+      serviceAccountEmail: '',
+      dedicatedServiceAccount: null,
+      cloudPlatformScope: null,
+    },
     serviceChecks: [],
     baseline: {
       manifestPath: operatingBaseline?.manifestPath || '',
@@ -359,7 +448,25 @@ const main = async () => {
     failures.push('MCP_IMPLEMENT_WORKER_URL is empty; remote worker endpoint is not configured (legacy alias MCP_OPENCODE_WORKER_URL is also accepted).');
   }
 
+  const ingressHost = getUrlHost(report.endpoint.url || workerUrl || baselineGcp.publicBaseUrl);
+  if (ingressHost) {
+    report.hardening.ingressMode = isSslipHost(ingressHost) ? 'temporary-sslip' : 'custom-domain';
+    report.hardening.customDomainConfigured = !isSslipHost(ingressHost);
+    if (report.hardening.customDomainConfigured === false) {
+      warnings.push('Worker ingress still uses sslip.io; move to a custom domain before broader rollout.');
+    }
+  }
+
   if (projectId) {
+    let projectMetadataItems = [];
+    const projectInfoRaw = run(gcloudBin, ['compute', 'project-info', 'describe', '--project', projectId, '--format=json'], { allowFail: true });
+    if (projectInfoRaw.ok) {
+      const payload = parseJson(projectInfoRaw.stdout, {});
+      projectMetadataItems = Array.isArray(payload?.commonInstanceMetadata?.items)
+        ? payload.commonInstanceMetadata.items
+        : [];
+    }
+
     const instanceArgs = [
       'compute',
       'instances',
@@ -380,7 +487,57 @@ const main = async () => {
       report.worker.machineType = toMachineType(payload?.machineType);
       const disks = Array.isArray(payload?.disks) ? payload.disks : [];
       const boot = disks.find((item) => item?.boot) || disks[0] || null;
+      const bootDiskName = lastPathSegment(boot?.source);
       report.worker.bootDiskGb = Number(boot?.diskSizeGb || 0) || null;
+
+      report.hardening.automaticRestart = typeof payload?.scheduling?.automaticRestart === 'boolean'
+        ? payload.scheduling.automaticRestart
+        : null;
+      if (report.hardening.automaticRestart === false) {
+        warnings.push('Compute Engine automaticRestart is disabled; unexpected maintenance can leave the worker offline.');
+      }
+
+      const instanceMetadataItems = Array.isArray(payload?.metadata?.items) ? payload.metadata.items : [];
+      const osLoginValue = readMetadataValue([...projectMetadataItems, ...instanceMetadataItems], 'enable-oslogin');
+      report.hardening.osLoginEnabled = parseBooleanLike(osLoginValue);
+      if (report.hardening.osLoginEnabled !== true) {
+        warnings.push('OS Login is not explicitly enabled for the worker; prefer IAM-backed SSH over per-box account drift.');
+      }
+
+      report.hardening.shieldedVm = {
+        secureBoot: typeof payload?.shieldedInstanceConfig?.enableSecureBoot === 'boolean'
+          ? payload.shieldedInstanceConfig.enableSecureBoot
+          : null,
+        vTpm: typeof payload?.shieldedInstanceConfig?.enableVtpm === 'boolean'
+          ? payload.shieldedInstanceConfig.enableVtpm
+          : null,
+        integrityMonitoring: typeof payload?.shieldedInstanceConfig?.enableIntegrityMonitoring === 'boolean'
+          ? payload.shieldedInstanceConfig.enableIntegrityMonitoring
+          : null,
+      };
+      if (
+        report.hardening.shieldedVm.secureBoot === false
+        || report.hardening.shieldedVm.vTpm === false
+        || report.hardening.shieldedVm.integrityMonitoring === false
+      ) {
+        warnings.push('Shielded VM protections are not fully enabled; review secure boot, vTPM, and integrity monitoring.');
+      }
+
+      const primaryServiceAccount = Array.isArray(payload?.serviceAccounts) ? payload.serviceAccounts[0] : null;
+      report.hardening.serviceAccountEmail = String(primaryServiceAccount?.email || '');
+      if (report.hardening.serviceAccountEmail) {
+        report.hardening.dedicatedServiceAccount = !report.hardening.serviceAccountEmail.endsWith('-compute@developer.gserviceaccount.com');
+        if (report.hardening.dedicatedServiceAccount === false) {
+          warnings.push('Worker still uses the default Compute Engine service account; switch to a dedicated least-privilege service account.');
+        }
+      }
+      const serviceAccountScopes = Array.isArray(primaryServiceAccount?.scopes)
+        ? primaryServiceAccount.scopes.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      report.hardening.cloudPlatformScope = serviceAccountScopes.some((scope) => scope.endsWith('/auth/cloud-platform'));
+      if (report.hardening.cloudPlatformScope) {
+        warnings.push('Worker service account still has the broad cloud-platform scope; reduce scopes or rely on IAM-only least privilege.');
+      }
 
       if (report.worker.status !== 'RUNNING') {
         failures.push(`Worker instance is not RUNNING (current: ${report.worker.status || 'unknown'}).`);
@@ -390,6 +547,31 @@ const main = async () => {
       }
       if (report.worker.bootDiskGb && report.baseline.bootDiskGb && report.worker.bootDiskGb > report.baseline.bootDiskGb) {
         warnings.push(`Boot disk is ${report.worker.bootDiskGb}GB; operating baseline is ${report.baseline.bootDiskGb}GB.`);
+      }
+
+      if (bootDiskName) {
+        const diskRaw = run(gcloudBin, [
+          'compute',
+          'disks',
+          'describe',
+          bootDiskName,
+          '--project',
+          projectId,
+          '--zone',
+          zone,
+          '--format=json',
+        ], { allowFail: true });
+        if (diskRaw.ok) {
+          const diskPayload = parseJson(diskRaw.stdout, {});
+          report.hardening.bootDiskSnapshotPolicies = Array.isArray(diskPayload?.resourcePolicies)
+            ? diskPayload.resourcePolicies.map((item) => lastPathSegment(item)).filter(Boolean)
+            : [];
+          if (report.hardening.bootDiskSnapshotPolicies.length === 0) {
+            warnings.push('Boot disk has no snapshot schedule/resource policy; add scheduled snapshots before treating this worker as durable control-plane infrastructure.');
+          }
+        } else {
+          warnings.push(`Unable to inspect boot disk policies: ${compactError(diskRaw.stderr)}`);
+        }
       }
     }
 

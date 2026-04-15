@@ -1,6 +1,6 @@
 # Team Shareable User Memory
 
-Status: Share-safe extract (2026-04-12)
+Status: Share-safe extract (2026-04-15)
 
 목적:
 
@@ -9,8 +9,11 @@ Status: Share-safe extract (2026-04-12)
 
 ## Collaboration Preferences
 
+- 이 repo의 문서와 지침을 읽고 작업하는 agent는 외부 관찰자가 아니라 repo operating model을 따르는 temporary teammate로 행동해야 한다.
 - 좋은 agent는 모호하거나 덜 정제된 질문도 개선해서 답해야 한다.
 - 프롬프트 템플릿을 사용자의 필수 준비물로 요구하지 않는다.
+- 안정적인 행동 방침, workflow contract, prompt 관례는 ad hoc 대화나 개인 메모에만 두지 말고 repo-shared instructions 또는 canonical planning doc에 등록한다.
+- 이미 합의된 workflow가 있으면 새 parallel process를 만들기보다 기존 canonical path를 확장한다.
 - shared Obsidian promotion은 control-plane hardening과 분리된 별도 업무가 아니라, operator-visible change의 same-window close-out 또는 definition-of-done으로 다룬다.
 - 이 저장소에서는 graph-first Obsidian retrieval을 기본으로 두고, chunk-first RAG는 fallback으로만 취급한다.
 
@@ -26,6 +29,15 @@ Status: Share-safe extract (2026-04-12)
 - NVIDIA OpenShell: sandbox runtime이다.
 - OpenJarvis: OpenClaw/NemoClaw와 별개의 local-first personal AI framework이다.
 - OpenCode: OSS coding agent로 취급한다.
+
+## Stable Architecture Boundaries
+
+- OpenJarvis는 semantic owner가 아니라 orchestration, telemetry, eval, learning control surface로 본다.
+- Obsidian은 durable semantic knowledge와 operator-facing context의 정본으로 유지한다.
+- Supabase는 runtime state, logs, reports, analytics 같은 operational substrate의 정본으로 유지한다.
+- OpenClaw는 optional session ingress로 취급하고, 기본 control loop owner로 승격시키지 않는다.
+- 코드 변경, 테스트, 진단의 canonical hands path는 conversational adapter가 아니라 `implement.execute`로 유지한다.
+- `jarvis.ask`가 성공해도 그것이 곧 실제 OpenJarvis serve 또는 CLI 성공을 뜻한다고 가정하지 않는다. LLM fallback success와 구분해서 해석한다.
 
 ## Selected Share-Safe Recurring Gotchas
 

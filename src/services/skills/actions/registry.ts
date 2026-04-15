@@ -45,6 +45,9 @@ import { youtubeSearchWebhookAction } from './youtubeWebhook';
 
 const ACTIONS: ActionDefinition[] = [];
 const ACTION_MAP = new Map<string, ActionDefinition>();
+let actionTermIndex = new Map<string, Set<string>>();
+let builtinsRegistered = false;
+let builtinsRegistering = false;
 
 const createAlias = (name: string, description: string, target: ActionDefinition): ActionDefinition => ({
   name,
@@ -56,15 +59,33 @@ const createAlias = (name: string, description: string, target: ActionDefinition
   },
 });
 
+const toTermSet = (text: string): Set<string> => {
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9\uac00-\ud7af_\-/]+/g).filter((t) => t.length >= 2),
+  );
+};
+
+const rebuildActionTermIndex = (): void => {
+  actionTermIndex = new Map(
+    ACTIONS.map((action) => [action.name, toTermSet(`${action.name} ${action.description}`)]),
+  );
+};
+
 /**
  * Register one or more actions into the global registry.
  * Duplicate names are silently skipped (first-wins).
  */
 export const registerActions = (...actions: ActionDefinition[]): void => {
+  let changed = false;
   for (const action of actions) {
     if (ACTION_MAP.has(action.name)) continue;
     ACTIONS.push(action);
     ACTION_MAP.set(action.name, action);
+    changed = true;
+  }
+
+  if (changed && builtinsRegistered && !builtinsRegistering) {
+    rebuildActionTermIndex();
   }
 };
 
@@ -75,72 +96,86 @@ export const registerAlias = (name: string, description: string, target: ActionD
   registerActions(createAlias(name, description, target));
 };
 
-// ──── Built-in registrations ────────────────────────────────────────────────
-// Orchestrator
-registerActions(localOrchestratorAllAction, localOrchestratorRouteAction);
-registerAlias('coordinate.all', 'Neutral alias for local.orchestrator.all.', localOrchestratorAllAction);
-registerAlias('coordinate.route', 'Neutral alias for local.orchestrator.route.', localOrchestratorRouteAction);
+const registerBuiltins = (): void => {
+  // Orchestrator
+  registerActions(localOrchestratorAllAction, localOrchestratorRouteAction);
+  registerAlias('coordinate.all', 'Neutral alias for local.orchestrator.all.', localOrchestratorAllAction);
+  registerAlias('coordinate.route', 'Neutral alias for local.orchestrator.route.', localOrchestratorRouteAction);
 
-// Lead agent roles
-registerActions(opendevPlanAction, nemoclawReviewAction, openjarvisOpsAction);
-registerAlias('architect.plan', 'Neutral alias for opendev.plan.', opendevPlanAction);
-registerAlias('review.review', 'Neutral alias for nemoclaw.review.', nemoclawReviewAction);
-registerAlias('operate.ops', 'Neutral alias for openjarvis.ops.', openjarvisOpsAction);
+  // Lead agent roles
+  registerActions(opendevPlanAction, nemoclawReviewAction, openjarvisOpsAction);
+  registerAlias('architect.plan', 'Neutral alias for opendev.plan.', opendevPlanAction);
+  registerAlias('nemoclaw.review', 'Legacy alias for canonical review.review and the optional NemoClaw-backed review lane.', nemoclawReviewAction);
+  registerAlias('operate.ops', 'Neutral alias for openjarvis.ops.', openjarvisOpsAction);
 
-// Jarvis extended
-registerActions(
-  jarvisResearchAction, jarvisDigestAction, jarvisMemoryIndexAction,
-  jarvisMemorySearchAction, jarvisEvalAction, jarvisTelemetryAction,
-  jarvisSchedulerListAction, jarvisSkillSearchAction,
-);
-
-// Code / content / data
-registerActions(
-  codeGenerateAction, youtubeSearchWebhookAction, youtubeSearchFirstAction,
-  stockChartAction, stockQuoteAction, ragRetrieveAction,
-  privacyForgetUserAction, privacyForgetGuildAction, investmentAnalysisAction,
-  newsGoogleSearchAction, newsVerifyAction, opencodeExecuteAction,
-);
-registerAlias(EXECUTOR_ACTION_LEGACY_NAME, 'Legacy alias for canonical implement.execute executor action.', opencodeExecuteAction);
-
-// Infrastructure / ops
-registerActions(
-  obsidianGuildDocUpsertAction, communitySearchAction, guildAnalyticsAction,
-  webSearchAction, webFetchAction, dbSupabaseReadAction, toolsRunCliAction,
-);
-
-// n8n delegation
-registerActions(
-  n8nStatusAction, n8nWorkflowListAction, n8nWorkflowExecuteAction,
-  n8nWorkflowTriggerAction, n8nDelegateNewsRssAction, n8nDelegateNewsSummarizeAction,
-  n8nDelegateNewsMonitorAction, n8nDelegateYoutubeFeedAction, n8nDelegateYoutubeScrapAction,
-  n8nDelegateAlertAction, n8nDelegateArticleContextAction,
-);
-
-// Sprint phases
-registerActions(qaTestAction, csoAuditAction, releaseShipAction, retroSummarizeAction, sopUpdateAction);
-registerAlias('test.qa', 'Neutral alias for qa.test.', qaTestAction);
-registerAlias('security.audit', 'Neutral alias for cso.audit.', csoAuditAction);
-registerAlias('ship.release', 'Neutral alias for release.ship.', releaseShipAction);
-registerAlias('summary.retro', 'Neutral alias for retro.summarize.', retroSummarizeAction);
-registerAlias('knowledge.update', 'Neutral alias for sop.update.', sopUpdateAction);
-
-// Pre-built term sets for Jaccard-based tool filtering in planner
-const toTermSet = (text: string): Set<string> => {
-  return new Set(
-    text.toLowerCase().split(/[^a-z0-9\uac00-\ud7af_\-/]+/g).filter((t) => t.length >= 2),
+  // Jarvis extended
+  registerActions(
+    jarvisResearchAction, jarvisDigestAction, jarvisMemoryIndexAction,
+    jarvisMemorySearchAction, jarvisEvalAction, jarvisTelemetryAction,
+    jarvisSchedulerListAction, jarvisSkillSearchAction,
   );
+
+  // Code / content / data
+  registerActions(
+    codeGenerateAction, youtubeSearchWebhookAction, youtubeSearchFirstAction,
+    stockChartAction, stockQuoteAction, ragRetrieveAction,
+    privacyForgetUserAction, privacyForgetGuildAction, investmentAnalysisAction,
+    newsGoogleSearchAction, newsVerifyAction, opencodeExecuteAction,
+  );
+  registerAlias(EXECUTOR_ACTION_LEGACY_NAME, 'Legacy alias for canonical implement.execute executor action.', opencodeExecuteAction);
+
+  // Infrastructure / ops
+  registerActions(
+    obsidianGuildDocUpsertAction, communitySearchAction, guildAnalyticsAction,
+    webSearchAction, webFetchAction, dbSupabaseReadAction, toolsRunCliAction,
+  );
+
+  // n8n delegation
+  registerActions(
+    n8nStatusAction, n8nWorkflowListAction, n8nWorkflowExecuteAction,
+    n8nWorkflowTriggerAction, n8nDelegateNewsRssAction, n8nDelegateNewsSummarizeAction,
+    n8nDelegateNewsMonitorAction, n8nDelegateYoutubeFeedAction, n8nDelegateYoutubeScrapAction,
+    n8nDelegateAlertAction, n8nDelegateArticleContextAction,
+  );
+
+  // Sprint phases
+  registerActions(qaTestAction, csoAuditAction, releaseShipAction, retroSummarizeAction, sopUpdateAction);
+  registerAlias('test.qa', 'Neutral alias for qa.test.', qaTestAction);
+  registerAlias('security.audit', 'Neutral alias for cso.audit.', csoAuditAction);
+  registerAlias('ship.release', 'Neutral alias for release.ship.', releaseShipAction);
+  registerAlias('summary.retro', 'Neutral alias for retro.summarize.', retroSummarizeAction);
+  registerAlias('knowledge.update', 'Neutral alias for sop.update.', sopUpdateAction);
 };
 
-const actionTermIndex = new Map<string, Set<string>>(
-  ACTIONS.map((action) => [action.name, toTermSet(`${action.name} ${action.description}`)]),
-);
+const ensureBuiltinsRegistered = (): void => {
+  if (builtinsRegistered || builtinsRegistering) {
+    return;
+  }
 
-export const listActions = (): ActionDefinition[] => ACTIONS.map((action) => ({ ...action }));
+  builtinsRegistering = true;
+  try {
+    registerBuiltins();
+    builtinsRegistered = true;
+    rebuildActionTermIndex();
+  } finally {
+    builtinsRegistering = false;
+  }
+};
 
-export const getAction = (actionName: string): ActionDefinition | null => ACTION_MAP.get(actionName) || null;
+export const listActions = (): ActionDefinition[] => {
+  ensureBuiltinsRegistered();
+  return ACTIONS.map((action) => ({ ...action }));
+};
 
-export const getActionTermIndex = (): ReadonlyMap<string, Set<string>> => actionTermIndex;
+export const getAction = (actionName: string): ActionDefinition | null => {
+  ensureBuiltinsRegistered();
+  return ACTION_MAP.get(actionName) || null;
+};
+
+export const getActionTermIndex = (): ReadonlyMap<string, Set<string>> => {
+  ensureBuiltinsRegistered();
+  return actionTermIndex;
+};
 
 /**
  * Generate a tool catalog section for system prompts.
@@ -148,6 +183,7 @@ export const getActionTermIndex = (): ReadonlyMap<string, Set<string>> => action
  * Inspired by Cline's ClineToolSet → PromptBuilder pipeline.
  */
 export function buildToolCatalogPrompt(filter?: { categories?: ActionCategory[] }): string {
+  ensureBuiltinsRegistered();
   const actions = filter?.categories
     ? ACTIONS.filter((a) => filter.categories!.includes(a.category))
     : ACTIONS;

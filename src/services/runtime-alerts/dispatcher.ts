@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/node';
 import logger from '../../logger';
-import { delegateAlertDispatch, shouldDelegate } from '../automation/n8nDelegationService';
+import { delegateAlertDispatch, shouldDelegate, shouldSkipInlineFallback } from '../automation/n8nDelegationService';
 import { RUNTIME_ALERT_COOLDOWN_MS, RUNTIME_ALERT_WEBHOOK_URL } from './config';
 import type { EmitAlert } from './types';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -29,7 +29,10 @@ const sendWebhookAlert = async (title: string, message: string, tags?: Record<st
     if (n8n.delegated && n8n.ok) {
       return; // n8n handled the alert dispatch
     }
-    // fall through to inline webhook
+    if (shouldSkipInlineFallback('alert-dispatch')) {
+      logger.warn('[ALERT] n8n delegation-first skipped inline webhook fallback');
+      return;
+    }
   }
 
   if (!RUNTIME_ALERT_WEBHOOK_URL) {

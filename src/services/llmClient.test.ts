@@ -163,6 +163,12 @@ describe('resolveLlmProvider', () => {
     expect(resolveLlmProvider()).toBe('anthropic');
   });
 
+  it('OPENJARVIS_ENABLED가 켜져 있으면 기본 폴백은 openjarvis를 우선한다', () => {
+    vi.stubEnv('OPENJARVIS_ENABLED', 'true');
+    vi.stubEnv('OPENAI_API_KEY', 'sk-primary');
+    expect(resolveLlmProvider()).toBe('openjarvis');
+  });
+
   it('AI_PROVIDER 없이 OPENAI_API_KEY만 있으면 openai 폴백', () => {
     vi.stubEnv('OPENAI_API_KEY', 'sk-primary');
     expect(resolveLlmProvider()).toBe('openai');
@@ -284,7 +290,7 @@ describe('generateText', () => {
     ).rejects.toThrow('OPENAI_API_KEY_NOT_CONFIGURED');
   });
 
-  it('code capability는 local ollama를 openclaw보다 먼저 시도한다', () => {
+  it('code capability는 local ollama 이후 raw gateway보다 direct code-grade providers를 먼저 둔다', () => {
     vi.stubEnv('AI_PROVIDER', 'openclaw');
     vi.stubEnv('OPENCLAW_BASE_URL', 'http://gateway.example');
     vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
@@ -297,7 +303,7 @@ describe('generateText', () => {
       { provider: 'openclaw', experiment: null },
     );
 
-    expect(chain.slice(0, 3)).toEqual(['ollama', 'openclaw', 'openai']);
+    expect(chain.slice(0, 3)).toEqual(['ollama', 'openai', 'openclaw']);
   });
 
   it('operations capability는 openjarvis orchestration lane을 먼저 둔다', () => {

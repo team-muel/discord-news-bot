@@ -32,7 +32,6 @@ Current app-owned `service-init` loops:
 
 - memory job runner
 - opencode publish worker
-- trading engine
 - runtime alert scanner
 
 Current external advisory workers:
@@ -52,18 +51,30 @@ Current app-owned `discord-ready` workloads:
 - Discord login-session cleanup when app-owned
 - Obsidian lore sync loop
 - retrieval eval loop
+- reward signal loop
+- eval auto-promote loop
 - agent SLO alert loop
+
+Current app-owned `service-init` or event-gated control workloads:
+
+- intent formation evaluation loop
 
 Current database-owned runtime:
 
 - Supabase maintenance cron jobs
 - Discord login-session cleanup when configured to run via DB/cron path
+- retrieval eval loop when `muel_retrieval_eval` is confirmed
+- reward signal loop when `muel_reward_signal` is confirmed
+- eval auto-promote loop when `muel_eval_auto_promote` is confirmed
+- agent SLO alert loop when `muel_slo_check` is confirmed
+- Obsidian lore sync loop when `muel_obsidian_lore_sync` is confirmed
+- intent formation evaluation loop when `muel_intent_eval` is confirmed
 
 Scheduler-policy canonical IDs (operator should compare by ID):
 
-- `service-init`: `memory-job-runner`, `opencode-publish-worker`, `trading-engine`, `runtime-alerts`
-- `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `login-session-cleanup`(app-owned), `obsidian-sync-loop`, `retrieval-eval-loop`, `agent-slo-alert-loop`
-- `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned)
+- `service-init`: `memory-job-runner`, `opencode-publish-worker`, `runtime-alerts`, `intent-formation`(app-owned)
+- `discord-ready`: `automation-modules`, `agent-daily-learning`, `got-cutover-autopilot`, `login-session-cleanup`(app-owned), `obsidian-sync-loop`, `retrieval-eval-loop`, `reward-signal-loop`, `eval-auto-promote-loop`, `agent-slo-alert-loop`
+- `database`: `supabase-maintenance-cron`, `login-session-cleanup`(db-owned), `obsidian-sync-loop`(db-owned), `retrieval-eval-loop`(db-owned), `reward-signal-loop`(db-owned), `eval-auto-promote-loop`(db-owned), `agent-slo-alert-loop`(db-owned), `intent-formation`(db-owned)
 
 Operator control-plane endpoints:
 
@@ -90,6 +101,7 @@ Operator interpretation rule:
 Operational rule:
 
 - When runtime behavior and docs disagree, treat `scheduler-policy` plus `runtimeBootstrap.ts` as the immediate source for incident triage, then patch docs in the same change set.
+- For db-owned scheduler items, treat `enabled/running=true` as valid only when the matching pg_cron job name exists (`muel_login_session_cleanup`, `muel_obsidian_lore_sync`, `muel_retrieval_eval`, `muel_reward_signal`, `muel_eval_auto_promote`, `muel_slo_check`, `muel_intent_eval`).
 
 ## 1) Required Environment Variables
 

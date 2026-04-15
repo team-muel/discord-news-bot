@@ -10,6 +10,7 @@
  *   - agent_slo_check: periodic SLO alert evaluation
  *   - login_session_cleanup: purge expired Discord login sessions
  *   - obsidian_lore_sync: vault→Supabase sync trigger
+ *   - obsidian_graph_audit: vault graph quality audit trigger
  *
  * The service is idempotent: calling bootstrap multiple times only creates missing jobs.
  * Each job calls a Supabase RPC function that performs the actual work server-side,
@@ -22,6 +23,7 @@
  *   PG_CRON_SLO_CHECK_SCHEDULE -- default 'star/15 * * * *'     (every 15min)
  *   PG_CRON_LOGIN_CLEANUP_SCHEDULE -- default '0 star/1 * * *'  (every 1h)
  *   PG_CRON_OBSIDIAN_SYNC_SCHEDULE -- default '0 star/2 * * *'  (every 2h)
+ *   PG_CRON_OBSIDIAN_GRAPH_AUDIT_SCHEDULE -- default '30 star/6 * * *'  (every 6h)
  */
 
 import logger from '../../logger';
@@ -35,6 +37,7 @@ const DEADLETTER_SCHEDULE = parseStringEnv(process.env.PG_CRON_DEADLETTER_SCHEDU
 const SLO_CHECK_SCHEDULE = parseStringEnv(process.env.PG_CRON_SLO_CHECK_SCHEDULE, '*/15 * * * *');
 const LOGIN_CLEANUP_SCHEDULE = parseStringEnv(process.env.PG_CRON_LOGIN_CLEANUP_SCHEDULE, '0 */1 * * *');
 const OBSIDIAN_SYNC_SCHEDULE = parseStringEnv(process.env.PG_CRON_OBSIDIAN_SYNC_SCHEDULE, '0 */2 * * *');
+const OBSIDIAN_GRAPH_AUDIT_SCHEDULE = parseStringEnv(process.env.PG_CRON_OBSIDIAN_GRAPH_AUDIT_SCHEDULE, '30 */6 * * *');
 const RETRIEVAL_EVAL_SCHEDULE = parseStringEnv(process.env.PG_CRON_RETRIEVAL_EVAL_SCHEDULE, '0 */24 * * *');
 const REWARD_SIGNAL_SCHEDULE = parseStringEnv(process.env.PG_CRON_REWARD_SIGNAL_SCHEDULE, '0 */6 * * *');
 const EVAL_AUTO_PROMOTE_SCHEDULE = parseStringEnv(process.env.PG_CRON_EVAL_AUTO_PROMOTE_SCHEDULE, '30 */6 * * *');
@@ -98,6 +101,16 @@ const CRON_JOBS: CronJobSpec[] = [
       body := '{}'::jsonb
     )`,
     description: 'Trigger Obsidian vault→Supabase lore sync via HTTP',
+  },
+  {
+    jobName: 'muel_obsidian_graph_audit',
+    schedule: OBSIDIAN_GRAPH_AUDIT_SCHEDULE,
+    command: `SELECT net.http_post(
+      url := current_setting('app.service_url') || '/api/internal/obsidian/audit',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+      body := '{}'::jsonb
+    )`,
+    description: 'Trigger Obsidian graph quality audit via HTTP',
   },
   {
     jobName: 'muel_retrieval_eval',
@@ -270,6 +283,7 @@ export const PG_CRON_LOOP_REPLACEMENTS: Record<string, string> = {
   muel_slo_check: 'agentSloAlertLoop',
   muel_login_session_cleanup: 'loginSessionCleanupLoop',
   muel_obsidian_lore_sync: 'obsidianLoreSyncLoop',
+  muel_obsidian_graph_audit: 'obsidianGraphAuditLoop',
   muel_retrieval_eval: 'retrievalEvalLoop',
   muel_reward_signal: 'rewardSignalLoop',
   muel_eval_auto_promote: 'evalAutoPromoteLoop',

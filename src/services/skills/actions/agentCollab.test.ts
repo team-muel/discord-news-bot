@@ -173,6 +173,7 @@ describe('agentCollab actions', () => {
     expect(getAction('coordinate.route')).not.toBeNull();
     expect(getAction('architect.plan')).not.toBeNull();
     expect(getAction('review.review')).not.toBeNull();
+    expect(getAction('nemoclaw.review')).not.toBeNull();
     expect(getAction('operate.ops')).not.toBeNull();
     expect(getAction('implement.execute')).not.toBeNull();
   });

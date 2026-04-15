@@ -1,6 +1,10 @@
 import type { Client, Message } from 'discord.js';
 import logger from '../../logger';
 import {
+  DISCORD_CHAT_COMMAND_NAMES,
+  DISCORD_CONTEXT_MENU_COMMAND_NAMES,
+} from '../../../config/runtime/discordCommandCatalog.js';
+import {
   OPENCLAW_ENABLED,
   OPENCLAW_GATEWAY_URL,
 } from '../../config';
@@ -48,6 +52,7 @@ import { startDiscordReadyWorkloads } from './readyWorkloads';
 import { processPassiveMemoryCapture, isGuildLearningEnabled } from './passiveMemoryCapture';
 import { handleButtonInteraction } from './buttonInteractions';
 import { handleGuildCreateLifecycle, handleGuildDeleteLifecycle } from './guildLifecycle';
+import { runStartupTaskSafely } from './startupTasks';
 import {
   botRuntimeState,
   getBotRuntimeSnapshot,
@@ -224,7 +229,10 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     }
 
     try {
-      if (interaction.commandName === '유저 프로필 보기' || interaction.commandName === '유저 메모 추가') {
+      if (
+        interaction.commandName === DISCORD_CONTEXT_MENU_COMMAND_NAMES.USER_PROFILE
+        || interaction.commandName === DISCORD_CONTEXT_MENU_COMMAND_NAMES.USER_NOTE
+      ) {
         await personaHandlers.handleUserContextCommand(interaction);
       }
     } catch (error) {
@@ -272,51 +280,51 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
 
     try {
       switch (interaction.commandName) {
-        case '도움말': {
+        case DISCORD_CHAT_COMMAND_NAMES.HELP: {
           await adminHandlers.handleHelpCommand(interaction);
           return;
         }
-        case '주가': {
+        case DISCORD_CHAT_COMMAND_NAMES.STOCK_PRICE: {
           await handleStockPriceCommand(interaction);
           return;
         }
-        case '차트': {
+        case DISCORD_CHAT_COMMAND_NAMES.STOCK_CHART: {
           await handleStockChartCommand(interaction);
           return;
         }
-        case '분석': {
+        case DISCORD_CHAT_COMMAND_NAMES.ANALYZE: {
           await handleAnalyzeCommand(interaction);
           return;
         }
-        case '구독': {
+        case DISCORD_CHAT_COMMAND_NAMES.SUBSCRIBE: {
           await handleGroupedSubscribeCommand(interaction);
           return;
         }
-        case '만들어줘': {
+        case DISCORD_CHAT_COMMAND_NAMES.MAKE: {
           await vibeHandlers.handleMakeCommand(interaction);
           return;
         }
-        case '해줘': {
+        case DISCORD_CHAT_COMMAND_NAMES.ASK_COMPAT: {
           await docsHandlers.handleAskCommand(interaction);
           return;
         }
-        case '뮤엘': {
+        case DISCORD_CHAT_COMMAND_NAMES.MUEL: {
           await docsHandlers.handleAskCommand(interaction);
           return;
         }
-        case '변경사항': {
+        case DISCORD_CHAT_COMMAND_NAMES.CHANGELOG: {
           await docsHandlers.handleChangelogCommand(interaction);
           return;
         }
-        case '프로필': {
+        case DISCORD_CHAT_COMMAND_NAMES.PROFILE: {
           await personaHandlers.handleProfileCommand(interaction);
           return;
         }
-        case '메모': {
+        case DISCORD_CHAT_COMMAND_NAMES.MEMO: {
           await personaHandlers.handleMemoCommand(interaction);
           return;
         }
-        case '관리자': {
+        case DISCORD_CHAT_COMMAND_NAMES.ADMIN: {
           if (interaction.options.getSubcommand() === '세션이력') {
             await agentHandlers.handleSessionCommand(interaction);
           } else {
@@ -327,47 +335,47 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
           }
           return;
         }
-        case '관리설정': {
+        case DISCORD_CHAT_COMMAND_NAMES.MANAGE_SETTINGS: {
           await adminHandlers.handleManageSettingsCommand(interaction);
           return;
         }
-        case '잊어줘': {
+        case DISCORD_CHAT_COMMAND_NAMES.FORGET: {
           await adminHandlers.handleForgetCommand(interaction);
           return;
         }
-        case '시작': {
-          await agentHandlers.handleAgentCommand(interaction, '시작');
+        case DISCORD_CHAT_COMMAND_NAMES.START: {
+          await agentHandlers.handleAgentCommand(interaction, DISCORD_CHAT_COMMAND_NAMES.START);
           return;
         }
-        case '상태': {
+        case DISCORD_CHAT_COMMAND_NAMES.STATUS: {
           await adminHandlers.handleStatusCommand(interaction);
           return;
         }
-        case '스킬목록': {
-          await agentHandlers.handleAgentCommand(interaction, '스킬목록');
+        case DISCORD_CHAT_COMMAND_NAMES.SKILL_LIST: {
+          await agentHandlers.handleAgentCommand(interaction, DISCORD_CHAT_COMMAND_NAMES.SKILL_LIST);
           return;
         }
-        case '정책': {
+        case DISCORD_CHAT_COMMAND_NAMES.POLICY: {
           await agentHandlers.handlePolicyCommand(interaction);
           return;
         }
-        case '온보딩': {
-          await agentHandlers.handleAgentCommand(interaction, '온보딩');
+        case DISCORD_CHAT_COMMAND_NAMES.ONBOARDING: {
+          await agentHandlers.handleAgentCommand(interaction, DISCORD_CHAT_COMMAND_NAMES.ONBOARDING);
           return;
         }
-        case '중지': {
-          await agentHandlers.handleAgentCommand(interaction, '중지');
+        case DISCORD_CHAT_COMMAND_NAMES.STOP: {
+          await agentHandlers.handleAgentCommand(interaction, DISCORD_CHAT_COMMAND_NAMES.STOP);
           return;
         }
-        case '유저': {
+        case DISCORD_CHAT_COMMAND_NAMES.USER: {
           await crmHandlers.handleMyInfoCommand(interaction);
           return;
         }
-        case '통계': {
+        case DISCORD_CHAT_COMMAND_NAMES.STATS: {
           await crmHandlers.handleUserInfoCommand(interaction);
           return;
         }
-        case '지표리뷰': {
+        case DISCORD_CHAT_COMMAND_NAMES.METRIC_REVIEW: {
           await interaction.deferReply({ ephemeral: true });
           try {
             const snapshot = await generateMetricReviewSnapshot();
@@ -456,18 +464,19 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     botRuntimeState.lastAlertReason = null;
     botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
-    void registerSlashCommands(client).catch((err) => logger.error('[BOT] registerSlashCommands failed: %s', getErrorMessage(err)));
-    void restoreApprovedDynamicWorkers().catch((err) => logger.error('[BOT] restoreApprovedDynamicWorkers failed: %s', getErrorMessage(err)));
-    void enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]).catch((err) => logger.error('[BOT] enforceImplementApprovalRequiredPilot failed: %s', getErrorMessage(err)));
+    runStartupTaskSafely('registerSlashCommands', () => registerSlashCommands(client));
+    runStartupTaskSafely('restoreApprovedDynamicWorkers', () => restoreApprovedDynamicWorkers());
+    runStartupTaskSafely('enforceImplementApprovalRequiredPilot', () => enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]));
     // OpenClaw Gateway preflight — warn early if configured but unreachable
     if (OPENCLAW_ENABLED || OPENCLAW_GATEWAY_URL) {
-      void checkOpenClawGatewayHealth().then((ok) => {
+      runStartupTaskSafely('checkOpenClawGatewayHealth', async () => {
+        const ok = await checkOpenClawGatewayHealth();
         if (!ok) logger.warn('[STARTUP] OpenClaw Gateway unreachable: %s', OPENCLAW_GATEWAY_URL || '(not configured)');
         else logger.info('[STARTUP] OpenClaw Gateway reachable');
       });
     }
-    startAutoWorkerProposalBackgroundLoop();
-    startDiscordReadyWorkloads(client);
+    runStartupTaskSafely('startAutoWorkerProposalBackgroundLoop', () => startAutoWorkerProposalBackgroundLoop());
+    runStartupTaskSafely('startDiscordReadyWorkloads', () => startDiscordReadyWorkloads(client));
   });
 
   // ── Guild lifecycle ───────────────────────────────────────────────────────

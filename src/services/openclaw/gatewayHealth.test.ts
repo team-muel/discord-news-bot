@@ -6,6 +6,7 @@ vi.mock('../../config', () => ({
   OPENCLAW_GATEWAY_URL: 'http://gw.test:4000',
   OPENCLAW_GATEWAY_TOKEN: 'tok-test',
   OPENCLAW_GATEWAY_ENABLED: true,
+  OPENCLAW_MODEL: 'openclaw-main',
   OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS: 30_000,
 }));
 
@@ -26,6 +27,7 @@ vi.mock('../supabaseClient', () => ({
 // Dynamic import after mocks
 const {
   checkOpenClawGatewayHealth,
+  checkOpenClawGatewayChatSupport,
   __resetGatewayHealthStateForTests,
   markGatewayUnhealthy,
   isGatewayHealthy,
@@ -43,12 +45,17 @@ const mockFetch = vi.mocked(fetchWithTimeout) as unknown as MockInstance;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const okResponse = (body: Record<string, unknown> = {}) => ({
+const okResponse = (body: Record<string, unknown> = {}, contentType = 'application/json') => ({
   ok: true,
+  headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null },
   json: async () => body,
 });
 
-const failResponse = () => ({ ok: false, json: async () => ({}) });
+const failResponse = (contentType = 'application/json') => ({
+  ok: false,
+  headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null },
+  json: async () => ({}),
+});
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +126,32 @@ describe('gatewayHealth', () => {
     });
   });
 
+  describe('checkOpenClawGatewayChatSupport', () => {
+    it('returns true when models endpoint is json', async () => {
+      mockFetch
+        .mockResolvedValueOnce(okResponse())
+        .mockResolvedValueOnce(okResponse({ data: [{ id: 'openclaw-main' }] }));
+
+      vi.advanceTimersByTime(20_000);
+      const result = await checkOpenClawGatewayChatSupport();
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenNthCalledWith(2, 'http://gw.test:4000/v1/models', {
+        method: 'GET',
+        headers: expect.objectContaining({ Authorization: 'Bearer tok-test' }),
+      }, 5000);
+    });
+
+    it('returns false when models endpoint returns html', async () => {
+      mockFetch
+        .mockResolvedValueOnce(okResponse())
+        .mockResolvedValueOnce(okResponse({}, 'text/html; charset=utf-8'));
+
+      vi.advanceTimersByTime(20_000);
+      const result = await checkOpenClawGatewayChatSupport();
+      expect(result).toBe(false);
+    });
+  });
+
   describe('getGatewayHeaders', () => {
     it('includes Content-Type and Authorization', () => {
       const headers = getGatewayHeaders();
@@ -131,11 +164,17 @@ describe('gatewayHealth', () => {
     it('returns response text on success', async () => {
       // First: force health check to pass
       mockFetch.mockResolvedValueOnce(okResponse()); // healthz
+      mockFetch.mockResolvedValueOnce(okResponse({ data: [{ id: 'openclaw-main' }] })); // /v1/models
       vi.advanceTimersByTime(20_000);
       mockFetch.mockResolvedValueOnce(okResponse({ choices: [{ message: { content: 'Hello world' } }] })); // /v1/chat/completions
 
       const result = await sendGatewayChat({ user: 'hi', system: 'test' });
       expect(result).toBe('Hello world');
+
+      const call = mockFetch.mock.calls[2];
+      const request = call?.[1] as { body?: string } | undefined;
+      const payload = request?.body ? JSON.parse(request.body) as { model?: string } : null;
+      expect(payload?.model).toBe('openclaw-main');
     });
 
     it('returns null when gateway is unhealthy', async () => {
@@ -147,6 +186,7 @@ describe('gatewayHealth', () => {
 
     it('returns null on empty response', async () => {
       mockFetch.mockResolvedValueOnce(okResponse()); // healthz
+      mockFetch.mockResolvedValueOnce(okResponse({ data: [{ id: 'openclaw-main' }] })); // /v1/models
       vi.advanceTimersByTime(20_000);
       mockFetch.mockResolvedValueOnce(okResponse({ choices: [{ message: { content: '' } }] })); // /v1/chat/completions
 
@@ -156,12 +196,23 @@ describe('gatewayHealth', () => {
 
     it('marks gateway unhealthy on fetch error', async () => {
       mockFetch.mockResolvedValueOnce(okResponse()); // healthz
+      mockFetch.mockResolvedValueOnce(okResponse({ data: [{ id: 'openclaw-main' }] })); // /v1/models
       vi.advanceTimersByTime(20_000);
       mockFetch.mockRejectedValueOnce(new Error('timeout')); // /v1/chat/completions
 
       const result = await sendGatewayChat({ user: 'hi', system: 'test' });
       expect(result).toBeNull();
       expect(isGatewayHealthy()).toBe(false);
+    });
+
+    it('returns null when gateway is control-only html', async () => {
+      mockFetch.mockResolvedValueOnce(okResponse()); // healthz
+      mockFetch.mockResolvedValueOnce(okResponse({}, 'text/html; charset=utf-8')); // /v1/models
+      vi.advanceTimersByTime(20_000);
+
+      const result = await sendGatewayChat({ user: 'hi', system: 'test' });
+      expect(result).toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 

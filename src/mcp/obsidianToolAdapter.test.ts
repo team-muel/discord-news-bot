@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const {
+  mockExecuteObsidianLoreSync,
+  mockExecuteObsidianGraphAudit,
+} = vi.hoisted(() => ({
+  mockExecuteObsidianLoreSync: vi.fn(),
+  mockExecuteObsidianGraphAudit: vi.fn(),
+}));
+
 // Mock Obsidian service dependencies before import
 vi.mock('../services/obsidian/router', () => ({
   searchObsidianVaultWithAdapter: vi.fn().mockResolvedValue([
@@ -103,6 +111,11 @@ vi.mock('../services/obsidian/obsidianQualityService', () => ({
     thresholds: { unresolvedLinks: 10, ambiguousLinks: 5, orphanFiles: 20, deadendFiles: 10, missingRequiredPropertyFiles: 5 },
     pass: true,
   }),
+}));
+
+vi.mock('../services/obsidian/obsidianMaintenanceControlService', () => ({
+  executeObsidianLoreSync: mockExecuteObsidianLoreSync,
+  executeObsidianGraphAudit: mockExecuteObsidianGraphAudit,
 }));
 
 vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
@@ -400,12 +413,20 @@ import { listObsidianMcpTools, callObsidianMcpTool, OBSIDIAN_TOOL_NAMES } from '
 describe('obsidianToolAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecuteObsidianLoreSync.mockResolvedValue({
+      lastStatus: 'success',
+      lastSummary: 'sync ok',
+    });
+    mockExecuteObsidianGraphAudit.mockResolvedValue({
+      result: { lastStatus: 'success', lastSummary: 'audit ok' },
+      snapshot: { pass: true, totals: { files: 100 } },
+    });
   });
 
   describe('listObsidianMcpTools', () => {
     it('returns all obsidian tools with valid specs', () => {
       const tools = listObsidianMcpTools();
-      expect(tools.length).toBe(31);
+      expect(tools.length).toBe(33);
 
       const names = tools.map((t) => t.name);
       expect(names).toContain('obsidian.search');
@@ -414,8 +435,10 @@ describe('obsidianToolAdapter', () => {
       expect(names).toContain('obsidian.graph');
       expect(names).toContain('obsidian.write');
       expect(names).toContain('obsidian.sync.status');
+      expect(names).toContain('obsidian.sync.run');
       expect(names).toContain('obsidian.cache.stats');
       expect(names).toContain('obsidian.quality.audit');
+      expect(names).toContain('obsidian.quality.audit.run');
       expect(names).toContain('obsidian.adapter.status');
       expect(names).toContain('obsidian.knowledge.control');
       expect(names).toContain('knowledge.bundle.compile');
@@ -458,9 +481,10 @@ describe('obsidianToolAdapter', () => {
 
   describe('OBSIDIAN_TOOL_NAMES', () => {
     it('contains all tool names', () => {
-      expect(OBSIDIAN_TOOL_NAMES.size).toBe(31);
+      expect(OBSIDIAN_TOOL_NAMES.size).toBe(33);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.search')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.write')).toBe(true);
+      expect(OBSIDIAN_TOOL_NAMES.has('obsidian.sync.run')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('obsidian.knowledge.control')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('knowledge.bundle.compile')).toBe(true);
       expect(OBSIDIAN_TOOL_NAMES.has('internal.knowledge.resolve')).toBe(true);
@@ -627,6 +651,14 @@ describe('obsidianToolAdapter', () => {
       expect(data.owner).toBe('app');
     });
 
+    it('obsidian.sync.run forces local execution through the maintenance facade', async () => {
+      const result = await callObsidianMcpTool({ name: 'obsidian.sync.run' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.lastStatus).toBe('success');
+      expect(mockExecuteObsidianLoreSync).toHaveBeenCalledWith({ forceLocal: true });
+    });
+
     // ── obsidian.cache.stats ─────────────────────────────────────────────
     it('obsidian.cache.stats returns statistics', async () => {
       const result = await callObsidianMcpTool({ name: 'obsidian.cache.stats' });
@@ -644,6 +676,14 @@ describe('obsidianToolAdapter', () => {
       const data = JSON.parse(result.content[0]?.text || '{}');
       expect(data.pass).toBe(true);
       expect(data.totals.files).toBe(100);
+    });
+
+    it('obsidian.quality.audit.run forces local execution through the maintenance facade', async () => {
+      const result = await callObsidianMcpTool({ name: 'obsidian.quality.audit.run' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.result.lastStatus).toBe('success');
+      expect(mockExecuteObsidianGraphAudit).toHaveBeenCalledWith({ forceLocal: true });
     });
 
     // ── obsidian.adapter.status ──────────────────────────────────────────

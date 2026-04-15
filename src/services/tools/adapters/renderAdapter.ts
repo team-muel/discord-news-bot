@@ -10,8 +10,14 @@
  *   - service.details: get service details by ID
  *   - deploy.list: list deploy history for a service
  *   - deploy.details: get specific deploy details
+ *   - deploy.trigger: trigger a new deploy for a service
+ *   - deploy.rollback: roll back a service to a known deploy
  *   - log.query: query service logs with filters
  *   - metrics.get: get service performance metrics
+ *   - job.list: list one-off jobs for a service
+ *   - job.details: get a specific one-off job
+ *   - job.create: create a one-off job
+ *   - job.cancel: cancel a one-off job
  *   - env.list: list environment variables for a service
  *   - env.update: update environment variables (destructive — requires confirmation)
  *   - postgres.query: run read-only SQL against Render Postgres
@@ -55,6 +61,20 @@ const validateId = (id: unknown, label: string): string | null => {
     return null;
   }
   return trimmed;
+};
+
+const readStringArg = (value: unknown, maxLength: number): string => {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, maxLength);
+};
+
+const readBooleanArg = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['true', '1', 'yes'].includes(normalized)) return true;
+  if (['false', '0', 'no'].includes(normalized)) return false;
+  return undefined;
 };
 
 const fetchRender = async (
@@ -146,6 +166,56 @@ const getDeployDetails = async (serviceId: string, deployId: string): Promise<Ex
   }
 };
 
+const triggerDeploy = async (serviceId: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
+  const start = Date.now();
+  const id = validateId(serviceId, 'serviceId');
+  if (!id) return makeResult(false, 'deploy.trigger', 'Invalid service ID', [], 0, 'INVALID_ID');
+
+  const payload: Record<string, unknown> = {};
+  const clearCache = readBooleanArg(args.clearCache ?? args.clear_cache);
+  const commitId = readStringArg(args.commitId ?? args.commit_id, 120);
+  const imageUrl = readStringArg(args.imageUrl ?? args.image_url, 500);
+  const deployMode = readStringArg(args.deployMode ?? args.deploy_mode, 80);
+
+  if (clearCache !== undefined) payload.clearCache = clearCache;
+  if (commitId) payload.commitId = commitId;
+  if (imageUrl) payload.imageUrl = imageUrl;
+  if (deployMode) payload.deployMode = deployMode;
+
+  try {
+    const { ok, body, status } = await fetchRender(`/services/${id}/deploys`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!ok) return makeResult(false, 'deploy.trigger', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
+
+    const deploy = ((body as Record<string, unknown> | null)?.deploy as Record<string, unknown> | undefined) ?? (body as Record<string, unknown> | null);
+    const deployLabel = typeof deploy?.id === 'string' ? deploy.id : id;
+    return makeResult(true, 'deploy.trigger', `Triggered deploy ${deployLabel}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
+  } catch (err) {
+    return makeResult(false, 'deploy.trigger', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
+  }
+};
+
+const rollbackDeploy = async (serviceId: string, deployId: string): Promise<ExternalAdapterResult> => {
+  const start = Date.now();
+  const sId = validateId(serviceId, 'serviceId');
+  const dId = validateId(deployId, 'deployId');
+  if (!sId || !dId) return makeResult(false, 'deploy.rollback', 'Invalid ID', [], 0, 'INVALID_ID');
+
+  try {
+    const { ok, body, status } = await fetchRender(`/services/${sId}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ deployId: dId }),
+    });
+    if (!ok) return makeResult(false, 'deploy.rollback', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
+
+    return makeResult(true, 'deploy.rollback', `Rollback requested for ${dId}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
+  } catch (err) {
+    return makeResult(false, 'deploy.rollback', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
+  }
+};
+
 const queryLogs = async (serviceId: string, filters?: Record<string, unknown>): Promise<ExternalAdapterResult> => {
   const start = Date.now();
   const id = validateId(serviceId, 'serviceId');
@@ -220,6 +290,95 @@ const getMetrics = async (serviceId: string, _args: Record<string, unknown>): Pr
     return makeResult(true, 'metrics.get', `Deploy health for ${id}`, output, Date.now() - start);
   } catch (err) {
     return makeResult(false, 'metrics.get', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
+  }
+};
+
+const listJobs = async (serviceId: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
+  const start = Date.now();
+  const id = validateId(serviceId, 'serviceId');
+  if (!id) return makeResult(false, 'job.list', 'Invalid service ID', [], 0, 'INVALID_ID');
+
+  const params = new URLSearchParams();
+  const clampedLimit = Math.min(Math.max(1, Number(args.limit) || 10), 50);
+  params.set('limit', String(clampedLimit));
+
+  const statusFilter = readStringArg(args.status, 60);
+  if (statusFilter) params.set('status', statusFilter);
+
+  try {
+    const { ok, body, status } = await fetchRender(`/services/${id}/jobs?${params.toString()}`);
+    if (!ok) return makeResult(false, 'job.list', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
+
+    const jobs = Array.isArray(body) ? body : [];
+    const summaries = jobs.map((jobEntry: Record<string, unknown>) => {
+      const job = (jobEntry.job as Record<string, unknown> | undefined) ?? jobEntry;
+      return `${job.id || '?'} — ${job.status || '?'} (${job.finishedAt || job.startedAt || job.createdAt || ''})`;
+    });
+
+    return makeResult(true, 'job.list', `${summaries.length} jobs`, summaries, Date.now() - start);
+  } catch (err) {
+    return makeResult(false, 'job.list', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
+  }
+};
+
+const getJobDetails = async (serviceId: string, jobId: string): Promise<ExternalAdapterResult> => {
+  const start = Date.now();
+  const sId = validateId(serviceId, 'serviceId');
+  const jId = validateId(jobId, 'jobId');
+  if (!sId || !jId) return makeResult(false, 'job.details', 'Invalid ID', [], 0, 'INVALID_ID');
+
+  try {
+    const { ok, body, status } = await fetchRender(`/services/${sId}/jobs/${jId}`);
+    if (!ok) return makeResult(false, 'job.details', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
+
+    return makeResult(true, 'job.details', `Job ${jId}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
+  } catch (err) {
+    return makeResult(false, 'job.details', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
+  }
+};
+
+const createJob = async (serviceId: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
+  const start = Date.now();
+  const id = validateId(serviceId, 'serviceId');
+  if (!id) return makeResult(false, 'job.create', 'Invalid service ID', [], 0, 'INVALID_ID');
+
+  const startCommand = readStringArg(args.startCommand ?? args.command ?? args.jobCommand, 2_000);
+  if (!startCommand) return makeResult(false, 'job.create', 'Missing startCommand', [], 0, 'EMPTY_START_COMMAND');
+
+  const payload: Record<string, unknown> = { startCommand };
+  const planId = validateId(args.planId ?? args.plan_id, 'planId');
+  if (planId) payload.planId = planId;
+
+  try {
+    const { ok, body, status } = await fetchRender(`/services/${id}/jobs`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!ok) return makeResult(false, 'job.create', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
+
+    const job = ((body as Record<string, unknown> | null)?.job as Record<string, unknown> | undefined) ?? (body as Record<string, unknown> | null);
+    const jobLabel = typeof job?.id === 'string' ? job.id : id;
+    return makeResult(true, 'job.create', `Created job ${jobLabel}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
+  } catch (err) {
+    return makeResult(false, 'job.create', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
+  }
+};
+
+const cancelJob = async (serviceId: string, jobId: string): Promise<ExternalAdapterResult> => {
+  const start = Date.now();
+  const sId = validateId(serviceId, 'serviceId');
+  const jId = validateId(jobId, 'jobId');
+  if (!sId || !jId) return makeResult(false, 'job.cancel', 'Invalid ID', [], 0, 'INVALID_ID');
+
+  try {
+    const { ok, body, status } = await fetchRender(`/services/${sId}/jobs/${jId}/cancel`, {
+      method: 'POST',
+    });
+    if (!ok) return makeResult(false, 'job.cancel', `Render API ${status}`, [], Date.now() - start, `HTTP_${status}`);
+
+    return makeResult(true, 'job.cancel', `Cancelled job ${jId}`, [JSON.stringify(body, null, 2).slice(0, 6000)], Date.now() - start);
+  } catch (err) {
+    return makeResult(false, 'job.cancel', 'Render unreachable', [], Date.now() - start, getErrorMessage(err));
   }
 };
 
@@ -331,14 +490,20 @@ const queryPostgres = async (databaseId: string, sql: string): Promise<ExternalA
 
 export const renderAdapter: ExternalToolAdapter = {
   id: ADAPTER_ID,
-  description: 'Render cloud platform — service management, deploy history, log querying, metrics, environment variables, and Postgres queries.',
+  description: 'Render cloud platform — service management, deploy control, one-off jobs, log querying, metrics, environment variables, and Postgres queries.',
   capabilities: [
     'service.list',
     'service.details',
     'deploy.list',
     'deploy.details',
+    'deploy.trigger',
+    'deploy.rollback',
     'log.query',
     'metrics.get',
+    'job.list',
+    'job.details',
+    'job.create',
+    'job.cancel',
     'env.list',
     'env.update',
     'postgres.query',
@@ -347,6 +512,8 @@ export const renderAdapter: ExternalToolAdapter = {
     'service.list',
     'service.details',
     'deploy.list',
+    'job.list',
+    'job.details',
     'log.query',
     'metrics.get',
   ],
@@ -365,8 +532,9 @@ export const renderAdapter: ExternalToolAdapter = {
   },
 
   execute: async (action: string, args: Record<string, unknown>): Promise<ExternalAdapterResult> => {
-    const serviceId = String(args.serviceId || args.service_id || args.id || DEFAULT_WORKSPACE || '');
+    const serviceId = String(args.serviceId || args.service_id || args.id || '');
     const deployId = String(args.deployId || args.deploy_id || '');
+    const jobId = String(args.jobId || args.job_id || '');
     const databaseId = String(args.databaseId || args.database_id || '');
     const limit = typeof args.limit === 'number' ? args.limit : undefined;
 
@@ -379,10 +547,22 @@ export const renderAdapter: ExternalToolAdapter = {
         return listDeploys(serviceId, limit);
       case 'deploy.details':
         return getDeployDetails(serviceId, deployId);
+      case 'deploy.trigger':
+        return triggerDeploy(serviceId, args);
+      case 'deploy.rollback':
+        return rollbackDeploy(serviceId, deployId);
       case 'log.query':
         return queryLogs(serviceId, args);
       case 'metrics.get':
         return getMetrics(serviceId, args);
+      case 'job.list':
+        return listJobs(serviceId, args);
+      case 'job.details':
+        return getJobDetails(serviceId, jobId);
+      case 'job.create':
+        return createJob(serviceId, args);
+      case 'job.cancel':
+        return cancelJob(serviceId, jobId);
       case 'env.list':
         return listEnvVars(serviceId);
       case 'env.update':

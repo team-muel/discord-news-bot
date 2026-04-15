@@ -12,7 +12,7 @@ Purpose:
 
 Primary handler hub:
 
-- src/bot.ts
+- src/discord/runtime/commandRouter.ts
 
 ## 1) Chat Input Command Mapping
 
@@ -63,7 +63,8 @@ For each adapter->core handoff:
 
 Source lines:
 
-- src/bot.ts: switch(commandName) dispatch table
+- src/discord/runtime/commandRouter.ts: switch(commandName) dispatch table
+- src/discord/commandDefinitions.ts: slash/context command registration surface
 - src/discord/session.ts: startVibeSession and startAgentSession bridge
 - src/services/multiAgentService.ts: startAgentSession core entry
 

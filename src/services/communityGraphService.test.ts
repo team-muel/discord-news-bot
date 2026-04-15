@@ -7,6 +7,8 @@ const insertChain = {
 const relationshipEdgeChain = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockResolvedValue({ data: [], error: null }),
   maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   upsert: vi.fn().mockResolvedValue({ error: null }),
 };
@@ -37,7 +39,7 @@ vi.mock('./agent/agentConsentService', () => ({
 }));
 
 import * as consentService from './agent/agentConsentService';
-import { recordCommunityInteractionEvent } from './communityGraphService';
+import { buildSocialContextHints, recordCommunityInteractionEvent } from './communityGraphService';
 
 describe('communityGraphService consent gating', () => {
   beforeEach(() => {
@@ -75,5 +77,18 @@ describe('communityGraphService consent gating', () => {
 
     expect(mockClient.from).toHaveBeenCalledWith('community_interaction_events');
     expect(insertChain.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('buildSocialContextHints는 requester consent가 없으면 조회를 건너뛴다', async () => {
+    vi.mocked(consentService.hasSocialGraphConsent).mockResolvedValue(false);
+
+    const hints = await buildSocialContextHints({
+      guildId: '12345678',
+      requesterUserId: '11111111',
+      maxItems: 4,
+    });
+
+    expect(hints).toEqual([]);
+    expect(mockClient.from).not.toHaveBeenCalled();
   });
 });

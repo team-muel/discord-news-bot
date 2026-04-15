@@ -73,6 +73,15 @@ describe('openshellAdapter.execute', () => {
     });
     // Should succeed because args are sanitized (not rejected)
     expect(result.ok).toBe(true);
+
+    const callArgs = mockExecFile.mock.calls[0];
+    const cliArgs = callArgs?.[1] as string[] | undefined;
+    const shellOrArgv = cliArgs?.join(' ') ?? '';
+    expect(shellOrArgv).toContain("openshell 'sandbox' 'exec' '-n' 'sb-1 rm -rf /'");
+    expect(shellOrArgv).toContain("'--no-tty'");
+    expect(shellOrArgv).toContain("'bash' '-lc' 'echo hello  cat /etc/passwd'");
+    expect(shellOrArgv).toContain('</dev/null');
+    expect(shellOrArgv).not.toContain('--write');
   });
 
   it('sandbox.create defaults from to ollama', async () => {
@@ -80,6 +89,32 @@ describe('openshellAdapter.execute', () => {
     const result = await openshellAdapter.execute('sandbox.create', {});
     expect(result.ok).toBe(true);
     expect(result.output).toEqual(['sandbox-123']);
+  });
+
+  it('sandbox.create passes through an explicit sandbox name', async () => {
+    mockExecFile.mockImplementation(makeExecCallback('sandbox-123') as never);
+    const result = await openshellAdapter.execute('sandbox.create', { from: 'ollama', name: 'muel-assistant' });
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain('muel-assistant');
+
+    const callArgs = mockExecFile.mock.calls[0];
+    const cliArgs = callArgs?.[1] as string[] | undefined;
+    const shellOrArgv = cliArgs?.join(' ') ?? '';
+    expect(shellOrArgv).toContain('--name');
+    expect(shellOrArgv).toContain('muel-assistant');
+  });
+
+  it('sandbox.create is idempotent when the named sandbox already exists', async () => {
+    mockExecFile.mockImplementation(((_cmd: string, _args: unknown, _opts: unknown, cb?: (err: Error | null, res: unknown) => void) => {
+      const callback = typeof _opts === 'function' ? _opts : cb;
+      if (callback) callback(new Error("sandbox 'muel-assistant' already exists"), null);
+      return {} as ReturnType<typeof execFile>;
+    }) as never);
+
+    const result = await openshellAdapter.execute('sandbox.create', { from: 'ollama', name: 'muel-assistant' });
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain('already exists');
   });
 
   it('returns EXECUTION_FAILED on CLI error', async () => {

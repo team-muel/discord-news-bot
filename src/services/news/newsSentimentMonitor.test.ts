@@ -26,6 +26,7 @@ vi.mock('./newsMonitorWorkerClient', () => ({
 
 vi.mock('../automation/n8nDelegationService', () => ({
   shouldDelegate: vi.fn(() => false),
+  shouldSkipInlineFallback: vi.fn(() => false),
   delegateArticleContextFetch: vi.fn(),
   delegateNewsSummarize: vi.fn(),
 }));

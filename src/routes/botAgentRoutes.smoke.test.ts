@@ -47,6 +47,15 @@ describe('bot agent route module smoke', () => {
     expect(routeKeys.has('GET /agent/runtime/operator-snapshot')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/workset')).toBe(true);
     expect(routeKeys.has('GET /agent/runtime/knowledge-control-plane')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/openjarvis/autopilot')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/openjarvis/hermes-runtime')).toBe(true);
+    expect(routeKeys.has('POST /agent/runtime/openjarvis/session-start')).toBe(true);
+    expect(routeKeys.has('GET /agent/runtime/openjarvis/session-open-bundle')).toBe(true);
+    expect(routeKeys.has('POST /agent/runtime/openjarvis/hermes-runtime/chat-note')).toBe(true);
+    expect(routeKeys.has('POST /agent/runtime/openjarvis/hermes-runtime/queue-objective')).toBe(true);
+    expect(routeKeys.has('POST /agent/runtime/openjarvis/hermes-runtime/chat-launch')).toBe(true);
+    expect(routeKeys.has('POST /agent/runtime/openjarvis/hermes-runtime/remediate')).toBe(true);
+    expect(routeKeys.has('POST /agent/runtime/openjarvis/memory-sync')).toBe(true);
     expect(routeKeys.has('GET /agent/got/policy')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/policy')).toBe(true);
     expect(routeKeys.has('GET /agent/privacy/consent')).toBe(true);

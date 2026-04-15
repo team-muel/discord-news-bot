@@ -149,6 +149,14 @@ export const isDelegationFirst = (): boolean =>
   readDelegationEnabled() && readDelegationFirst();
 
 /**
+ * Whether a configured task should skip inline fallback after a failed
+ * n8n attempt. Other delegated surfaces may still run, but the local
+ * fetch/scrape/summary path should stay off.
+ */
+export const shouldSkipInlineFallback = (task: DelegatableTask): boolean =>
+  shouldDelegate(task) && isDelegationFirst();
+
+/**
  * Delegate a task to n8n via webhook trigger.
  * Returns { delegated: false } if delegation is not available,
  * allowing the caller to fall back to inline execution.

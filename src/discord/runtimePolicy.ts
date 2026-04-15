@@ -32,6 +32,7 @@ import {
   DISCORD_FEEDBACK_REACTION_SEED_DOWN_RAW,
   DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES_RAW,
 } from '../config';
+import { DISCORD_DEFAULT_SIMPLE_COMMAND_ALLOWLIST } from '../../config/runtime/discordCommandCatalog.js';
 import { parseCsvList } from '../utils/env';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -153,11 +154,7 @@ const parseCommandAllowlist = (): ReadonlySet<string> => {
   if (DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW) {
     return new Set(parseCsvList(DISCORD_SIMPLE_COMMAND_ALLOWLIST_RAW));
   }
-  return new Set([
-    'ping', 'help', '도움말', '로그인', '구독', '뮤엘', '해줘', '만들어줘',
-    '주가', '차트', '상태', '설정', '정책', '세션', '관리설정',
-    '잊어줘', '학습', '유저', '프로필', '메모', '유저 프로필 보기', '유저 메모 추가',
-  ]);
+  return new Set(DISCORD_DEFAULT_SIMPLE_COMMAND_ALLOWLIST);
 };
 export const SIMPLE_COMMAND_ALLOWLIST: ReadonlySet<string> = parseCommandAllowlist();
 

@@ -3,6 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 // actionRunner의 순수 공개 함수 테스트
 // runGoalActions는 LLM/Supabase 의존이 있어 여기서는 diagnostics snapshot 구조만 검증
 import {
+  buildWorkflowCloseoutArtifacts,
+  extractWorkflowArtifactRefs,
   formatActionArtifactsForDisplay,
   getActionRunnerDiagnosticsSnapshot,
   type ActionRunnerDiagnosticsSnapshot,
@@ -117,6 +119,107 @@ describe('reflection artifact helpers', () => {
       'concern=recursive-improvement',
       'next_path=ops/improvement/rules/knowledge-reflection-pipeline.md',
       'customer_impact=true',
+    ]);
+  });
+
+  it('workflow artifact ref extractor는 ref-like artifact만 구조화한다', () => {
+    const reflection = buildActionReflectionArtifact({
+      plane: 'learning',
+      concern: 'recursive-improvement',
+      nextPath: 'ops/improvement/rules/knowledge-reflection-pipeline.md',
+      customerImpact: true,
+    });
+
+    const refs = extractWorkflowArtifactRefs([
+      'docs/CHANGELOG-ARCH.md',
+      'branch: feature/runtime-hot-state',
+      'commit: abc1234def5678',
+      'workflow session: supabase:remote-session-1',
+      'Release plan\nhttps://example.com/runbook?utm_source=test',
+      reflection,
+      'plain summary text that should stay unstructured',
+    ]);
+
+    expect(refs).toEqual([
+      { locator: 'docs/CHANGELOG-ARCH.md', refKind: 'repo-file', title: 'CHANGELOG-ARCH.md' },
+      { locator: 'branch:feature/runtime-hot-state', refKind: 'git-ref', title: 'feature/runtime-hot-state' },
+      { locator: 'abc1234def5678', refKind: 'git-ref', title: 'commit abc1234def56' },
+      { locator: 'supabase:remote-session-1', refKind: 'workflow-session', title: 'supabase:remote-session-1' },
+      { locator: 'https://example.com/runbook', refKind: 'url', title: 'Release plan' },
+      { locator: 'ops/improvement/rules/knowledge-reflection-pipeline.md', refKind: 'vault-note', title: 'recursive-improvement reflection target' },
+    ]);
+  });
+});
+
+describe('buildWorkflowCloseoutArtifacts', () => {
+  it('builds planner-empty decision distillate and capability demand together', () => {
+    const closeout = buildWorkflowCloseoutArtifacts({
+      goal: 'stabilize shared tooling handoff',
+      guildId: 'guild-1',
+      finalStatus: 'failed',
+      sourceEvent: 'recall_request',
+      plannerActionCount: 0,
+    });
+
+    expect(closeout.decisionDistillate).toMatchObject({
+      summary: 'Planner could not produce any executable actions inside the current boundary.',
+      nextAction: 'clarify the goal or expand the approved action surface before retrying',
+      sourceEvent: 'recall_request',
+      promoteAs: 'requirement',
+      tags: ['goal-pipeline', 'planner-empty'],
+    });
+    expect(closeout.capabilityDemands).toEqual([
+      expect.objectContaining({
+        summary: 'Planner produced no executable actions inside the current boundary.',
+        objective: 'stabilize shared tooling handoff',
+        missingCapability: 'executable plan inside current boundary',
+        missingSource: 'planner',
+        failedOrInsufficientRoute: 'planActions',
+        proposedOwner: 'gpt',
+        recallCondition: 'Planner produced no executable actions; GPT recall required',
+      }),
+    ]);
+  });
+
+  it('builds failed pipeline closeout with operator-owned capability demand when policy blocks a step', () => {
+    const closeout = buildWorkflowCloseoutArtifacts({
+      goal: 'repair the failed automation route',
+      guildId: 'guild-2',
+      finalStatus: 'failed',
+      sourceEvent: 'session_complete',
+      stepCount: 3,
+      replanned: true,
+      replanCount: 1,
+      failedSteps: [{
+        stepName: 'replan-step-1-web.search',
+        stepType: 'action',
+        ok: false,
+        output: [],
+        artifacts: ['docs/CHANGELOG-ARCH.md'],
+        durationMs: 120,
+        agentRole: 'review',
+        error: 'ACTION_NOT_ALLOWED',
+      }],
+    });
+
+    expect(closeout.decisionDistillate).toMatchObject({
+      summary: 'Pipeline failed after replanning and now needs GPT boundary review.',
+      nextAction: 'inspect the failed steps and revise the objective, policy boundary, or execution plan',
+      sourceEvent: 'session_complete',
+      promoteAs: 'development_slice',
+      tags: ['goal-pipeline', 'failed'],
+    });
+    expect(closeout.capabilityDemands).toEqual([
+      expect.objectContaining({
+        summary: 'Pipeline step replan-step-1-web.search was blocked by policy and needs a narrower route or approval.',
+        objective: 'repair the failed automation route',
+        missingCapability: 'ACTION_NOT_ALLOWED',
+        failedOrInsufficientRoute: 'replan-step-1-web.search',
+        proposedOwner: 'operator',
+        evidenceRefs: ['docs/CHANGELOG-ARCH.md'],
+        recallCondition: 'Pipeline failed after replanning; GPT recall required',
+        tags: ['goal-pipeline', 'failed', 'replanned'],
+      }),
     ]);
   });
 });

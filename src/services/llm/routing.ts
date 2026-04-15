@@ -85,18 +85,19 @@ export const parseProviderList = (raw: string): LlmProvider[] => {
 
 // ──── Provider Ordering ──────────────────────────────────────────────────────
 
-const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['litellm', 'openclaw', 'ollama', 'anthropic', 'openai', 'gemini', 'kimi', 'huggingface', 'openjarvis'];
-const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['litellm', 'openclaw', 'ollama', 'anthropic', 'openai', 'kimi', 'gemini', 'huggingface', 'openjarvis'];
-const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['ollama', 'litellm', 'openclaw', 'huggingface', 'openjarvis', 'kimi', 'gemini', 'anthropic', 'openai'];
-const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 'litellm', 'openclaw', 'kimi', 'gemini', 'openjarvis', 'huggingface', 'ollama'];
+// OpenJarvis is the preferred control surface when enabled; lower-level providers remain fallback engines.
+const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openjarvis', 'litellm', 'ollama', 'openclaw', 'anthropic', 'openai', 'gemini', 'kimi', 'huggingface'];
+const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openjarvis', 'litellm', 'ollama', 'openclaw', 'anthropic', 'openai', 'gemini', 'kimi', 'huggingface'];
+const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['openjarvis', 'ollama', 'litellm', 'huggingface', 'openclaw', 'kimi', 'gemini', 'anthropic', 'openai'];
+const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['openjarvis', 'anthropic', 'openai', 'litellm', 'gemini', 'kimi', 'ollama', 'huggingface', 'openclaw'];
 const CAPABILITY_PROVIDER_ORDER: Record<LlmRoutingCapability, readonly LlmProvider[]> = {
   general: DEFAULT_BASE_PROVIDER_ORDER,
-  'fast-chat': ['ollama', 'openclaw', 'litellm', 'huggingface', 'openjarvis', 'gemini', 'anthropic', 'openai', 'kimi'],
-  'deep-reasoning': ['anthropic', 'openai', 'openclaw', 'litellm', 'gemini', 'openjarvis', 'ollama', 'huggingface', 'kimi'],
-  code: ['ollama', 'openclaw', 'litellm', 'anthropic', 'openai', 'gemini', 'openjarvis', 'huggingface', 'kimi'],
-  memory: ['ollama', 'openclaw', 'litellm', 'huggingface', 'openjarvis', 'gemini', 'anthropic', 'openai', 'kimi'],
-  review: ['anthropic', 'openai', 'openclaw', 'litellm', 'gemini', 'ollama', 'openjarvis', 'huggingface', 'kimi'],
-  operations: ['openjarvis', 'ollama', 'openclaw', 'litellm', 'anthropic', 'openai', 'gemini', 'huggingface', 'kimi'],
+  'fast-chat': ['openjarvis', 'ollama', 'litellm', 'openclaw', 'huggingface', 'gemini', 'anthropic', 'openai', 'kimi'],
+  'deep-reasoning': ['openjarvis', 'anthropic', 'openai', 'litellm', 'gemini', 'ollama', 'huggingface', 'kimi', 'openclaw'],
+  code: ['openjarvis', 'ollama', 'litellm', 'anthropic', 'openai', 'gemini', 'huggingface', 'kimi', 'openclaw'],
+  memory: ['openjarvis', 'ollama', 'litellm', 'huggingface', 'gemini', 'anthropic', 'openai', 'kimi', 'openclaw'],
+  review: ['openjarvis', 'anthropic', 'openai', 'litellm', 'gemini', 'ollama', 'huggingface', 'kimi', 'openclaw'],
+  operations: ['openjarvis', 'ollama', 'litellm', 'anthropic', 'openai', 'gemini', 'huggingface', 'kimi', 'openclaw'],
 };
 const CAPABILITY_RULES: readonly CapabilityRule[] = [
   { pattern: 'chat.*', capability: 'fast-chat' },

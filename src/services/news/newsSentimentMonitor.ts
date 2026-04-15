@@ -6,7 +6,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
 import { fromTable } from '../infra/baseRepository';
 import { T_NEWS_SENTIMENT, T_SOURCES } from '../infra/tableRegistry';
 import { fetchNewsMonitorCandidatesByWorker } from './newsMonitorWorkerClient';
-import { delegateArticleContextFetch, delegateNewsSummarize, shouldDelegate } from '../automation/n8nDelegationService';
+import { delegateArticleContextFetch, delegateNewsSummarize, shouldDelegate, shouldSkipInlineFallback } from '../automation/n8nDelegationService';
 import { generateText, isAnyLlmConfigured } from '../llmClient';
 
 type NewsItem = {
@@ -164,13 +164,17 @@ const enforceTwoToThreeLines = (text: string): string => {
 };
 
 const loadArticleContext = async (link: string): Promise<{ title: string; description: string }> => {
+  const skipInlineFallback = shouldSkipInlineFallback('article-context-fetch');
+
   // n8n delegation: try delegating article context fetch
   if (shouldDelegate('article-context-fetch')) {
     const n8n = await delegateArticleContextFetch(link);
     if (n8n.delegated && n8n.ok && n8n.data) {
       return { title: String(n8n.data.title || '').slice(0, 300), description: String(n8n.data.description || '').slice(0, 1200) };
     }
-    // Fall through to inline on delegation failure
+    if (skipInlineFallback) {
+      return { title: '', description: '' };
+    }
   }
 
   try {
@@ -242,14 +246,18 @@ const appendSignatureHistory = (raw: string | null, signature: string): string =
 };
 
 const summarizeNewsInKorean = async (item: NewsItem): Promise<string> => {
+  const skipInlineFallback = shouldSkipInlineFallback('news-summarize');
+
   // n8n delegation: try summarization via n8n workflow
   if (shouldDelegate('news-summarize')) {
     const article = await loadArticleContext(item.link);
     const n8n = await delegateNewsSummarize(item.title, item.link, article.description);
-    if (n8n.delegated && n8n.ok && n8n.data?.summary) {
+    if (n8n.delegated && n8n.ok && n8n.data && typeof n8n.data.summary === 'string') {
       return enforceTwoToThreeLines(String(n8n.data.summary));
     }
-    // Fall through to inline on delegation failure
+    if (skipInlineFallback) {
+      return '';
+    }
   }
 
   if (!NEWS_KR_SUMMARY_ENABLED || !isAnyLlmConfigured()) {

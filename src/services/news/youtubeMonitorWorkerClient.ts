@@ -2,7 +2,7 @@ import { parseBooleanEnv, parseMinIntEnv, parseUrlEnv } from '../../utils/env';
 import { callMcpTool, parseMcpTextBlocks } from '../mcpWorkerClient';
 import { fetchWithTimeout } from '../../utils/network';
 import { scrapeLatestCommunityPostByUrl, scrapeLatestCommunityPostByInnerTube } from './youtubeCommunityScraper';
-import { delegateYoutubeCommunityScrape, delegateYoutubeFeedFetch, shouldDelegate } from '../automation/n8nDelegationService';
+import { delegateYoutubeCommunityScrape, delegateYoutubeFeedFetch, shouldDelegate, shouldSkipInlineFallback } from '../automation/n8nDelegationService';
 
 export type YouTubeMonitorMode = 'videos' | 'posts';
 
@@ -143,14 +143,15 @@ const fetchYouTubeLatestLocally = async (params: {
   mode: YouTubeMonitorMode;
   aggressiveProbe?: boolean;
 }): Promise<YouTubeMonitorLatestResult | null> => {
+  const delegatedChannelId = parseChannelId(params.sourceUrl) || null;
+
   // n8n delegation: try delegating feed/scrape to n8n
   if (params.mode === 'posts' && shouldDelegate('youtube-community-scrape')) {
     const n8n = await delegateYoutubeCommunityScrape(params.sourceUrl);
     if (n8n.delegated && n8n.ok && n8n.data) {
-      const channelId = parseChannelId(params.sourceUrl) || null;
       return {
         found: true,
-        channelId,
+        channelId: delegatedChannelId,
         entry: {
           id: String(n8n.data.id || ''),
           title: String(n8n.data.title || ''),
@@ -161,16 +162,21 @@ const fetchYouTubeLatestLocally = async (params: {
         },
       };
     }
+    if (shouldSkipInlineFallback('youtube-community-scrape')) {
+      return { found: false, channelId: delegatedChannelId };
+    }
   }
 
   if (params.mode === 'videos' && shouldDelegate('youtube-feed-fetch')) {
     const n8n = await delegateYoutubeFeedFetch(params.sourceUrl);
-    if (n8n.delegated && n8n.ok && n8n.data?.entries?.length) {
+    if (n8n.delegated && n8n.ok && n8n.data?.entries) {
       const entry = n8n.data.entries[0];
-      const channelId = parseChannelId(params.sourceUrl) || null;
+      if (!entry) {
+        return { found: false, channelId: delegatedChannelId };
+      }
       return {
         found: true,
-        channelId,
+        channelId: delegatedChannelId,
         entry: {
           id: String(entry.id || ''),
           title: String(entry.title || ''),
@@ -179,6 +185,9 @@ const fetchYouTubeLatestLocally = async (params: {
           author: String(entry.author || ''),
         },
       };
+    }
+    if (shouldSkipInlineFallback('youtube-feed-fetch')) {
+      return { found: false, channelId: delegatedChannelId };
     }
   }
 
