@@ -1,6 +1,6 @@
 # GCP Worker Cost/Health Report
 
-- checkedAt: 2026-04-15T14:05:46.842Z
+- checkedAt: 2026-04-15T19:43:11.559Z
 - period: weekly
 - ok: false
 - projectId: gen-lang-client-0405212361
