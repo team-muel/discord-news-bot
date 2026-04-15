@@ -1,17 +1,17 @@
 # GCP Worker Cost/Health Report
 
-- checkedAt: 2026-04-13T14:27:18.462Z
+- checkedAt: 2026-04-15T03:41:07.592Z
 - period: weekly
-- ok: true
+- ok: false
 - projectId: gen-lang-client-0405212361
 
 ## Worker
 
 - instance: instance-20260319-223412
 - zone: us-central1-c
-- status: RUNNING
-- machineType: e2-medium
-- bootDiskGb: 30
+- status: unknown
+- machineType: unknown
+- bootDiskGb: unknown
 
 ## Endpoint
 
@@ -32,37 +32,49 @@
 ## Static IP
 
 - addressName: opencode-worker-ip
-- address: 34.56.232.61
-- status: IN_USE
+- address: unknown
+- status: unknown
 
 ## Budget
 
-- billingAccount: 0128DB-0D1E45-996490
-- foundDisplayName: muel-worker-monthly-budget
+- billingAccount: unknown
+- foundDisplayName: not-found
 - expectedDisplayName: muel-worker-monthly-budget
 
 ## GCP-Native Hardening
 
 - ingressMode: temporary-sslip
 - customDomainConfigured: false
-- automaticRestart: false
+- automaticRestart: unknown
 - osLoginEnabled: unknown
-- shieldedVm: secureBoot=false vTpm=true integrityMonitoring=true
-- bootDiskSnapshotPolicies: default-schedule-1
-- serviceAccount: `354791569888-compute@developer.gserviceaccount.com` dedicated=false cloudPlatformScope=false
+- shieldedVm: secureBoot=unknown vTpm=unknown integrityMonitoring=unknown
+- bootDiskSnapshotPolicies: none
+- serviceAccount: unknown dedicated=unknown cloudPlatformScope=unknown
+
+## Failures
+
+- Failed to read worker instance metadata: ERROR: (gcloud.compute.instances.describe) You do not currently have an active account selected.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
 
 ## Warnings
 
 - Worker ingress still uses sslip.io; move to a custom domain before broader rollout.
-- Compute Engine automaticRestart is disabled; unexpected maintenance can leave the worker offline.
-- OS Login is not explicitly enabled for the worker; prefer IAM-backed SSH over per-box account drift.
-- Shielded VM protections are not fully enabled; review secure boot, vTPM, and integrity monitoring.
-- Worker still uses the default Compute Engine service account; switch to a dedicated least-privilege service account.
-- Static external IP is IN_USE; this improves stability but may incur small recurring cost.
+- Unable to inspect static IP status: ERROR: (gcloud.compute.addresses.list) You do not currently have an active account selected. | Please run:
+- Unable to list billing accounts: ERROR: (gcloud.billing.accounts.list) You do not currently have an active account selected. | Please run:
 
 ## Notes
 
-- Baseline manifest: C:\Muel_S\discord-news-bot\config\runtime\operating-baseline.json
+- Baseline manifest: /home/runner/work/discord-news-bot/discord-news-bot/config/runtime/operating-baseline.json
 - If static IP is kept for endpoint stability, expect small recurring IP cost.
 - Worker baseline is e2-medium (4GB). Keep disk around 30GB where possible.
 - Treat custom domain, snapshot schedule, OS Login, Shielded VM, and least-privilege service accounts as the current GCP hardening backlog on this worker lane.
