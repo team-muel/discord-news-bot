@@ -1,18 +1,18 @@
 # Dependency Graph
 
 - Entrypoints: server.ts, bot.ts, src/app.ts, src/bot.ts, src/services/multiAgentService.ts
-- Nodes: 425
+- Nodes: 429
 
 ## Top Fan-In (Most Imported Modules)
 
 | Module | Inbound Imports |
 | --- | --- |
-| src/utils/errorMessage.ts | 151 |
-| src/logger.ts | 144 |
+| src/utils/errorMessage.ts | 153 |
+| src/logger.ts | 146 |
 | src/utils/env.ts | 108 |
+| src/config.ts | 94 |
 | src/services/supabaseClient.ts | 94 |
-| src/config.ts | 92 |
-| src/services/llmClient.ts | 44 |
+| src/services/llmClient.ts | 45 |
 | src/services/skills/actions/types.ts | 44 |
 | src/services/infra/tableRegistry.ts | 26 |
 | src/services/infra/baseRepository.ts | 25 |
@@ -58,6 +58,7 @@ graph LR
   "server.ts" --> "src/config.ts"
   "server.ts" --> "src/discord/auth.ts"
   "server.ts" --> "src/discord/runtime/botRuntimeState.ts"
+  "server.ts" --> "src/discord/runtime/chatSdkRuntime.ts"
   "server.ts" --> "src/init.ts"
   "server.ts" --> "src/logger.ts"
   "server.ts" --> "src/services/agent/agentOpsService.ts"
@@ -142,6 +143,7 @@ graph LR
   "src/discord/commands/crm.ts" --> "src/services/userLearningPrefsService.ts"
   "src/discord/commands/docs.ts" --> "src/discord/auth.ts"
   "src/discord/commands/docs.ts" --> "src/discord/messages.ts"
+  "src/discord/commands/docs.ts" --> "src/discord/runtime/discordIngressAdapter.ts"
   "src/discord/commands/docs.ts" --> "src/discord/runtimePolicy.ts"
   "src/discord/commands/docs.ts" --> "src/discord/session.ts"
   "src/discord/commands/docs.ts" --> "src/discord/ui.ts"
@@ -174,6 +176,8 @@ graph LR
   "src/discord/commands/vibe.ts" --> "src/config.ts"
   "src/discord/commands/vibe.ts" --> "src/discord/auth.ts"
   "src/discord/commands/vibe.ts" --> "src/discord/messages.ts"
+  "src/discord/commands/vibe.ts" --> "src/discord/runtime/chatSdkRuntime.ts"
+  "src/discord/commands/vibe.ts" --> "src/discord/runtime/discordIngressAdapter.ts"
   "src/discord/commands/vibe.ts" --> "src/discord/runtimePolicy.ts"
   "src/discord/commands/vibe.ts" --> "src/discord/session.ts"
   "src/discord/commands/vibe.ts" --> "src/discord/ui.ts"
@@ -206,10 +210,14 @@ graph LR
   "src/discord/runtime/buttonInteractions.ts" --> "src/services/workerGeneration/workerSandbox.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/utils/codeThread.ts"
   "src/discord/runtime/buttonInteractions.ts" --> "src/utils/sessionArtifactStore.ts"
+  "src/discord/runtime/chatSdkRuntime.ts" --> "config/runtime/discordCommandCatalog.js"
+  "src/discord/runtime/chatSdkRuntime.ts" --> "src/config.ts"
+  "src/discord/runtime/chatSdkRuntime.ts" --> "src/discord/runtime/discordIngressAdapter.ts"
+  "src/discord/runtime/chatSdkRuntime.ts" --> "src/logger.ts"
+  "src/discord/runtime/chatSdkRuntime.ts" --> "src/utils/errorMessage.ts"
   "src/discord/runtime/commandRouter.ts" --> "config/runtime/discordCommandCatalog.js"
   "src/discord/runtime/commandRouter.ts" --> "src/config.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/auth.ts"
-  "src/discord/runtime/commandRouter.ts" --> "src/discord/commandDefinitions.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/commands/admin.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/commands/agent.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/commands/crm.ts"
@@ -222,10 +230,13 @@ graph LR
   "src/discord/runtime/commandRouter.ts" --> "src/discord/messages.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/botRuntimeState.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/buttonInteractions.ts"
+  "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/chatSdkRuntime.ts"
+  "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/discordIngressAdapter.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/guildLifecycle.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/passiveMemoryCapture.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/readyWorkloads.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/runtime/startupTasks.ts"
+  "src/discord/runtime/commandRouter.ts" --> "src/discord/runtimePolicy.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/session.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/discord/ui.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/logger.ts"
@@ -238,14 +249,23 @@ graph LR
   "src/discord/runtime/commandRouter.ts" --> "src/services/obsidian/obsidianRagService.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/services/obsidian/router.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/services/openclaw/gatewayHealth.ts"
-  "src/discord/runtime/commandRouter.ts" --> "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/services/sprint/sprintTriggers.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/services/workerGeneration/autoWorkerProposal.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/services/workerGeneration/backgroundProposalSweep.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/services/workerGeneration/dynamicWorkerRegistry.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/utils/codeThread.ts"
-  "src/discord/runtime/commandRouter.ts" --> "src/utils/discordChannelMeta.ts"
   "src/discord/runtime/commandRouter.ts" --> "src/utils/sessionArtifactStore.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/config.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/discord/runtime/discordIngressCutover.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/discord/runtimePolicy.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/logger.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/services/llmClient.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/services/openclaw/gatewayHealth.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/services/openjarvis/openjarvisHermesRuntimeControlService.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/utils/atomicWrite.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/utils/discordChannelMeta.ts"
+  "src/discord/runtime/discordIngressAdapter.ts" --> "src/utils/errorMessage.ts"
+  "src/discord/runtime/discordIngressCutover.ts" --> "src/utils/atomicWrite.ts"
   "src/discord/runtime/gatewayPreflight.ts" --> "src/utils/errorMessage.ts"
   "src/discord/runtime/gatewayPreflight.ts" --> "src/utils/network.ts"
   "src/discord/runtime/guildLifecycle.ts" --> "src/logger.ts"
@@ -551,10 +571,12 @@ graph LR
   "src/routes/health.ts" --> "src/services/automationBot.ts"
   "src/routes/health.ts" --> "src/services/runtime/bootstrapServerInfra.ts"
   "src/routes/health.ts" --> "src/services/runtime/runtimeBootstrap.ts"
+  "src/routes/health.ts" --> "src/services/runtime/runtimeSchedulerPolicyService.ts"
   "src/routes/health.ts" --> "src/services/tools/externalAdapterRegistry.ts"
   "src/routes/health.ts" --> "src/utils/migrationRegistry.ts"
   "src/routes/health.ts" --> "src/utils/obsidianEnv.ts"
   "src/routes/internal.ts" --> "src/config.ts"
+  "src/routes/internal.ts" --> "src/discord/runtime/discordIngressAdapter.ts"
   "src/routes/internal.ts" --> "src/services/agent/agentSloService.ts"
   "src/routes/internal.ts" --> "src/services/eval/evalMaintenanceControlService.ts"
   "src/routes/internal.ts" --> "src/services/infra/tableRegistry.ts"
@@ -1959,6 +1981,8 @@ graph LR
   "src/services/superAgentService.ts" --> "src/services/multiAgentService.ts"
   "src/services/superAgentService.ts" --> "src/services/skills/actionGovernanceStore.ts"
   "src/services/superAgentService.ts" --> "src/services/skills/registry.ts"
+  "src/services/superAgentService.ts" --> "src/services/superAgentServiceCatalog.ts"
+  "src/services/superAgentServiceCatalog.ts":::file
   "src/services/taskRoutingAnalyticsService.ts" --> "src/services/supabaseClient.ts"
   "src/services/taskRoutingAnalyticsService.ts" --> "src/services/taskRoutingService.ts"
   "src/services/taskRoutingMetricsService.ts" --> "src/logger.ts"
