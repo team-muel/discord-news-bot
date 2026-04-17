@@ -3,6 +3,7 @@ import { parseBooleanEnv, parseBoundedNumberEnv, parseMinIntEnv, parseStringEnv 
 import { runWithConcurrency } from '../../utils/async';
 import { buildAgentRuntimeReadinessReport } from './agentRuntimeReadinessService';
 import { buildGoNoGoReport } from '../goNoGoService';
+import { setGateProviderProfileOverride } from '../llmClient';
 import { summarizeOpencodeQueueReadiness } from '../opencode/opencodeGitHubQueueService';
 import { getMemoryQueueHealthSnapshot } from '../memory/memoryJobRunner';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabaseClient';
@@ -505,6 +506,10 @@ export const evaluateGuildSloReport = async (params: { guildId: string }) => {
 
   const policy = await getGuildPolicy(guildId);
   const checks = await buildChecks(guildId, policy);
+  const latencyCheck = checks.find((item) => item.layer === 'intelligence' && item.key === 'llm_p95_latency_ms');
+  if (latencyCheck?.status === 'fail') {
+    setGateProviderProfileOverride('cost-optimized', guildId);
+  }
 
   const failed = checks.filter((item) => item.status === 'fail');
   const warned = checks.filter((item) => item.status === 'warn');

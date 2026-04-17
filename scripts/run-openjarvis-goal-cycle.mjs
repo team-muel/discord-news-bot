@@ -31,15 +31,26 @@ const HERMES_RUNTIME_CONTROL_SCRIPT = path.join(ROOT, 'scripts', 'run-openjarvis
 const DEFAULT_HANDOFF_PACKET_PATH = process.env.HERMES_AUTOPILOT_HANDOFF_PACKET_PATH || 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md';
 const DEFAULT_PROGRESS_PACKET_PATH = process.env.HERMES_AUTOPILOT_PROGRESS_PACKET_PATH || 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md';
 const DEFAULT_RUNTIME_LANE = process.env.OPENJARVIS_RUNTIME_LANE || 'operator-personal';
+const REENTRY_ACK_STALE_WARNING_MS = 15 * 60 * 1000;
+const EXECUTION_BOARD_FOCUS_SECTION = 'Autonomous Focus (Single Objective Override)';
+const EXECUTION_BOARD_ACTIVE_SECTION = 'Active Now (WIP <= 3)';
 const EXECUTION_BOARD_QUEUED_SECTION = 'Queued Now (Approved, Not In Active WIP)';
 const AUTONOMOUS_GOAL_REJECT_PATTERNS = [
   /^continue the current workflow/i,
   /^keep workflow session/i,
+  /^keep launch manifest\/log/i,
   /^refresh the active continuity packet/i,
+  /^refresh the active progress packet/i,
   /^refresh workstream state/i,
   /^restart the next bounded automation cycle/i,
   /^wait for the next gpt objective/i,
   /^promote durable operator-visible outcomes/i,
+  /^start from the deterministic api path first/i,
+  /^start from deterministic route surfaces/i,
+  /^only escalate into fallback surfaces/i,
+  /^reuse the canonical handoff example/i,
+  /^stop and recall gpt when this route crosses the boundary/i,
+  /^persist route decisions, artifact refs, and compact distillates/i,
 ];
 const AUTONOMOUS_GOAL_LEADING_VERBS = new Set([
   'stabilize',
@@ -94,6 +105,182 @@ const uniqueCompactStrings = (values) => {
   return result;
 };
 
+const looksLikeArtifactPath = (value) => {
+  const normalized = compact(value).replace(/\\/g, '/');
+  if (!normalized || /\r|\n/.test(normalized) || /^https?:\/\//i.test(normalized)) {
+    return false;
+  }
+  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('/') || normalized.startsWith('./') || normalized.startsWith('../')) {
+    return true;
+  }
+
+  return /^(src|docs|plans|ops|guilds|chat|retros|tmp|config|scripts)\/.+/.test(normalized)
+    || /^[^\s]+\/(?:[^\s].*)\.[A-Za-z0-9]{1,10}$/.test(normalized);
+};
+
+const inferArtifactRefKind = (locator) => {
+  const normalized = compact(locator).replace(/\\/g, '/').toLowerCase();
+  if (/^https?:\/\//.test(normalized)) {
+    return 'url';
+  }
+  if (normalized.startsWith('workflow session:') || normalized.startsWith('supabase:') || normalized.startsWith('local-file:')) {
+    return 'workflow-session';
+  }
+  if (normalized.endsWith('.log') || /(^|\/)(logs?|tmp)\//.test(normalized)) {
+    return 'log';
+  }
+  if (normalized.endsWith('.md') && (/^\/vault\//.test(normalized) || /^(chat|guilds|ops|plans|retros)\//.test(normalized))) {
+    return 'vault-note';
+  }
+  if (/^[0-9a-f]{7,40}$/i.test(normalized) || normalized.startsWith('branch:')) {
+    return 'git-ref';
+  }
+  if (looksLikeArtifactPath(normalized)) {
+    return 'repo-file';
+  }
+  return 'other';
+};
+
+const resolveArtifactRefKind = ({ locator, refKind } = {}) => {
+  return compact(refKind).toLowerCase() || inferArtifactRefKind(locator);
+};
+
+const normalizeArtifactPlane = (value) => {
+  const plane = compact(value).toLowerCase();
+  if (!plane) {
+    return null;
+  }
+
+  return ['github', 'obsidian', 'hot-state', 'external', 'other'].includes(plane)
+    ? plane
+    : 'other';
+};
+
+const normalizeGithubSettlementKind = (value) => {
+  const settlementKind = compact(value).toLowerCase();
+  if (!settlementKind) {
+    return null;
+  }
+
+  return ['repo-file', 'branch', 'commit', 'pull-request', 'issue', 'ci-run', 'review', 'release', 'other'].includes(settlementKind)
+    ? settlementKind
+    : 'other';
+};
+
+const inferArtifactPlane = ({ locator, refKind, artifactPlane } = {}) => {
+  const explicitPlane = normalizeArtifactPlane(artifactPlane);
+  if (explicitPlane) {
+    return explicitPlane;
+  }
+
+  const normalizedLocator = compact(locator).replace(/\\/g, '/').toLowerCase();
+  const normalizedRefKind = resolveArtifactRefKind({ locator, refKind });
+
+  if (normalizedRefKind === 'repo-file' || normalizedRefKind === 'git-ref') {
+    return 'github';
+  }
+  if (normalizedRefKind === 'vault-note') {
+    return 'obsidian';
+  }
+  if (normalizedRefKind === 'workflow-session' || normalizedRefKind === 'log') {
+    return 'hot-state';
+  }
+  if (normalizedRefKind === 'url') {
+    return /^https?:\/\/(www\.)?(github\.com|raw\.githubusercontent\.com)\//.test(normalizedLocator)
+      ? 'github'
+      : 'external';
+  }
+
+  return normalizedLocator ? 'other' : null;
+};
+
+const inferGithubSettlementKind = ({ locator, refKind, artifactPlane, githubSettlementKind } = {}) => {
+  const explicitSettlementKind = normalizeGithubSettlementKind(githubSettlementKind);
+  if (explicitSettlementKind) {
+    return explicitSettlementKind;
+  }
+
+  const resolvedArtifactPlane = inferArtifactPlane({ locator, refKind, artifactPlane });
+  if (resolvedArtifactPlane !== 'github') {
+    return null;
+  }
+
+  const normalizedLocator = compact(locator).replace(/\\/g, '/').toLowerCase();
+  const normalizedRefKind = resolveArtifactRefKind({ locator, refKind });
+
+  if (normalizedRefKind === 'repo-file') {
+    return 'repo-file';
+  }
+  if (normalizedRefKind === 'git-ref') {
+    if (normalizedLocator.startsWith('branch:')) {
+      return 'branch';
+    }
+    if (/^[0-9a-f]{7,40}$/i.test(normalizedLocator)) {
+      return 'commit';
+    }
+    return 'other';
+  }
+  if (normalizedRefKind === 'url') {
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(normalizedLocator)) {
+      return normalizedLocator.includes('pullrequestreview') ? 'review' : 'pull-request';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/issues\/\d+/.test(normalizedLocator)) {
+      return 'issue';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+/.test(normalizedLocator)) {
+      return 'ci-run';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/(commit|commits)\/[0-9a-f]{7,40}/.test(normalizedLocator)) {
+      return 'commit';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/tree\/[^/?#]+/.test(normalizedLocator)) {
+      return 'branch';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/releases\/tag\/[^/?#]+/.test(normalizedLocator)) {
+      return 'release';
+    }
+    if (/^https?:\/\/(www\.)?(github\.com\/[^/]+\/[^/]+\/blob\/|raw\.githubusercontent\.com\/[^/]+\/[^/]+\/)/.test(normalizedLocator)) {
+      return 'repo-file';
+    }
+  }
+
+  return 'other';
+};
+
+const buildArtifactRefSummary = ({
+  entry,
+  createdAt = null,
+  runtimeLane = null,
+  sourceStepName = null,
+  sourceEvent = null,
+} = {}) => {
+  if (!isRecord(entry) || !compact(entry.locator)) {
+    return null;
+  }
+
+  const locator = compact(entry.locator);
+  return {
+    createdAt: toNullableString(createdAt),
+    locator,
+    refKind: toNullableString(entry.ref_kind ?? entry.refKind) || inferArtifactRefKind(locator),
+    title: toNullableString(entry.title),
+    artifactPlane: inferArtifactPlane({
+      locator,
+      refKind: entry.ref_kind ?? entry.refKind,
+      artifactPlane: entry.artifact_plane ?? entry.artifactPlane,
+    }),
+    githubSettlementKind: inferGithubSettlementKind({
+      locator,
+      refKind: entry.ref_kind ?? entry.refKind,
+      artifactPlane: entry.artifact_plane ?? entry.artifactPlane,
+      githubSettlementKind: entry.github_settlement_kind ?? entry.githubSettlementKind,
+    }),
+    runtimeLane: toNullableString(entry.runtime_lane) || runtimeLane,
+    sourceStepName: toNullableString(entry.source_step_name ?? entry.sourceStepName) || sourceStepName,
+    sourceEvent: toNullableString(entry.source_event ?? entry.sourceEvent) || sourceEvent,
+  };
+};
+
 export const normalizeLoopLimit = (value, fallback) => {
   const raw = String(value ?? '').trim();
   if (!raw) {
@@ -121,6 +308,77 @@ export const resolveGoalCycleRouteMode = (routeMode, gcpCapacityRecoveryRequeste
 };
 
 const serializeLoopLimit = (value) => (Number.isFinite(value) ? value : null);
+
+const parseTimestampMs = (value) => {
+  const normalized = compact(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const resolveAwaitingReentryAcknowledgmentState = (supervisor = {}) => {
+  const awaiting = supervisor?.awaiting_reentry_acknowledgment === true;
+  if (!awaiting) {
+    return {
+      awaiting: false,
+      startedAt: null,
+      ageMs: null,
+      stale: false,
+    };
+  }
+
+  const startedAt = toNullableString(
+    supervisor?.awaiting_reentry_acknowledgment_started_at
+    || supervisor?.last_launch?.launched_at
+    || supervisor?.stopped_at
+    || supervisor?.started_at,
+  );
+  const startedAtMs = parseTimestampMs(startedAt);
+  const ageMs = Number.isFinite(startedAtMs) ? Math.max(0, Date.now() - startedAtMs) : null;
+
+  return {
+    awaiting: true,
+    startedAt,
+    ageMs: Number.isFinite(ageMs) ? ageMs : null,
+    stale: Number.isFinite(ageMs) && ageMs >= REENTRY_ACK_STALE_WARNING_MS,
+  };
+};
+
+const QUEUED_REENTRY_ACK_RESUME_ACTION = 'Acknowledge the queued GPT turn with the reentry-ack command before allowing the queue-aware supervisor to relaunch.';
+
+const applyQueuedReentryResumeOverride = ({ resumeState, latestLoop, awaitingReentryAcknowledgment }) => {
+  if (!awaitingReentryAcknowledgment || !isRecord(resumeState)) {
+    return resumeState;
+  }
+
+  const queuedReentryObjective = toNullableString(latestLoop?.last_launch?.objective)
+    || toNullableString(resumeState.queued_reentry_objective)
+    || toNullableString(resumeState.objective);
+  const nextAction = compact(resumeState.next_action).toLowerCase().includes('reentry-ack')
+    ? toNullableString(resumeState.next_action)
+    : QUEUED_REENTRY_ACK_RESUME_ACTION;
+  const fingerprint = [
+    queuedReentryObjective || '',
+    nextAction || '',
+    toNullableString(resumeState.escalation_status) || '',
+    toNullableString(resumeState.owner) || '',
+    toNullableString(resumeState.mode) || '',
+    ...toStringArray(resumeState.safe_queue),
+  ].join('|');
+
+  return {
+    ...resumeState,
+    objective: queuedReentryObjective,
+    queued_reentry_objective: queuedReentryObjective,
+    next_action: nextAction,
+    resumable: false,
+    reason: 'packet_awaiting_reentry_ack',
+    fingerprint: fingerprint || null,
+  };
+};
 
 const buildSessionOpenOrchestrationGuidance = ({ routing, recall, result }) => {
   const recommendedMode = compact(routing?.recommended_mode).toLowerCase();
@@ -227,6 +485,7 @@ const inferCapabilityDemandOwner = ({ blocker, cheapestEnablementPath, recall, r
 
 const buildSessionOpenCapabilityDemands = ({
   workflow,
+  resumeState,
   routing,
   hermesRuntime,
   recall,
@@ -234,9 +493,16 @@ const buildSessionOpenCapabilityDemands = ({
   evidenceRefs,
   autonomousGoalCandidates,
 }) => {
-  const objective = toNullableString(autonomousGoalCandidates[0]?.objective) || toNullableString(workflow.objective);
+  const objective = toEffectiveAutonomousObjective(autonomousGoalCandidates[0]?.objective)
+    || resolveEffectiveWorkflowObjective({
+      workflowObjective: workflow.objective,
+      resumeState,
+      autonomousGoalCandidates,
+    });
   const blockers = toStringArray(hermesRuntime?.blockers);
   const nextActions = toStringArray(hermesRuntime?.next_actions);
+  const staleReentryAcknowledgment = hermesRuntime?.awaiting_reentry_acknowledgment_stale === true;
+  const reentryAcknowledgmentStartedAt = toNullableString(hermesRuntime?.awaiting_reentry_acknowledgment_started_at);
   const remediationActions = Array.isArray(hermesRuntime?.remediation_actions)
     ? hermesRuntime.remediation_actions.filter((entry) => isRecord(entry))
     : [];
@@ -250,7 +516,27 @@ const buildSessionOpenCapabilityDemands = ({
   const evidenceLocators = evidenceRefs.map((entry) => compact(entry.locator)).filter(Boolean).slice(0, 4);
   const demands = [];
 
-  if (blockers[0]) {
+  if (staleReentryAcknowledgment) {
+    demands.push({
+      summary: 'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment and is blocking the next autonomous cycle.',
+      objective,
+      missing_capability: 'stale_reentry_acknowledgment',
+      missing_source: reentryAcknowledgmentStartedAt ? `waiting-since:${reentryAcknowledgmentStartedAt}` : 'queued_chat_launched',
+      failed_or_insufficient_route: 'queued_chat_launched -> reentry_acknowledged',
+      cheapest_enablement_path: uniqueCompactStrings([
+        nextActions[0],
+        toNullableString(remediationActions[0]?.command_preview),
+        toNullableString(remediationActions[0]?.label),
+      ])[0] || null,
+      proposed_owner: 'hermes',
+      evidence_refs: evidenceLocators,
+      recall_condition: reentryAcknowledgmentStartedAt
+        ? `awaiting-reentry-ack:${reentryAcknowledgmentStartedAt}`
+        : 'awaiting-reentry-ack',
+    });
+  }
+
+  if (blockers[0] && !staleReentryAcknowledgment) {
     const cheapestEnablementPath = uniqueCompactStrings([
       toNullableString(remediationActions[0]?.command_preview),
       toNullableString(remediationActions[0]?.label),
@@ -365,6 +651,11 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
   const resumable = Boolean(resumeState?.resumable);
   const queueEnabled = Boolean(supervisor?.auto_select_queued_objective);
   const supervisorAlive = supervisor?.supervisor_alive === true;
+  const reentryAcknowledgmentState = resolveAwaitingReentryAcknowledgmentState(supervisor);
+  const awaitingReentryAcknowledgment = reentryAcknowledgmentState.awaiting;
+  const awaitingReentryAcknowledgmentStartedAt = reentryAcknowledgmentState.startedAt;
+  const awaitingReentryAcknowledgmentAgeMs = reentryAcknowledgmentState.ageMs;
+  const awaitingReentryAcknowledgmentStale = reentryAcknowledgmentState.stale;
   const hasHotState = ['supabase', 'local-file'].includes(compact(workflow?.source).toLowerCase());
   const localOperatorSurface = uniqueCompactStrings([
     ...toStringArray(routing?.primary_surfaces),
@@ -372,7 +663,7 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
   ]).includes('hermes-local-operator');
   const ideHandoffObserved = Boolean(vscodeCli?.last_auto_open);
   const queuedObjectivesAvailable = Array.isArray(autonomousGoalCandidates) && autonomousGoalCandidates.length > 0;
-  const canContinueWithoutGptSession = autoRestartOnRelease && resumable;
+  const canContinueWithoutGptSession = autoRestartOnRelease && (resumable || awaitingReentryAcknowledgment);
 
   let currentRole = 'helper-only';
   let readiness = 'not-ready';
@@ -398,6 +689,9 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
     supervisorAlive
       ? 'A live supervisor is currently holding the local continuity loop open.'
       : null,
+    awaitingReentryAcknowledgment
+      ? 'The last queue-aware VS Code handoff is still waiting for an explicit GPT reentry acknowledgment.'
+      : null,
     localOperatorSurface
       ? 'The active route already recognizes Hermes as a local operator fallback surface.'
       : null,
@@ -407,6 +701,9 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
   ]).slice(0, 6);
 
   const blockers = uniqueCompactStrings([
+    awaitingReentryAcknowledgmentStale
+      ? 'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment, so the autonomy loop is paused on a stale boundary.'
+      : null,
     canContinueWithoutGptSession
       ? null
       : 'Release-to-resume continuity is not fully enabled, so Hermes still behaves like a helper after GPT exits.',
@@ -416,7 +713,7 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
     queueEnabled
       ? null
       : 'Queued objective promotion is disabled, so Hermes cannot autonomously pick the next approved task.',
-    supervisorAlive
+    (supervisorAlive || awaitingReentryAcknowledgment)
       ? null
       : 'No live supervisor is holding the local continuity loop open right now.',
     localOperatorSurface
@@ -431,6 +728,9 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
   ]).slice(0, 6);
 
   const nextActions = uniqueCompactStrings([
+    awaitingReentryAcknowledgmentStale
+      ? 'Inspect the pending queued VS Code chat turn and run the reentry-ack command; the wait boundary has gone stale and Hermes will stay paused until it is closed out.'
+      : null,
     canContinueWithoutGptSession
       ? null
       : 'Mark the workstream as resumable release-to-restart automation only for bounded safe objectives.',
@@ -440,7 +740,10 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
     queueEnabled
       ? null
       : 'Enable auto-select queued objective on the supervisor loop for approved next-task promotion.',
-    supervisorAlive
+    awaitingReentryAcknowledgment
+      ? 'Acknowledge the queued GPT turn with the reentry-ack command before allowing the queue-aware supervisor to relaunch.'
+      : null,
+    (supervisorAlive || awaitingReentryAcknowledgment)
       ? null
       : 'Run the continuous goal-cycle supervisor so Hermes remains attached after release instead of stopping at the last bounded cycle.',
     localOperatorSurface
@@ -457,7 +760,7 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
   const runtimeLane = compact(workflow?.runtime_lane) || compact(resumeState?.runtime_lane) || DEFAULT_RUNTIME_LANE;
   const progressPacket = toNullableString(resumeState?.progress_packet_relative_path);
 
-  if (!supervisorAlive) {
+  if (!supervisorAlive && !awaitingReentryAcknowledgment) {
     remediationActions.push({
       action_id: 'start-supervisor-loop',
       label: 'Start Hermes queue supervisor',
@@ -478,7 +781,7 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
     });
   }
 
-  if (!ideHandoffObserved && progressPacket) {
+  if ((!ideHandoffObserved || awaitingReentryAcknowledgmentStale) && progressPacket) {
     remediationActions.push({
       action_id: 'open-progress-packet',
       label: 'Open the active progress packet in VS Code',
@@ -525,6 +828,10 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
     can_continue_without_gpt_session: canContinueWithoutGptSession,
     queue_enabled: queueEnabled,
     supervisor_alive: supervisorAlive,
+    awaiting_reentry_acknowledgment: awaitingReentryAcknowledgment,
+    awaiting_reentry_acknowledgment_started_at: awaitingReentryAcknowledgmentStartedAt,
+    awaiting_reentry_acknowledgment_age_ms: awaitingReentryAcknowledgmentAgeMs,
+    awaiting_reentry_acknowledgment_stale: awaitingReentryAcknowledgmentStale,
     has_hot_state: hasHotState,
     local_operator_surface: localOperatorSurface,
     ide_handoff_observed: ideHandoffObserved,
@@ -696,6 +1003,28 @@ const normalizeAutonomousGoalObjective = (value) => {
   return normalized || null;
 };
 
+const AUTONOMOUS_OBJECTIVE_PLACEHOLDERS = new Set([
+  'none',
+  'autopilot continuity session',
+]);
+
+const toEffectiveAutonomousObjective = (value) => {
+  const normalized = normalizeAutonomousGoalObjective(value);
+  if (!normalized) {
+    return null;
+  }
+  return AUTONOMOUS_OBJECTIVE_PLACEHOLDERS.has(normalized.toLowerCase()) ? null : normalized;
+};
+
+const resolveEffectiveWorkflowObjective = ({
+  workflowObjective = null,
+  resumeState = null,
+  autonomousGoalCandidates = [],
+} = {}) => toEffectiveAutonomousObjective(workflowObjective)
+  || toEffectiveAutonomousObjective(resumeState?.objective)
+  || toEffectiveAutonomousObjective(autonomousGoalCandidates[0]?.objective)
+  || null;
+
 const buildAutonomousGoalDedupeKeys = (value) => {
   const normalized = normalizeAutonomousGoalObjective(value);
   if (!normalized) {
@@ -744,18 +1073,18 @@ const buildAutonomousGoalCandidate = (objective, extras = {}) => {
   };
 };
 
-/**
- * @param {string} [executionBoardPath]
- * @returns {Array<{ objective: string; source: string; milestone: string | null; source_path: string | null; fingerprint: string }>}
- */
-export const readExecutionBoardQueuedObjectives = (executionBoardPath = EXECUTION_BOARD_PATH) => {
+const readExecutionBoardObjectives = ({
+  executionBoardPath = EXECUTION_BOARD_PATH,
+  sectionHeading,
+  source,
+} = {}) => {
   const markdown = readTextFile(executionBoardPath);
   if (!markdown) {
     return [];
   }
 
   const sourcePath = path.relative(ROOT, executionBoardPath).replace(/\\/g, '/');
-  return extractNumberedLines(markdown, EXECUTION_BOARD_QUEUED_SECTION)
+  return extractNumberedLines(markdown, sectionHeading)
     .flatMap((line) => {
       const objective = normalizeAutonomousGoalObjective(line);
       if (!isAutonomousGoalCandidate(objective)) {
@@ -763,14 +1092,40 @@ export const readExecutionBoardQueuedObjectives = (executionBoardPath = EXECUTIO
       }
       const milestone = extractMilestoneId(line);
       const candidate = buildAutonomousGoalCandidate(objective, {
-        source: 'execution-board-queued',
+        source,
         milestone,
         source_path: sourcePath,
-        fingerprint: `execution-board:${milestone || 'queued'}:${String(objective).toLowerCase()}`,
+        fingerprint: `execution-board:${source}:${milestone || 'none'}:${String(objective).toLowerCase()}`,
       });
       return candidate ? [candidate] : [];
     });
 };
+
+export const readExecutionBoardActiveObjectives = (executionBoardPath = EXECUTION_BOARD_PATH) => readExecutionBoardObjectives({
+  executionBoardPath,
+  sectionHeading: EXECUTION_BOARD_ACTIVE_SECTION,
+  source: 'execution-board-active',
+});
+
+/**
+ * @param {string} [executionBoardPath]
+ * @returns {Array<{ objective: string; source: string; milestone: string | null; source_path: string | null; fingerprint: string }>}
+ */
+export const readExecutionBoardFocusedObjectives = (executionBoardPath = EXECUTION_BOARD_PATH) => readExecutionBoardObjectives({
+  executionBoardPath,
+  sectionHeading: EXECUTION_BOARD_FOCUS_SECTION,
+  source: 'execution-board-focus',
+});
+
+/**
+ * @param {string} [executionBoardPath]
+ * @returns {Array<{ objective: string; source: string; milestone: string | null; source_path: string | null; fingerprint: string }>}
+ */
+export const readExecutionBoardQueuedObjectives = (executionBoardPath = EXECUTION_BOARD_PATH) => readExecutionBoardObjectives({
+  executionBoardPath,
+  sectionHeading: EXECUTION_BOARD_QUEUED_SECTION,
+  source: 'execution-board-queued',
+});
 
 /**
  * @param {{
@@ -788,6 +1143,7 @@ export const buildAutonomousGoalCandidates = ({
   const normalizedCurrentObjective = normalizeAutonomousGoalObjective(currentObjective || resumeState?.objective);
   const seen = new Set();
   const candidates = [];
+  const focusedObjectives = readExecutionBoardFocusedObjectives(executionBoardPath);
 
   const pushCandidate = (candidate) => {
     if (!candidate || !candidate.objective) {
@@ -803,6 +1159,17 @@ export const buildAutonomousGoalCandidates = ({
     candidates.push(candidate);
   };
 
+  for (const candidate of focusedObjectives) {
+    if (!isAutonomousGoalCandidate(candidate.objective, normalizedCurrentObjective)) {
+      continue;
+    }
+    pushCandidate(candidate);
+  }
+
+  if (candidates.length > 0) {
+    return candidates.slice(0, 6);
+  }
+
   for (const queueItem of toStringArray(resumeState?.safe_queue)) {
     if (!isAutonomousGoalCandidate(queueItem, normalizedCurrentObjective)) {
       continue;
@@ -811,6 +1178,10 @@ export const buildAutonomousGoalCandidates = ({
       source: 'safe-queue',
       fingerprint: `safe-queue:${String(normalizeAutonomousGoalObjective(queueItem)).toLowerCase()}`,
     }));
+  }
+
+  if (focusedObjectives.length > 0) {
+    return candidates.slice(0, 6);
   }
 
   for (const candidate of readExecutionBoardQueuedObjectives(executionBoardPath)) {
@@ -886,6 +1257,10 @@ const extractAutomationRoute = (progressMarkdown, handoffMarkdown) => {
     primary_path_type: guidance.primary_path_type || null,
     primary_surfaces: splitCommaSeparatedValues(guidance.primary_surfaces),
     fallback_surfaces: splitCommaSeparatedValues(guidance.fallback_surfaces),
+    hot_state: guidance.hot_state || null,
+    orchestration: guidance.orchestration || null,
+    semantic_owner: guidance.semantic_owner || null,
+    artifact_plane: guidance.artifact_plane || null,
     candidate_apis: splitCommaSeparatedValues(guidance.candidate_apis),
     candidate_mcp_tools: splitCommaSeparatedValues(guidance.candidate_mcp_tools),
     matched_examples: splitCommaSeparatedValues(guidance.matched_examples),
@@ -966,13 +1341,14 @@ const buildResumeState = async (params = {}) => {
   const progressTarget = resolveVaultTarget(vaultRoot, DEFAULT_PROGRESS_PACKET_PATH);
   const handoffContent = readLocalVaultFile(handoffTarget);
   const progressContent = readLocalVaultFile(progressTarget);
+  const ownerAndMode = extractKeyValueBullets(progressContent, 'Owner And Mode');
+  const queuedReentryObjective = toNullableString(ownerAndMode.queued_reentry_objective);
   const objective = extractFrontmatterValue(progressContent, 'objective')
     || extractFrontmatterValue(handoffContent, 'objective')
     || extractFirstBullet(progressContent, 'Objective')
     || extractFirstBullet(handoffContent, 'Session Objective');
   const packetNextAction = extractFirstBullet(progressContent, 'Next Action');
   const escalationStatus = extractFirstBullet(progressContent, 'Escalation Status') || 'unknown';
-  const ownerAndMode = extractKeyValueBullets(progressContent, 'Owner And Mode');
   const capacityEntries = extractKeyValueBullets(progressContent, 'Capacity State');
   const safeQueue = extractBulletLines(handoffContent, 'Safe Autonomous Queue For Hermes');
   const automationRoute = extractAutomationRoute(progressContent, handoffContent);
@@ -989,18 +1365,28 @@ const buildResumeState = async (params = {}) => {
   const nextAction = !gcpCapacityRecoveryRequested && isCapacityRecoveryNextAction(packetNextAction)
     ? WAIT_FOR_NEXT_GPT_ACTION
     : packetNextAction;
+  const awaitingReentryAcknowledgment = Boolean(
+    queuedReentryObjective
+    && compact(nextAction).toLowerCase().includes('reentry-ack'),
+  );
+  const effectiveObjective = awaitingReentryAcknowledgment ? queuedReentryObjective : objective;
   const waitBoundary = String(nextAction || '').trim().toLowerCase() === WAIT_FOR_NEXT_GPT_ACTION;
-  const resumable = Boolean(objective) && escalationStatus === 'none' && (!waitBoundary || gcpCapacityRecoveryRequested);
+  const resumable = Boolean(effectiveObjective)
+    && escalationStatus === 'none'
+    && !awaitingReentryAcknowledgment
+    && (!waitBoundary || gcpCapacityRecoveryRequested);
 
   let reason = null;
   if (!vaultRoot) {
     reason = 'missing_vault_root';
   } else if (!handoffContent && !progressContent) {
     reason = 'missing_continuity_packets';
-  } else if (!objective) {
+  } else if (!effectiveObjective) {
     reason = 'missing_packet_objective';
   } else if (escalationStatus !== 'none') {
     reason = `escalation_${escalationStatus}`;
+  } else if (awaitingReentryAcknowledgment) {
+    reason = 'packet_awaiting_reentry_ack';
   } else if (waitBoundary && gcpCapacityRecoveryRequested) {
     reason = 'operator_gcp_capacity_recovery_requested';
   } else if (waitBoundary) {
@@ -1008,7 +1394,7 @@ const buildResumeState = async (params = {}) => {
   }
 
   const fingerprint = [
-    objective || '',
+    effectiveObjective || '',
     nextAction || '',
     escalationStatus || '',
     ownerAndMode.owner || '',
@@ -1020,7 +1406,8 @@ const buildResumeState = async (params = {}) => {
     source: vaultRoot ? 'local-vault-mirror' : 'unavailable',
     available: Boolean(vaultRoot && progressContent && handoffContent),
     vault_root: vaultRoot,
-    objective,
+    objective: effectiveObjective,
+    queued_reentry_objective: queuedReentryObjective,
     next_action: nextAction,
     escalation_status: escalationStatus,
     owner: ownerAndMode.owner || null,
@@ -1067,11 +1454,26 @@ const buildResumeState = async (params = {}) => {
       ...toStringArray(derived.safe_queue),
       ...safeQueue,
     ])).filter(Boolean);
+    const effectiveDerivedObjective = packetState.queued_reentry_objective || derived.objective;
+    const effectiveDerivedNextAction = packetState.reason === 'packet_awaiting_reentry_ack'
+      ? packetState.next_action
+      : derived.next_action;
+    const effectiveDerivedReason = packetState.reason === 'packet_awaiting_reentry_ack'
+      ? packetState.reason
+      : derived.reason;
+    const effectiveDerivedResumable = packetState.reason === 'packet_awaiting_reentry_ack'
+      ? false
+      : derived.resumable;
     return {
       ...derived,
+      objective: effectiveDerivedObjective,
+      queued_reentry_objective: packetState.queued_reentry_objective,
+      next_action: effectiveDerivedNextAction,
+      resumable: effectiveDerivedResumable,
+      reason: effectiveDerivedReason,
       fingerprint: [
-        derived.objective || '',
-        derived.next_action || '',
+        effectiveDerivedObjective || '',
+        effectiveDerivedNextAction || '',
         derived.escalation_status || '',
         derived.owner || '',
         derived.mode || '',
@@ -1229,11 +1631,17 @@ const runHermesRuntimeControlAction = (params) => {
     if (params.chatMode) {
       args.push(`--chatMode=${params.chatMode}`);
     }
+    if (params.contextProfile) {
+      args.push(`--contextProfile=${params.contextProfile}`);
+    }
     if (Array.isArray(params.addFilePaths) && params.addFilePaths.length > 0) {
       args.push(`--addFilePaths=${params.addFilePaths.join(',')}`);
     }
     if (params.sessionPath) {
       args.push(`--sessionPath=${params.sessionPath}`);
+    }
+    if (params.sessionId) {
+      args.push(`--sessionId=${params.sessionId}`);
     }
     if (params.vaultPath) {
       args.push(`--vaultPath=${params.vaultPath}`);
@@ -1281,6 +1689,23 @@ const runHermesRuntimeControlAction = (params) => {
   }
 };
 
+const maybeAutoQueueNextObjective = (params) => {
+  if (!params.enabled) {
+    return null;
+  }
+
+  return runHermesRuntimeControlAction({
+    action: 'auto-queue-next-objective',
+    sessionPath: params.sessionPath,
+    sessionId: params.sessionId,
+    vaultPath: params.vaultPath,
+    capacityTarget: params.capacityTarget,
+    gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
+    runtimeLane: params.runtimeLane,
+    dryRun: params.dryRun,
+  });
+};
+
 const maybeLaunchQueuedObjectiveChat = (params) => {
   if (!params.enabled || !params.launchPlan?.autonomous_candidate) {
     return null;
@@ -1290,6 +1715,7 @@ const maybeLaunchQueuedObjectiveChat = (params) => {
     action: 'queue-objective',
     objective: params.launchPlan.objective,
     sessionPath: params.sessionPath,
+    sessionId: params.sessionId,
     vaultPath: params.vaultPath,
     capacityTarget: params.capacityTarget,
     gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
@@ -1299,7 +1725,9 @@ const maybeLaunchQueuedObjectiveChat = (params) => {
   const chatResult = runHermesRuntimeControlAction({
     action: 'chat-launch',
     objective: params.launchPlan.objective,
+    contextProfile: params.contextProfile || 'auto',
     sessionPath: params.sessionPath,
+    sessionId: params.sessionId,
     vaultPath: params.vaultPath,
     capacityTarget: params.capacityTarget,
     gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
@@ -1386,16 +1814,29 @@ const resolveSessionPath = (summary, overridePath) => {
   return latestPath;
 };
 
+export const resolveRequestedWorkflowSessionId = (summary, requestedSessionPath, overrideSessionId) => {
+  const explicit = String(overrideSessionId || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const localSession = requestedSessionPath ? readJsonFile(requestedSessionPath) : null;
+  return String(localSession?.session_id || '').trim()
+    || String(summary?.workflow?.session_id || '').trim()
+    || null;
+};
+
 export const buildStatusPayload = async (params = {}) => {
   const summary = params.summary || readJsonFile(SUMMARY_PATH);
   const summarySessionRaw = String(summary?.workflow?.session_path || '').trim();
   const summarySessionPath = summarySessionRaw ? path.resolve(ROOT, summarySessionRaw) : null;
   const summarySessionId = String(summary?.workflow?.session_id || '').trim() || null;
   const sessionPath = resolveSessionPath(summary, params.sessionPath);
+  const requestedSessionId = resolveRequestedWorkflowSessionId(summary, sessionPath, params.sessionId);
   const workstreamState = params.workstreamState || null;
   const resolvedWorkstreamState = workstreamState || await readLatestWorkflowState({
     sessionPath,
-    sessionId: summarySessionId,
+    sessionId: requestedSessionId,
     scope: process.env.OPENJARVIS_SCOPE || 'interactive:goal',
     workflowName: 'openjarvis.unattended',
     runtimeLane: params.runtimeLane || DEFAULT_RUNTIME_LANE,
@@ -1406,10 +1847,10 @@ export const buildStatusPayload = async (params = {}) => {
     : (resolvedWorkstreamState?.sessionPath || sessionPath);
   const latestLaunch = params.launch || readJsonFile(LATEST_INTERACTIVE_LAUNCH_PATH);
   const latestLoop = params.loopState || readJsonFile(LATEST_CONTINUITY_LOOP_PATH);
-  const resumeState = params.resumeState || await buildResumeState({
+  const baseResumeState = params.resumeState || await buildResumeState({
     vaultPath: params.vaultPath,
     sessionPath: effectiveSessionPath,
-    sessionId: summarySessionId,
+    sessionId: requestedSessionId,
     capacityTarget: params.capacityTarget,
     gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
     workstreamState: resolvedWorkstreamState,
@@ -1432,6 +1873,19 @@ export const buildStatusPayload = async (params = {}) => {
   const monitorAlive = launchMatchesSession ? isProcessAlive(latestLaunch?.monitor_pid) : null;
   const staleExecutionSuspected = Boolean(launchMatchesSession && session?.status === 'executing' && runnerAlive === false);
   const supervisorAlive = latestLoop?.supervisor_pid ? isProcessAlive(latestLoop.supervisor_pid) : false;
+  const reentryAcknowledgmentState = resolveAwaitingReentryAcknowledgmentState({
+    ...(isRecord(latestLoop) ? latestLoop : {}),
+    awaiting_reentry_acknowledgment: Boolean(
+      latestLoop?.awaiting_reentry_acknowledgment
+      || latestLoop?.last_launch?.awaiting_reentry_acknowledgment,
+    ),
+  });
+  const awaitingReentryAcknowledgment = reentryAcknowledgmentState.awaiting;
+  const resumeState = applyQueuedReentryResumeOverride({
+    resumeState: baseResumeState,
+    latestLoop,
+    awaitingReentryAcknowledgment,
+  });
   const gcpNative = buildGcpNativeAutopilotContext();
   const gcpCapacityRecoveryRequested = Boolean(params.gcpCapacityRecoveryRequested);
   const events = Array.isArray(session?.events) ? session.events : [];
@@ -1515,6 +1969,23 @@ export const buildStatusPayload = async (params = {}) => {
           cheapestEnablementPath: toNullableString(entry.cheapest_enablement_path),
           proposedOwner: toNullableString(entry.proposed_owner),
           evidenceRefs: toStringArray(entry.evidence_refs),
+          evidenceRefDetails: Array.isArray(entry.evidence_ref_details)
+            ? entry.evidence_ref_details
+              .map((ref) => buildArtifactRefSummary({
+                entry: ref,
+                createdAt: event?.created_at,
+                runtimeLane: toNullableString(entry.runtime_lane) || eventRuntimeLane,
+                sourceEvent: toNullableString(entry.source_event) || eventSourceEvent,
+              }))
+              .filter(Boolean)
+            : toStringArray(entry.evidence_refs)
+              .map((locator) => buildArtifactRefSummary({
+                entry: { locator },
+                createdAt: event?.created_at,
+                runtimeLane: toNullableString(entry.runtime_lane) || eventRuntimeLane,
+                sourceEvent: toNullableString(entry.source_event) || eventSourceEvent,
+              }))
+              .filter(Boolean),
           recallCondition: toNullableString(entry.recall_condition),
           runtimeLane: toNullableString(entry.runtime_lane) || eventRuntimeLane,
           sourceEvent: toNullableString(entry.source_event) || eventSourceEvent,
@@ -1546,6 +2017,17 @@ export const buildStatusPayload = async (params = {}) => {
           locator: compact(entry.locator),
           refKind: toNullableString(entry.ref_kind) || 'other',
           title: toNullableString(entry.title),
+          artifactPlane: inferArtifactPlane({
+            locator: entry.locator,
+            refKind: entry.ref_kind,
+            artifactPlane: entry.artifact_plane,
+          }),
+          githubSettlementKind: inferGithubSettlementKind({
+            locator: entry.locator,
+            refKind: entry.ref_kind,
+            artifactPlane: entry.artifact_plane,
+            githubSettlementKind: entry.github_settlement_kind,
+          }),
           runtimeLane: toNullableString(payload.runtime_lane)
             || toNullableString(session?.metadata?.runtime_lane)
             || (params.runtimeLane || DEFAULT_RUNTIME_LANE),
@@ -1556,21 +2038,49 @@ export const buildStatusPayload = async (params = {}) => {
     }
     return [];
   })();
+  const currentAutonomousObjective = toEffectiveAutonomousObjective(session?.metadata?.objective)
+    || toEffectiveAutonomousObjective(resumeState?.objective);
   const autonomousGoalCandidates = buildAutonomousGoalCandidates({
     resumeState,
-    currentObjective: session?.metadata?.objective || null,
+    currentObjective: currentAutonomousObjective,
   });
+  const effectiveWorkflowObjective = resolveEffectiveWorkflowObjective({
+    workflowObjective: session?.metadata?.objective || null,
+    resumeState,
+    autonomousGoalCandidates,
+  });
+  const effectiveResumeObjective = toEffectiveAutonomousObjective(resumeState?.objective)
+    || effectiveWorkflowObjective;
+  const normalizedResumeState = isRecord(resumeState)
+    ? {
+      ...resumeState,
+      available: Boolean(effectiveResumeObjective),
+      objective: effectiveResumeObjective,
+      fingerprint: [
+        effectiveResumeObjective || '',
+        toNullableString(resumeState.next_action) || '',
+        toNullableString(resumeState.escalation_status) || '',
+        toNullableString(resumeState.owner) || '',
+        toNullableString(resumeState.mode) || '',
+        ...toStringArray(resumeState.safe_queue),
+      ].join('|') || null,
+    }
+    : resumeState;
   const hermesRuntime = buildHermesRuntimeReadiness({
     workflow: {
       source: resolvedWorkstreamState?.source || (effectiveSessionPath ? 'local-file' : 'unavailable'),
-      auto_restart_on_release: session?.metadata?.auto_restart_on_release ?? resumeState?.auto_restart_on_release ?? null,
+      auto_restart_on_release: session?.metadata?.auto_restart_on_release ?? normalizedResumeState?.auto_restart_on_release ?? null,
     },
     supervisor: {
       auto_select_queued_objective: Boolean(latestLoop?.auto_select_queued_objective),
       supervisor_alive: supervisorAlive,
+      awaiting_reentry_acknowledgment: awaitingReentryAcknowledgment,
+      awaiting_reentry_acknowledgment_started_at: reentryAcknowledgmentState.startedAt,
+      awaiting_reentry_acknowledgment_age_ms: reentryAcknowledgmentState.ageMs,
+      awaiting_reentry_acknowledgment_stale: reentryAcknowledgmentState.stale,
     },
-    resumeState,
-    routing: resumeState?.automation_route || null,
+    resumeState: normalizedResumeState,
+    routing: normalizedResumeState?.automation_route || null,
     autonomousGoalCandidates,
     vscodeCli: {
       last_auto_open: latestLaunch?.vscode_bridge || latestLoop?.vscode_bridge || null,
@@ -1589,9 +2099,9 @@ export const buildStatusPayload = async (params = {}) => {
       status: session?.status || null,
       scope: session?.scope || null,
       stage: session?.stage || null,
-      objective: session?.metadata?.objective || null,
+      objective: effectiveWorkflowObjective,
       route_mode: session?.metadata?.route_mode || null,
-      auto_restart_on_release: session?.metadata?.auto_restart_on_release ?? resumeState?.auto_restart_on_release ?? null,
+      auto_restart_on_release: session?.metadata?.auto_restart_on_release ?? normalizedResumeState?.auto_restart_on_release ?? null,
       started_at: session?.started_at || null,
       completed_at: session?.completed_at || null,
       execution_health: staleExecutionSuspected ? 'stale-runner-missing' : null,
@@ -1618,6 +2128,13 @@ export const buildStatusPayload = async (params = {}) => {
       supervisor_alive: supervisorAlive,
       auto_select_queued_objective: Boolean(latestLoop.auto_select_queued_objective),
       auto_launch_queued_chat: Boolean(latestLoop.auto_launch_queued_chat),
+      awaiting_reentry_acknowledgment: awaitingReentryAcknowledgment,
+      awaiting_reentry_acknowledgment_started_at: reentryAcknowledgmentState.startedAt,
+      awaiting_reentry_acknowledgment_age_ms: reentryAcknowledgmentState.ageMs,
+      awaiting_reentry_acknowledgment_stale: reentryAcknowledgmentState.stale,
+      queued_reentry_objective: toNullableString(latestLoop.last_launch?.objective),
+      queued_reentry_source: toNullableString(latestLoop.last_launch?.source),
+      reentry_acknowledgment: latestLoop.reentry_acknowledgment || null,
       started_at: latestLoop.started_at || null,
       stopped_at: latestLoop.stopped_at || null,
       stop_reason: latestLoop.stop_reason || null,
@@ -1641,8 +2158,8 @@ export const buildStatusPayload = async (params = {}) => {
       stale_execution_suspected: staleExecutionSuspected,
     },
     capacity: null,
-    resume_state: resumeState,
-    automation_route: resumeState?.automation_route || null,
+    resume_state: normalizedResumeState,
+    automation_route: normalizedResumeState?.automation_route || null,
     continuity_packets: summaryMatchesSession ? (summary?.continuity_packets || null) : null,
     gcp_capacity_recovery_requested: gcpCapacityRecoveryRequested,
     gcp_native: gcpNative,
@@ -1712,6 +2229,28 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
         cheapest_enablement_path: toNullableString(entry.cheapestEnablementPath),
         proposed_owner: toNullableString(entry.proposedOwner),
         evidence_refs: toStringArray(entry.evidenceRefs).slice(0, 4),
+        evidence_ref_details: Array.isArray(entry.evidenceRefDetails)
+          ? entry.evidenceRefDetails
+            .filter((ref) => isRecord(ref) && compact(ref.locator))
+            .slice(0, 4)
+            .map((ref) => ({
+              locator: compact(ref.locator),
+              refKind: toNullableString(ref.refKind),
+              title: toNullableString(ref.title),
+              artifactPlane: inferArtifactPlane({
+                locator: ref.locator,
+                refKind: ref.refKind,
+                artifactPlane: ref.artifactPlane,
+              }),
+              githubSettlementKind: inferGithubSettlementKind({
+                locator: ref.locator,
+                refKind: ref.refKind,
+                artifactPlane: ref.artifactPlane,
+                githubSettlementKind: ref.githubSettlementKind,
+              }),
+              sourceStepName: toNullableString(ref.sourceStepName),
+            }))
+          : undefined,
         recall_condition: toNullableString(entry.recallCondition),
       }))
     : [];
@@ -1723,6 +2262,17 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
         locator: compact(entry.locator),
         refKind: toNullableString(entry.refKind),
         title: toNullableString(entry.title),
+        artifactPlane: inferArtifactPlane({
+          locator: entry.locator,
+          refKind: entry.refKind,
+          artifactPlane: entry.artifactPlane,
+        }),
+        githubSettlementKind: inferGithubSettlementKind({
+          locator: entry.locator,
+          refKind: entry.refKind,
+          artifactPlane: entry.artifactPlane,
+          githubSettlementKind: entry.githubSettlementKind,
+        }),
         sourceStepName: toNullableString(entry.sourceStepName),
       }))
     : [];
@@ -1741,6 +2291,11 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
         source_path: toNullableString(entry.source_path),
       }))
     : [];
+  const effectiveWorkflowObjective = resolveEffectiveWorkflowObjective({
+    workflowObjective: workflow.objective,
+    resumeState,
+    autonomousGoalCandidates,
+  });
   const safeQueue = toStringArray(resumeState.safe_queue).slice(0, 6);
   const progressPacket = toNullableString(resumeState.progress_packet_relative_path);
   const handoffPacket = toNullableString(resumeState.handoff_packet_relative_path);
@@ -1755,12 +2310,14 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
       autonomousGoalCandidates,
       vscodeCli: isRecord(status?.vscode_cli) ? status.vscode_cli : {},
     });
-  const activationTargetObjective = autonomousGoalCandidates[0]?.objective || toNullableString(workflow.objective);
+  const activationTargetObjective = toEffectiveAutonomousObjective(autonomousGoalCandidates[0]?.objective)
+    || effectiveWorkflowObjective;
   const activationPack = buildAutomationActivationPack({
     sourceSurface: 'session-open',
     objective: activationTargetObjective,
     matchedExampleIds: toStringArray(routing.matched_examples).slice(0, 6),
     candidateApis: toStringArray(routing.candidate_apis).slice(0, 6),
+    candidateMcpTools: toStringArray(routing.candidate_mcp_tools).slice(0, 6),
     primarySurfaces: toStringArray(routing.primary_surfaces).slice(0, 6),
     fallbackSurfaces: toStringArray(routing.fallback_surfaces).slice(0, 6),
     requiresDurableKnowledge: true,
@@ -1769,6 +2326,7 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
     ? persistedCapabilityDemands
     : buildSessionOpenCapabilityDemands({
       workflow,
+      resumeState,
       routing,
       hermesRuntime,
       recall,
@@ -1792,7 +2350,7 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
     bundle_version: 1,
     generated_at: new Date().toISOString(),
     summary_path: toNullableString(status?.summary_path),
-    objective: toNullableString(workflow.objective),
+    objective: effectiveWorkflowObjective,
     route_mode: toNullableString(workflow.route_mode),
     runtime_lane: toNullableString(workflow.runtime_lane),
     workflow: {
@@ -1826,7 +2384,12 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
       primary_path_type: toNullableString(routing.primary_path_type),
       primary_surfaces: toStringArray(routing.primary_surfaces).slice(0, 6),
       fallback_surfaces: toStringArray(routing.fallback_surfaces).slice(0, 6),
+      hot_state: toNullableString(routing.hot_state),
+      orchestration: toNullableString(routing.orchestration),
+      semantic_owner: toNullableString(routing.semantic_owner),
+      artifact_plane: toNullableString(routing.artifact_plane),
       candidate_apis: toStringArray(routing.candidate_apis).slice(0, 6),
+      candidate_mcp_tools: toStringArray(routing.candidate_mcp_tools).slice(0, 6),
       matched_examples: toStringArray(routing.matched_examples).slice(0, 6),
       escalation_required: Boolean(routing.escalation_required),
       escalation_target: toNullableString(routing.escalation_target),
@@ -1838,6 +2401,12 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
       can_continue_without_gpt_session: Boolean(hermesRuntime.can_continue_without_gpt_session),
       queue_enabled: Boolean(hermesRuntime.queue_enabled),
       supervisor_alive: Boolean(hermesRuntime.supervisor_alive),
+      awaiting_reentry_acknowledgment: Boolean(hermesRuntime.awaiting_reentry_acknowledgment),
+      awaiting_reentry_acknowledgment_started_at: toNullableString(hermesRuntime.awaiting_reentry_acknowledgment_started_at),
+      awaiting_reentry_acknowledgment_age_ms: Number.isFinite(Number(hermesRuntime.awaiting_reentry_acknowledgment_age_ms))
+        ? Number(hermesRuntime.awaiting_reentry_acknowledgment_age_ms)
+        : null,
+      awaiting_reentry_acknowledgment_stale: Boolean(hermesRuntime.awaiting_reentry_acknowledgment_stale),
       has_hot_state: Boolean(hermesRuntime.has_hot_state),
       local_operator_surface: Boolean(hermesRuntime.local_operator_surface),
       ide_handoff_observed: Boolean(hermesRuntime.ide_handoff_observed),
@@ -1920,6 +2489,12 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
       stop_reason: toNullableString(supervisor.stop_reason),
       last_launch_source: isRecord(supervisor.last_launch) ? toNullableString(supervisor.last_launch.source) : null,
       last_launch_at: isRecord(supervisor.last_launch) ? toNullableString(supervisor.last_launch.launched_at) : null,
+      awaiting_reentry_acknowledgment: Boolean(supervisor.awaiting_reentry_acknowledgment),
+      awaiting_reentry_acknowledgment_started_at: toNullableString(supervisor.awaiting_reentry_acknowledgment_started_at),
+      awaiting_reentry_acknowledgment_age_ms: Number.isFinite(Number(supervisor.awaiting_reentry_acknowledgment_age_ms))
+        ? Number(supervisor.awaiting_reentry_acknowledgment_age_ms)
+        : null,
+      awaiting_reentry_acknowledgment_stale: Boolean(supervisor.awaiting_reentry_acknowledgment_stale),
     },
     result: {
       final_status: toNullableString(result.final_status),
@@ -1981,6 +2556,7 @@ export const buildGoalCycleLaunchArgs = (params) => ([
   ...(params.gcpCapacityRecoveryRequested ? ['--gcpCapacityRecovery=true'] : []),
   ...(params.autoSelectQueuedObjective ? ['--autoSelectQueuedObjective=true'] : []),
   ...(params.autoLaunchQueuedChat ? ['--autoLaunchQueuedChat=true'] : []),
+  ...(params.autoLaunchQueuedChatContextProfile ? [`--autoLaunchQueuedChatContextProfile=${params.autoLaunchQueuedChatContextProfile}`] : []),
   ...(params.autoOpenResumePacket ? ['--autoOpenResumePacket=true'] : []),
   '--visibleTerminal=false',
 ]);
@@ -2073,6 +2649,7 @@ const launchVisibleWindowsPowerShell = (params) => {
       gcp_capacity_recovery_requested: Boolean(params.gcpCapacityRecoveryRequested),
       auto_select_queued_objective: Boolean(params.autoSelectQueuedObjective),
       auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
+      auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
       resume_from_packets: Boolean(params.resumeFromPackets),
       force_resume: Boolean(params.forceResume),
       runner_pid: Number.isFinite(runnerPid) ? runnerPid : null,
@@ -2097,6 +2674,7 @@ const launchVisibleWindowsPowerShell = (params) => {
       continuous_loop: Boolean(params.continuousLoop),
       auto_restart_on_release: Boolean(params.autoRestartOnRelease),
       auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
+      auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
       resume_from_packets: Boolean(params.resumeFromPackets),
       vscode_bridge: vscodeBridge,
     };
@@ -2116,6 +2694,7 @@ const launchVisibleWindowsPowerShell = (params) => {
       continuous_loop: Boolean(params.continuousLoop),
       auto_restart_on_release: Boolean(params.autoRestartOnRelease),
       auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
+      auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
       resume_from_packets: Boolean(params.resumeFromPackets),
       vscode_bridge: vscodeBridge,
     };
@@ -2148,6 +2727,7 @@ const runContinuousLoop = async (params) => {
     gcp_capacity_recovery_requested: Boolean(params.gcpCapacityRecoveryRequested),
     auto_select_queued_objective: Boolean(params.autoSelectQueuedObjective),
     auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
+    auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
     launches_completed: 0,
     idle_checks: 0,
     last_reason: null,
@@ -2276,7 +2856,9 @@ const runContinuousLoop = async (params) => {
         queuedChatLaunch = maybeLaunchQueuedObjectiveChat({
           enabled: true,
           launchPlan,
+          contextProfile: params.autoLaunchQueuedChatContextProfile || 'auto',
           sessionPath: params.sessionPath || null,
+          sessionId: status.workflow?.session_id || null,
           vaultPath: params.vaultPath || null,
           capacityTarget: params.capacityTarget,
           gcpCapacityRecoveryRequested,
@@ -2303,6 +2885,7 @@ const runContinuousLoop = async (params) => {
           source: `${launchPlan.source}:vscode-chat`,
           fingerprint: launchPlan.fingerprint,
           milestone: launchPlan.autonomous_candidate?.milestone || null,
+          context_profile: queuedChatLaunch?.chat_result?.contextProfile || params.autoLaunchQueuedChatContextProfile || null,
           session_id: status.workflow?.session_id || null,
           session_path: status.workflow?.session_path || null,
           runtime_lane: status.workflow?.runtime_lane || params.runtimeLane || null,
@@ -2365,6 +2948,31 @@ const runContinuousLoop = async (params) => {
       }
       idleChecks = 0;
       await sleepMs(1000);
+      continue;
+    }
+
+    const autoQueueResult = (!launchPlan
+      && params.autoSelectQueuedObjective
+      && !queuedCandidate
+      && !capacityBelowTarget
+      && !gcpCapacityRecoveryRequested
+      && status.capacity?.loop_action !== 'escalate')
+      ? maybeAutoQueueNextObjective({
+        enabled: true,
+        sessionPath: params.sessionPath || null,
+        sessionId: status.workflow?.session_id || null,
+        vaultPath: params.vaultPath || null,
+        capacityTarget: params.capacityTarget,
+        gcpCapacityRecoveryRequested,
+        runtimeLane: params.runtimeLane,
+        dryRun: params.dryRun,
+      })
+      : null;
+
+    if (autoQueueResult?.ok && Array.isArray(autoQueueResult?.synthesizedObjectives) && autoQueueResult.synthesizedObjectives.length > 0) {
+      loopState.last_reason = 'auto-queued-next-objective';
+      loopState.auto_queue_result = autoQueueResult;
+      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
       continue;
     }
 
@@ -2496,6 +3104,7 @@ const main = async () => {
   const continueUntilCapacity = parseBool(parseArg('continueUntilCapacity', 'false'), false);
   const autoSelectQueuedObjective = parseBool(parseArg('autoSelectQueuedObjective', process.env.OPENJARVIS_AUTO_SELECT_QUEUED_OBJECTIVE || 'false'), false);
   const autoLaunchQueuedChat = parseBool(parseArg('autoLaunchQueuedChat', process.env.OPENJARVIS_AUTO_LAUNCH_QUEUED_CHAT || 'false'), false);
+  const autoLaunchQueuedChatContextProfile = String(parseArg('autoLaunchQueuedChatContextProfile', autoLaunchQueuedChat ? 'auto' : '')).trim() || null;
   const idleSeconds = Math.max(10, Number.parseInt(String(parseArg('idleSeconds', '45')).trim(), 10) || 45);
   const maxCycles = normalizeLoopLimit(parseArg('maxCycles', continuousLoop ? '3' : '1'), continuousLoop ? 3 : 1);
   const maxIdleChecks = normalizeLoopLimit(parseArg('maxIdleChecks', continuousLoop ? '120' : '1'), continuousLoop ? 120 : 1);
@@ -2579,6 +3188,7 @@ const main = async () => {
       continueUntilCapacity,
       autoSelectQueuedObjective,
       autoLaunchQueuedChat,
+      autoLaunchQueuedChatContextProfile,
       gcpCapacityRecoveryRequested,
       vaultPath: vaultPath || null,
       resumeState,
@@ -2602,6 +3212,7 @@ const main = async () => {
       gcp_capacity_recovery_requested: gcpCapacityRecoveryRequested,
       auto_select_queued_objective: autoSelectQueuedObjective,
       auto_launch_queued_chat: autoLaunchQueuedChat,
+      auto_launch_queued_chat_context_profile: autoLaunchQueuedChatContextProfile,
       resume_state: resumeState,
       monitor_command: 'npm run openjarvis:goal:status',
     }, null, 2));
@@ -2634,6 +3245,7 @@ const main = async () => {
       continueUntilCapacity,
       autoSelectQueuedObjective,
       autoLaunchQueuedChat,
+      autoLaunchQueuedChatContextProfile,
       capacityTarget,
       gcpCapacityRecoveryRequested,
       runtimeLane,
@@ -2658,6 +3270,7 @@ const main = async () => {
       gcp_capacity_recovery_requested: gcpCapacityRecoveryRequested,
       auto_select_queued_objective: autoSelectQueuedObjective,
       auto_launch_queued_chat: autoLaunchQueuedChat,
+      auto_launch_queued_chat_context_profile: autoLaunchQueuedChatContextProfile,
       resume_state: resumeState,
       vscode_bridge: vscodeBridge,
       status,
@@ -2686,6 +3299,7 @@ const main = async () => {
     gcp_capacity_recovery_requested: gcpCapacityRecoveryRequested,
     auto_select_queued_objective: autoSelectQueuedObjective,
     auto_launch_queued_chat: autoLaunchQueuedChat,
+    auto_launch_queued_chat_context_profile: autoLaunchQueuedChatContextProfile,
     resume_state: resumeState,
     vscode_bridge: vscodeBridge,
     status,

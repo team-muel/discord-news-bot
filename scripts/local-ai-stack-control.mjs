@@ -596,7 +596,7 @@ const buildManualLanes = () => ({
 
 const ensureUniqueSteps = (steps) => [...new Set(steps.filter(Boolean))];
 
-const buildDoctorReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
+export const buildDoctorReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
   const runtimeLane = compact(process.env.OPENJARVIS_RUNTIME_LANE || DEFAULT_RUNTIME_LANE) || DEFAULT_RUNTIME_LANE;
   const plan = buildManagedServicePlan(process.env);
   const obsidian = loadEffectiveObsidianAccessPosture();
@@ -842,7 +842,7 @@ const ensureCommandStart = async ({ id, scriptName, probe, dryRun = false }) => 
   };
 };
 
-const runUp = async ({ profile = DEFAULT_PROFILE, applyProfileFirst = true, dryRun = false }) => {
+export const runUp = async ({ profile = DEFAULT_PROFILE, applyProfileFirst = true, dryRun = false }) => {
   const operations = [];
 
   if (applyProfileFirst) {

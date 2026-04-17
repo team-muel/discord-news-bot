@@ -1,0 +1,67 @@
+{
+  "hardware_info": {
+    "platform": "windows",
+    "cpu_brand": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "cpu_count": 12,
+    "ram_gb": 0.0,
+    "gpu": {
+      "vendor": "nvidia",
+      "name": "NVIDIA GeForce RTX 4060 Ti",
+      "vram_gb": 8.0,
+      "count": 1
+    }
+  },
+  "benchmark": "supergpqa",
+  "category": "reasoning",
+  "backend": "jarvis-agent",
+  "model": "hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M",
+  "total_samples": 1,
+  "scored_samples": 0,
+  "correct": 0,
+  "accuracy": 0.0,
+  "errors": 1,
+  "mean_latency_seconds": 0.0,
+  "total_cost_usd": 0.0,
+  "per_subject": {
+    "Pharmaceutics": {
+      "accuracy": 0.0,
+      "total": 1.0,
+      "scored": 0.0,
+      "correct": 0.0
+    }
+  },
+  "started_at": 1776261857.8027532,
+  "ended_at": 1776261864.6379347,
+  "accuracy_stats": null,
+  "latency_stats": null,
+  "ttft_stats": null,
+  "energy_stats": null,
+  "power_stats": null,
+  "gpu_utilization_stats": null,
+  "throughput_stats": null,
+  "mfu_stats": null,
+  "mbu_stats": null,
+  "ipw_stats": null,
+  "ipj_stats": null,
+  "energy_per_output_token_stats": null,
+  "throughput_per_watt_stats": null,
+  "itl_stats": null,
+  "input_token_stats": null,
+  "output_token_stats": null,
+  "total_energy_joules": 0.0,
+  "warmup_samples_excluded": 0,
+  "steady_state_reached": false,
+  "energy_method": "",
+  "avg_power_watts": 0.0,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "efficiency": {
+    "accuracy": 0.0,
+    "total_energy_joules": 0.0,
+    "avg_power_watts": 0.0,
+    "ipj": null,
+    "ipw": null
+  },
+  "normalized_statistics": null,
+  "normalized_efficiency": null
+}

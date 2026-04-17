@@ -1,0 +1,18 @@
+{
+    "git.ignoreLimitWarning": true,
+    "chat.mcp.autostart": true,
+    "vitest.enable": true,
+    "vitest.commandLine": "npx vitest",
+    "testing.defaultGutterClickAction": "run",
+    "testing.followRunningTest": true,
+    "testing.showAllMessages": true,
+    "acp.autoApprovePermissions": "ask",
+    "acp.agents": {
+        "hermes-agent": {
+            "command": "C:\\Users\\fancy\\bin\\hermes.cmd",
+            "args": [
+                "acp"
+            ]
+        }
+    }
+}

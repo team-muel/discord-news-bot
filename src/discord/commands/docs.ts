@@ -23,6 +23,14 @@ type DocsDeps = {
   generateText: (params: LlmTextRequest) => Promise<string>;
   isAnyLlmConfigured: () => boolean;
   getErrorMessage: (error: unknown) => string;
+  routeOpenClawDiscordIngress?: (params: {
+    request: string;
+    guildId: string | null;
+    userId: string;
+    channel: ChatInputCommandInteraction['channel'];
+    entryLabel: string;
+    surface: 'docs-command';
+  }) => Promise<{ answer: string } | null>;
 };
 
 const formatMetadataSignalsLine = (signals?: RAGQueryResult['metadataSignals']): string => {
@@ -61,6 +69,31 @@ export const createDocsHandlers = (deps: DocsDeps) => {
     const question = (interaction.options.getString('질문', true) || '').trim();
     if (!question) {
       await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleInputError, DISCORD_MESSAGES.docs.askInputRequired, EMBED_WARN));
+      return;
+    }
+
+    const openClawResult = deps.routeOpenClawDiscordIngress
+      ? await deps.routeOpenClawDiscordIngress({
+        request: question,
+        guildId: interaction.guildId,
+        userId: interaction.user.id,
+        channel: interaction.channel,
+        entryLabel: `/${interaction.commandName}`,
+        surface: 'docs-command',
+      }).catch(() => {
+        return null;
+      })
+      : null;
+    if (openClawResult?.answer) {
+      const body = [
+        openClawResult.answer.slice(0, DISCORD_DOCS_ANSWER_LIMIT),
+        accessNotice,
+      ].filter(Boolean).join('\n');
+      await interaction.editReply(
+        buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
+      );
+      const reply = await interaction.fetchReply().catch(() => null);
+      await seedFeedbackReactions(reply);
       return;
     }
 

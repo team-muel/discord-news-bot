@@ -5,8 +5,10 @@ import {
   GO_NO_GO_MIN_RECALL_AT_5,
   GO_NO_GO_MIN_PILOT_GUILDS,
   GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN,
+  GO_NO_GO_MAX_LLM_P95_LATENCY_MS,
   GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL,
   GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE,
+  LLM_CALL_LOG_TABLE,
 } from '../config';
 import { getMemoryJobQueueStats } from './memory/memoryJobRunner';
 import { getMemoryQualityMetrics } from './memory/memoryQualityMetricsService';
@@ -26,15 +28,65 @@ const DEFAULT_THRESHOLDS = {
   minRecallAt5: GO_NO_GO_MIN_RECALL_AT_5,
   minPilotGuilds: GO_NO_GO_MIN_PILOT_GUILDS,
   maxCorrectionSlaP95Minutes: GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN,
+  maxLlmP95LatencyMs: GO_NO_GO_MAX_LLM_P95_LATENCY_MS,
   maxTelemetryQueueDroppedTotal: GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL,
   maxTelemetryQueueDropRate: GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE,
 };
 
 const toStatus = (ok: boolean): 'pass' | 'fail' => (ok ? 'pass' : 'fail');
 
+const percentile = (values: number[], p: number): number | null => {
+  const clean = values
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .sort((left, right) => left - right);
+
+  if (clean.length === 0) {
+    return null;
+  }
+  if (clean.length === 1) {
+    return clean[0];
+  }
+
+  const rank = Math.ceil((p / 100) * clean.length) - 1;
+  const index = Math.max(0, Math.min(clean.length - 1, rank));
+  return clean[index];
+};
+
+const getLlmLatencyP95Ms = async (guildId: string | undefined, days: number): Promise<number | null> => {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const sinceIso = new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000).toISOString();
+  const client = getSupabaseClient();
+  let query = client
+    .from(LLM_CALL_LOG_TABLE)
+    .select('latency_ms')
+    .gte('created_at', sinceIso)
+    .not('latency_ms', 'is', null);
+
+  if (guildId) {
+    query = query.eq('guild_id', guildId);
+  }
+
+  const { data, error } = await query.limit(5000);
+  if (error || !data || data.length === 0) {
+    return null;
+  }
+
+  const latencies = (data as Array<Record<string, unknown>>)
+    .map((row) => Number(row.latency_ms))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+
+  return percentile(latencies, 95);
+};
+
 export const buildGoNoGoReport = async (params: GoNoGoParams) => {
-  const metrics = await getMemoryQualityMetrics({ guildId: params.guildId, days: params.days });
-  const queue = await getMemoryJobQueueStats(params.guildId);
+  const [metrics, queue, llmLatencyP95Ms] = await Promise.all([
+    getMemoryQualityMetrics({ guildId: params.guildId, days: params.days }),
+    getMemoryJobQueueStats(params.guildId),
+    getLlmLatencyP95Ms(params.guildId, params.days),
+  ]);
   const telemetryQueue = getAgentTelemetryQueueSnapshot();
   const openjarvisMemorySync = getOpenJarvisMemorySyncStatus();
   const telemetryAttempted = Math.max(1, telemetryQueue.processed + telemetryQueue.dropped);
@@ -96,6 +148,14 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
       actual: metrics.feedback.correctionSlaP95Minutes,
       threshold: DEFAULT_THRESHOLDS.maxCorrectionSlaP95Minutes,
       status: toStatus(metrics.feedback.correctionSlaP95Minutes <= DEFAULT_THRESHOLDS.maxCorrectionSlaP95Minutes),
+    },
+    {
+      id: 'llm-p95-latency',
+      label: 'llm p95 latency should stay within SLO threshold',
+      actual: llmLatencyP95Ms,
+      threshold: DEFAULT_THRESHOLDS.maxLlmP95LatencyMs,
+      status: toStatus(llmLatencyP95Ms === null || llmLatencyP95Ms <= DEFAULT_THRESHOLDS.maxLlmP95LatencyMs),
+      detail: llmLatencyP95Ms === null ? 'No LLM latency samples found in the current go/no-go window.' : undefined,
     },
     {
       id: 'pilot-guilds',
@@ -165,6 +225,7 @@ export const buildGoNoGoReport = async (params: GoNoGoParams) => {
     assumptions: [
       'recall@k is computed as proxy from retrieval logs (no human-labeled relevance set).',
       'pilot guild count is estimated from active sources by distinct guild_id.',
+      'llm p95 latency is computed from logged LLM calls when Supabase telemetry is available.',
     ],
   };
 };

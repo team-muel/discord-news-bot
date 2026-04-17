@@ -20,7 +20,7 @@ vi.mock('../../config', () => ({
   LLM_API_TIMEOUT_MS: 1000,
   LLM_API_TIMEOUT_LARGE_MS: 2000,
   OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
-  OLLAMA_MODEL: 'qwen2.5:7b-instruct',
+  OLLAMA_MODEL: 'qwen2.5:7b',
   OPENCLAW_API_KEY: '',
   OPENCLAW_BASE_URL: 'https://openclaw.example',
   OPENCLAW_FALLBACK_MODELS_RAW: '',

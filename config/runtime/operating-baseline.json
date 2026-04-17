@@ -17,6 +17,7 @@
   "services": {
     "implementWorker": {
       "envKey": "MCP_IMPLEMENT_WORKER_URL",
+      "legacyEnvKey": "MCP_OPENCODE_WORKER_URL",
       "url": "https://34.56.232.61.sslip.io",
       "directUrl": "http://34.56.232.61:8787",
       "healthPath": "/health",
@@ -24,6 +25,7 @@
     },
     "architectWorker": {
       "envKey": "MCP_ARCHITECT_WORKER_URL",
+      "legacyEnvKey": "MCP_OPENDEV_WORKER_URL",
       "url": "https://34.56.232.61.sslip.io/architect",
       "directUrl": "http://34.56.232.61:8791",
       "healthPath": "/health",
@@ -31,6 +33,7 @@
     },
     "reviewWorker": {
       "envKey": "MCP_REVIEW_WORKER_URL",
+      "legacyEnvKey": "MCP_NEMOCLAW_WORKER_URL",
       "url": "https://34.56.232.61.sslip.io/review",
       "directUrl": "http://34.56.232.61:8792",
       "healthPath": "/health",
@@ -38,6 +41,7 @@
     },
     "operateWorker": {
       "envKey": "MCP_OPERATE_WORKER_URL",
+      "legacyEnvKey": "MCP_OPENJARVIS_WORKER_URL",
       "url": "https://34.56.232.61.sslip.io/operate",
       "directUrl": "http://34.56.232.61:8793",
       "healthPath": "/health",

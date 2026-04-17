@@ -789,7 +789,7 @@ const requestOpenAiCompatible = async (
 };
 
 export const requestOpenJarvis = (params: LlmTextRequest): Promise<string> =>
-  requestOpenAiCompatible(params, OPENJARVIS_SERVE_URL, params.model || OPENJARVIS_MODEL || 'qwen2.5:7b-instruct', 'OpenJarvis');
+  requestOpenAiCompatible(params, OPENJARVIS_SERVE_URL, params.model || OPENJARVIS_MODEL || 'qwen2.5:7b', 'OpenJarvis');
 
 export const requestLiteLLM = (params: LlmTextRequest): Promise<string> =>
   requestOpenAiCompatible(params, LITELLM_BASE_URL, params.model || LITELLM_MODEL, 'LiteLLM', LITELLM_MASTER_KEY || undefined);

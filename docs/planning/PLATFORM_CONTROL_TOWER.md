@@ -17,6 +17,7 @@
 | --- | --- | --- | --- |
 | 운영 runtime contract | config/runtime/operating-baseline.json | docs/RUNBOOK_MUEL_PLATFORM.md, docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md, docs/planning/GCP_OPENCODE_WORKER_VM_DEPLOY.md | 머신 타입, 항상-온 필수 서비스, canonical endpoint는 manifest 우선 |
 | 플랫폼 전체 운영 | docs/RUNBOOK_MUEL_PLATFORM.md | docs/OPERATIONS_24_7.md | 운영 절차 변경은 Runbook 먼저 반영 |
+| 다중 plane 운영 모델 | docs/adr/ADR-008-multi-plane-operating-model.md | docs/ARCHITECTURE_INDEX.md, docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md | plane ownership 변경은 ADR 먼저 고정하고 index/playbook에 반영 |
 | Vault operating model | docs/planning/OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md | docs/planning/OBSIDIAN_OBJECT_MODEL.md, docs/planning/OBSIDIAN_TRANSITION_PLAN.md | 볼트 구조와 의미 계층 변경은 Blueprint 먼저 반영 |
 | 24/7 런타임/배포 | docs/OPERATIONS_24_7.md | docs/RENDER_AGENT_ENV_TEMPLATE.md | 배포/환경 변경은 Ops 문서 우선 |
 | 임계치 기반 의사결정 | docs/OPERATOR_SOP_DECISION_TABLE.md | docs/ONCALL_COMMS_PLAYBOOK.md, docs/ONCALL_INCIDENT_TEMPLATE.md | 임계치 충돌 시 SOP 우선 |
@@ -24,6 +25,7 @@
 | 스프린트 실행 상태 | docs/planning/EXECUTION_BOARD.md | docs/planning/SPRINT_BACKLOG_MEMORY_AGENT.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md | Now/Next/Later 외 상태값 금지, 항목별 milestone ID 필수 |
 | 비용/품질 게이트 | docs/planning/FINOPS_PLAYBOOK.md, docs/planning/BETA_GO_NO_GO_CHECKLIST.md | docs/planning/MEMORY_RETRIEVAL_SCORING.md | 배포 전 Go/No-Go 필수 |
 | 평가 프레임/SQL 부록 | docs/planning/AGENT_ARCH_EVAL_FRAMEWORK.md | docs/planning/AGENT_EVAL_QUERY_PLAYBOOK.md | 평가는 측정 레시피로만 사용, 우선순위 결정은 보드 우선 |
+| 로컬 agent control plane | docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md | docs/adr/ADR-008-multi-plane-operating-model.md, docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md, docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md | Multica workspace 역할 카드, issue topology, lane routing은 이 문서 우선 |
 | 데이터/스키마 | docs/SUPABASE_SCHEMA.sql | docs/planning/MEMORY_SCHEMA_MIGRATION_PLAN.md | 스키마 변경 시 SQL + 계획 동시 갱신 |
 | 아키텍처 변경 근거 | docs/adr/\*.md | docs/CHANGELOG-ARCH.md | 설계 변경은 ADR 선행 |
 
@@ -57,7 +59,8 @@
 1. 운영 절차/장애 대응 변경: RUNBOOK + SOP 변경안
 2. 기능/제품 우선순위 변경: ROADMAP + BACKLOG 변경안
 3. 데이터 모델/품질 정책 변경: ADR + SCHEMA/MIGRATION 변경안
-4. 릴리즈 조건 변경: GO/NO-GO 체크리스트 변경안
+4. control plane, workflow kernel, artifact plane, semantic owner 경계 변경: ADR + ARCHITECTURE_INDEX + 관련 playbook 변경안
+5. 릴리즈 조건 변경: GO/NO-GO 체크리스트 변경안
 
 규칙:
 

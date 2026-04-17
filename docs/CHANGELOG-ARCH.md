@@ -21,6 +21,446 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-17 - Capability Demand Events Now Preserve Structured Evidence Ref Details
+
+- Why: `capability_demand.evidence_refs` still collapsed supporting evidence down to locator strings even after `artifact_ref` hot-state had gained `artifact_plane` and `github_settlement_kind`. That left blocked-route and missing-capability history unable to preserve whether a cited repo artifact was a repo file, commit, pull request, CI run, or other GitHub settlement form.
+- Scope: extended workflow capability-demand types and closeout generation to carry additive `evidenceRefDetails`, taught workflow persistence to serialize and parse `payload.demands[*].evidence_ref_details` with legacy locator backfill, and projected the same detail block through OpenJarvis autopilot status plus session-open bundles.
+- Impacted Routes: `GET /agent/runtime/unattended-health`, `GET /agent/runtime/openjarvis/autopilot`, `automation.session_open_bundle`
+- Impacted Services: `src/services/workflow/workflowPersistenceService.ts`, `src/services/workflow/workflowPersistenceTransforms.ts`, `src/services/workflow/workflowPersistenceService.test.ts`, `src/services/skills/actionRunnerWorkflowCloseout.ts`, `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunner.test.ts`, `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `src/services/openjarvis/openjarvisAutopilotStatusService.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: no new table or RPC contract added; `public.workflow_events.payload.demands[*]` may now include additive `evidence_ref_details` entries while `evidence_refs` remains for compatibility
+- Risk/Regression Notes: additive payload change only. Existing callers can keep reading `evidence_refs`, and legacy rows backfill structured details from locator strings so old demand history still renders repo-file, GitHub, log, vault-note, and workflow-session hints without a data migration.
+- Validation: `npx vitest run src/services/skills/actionRunner.test.ts src/services/workflow/workflowPersistenceService.test.ts scripts/openjarvis-remote-workstream-smoke.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Workflow Artifact Refs Now Distinguish GitHub Settlement Kind
+
+- Why: `artifact_plane=github` was enough to distinguish repo-visible settlement from external evidence, but it still left branch, commit, pull request, issue, and CI-run forms collapsed into one plane-level label. That meant hot-state and session-open bundles still lost the exact GitHub settlement form that operators and Hermes handoff notes need.
+- Scope: added additive `github_settlement_kind` metadata to workflow artifact-ref payload entries, inferred it for legacy rows from existing locators and ref kinds, taught the source action-artifact extractor to emit explicit plane and GitHub settlement metadata for new refs, projected it through OpenJarvis autopilot status and session-open evidence refs, and surfaced the richer label in Hermes runtime handoff notes when the GitHub form adds information beyond the base ref kind.
+- Impacted Routes: `GET /agent/runtime/unattended-health`, `GET /agent/runtime/openjarvis/autopilot`, `automation.session_open_bundle`
+- Impacted Services: `src/services/workflow/workflowPersistenceService.ts`, `src/services/workflow/workflowPersistenceTransforms.ts`, `src/services/workflow/workflowPersistenceService.test.ts`, `src/services/skills/actionRunnerArtifacts.ts`, `src/services/skills/actionRunner.test.ts`, `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `src/services/openjarvis/openjarvisAutopilotStatusService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: no new table or RPC contract added; `public.workflow_events.payload.refs[*]` may now include additive `github_settlement_kind` metadata when the artifact plane resolves to GitHub
+- Risk/Regression Notes: additive payload change only. Existing callers can keep omitting the field because persistence and runtime projection infer repo-file, branch, commit, pull-request, issue, CI-run, review, and release shapes from the current locator/ref-kind patterns.
+- Validation: `npx vitest run src/services/workflow/workflowPersistenceService.test.ts src/services/skills/actionRunner.test.ts scripts/openjarvis-remote-workstream-smoke.test.ts src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Workflow Artifact Refs Now Carry Artifact Plane Metadata
+
+- Why: hot-state already persisted structured `artifact_ref` rows, but those refs still forced downstream consumers to guess whether a repo path or URL belonged to the GitHub settlement plane, Obsidian durable notes, or an external surface. That left the multi-plane model explicit in planning prose while the runtime artifact objects themselves stayed under-specified.
+- Scope: added additive `artifact_plane` metadata to workflow artifact-ref payload entries, inferred it for legacy rows and unchanged callers, and projected the same field through OpenJarvis autopilot status plus session-open evidence refs.
+- Impacted Routes: `GET /agent/runtime/unattended-health`, `GET /agent/runtime/openjarvis/autopilot`, `automation.session_open_bundle`
+- Impacted Services: `src/services/workflow/workflowPersistenceService.ts`, `src/services/workflow/workflowPersistenceTransforms.ts`, `src/services/workflow/workflowPersistenceService.test.ts`, `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `src/services/openjarvis/openjarvisAutopilotStatusService.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: no new table or RPC contract added; `public.workflow_events.payload.refs[*]` may now include additive `artifact_plane` metadata
+- Risk/Regression Notes: additive payload change only. Existing callers can keep omitting the field because persistence and runtime projection infer GitHub for repo files and git refs, Obsidian for vault notes, hot-state for workflow sessions/logs, and external for non-GitHub URLs.
+- Validation: `npx vitest run src/services/workflow/workflowPersistenceService.test.ts scripts/openjarvis-remote-workstream-smoke.test.ts src/routes/botAgentObsidianRuntime.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Workflow Draft Stages Now Model GitHub Artifact Settlement
+
+- Why: the multi-plane planner already exposed GitHub as the artifact and review plane in route previews and optimizer state owners, but `automation.workflow.draft` still collapsed closeout into the hot-state ledger. That made it too easy for unattended workflow drafts to imply that repo-visible settlement lived in Supabase or Obsidian instead of on GitHub.
+- Scope: extended workflow draft stage ownership with an explicit GitHub artifact-settlement stage, separated hot-state closeout from repo-visible artifact settlement, updated the direct workflow-draft and optimizer-plan tests, and documented the stage split in the GPT/Hermes operating plan.
+- Impacted Routes: `automation.workflow.draft`; embedded `workflowDraft` output inside `automation.optimizer.plan`
+- Impacted Services: `src/services/automation/apiFirstAgentFallbackService.ts`, `src/services/automation/apiFirstAgentFallbackService.test.ts`, `docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive planner-output change only. Existing callers still receive the same draft shape, but stage owners now make the GitHub settlement boundary explicit so hot-state closeout, repo-visible artifacts, and durable promotion are no longer implied to share one owner.
+- Validation: `npx vitest run src/services/automation/apiFirstAgentFallbackService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Multi-Plane Runtime Guidance Surfaced In Automation Catalog And Hermes Launch Context
+
+- Why: ADR-008 and the architecture docs had already fixed the multi-plane ownership model, but the live automation planning surface still did not expose GitHub as an explicit artifact/review plane and Hermes delegated launches were not yet guaranteed to read the new decision and Multica playbook before broad repo archaeology.
+- Scope: updated the API-first and agent-fallback automation catalog, optimizer plan, continuity-packet route serialization, session-open bundle, and activation-pack read-next bundle to model GitHub as a first-class artifact/review plane alongside Supabase hot-state and Obsidian semantic ownership; added the same plane split to runtime guardrails and asset delegation; wired Hermes scout, delegated-operator, and executor launches to include ADR-008 and the Multica control-plane playbook in their context candidates; and surfaced the same route ownership in Hermes runtime handoff notes.
+- Impacted Routes: `automation.capability.catalog`, `automation.route.preview`, `automation.optimizer.plan`, `automation.session_open_bundle`, continuity packet sync output, Hermes VS Code launch prompts, Hermes runtime handoff notes
+- Impacted Services: `src/services/automation/apiFirstAgentFallbackService.ts`, `src/services/automation/apiFirstAgentFallbackService.test.ts`, `scripts/sync-openjarvis-continuity-packets.ts`, `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `src/services/openjarvis/openjarvisAutopilotStatusService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: this remains a control-surface hardening slice, not a broad runtime migration. GitHub is now explicit in planning and runtime launch guidance as the artifact/review plane, but Supabase still owns mutable workflow state and Obsidian still owns durable semantic meaning.
+- Validation: targeted Vitest for the automation catalog/optimizer service, continuity/session-open smoke coverage, and Hermes runtime control service; `npx tsc --noEmit`.
+
+## 2026-04-17 - Multi-Plane Operating Model Canonicalized
+
+- Why: the repo had already drifted toward a stronger operating split where Multica handles visible coordination, shared Obsidian owns durable meaning, Supabase plus n8n own hot-state workflow execution, GitHub owns artifact and review settlement, and agent runtimes act as pluggable worker lanes. That shape had been discussed, but it was not yet fixed in the repo's canonical decision and indexing surfaces.
+- Scope: added a repo ADR compatibility stub for the multi-plane operating model, aligned Architecture Index ownership language and adoption order, updated the Platform Control Tower intake rules and canonical ownership table, expanded the Multica playbook's plane split to include workflow routers and GitHub, registered the shared backfill target, and indexed the new canonical surfaces in the planning README.
+- Impacted Routes: N/A
+- Impacted Services: `docs/adr/ADR-008-multi-plane-operating-model.md`, `docs/ARCHITECTURE_INDEX.md`, `docs/planning/PLATFORM_CONTROL_TOWER.md`, `docs/planning/README.md`, `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: documentation and control-surface alignment only. This does not claim that the full runtime migration is already implemented. It only fixes the ownership model and rollout order the repo should now use when future runtime work lands.
+- Validation: shared `requirement.compile` promotion for the decision artifact; VS Code diagnostics check for updated Markdown and JSON files.
+
+## 2026-04-17 - LiteLLM Remote NVIDIA Reasoning Alias Expansion
+
+- Why: the current workstation-local lanes are still the primary default, but the repo needed a narrower and more defensible next step for remote delegation posture: add larger NVIDIA-hosted reasoning and code-capable model aliases without changing the default provider order or claiming that the broader agent operating model is already production-shaped.
+- Scope: added opt-in LiteLLM aliases for Gemma 4 31B, Qwen coder 32B and 480B, and Nemotron Ultra 253B; documented the expanded NVIDIA NIM alias surface in the runtime matrix.
+- Impacted Routes: N/A
+- Impacted Services: `litellm.config.yaml`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: existing defaults (`muel-balanced`, `muel-fast`, `muel-precise`, local Ollama lanes, provider order) remain unchanged. The new aliases are opt-in only and still require `NVIDIA_NIM_API_KEY`. NVIDIA build/NIM trial surfaces may log prompts and outputs under their API trial terms, so these lanes should be treated as non-confidential until a separate policy decision changes that.
+- Validation: NVIDIA NIM model ID verification against `docs.api.nvidia.com` for `google/gemma-4-31b-it`, `qwen/qwen2.5-coder-32b-instruct`, `qwen/qwen3-coder-480b-a35b-instruct`, and `nvidia/llama-3.1-nemotron-ultra-253b-v1`; VS Code diagnostics check for updated YAML/Markdown files.
+
+## 2026-04-17 - Multica Local Control Plane Baseline Retired LM Studio Backend
+
+- Why: the Multica pilot had a hidden dependency on an old LM Studio-style Hermes endpoint at `http://127.0.0.1:1234/v1`, which produced empty-output failures and obscured the real local control-plane baseline. After retiring that path, the next blocker was agent drift: child-issue runs were summarizing `multica issue get` JSON, falling back to generic assistant chat, or invoking irrelevant local tools instead of executing the bounded validation request.
+- Scope: documented the Multica local runtime baseline and the issue-execution contract so the canonical workflow now treats LM Studio as retired for this control-plane path, keeps Hermes behind local Ollama, and requires child-lane agents to execute the issue request directly instead of echoing task metadata, spawning local todo placeholders, looping on session-inspection tools, or drifting into irrelevant vision/edit-tool calls. The local wrapper baseline also now records that OpenClaw JSON validation on this workstation should normalize onto a repo-specific isolated agent workspace plus a visible `multica` CLI shim instead of trusting daemon-provided `--session-id` reuse against the default main workspace.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: the canonical local Multica workflow no longer assumes an LM Studio endpoint on port `1234`. `Hermes Local` should use a verified local Ollama OpenAI-compatible endpoint, and the local ACP wrapper may still need a deliberately narrow disabled-tool surface for bounded validation runs on this workstation, including vision and edit tools that can fire even when the issue forbids repo mutation. `OpenClaw Local` also should not trust daemon-provided raw `--session-id` execution for stateless JSON checks on this workstation; normalize those checks through a repo-specific isolated agent workspace and keep the local `multica` CLI discoverable on PATH or the lane will fail before it reads the assigned issue.
+- Validation: WSL Hermes config inspection, direct ACP session construction checks for disabled-tool filtering, local `Hermes: Quick Local Check`, OpenClaw isolated-agent workspace smoke, manual issue-style OpenClaw wrapper repro after adding the `multica` PATH shim, and Multica daemon log review
+
+## 2026-04-17 - Session Policy-Gate Block Handling Moved Behind Session Prelude Helper
+
+- Why: `multiAgentService.ts` still duplicated policy-gate block terminalization in both the main pipeline and the primary LangGraph handler map. The transition logic already lived in `sessionPrelude.ts`, but the block-result completion path still sat in the host facade.
+- Scope: extended `langgraph/sessionRuntime/sessionPrelude.ts` with a reusable policy-gate state helper that applies the transition, terminalizes blocked sessions, and touches allowed sessions; rewired both `executeSessionWithMainPipeline()` and the primary LangGraph `policy_gate` handler in `multiAgentService.ts`; and added focused coverage in `sessionPrelude.test.ts`.
+- Impacted Routes: none; task-policy gating and blocked-session messaging remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: host queue ownership, non-task completion, and terminal session persistence remain in the same layers. This slice only removes duplicated policy-block completion wiring from the facade.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts`, `src/services/langgraph/sessionRuntime/branchRuntime.test.ts`, and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - LangGraph Requested-Skill And Fast-Path State Writers Moved Behind Branch Runtime Wrappers
+
+- Why: `multiAgentService.ts` still owned the last requested-skill and fast-path shadowGraph state mutations in the primary LangGraph handler map even though the underlying execution and refine primitives already lived in `branchRuntime.ts`. That kept the host facade responsible for `executionDraft` and `finalCandidate` writes that belong with branch-runtime node behavior.
+- Scope: extended `langgraph/sessionRuntime/branchRuntime.ts` with stateful requested-skill and fast-path wrappers, rewired the primary LangGraph handler map in `multiAgentService.ts` to delegate to them, and added focused coverage for the new wrapper surface in `branchRuntime.test.ts`.
+- Impacted Routes: none; requested-skill and fast-path runtime behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/branchRuntime.ts`, `src/services/langgraph/sessionRuntime/branchRuntime.test.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: host queue ownership, terminalization, and branch selection remain in the same layers. This slice only removes the remaining requested-skill and fast-path handler-local shadow state duplication from the facade.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/branchRuntime.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - M-24 Reframed As Channel Ingress Abstraction With Chat SDK-Ready Boundaries
+
+- Why: the repository had already proven that Discord ingress can prefer OpenClaw while Hermes continues as the bounded continuity lane, but the milestone wording still made OpenClaw sound like the permanent architectural owner of M-24. The next decision was narrower: keep the current Discord/OpenClaw path as the first adapter, preserve single-ingress compatibility mode, and leave a clean insertion point for a future Chat SDK surface without reopening the runtime ownership model.
+- Scope: redefined M-24 in the execution board, capability-gap analysis, roadmap, and single-ingress operating plan as a channel-ingress abstraction milestone. The updated docs now state that OpenClaw remains the first ingress adapter, Hermes remains the complementary continuity/operator lane, and Chat SDK belongs in the ingress layer rather than the runtime-ownership layer.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/EXECUTION_BOARD.md`, `docs/planning/CAPABILITY_GAP_ANALYSIS.md`, `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: documentation and test-fixture alignment only. The live Discord router still prefers OpenClaw under the same health gates and still falls back to the existing handlers when that ingress does not accept the request. What changed is the forward contract: future channel surfaces should reuse the same normalized ingress boundary instead of competing for runtime ownership.
+- Validation: markdown review; targeted Vitest for `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`
+
+## 2026-04-17 - Shared Wiki Canonical Ownership Extended To Prior Art And Repository Appendix
+
+- Why: the prior-art reference and beginner appendix had already been promoted into shared Obsidian targets, but the repo copies still carried full source content. That kept extra prose in the active planning surface and left automated backfill exposed to accidental overwrite from reduced mirror sources.
+- Scope: converted the repo copies of the agent-orchestration prior art and repository appendix into compatibility stubs, and marked their catalog entries as `compatibility-stub` so automated backfill skips them.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/AGENT_ORCHESTRATION_PRIOR_ART.md`, `docs/planning/contexts/team-muel_discord-news-bot_beginner-to-system-builder-appendix.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. Shared wiki ownership is unchanged, but repo-to-vault backfill now treats these reduced repo mirrors as skip-only sources and the active repo doc surface stays smaller.
+- Validation: `npm run -s docs:externalization:audit:json` candidate status check before conversion; follow-up audit after stub conversion
+
+## 2026-04-17 - Shared Wiki Canonical Ownership Extended To Local Collaboration Workflow And MCP Profile
+
+- Why: the local collaboration workflow and IDE MCP workspace profile were already catalog-backed and present in shared Obsidian, but the repo copies still carried full source prose. That kept more operator/reference material in the active repo surface than the externalization plan intends.
+- Scope: converted the local collaboration workflow and IDE MCP workspace setup docs into compatibility stubs, and marked their catalog entries as `compatibility-stub` so automated backfill skips the reduced repo mirrors.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md`, `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. Shared wiki and shared MCP profile ownership remain unchanged, while the repo planning surface loses two more duplicated long-form reference docs.
+- Validation: `node --import dotenv/config --import tsx scripts/audit-repo-doc-externalization.ts --json` filtered candidate check before conversion; follow-up externalization audit and backfill dry-run after stub conversion
+
+## 2026-04-17 - Shared Wiki Canonical Ownership Extended To Obsidian Digital Twin Docs
+
+- Why: the digital-twin constitution, ingest workflow, note schema, and note templates were already catalog-backed and present in shared Obsidian, but the repo copies still carried full reference content. That left more long-form knowledge-control material in the active planning surface than the externalization plan intends.
+- Scope: converted four Obsidian digital-twin docs into compatibility stubs, and marked their catalog entries as `compatibility-stub` so automated backfill skips the reduced repo mirrors.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md`, `docs/planning/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md`, `docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md`, `docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. Shared digital-twin guidance remains canonical in Obsidian, while the repo-local planning surface loses four additional duplicated reference docs.
+- Validation: `node --import dotenv/config --import tsx scripts/audit-repo-doc-externalization.ts --json` filtered candidate check before conversion; follow-up externalization audit and backfill dry-run after stub conversion
+
+## 2026-04-17 - Shared Wiki Canonical Ownership Extended To Unattended OpenJarvis And Secret-Rotation Ops Docs
+
+- Why: the unattended OpenJarvis autonomy setup and secret-rotation rollout docs were already catalog-backed and present in shared Obsidian, but the repo copies still carried full operational prose. That left the final two long-form externalization candidates in the active repo surface.
+- Scope: converted the unattended OpenJarvis autonomy setup and secret-rotation rollout docs into compatibility stubs, and marked their catalog entries as `compatibility-stub` so automated backfill skips the reduced repo mirrors.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md`, `docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: N/A
+- Risk/Regression Notes: no runtime behavior changed. Shared operations guidance remains canonical in Obsidian, and the active repo externalization lane no longer has any remaining stub-ready non-stub candidates.
+- Validation: `node --import dotenv/config --import tsx scripts/audit-repo-doc-externalization.ts --json` filtered candidate check before conversion; follow-up externalization audit and backfill dry-run after stub conversion
+
+## 2026-04-16 - Hermes Runtime Profile Family And Reentry Promotion Continuity Added
+
+- Why: the Hermes continuity lane only exposed a broad delegated profile, so unattended relaunches could not preserve narrower intent like scout, executor, distiller, or guardian work. Reentry closeout knowledge also risked staying trapped in workflow events instead of flowing into shared knowledge.
+- Scope: expanded Hermes runtime context profiles with auto resolution, threaded the selected profile through session-start prep, goal-cycle relaunch manifests, MCP and admin route surfaces, added operator scripts for the new launch profiles, and attached shared-knowledge promotion to reentry acknowledgments.
+- Impacted Routes: `/agent/runtime/openjarvis/session-start`, `/agent/runtime/openjarvis/hermes-runtime/chat-launch`, MCP tools `automation.session_start_prep`, `automation.hermes_runtime.chat_launch`
+- Impacted Services: `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/ack-openjarvis-reentry.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/mcp/toolAdapter.ts`, `package.json`
+- Impacted Tables/RPC: none; workflow event payloads now carry richer profile and promotion metadata
+- Risk/Regression Notes: queued-chat relaunch now defaults to `auto` profile inference rather than a hardcoded delegated profile, and distiller/guardian closeouts can emit shared-knowledge promotion metadata plus `artifact_ref` workflow events. Existing delegated-operator launches remain supported.
+- Validation: `npm exec tsc -- --noEmit`; targeted Vitest for `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `scripts/ack-openjarvis-reentry.test.ts`, `src/mcp/toolAdapter.test.ts`, and `src/routes/botAgentObsidianRuntime.test.ts`
+
+## 2026-04-16 - Local-First OpenJarvis Model Drift Removed From Operator Profiles
+
+- Why: the local-first operator lane and direct OpenJarvis CLI defaults had drifted to `qwen2.5:7b-instruct`, but the verified workstation inventory and current local Ollama lane expose `qwen2.5:7b`. That drift broke direct `jarvis ask` and made `openjarvis:serve:local` fragile until operators hand-edited both repo env and local user config.
+- Scope: aligned the local-first/OpenClaw env profiles and `.env.example` to `qwen2.5:7b`, pinned repo-local OpenJarvis serve on explicit Ollama engine settings, added `local:stack:first:*` control-surface scripts, tightened OpenJarvis serve engine/model resolution, and updated runtime defaults/tests to the same local lane.
+- Impacted Routes: N/A
+- Impacted Services: `config/env/local-first-hybrid.profile.env`, `config/env/local-first-hybrid-gemma4.profile.env`, `config/env/local-openclaw-stack.profile.env`, `scripts/start-openjarvis-serve.mjs`, `package.json`, `.env.example`, `src/configLlmProviders.ts`, `src/services/llm/client.ts`, `src/services/llm/providers.ts`, `src/services/tools/adapters/openjarvisAdapter.ts`, `src/services/llmClient.test.ts`, `src/services/llm/providers.test.ts`, `src/services/tools/adapters/openjarvisAdapter.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: repo-local OpenJarvis serve now defaults to direct Ollama when the configured model is a direct local model, while retaining LiteLLM when operators explicitly use `muel-*` aliases. Remote max-delegation control-plane behavior remains unchanged.
+- Validation: `npm run env:profile:local-first-hybrid`; direct `jarvis ask --no-stream "Reply with only OK"`; `npm run openjarvis:serve:local`; authenticated `GET http://127.0.0.1:8000/v1/models`; targeted Vitest for updated LLM/OpenJarvis tests; `npm run lint`
+
+## 2026-04-16 - Session Bootstrap Moved Into Runtime Support Helper
+
+- Why: `multiAgentService.ts` still owned priority normalization, workflow step templating, and queued session skeleton construction even though those concerns define runtime bootstrap shape rather than queue orchestration.
+- Scope: added `langgraph/runtimeSupport/runtimeSessionBootstrap.ts` for priority normalization, initial step construction, and queued-session creation; rewired `multiAgentService.ts` to delegate start-session and step rebuild paths; added focused bootstrap tests and updated the services directory map.
+- Impacted Routes: none; start-session validation and queue ownership remain in `multiAgentService.ts`
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionBootstrap.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionBootstrap.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: public session lifecycle APIs are unchanged. This slice only narrows host ownership around bootstrap defaults and initial workflow step generation.
+- Validation: targeted Vitest for `src/services/langgraph/runtimeSupport/runtimeSessionBootstrap.test.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionState.test.ts`, `src/services/langgraph/runtimeSupport/runtimeTerminal.test.ts`, and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Retry And Resume Session State Reset Moved Into Runtime Session State Helpers
+
+- Why: after the terminal-writer extraction, `multiAgentService.ts` still mutated retry and resume state inline even though those field resets are session-state concerns, not queue ownership concerns.
+- Scope: extended `langgraph/runtimeSupport/runtimeSessionState.ts` with retry reset and resume preparation helpers, rewired `multiAgentService.ts` to delegate to them while keeping queue enqueue/persist ownership in the host, added focused runtime-session-state coverage, and updated the services directory map.
+- Impacted Routes: none; retry queue semantics, resumable checkpoint gating, and HITL resume behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionState.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionState.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: host queue orchestration and public session lifecycle APIs remain unchanged. This slice only removes repeated retry/resume field mutation from the facade.
+- Validation: targeted Vitest for `src/services/langgraph/runtimeSupport/runtimeSessionState.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Terminal Session Finalization Moved Behind Runtime Terminal Support
+
+- Why: `multiAgentService.ts` still owned the terminal writer end-to-end, including persist-and-emit state mutation, checkpoint clearing, outcome attribution, assistant-turn binding, and best-effort shadow follow-up. Those are runtime terminal mechanics rather than session-facade API behavior.
+- Scope: extended `langgraph/runtimeSupport/runtimeTerminal.ts` with terminal-status detection and terminal-session finalization orchestration, rewired `multiAgentService.ts` to use a thin dependency-injected wrapper, added focused runtime-terminal coverage, and updated the services directory map.
+- Impacted Routes: none; terminal status semantics, assistant-turn persistence, and shadow follow-up behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/runtimeSupport/runtimeTerminal.ts`, `src/services/langgraph/runtimeSupport/runtimeTerminal.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: queue ownership, session lifecycle APIs, and runtime queue drain behavior remain in the host. This slice only removes the terminal cleanup writer from the facade while preserving the same persistence callbacks and best-effort async side effects.
+- Validation: targeted Vitest for `src/services/langgraph/runtimeSupport/runtimeTerminal.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Traffic Routing Host Helpers Moved Into Runtime Routing Support
+
+- Why: `multiAgentService.ts` still owned traffic-route normalization, fallback decision assembly, route-to-engine session mutation, and route-resolution persistence/logging inline. Those concerns are runtime routing mechanics, not session-facade API behavior.
+- Scope: added `langgraph/runtimeSupport/runtimeRouting.ts` for traffic-route application, normalization, fallback construction, and route-resolution orchestration; rewired `multiAgentService.ts` to delegate to the helper while preserving host-controlled persistence and logger callbacks; added focused runtime-routing tests; and updated the services directory map.
+- Impacted Routes: none; traffic-route selection, langgraph/main engine selection, and fallback-to-main semantics remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/runtimeSupport/runtimeRouting.ts`, `src/services/langgraph/runtimeSupport/runtimeRouting.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: route persistence timing and fallback ownership remain in the host callback layer. This slice only removes inline traffic-routing state mutation and normalization logic from the facade.
+- Validation: targeted Vitest for `src/services/langgraph/runtimeSupport/runtimeRouting.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - LangGraph Checkpoint And HITL Pause State Moved Into Runtime Session State Helpers
+
+- Why: after the handler wrapper extractions, `multiAgentService.ts` still carried checkpoint persistence, resumable-session detection, and HITL pause-state mutation inline even though those are session-state concerns rather than host orchestration concerns.
+- Scope: extended `langgraph/runtimeSupport/runtimeSessionState.ts` with checkpoint persistence/clear helpers, resumable-session detection, and HITL pause-state mutation; rewired `multiAgentService.ts` to use the extracted helpers through host-provided persistence callbacks; added focused runtime-session-state coverage; and updated the services directory map.
+- Impacted Routes: none; checkpoint resume semantics, HITL pause persistence, and terminal checkpoint clearing remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionState.ts`, `src/services/langgraph/runtimeSupport/runtimeSessionState.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: session persistence timing still flows through the host callbacks, so this slice does not change queue ownership or Supabase write behavior. It only moves repeated checkpoint/HITL state mutation behind runtime session-state helpers.
+- Validation: targeted Vitest for `src/services/langgraph/runtimeSupport/runtimeSessionState.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - HITL Review And Compose Response Wrappers Moved Behind Session Runtime Helpers
+
+- Why: even after the earlier deliberation and prelude slices, `multiAgentService.ts` still directly owned the primary LangGraph HITL review mutation path and the final compose-response terminalization branch. Those were the last obvious handler-local state writers in the primary graph host.
+- Scope: extended `langgraph/sessionRuntime/fullReviewDeliberationNodes.ts` with a reusable HITL review state wrapper, extended `langgraph/sessionRuntime/sessionPrelude.ts` with a compose-response resolver for task and non-task terminalization, rewired the primary LangGraph handler map in `multiAgentService.ts` to delegate to both helpers, and added focused coverage in the corresponding helper test files.
+- Impacted Routes: none; HITL pause/resume flow, requested-skill/fast-path completion, and final result selection behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts`, `src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.test.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the host still owns queue control, checkpoint persistence callbacks, and terminal session persistence. This slice only removes the remaining handler-local HITL and compose-response state wiring while preserving existing terminal status semantics.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts`, `src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.test.ts`, and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Multi-Agent Session Prelude Helpers Moved Into Session Runtime Layer
+
+- Why: `multiAgentService.ts` still mixed intent classification, policy transition, execution-strategy trace decoration, and non-task terminalization inline with host orchestration. Those concerns already aligned more naturally with the existing `langgraph/sessionRuntime` boundary than with the top-level session facade.
+- Scope: added `langgraph/sessionRuntime/sessionPrelude.ts` for intent-classification prelude, policy transition application, execution-strategy shadow updates, and non-task terminalization; rewired `multiAgentService.ts` to delegate to the helper through an injected dependency bundle; added focused unit coverage; and updated the services directory map.
+- Impacted Routes: none; public session facade APIs and runtime queue ownership remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: branch execution, queue ownership, and terminal persistence contracts remain in their existing layers. This slice only moves the pre-branch session runtime prelude into the sessionRuntime layer with explicit host-provided mutators.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Multi-Agent Compile Prompt And Memory Hydration Wrappers Consolidated In Session Prelude
+
+- Why: after the initial prelude extraction, `multiAgentService.ts` still duplicated prompt-compilation session mutation and memory-hydration shadow updates across both the main pipeline and the primary LangGraph handler map.
+- Scope: extended `langgraph/sessionRuntime/sessionPrelude.ts` with compiled-prompt application and session-memory hydration wrappers, rewired the main pipeline and handler map in `multiAgentService.ts` to use them, and expanded focused unit coverage in `sessionPrelude.test.ts`.
+- Impacted Routes: none; prompt normalization, task-goal selection, and memory-hint loading behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.ts`, `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this slice only removes duplicated host wiring. The same `runCompilePromptNode()` and `runHydrateMemoryNode()` primitives still own the underlying behavior, now behind the shared session-prelude facade.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/sessionPrelude.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Requested-Skill And Fast-Path LangGraph Handlers Reused Branch Runtime Helpers
+
+- Why: `multiAgentService.ts` still kept separate requested-skill and fast-path node handler implementations even though `branchRuntime.ts` already owned the same execution/refine behavior for the main pipeline branches.
+- Scope: extended `langgraph/sessionRuntime/branchRuntime.ts` with reusable requested-skill and fast-path node helpers, rewired the primary LangGraph handler map in `multiAgentService.ts` to delegate to them, and added focused branch-runtime tests for the new helper surface.
+- Impacted Routes: none; requested-skill and fast-path runtime behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/branchRuntime.ts`, `src/services/langgraph/sessionRuntime/branchRuntime.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: trace node labels used by the primary LangGraph path are preserved, while the main pipeline branch runtime continues to use its existing stage-level trace labels through the same shared execution helpers.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/branchRuntime.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Full-Review LangGraph State Writers Moved Behind FullReviewNodes Helpers
+
+- Why: `multiAgentService.ts` still directly owned the full-review plan/execution/critique shadowGraph writes and node-local trace decoration even after the underlying full-review execution primitives had already moved into `fullReviewNodes.ts`.
+- Scope: extended `langgraph/sessionRuntime/fullReviewNodes.ts` with stateful wrapper helpers for full-review plan, execution, and critique nodes; rewired the primary LangGraph handler map in `multiAgentService.ts` to use them; and added focused coverage for the new wrapper surface in `fullReviewNodes.test.ts`.
+- Impacted Routes: none; full-review plan/research/critique behavior remains unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/fullReviewNodes.ts`, `src/services/langgraph/sessionRuntime/fullReviewNodes.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the same `runPlanTaskNode()`, `runResearchTaskNode()`, and `runCriticReviewNode()` primitives still own the underlying work. This slice only moves the handler-specific shadowGraph update contract and trace emission behind shared helpers.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/fullReviewNodes.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Full-Review Deliberation State Writers Moved Behind Deliberation Helpers
+
+- Why: `multiAgentService.ts` still directly owned the ToT shadow snapshot write, final candidate state write, and selected-final promotion write for the primary LangGraph full-review path, even though the underlying deliberation primitives already lived in `fullReviewDeliberationNodes.ts`.
+- Scope: extended `langgraph/sessionRuntime/fullReviewDeliberationNodes.ts` with stateful wrappers for ToT exploration, final compose, and candidate promotion; rewired the primary LangGraph handler map in `multiAgentService.ts` to use them; and added focused wrapper coverage in `fullReviewDeliberationNodes.test.ts`.
+- Impacted Routes: none; ToT cutover, compose, and promotion behavior remain unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.ts`, `src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the same `runComposeFinalNode()`, `runPromoteBestCandidateNode()`, and `runToTShadowExploration()` primitives still own the underlying decision logic. This slice only removes host-side shadowGraph and node-trace duplication for the primary LangGraph path.
+- Validation: targeted Vitest for `src/services/langgraph/sessionRuntime/fullReviewDeliberationNodes.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner Config And Stateful Caches Moved Behind Dedicated Helpers
+
+- Why: `actionRunner.ts` was still mixing env-derived policy, cache/circuit state, gate-verdict memoization, and execution flow in one host file. That made the next extraction steps riskier because tests and future refactors would keep touching hidden singleton state inline.
+- Scope: added `actionRunnerConfig.ts` for env-driven runner policy and cacheability defaults, added `actionRunnerState.ts` for gate-verdict caching, FinOps lookup throttling, circuit/cache singletons, and action utility tracking, rewired `actionRunner.ts` to consume those helpers while keeping its public facade, and updated the services directory map plus focused tests.
+- Impacted Routes: none; existing runtime/admin surfaces still import `syncHighRiskActionsToSandboxPolicy()` and `getActionUtilityScore()` through `actionRunner.ts`
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerConfig.ts`, `src/services/skills/actionRunnerState.ts`, `src/services/skills/actionRunner.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: defaults and public behavior are intentionally unchanged. The new `__resetActionRunnerForTests()` hook only affects test/runtime reset callers and prevents future singleton leakage during additional refactor slices.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner Workflow Closeout Builder Moved Behind Dedicated Helper
+
+- Why: after the config/state extraction, `actionRunner.ts` still kept the pipeline closeout distillate and capability-demand builder inline with execution flow. That made the pipeline section harder to scan and left a cohesive pure computation block inside the host facade.
+- Scope: added `actionRunnerWorkflowCloseout.ts` for workflow closeout artifact calculation, rewired `actionRunner.ts` to delegate through a narrow evidence-ref callback while preserving the existing `buildWorkflowCloseoutArtifacts()` export surface, and updated the services directory map.
+- Impacted Routes: none; goal-pipeline behavior and workflow persistence remain unchanged
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerWorkflowCloseout.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: only helper placement changed. Artifact-ref extraction still lives in `actionRunner.ts`, so the new helper receives normalized evidence locators without changing closeout semantics or the public test surface.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner Artifact And News Parsing Helpers Moved Behind Dedicated Helper
+
+- Why: `actionRunner.ts` still carried artifact display formatting, workflow artifact-ref extraction, URL normalization, and external-news artifact parsing inline. Those routines are pure parsing/formatting concerns with existing tests and do not belong in the main execution host.
+- Scope: added `actionRunnerArtifacts.ts` for reflection-display formatting, workflow artifact reference extraction, and external-news artifact parsing; rewired `actionRunner.ts` to import and re-export the public helper surface; and updated the services directory map.
+- Impacted Routes: none; action execution output, workflow artifact persistence, and external-news capture behavior remain unchanged
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerArtifacts.ts`, `src/services/skills/actionRunner.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: parsing semantics are intentionally unchanged. `actionRunner.ts` continues to expose `formatActionArtifactsForDisplay()` and `extractWorkflowArtifactRefs()` so existing callers and tests keep the same import surface.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner External News Capture Moved Behind Dedicated Helper
+
+- Why: `actionRunner.ts` still embedded a full subflow for external-news capture policy checks, dedupe/fingerprint logic, and memory persistence. That behavior is a separate concern from action execution and made the host file harder to reason about.
+- Scope: added `actionRunnerNewsCapture.ts` for policy gating, domain filtering, freshness checks, fingerprint dedupe, and semantic-memory persistence; rewired `actionRunner.ts` to delegate to the helper; added focused helper tests; and updated the services directory map.
+- Impacted Routes: none; this only reorganizes internal orchestration for `news.google.search` success handling
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerNewsCapture.ts`, `src/services/skills/actionRunnerNewsCapture.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: behavior is intentionally preserved. The new helper accepts optional dependency overrides so policy/dedupe persistence can now be tested without pulling in live DB or memory services.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts` and `src/services/skills/actionRunnerNewsCapture.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner Shared Execution Primitive Moved Behind Dedicated Helper
+
+- Why: after the policy, parsing, and closeout slices, `actionRunner.ts` still duplicated the real action invoke path across non-pipeline and pipeline modes. Timeout handling, worker-result normalization, structured error logging, retry rules, circuit state, and cache key generation remained coupled to the host facade.
+- Scope: added `actionRunnerExecution.ts` for cache-key generation, cache access, circuit checks, and normalized action execution with retry/timeout handling; rewired both `runGoalActions()` and the pipeline step executor to use the same execution primitive; added focused execution-helper tests; and updated the services directory map.
+- Impacted Routes: none; non-pipeline action execution and goal-pipeline step execution keep the same outward behavior while sharing the same internal execution path
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerExecution.ts`, `src/services/skills/actionRunnerExecution.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: retry stop conditions and timeout/error normalization are intentionally preserved. The pipeline step executor now uses the same normalized execution primitive as the classic runner path, reducing divergence risk between the two modes.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts`, `src/services/skills/actionRunnerNewsCapture.test.ts`, and `src/services/skills/actionRunnerExecution.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner Pipeline Session Persistence Moved Behind Dedicated Helper
+
+- Why: `runGoalPipeline()` still mixed workflow-session lifecycle persistence with planning and output rendering. Session start, executing transition, replan event recording, per-step workflow writes, and final closeout were a coherent workflow-side-effect concern rather than host orchestration logic.
+- Scope: added `actionRunnerPipelinePersistence.ts` for goal-pipeline session lifecycle persistence, rewired `actionRunner.ts` to delegate to it, added focused lifecycle tests, and updated the services directory map.
+- Impacted Routes: none; goal-pipeline behavior and workflow persistence semantics remain unchanged
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerPipelinePersistence.ts`, `src/services/skills/actionRunnerPipelinePersistence.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: execution planning and user-visible output remain in `actionRunner.ts`. The new helper only centralizes workflow persistence side effects, reducing drift between planner-empty and session-complete closeout paths.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts`, `src/services/skills/actionRunnerExecution.test.ts`, `src/services/skills/actionRunnerNewsCapture.test.ts`, and `src/services/skills/actionRunnerPipelinePersistence.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Action Runner Governance And Approval Gate Moved Behind Dedicated Helper
+
+- Why: `runGoalActions()` still embedded the guild-policy fetch path, disabled-policy branch, high-risk approval escalation, and approval-request creation inline. That was the last large policy block still mixed into the host execution loop.
+- Scope: added `actionRunnerGovernance.ts` for governance evaluation and approval-request escalation, rewired `actionRunner.ts` to consume the helper while preserving the same logging/output behavior, added focused helper tests, and updated the services directory map.
+- Impacted Routes: none; action execution still produces the same blocked/approval states and the same approval request side effects
+- Impacted Services: `src/services/skills/actionRunner.ts`, `src/services/skills/actionRunnerGovernance.ts`, `src/services/skills/actionRunnerGovernance.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the helper only centralizes policy decision logic. Action logs, diagnostics counters, and user-visible output formatting remain in `actionRunner.ts` so blocked-state behavior stays stable.
+- Validation: targeted Vitest for `src/services/skills/actionRunner.test.ts`, `src/services/skills/actionRunnerExecution.test.ts`, `src/services/skills/actionRunnerNewsCapture.test.ts`, `src/services/skills/actionRunnerPipelinePersistence.test.ts`, and `src/services/skills/actionRunnerGovernance.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Hermes Reentry Ack Now Auto-Queues The Next Bounded Objective Before Restart
+
+- Why: queued chat relaunch and reentry acknowledgment were already in place, but the closeout path still depended on a separately pre-populated safe queue. That meant a completed GPT turn could still stop at summary time even when the live hot-state already contained a clear next bounded objective in `next_queue_head` or capability-demand objective fields.
+- Scope: threaded `sessionId` through the OpenJarvis status helper so hot-state reads can stay pinned to the acknowledged workflow session, added a runtime-control helper that synthesizes bounded queue candidates from the current Hermes status bundle and writes them into the safe queue when the queue is empty, wired `scripts/ack-openjarvis-reentry.ts` to call that helper before restarting the queue-aware supervisor, and taught the continuous goal-cycle loop to call the same helper immediately when auto-select is enabled but no queued candidate is available. Added focused unit coverage for the runtime-control helper and the reentry-ack closeout path.
+- Impacted Routes: no new HTTP route; the behavior change applies to the existing `openjarvis:hermes:runtime:reentry-ack` closeout CLI and the underlying runtime-control service
+- Impacted Services: `src/services/openjarvis/openjarvisAutopilotStatusService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `scripts/ack-openjarvis-reentry.ts`, `scripts/ack-openjarvis-reentry.test.ts`
+- Impacted Tables/RPC: none; this change reuses the existing workflow event hot-state, continuity packet safe queue, and supervisor restart path
+- Risk/Regression Notes: auto-queueing is intentionally narrow. It runs only when queued-objective auto-selection is enabled, skips when the queue already has candidates, and refuses to synthesize new queue entries while capacity is asking for `escalate`. Candidate synthesis is limited to `next_queue_head` plus explicit capability-demand objectives so generic `next_action` text does not get promoted into the queue. The continuous goal-cycle now immediately retries after a successful auto-queue instead of falling through to an idle wait.
+- Validation: targeted Vitest for `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts` and `scripts/ack-openjarvis-reentry.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Multi-Agent Execute Session Terminal Helpers Moved To Runtime Support
+
+- Why: after the snapshot/outcome-cache extraction, `multiAgentService.ts` still carried execute-time fallback and terminal failure normalization inline. That kept route-fallback policy, user-safe error mapping, and side-effectful fallback state reset coupled to the host facade even though they are runtime support concerns.
+- Scope: added `langgraph/runtimeSupport/runtimeTerminal.ts` for langgraph-primary fallback application and terminal failure normalization, rewired `executeSession()` in `multiAgentService.ts` to delegate to the new helpers, added focused unit coverage for the helper surface, and updated the services directory map.
+- Impacted Routes: none; session start/cancel/resume and runtime snapshot surfaces are unchanged
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/langgraph/runtimeSupport/runtimeTerminal.ts`, `src/services/langgraph/runtimeSupport/runtimeTerminal.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: public multi-agent session APIs, queue ownership, and existing terminal status semantics remain unchanged. This slice narrows execute-time branching but intentionally leaves the heavier terminal writer and branch-runtime execution inside `multiAgentService.ts` for later extraction.
+- Validation: targeted Vitest for `src/services/langgraph/runtimeSupport/runtimeTerminal.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-16 - Multi-Agent Runtime Snapshot And Outcome Cache Moved Behind Dedicated Helpers
+
+- Why: active milestone M-21 explicitly calls for shrinking oversized root-level services without changing their public facade. `multiAgentService.ts` still owned two low-risk concerns that did not need to live inside the session host: runtime snapshot assembly and the cross-session recent-outcome cache.
+- Scope: extracted multi-agent runtime constants into `multiAgentConfig.ts`, moved runtime snapshot building and recent session outcome cache handling into `multiAgentSnapshot.ts`, kept `multiAgentService.ts` as the public facade and queue owner, and updated the test reset hook so extracted outcome state is cleared between test runs. Added focused unit coverage for the extracted helper module.
+- Impacted Routes: none; existing runtime snapshot consumers still call `getMultiAgentRuntimeSnapshot()` through `multiAgentService.ts`
+- Impacted Services: `src/services/multiAgentService.ts`, `src/services/multiAgentConfig.ts`, `src/services/multiAgentSnapshot.ts`, `src/services/multiAgentSnapshot.test.ts`, `src/services/DIRECTORY_MAP.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: public multi-agent session APIs, queue ownership, and runtime snapshot shape remain unchanged. This slice intentionally stops at facade-safe extraction and does not yet move branch execution or queue host behavior out of `multiAgentService.ts`.
+- Validation: targeted Vitest for `src/services/multiAgentSnapshot.test.ts` and `src/services/multiAgentService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-15 - Hermes Autonomy Can Be Pinned To One Execution-Board Focus Objective
+
+- Why: the repo can already auto-promote approved queued objectives, but that behavior still allows stale safe-queue entries or generic board backlog items to compete with a newly declared strategic focus. The user direction for this slice is stricter: keep autonomous reassignment pointed at codebase optimization only until that focus is deliberately removed.
+- Scope: added an execution-board focus override section that the goal-cycle candidate builder reads before any packet safe queue or generic board backlog, switched the non-override board fallback from Active WIP to Queued Now so completed-loop promotion no longer reuses active WIP as the next target, added an optional `replaceExisting` flag to the Hermes queue-objective control surface so operators can reset the safe queue to a single bounded objective, refocused the execution board around M-21 codebase optimization, fixed continuity packet sync so explicit handoff queue overrides survive later sync passes, guarded `scripts/sync-openjarvis-continuity-packets.ts` so importing the module no longer fires a side-effect `manual-sync`, and taught the detached local-autonomy supervisor drift tracker to restart when the continuity sync script itself changes.
+- Impacted Routes: existing `POST /api/bot/agent/runtime/openjarvis/hermes-runtime/queue-objective` now accepts `replaceExisting=true` when the safe queue must be reset to one objective
+- Impacted Services: `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `scripts/run-local-autonomy-supervisor.ts`, `scripts/run-local-autonomy-supervisor.test.ts`, `scripts/sync-openjarvis-continuity-packets.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `src/mcp/toolAdapter.ts`, `src/mcp/toolAdapter.test.ts`, `docs/planning/EXECUTION_BOARD.md`
+- Impacted Tables/RPC: none; this change reuses the existing continuity packet, runtime admin route, and local MCP queue-objective surface
+- Risk/Regression Notes: when the new execution-board focus section is populated, autonomous candidate selection intentionally ignores stale safe-queue and generic execution-board backlog items. Queue replacement remains opt-in through `replaceExisting=true`; default queue writes still append for existing callers. Mixed remote-write/local-read Obsidian routing now also mirrors shared queue writes back into the local vault path so later packet sync reads the same explicit queue that operators just wrote, and sync imports no longer trigger unsolicited live packet rewrites.
+- Validation: targeted Vitest for `scripts/openjarvis-remote-workstream-smoke.test.ts`, `scripts/run-local-autonomy-supervisor.test.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, and `src/mcp/toolAdapter.test.ts`; `npx tsc --noEmit`; live queue-objective write to `HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md`; live `npx tsx scripts/sync-openjarvis-continuity-packets.ts --reason=manual-sync`
+
+## 2026-04-15 - Discord OpenClaw Ingress Now Bridges Into Hermes Continuity And OpenJarvis Managed Memory Maintenance
+
+- Why: M-24 required the Discord surface to stop at neither slash routing nor one-off replies. The repo needed a real Discord ingress path that can prefer OpenClaw when the gateway is healthy, fall back safely to existing docs/vibe behavior when it is not, and close one recurring bounded objective with managed-agent trace and feedback instead of leaving memory maintenance as a detached script lane.
+- Scope: added a shared OpenClaw Discord ingress helper at the command-router edge, injected it into the existing docs and prefixed vibe handlers, and promoted OpenJarvis memory sync into a managed maintenance flow that resolves a stable agent, triggers the repo-owned sync executor, captures the latest trace, and records feedback. Added an admin runtime route plus focused route and handler coverage.
+- Impacted Routes: existing Discord `/해줘`, `/뮤엘`, and prefixed `뮤엘 ...` ingress can now short-circuit through OpenClaw with fallback to the prior handlers; added `POST /api/bot/agent/runtime/openjarvis/memory-sync/managed`
+- Impacted Services: `src/discord/runtime/commandRouter.ts`, `src/discord/commands/docs.ts`, `src/discord/commands/vibe.ts`, `src/services/openjarvis/openjarvisMemorySyncStatusService.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `src/discord/commands/docs.test.ts`, `src/discord/commands/vibe.test.ts`, `src/services/openjarvis/openjarvisMemorySyncStatusService.test.ts`
+- Impacted Tables/RPC: none; the new managed path reuses existing OpenJarvis external adapter actions and the repo-owned `scripts/sync-openjarvis-memory.ts` executor
+- Risk/Regression Notes: Discord continuity queueing is intentionally narrow and skips private-thread promotion to avoid leaking thread-local intent into broader continuity surfaces. OpenClaw ingress remains gateway-gated and silently falls back to the existing docs/vibe flow if the gateway does not handle the request, so the older Discord behavior remains intact under degraded local tool conditions.
+- Validation: targeted Vitest for `src/discord/commands/docs.test.ts`, `src/discord/commands/vibe.test.ts`, `src/services/openjarvis/openjarvisMemorySyncStatusService.test.ts`, and `src/routes/botAgentObsidianRuntime.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-15 - LLM P95 Latency Now Drives Go-No-Go, Temporary Cost-Optimized Provider Downgrade, And Operator Visibility
+
+- Why: active milestone M-20 requires the platform to react when LLM latency SLOs drift, but the repo previously treated p95 latency as a reporting signal only. That left three gaps: go/no-go decisions could stay green while latency was already degraded, the runtime had no immediate circuit-breaker style downgrade path even though a temporary provider profile override mechanism already existed, and operators could not tell from the runtime view whether the effective provider profile came from the workflow default or an active gate override.
+- Scope: added an LLM p95 latency check to the go/no-go report using logged LLM call telemetry and the existing `AGENT_SLO_INTELLIGENCE_MAX_P95_LATENCY_MS` threshold, wired the existing 30-second gate provider-profile override so `evaluateGuildSloReport` automatically sets `cost-optimized` for the affected guild when the SLO breach is detected, and exposed the active gate override separately in the LLM runtime snapshot for unattended-health/operator inspection.
+- Impacted Routes: existing `GET /api/bot/agent/runtime/unattended-health` now includes `llmRuntime.gateProviderProfile` so operators can distinguish a temporary gate override from the workflow default profile
+- Impacted Services: `src/config.ts`, `src/services/goNoGoService.ts`, `src/services/goNoGoService.test.ts`, `src/services/agent/agentSloService.ts`, `src/services/agent/agentSloService.test.ts`, `src/services/llm/client.ts`, `src/services/llmClient.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/OPERATIONS_24_7.md`
+- Impacted Tables/RPC: no schema change; reads existing `agent_llm_call_logs` telemetry and existing SLO policy tables
+- Risk/Regression Notes: the downgrade is intentionally temporary and in-memory only, using the pre-existing 30-second gate override TTL. This keeps the change as a short-lived circuit breaker rather than a persistent policy rewrite, and avoids clearing other gate-driven overrides unless the new latency breach actually occurs. The new runtime visibility is additive only and does not change provider selection by itself.
+- Validation: targeted Vitest for `src/services/goNoGoService.test.ts`, `src/services/agent/agentSloService.test.ts`, `src/services/llmClient.test.ts`, and `src/routes/botAgentObsidianRuntime.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-15 - Operator Runtime Surfaces Now Expose Local Max-Delegation Readiness
+
+- Why: the repository already had a standard doctor for the `local-nemoclaw-max-delegation` profile, but the canonical operator surfaces still could not explain why the local 24-hour autonomy lane was blocked. Operators had to leave `unattended-health` and `operator-snapshot` and run the separate script manually.
+- Scope: exported the existing local stack doctor as a reusable helper, surfaced its result under `localAutonomy` in both `GET /api/bot/agent/runtime/unattended-health` and `GET /api/bot/agent/runtime/operator-snapshot`, and updated focused route coverage plus operator docs to explain the new signal.
+- Impacted Routes: `GET /api/bot/agent/runtime/unattended-health`, `GET /api/bot/agent/runtime/operator-snapshot`
+- Impacted Services: `scripts/local-ai-stack-control.mjs`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/OPERATIONS_24_7.md`
+- Impacted Tables/RPC: no table or RPC contract changed; the new operator-visible block reuses the existing local stack doctor and its current workflow-state/memory projection reads
+- Risk/Regression Notes: this adds local stack probing work to the admin runtime routes, but it intentionally reuses the existing doctor contract instead of creating a second readiness implementation with divergent semantics.
+- Validation: targeted Vitest for `src/routes/botAgentObsidianRuntime.test.ts` and `scripts/local-ai-stack-control.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-15 - OpenJarvis Scheduler Is Now A First-Class Runtime Surface For Long-Running Memory Watch
+
+- Why: the repository already leveraged OpenJarvis managed memory maintenance and documented scheduler usage historically, but operators still had no repo-owned control surface to inspect scheduler state, ensure a recurring memory-watch task, or start the scheduler daemon itself. That left 24-hour local autonomy partially wired: Hermes continuity could keep the queue alive, while OpenJarvis long-running scheduling still depended on ad hoc CLI knowledge.
+- Scope: expanded the OpenJarvis adapter with scheduler create/pause/resume/cancel/logs capabilities; added repo-owned scheduler status, ensure-memory-sync-schedule, and daemon-start helpers under the existing OpenJarvis memory control service; exposed new admin runtime routes for scheduler status, memory-sync schedule ensure, and daemon start; surfaced scheduler status in operator snapshot and unattended-health payloads; and added CLI entrypoints for `openjarvis:scheduler:start`, `openjarvis:scheduler:status`, and `openjarvis:memory:sync:schedule:ensure`.
+- Impacted Routes: new `GET /api/bot/agent/runtime/openjarvis/scheduler`, new `POST /api/bot/agent/runtime/openjarvis/memory-sync/schedule`, new `POST /api/bot/agent/runtime/openjarvis/scheduler/start`; existing `GET /api/bot/agent/runtime/operator-snapshot` and `GET /api/bot/agent/runtime/unattended-health` now include OpenJarvis scheduler state alongside memory sync state.
+- Impacted Services: `src/services/tools/adapters/openjarvisAdapter.ts`, `src/services/tools/externalAdapterTypes.ts`, `src/services/openjarvis/openjarvisMemorySyncStatusService.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `scripts/run-openjarvis-scheduler.ts`, `package.json`, `src/services/openjarvis/openjarvisMemorySyncStatusService.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `src/services/tools/adapters/openjarvisAdapter.test.ts`
+- Impacted Tables/RPC: none; the new scheduler control surface only wraps existing OpenJarvis CLI and existing repo-owned runtime routes.
+- Risk/Regression Notes: OpenJarvis scheduler tasks execute agent prompts and still require the scheduler daemon to be running separately; the repo-owned memory sync script remains the canonical direct refresh path. The new memory-watch schedule defaults to a short deterministic prompt so scheduler list output can be matched reliably even when upstream CLI tables truncate prompt columns.
+- Validation: targeted Vitest for `src/services/openjarvis/openjarvisMemorySyncStatusService.test.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, and `src/services/tools/adapters/openjarvisAdapter.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-15 - Repo Runtime Now Keeps The Local Max-Delegation Lane And Hermes Supervisor Alive
+
+- Why: exposing `localAutonomy` in operator views made the blocker visible, but visibility alone does not satisfy 24-hour unattended autonomy. The repo still had no app-owned loop that would automatically re-run the local stack doctor/up sequence and requeue the Hermes continuous supervisor when it dropped.
+- Scope: added a repo-owned `localAutonomySupervisorLoop` that starts at `service-init`, checks whether the local max-delegation lane is relevant in the current environment, heals the local stack through the existing `runUp()` control surface when doctor fails, and queues the existing `start-supervisor-loop` remediation when Hermes continuity is present but not alive; the local lane now also requests `autoLaunchQueuedChat=true` on that remediation so queued next objectives can reopen the next GPT session instead of stopping at a supervisor-only loop; if a stale manual-chat supervisor is still alive, the loop now replaces it with the queue-aware profile once the active workflow is no longer executing; queued supervisor remediation now also forwards the explicit `dryRun` mode into the spawned goal-cycle command so a live auto-chat repair does not silently fall back to preview-only VS Code chat launch; queued-chat handoff state is now surfaced as `awaiting_reentry_acknowledgment` in goal status and Hermes runtime readiness, and the local autonomy loop treats that state as a wait boundary instead of blindly relaunching the supervisor while GPT closeout is still pending; the first awaiting-ack boundary now also refreshes continuity packet sync immediately so the queued reentry objective and wait state become visible before the handoff goes stale; if that wait boundary ages past 15 minutes, runtime status now marks it stale, local autonomy reports `reentry=stale-ack`, records a deduped workflow `capability_demand`, and reruns continuity packet sync so the Obsidian handoff/progress packet mirrors the stalled handoff as an operator-visible blocker; continuity packet sync now also falls back to the detached `local-autonomy-supervisor` manifest/status/log artifacts so handoff/progress packets can surface `continuity_watch_alive` and watcher evidence refs when no active launch manifest exists; packet-generated continuity guidance lines in Safe Autonomous Queue are now filtered out of `autonomous_goal_candidates` so release-to-restart prefers real bounded work instead of repeating packet-maintenance boilerplate; added a standalone detached `npm run local:autonomy:supervisor` entrypoint plus `status`, `stop`, `restart`, and `watch` variants for sessions where the repo runtime is not already running; detached manifest/status artifacts now carry a tracked-code fingerprint and the detached start command auto-restarts a stale daemon when the self-heal code changed; surfaced the loop in runtime route payloads and scheduler policy; and added focused regression coverage for the new runtime service, bootstrap wiring, scheduler policy, runtime route outputs, queued-supervisor remediation forwarding, queued reentry wait-boundary handling, continuity watch fallback observability, and daemon drift detection helpers.
+- Impacted Routes: existing `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/operator-snapshot` now include `localAutonomySupervisorLoop`; existing `GET /api/bot/agent/runtime/scheduler-policy` now includes `local-autonomy-supervisor`
+- Impacted Services: `src/services/runtime/localAutonomySupervisorService.ts`, `src/services/runtime/localAutonomySupervisorService.test.ts`, `src/services/runtime/runtimeBootstrap.ts`, `src/services/runtime/runtimeBootstrap.test.ts`, `src/services/runtime/runtimeSchedulerPolicyService.ts`, `src/services/runtime/runtimeSchedulerPolicyService.test.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/botAgentObsidianRuntime.test.ts`, `scripts/local-ai-stack-control.mjs`, `scripts/run-local-autonomy-supervisor.ts`, `scripts/run-local-autonomy-supervisor.test.ts`, `scripts/sync-openjarvis-continuity-packets.ts`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/OPERATIONS_24_7.md`
+- Impacted Tables/RPC: no new table or RPC contract added; the loop reuses existing local doctor/up probes plus the existing OpenJarvis Hermes remediation contract
+- Risk/Regression Notes: the new loop is fail-closed to environments that do not expose local managed surfaces, so shared or remote-only deployments do not start it. On local max-delegation environments it will spawn the Hermes supervisor without a visible terminal to keep unattended continuity quiet and repeatable, and it now explicitly targets queue-aware GPT relaunch instead of leaving that behavior to whichever env default happened to be active. Detached local-autonomy daemons still keep their in-memory code image, but manifest/status now mark that drift explicitly and the detached start path will replace a stale daemon instead of silently reporting `alreadyRunning=true` on outdated code.
+- Validation: targeted Vitest for `src/services/runtime/localAutonomySupervisorService.test.ts`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts`, and `scripts/openjarvis-remote-workstream-smoke.test.ts`; `npx tsc --noEmit`; live `npm run local:autonomy:supervisor:stop`; live `npm run local:autonomy:supervisor:once`; artifact verification in `tmp/autonomy/local-autonomy-supervisor.json` plus `tmp/autonomy/launches/latest-interactive-goal-loop.json` showing `auto_launch_queued_chat=true`, `last_reason=queued-chat-launched`, `awaiting_reentry_acknowledgment=true`, and `bridgeResult.dryRun=false`
+
 ## 2026-04-15 - Shared OpenJarvis Memory Sync Now Fails Soft On Sparse Obsidian Runtime Status Shapes
 
 - Why: the shared GCP runtime had already exposed OpenJarvis memory sync through the shared control plane, but the runtime-side projection script still assumed every deployed Obsidian router returned `accessPosture.summary`. Sparse or older shared runtime mirrors could therefore queue the sync successfully and then crash before writing `tmp/openjarvis-memory-feed/summary.json`, which made the live shared demonstration look like a silent no-op instead of a diagnosable control-plane result.
@@ -620,6 +1060,16 @@ Copy this block for each change:
 - Impacted Tables/RPC: no new table or RPC contract added
 - Risk/Regression Notes: the new profile changes only the direct Ollama lane to `gemma4:e4b` by default while preserving OpenJarvis workflow bindings, optimize judge, and NemoClaw inference on Qwen. This keeps the blast radius focused on local Hermes-side reasoning and avoids turning the unattended path into an implicit model migration.
 - Validation: `npm run env:profile:local-first-hybrid:gemma4:dry`, `npm run lint`
+
+## 2026-04-16 - Hermes Chat Launch Gains Delegated Operator Context Profile
+
+- Why: Hermes continuity and VS Code relaunch were already working, but the launch surface still treated Hermes too narrowly. The next gap was not another transport primitive; it was giving Hermes a richer bounded startup context so it could leverage roadmap, shared-knowledge, architecture, and upstream research surfaces without turning every turn back into broad archaeology.
+- Scope: added a `delegated-operator` context profile for Hermes VS Code chat launch, enriched the launch prompt with shared-knowledge and upstream-research guidance, attached canonical roadmap and Hermes runtime contract docs by default, propagated the profile through the local runtime-control CLI, admin route, MCP tool, and queued auto-chat launch path, and added a shortcut script for delegated launches.
+- Impacted Routes: `POST /agent/runtime/openjarvis/hermes-runtime/chat-launch`, local MCP tool `automation.hermes_runtime.chat_launch`
+- Impacted Services: `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `scripts/run-openjarvis-hermes-runtime-control.ts`, `scripts/run-openjarvis-goal-cycle.mjs`, `src/routes/bot-agent/runtimeRoutes.ts`, `src/mcp/toolAdapter.ts`, `package.json`
+- Impacted Tables/RPC: no new table or RPC contract added
+- Risk/Regression Notes: additive launch-context change only. Default manual launches still work without the new profile, while queue-aware auto-chat now opts into the broader delegated context so Hermes can start from canonical docs and shared-knowledge guidance instead of only packet-local hints.
+- Validation: targeted Vitest for Hermes runtime control and MCP tool routing, plus `npx tsc --noEmit`
 
 ## 2026-04-12 - Hermes VS Code Bridge Added For Single-Ingress Sidecar Control
 

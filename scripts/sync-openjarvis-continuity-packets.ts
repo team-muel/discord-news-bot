@@ -2,9 +2,11 @@ import 'dotenv/config';
 /* eslint-disable no-console */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { parseArg, parseBool } from './lib/cliArgs.mjs';
 import { readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
+import { readExecutionBoardFocusedObjectives } from './run-openjarvis-goal-cycle.mjs';
 import {
   DEFAULT_CAPACITY_TARGET,
   WAIT_FOR_NEXT_GPT_ACTION,
@@ -81,13 +83,87 @@ type LaunchManifest = {
   vscode_bridge?: Record<string, unknown> | null;
 };
 
+type LocalAutonomySupervisorManifest = {
+  pid?: number | null;
+  startedAt?: string;
+  intervalMs?: number | null;
+  logPath?: string;
+  statusPath?: string;
+  detached?: boolean;
+  codeFingerprint?: string | null;
+};
+
+type LocalAutonomySupervisorStatus = {
+  checkedAt?: string;
+  summary?: string;
+  watchProcess?: {
+    pid?: number | null;
+    mode?: string;
+    detached?: boolean;
+    manifestPath?: string;
+    statusPath?: string;
+    logPath?: string;
+  } | null;
+  code?: {
+    driftDetected?: boolean;
+    restartRecommended?: boolean;
+    reason?: string | null;
+  } | null;
+};
+
+export type LocalAutonomyWatchState = {
+  alive: boolean | null;
+  pid: number | null;
+  startedAt: string | null;
+  checkedAt: string | null;
+  detached: boolean;
+  summary: string | null;
+  manifestPath: string | null;
+  statusPath: string | null;
+  logPath: string | null;
+  codeDriftDetected: boolean;
+  restartRecommended: boolean;
+  driftReason: string | null;
+};
+
+type ContinuityLoopState = {
+  awaiting_reentry_acknowledgment?: boolean;
+  awaiting_reentry_acknowledgment_started_at?: string | null;
+  auto_launch_queued_chat?: boolean;
+  stopped_at?: string | null;
+  stop_reason?: string | null;
+  last_reason?: string | null;
+  last_launch?: Record<string, unknown> | null;
+};
+
+type ContinuityPacketSyncParams = {
+  sessionPath?: string;
+  sessionId?: string;
+  runtimeLane?: string;
+  reason?: string;
+  handoffFile?: string;
+  progressFile?: string;
+  capacityTarget?: number | string;
+  gcpCapacityRecoveryRequested?: boolean;
+  vaultPath?: string;
+};
+
 const ROOT = process.cwd();
 const SUMMARY_PATH = path.join(ROOT, 'tmp', 'autonomy', 'openjarvis-unattended-last-run.json');
 const WORKFLOW_DIR = path.join(ROOT, 'tmp', 'autonomy', 'workflow-sessions');
 const LATEST_LAUNCH_PATH = path.join(ROOT, 'tmp', 'autonomy', 'launches', 'latest-interactive-goal.json');
+const LATEST_CONTINUITY_LOOP_PATH = path.join(ROOT, 'tmp', 'autonomy', 'launches', 'latest-interactive-goal-loop.json');
+const LOCAL_AUTONOMY_SUPERVISOR_STATUS_PATH = path.join(ROOT, 'tmp', 'autonomy', 'local-autonomy-supervisor.json');
+const LOCAL_AUTONOMY_SUPERVISOR_MANIFEST_PATH = path.join(ROOT, 'tmp', 'autonomy', 'local-autonomy-supervisor.manifest.json');
+const LOCAL_AUTONOMY_SUPERVISOR_LOG_PATH = path.join(ROOT, 'tmp', 'autonomy', 'local-autonomy-supervisor.log');
 
 const DEFAULT_HANDOFF_FILE = 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md';
 const DEFAULT_PROGRESS_FILE = 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md';
+const REENTRY_ACK_STALE_WARNING_MS = 15 * 60 * 1000;
+const DEFAULT_CONTINUITY_OBJECTIVE = 'Autopilot continuity session';
+const SAFE_QUEUE_SECTION_HEADING = 'Safe Autonomous Queue For Hermes';
+const HANDOFF_OBJECTIVE_SECTION_HEADING = 'Session Objective';
+const PROGRESS_OBJECTIVE_SECTION_HEADING = 'Objective';
 
 const readJsonFile = <T>(filePath: string): T | null => {
   try {
@@ -99,6 +175,21 @@ const readJsonFile = <T>(filePath: string): T | null => {
 
 const toTrimmed = (value: unknown): string => String(value || '').trim();
 const toRelative = (targetPath: string): string => path.relative(ROOT, targetPath).replace(/\\/g, '/');
+
+const parseTimestampMs = (value: unknown): number | null => {
+  const normalized = toTrimmed(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseOptionalInteger = (value: unknown): number | null => {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+};
 
 const sanitizeStringList = (value: unknown): string[] => Array.isArray(value)
   ? value.map((entry) => toTrimmed(entry)).filter(Boolean)
@@ -182,6 +273,36 @@ const inferExecutionPreference = (metadata: Record<string, unknown>): Automation
   }
   return 'hybrid';
 };
+
+export const resolveLocalAutonomyWatchState = (params: {
+  manifest: LocalAutonomySupervisorManifest | null;
+  status: LocalAutonomySupervisorStatus | null;
+}): LocalAutonomyWatchState => {
+  const watchProcess = params.status?.watchProcess && typeof params.status.watchProcess === 'object'
+    ? params.status.watchProcess
+    : null;
+  const pid = parseOptionalInteger(watchProcess?.pid) ?? parseOptionalInteger(params.manifest?.pid);
+
+  return {
+    alive: pid ? isProcessAlive(pid) : null,
+    pid,
+    startedAt: toTrimmed(params.manifest?.startedAt) || null,
+    checkedAt: toTrimmed(params.status?.checkedAt) || null,
+    detached: watchProcess?.detached === true || params.manifest?.detached === true,
+    summary: toTrimmed(params.status?.summary) || null,
+    manifestPath: toTrimmed(watchProcess?.manifestPath) || toRelative(LOCAL_AUTONOMY_SUPERVISOR_MANIFEST_PATH),
+    statusPath: toTrimmed(watchProcess?.statusPath) || toTrimmed(params.manifest?.statusPath) || toRelative(LOCAL_AUTONOMY_SUPERVISOR_STATUS_PATH),
+    logPath: toTrimmed(watchProcess?.logPath) || toTrimmed(params.manifest?.logPath) || toRelative(LOCAL_AUTONOMY_SUPERVISOR_LOG_PATH),
+    codeDriftDetected: params.status?.code?.driftDetected === true,
+    restartRecommended: params.status?.code?.restartRecommended === true,
+    driftReason: toTrimmed(params.status?.code?.reason) || null,
+  };
+};
+
+const readLocalAutonomyWatchState = (): LocalAutonomyWatchState => resolveLocalAutonomyWatchState({
+  manifest: readJsonFile<LocalAutonomySupervisorManifest>(LOCAL_AUTONOMY_SUPERVISOR_MANIFEST_PATH),
+  status: readJsonFile<LocalAutonomySupervisorStatus>(LOCAL_AUTONOMY_SUPERVISOR_STATUS_PATH),
+});
 
 const inferAutomationRouteInput = (session: WorkflowSession): AutomationRoutePreviewInput | null => {
   const metadata = getMetadataRecord(session);
@@ -278,6 +399,20 @@ const resolveSessionPath = (summary: GoalSummary | null, override: string): stri
   return summaryPath || latestPath;
 };
 
+export const resolveRequestedSessionId = (
+  summary: GoalSummary | null,
+  requestedSessionPath: string | null,
+  override: string,
+): string | null => {
+  const explicit = toTrimmed(override);
+  if (explicit) {
+    return explicit;
+  }
+
+  const localSession = requestedSessionPath ? readJsonFile<WorkflowSession>(requestedSessionPath) : null;
+  return toTrimmed(localSession?.session_id) || toTrimmed(summary?.workflow?.session_id) || null;
+};
+
 const isProcessAlive = (pid: unknown): boolean => {
   const numericPid = Number(pid);
   if (!Number.isInteger(numericPid) || numericPid <= 0) {
@@ -319,6 +454,134 @@ const toBulletLines = (items: string[], fallback = '- none'): string[] => {
   return items.map((item) => `- ${item}`);
 };
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const stripWrappingQuotes = (value: string): string => {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1).trim();
+  }
+  return value;
+};
+
+const normalizeContinuityObjective = (value: unknown): string | null => {
+  const normalized = toTrimmed(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === 'none' || lowered === '(none)' || lowered === DEFAULT_CONTINUITY_OBJECTIVE.toLowerCase()) {
+    return null;
+  }
+
+  return normalized;
+};
+
+const readExistingPacketContent = (vaultPath: string, fileName: string): string | null => {
+  try {
+    return fs.readFileSync(path.resolve(vaultPath, fileName), 'utf8');
+  } catch {
+    return null;
+  }
+};
+
+const extractFrontmatterValue = (markdown: string | null, key: string): string | null => {
+  if (!markdown) {
+    return null;
+  }
+
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) {
+    return null;
+  }
+
+  const pattern = new RegExp(`^${escapeRegExp(key)}\\s*:\\s*(.+)$`, 'i');
+  for (const line of match[1].split(/\r?\n/)) {
+    const lineMatch = line.match(pattern);
+    if (lineMatch) {
+      return stripWrappingQuotes(lineMatch[1].trim());
+    }
+  }
+
+  return null;
+};
+
+const extractBulletSection = (markdown: string | null, heading: string): string[] => {
+  if (!markdown) {
+    return [];
+  }
+
+  const lines = markdown.split(/\r?\n/);
+  const headingPattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, 'i');
+  const sectionHeadingPattern = /^##\s+/;
+  let insideSection = false;
+  const items: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!insideSection) {
+      if (headingPattern.test(line)) {
+        insideSection = true;
+      }
+      continue;
+    }
+
+    if (sectionHeadingPattern.test(line)) {
+      break;
+    }
+    if (!line.startsWith('- ')) {
+      continue;
+    }
+
+    const value = toTrimmed(line.slice(2));
+    if (!value || value.toLowerCase() === 'none') {
+      continue;
+    }
+    items.push(value);
+  }
+
+  return items;
+};
+
+const extractFirstBullet = (markdown: string | null, heading: string): string | null => extractBulletSection(markdown, heading)[0] || null;
+
+export const resolveContinuityObjective = (params: {
+  focusObjective?: unknown;
+  sessionStatus?: unknown;
+  sessionObjective?: unknown;
+  packetObjective?: unknown;
+}): string | null => {
+  const sessionStatus = toTrimmed(params.sessionStatus).toLowerCase();
+  const focusObjective = normalizeContinuityObjective(params.focusObjective);
+  if (focusObjective && sessionStatus === 'released') {
+    return focusObjective;
+  }
+
+  return normalizeContinuityObjective(params.sessionObjective)
+  || normalizeContinuityObjective(params.packetObjective)
+  || focusObjective
+  || null;
+};
+
+export const resolveContinuitySafeQueue = (params: {
+  existingQueue?: unknown;
+  generatedQueue?: unknown;
+}): string[] => {
+  const existingQueue = sanitizeStringList(params.existingQueue);
+  const generatedQueue = sanitizeStringList(params.generatedQueue);
+
+  if (existingQueue.length === 0) {
+    return generatedQueue;
+  }
+
+  const firstExistingItem = existingQueue[0];
+  if (!generatedQueue.includes(firstExistingItem)) {
+    return existingQueue;
+  }
+
+  return generatedQueue;
+};
+
 const buildSafeAutonomousQueue = (automationRoute: AutomationRoutePreview | null): string[] => {
   const queue = [
     'continue the current workflow if runner and session state stay healthy',
@@ -353,6 +616,34 @@ const buildSafeAutonomousQueue = (automationRoute: AutomationRoutePreview | null
   return queue;
 };
 
+const resolveLoopReentryState = (loopState: ContinuityLoopState | null) => {
+  const lastLaunch = loopState?.last_launch && typeof loopState.last_launch === 'object' && !Array.isArray(loopState.last_launch)
+    ? loopState.last_launch
+    : null;
+  const awaiting = Boolean(
+    loopState?.awaiting_reentry_acknowledgment
+    || lastLaunch?.awaiting_reentry_acknowledgment,
+  );
+  const startedAt = toTrimmed(
+    loopState?.awaiting_reentry_acknowledgment_started_at
+    || lastLaunch?.launched_at
+    || loopState?.stopped_at,
+  ) || null;
+  const startedAtMs = parseTimestampMs(startedAt);
+  const ageMs = startedAtMs !== null ? Math.max(0, Date.now() - startedAtMs) : null;
+  const stale = awaiting && ageMs !== null && ageMs >= REENTRY_ACK_STALE_WARNING_MS;
+
+  return {
+    awaiting,
+    startedAt,
+    ageMs,
+    stale,
+    autoLaunchQueuedChat: loopState?.auto_launch_queued_chat === true,
+    objective: toTrimmed(lastLaunch?.objective) || null,
+    source: toTrimmed(lastLaunch?.source) || null,
+  };
+};
+
 const buildAutomationRouteSectionLines = (route: AutomationRoutePreview | null): string[] => {
   if (!route) {
     return ['route_guidance: unavailable'];
@@ -363,6 +654,10 @@ const buildAutomationRouteSectionLines = (route: AutomationRoutePreview | null):
     `primary_path_type: ${route.primaryPath.pathType}`,
     `primary_surfaces: ${route.primaryPath.surfaces.join(', ') || 'none'}`,
     `fallback_surfaces: ${route.fallbackPath.surfaces.join(', ') || 'none'}`,
+    `hot_state: ${route.statePlane.hotState}`,
+    `orchestration: ${route.statePlane.orchestration}`,
+    `semantic_owner: ${route.statePlane.semanticOwner}`,
+    `artifact_plane: ${route.statePlane.artifactPlane}`,
     `candidate_apis: ${route.candidates.apis.join(', ') || 'none'}`,
     `candidate_mcp_tools: ${route.candidates.mcpTools.join(', ') || 'none'}`,
     `matched_examples: ${route.matchedExampleIds.join(', ') || 'none'}`,
@@ -444,6 +739,7 @@ const buildContinuityRuntimeState = (params: {
   session: WorkflowSession;
   summary: GoalSummary | null;
   launch: LaunchManifest | null;
+  loopState: ContinuityLoopState | null;
   runnerAlive: boolean | null;
   monitorAlive: boolean | null;
   syncReason: string;
@@ -454,11 +750,15 @@ const buildContinuityRuntimeState = (params: {
   gcpCapacityRecoveryRequested: boolean;
   automationRoute: AutomationRoutePreview | null;
   autoRestartOnRelease: boolean;
+  resolvedObjective: string | null;
+  objectiveDisplayFallback: string | null;
+  safeQueue: string[];
 }) => {
   const completedSteps = (params.session.steps || []).filter((step) => ['pass', 'passed'].includes(toTrimmed(step.status).toLowerCase()));
   const runningSteps = (params.session.steps || []).filter((step) => toTrimmed(step.status).toLowerCase() === 'running');
   const failedSteps = (params.session.steps || []).filter((step) => ['fail', 'failed'].includes(toTrimmed(step.status).toLowerCase()));
   const ownerMode = buildOwnerAndMode(params.session, params.runnerAlive, params.autoRestartOnRelease);
+  const objective = params.resolvedObjective || toTrimmed(params.objectiveDisplayFallback) || DEFAULT_CONTINUITY_OBJECTIVE;
   const defaultNextAction = buildNextAction({
     session: params.session,
     runningSteps,
@@ -469,10 +769,7 @@ const buildContinuityRuntimeState = (params: {
   if (params.gcpCapacityRecoveryRequested && toTrimmed(params.session.status).toLowerCase() === 'released') {
     nextAction = buildCapacityRecoveryNextAction(params.capacityTarget);
   }
-  const safeQueue = buildSafeAutonomousQueue(params.automationRoute);
-  if (params.autoRestartOnRelease) {
-    safeQueue.push('restart the next bounded automation cycle automatically after release unless an escalation boundary appears');
-  }
+  const safeQueue = sanitizeStringList(params.safeQueue);
   const waitBoundary = toTrimmed(nextAction).toLowerCase() === WAIT_FOR_NEXT_GPT_ACTION;
   const resumeReason = ownerMode.escalation !== 'none'
     ? `escalation_${ownerMode.escalation}`
@@ -481,6 +778,7 @@ const buildContinuityRuntimeState = (params: {
       : (waitBoundary ? 'packet_waiting_for_next_gpt_objective' : null));
   const health = normalizeContinuityObsidianHealth(getObsidianVaultHealthStatus(), params.vaultPath);
   const staleExecutionSuspected = Boolean(toTrimmed(params.session.status).toLowerCase() === 'executing' && params.runnerAlive === false);
+  const reentryState = resolveLoopReentryState(params.loopState);
   const gcpNative = buildGcpNativeAutopilotContext();
   const capacity = buildAutopilotCapacity({
     target: params.capacityTarget,
@@ -512,7 +810,7 @@ const buildContinuityRuntimeState = (params: {
     },
     resume_state: {
       available: true,
-      resumable: Boolean(toTrimmed(params.session.metadata?.objective) && ownerMode.escalation === 'none' && !waitBoundary),
+      resumable: Boolean(params.resolvedObjective && ownerMode.escalation === 'none' && !waitBoundary),
       reason: resumeReason,
       owner: ownerMode.owner,
       mode: ownerMode.mode,
@@ -541,6 +839,8 @@ const buildContinuityRuntimeState = (params: {
     runningSteps,
     failedSteps,
     ownerMode,
+    objective,
+    resolvedObjective: params.resolvedObjective,
     nextAction,
     safeQueue,
     waitBoundary,
@@ -549,6 +849,7 @@ const buildContinuityRuntimeState = (params: {
     capacity,
     automationRoute: params.automationRoute,
     autoRestartOnRelease: params.autoRestartOnRelease,
+    reentryState,
   };
 };
 
@@ -590,6 +891,7 @@ const buildHandoffContent = (params: {
   session: WorkflowSession;
   summary: GoalSummary | null;
   launch: LaunchManifest | null;
+  localAutonomyWatch: LocalAutonomyWatchState;
   runnerAlive: boolean | null;
   monitorAlive: boolean | null;
   syncReason: string;
@@ -609,12 +911,21 @@ const buildHandoffContent = (params: {
   if (params.launch?.log_path) {
     evidenceRefs.push(`launch log: ${toRelative(path.resolve(ROOT, params.launch.log_path))}`);
   }
+  if (params.localAutonomyWatch.manifestPath) {
+    evidenceRefs.push(`local autonomy manifest: ${params.localAutonomyWatch.manifestPath}`);
+  }
+  if (params.localAutonomyWatch.statusPath) {
+    evidenceRefs.push(`local autonomy status: ${params.localAutonomyWatch.statusPath}`);
+  }
+  if (params.localAutonomyWatch.logPath) {
+    evidenceRefs.push(`local autonomy log: ${params.localAutonomyWatch.logPath}`);
+  }
 
   const lines = [
     '# Hermes Autopilot Continuity Handoff Packet',
     '',
     '## Session Objective',
-    ...toBulletLines([toTrimmed(params.session.metadata?.objective) || 'Autopilot continuity session']),
+    ...toBulletLines([params.runtimeState.objective]),
     '',
     '## User Intent Model',
     ...toBulletLines([
@@ -634,6 +945,12 @@ const buildHandoffContent = (params: {
       `deploy_status: ${deployStatus}`,
       `runner_alive: ${params.runnerAlive === null ? 'unknown' : String(params.runnerAlive)}`,
       `monitor_alive: ${params.monitorAlive === null ? 'unknown' : String(params.monitorAlive)}`,
+      `continuity_watch_alive: ${params.localAutonomyWatch.alive === null ? 'unknown' : String(params.localAutonomyWatch.alive)}`,
+      `continuity_watch_summary: ${params.localAutonomyWatch.summary || 'unknown'}`,
+      `queued_reentry_objective: ${params.runtimeState.reentryState.objective || 'none'}`,
+      `queued_reentry_ack: ${params.runtimeState.reentryState.awaiting
+        ? `${params.runtimeState.reentryState.stale ? 'stale' : 'pending'}${params.runtimeState.reentryState.startedAt ? ` since ${params.runtimeState.reentryState.startedAt}` : ''}`
+        : 'none'}`,
       `obsidian_health: ${params.runtimeState.health.healthy ? 'healthy' : params.runtimeState.health.issues.join('; ') || 'degraded'}`,
       `sync_reason: ${params.syncReason}`,
     ]),
@@ -668,6 +985,9 @@ const buildHandoffContent = (params: {
     '',
     '## Open Loops',
     ...toBulletLines([
+      ...(params.runtimeState.reentryState.awaiting
+        ? [`queued GPT handoff waiting for reentry acknowledgment${params.runtimeState.reentryState.objective ? ` for ${params.runtimeState.reentryState.objective}` : ''}${params.runtimeState.reentryState.startedAt ? ` since ${params.runtimeState.reentryState.startedAt}` : ''}`]
+        : []),
       ...params.runtimeState.runningSteps.map(formatStep),
       ...params.runtimeState.failedSteps.map((step) => `failed step requires attention: ${formatStep(step)}`),
     ]),
@@ -675,7 +995,9 @@ const buildHandoffContent = (params: {
     '## Pending Decisions For GPT',
     ...toBulletLines(params.runtimeState.ownerMode.escalation === 'pending-gpt'
       ? params.runtimeState.failedSteps.map((step) => `decide recovery path for ${formatStep(step)}`)
-      : []),
+      : (params.runtimeState.reentryState.stale
+        ? ['close out the stale queued GPT handoff or leave a bounded recall decision before restarting autonomy']
+        : [])),
     '',
     '## Safe Autonomous Queue For Hermes',
     ...toBulletLines(params.runtimeState.safeQueue),
@@ -707,6 +1029,7 @@ const buildProgressContent = (params: {
   session: WorkflowSession;
   summary: GoalSummary | null;
   launch: LaunchManifest | null;
+  localAutonomyWatch: LocalAutonomyWatchState;
   runnerAlive: boolean | null;
   monitorAlive: boolean | null;
   syncReason: string;
@@ -714,8 +1037,20 @@ const buildProgressContent = (params: {
 }): string => {
   const delta = [
     `session ${toTrimmed(params.session.session_id)} is ${toTrimmed(params.session.status).toLowerCase() || 'unknown'}`,
-    params.launch?.log_path ? `latest launch log: ${toRelative(path.resolve(ROOT, params.launch.log_path))}` : 'launch log unavailable',
+    params.launch?.log_path
+      ? `latest launch log: ${toRelative(path.resolve(ROOT, params.launch.log_path))}`
+      : (params.localAutonomyWatch.logPath ? `local autonomy watch log: ${params.localAutonomyWatch.logPath}` : 'launch log unavailable'),
+    ...(params.runtimeState.reentryState.awaiting
+      ? [`queued reentry acknowledgment is ${params.runtimeState.reentryState.stale ? 'stale' : 'pending'}${params.runtimeState.reentryState.objective ? ` for ${params.runtimeState.reentryState.objective}` : ''}${params.runtimeState.reentryState.startedAt ? ` since ${params.runtimeState.reentryState.startedAt}` : ''}`]
+      : []),
     `sync_reason: ${params.syncReason}`,
+  ];
+
+  const blockers = [
+    ...params.runtimeState.failedSteps.map(formatStep),
+    ...(params.runtimeState.reentryState.stale
+      ? [`queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment${params.runtimeState.reentryState.startedAt ? ` since ${params.runtimeState.reentryState.startedAt}` : ''}`]
+      : []),
   ];
 
   const evidenceRefs = [
@@ -725,12 +1060,18 @@ const buildProgressContent = (params: {
   if (params.launch?.manifest_path) {
     evidenceRefs.push(`launch manifest: ${toRelative(path.resolve(ROOT, params.launch.manifest_path))}`);
   }
+  if (params.localAutonomyWatch.manifestPath) {
+    evidenceRefs.push(`local autonomy manifest: ${params.localAutonomyWatch.manifestPath}`);
+  }
+  if (params.localAutonomyWatch.statusPath) {
+    evidenceRefs.push(`local autonomy status: ${params.localAutonomyWatch.statusPath}`);
+  }
 
   const lines = [
     '# Hermes Autopilot Continuity Progress Packet',
     '',
     '## Objective',
-    ...toBulletLines([toTrimmed(params.session.metadata?.objective) || 'Autopilot continuity session']),
+    ...toBulletLines([params.runtimeState.objective]),
     '',
     '## Owner And Mode',
     ...toBulletLines([
@@ -739,6 +1080,9 @@ const buildProgressContent = (params: {
       `route_mode: ${toTrimmed(params.session.metadata?.route_mode)}`,
       `runner_alive: ${params.runnerAlive === null ? 'unknown' : String(params.runnerAlive)}`,
       `monitor_alive: ${params.monitorAlive === null ? 'unknown' : String(params.monitorAlive)}`,
+      `continuity_watch_alive: ${params.localAutonomyWatch.alive === null ? 'unknown' : String(params.localAutonomyWatch.alive)}`,
+      `continuity_watch_summary: ${params.localAutonomyWatch.summary || 'unknown'}`,
+      `queued_reentry_objective: ${params.runtimeState.reentryState.objective || 'none'}`,
     ]),
     '',
     '## Delta Since Last GPT Session',
@@ -751,10 +1095,14 @@ const buildProgressContent = (params: {
     ...toBulletLines(params.runtimeState.runningSteps.map(formatStep)),
     '',
     '## Blockers',
-    ...toBulletLines(params.runtimeState.failedSteps.map(formatStep)),
+    ...toBulletLines(blockers),
     '',
     '## Next Action',
-    ...toBulletLines([params.runtimeState.nextAction]),
+    ...toBulletLines([
+      params.runtimeState.reentryState.stale
+        ? 'inspect the pending queued VS Code chat turn and run openjarvis:hermes:runtime:reentry-ack before allowing the next autonomous cycle'
+        : params.runtimeState.nextAction,
+    ]),
     '',
     '## Automation Route Guidance',
     ...toBulletLines(buildAutomationRouteSectionLines(params.runtimeState.automationRoute)),
@@ -818,13 +1166,14 @@ const writeLocalVaultMirror = (params: {
   return absolutePath;
 };
 
-async function main(): Promise<void> {
+export const syncOpenJarvisContinuityPackets = async (params: ContinuityPacketSyncParams = {}) => {
   const summary = readJsonFile<GoalSummary>(SUMMARY_PATH);
-  const requestedSessionPath = resolveSessionPath(summary, parseArg('sessionPath', ''));
-  const runtimeLane = toTrimmed(parseArg('runtimeLane', process.env.OPENJARVIS_RUNTIME_LANE || 'operator-personal')) || 'operator-personal';
+  const requestedSessionPath = resolveSessionPath(summary, params.sessionPath || '');
+  const requestedSessionId = resolveRequestedSessionId(summary, requestedSessionPath, params.sessionId || '');
+  const runtimeLane = toTrimmed(params.runtimeLane || process.env.OPENJARVIS_RUNTIME_LANE || 'operator-personal') || 'operator-personal';
   const workstreamState = await readLatestWorkflowState({
     sessionPath: requestedSessionPath,
-    sessionId: toTrimmed(summary?.workflow?.session_id) || toTrimmed(parseArg('sessionId', '')),
+    sessionId: requestedSessionId || undefined,
     scope: process.env.OPENJARVIS_SCOPE || null,
     workflowName: 'openjarvis.unattended',
     runtimeLane,
@@ -835,26 +1184,56 @@ async function main(): Promise<void> {
     throw new Error('No workflow session available for continuity packet sync');
   }
 
-  const vaultPath = getObsidianVaultRoot();
+  const vaultPath = toTrimmed(params.vaultPath) || getObsidianVaultRoot();
   if (!toTrimmed(vaultPath)) {
     throw new Error('Obsidian vault path is not configured');
   }
 
   const latestLaunch = readJsonFile<LaunchManifest>(LATEST_LAUNCH_PATH);
+  const latestLoop = readJsonFile<ContinuityLoopState>(LATEST_CONTINUITY_LOOP_PATH);
+  const localAutonomyWatch = readLocalAutonomyWatchState();
   const launch = matchesLaunch(latestLaunch, session) ? latestLaunch : null;
   const runnerAlive = launch ? isProcessAlive(launch.runner_pid) : null;
   const monitorAlive = launch ? isProcessAlive(launch.monitor_pid) : null;
-  const syncReason = toTrimmed(parseArg('reason', 'manual-sync')) || 'manual-sync';
-  const handoffFile = toTrimmed(parseArg('handoffFile', process.env.HERMES_AUTOPILOT_HANDOFF_PACKET_PATH || DEFAULT_HANDOFF_FILE)) || DEFAULT_HANDOFF_FILE;
-  const progressFile = toTrimmed(parseArg('progressFile', process.env.HERMES_AUTOPILOT_PROGRESS_PACKET_PATH || DEFAULT_PROGRESS_FILE)) || DEFAULT_PROGRESS_FILE;
-  const capacityTarget = normalizeCapacityTarget(parseArg('capacityTarget', process.env.HERMES_AUTOPILOT_CAPACITY_TARGET || String(DEFAULT_CAPACITY_TARGET)));
-  const gcpCapacityRecoveryRequested = parseBool(parseArg('gcpCapacityRecovery', process.env.HERMES_AUTOPILOT_GCP_CAPACITY_RECOVERY || 'false'), false);
+  const syncReason = toTrimmed(params.reason) || 'manual-sync';
+  const handoffFile = toTrimmed(params.handoffFile || process.env.HERMES_AUTOPILOT_HANDOFF_PACKET_PATH || DEFAULT_HANDOFF_FILE) || DEFAULT_HANDOFF_FILE;
+  const progressFile = toTrimmed(params.progressFile || process.env.HERMES_AUTOPILOT_PROGRESS_PACKET_PATH || DEFAULT_PROGRESS_FILE) || DEFAULT_PROGRESS_FILE;
+  const capacityTarget = normalizeCapacityTarget(String(params.capacityTarget ?? process.env.HERMES_AUTOPILOT_CAPACITY_TARGET ?? DEFAULT_CAPACITY_TARGET));
+  const gcpCapacityRecoveryRequested = typeof params.gcpCapacityRecoveryRequested === 'boolean'
+    ? params.gcpCapacityRecoveryRequested
+    : parseBool(process.env.HERMES_AUTOPILOT_GCP_CAPACITY_RECOVERY || 'false', false);
   const autoRestartOnRelease = readMetadataBoolean(getMetadataRecord(session), ['auto_restart_on_release', 'autoRestartOnRelease']) ?? false;
   const automationRoute = await buildAutomationRouteGuidance(session);
+  const generatedSafeQueue = buildSafeAutonomousQueue(automationRoute);
+  if (autoRestartOnRelease) {
+    generatedSafeQueue.push('restart the next bounded automation cycle automatically after release unless an escalation boundary appears');
+  }
+  const existingHandoffContent = readExistingPacketContent(vaultPath, handoffFile);
+  const existingProgressContent = readExistingPacketContent(vaultPath, progressFile);
+  const focusedObjective = readExecutionBoardFocusedObjectives()[0]?.objective || null;
+  const existingPacketObjective = resolveContinuityObjective({
+    focusObjective: focusedObjective,
+    sessionStatus: session.status,
+    packetObjective: extractFrontmatterValue(existingProgressContent, 'objective')
+      || extractFrontmatterValue(existingHandoffContent, 'objective')
+      || extractFirstBullet(existingProgressContent, PROGRESS_OBJECTIVE_SECTION_HEADING)
+      || extractFirstBullet(existingHandoffContent, HANDOFF_OBJECTIVE_SECTION_HEADING),
+  });
+  const resolvedObjective = resolveContinuityObjective({
+    focusObjective: focusedObjective,
+    sessionStatus: session.status,
+    sessionObjective: session.metadata?.objective,
+    packetObjective: existingPacketObjective,
+  });
+  const safeQueue = resolveContinuitySafeQueue({
+    existingQueue: extractBulletSection(existingHandoffContent, SAFE_QUEUE_SECTION_HEADING),
+    generatedQueue: generatedSafeQueue,
+  });
   const runtimeState = buildContinuityRuntimeState({
     session,
     summary,
     launch,
+    loopState: latestLoop,
     runnerAlive,
     monitorAlive,
     syncReason,
@@ -865,6 +1244,9 @@ async function main(): Promise<void> {
     gcpCapacityRecoveryRequested,
     automationRoute,
     autoRestartOnRelease,
+    resolvedObjective,
+    objectiveDisplayFallback: toTrimmed(session.metadata?.objective) || null,
+    safeQueue,
   });
 
   const handoffContent = buildHandoffContent({
@@ -872,6 +1254,7 @@ async function main(): Promise<void> {
     session,
     summary,
     launch,
+    localAutonomyWatch,
     runnerAlive,
     monitorAlive,
     syncReason,
@@ -883,7 +1266,7 @@ async function main(): Promise<void> {
     source: 'openjarvis-continuity-packet-sync',
     guild_id: 'system',
     packet_kind: 'handoff',
-    objective: toTrimmed(session.metadata?.objective) || 'Autopilot continuity session',
+    objective: runtimeState.objective,
     capacity_target: runtimeState.capacity.target,
     capacity_score: runtimeState.capacity.score,
     capacity_state: runtimeState.capacity.state,
@@ -904,6 +1287,7 @@ async function main(): Promise<void> {
     session,
     summary,
     launch,
+    localAutonomyWatch,
     runnerAlive,
     monitorAlive,
     syncReason,
@@ -915,7 +1299,7 @@ async function main(): Promise<void> {
     source: 'openjarvis-continuity-packet-sync',
     guild_id: 'system',
     packet_kind: 'progress',
-    objective: toTrimmed(session.metadata?.objective) || 'Autopilot continuity session',
+    objective: runtimeState.objective,
     capacity_target: runtimeState.capacity.target,
     capacity_score: runtimeState.capacity.score,
     capacity_state: runtimeState.capacity.state,
@@ -979,7 +1363,7 @@ async function main(): Promise<void> {
     }),
   });
 
-  console.log(JSON.stringify({
+  return {
     ok: true,
     sync_reason: syncReason,
     workstream_source: workstreamState?.source || (sessionPath ? 'local-file' : 'unavailable'),
@@ -987,7 +1371,7 @@ async function main(): Promise<void> {
     session_id: toTrimmed(session.session_id),
     session_path: sessionPath ? toRelative(sessionPath) : null,
     status: toTrimmed(session.status),
-    objective: toTrimmed(session.metadata?.objective),
+    objective: runtimeState.objective,
     handoff_packet: handoffResult.path,
     progress_packet: progressResult.path,
     handoff_local_mirror: handoffMirrorPath,
@@ -996,6 +1380,16 @@ async function main(): Promise<void> {
     launch_log: launch?.log_path ? toRelative(path.resolve(ROOT, launch.log_path)) : null,
     runner_alive: runnerAlive,
     monitor_alive: monitorAlive,
+    continuity_watch_alive: localAutonomyWatch.alive,
+    continuity_watch_pid: localAutonomyWatch.pid,
+    continuity_watch_checked_at: localAutonomyWatch.checkedAt,
+    continuity_watch_summary: localAutonomyWatch.summary,
+    continuity_watch_manifest: localAutonomyWatch.manifestPath,
+    continuity_watch_status: localAutonomyWatch.statusPath,
+    continuity_watch_log: localAutonomyWatch.logPath,
+    continuity_watch_code_drift_detected: localAutonomyWatch.codeDriftDetected,
+    continuity_watch_restart_recommended: localAutonomyWatch.restartRecommended,
+    continuity_watch_drift_reason: localAutonomyWatch.driftReason,
     vault_root: vaultPath,
     obsidian_healthy: runtimeState.health.healthy,
     obsidian_issues: runtimeState.health.issues,
@@ -1009,17 +1403,41 @@ async function main(): Promise<void> {
         matched_example_ids: runtimeState.automationRoute.matchedExampleIds,
         primary_surfaces: runtimeState.automationRoute.primaryPath.surfaces,
         fallback_surfaces: runtimeState.automationRoute.fallbackPath.surfaces,
+        hot_state: runtimeState.automationRoute.statePlane.hotState,
+        orchestration: runtimeState.automationRoute.statePlane.orchestration,
+        semantic_owner: runtimeState.automationRoute.statePlane.semanticOwner,
+        artifact_plane: runtimeState.automationRoute.statePlane.artifactPlane,
         escalation: runtimeState.automationRoute.escalation,
         auto_restart_on_release: runtimeState.autoRestartOnRelease,
       }
       : null,
-  }, null, 2));
+  };
+};
+
+async function main(): Promise<void> {
+  const result = await syncOpenJarvisContinuityPackets({
+    sessionPath: parseArg('sessionPath', ''),
+    sessionId: parseArg('sessionId', ''),
+    runtimeLane: parseArg('runtimeLane', process.env.OPENJARVIS_RUNTIME_LANE || 'operator-personal'),
+    reason: parseArg('reason', 'manual-sync'),
+    handoffFile: parseArg('handoffFile', process.env.HERMES_AUTOPILOT_HANDOFF_PACKET_PATH || DEFAULT_HANDOFF_FILE),
+    progressFile: parseArg('progressFile', process.env.HERMES_AUTOPILOT_PROGRESS_PACKET_PATH || DEFAULT_PROGRESS_FILE),
+    capacityTarget: parseArg('capacityTarget', process.env.HERMES_AUTOPILOT_CAPACITY_TARGET || String(DEFAULT_CAPACITY_TARGET)),
+    gcpCapacityRecoveryRequested: parseBool(parseArg('gcpCapacityRecovery', process.env.HERMES_AUTOPILOT_GCP_CAPACITY_RECOVERY || 'false'), false),
+  });
+  console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch((error) => {
-  console.error(JSON.stringify({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-  }, null, 2));
-  process.exitCode = 1;
-});
+const isDirectExecution = process.argv[1]
+  ? path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+  : false;
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    console.error(JSON.stringify({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }, null, 2));
+    process.exitCode = 1;
+  });
+}

@@ -20,8 +20,8 @@ const {
 }));
 
 vi.mock('../middleware/auth', () => ({
-  requireAdmin: noop,
-  requireAuth: noop,
+  requireAdmin: (_req: unknown, _res: unknown, next: (error?: unknown) => void) => next(),
+  requireAuth: (_req: unknown, _res: unknown, next: (error?: unknown) => void) => next(),
 }));
 
 vi.mock('../logger', () => ({

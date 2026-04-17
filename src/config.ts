@@ -394,6 +394,7 @@ export const GO_NO_GO_MAX_JOB_FAILURE_RATE = _clampPct(process.env.GO_NO_GO_MAX_
 export const GO_NO_GO_MIN_RECALL_AT_5 = _clampPct(process.env.GO_NO_GO_MIN_RECALL_AT_5, 0.60);
 export const GO_NO_GO_MIN_PILOT_GUILDS = parseMinIntEnv(process.env.GO_NO_GO_MIN_PILOT_GUILDS, 3, 1);
 export const GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN = parseBoundedNumberEnv(process.env.GO_NO_GO_MAX_CORRECTION_SLA_P95_MIN, 5, 0.1, 1440);
+export const GO_NO_GO_MAX_LLM_P95_LATENCY_MS = parseMinIntEnv(process.env.AGENT_SLO_INTELLIGENCE_MAX_P95_LATENCY_MS, 6000, 100);
 export const GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL = parseIntegerEnv(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROPPED_TOTAL, 0);
 export const GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE = _clampPct(process.env.GO_NO_GO_MAX_TELEMETRY_QUEUE_DROP_RATE, 0.02);
 

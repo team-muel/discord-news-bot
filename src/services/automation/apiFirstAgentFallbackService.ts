@@ -10,6 +10,7 @@ import {
 export type AutomationSurfaceLayer =
   | 'semantic-owner'
   | 'hot-state'
+  | 'artifact-review'
   | 'api-first'
   | 'mcp-wrapping'
   | 'agent-fallback'
@@ -86,6 +87,7 @@ export type AutomationRoutePreview = {
     hotState: string;
     orchestration: string;
     semanticOwner: string;
+    artifactPlane: string;
   };
   modelPolicy: {
     apiPath: string;
@@ -139,6 +141,7 @@ export type AutomationWorkflowDraftCandidate = {
 export type AutomationWorkflowDraftStageOwner =
   | 'api-router'
   | 'supabase-hot-state'
+  | 'github-artifact-plane'
   | 'mcp-wrapper'
   | 'hermes-local'
   | 'gpt-recall'
@@ -191,6 +194,7 @@ export type AutomationOptimizerPlan = {
     stateOwners: {
       hotState: string;
       semanticOwner: string;
+      artifactPlane: string;
       workflowRouter: string;
       teammateScaleOut: string;
     };
@@ -419,6 +423,7 @@ const buildObservabilityCoverage = (): AutomationObservabilityCoverage => ({
   complementaryCoverage: [
     'Supabase workflow_sessions and workflow_events remain the canonical ledger for route decisions, recall boundaries, artifact refs, and decision distillates.',
     'The repository already exposes structured recall_request, artifact_ref, and decision_distillate hot-state objects beyond OpenJarvis telemetry.',
+    'GitHub PRs, commit history, and CI evidence remain the repo-visible review and settlement trail when the route produces code or documentation artifacts.',
     'agentTelemetryQueue and readiness surfaces cover queue health and drop behavior outside OpenJarvis itself.',
     'n8n execution history and workflow logs remain the best source for router-node execution details at the orchestration layer.',
     'Obsidian decision.trace and shared wiki promotion remain the durable semantic audit layer after runtime execution settles.',
@@ -431,6 +436,7 @@ const buildObservabilityCoverage = (): AutomationObservabilityCoverage => ({
   recommendedPlacement: [
     'OpenJarvis: local telemetry, evaluation, optimization, and memory-projection observability.',
     'Supabase hot-state: canonical route events, recall boundaries, artifact refs, and runtime lane separation.',
+    'GitHub: repo-visible review threads, CI evidence, and merge settlement for code or docs artifacts.',
     'n8n: workflow-router execution logs, wait and retry boundaries, and trigger history.',
     'Obsidian: durable decision history, runbook updates, and architecture-significant distillates.',
   ],
@@ -577,6 +583,15 @@ export const buildAutomationCapabilityCatalog = async (options: {
       bindings: ['workflow_sessions', 'workflow_steps', 'workflow_events'],
       preferredWhen: ['shared task state', 'routing decisions', 'runtime subscriptions'],
       avoidWhen: ['semantic source of truth', 'operator-facing architecture explanations'],
+    },
+    {
+      surfaceId: 'github-artifact-plane',
+      layer: 'artifact-review',
+      operationalState: 'assumed',
+      responsibility: 'Repo-visible artifact, review, and settlement plane for code changes, documentation deltas, CI evidence, and merge history.',
+      bindings: ['git refs and commits', 'GitHub PRs/issues', 'CI artifacts and release evidence'],
+      preferredWhen: ['repo-visible code or docs artifacts', 'review threads and merge settlement', 'CI or release evidence'],
+      avoidWhen: ['shared mutable workflow state', 'durable semantic ownership'],
     },
     {
       surfaceId: 'n8n-router',
@@ -877,6 +892,7 @@ export const previewApiFirstAgentFallbackRoute = async (
       semanticOwner: requiresDurableKnowledge
         ? 'Promote durable conclusions into Obsidian after runtime execution settles.'
         : 'Obsidian promotion can remain optional for this short-lived task.',
+      artifactPlane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.',
     },
     modelPolicy: {
       apiPath: 'Do not spend LLM budget on the API path unless the deterministic lookup misses or returns low confidence.',
@@ -1124,15 +1140,29 @@ const buildWorkflowDraftStages = (params: {
     stageId: 'finalize',
     owner: 'supabase-hot-state',
     summary: params.runtimeLane === 'public-guild'
-      ? 'Finalize through the hot-state ledger, sanitize the public deliverable, and emit only the bounded result.'
-      : 'Finalize through the hot-state ledger with a compact decision distillate and artifact refs.',
+      ? 'Finalize through the hot-state ledger, sanitize the public deliverable, and emit only the bounded result before any repo-visible settlement.'
+      : 'Finalize through the hot-state ledger with a compact decision distillate before any repo-visible artifact settlement.'
+    ,
     nodes: dedupeStringList([
       'workflow_event.route_selected',
       'decision_distillate',
       params.runtimeLane === 'public-guild' ? 'deliverable_sanitizer' : null,
-      'artifact_ref',
     ]),
     successCriteria: 'The route closes with a compact ledger update and no ambiguous final state.',
+  });
+
+  stages.push({
+    stageId: 'artifact-settlement',
+    owner: 'github-artifact-plane',
+    summary: params.runtimeLane === 'public-guild'
+      ? 'When the route changes repo-visible automation behavior, settle code, docs, CI evidence, and reviewable artifacts through GitHub while the public reply remains bounded.'
+      : 'Settle repo-visible code, docs, CI evidence, and reviewable artifacts through GitHub instead of treating hot-state or Obsidian as the artifact plane.',
+    nodes: dedupeStringList([
+      'artifact_ref',
+      'GitHub PR, commit, or issue evidence',
+      'CI or review status',
+    ]),
+    successCriteria: 'Repo-visible artifacts settle on GitHub and the hot-state ledger keeps only compact pointers back to that reviewable surface.',
   });
 
   if (params.requiresDurableKnowledge) {
@@ -1225,9 +1255,10 @@ const buildWorkflowDraftInternal = (params: {
     }),
     modificationPolicy: dedupeStringList([
       changeMode === 'update-existing'
-        ? `Modify the existing workflow${existingWorkflowName ? ` ${existingWorkflowName}` : ''} by patching router, fallback, and finalization stages instead of rebuilding provider auth or trigger ownership from scratch.`
-        : 'Create a new workflow around ingress, deterministic routing, explicit fallback, and structured closeout only.',
+        ? `Modify the existing workflow${existingWorkflowName ? ` ${existingWorkflowName}` : ''} by patching router, fallback, hot-state closeout, and artifact-settlement stages instead of rebuilding provider auth or trigger ownership from scratch.`
+        : 'Create a new workflow around ingress, deterministic routing, explicit fallback, hot-state closeout, and artifact settlement only.',
       'Keep waits, retries, and schedule or webhook ingress in n8n rather than inside GPT or Hermes runtime turns.',
+      'Keep GitHub artifact settlement distinct from Supabase closeout and Obsidian durable promotion.',
       runtimeLane === 'public-guild'
         ? 'Preserve public-guild sanitization and keep GPT recall as the explicit boundary for policy or product ambiguity.'
         : 'Keep GPT recall as the explicit boundary for policy, destructive change, or unresolved ambiguity.',
@@ -1297,6 +1328,25 @@ const buildAssetDelegationMatrix = (params: {
         ? null
         : 'Obsidian retrieval or write health is not fully confirmed, so durable promotion remains at risk until the adapter path is healthy.',
       nextMove: 'Promote only durable meaning here, and keep packets or summaries as projections rather than the sole runtime owner.',
+    },
+    {
+      assetId: 'github-artifact-plane',
+      defaultMode: 'supporting',
+      currentState: 'assumed',
+      ownership: 'Repo-visible artifact, review, and settlement plane for code changes, documentation deltas, CI evidence, and merge history.',
+      useFor: [
+        'PRs, branches, and review threads for repo-visible outputs',
+        'CI or release evidence tied to code or documentation artifacts',
+        'settling code and docs changes after the workflow ledger closes the route',
+      ],
+      avoidFor: [
+        'shared mutable workflow queue state',
+        'durable semantic ownership of operator meaning',
+      ],
+      currentBottleneck: params.sharedBenefitPhase === 'constraint-only'
+        ? 'Keep GitHub settlement downstream of the hot-state closeout until the route contract is stable enough to externalize cleanly.'
+        : null,
+      nextMove: 'Settle repo-visible artifacts here after Supabase records the route outcome, and keep GitHub out of the role of workflow state machine or semantic owner.',
     },
     {
       assetId: 'n8n-router',
@@ -1486,6 +1536,7 @@ const buildLaneGuardrails = (params: {
   'Keep authentication, authorization, and versioning in the provider-native API or CLI layer instead of pushing them into agent prompts or workflow notes.',
   'Use an explicit router boundary between deterministic API handling and MCP or Hermes fallback.',
   'Persist compact decision distillates and artifact refs into Supabase hot-state and promote only durable meaning into Obsidian.',
+  'Use GitHub as the repo-visible artifact and review plane for code, docs, and CI evidence instead of treating it as the workflow state machine or semantic owner.',
   params.runtimeLane === 'public-guild'
     ? 'Sanitize the final Discord deliverable, including wrapped deliverable text, before any public reply is emitted.'
     : null,
@@ -1675,6 +1726,7 @@ export const buildAutomationOptimizerPlan = async (
       stateOwners: {
         hotState: 'Supabase workflow sessions and workflow events remain the canonical hot-state ledger.',
         semanticOwner: 'Obsidian remains the durable semantic owner for decisions, runbooks, and architecture-significant deltas.',
+        artifactPlane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code changes, docs deltas, CI evidence, and merge history.',
         workflowRouter: snapshot.configuredN8nTaskCount > 0
           ? 'n8n owns trigger, wait, retry, and router-node execution for deterministic automation.'
           : 'Hermes remains the temporary router entrypoint until n8n routes are activated for this slice.',

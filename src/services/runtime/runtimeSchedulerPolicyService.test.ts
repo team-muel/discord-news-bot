@@ -14,6 +14,7 @@ const {
   mockGetEvalAutoPromoteLoopStatus,
   mockGetObsidianGraphAuditLoopStats,
   mockGetRuntimeBootstrapState,
+  mockGetLocalAutonomySupervisorLoopStats,
 } = vi.hoisted(() => ({
   mockListSupabaseCronJobs: vi.fn(async (): Promise<MockCronJob[]> => []),
   mockGetRewardSignalLoopStatus: vi.fn(() => ({
@@ -58,6 +59,12 @@ const {
       summary: null,
       deferredTaskCount: 0,
     },
+  })),
+  mockGetLocalAutonomySupervisorLoopStats: vi.fn(() => ({
+    enabled: true,
+    started: true,
+    running: false,
+    intervalMs: 300000,
   })),
 }));
 
@@ -175,6 +182,10 @@ vi.mock('./runtimeBootstrap', () => ({
   getRuntimeBootstrapState: mockGetRuntimeBootstrapState,
 }));
 
+vi.mock('./localAutonomySupervisorService', () => ({
+  getLocalAutonomySupervisorLoopStats: mockGetLocalAutonomySupervisorLoopStats,
+}));
+
 vi.mock('../infra/supabaseExtensionOpsService', () => ({ listSupabaseCronJobs: mockListSupabaseCronJobs }));
 
 describe('getRuntimeSchedulerPolicySnapshot', () => {
@@ -245,12 +256,14 @@ describe('getRuntimeSchedulerPolicySnapshot', () => {
     const memory = snapshot.items.find((item) => item.id === 'memory-job-runner');
     const opencode = snapshot.items.find((item) => item.id === 'opencode-publish-worker');
     const alerts = snapshot.items.find((item) => item.id === 'runtime-alerts');
+    const localAutonomy = snapshot.items.find((item) => item.id === 'local-autonomy-supervisor');
     const sloAlerts = snapshot.items.find((item) => item.id === 'agent-slo-alert-loop');
     const graphAudit = snapshot.items.find((item) => item.id === 'obsidian-graph-audit-loop');
 
     expect(memory?.startup).toBe('service-init');
     expect(opencode?.running).toBe(true);
     expect(alerts?.running).toBe(true);
+    expect(localAutonomy).toMatchObject({ owner: 'app', startup: 'service-init', running: true, enabled: true });
     expect(sloAlerts?.startup).toBe('discord-ready');
     expect(sloAlerts?.running).toBe(true);
     expect(graphAudit).toMatchObject({ owner: 'app', schedule: 'every 360m' });

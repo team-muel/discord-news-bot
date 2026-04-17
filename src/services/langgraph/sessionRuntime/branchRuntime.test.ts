@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executeSessionBranchRuntime } from './branchRuntime';
-import type { AgentSession, AgentStep, BeamEvaluation } from '../../multiAgentService';
+import {
+  executeSessionBranchRuntime,
+  runFastPathExecutionNode,
+  runFastPathExecutionStateNode,
+  runFastPathRefineNode,
+  runFastPathRefineStateNode,
+  runRequestedSkillExecutionNode,
+  runRequestedSkillExecutionStateNode,
+  runRequestedSkillRefineNode,
+  runRequestedSkillRefineStateNode,
+} from './branchRuntime';
+import type { AgentSession, AgentStep, BeamEvaluation } from '../../multiAgentTypes';
 
 const createStep = (role: AgentStep['role'], title: string): AgentStep => ({
   id: `${role}-1`,
@@ -164,5 +174,145 @@ describe('executeSessionBranchRuntime', () => {
     expect(dependencies.traceShadowNode).toHaveBeenCalledWith(session, 'execute_actions', 'researcher_execution');
     expect(dependencies.traceShadowNode).toHaveBeenCalledWith(session, 'critic_review', 'ops-critique');
     expect(dependencies.markSessionTerminal).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('requested/fast node helpers', () => {
+  it('runRequestedSkillExecutionNode returns the draft and writes the requested-skill trace', async () => {
+    const session = createSession();
+    const dependencies = createDependencies();
+
+    const result = await runRequestedSkillExecutionNode({
+      session,
+      taskGoal: 'target',
+      sessionStartedAtMs: Date.now(),
+      planner: session.steps[0],
+      dependencies,
+      sessionTimeoutMs: constants.sessionTimeoutMs,
+      traceNode: 'requested_skill_run',
+    });
+
+    expect(result).toBe('draft');
+    expect(dependencies.traceShadowNode).toHaveBeenCalledWith(session, 'requested_skill_run', 'requested_skill=ops-execution');
+  });
+
+  it('runRequestedSkillRefineNode refines the draft and writes the refine trace', async () => {
+    const session = createSession();
+    const dependencies = createDependencies();
+
+    const result = await runRequestedSkillRefineNode({
+      session,
+      taskGoal: 'target',
+      currentDraft: 'draft',
+      sessionStartedAtMs: Date.now(),
+      dependencies,
+      traceNode: 'requested_skill_refine',
+    });
+
+    expect(result).toBe('draft');
+    expect(dependencies.traceShadowNode).toHaveBeenCalledWith(session, 'requested_skill_refine', 'ops-execution');
+  });
+
+  it('runFastPathExecutionNode returns the draft and writes the fast-path trace', async () => {
+    const session = createSession();
+    const dependencies = createDependencies();
+
+    const result = await runFastPathExecutionNode({
+      session,
+      taskGoal: 'target',
+      sessionStartedAtMs: Date.now(),
+      researcher: session.steps[1],
+      dependencies,
+      sessionTimeoutMs: constants.sessionTimeoutMs,
+      traceNode: 'fast_path_run',
+    });
+
+    expect(result).toBe('draft');
+    expect(dependencies.traceShadowNode).toHaveBeenCalledWith(session, 'fast_path_run', 'fast_path');
+  });
+
+  it('runFastPathRefineNode refines the draft and writes the refine trace', async () => {
+    const session = createSession();
+    const dependencies = createDependencies();
+
+    const result = await runFastPathRefineNode({
+      session,
+      taskGoal: 'target',
+      currentDraft: 'draft',
+      sessionStartedAtMs: Date.now(),
+      dependencies,
+      traceNode: 'fast_path_refine',
+    });
+
+    expect(result).toBe('draft');
+    expect(dependencies.traceShadowNode).toHaveBeenCalledWith(session, 'fast_path_refine', 'fast_path');
+  });
+
+  it('requested-skill state helpers persist executionDraft and finalCandidate into shadowGraph', async () => {
+    const session = createSession();
+    const dependencies = createDependencies();
+
+    const draftState = await runRequestedSkillExecutionStateNode({
+      session,
+      taskGoal: 'target',
+      sessionStartedAtMs: Date.now(),
+      planner: session.steps[0],
+      dependencies,
+      sessionTimeoutMs: constants.sessionTimeoutMs,
+      ensureShadowGraph: dependencies.ensureShadowGraph,
+      traceNode: 'requested_skill_run',
+    });
+
+    expect(draftState.executionDraft).toBe('draft');
+    expect(session.shadowGraph?.executionDraft).toBe('draft');
+
+    const finalState = await runRequestedSkillRefineStateNode({
+      session,
+      taskGoal: 'target',
+      currentDraft: 'draft',
+      sessionStartedAtMs: Date.now(),
+      dependencies,
+      ensureShadowGraph: dependencies.ensureShadowGraph,
+      traceNode: 'requested_skill_refine',
+    });
+
+    expect(finalState.finalCandidate).toBe('draft');
+    expect(finalState.selectedFinalRaw).toBe('draft');
+    expect(session.shadowGraph?.finalCandidate).toBe('draft');
+    expect(session.shadowGraph?.selectedFinalRaw).toBe('draft');
+  });
+
+  it('fast-path state helpers persist executionDraft and finalCandidate into shadowGraph', async () => {
+    const session = createSession();
+    const dependencies = createDependencies();
+
+    const draftState = await runFastPathExecutionStateNode({
+      session,
+      taskGoal: 'target',
+      sessionStartedAtMs: Date.now(),
+      researcher: session.steps[1],
+      dependencies,
+      sessionTimeoutMs: constants.sessionTimeoutMs,
+      ensureShadowGraph: dependencies.ensureShadowGraph,
+      traceNode: 'fast_path_run',
+    });
+
+    expect(draftState.executionDraft).toBe('draft');
+    expect(session.shadowGraph?.executionDraft).toBe('draft');
+
+    const finalState = await runFastPathRefineStateNode({
+      session,
+      taskGoal: 'target',
+      currentDraft: 'draft',
+      sessionStartedAtMs: Date.now(),
+      dependencies,
+      ensureShadowGraph: dependencies.ensureShadowGraph,
+      traceNode: 'fast_path_refine',
+    });
+
+    expect(finalState.finalCandidate).toBe('draft');
+    expect(finalState.selectedFinalRaw).toBe('draft');
+    expect(session.shadowGraph?.finalCandidate).toBe('draft');
+    expect(session.shadowGraph?.selectedFinalRaw).toBe('draft');
   });
 });

@@ -13,6 +13,7 @@ const {
   mockReadObsidianFileWithAdapter,
   mockWriteObsidianNoteWithAdapter,
   mockRunHermesVsCodeBridge,
+  mockSpawn,
 } = vi.hoisted(() => ({
   mockGetObsidianAdapterRuntimeStatus: vi.fn(),
   mockGetObsidianVaultRoot: vi.fn(),
@@ -22,6 +23,19 @@ const {
   mockReadObsidianFileWithAdapter: vi.fn(),
   mockWriteObsidianNoteWithAdapter: vi.fn(),
   mockRunHermesVsCodeBridge: vi.fn(),
+  mockSpawn: vi.fn(() => {
+    const child = {
+      pid: 9876,
+      once: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
+        if (event === 'spawn') {
+          queueMicrotask(() => callback());
+        }
+        return child;
+      }),
+      unref: vi.fn(),
+    };
+    return child;
+  }),
 }));
 
 vi.mock('../../utils/obsidianEnv', () => ({
@@ -47,12 +61,22 @@ vi.mock('../runtime/hermesVsCodeBridgeService', () => ({
   runHermesVsCodeBridge: mockRunHermesVsCodeBridge,
 }));
 
+vi.mock('node:child_process', () => ({
+  spawn: mockSpawn,
+}));
+
 import {
+  autoQueueOpenJarvisHermesRuntimeObjectives,
   createOpenJarvisHermesRuntimeChatNote,
   enqueueOpenJarvisHermesRuntimeObjectives,
   launchOpenJarvisHermesChatSession,
   prepareOpenJarvisHermesSessionStart,
+  runOpenJarvisHermesRuntimeRemediation,
 } from './openjarvisHermesRuntimeControlService';
+import type {
+  OpenJarvisAutopilotStatus,
+  OpenJarvisSessionOpenBundle,
+} from './openjarvisAutopilotStatusService';
 
 const buildStatus = () => ({
   workflow: {
@@ -87,8 +111,10 @@ const buildStatus = () => ({
       {
         createdAt: '2026-04-13T00:03:00.000Z',
         locator: 'docs/planning/EXECUTION_BOARD.md',
-        refKind: 'doc',
+        refKind: 'repo-file',
         title: 'Execution Board',
+        artifactPlane: 'github',
+        githubSettlementKind: 'repo-file',
         runtimeLane: 'operator-personal',
         sourceStepName: 'collect-artifacts',
         sourceEvent: 'artifact_ref',
@@ -145,6 +171,15 @@ const buildBundle = () => ({
   },
   runtime_lane: 'operator-personal',
   route_mode: 'operations',
+  routing: {
+    recommended_mode: 'api-first-with-agent-fallback',
+    primary_path_type: 'api-path',
+    hot_state: 'Supabase workflow sessions/events remain the shared hot-state plane.',
+    orchestration: 'n8n is available for trigger routing, waits, retries, and webhook glue.',
+    semantic_owner: 'Promote durable conclusions into Obsidian after runtime execution settles.',
+    artifact_plane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.',
+    candidate_mcp_tools: ['upstream.gcpcompute.internal_knowledge_resolve'],
+  },
   continuity: {
     next_action: 'launch the next bounded GPT task',
   },
@@ -199,8 +234,18 @@ const buildBundle = () => ({
   evidence_refs: [
     {
       locator: 'docs/planning/EXECUTION_BOARD.md',
-      refKind: 'doc',
+      refKind: 'repo-file',
       title: 'Execution Board',
+      artifactPlane: 'github',
+      githubSettlementKind: 'repo-file',
+      sourceStepName: 'collect-artifacts',
+    },
+    {
+      locator: 'branch:feat/runtime-hot-state',
+      refKind: 'git-ref',
+      title: 'feat/runtime-hot-state',
+      artifactPlane: 'github',
+      githubSettlementKind: 'branch',
       sourceStepName: 'collect-artifacts',
     },
   ],
@@ -317,12 +362,15 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('Supabase workflow session and event rows remain the mutable hot-state source.');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('Compact Bootstrap');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('start_with: objective -> hermes_runtime -> decision -> next_queue');
+    expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('Route Guidance');
+    expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('artifact_plane: GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('Capability Demands');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('owner=hermes');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('Latest Decision Distillate');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('summary: Use the compact continuity bundle first.');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('blocked_action: ship');
-    expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('docs/planning/EXECUTION_BOARD.md - Execution Board (doc, collect-artifacts)');
+    expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('docs/planning/EXECUTION_BOARD.md - Execution Board (repo-file, collect-artifacts)');
+    expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('branch:feat/runtime-hot-state - feat/runtime-hot-state (git-ref, github=branch, collect-artifacts)');
     expect(mockBuildInboxChatNote.mock.calls[0][0].message).toContain('start-supervisor-loop');
     expect(mockGetOpenJarvisSessionOpenBundle).toHaveBeenCalledWith(expect.objectContaining({
       status: expect.objectContaining({
@@ -346,6 +394,8 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
         workflow_session_id: 'wf-session-1',
         workflow_status: 'released',
         state_projection: 'supabase-hot-state-to-obsidian-projection',
+        route_recommended_mode: 'api-first-with-agent-fallback',
+        route_artifact_plane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.',
         decision_summary: 'Use the compact continuity bundle first.',
         decision_next_action: 'launch the next bounded GPT task',
         decision_tags: ['hermes', 'continuity'],
@@ -410,6 +460,7 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
   });
 
   it('updates the Hermes handoff packet through the shared Obsidian adapter before touching local fs', async () => {
+    const { vaultRoot, packetPath } = createVaultPacket();
     const packetContent = `---\ntitle: Hermes Autopilot Continuity Handoff Packet\n---\n\n## Safe Autonomous Queue For Hermes\n- keep workflow session and summary aligned\n`;
     mockReadObsidianFileWithAdapter.mockResolvedValueOnce(packetContent);
     mockWriteObsidianNoteWithAdapter.mockResolvedValueOnce({
@@ -417,7 +468,7 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
     });
 
     const result = await enqueueOpenJarvisHermesRuntimeObjectives({
-      vaultPath: '/vault',
+      vaultPath: vaultRoot,
       objective: 'stabilize the next GPT relaunch objective',
     });
 
@@ -426,15 +477,47 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
       completion: 'updated',
       handoffPacketPath: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
     });
+    expect(fs.readFileSync(packetPath, 'utf8')).toContain('- stabilize the next GPT relaunch objective');
     expect(mockReadObsidianFileWithAdapter).toHaveBeenCalledWith({
-      vaultPath: path.resolve('/vault'),
+      vaultPath: path.resolve(vaultRoot),
       filePath: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
     });
     expect(mockWriteObsidianNoteWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
-      vaultPath: path.resolve('/vault'),
+      vaultPath: path.resolve(vaultRoot),
       fileName: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
       skipKnowledgeCompilation: true,
     }));
+  });
+
+  it('replaces existing queued objectives when replaceExisting is enabled', async () => {
+    const { vaultRoot, packetPath } = createVaultPacket();
+    mockGetObsidianVaultRoot.mockReturnValue(vaultRoot);
+    mockGetObsidianAdapterRuntimeStatus.mockReturnValueOnce({
+      selectedByCapability: {
+        read_file: 'local-fs',
+        write_note: 'local-fs',
+      },
+      accessPosture: {
+        mode: 'direct-vault-primary',
+      },
+    });
+    mockWriteObsidianNoteWithAdapter.mockResolvedValueOnce({
+      path: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
+    });
+
+    const result = await enqueueOpenJarvisHermesRuntimeObjectives({
+      objective: '전체 코드 최적화 + 서비스 모듈 유지보수성 개선',
+      replaceExisting: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'updated',
+      requestedObjectives: ['전체 코드 최적화 + 서비스 모듈 유지보수성 개선'],
+      queuedObjectives: ['전체 코드 최적화 + 서비스 모듈 유지보수성 개선'],
+    });
+    expect(fs.readFileSync(packetPath, 'utf8')).toContain('- 전체 코드 최적화 + 서비스 모듈 유지보수성 개선');
+    expect(fs.readFileSync(packetPath, 'utf8')).not.toContain('keep workflow session and summary aligned');
   });
 
   it('previews Hermes queue updates without writing when dryRun is enabled', async () => {
@@ -470,10 +553,106 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
     expect(mockWriteObsidianNoteWithAdapter).not.toHaveBeenCalled();
   });
 
+  it('synthesizes and queues the next bounded objective when the queue is empty', async () => {
+    const { vaultRoot, packetPath } = createVaultPacket();
+    const status = {
+      ...buildStatus(),
+      hermes_runtime: {
+        ...buildStatus().hermes_runtime,
+        queued_objectives_available: false,
+      },
+      autonomous_goal_candidates: [],
+    };
+    const bundle = {
+      ...buildBundle(),
+      autonomous_queue: {
+        enabled: true,
+        candidates: [],
+      },
+    };
+
+    mockGetObsidianVaultRoot.mockReturnValue(vaultRoot);
+    mockGetObsidianAdapterRuntimeStatus.mockReturnValue({
+      selectedByCapability: {
+        read_file: 'local-fs',
+        write_note: 'local-fs',
+      },
+      accessPosture: {
+        mode: 'direct-vault-primary',
+      },
+    });
+    mockWriteObsidianNoteWithAdapter.mockResolvedValueOnce({
+      path: 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md',
+    });
+
+    const result = await autoQueueOpenJarvisHermesRuntimeObjectives({
+      status: status as unknown as OpenJarvisAutopilotStatus,
+      bundle: bundle as unknown as OpenJarvisSessionOpenBundle,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'updated',
+      synthesizedObjectives: ['stabilize the next GPT relaunch objective'],
+      queueObjective: {
+        ok: true,
+        completion: 'updated',
+        requestedObjectives: ['stabilize the next GPT relaunch objective'],
+      },
+    });
+    expect(result.queueObjective?.queuedObjectives).toEqual([
+      'stabilize the next GPT relaunch objective',
+      'keep workflow session and summary aligned',
+    ]);
+    expect(fs.readFileSync(packetPath, 'utf8')).toContain('- stabilize the next GPT relaunch objective');
+  });
+
+  it('rejects generic continuation text during auto-queue synthesis', async () => {
+    const status = {
+      ...buildStatus(),
+      hermes_runtime: {
+        ...buildStatus().hermes_runtime,
+        queued_objectives_available: false,
+      },
+      autonomous_goal_candidates: [],
+      workflow: {
+        ...buildStatus().workflow,
+        lastCapabilityDemands: [],
+      },
+    };
+    const bundle = {
+      ...buildBundle(),
+      compact_bootstrap: {
+        ...buildBundle().compact_bootstrap,
+        next_queue_head: 'continue the current workflow if runner and workstream state stay healthy',
+      },
+      autonomous_queue: {
+        enabled: true,
+        candidates: [],
+      },
+      capability_demands: [],
+    };
+
+    const result = await autoQueueOpenJarvisHermesRuntimeObjectives({
+      status: status as unknown as OpenJarvisAutopilotStatus,
+      bundle: bundle as unknown as OpenJarvisSessionOpenBundle,
+      dryRun: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'skipped',
+      synthesizedObjectives: [],
+      errorCode: 'NO_SYNTHESIZED_OBJECTIVES',
+    });
+  });
+
   it('prepares session-start runtime state with shared Obsidian projection and supervisor startup', async () => {
     const result = await prepareOpenJarvisHermesSessionStart({
       runtimeLane: 'operator-personal',
+      contextProfile: 'scout',
       dryRun: true,
+      autoLaunchQueuedChat: true,
       requesterId: 'agent-1',
       requesterKind: 'session',
     });
@@ -499,10 +678,66 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
       },
     });
     expect(result.bundle?.workflow.source).toBe('supabase');
+    expect(result.remediation?.command).toContain('--autoLaunchQueuedChat=true');
+    expect(result.remediation?.command).toContain('--autoLaunchQueuedChatContextProfile=scout');
     expect(mockWriteObsidianNoteWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
       trustedSource: true,
       vaultPath: path.resolve('/vault'),
     }));
+  });
+
+  it('builds a queue-aware supervisor remediation command when queued chat relaunch is requested', async () => {
+    const result = await runOpenJarvisHermesRuntimeRemediation({
+      runtimeLane: 'operator-personal',
+      actionId: 'start-supervisor-loop',
+      dryRun: true,
+      visibleTerminal: false,
+      autoLaunchQueuedChat: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      actionId: 'start-supervisor-loop',
+      completion: 'queued',
+      dryRun: true,
+    });
+    expect(result.command).toContain('--autoLaunchQueuedChat=true');
+    expect(result.command).toContain('--dryRun=true');
+    expect(result.command).toContain('--visibleTerminal=false');
+  });
+
+  it('forwards live dryRun=false into queued supervisor launches', async () => {
+    const result = await runOpenJarvisHermesRuntimeRemediation({
+      runtimeLane: 'operator-personal',
+      actionId: 'start-supervisor-loop',
+      dryRun: false,
+      visibleTerminal: false,
+      autoLaunchQueuedChat: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      actionId: 'start-supervisor-loop',
+      completion: 'queued',
+      dryRun: false,
+      pid: 9876,
+    });
+    expect(result.command).toContain('--autoLaunchQueuedChat=true');
+    expect(result.command).toContain('--dryRun=false');
+    expect(result.command).toContain('--visibleTerminal=false');
+    expect(mockSpawn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining([
+        'node',
+        'scripts/run-openjarvis-goal-cycle.mjs',
+        '--dryRun=false',
+      ]),
+      expect.objectContaining({
+        cwd: path.resolve(process.cwd()),
+        detached: true,
+        stdio: 'ignore',
+      }),
+    );
   });
 
   it('does not mutate the Hermes queue during session-start dry runs', async () => {
@@ -584,5 +819,154 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
         path.resolve(process.cwd(), 'docs/planning/EXECUTION_BOARD.md'),
       ]),
     }));
+  });
+
+  it('builds a delegated-operator launch with canonical roadmap and shared-knowledge context', async () => {
+    const result = await launchOpenJarvisHermesChatSession({
+      objective: 'stabilize the next GPT relaunch objective',
+      contextProfile: 'delegated-operator',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'queued',
+      objective: 'stabilize the next GPT relaunch objective',
+      contextProfile: 'delegated-operator',
+    });
+    expect(result.prompt).toContain('Delegated Leverage Contract');
+    expect(result.prompt).toContain('shared Obsidian and shared MCP knowledge surfaces');
+    expect(result.prompt).toContain('multi-plane ownership split explicit');
+    expect(result.prompt).toContain('GitHub or DeepWiki style research');
+    expect(mockRunHermesVsCodeBridge).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'chat',
+      addFilePaths: expect.arrayContaining([
+        'docs/TEAM_SHARED_OBSIDIAN_START_HERE.md',
+        'docs/adr/ADR-008-multi-plane-operating-model.md',
+        'docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md',
+        'docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md',
+        'docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md',
+        'docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md',
+      ]),
+    }));
+  });
+
+  it('auto-resolves the executor profile for bounded implementation objectives', async () => {
+    const result = await launchOpenJarvisHermesChatSession({
+      objective: 'multiAgentService terminal writer extraction 3차',
+      contextProfile: 'auto',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'queued',
+      objective: 'multiAgentService terminal writer extraction 3차',
+      contextProfile: 'executor',
+    });
+    expect(result.prompt).toContain('Executor Contract');
+    expect(mockRunHermesVsCodeBridge).toHaveBeenCalledWith(expect.objectContaining({
+      addFilePaths: expect.arrayContaining([
+        'docs/ARCHITECTURE_INDEX.md',
+        'docs/RUNBOOK_MUEL_PLATFORM.md',
+      ]),
+    }));
+  });
+
+  it('auto-resolves the distiller profile for promotion-oriented closeout objectives', async () => {
+    const result = await launchOpenJarvisHermesChatSession({
+      objective: 'promote the recovery outcome into shared wiki and changelog',
+      contextProfile: 'auto',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'queued',
+      contextProfile: 'distiller',
+    });
+    expect(result.prompt).toContain('Distiller Contract');
+    expect(result.prompt).toContain('--profile=distiller');
+    expect(mockRunHermesVsCodeBridge).toHaveBeenCalledWith(expect.objectContaining({
+      addFilePaths: expect.arrayContaining([
+        'docs/CHANGELOG-ARCH.md',
+        'docs/planning/README.md',
+      ]),
+    }));
+  });
+
+  it('auto-resolves the guardian profile for stale reentry and recovery objectives', async () => {
+    const result = await launchOpenJarvisHermesChatSession({
+      objective: 'stale reentry acknowledgment recovery',
+      contextProfile: 'auto',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'queued',
+      contextProfile: 'guardian',
+    });
+    expect(result.prompt).toContain('Guardian Contract');
+    expect(result.prompt).toContain('--profile=guardian');
+    expect(mockRunHermesVsCodeBridge).toHaveBeenCalledWith(expect.objectContaining({
+      addFilePaths: expect.arrayContaining([
+        'docs/RUNBOOK_MUEL_PLATFORM.md',
+        'docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md',
+      ]),
+    }));
+  });
+
+  it('prefers the explicit launch objective over stale activation-pack objective hints', async () => {
+    const status = {
+      ...buildStatus(),
+      workflow: {
+        ...buildStatus().workflow,
+        objective: '외부 OSS 어댑터 활용률 80%+',
+      },
+      autonomous_goal_candidates: [
+        {
+          objective: 'User CRM 심화 + Social Graph 고도화',
+          source: 'execution-board-active',
+          milestone: 'M-19',
+          source_path: 'docs/planning/EXECUTION_BOARD.md',
+          fingerprint: 'execution-board-active:M-19',
+        },
+        {
+          objective: '채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)',
+          source: 'safe-queue',
+          milestone: 'M-24',
+          source_path: 'docs/planning/EXECUTION_BOARD.md',
+          fingerprint: 'safe-queue:M-24',
+        },
+      ],
+    };
+    mockGetOpenJarvisAutopilotStatus.mockResolvedValueOnce(status);
+    mockGetOpenJarvisSessionOpenBundle.mockResolvedValueOnce({
+      ...buildBundle(),
+      activation_pack: {
+        ...buildBundle().activation_pack,
+        target_objective: 'User CRM 심화 + Social Graph 고도화',
+        activate_first: [
+          'use this session-open bundle as the bootstrap source for User CRM 심화 + Social Graph 고도화',
+          'read the continuity packet',
+        ],
+      },
+      compact_bootstrap: {
+        ...buildBundle().compact_bootstrap,
+        objective: 'User CRM 심화 + Social Graph 고도화',
+      },
+    });
+
+    const result = await launchOpenJarvisHermesChatSession({
+      objective: '채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'queued',
+      objective: '채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)',
+    });
+    expect(result.prompt).toContain('Primary objective: 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)');
+    expect(result.prompt).toContain('treat 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비) as the active launch target for this turn');
+    expect(result.prompt).toContain('- launch_target: 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)');
+    expect(result.prompt).not.toContain('use this session-open bundle as the bootstrap source for User CRM 심화 + Social Graph 고도화');
+    expect(result.prompt).not.toContain('workflow_current_objective: 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)');
   });
 });

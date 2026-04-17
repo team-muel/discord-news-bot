@@ -44,6 +44,77 @@ describe('openjarvisAutopilotCapacity', () => {
     expect(gcpNative.shared_mcp_remote_preferred).toBe(true);
   });
 
+  it('accepts legacy worker aliases, indexing ingress, and direct URLs for the GCP lane', () => {
+    const gcpNative = buildGcpNativeAutopilotContext({
+      operatingBaseline: {
+        gcpWorker: {
+          instanceName: 'instance-1',
+          machineType: 'e2-medium',
+        },
+        services: {
+          implementWorker: {
+            envKey: 'MCP_IMPLEMENT_WORKER_URL',
+            legacyEnvKey: 'MCP_OPENCODE_WORKER_URL',
+            url: 'https://worker.example.com',
+            directUrl: 'http://34.56.232.61:8787',
+          },
+          architectWorker: {
+            envKey: 'MCP_ARCHITECT_WORKER_URL',
+            legacyEnvKey: 'MCP_OPENDEV_WORKER_URL',
+            url: 'https://worker.example.com/architect',
+          },
+          reviewWorker: {
+            envKey: 'MCP_REVIEW_WORKER_URL',
+            legacyEnvKey: 'MCP_NEMOCLAW_WORKER_URL',
+            url: 'https://worker.example.com/review',
+          },
+          operateWorker: {
+            envKey: 'MCP_OPERATE_WORKER_URL',
+            legacyEnvKey: 'MCP_OPENJARVIS_WORKER_URL',
+            url: 'https://worker.example.com/operate',
+          },
+          openjarvisServe: {
+            envKey: 'OPENJARVIS_SERVE_URL',
+            url: 'https://worker.example.com/openjarvis',
+            directUrl: 'http://34.56.232.61:8000',
+          },
+          unifiedMcp: {
+            envKey: 'MCP_SHARED_MCP_URL',
+            legacyEnvKey: 'OBSIDIAN_REMOTE_MCP_URL',
+            indexingEnvKey: 'MCP_INDEXING_REMOTE_URL',
+            url: 'https://worker.example.com/mcp',
+          },
+        },
+      },
+      env: {
+        ACTION_MCP_STRICT_ROUTING: 'true',
+        ACTION_MCP_DELEGATION_ENABLED: 'true',
+        OPENJARVIS_REQUIRE_OPENCODE_WORKER: 'true',
+        OBSIDIAN_REMOTE_MCP_ENABLED: 'true',
+        MCP_OPENCODE_WORKER_URL: 'https://worker.example.com',
+        MCP_OPENDEV_WORKER_URL: 'https://worker.example.com/architect',
+        MCP_NEMOCLAW_WORKER_URL: 'https://worker.example.com/review',
+        MCP_OPENJARVIS_WORKER_URL: 'https://worker.example.com/operate',
+        OPENJARVIS_SERVE_URL: 'http://34.56.232.61:8000',
+        MCP_INDEXING_REMOTE_URL: 'https://worker.example.com/mcp',
+      },
+    });
+
+    const services = gcpNative.services as Record<string, { env_keys: string[] }>;
+
+    expect(gcpNative.wired_surface_count).toBe(6);
+    expect(gcpNative.missing_surfaces).toEqual([]);
+    expect(services.implementWorker.env_keys).toEqual([
+      'MCP_IMPLEMENT_WORKER_URL',
+      'MCP_OPENCODE_WORKER_URL',
+    ]);
+    expect(services.unifiedMcp.env_keys).toEqual([
+      'MCP_SHARED_MCP_URL',
+      'OBSIDIAN_REMOTE_MCP_URL',
+      'MCP_INDEXING_REMOTE_URL',
+    ]);
+  });
+
   it('treats a healthy released session at the wait boundary as target-reached waiting state', () => {
     const capacity = buildAutopilotCapacity({
       target: 90,

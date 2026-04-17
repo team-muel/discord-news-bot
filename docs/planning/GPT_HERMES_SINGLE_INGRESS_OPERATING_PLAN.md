@@ -62,6 +62,27 @@ timeline
 
 Discord should be treated here as a compatibility ingress, not the architectural owner of the workstream. The hot-state plane, local delegation surfaces, and recall boundaries should remain channel-agnostic enough that a future Chat SDK style multi-platform ingress can replace Discord without changing Supabase ownership, Obsidian semantic ownership, local n8n delegation, or Hermes/OpenJarvis routing.
 
+## M-24 Channel Ingress Abstraction
+
+M-24 should now be read as a channel-ingress abstraction milestone, not as a permanent requirement that OpenClaw own the user-facing surface.
+
+The near-term first adapter remains the current Discord ingress that can prefer OpenClaw when healthy and fall back safely when it is not. The target delta is to separate channel normalization from downstream routing so a future Chat SDK ingress can attach without rewriting Supabase hot-state ownership, Obsidian semantic ownership, Hermes continuity, or OpenJarvis managed operations.
+
+### Minimal Slice
+
+1. define one normalized ingress envelope for user request, channel context, reply mode, source refs, and tenant lane
+2. keep Discord plus optional OpenClaw as the first concrete adapter pair behind that envelope
+3. let any future Chat SDK adapter call the same routing and policy contract instead of inventing a second runtime lane
+4. keep one user-facing ingress owner per surface; Hermes stays a complementary continuity and operator lane rather than a competing chat ingress in compatibility mode
+5. treat UI and channel replacement as separate from runtime ownership, memory ownership, and autonomy ownership
+
+### Exit Criteria
+
+- existing `/해줘`, `/뮤엘`, and prefixed `뮤엘 ...` behavior remains intact
+- OpenClaw remains optional rather than becoming the semantic owner of the workstream
+- a future Chat SDK adapter can be added by implementing the ingress envelope and reply adapter only
+- Hermes, OpenJarvis, Supabase, and Obsidian boundaries do not need reownership or renaming
+
 ## Concrete Example Already In Flight
 
 One useful example is already real inside this repository: the reverse-engineered YouTube community post flow.
@@ -430,6 +451,8 @@ That contract now has explicit local planning surfaces too:
 - `automation.route.preview` for the raw route recommendation
 - `automation.optimizer.plan` for Autopilot-oriented route, cost, observability, public-lane guardrails, and shared scale-out planning
 - `automation.workflow.draft` for a reusable n8n draft or update plan built from the existing starter workflow bundle when a deterministic route should become a real workflow
+
+That workflow draft should keep the stage owners explicit: Supabase closes out hot-state, GitHub settles repo-visible artifact and review evidence, and Obsidian remains an optional durable-promotion tail instead of collapsing those three planes into one closeout step.
 
 If a route remains deterministic and low-ambiguity, the system should prefer finishing from the compact bundle and existing route guidance rather than inserting an advisor-style subordinate consultation.
 Advisor-style escalation becomes appropriate only when the cheaper executor reaches a real hard reasoning checkpoint that is still below the GPT recall boundary.

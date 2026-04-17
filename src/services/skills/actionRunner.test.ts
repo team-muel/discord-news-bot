@@ -1,15 +1,25 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // actionRunner의 순수 공개 함수 테스트
 // runGoalActions는 LLM/Supabase 의존이 있어 여기서는 diagnostics snapshot 구조만 검증
 import {
+  __resetActionRunnerForTests,
   buildWorkflowCloseoutArtifacts,
   extractWorkflowArtifactRefs,
   formatActionArtifactsForDisplay,
   getActionRunnerDiagnosticsSnapshot,
   type ActionRunnerDiagnosticsSnapshot,
 } from './actionRunner';
+import {
+  HIGH_RISK_APPROVAL_ACTIONS,
+  isActionCacheable,
+  isGovernanceFastPathEligible,
+} from './actionRunnerConfig';
 import { buildActionReflectionArtifact, parseActionReflectionArtifact } from './actions/types';
+
+beforeEach(() => {
+  __resetActionRunnerForTests();
+});
 
 describe('getActionRunnerDiagnosticsSnapshot (초기 상태)', () => {
   it('스냅샷 구조가 올바르다', () => {
@@ -141,13 +151,61 @@ describe('reflection artifact helpers', () => {
     ]);
 
     expect(refs).toEqual([
-      { locator: 'docs/CHANGELOG-ARCH.md', refKind: 'repo-file', title: 'CHANGELOG-ARCH.md' },
-      { locator: 'branch:feature/runtime-hot-state', refKind: 'git-ref', title: 'feature/runtime-hot-state' },
-      { locator: 'abc1234def5678', refKind: 'git-ref', title: 'commit abc1234def56' },
-      { locator: 'supabase:remote-session-1', refKind: 'workflow-session', title: 'supabase:remote-session-1' },
-      { locator: 'https://example.com/runbook', refKind: 'url', title: 'Release plan' },
-      { locator: 'ops/improvement/rules/knowledge-reflection-pipeline.md', refKind: 'vault-note', title: 'recursive-improvement reflection target' },
+      {
+        locator: 'docs/CHANGELOG-ARCH.md',
+        refKind: 'repo-file',
+        title: 'CHANGELOG-ARCH.md',
+        artifactPlane: 'github',
+        githubSettlementKind: 'repo-file',
+      },
+      {
+        locator: 'branch:feature/runtime-hot-state',
+        refKind: 'git-ref',
+        title: 'feature/runtime-hot-state',
+        artifactPlane: 'github',
+        githubSettlementKind: 'branch',
+      },
+      {
+        locator: 'abc1234def5678',
+        refKind: 'git-ref',
+        title: 'commit abc1234def56',
+        artifactPlane: 'github',
+        githubSettlementKind: 'commit',
+      },
+      {
+        locator: 'supabase:remote-session-1',
+        refKind: 'workflow-session',
+        title: 'supabase:remote-session-1',
+        artifactPlane: 'hot-state',
+      },
+      {
+        locator: 'https://example.com/runbook',
+        refKind: 'url',
+        title: 'Release plan',
+        artifactPlane: 'external',
+      },
+      {
+        locator: 'ops/improvement/rules/knowledge-reflection-pipeline.md',
+        refKind: 'vault-note',
+        title: 'recursive-improvement reflection target',
+        artifactPlane: 'obsidian',
+      },
     ]);
+  });
+});
+
+describe('actionRunner config defaults', () => {
+  it('keeps the canonical executor in the high-risk approval set', () => {
+    expect(HIGH_RISK_APPROVAL_ACTIONS.has('implement.execute')).toBe(true);
+  });
+
+  it('marks read-only default actions as governance fast-path and cacheable', () => {
+    expect(isGovernanceFastPathEligible('web.search')).toBe(true);
+    expect(isActionCacheable('web.search')).toBe(true);
+  });
+
+  it('does not mark write-style actions as cacheable by default', () => {
+    expect(isActionCacheable('privacy.forget.guild')).toBe(false);
   });
 });
 
@@ -217,6 +275,15 @@ describe('buildWorkflowCloseoutArtifacts', () => {
         failedOrInsufficientRoute: 'replan-step-1-web.search',
         proposedOwner: 'operator',
         evidenceRefs: ['docs/CHANGELOG-ARCH.md'],
+        evidenceRefDetails: [
+          {
+            locator: 'docs/CHANGELOG-ARCH.md',
+            refKind: 'repo-file',
+            title: 'CHANGELOG-ARCH.md',
+            artifactPlane: 'github',
+            githubSettlementKind: 'repo-file',
+          },
+        ],
         recallCondition: 'Pipeline failed after replanning; GPT recall required',
         tags: ['goal-pipeline', 'failed', 'replanned'],
       }),

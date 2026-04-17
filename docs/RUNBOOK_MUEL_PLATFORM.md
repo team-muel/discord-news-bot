@@ -82,6 +82,7 @@ Open these first when verifying behavior:
 - Secret rotation and shared Supabase read-plane rollout: `docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md`
 - Obsidian sync operations: `docs/OBSIDIAN_SUPABASE_SYNC.md`
 - Team-shared MCP and IDE operating standard: `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md`
+- Multica local control-plane playbook: `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md`
 - MCP tool spec and rollout: `docs/planning/mcp/MCP_TOOL_SPEC.md`, `docs/planning/mcp/MCP_ROLLOUT_1W.md`
 - Lightweight worker split: `docs/planning/mcp/LIGHTWORKER_SPLIT_ARCH.md`
 - Progressive autonomy 30-day checklist: `docs/archive/PROGRESSIVE_AUTONOMY_30D_CHECKLIST.md` (ARCHIVED)
@@ -297,8 +298,9 @@ Sync rule:
 - local-first hybrid 적용 직후에는 `npm run env:check:local-hybrid`로 Ollama/worker 공존 readiness를 추가 확인한다.
 - `local-openclaw-stack` 프로필은 `OPENCLAW_GATEWAY_URL`과 `OPENCLAW_BASE_URL`을 `http://127.0.0.1:18789`로 맞추고 gateway/API 토큰은 기본적으로 비운다. 로컬 또는 공유 gateway가 보호되어 있으면 적용 직후 토큰 값을 다시 채운다.
 - `local-openclaw-stack` 프로필은 OpenClaw local ingress를 기본값으로 두고 `MCP_IMPLEMENT_WORKER_URL`은 로컬 worker(`http://127.0.0.1:8787`)로 둔다. 완전 로컬 구현 경로가 필요하면 `npm run worker:opencode:local`을 먼저 띄우고, 원격 fail-closed 구현 경로를 유지하려면 적용 후 `MCP_IMPLEMENT_WORKER_URL`을 GCP worker URL로 덮어쓴다.
+- `local-first-hybrid`와 `local-first-hybrid-gemma4` 프로필은 repo-local OpenJarvis serve를 `OPENJARVIS_ENGINE=ollama`, `OPENJARVIS_MODEL=qwen2.5:7b`로 고정한다. Gemma 4 A/B 프로필에서도 Hermes-side direct Ollama lane만 `gemma4:e4b`로 바뀌고, OpenJarvis/NemoClaw/optimize judge는 검증된 Qwen lane에 남는다.
 - `local-nemoclaw-stack` 프로필은 direct Ollama lane과 NemoClaw sandbox lane을 같은 Nemotron Nano 8B GGUF로 맞추되, OpenJarvis serve/model binding은 검증된 Qwen lane에 그대로 둔다. 또한 host OpenClaw ingress를 dev-profile 포트 `http://127.0.0.1:19001`로 함께 찍어, NemoClaw dashboard 기본 포트 `18789`와 충돌하지 않게 한다. 목적은 Windows + WSL 환경에서 Ollama 8B -> OpenJarvis -> OpenClaw/Hermes -> NemoClaw/OpenShell 순서를 실제로 성립시키는 것이다.
-- `local-nemoclaw-max-delegation` 프로필은 위 구조를 유지한 채 `MCP_IMPLEMENT_WORKER_URL`을 로컬 worker(`http://127.0.0.1:8787`)로 고정하고 `N8N_DELEGATION_ENABLED=true`를 켠다. 목적은 Discord를 장기 고정 ingress로 보지 않고, 로컬에서 위임 가능한 작업을 최대한 local worker + local n8n으로 먼저 밀어 넣는 것이다.
+- `local-nemoclaw-max-delegation` 프로필은 위 구조를 유지하되 `MCP_IMPLEMENT_WORKER_URL`, `MCP_ARCHITECT_WORKER_URL`, `MCP_REVIEW_WORKER_URL`, `MCP_OPERATE_WORKER_URL`, `OPENJARVIS_SERVE_URL`을 canonical GCP control-plane surface로 고정하고 `N8N_DELEGATION_ENABLED=true`를 켠다. 목적은 로컬 Ollama/OpenClaw/n8n 가속은 유지하면서도 24시간 무감독 lane의 hands/control plane은 remote always-on surface로 fail-closed 시키는 것이다.
 - NemoClaw 계열 프로필은 `OPENSHELL_SANDBOX_DELEGATION=true`, `OPENSHELL_DEFAULT_SANDBOX_ID=muel-assistant`, `OPENSHELL_DEFAULT_SANDBOX_IMAGE=ollama`를 함께 찍는다. 이렇게 해야 implement fast-path와 OpenShell auto-create가 같은 sandbox 이름을 사용한다.
 - Windows Docker Desktop + WSL에서 NemoClaw sandbox inference를 쓰는 로컬 프로필은 `NEMOCLAW_SANDBOX_OLLAMA_URL=http://host.docker.internal:11434`를 명시해야 한다. sandbox 내부 `localhost`는 호스트 Ollama를 가리키지 않는다.
 - local OpenClaw 2026.3.13 dev gateway는 `healthz`와 control UI는 살아 있어도 `/v1/chat/completions` 같은 OpenAI-compatible chat surface가 비어 있을 수 있다. 따라서 `OPENCLAW_GATEWAY_URL` health만으로 chat-ready를 판단하지 말고, JSON을 돌려주는 `/v1/models` 확인이나 CLI fallback readiness를 별도로 본다.
@@ -306,6 +308,11 @@ Sync rule:
 - `local-nemoclaw-max-delegation` 프로필은 `N8N_DELEGATION_FIRST=true`를 사용해, webhook이 설정된 뉴스 RSS/뉴스 후보/기사 컨텍스트/유튜브 feed/community/뉴스 요약 경로에서 inline fetch/scrape/summary fallback을 건너뛴다. 또한 `NEWS_MONITOR_LOCAL_FALLBACK_ENABLED=false`, `YOUTUBE_MONITOR_LOCAL_FALLBACK_ENABLED=false`를 함께 찍어 legacy local scraper lane도 명시적으로 꺼 둔다. 목적은 로컬 코드베이스를 orchestration 중심으로 더 얇게 유지하는 것이다.
 - host OpenClaw와 NemoClaw onboard를 같은 머신에서 함께 쓸 때는 포트 소유권을 분리한다. pure OpenClaw local stack은 기본 포트 `18789`를 계속 쓰고, NemoClaw 계열 프로필은 host OpenClaw를 dev-profile 포트 `19001`로 옮긴다. NemoClaw onboard는 upstream 기본값상 dashboard `18789`를 강하게 가정한다.
 - 로컬 OpenJarvis API key는 별도 발급 절차가 아니라 operator가 정하는 정적 bearer token이다. 로컬에서는 `.env`의 `OPENJARVIS_SERVE_API_KEY`를 채우고 `npm run openjarvis:serve:local`로 시작한다. helper가 런타임에서 `OPENJARVIS_API_KEY`로 자동 매핑한다.
+- `GET /api/bot/agent/runtime/unattended-health`와 `GET /api/bot/agent/runtime/operator-snapshot`는 이제 `localAutonomy` 블록으로 `local-nemoclaw-max-delegation` 표준 profile의 doctor 결과를 함께 보여준다. 로컬 24시간 자율 lane이 막히면 여기서 바로 `failures`와 `nextSteps`를 읽고, local n8n/LiteLLM bring-up 또는 canonical GCP surface drift 여부를 우선 확인한다.
+- repo runtime이 살아 있는 동안에는 `localAutonomySupervisorLoop`가 service-init loop로 함께 돌며, 같은 표준 profile을 주기적으로 doctor/up 하고 Hermes supervisor가 비어 있으면 자동으로 `start-supervisor-loop` remediation을 큐잉한다. local max-delegation lane에서는 이때 `autoLaunchQueuedChat=true`도 함께 요구해서 queued next objective가 있으면 다음 GPT 세션까지 이어간다.
+- 이미 떠 있는 Hermes supervisor가 구형 manual-chat 모드라면, 현재 workflow가 `executing`이 아닌 안전 구간에서 local autonomy loop가 그 supervisor를 내리고 queue-aware auto-chat 모드로 다시 올려 24시간 연속성을 수렴시킨다.
+- queue-aware supervisor가 `queued_chat_launched` 이후 `awaiting_reentry_acknowledgment=true` 상태로 멈춰 있다면, local autonomy loop는 이를 supervisor-down 고장으로 취급하지 않는다. 이 구간에서는 `openjarvis:hermes:runtime:reentry-ack`가 먼저 실행되어야 하며, status/readiness/local-autonomy 표면은 같은 wait boundary를 유지해서 중복 GPT relaunch를 막는다. 대기 시간이 15분을 넘기면 `awaiting_reentry_acknowledgment_stale=true` 와 `reentry=stale-ack` 경고가 surfaced 되고, local autonomy loop 는 같은 stale boundary 당 한 번만 workflow `capability_demand` 를 기록한 뒤 continuity packet sync 를 다시 돌려 Obsidian-visible handoff/progress packet 까지 갱신한다.
+- repo runtime이 없거나 아직 올리지 않은 세션에서는 `npm run local:autonomy:supervisor`가 같은 self-heal logic을 detached 독립 프로세스로 유지한다. 최신 상태는 `tmp/autonomy/local-autonomy-supervisor.json`, 프로세스 메타데이터는 `tmp/autonomy/local-autonomy-supervisor.manifest.json`, stdout/stderr 로그는 `tmp/autonomy/local-autonomy-supervisor.log`에 기록된다. status payload의 `watchProcess`와 `stats.lastSupervisorAutoLaunchQueuedChat`로 standalone lane이 queue-aware chat relaunch를 목표 상태로 유지하는지 바로 확인할 수 있다. continuity packet sync도 이제 이 manifest/status/log를 fallback observability source로 읽으므로 active launch manifest가 비어 있어도 Obsidian handoff/progress packet의 `continuity_watch_alive`와 evidence refs로 detached watcher 생존 여부를 확인할 수 있다. manifest와 status는 tracked code fingerprint도 함께 기록하므로 `npm run local:autonomy:supervisor:status`에서 `code.driftDetected`와 `code.restartRecommended`를 보면 detached daemon이 현재 repo 코드와 어긋났는지 바로 알 수 있다. `npm run local:autonomy:supervisor`는 drift가 감지된 기존 daemon을 자동으로 교체하고, 필요하면 `npm run local:autonomy:supervisor:restart`로 강제 재기동할 수 있다.
 - 현재 local-nemoclaw-stack의 OpenJarvis lane은 LiteLLM(`http://127.0.0.1:4000`) 뒤의 검증된 Qwen 모델을 쓴다. `NVIDIA_API_KEY`나 `NVIDIA_NIM_API_KEY`는 NemoClaw/OpenJarvis의 로컬 Ollama/LiteLLM lane을 올리는 데 필수는 아니고, NVIDIA cloud/NIM inference를 직접 쓰려는 경우에만 필요하다.
 - Gemma 4 A/B 프로필은 direct Ollama lane만 `gemma4:e4b`로 바꾸고 OpenJarvis, optimize judge, NemoClaw inference는 기존 qwen lane에 유지한다. 목적은 Hermes-side local reasoning 실험이지 unattended worker 전체 교체가 아니다.
 - `npm run env:check:local-hybrid` 통과는 로컬 추론 readiness만 의미한다. 항상-온 운영 readiness는 `GET /api/bot/agent/runtime/unattended-health`와 원격 worker/LiteLLM/remote-mcp health로 별도 판단한다.
@@ -341,16 +348,28 @@ Tracked Docker Desktop helper files:
 
 빠른 표준 제어면:
 
+- 로컬 우선 doctor: `npm run local:stack:first:doctor`
+- 로컬 우선 상태판(status): `npm run local:stack:first:status`
+- 로컬 우선 프로필 적용 + managed local services bring-up: `npm run local:stack:first:up`
+- 로컬 우선 사전 미리보기: `npm run local:stack:first:up:dry`
 - 전체 doctor: `npm run local:stack:max:doctor`
 - 상태판(status): `npm run local:stack:max:status`
 - 표준 프로필 적용 + managed local services bring-up: `npm run local:stack:max:up`
 - 사전 미리보기: `npm run local:stack:max:up:dry`
+- standalone self-heal loop 1회 점검: `npm run local:autonomy:supervisor:once`
+- standalone self-heal loop detached 시작: `npm run local:autonomy:supervisor`
+- standalone self-heal loop 상태 확인: `npm run local:autonomy:supervisor:status`
+- standalone self-heal loop 중지: `npm run local:autonomy:supervisor:stop`
+- standalone self-heal loop 강제 재기동: `npm run local:autonomy:supervisor:restart`
+- foreground watch 실행: `npm run local:autonomy:supervisor:watch`
 
-이 제어면은 `local-nemoclaw-max-delegation` 프로필을 표준 기준으로 보고, repo가 직접 관리할 수 있는 deterministic local surfaces만 자동으로 다룬다.
+이 제어면은 `local-nemoclaw-max-delegation` 프로필을 표준 기준으로 보고, repo가 직접 관리할 수 있는 deterministic local surfaces만 자동으로 다룬다. `local:stack:first:*` 제어면은 `local-first-hybrid`를 기준으로 같은 doctor/status/up 흐름을 제공하고, repo-local OpenJarvis serve를 direct Ollama `qwen2.5:7b` lane에 고정한다. `muel-*` 같은 LiteLLM alias를 직접 쓰고 싶으면 `OPENJARVIS_ENGINE` 또는 `OPENJARVIS_MODEL`을 명시적으로 덮어쓴다.
 
-- 자동 관리 대상: local LiteLLM sidecar, local n8n, local OpenJarvis serve, local opencode worker
+- 자동 관리 대상: local LiteLLM sidecar, local n8n, 그리고 현재 profile에서 실제로 local URL로 남아 있는 deterministic service만
 - 상태 요약 포함: Obsidian access posture, OpenJarvis memory projection freshness, latest workflow hot-state summary
 - 수동 유지 대상: OpenClaw, NemoClaw, OpenShell 같은 WSL/dashboard/operator-managed lanes
+
+현재 `local-nemoclaw-max-delegation` 표준 profile에서는 canonical GCP worker/OpenJarvis surface를 관찰하고, local control surface auto-start는 LiteLLM/n8n 쪽에만 남긴다.
 
 1. Apply the hardened local profile: `npm run env:profile:local-nemoclaw-stack`
 2. Start host OpenClaw on the non-conflicting dev port: `npm run openclaw:gateway:dev`
@@ -504,6 +523,20 @@ Interactive goal-cycle commands:
 - `npm run openjarvis:packets:sync`
 - `npm run agent:context:audit`
 
+Hermes runtime continuity dry-run checks:
+
+- `npm run openjarvis:hermes:runtime:chat-launch:auto -- --objective="monitor queue reentry health and recover stale supervisor continuity" --runtimeLane=operator-personal --dryRun=true`
+- `npm run openjarvis:hermes:runtime:chat-launch:distiller -- --objective="promote the Hermes runtime profile family outcome into shared wiki and changelog" --runtimeLane=operator-personal --dryRun=true`
+- `npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed --profile=distiller --promoteImmediately=true --summary="<one line closeout>" --nextAction="<next bounded step>" --dryRun=true`
+
+Expected dry-run reading:
+
+- `chat-launch:auto` should resolve queue, reentry, supervisor, and recovery objectives into the `guardian` profile and attach the runbook, runtime contract, and continuity packet files.
+- `chat-launch:distiller` should keep the explicit `distiller` profile and attach changelog, archaeology, and shared-knowledge contract docs instead of implementation-heavy files.
+- `reentry-ack` dry-runs should report `knowledgePromotion.status=skipped` with `dry_run` in `skippedReasons`; promotion becomes a real write only when `--dryRun=false`.
+- use the `--name=value` form exactly; these scripts do not reliably parse spaced CLI arguments.
+- session-start dry-runs may legitimately return `remediation: null` when the supervisor is already alive. Treat that as healthy no-op behavior, not as a restart failure.
+
 Operational intent:
 
 - `openjarvis:goal:run` reuses the unattended engine but stamps the run as `interactive:goal`, which makes user-driven objective cycles inspectable through the same workflow artifact paths instead of inventing a second orchestration surface.
@@ -558,7 +591,7 @@ Expected reading:
 
 - `workerApprovals.pendingApprovals` shows the guild-scoped queue backlog.
 - `policyBindings.executorPolicy.runMode` is the canonical field and remains `approval_required` unless an operator-approved exception is active. Legacy alias `policyBindings.opencodeExecutePolicy.runMode` is still emitted for compatibility.
-- `llmRuntime.workflowBinding`, `llmRuntime.effectiveProviderProfile`, `modelFallback.defaultProviderFallbackChain`, and `providerPolicyBindings` match the intended provider routing.
+- `llmRuntime.workflowBinding`, `llmRuntime.gateProviderProfile`, `llmRuntime.effectiveProviderProfile`, `modelFallback.defaultProviderFallbackChain`, and `providerPolicyBindings` match the intended provider routing. When `gateProviderProfile` is non-null, treat it as an active temporary circuit-breaker override rather than the steady-state workflow default.
 - `safetySignals` stays at `approvalRequiredCompliancePct=100`, `unapprovedAutodeployCount=0`, and `policyViolationCount=0` for the guild under review.
 - `delegationEvidence.complete=true` and `missingDelegationExecutions=0` prove the OpenDev -> NemoClaw sandbox path was not bypassed.
 - `globalArtifacts.latestGateDecision` confirms the latest provider fallback trigger/target and safety verdict.
@@ -953,7 +986,7 @@ Operator notes:
 - `n8n.workflow.status` and updateExisting/public-API workflow CRUD still require `N8N_API_KEY`, but the repo can provision that key locally with `npm run n8n:local:api-key:ensure`.
 - The starter bundle now covers `news-rss-fetch`, `news-summarize`, `news-monitor-candidates`, `youtube-feed-fetch`, `youtube-community-scrape`, `alert-dispatch`, and `article-context-fetch`.
 - The `alert-dispatch` starter intentionally fails unless you provide a real sink, so inline fallback remains intact until you wire one.
-- `local-nemoclaw-max-delegation` is the explicit opt-in profile for “delegate locally as much as possible”: it enables n8n delegation, turns on delegation-first for configured news/youtube/article-context tasks so inline fallbacks stay off, explicitly disables the legacy local news and YouTube fallback lanes, points implement work at the local opencode worker, and leaves `N8N_WEBHOOK_ALERT_DISPATCH` blank so runtime alerts stay on the inline webhook path until a real n8n sink exists.
+- `local-nemoclaw-max-delegation` is the explicit opt-in profile for “delegate as much as possible without breaking the 24-hour lane”: it enables n8n delegation, turns on delegation-first for configured news/youtube/article-context tasks so inline fallbacks stay off, explicitly disables the legacy local news and YouTube fallback lanes, pins implement/review/operate/OpenJarvis control surfaces to the canonical GCP lane, and leaves `N8N_WEBHOOK_ALERT_DISPATCH` blank so runtime alerts stay on the inline webhook path until a real n8n sink exists.
 - Generated files live under `tmp/n8n-local/`, which is git-ignored in this repo.
 
 Worker-first lightweight split status:

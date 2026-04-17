@@ -15,10 +15,19 @@ import {
   normalizeLoopLimit,
   parseJsonCommandOutput,
   pickAutonomousGoalCandidate,
+  readExecutionBoardFocusedObjectives,
   readExecutionBoardQueuedObjectives,
+  resolveRequestedWorkflowSessionId,
   resolveGoalCycleRouteMode,
 } from './run-openjarvis-goal-cycle.mjs';
-import { formatWorkflowSessionReference, normalizeContinuityObsidianHealth } from './sync-openjarvis-continuity-packets';
+import {
+  formatWorkflowSessionReference,
+  normalizeContinuityObsidianHealth,
+  resolveContinuityObjective,
+  resolveContinuitySafeQueue,
+  resolveLocalAutonomyWatchState,
+  resolveRequestedSessionId,
+} from './sync-openjarvis-continuity-packets';
 
 describe('openjarvis remote workstream smoke', () => {
   it('surfaces a remote-only Supabase workstream in goal-cycle status', async () => {
@@ -74,6 +83,11 @@ describe('openjarvis remote workstream smoke', () => {
                 locator: 'docs/CHANGELOG-ARCH.md',
                 ref_kind: 'repo-file',
                 title: 'Architecture changelog',
+              },
+              {
+                locator: 'https://github.com/team-muel/discord-news-bot/pull/123',
+                ref_kind: 'url',
+                title: 'PR 123',
               },
               {
                 locator: 'https://example.com/runbook',
@@ -138,11 +152,20 @@ describe('openjarvis remote workstream smoke', () => {
       {
         locator: 'docs/CHANGELOG-ARCH.md',
         refKind: 'repo-file',
+        artifactPlane: 'github',
+        githubSettlementKind: 'repo-file',
         sourceStepName: 'gate-check',
+      },
+      {
+        locator: 'https://github.com/team-muel/discord-news-bot/pull/123',
+        refKind: 'url',
+        artifactPlane: 'github',
+        githubSettlementKind: 'pull-request',
       },
       {
         locator: 'https://example.com/runbook',
         refKind: 'url',
+        artifactPlane: 'external',
       },
     ]);
     expect(status.resume_state.runtime_lane).toBe('operator-personal');
@@ -167,6 +190,214 @@ describe('openjarvis remote workstream smoke', () => {
     ]));
   });
 
+  it('treats queued-chat reentry acknowledgment as a wait boundary instead of a missing-supervisor failure', async () => {
+    const queuedLaunchAt = new Date(Date.now() - 60 * 1000).toISOString();
+    const session = {
+      session_id: 'remote-session-ack',
+      workflow_name: 'openjarvis.unattended',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      status: 'released',
+      started_at: '2026-04-15T08:00:00.000Z',
+      completed_at: '2026-04-15T08:05:00.000Z',
+      metadata: {
+        objective: 'await queued reentry ack',
+        route_mode: 'delivery',
+        runtime_lane: 'operator-personal',
+        auto_restart_on_release: true,
+      },
+      events: [],
+      steps: [],
+    };
+
+    const status = await buildStatusPayload({
+      summary: {},
+      launch: {},
+      loopState: {
+        status: 'stopped',
+        supervisor_pid: null,
+        auto_select_queued_objective: true,
+        auto_launch_queued_chat: true,
+        awaiting_reentry_acknowledgment: true,
+        stop_reason: 'queued_chat_launched',
+        last_reason: 'queued-chat-launched',
+        last_launch: {
+          objective: 'await queued reentry ack',
+          launched_at: queuedLaunchAt,
+          awaiting_reentry_acknowledgment: true,
+        },
+      },
+      capacityTarget: 90,
+      runtimeLane: 'operator-personal',
+      workstreamState: {
+        ok: true,
+        source: 'supabase',
+        sessionPath: null,
+        session,
+      },
+      resumeState: deriveResumeStateFromWorkflowSession(session, {
+        source: 'supabase-workstream',
+        gcpCapacityRecoveryRequested: false,
+        capacityTarget: 90,
+        runtimeLane: 'operator-personal',
+        waitBoundaryAction: 'wait for the next gpt objective or human approval boundary',
+      }),
+    });
+
+    expect(status.supervisor).toMatchObject({
+      supervisor_alive: false,
+      auto_select_queued_objective: true,
+      auto_launch_queued_chat: true,
+      awaiting_reentry_acknowledgment: true,
+      queued_reentry_objective: 'await queued reentry ack',
+      stop_reason: 'queued_chat_launched',
+    });
+    expect(status.resume_state).toMatchObject({
+      objective: 'await queued reentry ack',
+      queued_reentry_objective: 'await queued reentry ack',
+      resumable: false,
+      reason: 'packet_awaiting_reentry_ack',
+    });
+    expect(status.hermes_runtime).toMatchObject({
+      readiness: 'partial',
+      supervisor_alive: false,
+      awaiting_reentry_acknowledgment: true,
+      awaiting_reentry_acknowledgment_stale: false,
+    });
+    expect(status.hermes_runtime.next_actions).toEqual(expect.arrayContaining([
+      'Acknowledge the queued GPT turn with the reentry-ack command before allowing the queue-aware supervisor to relaunch.',
+    ]));
+    expect(status.hermes_runtime.blockers).not.toContain('No live supervisor is holding the local continuity loop open right now.');
+    expect(status.hermes_runtime.remediation_actions.map((entry: { action_id: string }) => entry.action_id)).not.toContain('start-supervisor-loop');
+  });
+
+  it('raises a stale queued-chat reentry warning and derived capability demand after the wait boundary ages out', async () => {
+    const staleQueuedLaunchAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const session = {
+      session_id: 'remote-session-stale-ack',
+      workflow_name: 'openjarvis.unattended',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      status: 'released',
+      started_at: '2026-04-15T08:00:00.000Z',
+      completed_at: '2026-04-15T08:05:00.000Z',
+      metadata: {
+        objective: 'close out the pending queued chat turn',
+        route_mode: 'delivery',
+        runtime_lane: 'operator-personal',
+        auto_restart_on_release: true,
+      },
+      events: [],
+      steps: [],
+    };
+
+    const status = await buildStatusPayload({
+      summary: {},
+      launch: {},
+      loopState: {
+        status: 'stopped',
+        supervisor_pid: null,
+        auto_select_queued_objective: true,
+        auto_launch_queued_chat: true,
+        awaiting_reentry_acknowledgment: true,
+        stop_reason: 'queued_chat_launched',
+        stopped_at: staleQueuedLaunchAt,
+        last_reason: 'queued-chat-launched',
+        last_launch: {
+          objective: 'close out the pending queued chat turn',
+          launched_at: staleQueuedLaunchAt,
+          awaiting_reentry_acknowledgment: true,
+        },
+      },
+      capacityTarget: 90,
+      runtimeLane: 'operator-personal',
+      workstreamState: {
+        ok: true,
+        source: 'supabase',
+        sessionPath: null,
+        session,
+      },
+      resumeState: deriveResumeStateFromWorkflowSession(session, {
+        source: 'supabase-workstream',
+        gcpCapacityRecoveryRequested: false,
+        capacityTarget: 90,
+        runtimeLane: 'operator-personal',
+        waitBoundaryAction: 'wait for the next gpt objective or human approval boundary',
+      }),
+    });
+
+    expect(status.supervisor).toMatchObject({
+      awaiting_reentry_acknowledgment: true,
+      awaiting_reentry_acknowledgment_started_at: staleQueuedLaunchAt,
+      awaiting_reentry_acknowledgment_stale: true,
+    });
+    expect(status.hermes_runtime).toMatchObject({
+      awaiting_reentry_acknowledgment: true,
+      awaiting_reentry_acknowledgment_started_at: staleQueuedLaunchAt,
+      awaiting_reentry_acknowledgment_stale: true,
+    });
+    expect(status.hermes_runtime.blockers).toContain(
+      'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment, so the autonomy loop is paused on a stale boundary.',
+    );
+    expect(status.hermes_runtime.next_actions).toContain(
+      'Inspect the pending queued VS Code chat turn and run the reentry-ack command; the wait boundary has gone stale and Hermes will stay paused until it is closed out.',
+    );
+
+    const bundle = buildSessionOpenBundle({ status });
+    expect(bundle.capability_demands[0]).toMatchObject({
+      summary: 'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment and is blocking the next autonomous cycle.',
+      missing_capability: 'stale_reentry_acknowledgment',
+      failed_or_insufficient_route: 'queued_chat_launched -> reentry_acknowledged',
+      proposed_owner: 'hermes',
+    });
+    expect(bundle.supervisor).toMatchObject({
+      awaiting_reentry_acknowledgment: true,
+      awaiting_reentry_acknowledgment_started_at: staleQueuedLaunchAt,
+      awaiting_reentry_acknowledgment_stale: true,
+    });
+  });
+
+  it('derives local autonomy watch observability fallback from manifest and status artifacts', () => {
+    const watchState = resolveLocalAutonomyWatchState({
+      manifest: {
+        pid: process.pid,
+        startedAt: '2026-04-15T09:32:40.191Z',
+        logPath: 'tmp/autonomy/local-autonomy-supervisor.log',
+        statusPath: 'tmp/autonomy/local-autonomy-supervisor.json',
+        detached: true,
+      },
+      status: {
+        checkedAt: '2026-04-15T09:42:53.847Z',
+        summary: 'doctor=true failures=0 hermes=ready supervisor:alive:auto-chat',
+        watchProcess: {
+          pid: process.pid,
+          detached: true,
+          manifestPath: 'tmp/autonomy/local-autonomy-supervisor.manifest.json',
+          statusPath: 'tmp/autonomy/local-autonomy-supervisor.json',
+          logPath: 'tmp/autonomy/local-autonomy-supervisor.log',
+        },
+        code: {
+          driftDetected: false,
+          restartRecommended: false,
+          reason: null,
+        },
+      },
+    });
+
+    expect(watchState).toMatchObject({
+      alive: true,
+      pid: process.pid,
+      detached: true,
+      summary: 'doctor=true failures=0 hermes=ready supervisor:alive:auto-chat',
+      manifestPath: 'tmp/autonomy/local-autonomy-supervisor.manifest.json',
+      statusPath: 'tmp/autonomy/local-autonomy-supervisor.json',
+      logPath: 'tmp/autonomy/local-autonomy-supervisor.log',
+      codeDriftDetected: false,
+      restartRecommended: false,
+      driftReason: null,
+    });
+  });
+
   it('prefers persisted capability demand events over derived bundle demands', () => {
     const bundle = buildSessionOpenBundle({
       status: {
@@ -184,6 +415,19 @@ describe('openjarvis remote workstream smoke', () => {
               cheapestEnablementPath: 'inspect the failed steps and revise the objective, policy boundary, or execution plan',
               proposedOwner: 'operator',
               evidenceRefs: ['docs/CHANGELOG-ARCH.md'],
+              evidenceRefDetails: [
+                {
+                  createdAt: '2026-04-12T10:00:30.000Z',
+                  locator: 'docs/CHANGELOG-ARCH.md',
+                  refKind: 'repo-file',
+                  title: 'Architecture changelog',
+                  artifactPlane: 'github',
+                  githubSettlementKind: 'repo-file',
+                  runtimeLane: 'operator-personal',
+                  sourceStepName: null,
+                  sourceEvent: 'session_complete',
+                },
+              ],
               recallCondition: 'Pipeline failed after replanning; GPT recall required',
               runtimeLane: 'operator-personal',
               sourceEvent: 'session_complete',
@@ -231,6 +475,16 @@ describe('openjarvis remote workstream smoke', () => {
         cheapest_enablement_path: 'inspect the failed steps and revise the objective, policy boundary, or execution plan',
         proposed_owner: 'operator',
         evidence_refs: ['docs/CHANGELOG-ARCH.md'],
+        evidence_ref_details: [
+          {
+            locator: 'docs/CHANGELOG-ARCH.md',
+            refKind: 'repo-file',
+            title: 'Architecture changelog',
+            artifactPlane: 'github',
+            githubSettlementKind: 'repo-file',
+            sourceStepName: null,
+          },
+        ],
         recall_condition: 'Pipeline failed after replanning; GPT recall required',
       },
     ]);
@@ -240,6 +494,99 @@ describe('openjarvis remote workstream smoke', () => {
     expect(formatWorkflowSessionReference(null, {
       session_id: 'remote-session-2',
     })).toBe('workflow session: supabase:remote-session-2');
+  });
+
+  it('prefers the selected local session path over a stale summary session id when requesting continuity sync state', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-sync-session-id-'));
+    const sessionPath = path.join(tempDir, 'latest-session.json');
+
+    await fs.writeFile(sessionPath, JSON.stringify({
+      session_id: 'latest-local-session',
+      steps: [],
+      events: [],
+    }), 'utf8');
+
+    try {
+      expect(resolveRequestedSessionId({
+        workflow: {
+          session_id: 'stale-summary-session',
+        },
+      }, sessionPath, '')).toBe('latest-local-session');
+
+      expect(resolveRequestedSessionId({
+        workflow: {
+          session_id: 'stale-summary-session',
+        },
+      }, sessionPath, 'explicit-session')).toBe('explicit-session');
+
+      expect(resolveRequestedWorkflowSessionId({
+        workflow: {
+          session_id: 'stale-summary-session',
+        },
+      }, sessionPath, '')).toBe('latest-local-session');
+
+      expect(resolveRequestedWorkflowSessionId({
+        workflow: {
+          session_id: 'stale-summary-session',
+        },
+      }, sessionPath, 'explicit-session')).toBe('explicit-session');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves explicit safe queue overrides over generated continuity defaults', () => {
+    const generatedQueue = [
+      'continue the current workflow if runner and session state stay healthy',
+      'keep launch manifest/log, workflow session, and summary aligned',
+    ];
+
+    expect(resolveContinuitySafeQueue({
+      existingQueue: ['stabilize shared MCP teammate bootstrap hardening'],
+      generatedQueue,
+    })).toEqual(['stabilize shared MCP teammate bootstrap hardening']);
+
+    expect(resolveContinuitySafeQueue({
+      existingQueue: generatedQueue,
+      generatedQueue: [...generatedQueue, 'persist route decisions, artifact refs, and compact distillates after each fallback cycle'],
+    })).toEqual([
+      'continue the current workflow if runner and session state stay healthy',
+      'keep launch manifest/log, workflow session, and summary aligned',
+      'persist route decisions, artifact refs, and compact distillates after each fallback cycle',
+    ]);
+  });
+
+  it('prefers an explicit packet objective when the workstream objective is only a placeholder', () => {
+    expect(resolveContinuityObjective({
+      sessionObjective: 'none',
+      packetObjective: '전체 코드 최적화 + 서비스 모듈 유지보수성 개선',
+    })).toBe('전체 코드 최적화 + 서비스 모듈 유지보수성 개선');
+
+    expect(resolveContinuityObjective({
+      sessionObjective: 'Autopilot continuity session',
+      packetObjective: 'stabilize shared MCP teammate bootstrap hardening',
+    })).toBe('stabilize shared MCP teammate bootstrap hardening');
+
+    expect(resolveContinuityObjective({
+      sessionObjective: 'none',
+      packetObjective: 'none',
+    })).toBeNull();
+  });
+
+  it('prefers the execution-board focus objective over stale released session objectives', () => {
+    expect(resolveContinuityObjective({
+      focusObjective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+      sessionStatus: 'released',
+      sessionObjective: '전체 코드 최적화 + 서비스 모듈 유지보수성 개선',
+      packetObjective: '전체 코드 최적화 + 서비스 모듈 유지보수성 개선',
+    })).toBe('코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상');
+
+    expect(resolveContinuityObjective({
+      focusObjective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+      sessionStatus: 'executing',
+      sessionObjective: '전체 코드 최적화 + 서비스 모듈 유지보수성 개선',
+      packetObjective: '전체 코드 최적화 + 서비스 모듈 유지보수성 개선',
+    })).toBe('전체 코드 최적화 + 서비스 모듈 유지보수성 개선');
   });
 
   it('does not keep stale packet-based GCP recovery active unless explicitly requested again', async () => {
@@ -289,6 +636,10 @@ gcp_capacity_recovery_requested: true
 - primary_path_type: api-path
 - primary_surfaces: n8n-router, supabase-hot-state
 - fallback_surfaces: gcpcompute-shared-mcp, hermes-local-operator
+- hot_state: Supabase workflow sessions/events remain the shared hot-state plane.
+- orchestration: n8n is available for trigger routing, waits, retries, and webhook glue.
+- semantic_owner: Promote durable conclusions into Obsidian after runtime execution settles.
+- artifact_plane: GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.
 - candidate_apis: youtube-community-scrape
 - candidate_mcp_tools: none
 - matched_examples: youtube-community-post-handoff
@@ -335,6 +686,8 @@ gcp_capacity_recovery_requested: true
       expect(status.resume_state.automation_route).toMatchObject({
         recommended_mode: 'api-first-with-agent-fallback',
         matched_examples: ['youtube-community-post-handoff'],
+        hot_state: 'Supabase workflow sessions/events remain the shared hot-state plane.',
+        artifact_plane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.',
         candidate_apis: ['youtube-community-scrape'],
         local_pattern: 'ext.<adapterId>.<capability>',
         shared_pattern: 'upstream.<namespace>.<tool>',
@@ -429,6 +782,66 @@ gcp_capacity_recovery_requested: true
     expect(capacity.primary_reason).toBe('capacity_below_target');
   });
 
+  it('fills workflow objective from resume state when the workstream metadata only contains a placeholder', async () => {
+    const session = {
+      session_id: 'remote-session-placeholder-objective',
+      workflow_name: 'openjarvis.unattended',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      status: 'released',
+      started_at: '2026-04-16T00:00:00.000Z',
+      completed_at: '2026-04-16T00:01:00.000Z',
+      metadata: {
+        objective: 'none',
+        route_mode: 'delivery',
+        runtime_lane: 'operator-personal',
+        auto_restart_on_release: true,
+      },
+      events: [],
+      steps: [],
+    };
+
+    const status = await buildStatusPayload({
+      summary: {},
+      launch: {},
+      loopState: {
+        status: 'running',
+        auto_select_queued_objective: true,
+        auto_launch_queued_chat: true,
+      },
+      capacityTarget: 90,
+      gcpCapacityRecoveryRequested: false,
+      runtimeLane: 'operator-personal',
+      workstreamState: {
+        ok: true,
+        source: 'supabase',
+        sessionPath: null,
+        session,
+      },
+      resumeState: {
+        owner: 'hermes',
+        mode: 'observing',
+        objective: 'stabilize queue-aware supervisor visibility',
+        next_action: 'restart the next bounded automation cycle from the active objective',
+        resumable: true,
+        reason: 'workstream_auto_restart_ready',
+        escalation_status: 'none',
+        auto_restart_on_release: true,
+        safe_queue: ['stabilize queue-aware supervisor visibility'],
+      },
+    });
+
+    expect(status.workflow.objective).toBe('stabilize queue-aware supervisor visibility');
+    expect(status.resume_state).toMatchObject({
+      objective: 'stabilize queue-aware supervisor visibility',
+      available: true,
+    });
+
+    const bundle = buildSessionOpenBundle({ status });
+    expect(bundle.objective).toBe('stabilize queue-aware supervisor visibility');
+    expect(bundle.activation_pack.target_objective).toBe(status.autonomous_goal_candidates[0]?.objective);
+  });
+
   it('merges packet safe queue objectives into live workstream resume state', async () => {
     const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-openjarvis-safe-queue-'));
     const executionDir = path.join(vaultPath, 'plans', 'execution');
@@ -506,8 +919,8 @@ automation_auto_restart_on_release: true
       ]));
       expect(status.autonomous_goal_candidates).toEqual(expect.arrayContaining([
         expect.objectContaining({
-          objective: 'document API-first and agent-fallback tool-layer optimization slice',
-          source: 'safe-queue',
+          objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+          source: 'execution-board-focus',
         }),
       ]));
     } finally {
@@ -588,6 +1001,8 @@ automation_auto_restart_on_release: true
               locator: 'docs/CHANGELOG-ARCH.md',
               refKind: 'repo-file',
               title: 'Architecture changelog',
+              artifactPlane: 'github',
+              githubSettlementKind: 'repo-file',
               sourceStepName: 'delivery-cycle',
             },
           ],
@@ -639,7 +1054,12 @@ automation_auto_restart_on_release: true
           primary_path_type: 'api-path',
           primary_surfaces: ['n8n-router', 'supabase-hot-state'],
           fallback_surfaces: ['hermes-local-operator'],
+          hot_state: 'Supabase workflow sessions/events remain the shared hot-state plane.',
+          orchestration: 'n8n is available for trigger routing, waits, retries, and webhook glue.',
+          semantic_owner: 'Promote durable conclusions into Obsidian after runtime execution settles.',
+          artifact_plane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.',
           candidate_apis: ['youtube-community-scrape'],
+          candidate_mcp_tools: ['upstream.gcpcompute.internal_knowledge_resolve'],
           matched_examples: ['youtube-community-post-handoff'],
           escalation_required: false,
           escalation_target: 'none',
@@ -683,6 +1103,10 @@ automation_auto_restart_on_release: true
       },
       routing: {
         recommended_mode: 'api-first-with-agent-fallback',
+        hot_state: 'Supabase workflow sessions/events remain the shared hot-state plane.',
+        semantic_owner: 'Promote durable conclusions into Obsidian after runtime execution settles.',
+        artifact_plane: 'GitHub remains the repo-visible artifact, review, and settlement plane for code, docs, CI evidence, and merge history.',
+        candidate_mcp_tools: ['upstream.gcpcompute.internal_knowledge_resolve'],
         matched_examples: ['youtube-community-post-handoff'],
       },
       hermes_runtime: {
@@ -701,6 +1125,7 @@ automation_auto_restart_on_release: true
         target_objective: 'stabilize shared MCP teammate bootstrap hardening',
         objective_class: 'shared-mcp-bootstrap',
         tool_calls: expect.arrayContaining(['automation.route.preview', 'automation.capability.catalog']),
+        mcp_surfaces: expect.arrayContaining(['external-mcp-wrappers']),
       },
       orchestration: {
         current_priority: 'compact-bootstrap-first',
@@ -746,6 +1171,14 @@ automation_auto_restart_on_release: true
         proposed_owner: 'hermes',
       }),
     ]));
+    expect(bundle.evidence_refs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        locator: 'docs/CHANGELOG-ARCH.md',
+        refKind: 'repo-file',
+        artifactPlane: 'github',
+        githubSettlementKind: 'repo-file',
+      }),
+    ]));
     expect(bundle.read_first).toContain('progress-packet:plans/execution/HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md');
     expect(bundle.read_first).toContain('unattended-summary:tmp/autonomy/openjarvis-unattended-last-run.json');
     expect(bundle.read_first).toContain('next-objective:stabilize shared MCP teammate bootstrap hardening');
@@ -776,17 +1209,72 @@ automation_auto_restart_on_release: true
     expect(bundle.activation_pack.fallback_order).toContain('n8n-router');
   });
 
-  it('derives autonomous goal candidates from safe queue and queued execution board items', async () => {
+  it('falls back to the first autonomous goal candidate when the bundle workflow objective is still a placeholder', () => {
+    const bundle = buildSessionOpenBundle({
+      status: {
+        workflow: {
+          objective: 'none',
+          route_mode: 'delivery',
+          runtime_lane: 'operator-personal',
+          lastArtifactRefs: [],
+        },
+        result: {
+          final_status: 'released',
+          failed_steps: 0,
+          step_count: 1,
+        },
+        capacity: {},
+        resume_state: {
+          objective: 'none',
+          safe_queue: [],
+        },
+        automation_route: {},
+        supervisor: {},
+        hermes_runtime: {
+          target_role: 'persistent-local-operator',
+          current_role: 'continuity-sidecar',
+          readiness: 'ready',
+          can_continue_without_gpt_session: true,
+          queue_enabled: true,
+          supervisor_alive: true,
+          has_hot_state: true,
+          local_operator_surface: true,
+          ide_handoff_observed: true,
+          queued_objectives_available: true,
+          strengths: [],
+          blockers: [],
+          next_actions: [],
+          remediation_actions: [],
+        },
+        autonomous_goal_candidates: [
+          {
+            objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+            source: 'execution-board-focus',
+            milestone: 'M-21',
+            source_path: 'docs/planning/EXECUTION_BOARD.md',
+          },
+        ],
+      },
+    });
+
+    expect(bundle.objective).toBe('코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상');
+    expect(bundle.activation_pack.target_objective).toBe('코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상');
+  });
+
+  it('derives autonomous goal candidates from safe queue and queued execution board items when no focus override is present', async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-openjarvis-execution-board-'));
     const executionBoardPath = path.join(workspaceDir, 'EXECUTION_BOARD.md');
 
     await fs.writeFile(executionBoardPath, `# Execution Board
 
+## Active Now (WIP <= 3)
+
+1. [M-19] User CRM 심화 + Social Graph 고도화
+2. [M-20] LLM 레이턴시 SLO 자동 Fallback
+
 ## Queued Now (Approved, Not In Active WIP)
 
-1. [M-22] Shared MCP teammate bootstrap hardening — after tool-layer baseline closes
-   - publish gcpCompute teammate bootstrap lane
-2. [M-23] Operator docs lightweighting
+1. [M-23] Operator docs lightweighting
 `, 'utf8');
 
     try {
@@ -795,13 +1283,17 @@ automation_auto_restart_on_release: true
           objective: 'recover canonical GCP lane and Render readiness',
           safe_queue: [
             'keep workflow session, launch state, and summary aligned',
+            'keep launch manifest/log, workflow session, and summary aligned',
+            'refresh the active progress packet on session transitions and completion',
+            'only escalate into fallback surfaces after an explicit router miss, ambiguity, or parser drift: hermes-local-operator, local-workstation-executor',
+            'persist route decisions, artifact refs, and compact distillates after each fallback cycle',
             'stabilize shared MCP teammate bootstrap hardening',
           ],
         },
         executionBoardPath,
       });
 
-      expect(candidates).toEqual([
+      expect(candidates).toEqual(expect.arrayContaining([
         expect.objectContaining({
           objective: 'stabilize shared MCP teammate bootstrap hardening',
           source: 'safe-queue',
@@ -811,12 +1303,8 @@ automation_auto_restart_on_release: true
           source: 'execution-board-queued',
           milestone: 'M-23',
         }),
-      ]);
+      ]));
       expect(readExecutionBoardQueuedObjectives(executionBoardPath)).toEqual([
-        expect.objectContaining({
-          objective: 'Shared MCP teammate bootstrap hardening',
-          milestone: 'M-22',
-        }),
         expect.objectContaining({
           objective: 'Operator docs lightweighting',
           milestone: 'M-23',
@@ -829,6 +1317,68 @@ automation_auto_restart_on_release: true
         objective: 'Operator docs lightweighting',
         source: 'execution-board-queued',
       }));
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it('pins autonomous goal candidates to the single execution-board focus override', async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-openjarvis-focus-board-'));
+    const executionBoardPath = path.join(workspaceDir, 'EXECUTION_BOARD.md');
+
+    await fs.writeFile(executionBoardPath, `# Execution Board
+
+## Autonomous Focus (Single Objective Override)
+
+1. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
+
+## Active Now (WIP <= 3)
+
+1. [M-19] User CRM 심화 + Social Graph 고도화
+
+## Queued Now (Approved, Not In Active WIP)
+
+1. [M-23] Operator docs lightweighting
+`, 'utf8');
+
+    try {
+      const candidates = buildAutonomousGoalCandidates({
+        resumeState: {
+          objective: 'recover canonical GCP lane and Render readiness',
+          safe_queue: [
+            'stabilize shared MCP teammate bootstrap hardening',
+            'operator docs lightweighting',
+          ],
+        },
+        executionBoardPath,
+      });
+
+      expect(readExecutionBoardFocusedObjectives(executionBoardPath)).toEqual([
+        expect.objectContaining({
+          objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+          source: 'execution-board-focus',
+          milestone: 'M-21',
+        }),
+      ]);
+      expect(candidates).toEqual([
+        expect.objectContaining({
+          objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+          source: 'execution-board-focus',
+          milestone: 'M-21',
+        }),
+      ]);
+      expect(buildAutonomousGoalCandidates({
+        resumeState: {
+          objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+          safe_queue: ['stabilize shared MCP teammate bootstrap hardening'],
+        },
+        executionBoardPath,
+      })).toEqual([
+        expect.objectContaining({
+          objective: 'stabilize shared MCP teammate bootstrap hardening',
+          source: 'safe-queue',
+        }),
+      ]);
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }

@@ -83,7 +83,7 @@ describe('hermesVsCodeBridgeService', () => {
     }
   });
 
-  const createVaultPacket = () => {
+  const createVaultPacket = (options?: { includeGuiBinary?: boolean }) => {
     const vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-vscode-bridge-vault-'));
     tempDirs.push(vaultRoot);
     const packetPath = path.join(vaultRoot, 'plans', 'execution', 'HERMES_LOCAL_BOOTSTRAP_NEXT_ACTIONS.md');
@@ -91,7 +91,11 @@ describe('hermesVsCodeBridgeService', () => {
     fs.writeFileSync(packetPath, PACKET_TEMPLATE, 'utf8');
     const codeCliPath = path.join(vaultRoot, 'code.cmd');
     fs.writeFileSync(codeCliPath, '@echo off\n', 'utf8');
-    return { vaultRoot, packetPath, codeCliPath };
+    const codeGuiPath = path.join(vaultRoot, 'Code.exe');
+    if (options?.includeGuiBinary) {
+      fs.writeFileSync(codeGuiPath, '', 'utf8');
+    }
+    return { vaultRoot, packetPath, codeCliPath, codeGuiPath };
   };
 
   it('executes a goto action and logs it back to the packet', async () => {
@@ -168,7 +172,7 @@ describe('hermesVsCodeBridgeService', () => {
   });
 
   it('queues a VS Code chat session with prompt and added context files', async () => {
-    const { vaultRoot, packetPath, codeCliPath } = createVaultPacket();
+    const { vaultRoot, packetPath, codeCliPath } = createVaultPacket({ includeGuiBinary: true });
 
     const result = await runHermesVsCodeBridge({
       action: 'chat',
@@ -192,6 +196,12 @@ describe('hermesVsCodeBridgeService', () => {
     expect(result.command).toContain('--maximize');
     expect(result.command).toContain('-a');
     expect(result.command).toContain('Continue the next bounded objective');
+    expect(result.command).toContain('Code.exe');
+    expect(mockSpawn).toHaveBeenCalledWith(expect.stringContaining('Code.exe'), expect.any(Array), expect.objectContaining({
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }));
     expect(result.packetLog.logged).toBe(true);
   });
 });

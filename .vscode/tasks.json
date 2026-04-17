@@ -1,0 +1,91 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Hermes: Doctor",
+      "type": "shell",
+      "command": "hermes.cmd",
+      "args": ["doctor"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Hermes: Quick Local Check",
+      "type": "shell",
+      "command": "hermes.cmd",
+      "args": ["chat", "-q", "Reply with only OK", "-Q"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Hermes: Skills List",
+      "type": "shell",
+      "command": "hermes.cmd",
+      "args": ["skills", "list"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Hermes: ACP Server",
+      "type": "shell",
+      "command": "hermes.cmd",
+      "args": ["acp"],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+
+    {
+      "label": "Worktree: New Branch",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "& { $branch = Read-Host 'Branch name (e.g. feat/my-feature)'; $slug = $branch -replace '[^a-zA-Z0-9-]','-'; $path = \"C:\\Muel_S\\wt\\$slug\"; git worktree add -b $branch $path main; code $path }"
+      ],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "new" }
+    },
+
+    {
+      "label": "Worktree: Open Existing",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "& { git worktree list; $path = Read-Host 'Worktree path to open'; code $path }"
+      ],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "new" }
+    },
+
+    {
+      "label": "Worktree: List",
+      "type": "shell",
+      "command": "git",
+      "args": ["worktree", "list"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    {
+      "label": "Worktree: Remove",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "& { git worktree list; $path = Read-Host 'Worktree path to remove'; git worktree remove $path }"
+      ],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "new" }
+    },
+
+    {
+      "label": "Worktree: Prune",
+      "type": "shell",
+      "command": "git",
+      "args": ["worktree", "prune", "-v"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ]
+}

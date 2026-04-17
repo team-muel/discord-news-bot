@@ -6,12 +6,254 @@ const toStringArray = (value: unknown): string[] => Array.isArray(value)
   : [];
 
 const WORKFLOW_ARTIFACT_REF_KINDS = ['repo-file', 'vault-note', 'log', 'url', 'git-ref', 'workflow-session', 'other'] as const;
+const WORKFLOW_ARTIFACT_PLANES = ['github', 'obsidian', 'hot-state', 'external', 'other'] as const;
+const WORKFLOW_GITHUB_SETTLEMENT_KINDS = ['repo-file', 'branch', 'commit', 'pull-request', 'issue', 'ci-run', 'review', 'release', 'other'] as const;
 
 const normalizeWorkflowArtifactRefKind = (value: unknown): string => {
   const kind = compact(value).toLowerCase();
   return (WORKFLOW_ARTIFACT_REF_KINDS as readonly string[]).includes(kind)
     ? kind
     : 'other';
+};
+
+const looksLikeWorkflowArtifactPath = (value: unknown): boolean => {
+  const normalized = compact(value).replace(/\\/g, '/');
+  if (!normalized || /\r|\n/.test(normalized) || /^https?:\/\//i.test(normalized)) {
+    return false;
+  }
+  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('/') || normalized.startsWith('./') || normalized.startsWith('../')) {
+    return true;
+  }
+
+  return /^(src|docs|plans|ops|guilds|chat|retros|tmp|config|scripts)\/.+/.test(normalized)
+    || /^[^\s]+\/(?:[^\s].*)\.[A-Za-z0-9]{1,10}$/.test(normalized);
+};
+
+const inferWorkflowArtifactRefKindFromLocator = (locator: unknown): string => {
+  const normalized = compact(locator).replace(/\\/g, '/').toLowerCase();
+  if (/^https?:\/\//.test(normalized)) {
+    return 'url';
+  }
+  if (normalized.startsWith('workflow session:') || normalized.startsWith('supabase:') || normalized.startsWith('local-file:')) {
+    return 'workflow-session';
+  }
+  if (normalized.endsWith('.log') || /(^|\/)(logs?|tmp)\//.test(normalized)) {
+    return 'log';
+  }
+  if (normalized.endsWith('.md') && (/^\/vault\//.test(normalized) || /^(chat|guilds|ops|plans|retros)\//.test(normalized))) {
+    return 'vault-note';
+  }
+  if (/^[0-9a-f]{7,40}$/i.test(normalized) || normalized.startsWith('branch:')) {
+    return 'git-ref';
+  }
+  if (looksLikeWorkflowArtifactPath(normalized)) {
+    return 'repo-file';
+  }
+  return 'other';
+};
+
+const resolveWorkflowArtifactRefKind = (params: {
+  locator?: unknown;
+  refKind?: unknown;
+}): string => {
+  if (compact(params.refKind)) {
+    return normalizeWorkflowArtifactRefKind(params.refKind);
+  }
+  return inferWorkflowArtifactRefKindFromLocator(params.locator);
+};
+
+const normalizeWorkflowArtifactPlane = (value: unknown): string | null => {
+  const plane = compact(value).toLowerCase();
+  if (!plane) {
+    return null;
+  }
+
+  return (WORKFLOW_ARTIFACT_PLANES as readonly string[]).includes(plane)
+    ? plane
+    : 'other';
+};
+
+const normalizeWorkflowGithubSettlementKind = (value: unknown): string | null => {
+  const settlementKind = compact(value).toLowerCase();
+  if (!settlementKind) {
+    return null;
+  }
+
+  return (WORKFLOW_GITHUB_SETTLEMENT_KINDS as readonly string[]).includes(settlementKind)
+    ? settlementKind
+    : 'other';
+};
+
+const inferWorkflowArtifactPlane = (params: {
+  locator?: unknown;
+  refKind?: unknown;
+  artifactPlane?: unknown;
+}): string | null => {
+  const explicitPlane = normalizeWorkflowArtifactPlane(params.artifactPlane);
+  if (explicitPlane) {
+    return explicitPlane;
+  }
+
+  const refKind = resolveWorkflowArtifactRefKind({ locator: params.locator, refKind: params.refKind });
+  const locator = compact(params.locator).replace(/\\/g, '/').toLowerCase();
+
+  if (refKind === 'repo-file' || refKind === 'git-ref') {
+    return 'github';
+  }
+  if (refKind === 'vault-note') {
+    return 'obsidian';
+  }
+  if (refKind === 'workflow-session' || refKind === 'log') {
+    return 'hot-state';
+  }
+  if (refKind === 'url') {
+    return /^https?:\/\/(www\.)?(github\.com|raw\.githubusercontent\.com)\//.test(locator)
+      ? 'github'
+      : 'external';
+  }
+
+  return locator ? 'other' : null;
+};
+
+const inferWorkflowGithubSettlementKind = (params: {
+  locator?: unknown;
+  refKind?: unknown;
+  artifactPlane?: unknown;
+  githubSettlementKind?: unknown;
+}): string | null => {
+  const explicitSettlementKind = normalizeWorkflowGithubSettlementKind(params.githubSettlementKind);
+  if (explicitSettlementKind) {
+    return explicitSettlementKind;
+  }
+
+  const artifactPlane = inferWorkflowArtifactPlane(params);
+  if (artifactPlane !== 'github') {
+    return null;
+  }
+
+  const refKind = resolveWorkflowArtifactRefKind({ locator: params.locator, refKind: params.refKind });
+  const locator = compact(params.locator).replace(/\\/g, '/').toLowerCase();
+
+  if (refKind === 'repo-file') {
+    return 'repo-file';
+  }
+
+  if (refKind === 'git-ref') {
+    if (locator.startsWith('branch:')) {
+      return 'branch';
+    }
+    if (/^[0-9a-f]{7,40}$/i.test(locator)) {
+      return 'commit';
+    }
+    return 'other';
+  }
+
+  if (refKind === 'url') {
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(locator)) {
+      return locator.includes('pullrequestreview') ? 'review' : 'pull-request';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/issues\/\d+/.test(locator)) {
+      return 'issue';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+/.test(locator)) {
+      return 'ci-run';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/(commit|commits)\/[0-9a-f]{7,40}/.test(locator)) {
+      return 'commit';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/tree\/[^/?#]+/.test(locator)) {
+      return 'branch';
+    }
+    if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+\/releases\/tag\/[^/?#]+/.test(locator)) {
+      return 'release';
+    }
+    if (/^https?:\/\/(www\.)?(github\.com\/[^/]+\/[^/]+\/blob\/|raw\.githubusercontent\.com\/[^/]+\/[^/]+\/)/.test(locator)) {
+      return 'repo-file';
+    }
+  }
+
+  return 'other';
+};
+
+const buildWorkflowArtifactRefPayloadEntry = (ref: Record<string, unknown>): Record<string, unknown> | null => {
+  const locator = compact(ref.locator);
+  if (!locator) {
+    return null;
+  }
+
+  const refKind = resolveWorkflowArtifactRefKind({
+    locator,
+    refKind: ref.refKind ?? ref.ref_kind,
+  });
+  const normalizedRef: Record<string, unknown> = {
+    locator,
+    ref_kind: refKind,
+    title: toNullableString(ref.title),
+  };
+  const artifactPlane = inferWorkflowArtifactPlane({
+    locator,
+    refKind,
+    artifactPlane: ref.artifactPlane ?? ref.artifact_plane,
+  });
+  if (artifactPlane) {
+    normalizedRef.artifact_plane = artifactPlane;
+  }
+  const githubSettlementKind = inferWorkflowGithubSettlementKind({
+    locator,
+    refKind,
+    artifactPlane,
+    githubSettlementKind: ref.githubSettlementKind ?? ref.github_settlement_kind,
+  });
+  if (githubSettlementKind) {
+    normalizedRef.github_settlement_kind = githubSettlementKind;
+  }
+  return normalizedRef;
+};
+
+const parseWorkflowArtifactRefSummaryEntries = (params: {
+  entries?: unknown;
+  createdAt?: unknown;
+  fallbackLane?: string;
+  runtimeLane?: unknown;
+  sourceStepName?: unknown;
+  sourceEvent?: unknown;
+}) => {
+  const fallbackLane = compact(params.fallbackLane) || DEFAULT_WORKFLOW_RUNTIME_LANE;
+  const eventRuntimeLane = compact(params.runtimeLane)
+    ? normalizeWorkflowRuntimeLane(params.runtimeLane, fallbackLane)
+    : fallbackLane;
+  const entries = Array.isArray(params.entries) ? params.entries : [];
+
+  return entries.flatMap((entry) => {
+    if (!isRecord(entry) || !compact(entry.locator)) {
+      return [];
+    }
+
+    const locator = compact(entry.locator);
+    const refKind = resolveWorkflowArtifactRefKind({ locator, refKind: entry.ref_kind ?? entry.refKind });
+    return [{
+      createdAt: toNullableString(params.createdAt),
+      locator,
+      refKind,
+      title: toNullableString(entry.title),
+      artifactPlane: inferWorkflowArtifactPlane({
+        locator,
+        refKind,
+        artifactPlane: entry.artifact_plane ?? entry.artifactPlane,
+      }),
+      githubSettlementKind: inferWorkflowGithubSettlementKind({
+        locator,
+        refKind,
+        artifactPlane: entry.artifact_plane ?? entry.artifactPlane,
+        githubSettlementKind: entry.github_settlement_kind ?? entry.githubSettlementKind,
+      }),
+      runtimeLane: compact(entry.runtime_lane)
+        ? normalizeWorkflowRuntimeLane(entry.runtime_lane, eventRuntimeLane)
+        : eventRuntimeLane,
+      sourceStepName: toNullableString(entry.source_step_name ?? entry.sourceStepName) || toNullableString(params.sourceStepName),
+      sourceEvent: toNullableString(entry.source_event ?? entry.sourceEvent) || toNullableString(params.sourceEvent),
+    }];
+  });
 };
 
 export const DEFAULT_WORKFLOW_RUNTIME_LANE = 'system-internal';
@@ -120,6 +362,19 @@ export const buildWorkflowCapabilityDemandEvent = (batch: {
       normalized.evidence_refs = evidenceRefs;
     }
 
+    const evidenceRefDetails = Array.isArray(demand.evidenceRefDetails)
+      ? demand.evidenceRefDetails.flatMap((ref) => {
+        if (!isRecord(ref)) {
+          return [];
+        }
+        const normalizedRef = buildWorkflowArtifactRefPayloadEntry(ref);
+        return normalizedRef ? [normalizedRef] : [];
+      })
+      : [];
+    if (evidenceRefDetails.length > 0) {
+      normalized.evidence_ref_details = evidenceRefDetails;
+    }
+
     const tags = toStringArray(demand.tags);
     if (tags.length > 0) {
       normalized.tags = tags;
@@ -156,11 +411,31 @@ export const buildWorkflowArtifactRefEvent = (batch: {
   sourceEvent?: unknown;
 }): { payload: Record<string, unknown>; decisionReason: string } | null => {
   const refs = (batch.refs || [])
-    .map((ref) => ({
-      locator: compact(ref.locator),
-      ref_kind: normalizeWorkflowArtifactRefKind(ref.refKind),
-      title: toNullableString(ref.title),
-    }))
+    .map((ref) => {
+      const normalizedRef: Record<string, unknown> = {
+        locator: compact(ref.locator),
+        ref_kind: normalizeWorkflowArtifactRefKind(ref.refKind),
+        title: toNullableString(ref.title),
+      };
+      const artifactPlane = inferWorkflowArtifactPlane({
+        locator: ref.locator,
+        refKind: ref.refKind,
+        artifactPlane: ref.artifactPlane,
+      });
+      if (artifactPlane) {
+        normalizedRef.artifact_plane = artifactPlane;
+      }
+      const githubSettlementKind = inferWorkflowGithubSettlementKind({
+        locator: ref.locator,
+        refKind: ref.refKind,
+        artifactPlane: ref.artifactPlane,
+        githubSettlementKind: ref.githubSettlementKind,
+      });
+      if (githubSettlementKind) {
+        normalizedRef.github_settlement_kind = githubSettlementKind;
+      }
+      return normalizedRef;
+    })
     .filter((ref) => Boolean(ref.locator));
 
   if (refs.length === 0) {
@@ -273,6 +548,22 @@ export const parseWorkflowCapabilityDemandSummaries = (
     }
 
     const entryTags = toStringArray(entry.tags);
+    const evidenceRefs = toStringArray(entry.evidence_refs);
+    const evidenceRefDetails = Array.isArray(entry.evidence_ref_details)
+      ? parseWorkflowArtifactRefSummaryEntries({
+        entries: entry.evidence_ref_details,
+        createdAt: row.created_at,
+        fallbackLane: eventRuntimeLane,
+        runtimeLane: entry.runtime_lane,
+        sourceEvent: entry.source_event || eventSourceEvent,
+      })
+      : parseWorkflowArtifactRefSummaryEntries({
+        entries: evidenceRefs.map((locator) => ({ locator })),
+        createdAt: row.created_at,
+        fallbackLane: eventRuntimeLane,
+        runtimeLane: entry.runtime_lane,
+        sourceEvent: entry.source_event || eventSourceEvent,
+      });
     return [{
       createdAt: toNullableString(row.created_at),
       summary,
@@ -282,7 +573,8 @@ export const parseWorkflowCapabilityDemandSummaries = (
       failedOrInsufficientRoute: toNullableString(entry.failed_or_insufficient_route),
       cheapestEnablementPath: toNullableString(entry.cheapest_enablement_path),
       proposedOwner: toNullableString(entry.proposed_owner),
-      evidenceRefs: toStringArray(entry.evidence_refs),
+      evidenceRefs,
+      evidenceRefDetails,
       recallCondition: toNullableString(entry.recall_condition),
       runtimeLane: compact(entry.runtime_lane)
         ? normalizeWorkflowRuntimeLane(entry.runtime_lane, eventRuntimeLane)
@@ -302,22 +594,12 @@ export const parseWorkflowArtifactRefSummaries = (
 ) => {
   if (!row) return [];
   const payload = isRecord(row.payload) ? row.payload : {};
-  const refs = Array.isArray(payload.refs) ? payload.refs : [];
-  return refs.flatMap((entry) => {
-    if (!isRecord(entry) || !compact(entry.locator)) {
-      return [];
-    }
-
-    return [{
-      createdAt: toNullableString(row.created_at),
-      locator: compact(entry.locator),
-      refKind: normalizeWorkflowArtifactRefKind(entry.ref_kind),
-      title: toNullableString(entry.title),
-      runtimeLane: compact(payload.runtime_lane)
-        ? normalizeWorkflowRuntimeLane(payload.runtime_lane, fallbackLane)
-        : fallbackLane,
-      sourceStepName: toNullableString(payload.source_step_name),
-      sourceEvent: toNullableString(payload.source_event),
-    }];
+  return parseWorkflowArtifactRefSummaryEntries({
+    entries: payload.refs,
+    createdAt: row.created_at,
+    fallbackLane,
+    runtimeLane: payload.runtime_lane,
+    sourceStepName: payload.source_step_name,
+    sourceEvent: payload.source_event,
   });
 };

@@ -33,6 +33,7 @@ Current app-owned `service-init` loops:
 - memory job runner
 - opencode publish worker
 - runtime alert scanner
+- local autonomy supervisor loop
 
 Current external advisory workers:
 
@@ -85,8 +86,14 @@ Operator control-plane endpoints:
 - `GET /api/bot/agent/runtime/scheduler-policy`: canonical runtime ownership/startup snapshot
 - `GET /api/bot/agent/runtime/role-workers`: advisory worker specs plus current reachability/health snapshot
 - `GET /api/bot/agent/runtime/loops`: loop health for memory, Obsidian sync, retrieval eval
-- `GET /api/bot/agent/runtime/unattended-health`: unattended execution telemetry and opencode readiness
+- `GET /api/bot/agent/runtime/loops`: also includes `localAutonomySupervisorLoop`, which self-heals the local max-delegation stack and queues Hermes supervisor restart when the local continuity loop is missing. On the local 24/7 lane it now requests `autoLaunchQueuedChat=true`, so queued next objectives can reopen the next GPT session instead of stopping at supervisor-only continuity.
+- If the live Hermes supervisor is present but still reports `auto_launch_queued_chat=false`, the repo-owned local autonomy loop now treats that as mode drift and replaces it with the queue-chat profile once the active workflow is no longer executing.
+- If the queue-aware handoff already stopped at `queued_chat_launched` and reports `awaiting_reentry_acknowledgment=true`, treat that as an intentional wait boundary rather than a missing-supervisor incident. In that state the repo-owned local autonomy loop must wait for `openjarvis:hermes:runtime:reentry-ack` instead of relaunching another queued GPT turn. The first healthy awaiting-ack boundary now immediately refreshes continuity packet sync so the handoff/progress notes project the selected queued objective and wait state before the boundary goes stale. Once that wait exceeds 15 minutes, the same runtime surfaces expose `awaiting_reentry_acknowledgment_stale=true`, local autonomy summarizes it as `reentry=stale-ack`, records a deduped workflow `capability_demand`, and reruns continuity packet sync so the local Obsidian handoff/progress notes reflect the stalled handoff as an operator-visible blocker. If there is no active launch manifest/log, the same packet sync now falls back to the detached `local-autonomy-supervisor` manifest/status/log artifacts and surfaces `continuity_watch_alive` plus watcher evidence refs instead of leaving continuity ownership as unknown.
+- local-only or pre-server sessions can keep the same self-heal contract alive with `npm run local:autonomy:supervisor`; it now starts a detached local daemon, writes the latest standalone status to `tmp/autonomy/local-autonomy-supervisor.json`, exposes daemon metadata through `npm run local:autonomy:supervisor:status`, and can be stopped with `npm run local:autonomy:supervisor:stop`. Check `watchProcess.detached`, `stats.lastSupervisorAutoLaunchQueuedChat`, and `code.restartRecommended` in the status artifact when validating that the lane is still queue-chat aware and still running the current repo code. The detached start command now auto-restarts a stale daemon when tracked self-heal code changed, and `npm run local:autonomy:supervisor:restart` is the explicit forced fallback when an operator wants a clean rebootstrap.
+- `GET /api/bot/agent/runtime/unattended-health`: unattended execution telemetry, opencode readiness, and current LLM routing snapshot including any active gate override
 - `GET /api/bot/agent/runtime/unattended-health`: also includes `advisoryWorkersHealth` for local-orchestrator/OpenDev/NemoClaw/OpenJarvis workers
+- `GET /api/bot/agent/runtime/unattended-health`: also includes `localAutonomy`, the standard `local-nemoclaw-max-delegation` doctor result for the local 24-hour autonomy lane
+- `GET /api/bot/agent/runtime/operator-snapshot`: also includes `localAutonomy` and mirrors the same local max-delegation doctor state inside `runtime.localAutonomy`
 - `GET /api/bot/agent/runtime/readiness?guildId=...`: guild-scoped runtime readiness report
 - `GET /api/bot/agent/runtime/slo/report?guildId=...`: guild SLO status
 - `GET /api/bot/agent/runtime/slo/alerts?guildId=...`: recent SLO alert events
@@ -96,6 +103,8 @@ Operator interpretation rule:
 - `GET /api/bot/agent/actions/catalog` answers which runtime actions are registered
 - `GET /api/bot/agent/runtime/role-workers` answers which advisory worker endpoints are configured and reachable
 - `GET /api/bot/agent/runtime/scheduler-policy` answers which unattended workloads are expected to run and who owns them
+- `GET /api/bot/agent/runtime/loops` answers whether the repo-owned local self-heal loop itself is alive
+- `GET /api/bot/agent/runtime/unattended-health` plus `GET /api/bot/agent/runtime/operator-snapshot` answer whether the local max-delegation lane itself is blocked and what the next repair step is through `localAutonomy.failures` and `localAutonomy.nextSteps`
 - if a capability is not visible through one of these runtime surfaces, do not assume that a matching `.github` role or prompt file makes it operationally available
 
 Operational rule:

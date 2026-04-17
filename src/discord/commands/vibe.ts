@@ -35,6 +35,15 @@ type VibeDeps = {
     request: string;
     sessionId: string;
   }) => Promise<{ ok: boolean; approvalId?: string; error?: string }>;
+  routeOpenClawDiscordIngress?: (params: {
+    request: string;
+    guildId: string;
+    userId: string;
+    channel: Message['channel'];
+    messageId: string;
+    entryLabel: string;
+    surface: 'muel-message';
+  }) => Promise<{ answer: string } | null>;
 };
 
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
@@ -424,6 +433,28 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     if (channelMode === 'ai_utility' && !UTILITY_TASK_HINT_PATTERN.test(request)) {
       await message.reply(DISCORD_MESSAGES.vibe.utilityOnlyPrompt);
       return;
+    }
+
+    if (isPrefixed && deps.routeOpenClawDiscordIngress) {
+      const openClawResult = await deps.routeOpenClawDiscordIngress({
+        request,
+        guildId: message.guildId,
+        userId: message.author.id,
+        channel: message.channel,
+        messageId: message.id,
+        entryLabel: '뮤엘 메시지',
+        surface: 'muel-message',
+      }).catch((error) => {
+        logger.debug('[VIBE] OpenClaw Discord ingress failed: %s', deps.getErrorMessage(error));
+        return null;
+      });
+      if (openClawResult?.answer) {
+        const reply = await message.reply(openClawResult.answer.slice(0, 1_800));
+        await seedFeedbackReactions(reply).catch((error) => {
+          logVibeNonCritical('seedFeedbackReactions(openclaw ingress) failed', error, deps.getErrorMessage);
+        });
+        return;
+      }
     }
 
     // ── Quick-intent router: simple conversation handled directly via LLM ──

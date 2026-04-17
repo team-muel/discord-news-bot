@@ -78,6 +78,7 @@
 - `HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md`: Hermes hands-layer의 최소 로컬 부트스트랩과 첫 ingest loop의 정본
 - `HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md`: bounded GPT reasoning과 persistent Hermes continuity 사이의 handoff, progress, recall 계약의 정본
 - `GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`: Hermes를 진짜 두 번째 로컬 assistant로 승격하는 목표 상태와 hot-state plane 분리의 정본
+- `MULTICA_CONTROL_PLANE_PLAYBOOK.md`: Multica workspace 역할 카드, issue topology, 그리고 보이는 로컬 control-plane 규칙의 정본
 - `OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md`: repo 전반에 흩어진 개발 과정과 cross-repo 맥락을 wiki object로 수렴하는 규칙의 정본
 - `mcp/TOOL_FIRST_KNOWLEDGE_CONTRACTS.md`: shared MCP와 shared Obsidian을 위한 고수준 지식 계약의 정본
 - `mcp/KNOWLEDGE_BUNDLE_COMPILE_SPEC.md`: `knowledge.bundle.compile` 세부 계약의 정본
@@ -85,6 +86,7 @@
 - `OBSIDIAN_SEED_OBJECTS_PRIORITY.md`: shared wiki seed object 우선순위의 정본
 - `REPO_DOC_EXTERNALIZATION_PLAN.md`: planning 과밀도 축소, shared Obsidian externalization, stub conversion, delete-ready gate의 정본
 - `LOCAL_COLLAB_AGENT_WORKFLOW.md`: 로컬 IDE 협업 규칙과 handoff 계약의 정본
+- `AGENT_ORCHESTRATION_PRIOR_ART.md`: 향후 agent orchestration prior art와 외부 reference intake의 정본
 - `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`: 향후 로컬 외부 도구 통합 설계의 정본
 - `EXTERNAL_TOOL_INTEGRATION_PLAN.md`: NVIDIA OpenShell/NemoClaw/OpenClaw/Nemotron 실제 외부 도구 통합 계획
 - `.github/agents/*`, `.github/prompts/*`, `.github/instructions/*`: IDE 커스터마이징 입력면
@@ -100,14 +102,16 @@
 7. Hermes를 hands-layer로 붙이는 최소 조건은 `HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md`에서 확인한다.
 8. bounded GPT 세션과 persistent Hermes 사이의 ongoing continuity 계약은 `HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md`에서 확인한다.
 9. Hermes를 숨은 sidecar가 아니라 first-class local assistant로 올리는 목표 상태는 `GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`에서 확인한다.
-10. IDE 협업 규칙 수정은 `LOCAL_COLLAB_AGENT_WORKFLOW.md`와 `.github` 커스터마이징 파일을 함께 본다.
-11. 아직 구현되지 않은 로컬 외부 도구 통합은 `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`에서 별도 설계로 다룬다.
+10. Multica workspace 역할, issue topology, lane routing은 `MULTICA_CONTROL_PLANE_PLAYBOOK.md`에서 확인한다.
+11. IDE 협업 규칙 수정은 `LOCAL_COLLAB_AGENT_WORKFLOW.md`와 `.github` 커스터마이징 파일을 함께 본다.
+12. 아직 구현되지 않은 로컬 외부 도구 통합은 `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`에서 별도 설계로 다룬다.
 
 ## 문서 목록
 
 - UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md
 - OPENCODE_EXECUTOR_MIN_SPEC.md
 - LOCAL_COLLAB_AGENT_WORKFLOW.md
+- AGENT_ORCHESTRATION_PRIOR_ART.md
 - LOCAL_TOOL_ADAPTER_ARCHITECTURE.md
 - EXTERNAL_TOOL_INTEGRATION_PLAN.md
 - OPENCODE_PUBLISH_WORKER_MIN_SPEC.md
@@ -126,10 +130,12 @@
 - HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md
 - HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md
 - GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md
+- MULTICA_CONTROL_PLANE_PLAYBOOK.md
 - OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md
 - OBSIDIAN_SEED_OBJECTS_PRIORITY.md
 - REPO_DOC_EXTERNALIZATION_PLAN.md
 - contexts/team-muel_discord-news-bot.md
+- contexts/team-muel_discord-news-bot_beginner-to-system-builder-appendix.md
 - TEAM_SHAREABLE_USER_MEMORY.md
 - development/2026-04-10_obsidian-development-archaeology-wikiization.md
 - GCP_OPENCODE_WORKER_VM_DEPLOY.md
@@ -169,6 +175,10 @@ Archived documents: [docs/archive/README.md](../archive/README.md)
 - ../adr/ADR-003-admin-correction-loop.md
 - ../adr/ADR-004-citation-first-response.md
 - ../adr/ADR-005-context-compression-pipeline.md
+- ../adr/ADR-006-intent-intelligence-layer.md
+- ../adr/ADR-006-memory-evolution-and-tiering.md
+- ../adr/ADR-007-multi-platform-surface-abstraction.md
+- ../adr/ADR-008-multi-plane-operating-model.md
 
 ## 사용 방법
 
@@ -203,6 +213,7 @@ Archived documents: [docs/archive/README.md](../archive/README.md)
 
 - `PLATFORM_CONTROL_TOWER.md`
 - `LOCAL_COLLAB_AGENT_WORKFLOW.md`
+- `AGENT_ORCHESTRATION_PRIOR_ART.md`
 - `MULTI_AGENT_OPERATING_STANDARD_V1.md`
 - `CORE_COMMAND_INTERFACE_V1.md`
 - `DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`
@@ -281,6 +292,7 @@ Moved to [docs/archive/](../archive/README.md).
 ### Development Archaeology Seed Objects
 
 - `contexts/team-muel_discord-news-bot.md`
+- `contexts/team-muel_discord-news-bot_beginner-to-system-builder-appendix.md`
 - `development/2026-04-10_obsidian-development-archaeology-wikiization.md`
 
 ## Archive / Shrink Rules

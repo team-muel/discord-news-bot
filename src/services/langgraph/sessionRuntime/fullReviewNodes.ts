@@ -1,6 +1,6 @@
 import { ensureSessionBudget, getErrorMessage } from '../runtimeSupport/runtimeBudget';
 import type { SkillId } from '../../skills/types';
-import type { AgentSession, AgentStep } from '../../multiAgentService';
+import type { AgentSession, AgentStep } from '../../multiAgentTypes';
 
 export type FullReviewRuntimeDependencies = {
   traceShadowNode: (session: AgentSession, node: 'plan_actions' | 'execute_actions' | 'critic_review', note?: string) => void;
@@ -28,6 +28,8 @@ export type FullReviewRuntimeDependencies = {
     sessionStartedAtMs: number;
   }) => Promise<string>;
 };
+
+type EnsureShadowGraph = (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
 
 export const runPlanTaskNode = async (params: {
   session: AgentSession;
@@ -77,6 +79,48 @@ export const runPlanTaskNode = async (params: {
     plan,
     subgoals,
   };
+};
+
+export const runFullReviewPlanStateNode = async (params: {
+  session: AgentSession;
+  planner: AgentStep;
+  taskGoal: string;
+  sessionStartedAtMs: number;
+  sessionTimeoutMs: number;
+  dependencies: FullReviewRuntimeDependencies;
+  ensureShadowGraph: EnsureShadowGraph;
+  traceNodeState: (note: string) => void;
+}): Promise<{
+  plan: string;
+  subgoals: string[];
+}> => {
+  const { session, planner, taskGoal, sessionStartedAtMs, sessionTimeoutMs, dependencies, ensureShadowGraph, traceNodeState } = params;
+  const planTask = await runPlanTaskNode({
+    session,
+    planner,
+    taskGoal,
+    sessionStartedAtMs,
+    sessionTimeoutMs,
+    dependencies,
+  });
+
+  const currentGraph = ensureShadowGraph(session);
+  session.shadowGraph = {
+    ...currentGraph,
+    planText: planTask.plan,
+    subgoals: [...planTask.subgoals],
+    plans: [
+      ...currentGraph.plans,
+      {
+        actionName: 'ops-plan',
+        args: { goal: taskGoal },
+        reason: String(planTask.plan || '').slice(0, 300),
+      },
+    ],
+  };
+  traceNodeState(`subgoals=${planTask.subgoals.length}`);
+
+  return planTask;
 };
 
 export const runResearchTaskNode = async (params: {
@@ -134,6 +178,50 @@ export const runResearchTaskNode = async (params: {
   ].join('\n'), plan);
 };
 
+export const runFullReviewExecutionStateNode = async (params: {
+  session: AgentSession;
+  researcher: AgentStep;
+  taskGoal: string;
+  plan: string;
+  subgoals: string[];
+  sessionStartedAtMs: number;
+  sessionTimeoutMs: number;
+  dependencies: FullReviewRuntimeDependencies;
+  ensureShadowGraph: EnsureShadowGraph;
+  traceNodeState: (note: string) => void;
+}): Promise<string> => {
+  const {
+    session,
+    researcher,
+    taskGoal,
+    plan,
+    subgoals,
+    sessionStartedAtMs,
+    sessionTimeoutMs,
+    dependencies,
+    ensureShadowGraph,
+    traceNodeState,
+  } = params;
+
+  const executionDraft = await runResearchTaskNode({
+    session,
+    researcher,
+    taskGoal,
+    plan,
+    subgoals,
+    sessionStartedAtMs,
+    sessionTimeoutMs,
+    dependencies,
+  });
+
+  session.shadowGraph = {
+    ...ensureShadowGraph(session),
+    executionDraft,
+  };
+  traceNodeState('researcher_execution');
+  return executionDraft;
+};
+
 export const runCriticReviewNode = async (params: {
   session: AgentSession;
   critic: AgentStep;
@@ -163,4 +251,45 @@ export const runCriticReviewNode = async (params: {
     `실행안: ${executionDraft}`,
     '출력: 사실성 위험, 과잉자동화 위험, 개인정보/운영 리스크를 점검하고 보완안을 제시',
   ].join('\n'), executionDraft);
+};
+
+export const runFullReviewCritiqueStateNode = async (params: {
+  session: AgentSession;
+  critic: AgentStep;
+  taskGoal: string;
+  executionDraft: string;
+  sessionStartedAtMs: number;
+  sessionTimeoutMs: number;
+  dependencies: FullReviewRuntimeDependencies;
+  ensureShadowGraph: EnsureShadowGraph;
+  traceNodeState: (note: string) => void;
+}): Promise<string> => {
+  const {
+    session,
+    critic,
+    taskGoal,
+    executionDraft,
+    sessionStartedAtMs,
+    sessionTimeoutMs,
+    dependencies,
+    ensureShadowGraph,
+    traceNodeState,
+  } = params;
+
+  const critique = await runCriticReviewNode({
+    session,
+    critic,
+    taskGoal,
+    executionDraft,
+    sessionStartedAtMs,
+    sessionTimeoutMs,
+    dependencies,
+  });
+
+  session.shadowGraph = {
+    ...ensureShadowGraph(session),
+    critiqueText: critique,
+  };
+  traceNodeState('ops-critique');
+  return critique;
 };
