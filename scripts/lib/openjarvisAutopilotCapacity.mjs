@@ -88,6 +88,22 @@ const readOperatingBaseline = (baselinePath = DEFAULT_OPERATING_BASELINE_PATH) =
 
 const formatGcpServiceLabel = (serviceId) => GCP_NATIVE_SERVICE_LABELS[serviceId] || String(serviceId || '').trim() || 'unknown service';
 
+const collectServiceEnvKeys = (service = {}) => [
+  service.envKey,
+  service.legacyEnvKey,
+  service.indexingEnvKey,
+  ...(Array.isArray(service.extraEnvKeys) ? service.extraEnvKeys : []),
+].filter(Boolean);
+
+const collectServiceCanonicalCandidates = (service = {}) => [
+  service.url,
+  service.legacyUrl,
+  service.directUrl,
+  ...(Array.isArray(service.extraUrls) ? service.extraUrls : []),
+]
+  .map((value) => String(value || '').trim())
+  .filter(Boolean);
+
 export const buildGcpNativeAutopilotContext = (params = {}) => {
   const env = params.env || process.env;
   const operatingBaselinePath = params.operatingBaselinePath || DEFAULT_OPERATING_BASELINE_PATH;
@@ -130,13 +146,11 @@ export const buildGcpNativeAutopilotContext = (params = {}) => {
       continue;
     }
 
-    const envKeys = [service.envKey, service.legacyEnvKey].filter(Boolean);
+    const envKeys = collectServiceEnvKeys(service);
     const actualValues = envKeys
       .map((envKey) => String(env[envKey] || '').trim())
       .filter(Boolean);
-    const canonicalCandidates = [service.url, service.legacyUrl]
-      .map((value) => String(value || '').trim())
-      .filter(Boolean);
+    const canonicalCandidates = collectServiceCanonicalCandidates(service);
     const canonicalMatch = actualValues.some((actualValue) => canonicalCandidates.some((candidate) => urlsEquivalent(actualValue, candidate)));
     const remoteConfigured = actualValues.some(isRemoteUrl);
 

@@ -47,6 +47,11 @@ describe('openjarvisAdapter lite capabilities', () => {
       'jarvis.agent.tasks.list',
       'jarvis.agent.traces.list',
       'jarvis.agent.trace.get',
+      'jarvis.scheduler.create',
+      'jarvis.scheduler.pause',
+      'jarvis.scheduler.resume',
+      'jarvis.scheduler.cancel',
+      'jarvis.scheduler.logs',
     ]));
   });
 });
@@ -55,9 +60,9 @@ describe('buildOptimizeCliArgs', () => {
   it('builds config-driven optimize args with local engines', () => {
     expect(buildOptimizeCliArgs({
       config: 'config/runtime/openjarvis-local-first-optimize.toml',
-      optimizerModel: 'qwen2.5:7b-instruct',
+      optimizerModel: 'qwen2.5:7b',
       optimizerEngine: 'ollama',
-      judgeModel: 'qwen2.5:7b-instruct',
+      judgeModel: 'qwen2.5:7b',
       judgeEngine: 'ollama',
       trials: 1,
       maxSamples: 1,
@@ -71,11 +76,11 @@ describe('buildOptimizeCliArgs', () => {
       '--max-samples',
       '1',
       '--optimizer-model',
-      'qwen2.5:7b-instruct',
+      'qwen2.5:7b',
       '--optimizer-engine',
       'ollama',
       '--judge-model',
-      'qwen2.5:7b-instruct',
+      'qwen2.5:7b',
       '--judge-engine',
       'ollama',
     ]);

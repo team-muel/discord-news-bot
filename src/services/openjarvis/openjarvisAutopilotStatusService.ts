@@ -25,6 +25,8 @@ export type OpenJarvisAutopilotArtifactRefSummary = {
   locator: string;
   refKind: string | null;
   title: string | null;
+  artifactPlane?: string | null;
+  githubSettlementKind?: string | null;
   runtimeLane: string | null;
   sourceStepName: string | null;
   sourceEvent: string | null;
@@ -40,6 +42,7 @@ export type OpenJarvisAutopilotCapabilityDemandSummary = {
   cheapestEnablementPath: string | null;
   proposedOwner: string | null;
   evidenceRefs: string[];
+  evidenceRefDetails?: OpenJarvisAutopilotArtifactRefSummary[];
   recallCondition: string | null;
   runtimeLane: string | null;
   sourceEvent: string | null;
@@ -72,6 +75,11 @@ export type OpenJarvisAutopilotStatus = {
   supervisor: (Record<string, unknown> & {
     auto_select_queued_objective?: boolean;
     auto_launch_queued_chat?: boolean;
+    awaiting_reentry_acknowledgment?: boolean;
+    awaiting_reentry_acknowledgment_started_at?: string | null;
+    awaiting_reentry_acknowledgment_age_ms?: number | null;
+    awaiting_reentry_acknowledgment_stale?: boolean;
+    reentry_acknowledgment?: Record<string, unknown> | null;
   }) | null;
   result: {
     final_status: string | null;
@@ -93,6 +101,10 @@ export type OpenJarvisAutopilotStatus = {
     can_continue_without_gpt_session: boolean;
     queue_enabled: boolean;
     supervisor_alive: boolean;
+    awaiting_reentry_acknowledgment?: boolean;
+    awaiting_reentry_acknowledgment_started_at?: string | null;
+    awaiting_reentry_acknowledgment_age_ms?: number | null;
+    awaiting_reentry_acknowledgment_stale?: boolean;
     has_hot_state: boolean;
     local_operator_surface: boolean;
     ide_handoff_observed: boolean;
@@ -128,6 +140,7 @@ export type OpenJarvisAutopilotStatus = {
 
 export type OpenJarvisAutopilotStatusParams = {
   sessionPath?: string | null;
+  sessionId?: string | null;
   vaultPath?: string | null;
   capacityTarget?: number | null;
   gcpCapacityRecoveryRequested?: boolean;
@@ -177,7 +190,12 @@ export type OpenJarvisSessionOpenBundle = {
     primary_path_type: string | null;
     primary_surfaces: string[];
     fallback_surfaces: string[];
+    hot_state: string | null;
+    orchestration: string | null;
+    semantic_owner: string | null;
+    artifact_plane: string | null;
     candidate_apis: string[];
+    candidate_mcp_tools: string[];
     matched_examples: string[];
     escalation_required: boolean;
     escalation_target: string | null;
@@ -189,6 +207,10 @@ export type OpenJarvisSessionOpenBundle = {
     can_continue_without_gpt_session: boolean;
     queue_enabled: boolean;
     supervisor_alive: boolean;
+    awaiting_reentry_acknowledgment?: boolean;
+    awaiting_reentry_acknowledgment_started_at?: string | null;
+    awaiting_reentry_acknowledgment_age_ms?: number | null;
+    awaiting_reentry_acknowledgment_stale?: boolean;
     has_hot_state: boolean;
     local_operator_surface: boolean;
     ide_handoff_observed: boolean;
@@ -265,6 +287,8 @@ export type OpenJarvisSessionOpenBundle = {
     locator: string;
     refKind: string | null;
     title: string | null;
+    artifactPlane?: string | null;
+    githubSettlementKind?: string | null;
     sourceStepName: string | null;
   }>;
   capability_demands: Array<{
@@ -276,6 +300,14 @@ export type OpenJarvisSessionOpenBundle = {
     cheapest_enablement_path: string | null;
     proposed_owner: string | null;
     evidence_refs: string[];
+    evidence_ref_details?: Array<{
+      locator: string;
+      refKind: string | null;
+      title: string | null;
+      artifactPlane?: string | null;
+      githubSettlementKind?: string | null;
+      sourceStepName: string | null;
+    }>;
     recall_condition: string | null;
   }>;
   capacity: {
@@ -292,6 +324,10 @@ export type OpenJarvisSessionOpenBundle = {
     stop_reason: string | null;
     last_launch_source: string | null;
     last_launch_at: string | null;
+    awaiting_reentry_acknowledgment?: boolean;
+    awaiting_reentry_acknowledgment_started_at?: string | null;
+    awaiting_reentry_acknowledgment_age_ms?: number | null;
+    awaiting_reentry_acknowledgment_stale?: boolean;
   };
   result: {
     final_status: string | null;
@@ -324,6 +360,7 @@ export const getOpenJarvisAutopilotStatus = async (
   const module = await import('../../../scripts/run-openjarvis-goal-cycle.mjs') as GoalCycleStatusModule;
   return module.buildStatusPayload({
     sessionPath: params.sessionPath || null,
+    sessionId: params.sessionId || null,
     vaultPath: params.vaultPath || null,
     capacityTarget: params.capacityTarget ?? undefined,
     gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,

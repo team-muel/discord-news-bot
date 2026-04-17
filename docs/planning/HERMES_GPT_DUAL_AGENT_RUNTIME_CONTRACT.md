@@ -115,6 +115,31 @@ If Hermes can cheaply gather the missing fact, fetch the missing page, probe the
 Hermes is therefore not just a continuation shim.
 Hermes is the active delegate that expands what GPT can accomplish per bounded session.
 
+## Runtime Profile Family Rule
+
+The compatibility loop should not treat every Hermes relaunch as one broad delegated lane.
+
+The active runtime profile now carries bounded intent so Hermes can reopen in the right posture instead of rediscovering what kind of turn it is.
+
+- `default`: general continuity-safe launch when no narrower role is justified
+- `auto`: infer the role from the queued objective plus current hot-state signals
+- `delegated-operator`: broad multi-surface hands layer when the turn mixes research, tooling, and bounded execution
+- `scout`: research, probing, mapping, upstream verification, and repo archaeology
+- `executor`: bounded implementation, patching, and validation work
+- `distiller`: closeout, changelog, wiki, playbook, and decision-compression work
+- `guardian`: queue health, stale reentry, supervisor continuity, rollback, and recovery work
+
+Profile continuity matters across three boundaries:
+
+- queued GPT chat launch
+- reentry acknowledgment closeout
+- queue-aware supervisor restart
+
+If the profile is lost at one of those boundaries, Hermes reopens with the wrong operating contract and wastes the next turn reacquiring posture instead of progressing the objective.
+
+Session-start preparation is intentionally state-dependent.
+If the supervisor is already alive, a healthy session-start result may omit remediation instead of forcing a redundant restart just to satisfy a smoke check.
+
 ## Bootstrap Minimization Rule
 
 Session-open quality should come from a small high-signal bundle, not from rereading a large compatibility archive every time.

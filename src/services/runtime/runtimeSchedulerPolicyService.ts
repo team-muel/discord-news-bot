@@ -13,6 +13,7 @@ import { listSupabaseCronJobs } from '../infra/supabaseExtensionOpsService';
 import { getRuntimeAlertsStats } from './runtimeAlertService';
 import { getOpencodePublishWorkerStats } from '../opencode/opencodePublishWorker';
 import { getRuntimeBootstrapState } from './runtimeBootstrap';
+import { getLocalAutonomySupervisorLoopStats } from './localAutonomySupervisorService';
 import { INTENT_FORMATION_ENABLED } from '../../config';
 
 type SchedulerOwner = 'app' | 'db';
@@ -57,6 +58,7 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
   const loginCleanup = getLoginSessionCleanupLoopStats();
   const runtimeAlerts = getRuntimeAlertsStats();
   const opencodePublish = getOpencodePublishWorkerStats();
+  const localAutonomySupervisor = getLocalAutonomySupervisorLoopStats();
   const runtimeBootstrap = getRuntimeBootstrapState();
   const advisoryWorkerHealth = await getAgentRoleWorkersHealthSnapshot();
   const advisoryWorkerSpecs = listAgentRoleWorkerSpecs();
@@ -163,6 +165,19 @@ export const getRuntimeSchedulerPolicySnapshot = async (): Promise<RuntimeSchedu
       running: Boolean(runtimeAlerts.running),
       schedule: `every ${Math.max(1, Math.round(runtimeAlerts.intervalMs / 1000))}s`,
       source: ['src/services/runtimeAlertService.ts', 'src/services/runtimeBootstrap.ts'],
+    },
+    {
+      id: 'local-autonomy-supervisor',
+      title: 'Local autonomy self-heal and Hermes supervisor loop',
+      owner: 'app',
+      startup: 'service-init',
+      enabled: Boolean(localAutonomySupervisor.enabled),
+      running: Boolean(localAutonomySupervisor.started),
+      schedule: `every ${Math.max(1, Math.round(localAutonomySupervisor.intervalMs / 1000))}s`,
+      source: [
+        'src/services/runtime/localAutonomySupervisorService.ts',
+        'src/services/runtime/runtimeBootstrap.ts',
+      ],
     },
     {
       id: 'obsidian-sync-loop',

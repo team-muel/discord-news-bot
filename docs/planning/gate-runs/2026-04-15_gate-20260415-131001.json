@@ -1,0 +1,95 @@
+{
+  "run_id": "gate-20260415-131001",
+  "stage": "A",
+  "target_scope": "weekly:auto",
+  "started_at": "2026-04-15T13:10:01.911Z",
+  "ended_at": "2026-04-15T13:10:01.911Z",
+  "operator": "auto",
+  "change_set": "auto-judge gate decision from metric inputs",
+  "final_decision": {
+    "overall": "pending",
+    "required_actions": [
+      "provider_profile_fallback:quality-optimized"
+    ],
+    "advisory_actions": [],
+    "rollback_required": false,
+    "rollback_type": "none",
+    "rollback_deadline_min": "",
+    "provider_profile_fallback_required": true,
+    "provider_profile_target": "quality-optimized",
+    "provider_profile_trigger": "quality_gate_fail",
+    "provider_profile_evidence_template": "docs/planning/runtime-profiles/quality-first.env"
+  },
+  "gates": {
+    "reliability": {
+      "verdict": "pending",
+      "metrics": {
+        "p95_latency_ms": 0,
+        "error_rate_pct": null,
+        "queue_lag_sec": 0,
+        "rollback_rehearsal_fail_count": 0,
+        "memory_deadletter_pending_count": 0,
+        "memory_deadletter_ignored_count": 0
+      },
+      "reasons": [
+        "reliability metrics missing: error_rate_pct",
+        "allowPending=true로 pending 판정"
+      ]
+    },
+    "quality": {
+      "verdict": "fail",
+      "metrics": {
+        "citation_rate": null,
+        "retrieval_hit_at_k": 0,
+        "hallucination_review_fail_rate": null,
+        "session_success_rate": null
+      },
+      "auto_fetched": false,
+      "reasons": [
+        "retrieval_hit_at_k: 0 (threshold >= 0.45)"
+      ]
+    },
+    "safety": {
+      "verdict": "pending",
+      "metrics": {
+        "approval_required_compliance_pct": null,
+        "unapproved_autodeploy_count": null,
+        "policy_violation_count": null,
+        "privacy_block_count": null
+      },
+      "reasons": [
+        "safety metrics missing: approval_required_compliance_pct, unapproved_autodeploy_count, policy_violation_count, privacy_block_count",
+        "allowPending=true로 pending 판정"
+      ]
+    },
+    "governance": {
+      "verdict": "pass",
+      "metrics": {
+        "roadmap_synced": true,
+        "execution_board_synced": true,
+        "backlog_synced": true,
+        "runbook_synced": true,
+        "changelog_synced": true
+      },
+      "reasons": [
+        "roadmap_synced: true",
+        "execution_board_synced: true",
+        "backlog_synced: true",
+        "runbook_synced: true",
+        "changelog_synced: true"
+      ]
+    }
+  },
+  "runtime_loop_evidence": {
+    "startup_owner_taxonomy": "service-init|discord-ready|database / owner(app|db)",
+    "scheduler_policy_generated_at": null,
+    "scheduler_policy_items_verified": false,
+    "service_init_ids_verified": false,
+    "discord_ready_ids_verified": false,
+    "database_ids_verified": false,
+    "loops_snapshot_attached": false,
+    "unattended_health_snapshot_attached": false,
+    "worker_approval_gates_snapshot_attached": false,
+    "sandbox_delegation_verified": false
+  }
+}

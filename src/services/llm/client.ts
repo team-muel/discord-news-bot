@@ -189,6 +189,7 @@ export const getLlmRuntimeSnapshot = async (params?: {
   actionPolicyProviders: LlmProvider[];
   workflowBinding: ReturnType<typeof resolveWorkflowModelBinding>;
   workflowProfile: ReturnType<typeof resolveWorkflowProfile> | null;
+  gateProviderProfile: ReturnType<typeof resolveWorkflowProfile> | null;
   effectiveProviderProfile: ReturnType<typeof resolveWorkflowProfile> | null;
   configuredProviders: LlmProvider[];
   resolvedChain: LlmProvider[];
@@ -227,6 +228,7 @@ export const getLlmRuntimeSnapshot = async (params?: {
     actionPolicyProviders,
     workflowBinding,
     workflowProfile,
+    gateProviderProfile,
     effectiveProviderProfile,
     configuredProviders,
     resolvedChain,
@@ -264,7 +266,7 @@ export const generateTextWithMeta = async (
     if (p === 'huggingface') return HUGGINGFACE_MODEL;
     if (p === 'openclaw') return OPENCLAW_MODEL;
     if (p === 'ollama') return OLLAMA_MODEL || 'qwen2.5:3b-instruct';
-    if (p === 'openjarvis') return OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
+    if (p === 'openjarvis') return OPENJARVIS_MODEL || 'qwen2.5:7b';
     if (p === 'litellm') return LITELLM_MODEL;
     if (p === 'kimi') return KIMI_MODEL;
     return undefined;

@@ -66,6 +66,7 @@ describe('apiFirstAgentFallbackService', () => {
     expect(catalog.model).toBe('API-First & Agent-Fallback');
     expect(catalog.runtimeSignals.configuredN8nTaskCount).toBe(4);
     expect(catalog.runtimeSignals.upstreamNamespaces).toEqual(['gcpcompute']);
+    expect(catalog.surfaces.find((surface) => surface.surfaceId === 'github-artifact-plane')?.layer).toBe('artifact-review');
     expect(catalog.surfaces.find((surface) => surface.surfaceId === 'n8n-router')?.operationalState).toBe('ready');
     expect(catalog.surfaces.find((surface) => surface.surfaceId === 'gcpcompute-shared-mcp')?.operationalState).toBe('ready');
     expect(catalog.surfaces.find((surface) => surface.surfaceId === 'hermes-local-operator')?.operationalState).toBe('ready');
@@ -98,6 +99,7 @@ describe('apiFirstAgentFallbackService', () => {
     expect(preview.fallbackPath.surfaces).toContain('gcpcompute-shared-mcp');
     expect(preview.fallbackPath.surfaces).toContain('hermes-local-operator');
     expect(preview.fallbackPath.surfaces).toContain('local-workstation-executor');
+    expect(preview.statePlane.artifactPlane).toContain('GitHub');
     expect(preview.activationPack.toolCalls).toContain('automation.session_start_prep');
     expect(preview.activationPack.apiSurfaces).toContain('n8n-router');
     expect(preview.escalation.required).toBe(false);
@@ -137,6 +139,10 @@ describe('apiFirstAgentFallbackService', () => {
     expect(preview.activationPack.recommendedSkills.map((entry) => entry.skillId)).toEqual(
       expect.arrayContaining(['plan', 'obsidian-knowledge']),
     );
+    expect(preview.activationPack.readNext).toEqual(expect.arrayContaining([
+      'docs/adr/ADR-008-multi-plane-operating-model.md',
+      'docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md',
+    ]));
     expect(preview.activationPack.toolCalls).toContain('automation.session_start_prep');
     expect(preview.activationPack.toolCalls).toContain('automation.capability.catalog');
     expect(preview.activationPack.toolCalls).toContain('automation.optimizer.plan');
@@ -167,7 +173,18 @@ describe('apiFirstAgentFallbackService', () => {
     expect(draft.starterCandidates[0]?.seedPayload).toEqual(expect.objectContaining({
       name: 'muel local youtube community scrape starter',
     }));
-    expect(draft.modificationPolicy[0]).toContain('Modify the existing workflow');
+    expect(draft.stages.find((stage) => stage.stageId === 'artifact-settlement')).toEqual(expect.objectContaining({
+      owner: 'github-artifact-plane',
+      summary: expect.stringContaining('GitHub'),
+      nodes: expect.arrayContaining(['artifact_ref']),
+    }));
+    expect(draft.stages.findIndex((stage) => stage.stageId === 'artifact-settlement')).toBeGreaterThan(
+      draft.stages.findIndex((stage) => stage.stageId === 'finalize'),
+    );
+    expect(draft.modificationPolicy[0]).toContain('artifact-settlement');
+    expect(draft.modificationPolicy).toEqual(expect.arrayContaining([
+      expect.stringContaining('GitHub artifact settlement distinct from Supabase closeout'),
+    ]));
   });
 
   it('builds an optimizer plan with public-guild guardrails and shared scale-out guidance', async () => {
@@ -192,6 +209,7 @@ describe('apiFirstAgentFallbackService', () => {
     expect(plan.dynamicWorkflowRequested).toBe(true);
     expect(plan.routePreview.recommendedMode).toBe('api-first-with-agent-fallback');
     expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'supabase-hot-state')?.defaultMode).toBe('primary');
+    expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'github-artifact-plane')?.currentState).toBe('assumed');
     expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'gcpcompute-shared-mcp')?.currentState).toBe('ready');
     expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'hermes-local-operator')?.currentBottleneck).toContain('Public guild routes');
     expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'local-workstation-executor')?.currentState).toBe('ready');
@@ -199,6 +217,7 @@ describe('apiFirstAgentFallbackService', () => {
     expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'skills-and-activation-pack')?.useFor).toEqual(expect.arrayContaining([
       expect.stringContaining('compact bootstrap'),
     ]));
+    expect(plan.operatingContract.stateOwners.artifactPlane).toContain('GitHub');
     expect(plan.operatingContract.serviceGuardrails).toEqual(expect.arrayContaining([
       expect.stringContaining('Sanitize the final Discord deliverable'),
     ]));
@@ -206,6 +225,10 @@ describe('apiFirstAgentFallbackService', () => {
       expect.stringContaining('Keep waits, retries, and schedules in n8n'),
     ]));
     expect(plan.observabilityPlan.signals).toContain('deliverable_sanitized');
+    expect(plan.workflowDraft.stages.find((stage) => stage.stageId === 'artifact-settlement')).toEqual(expect.objectContaining({
+      owner: 'github-artifact-plane',
+      nodes: expect.arrayContaining(['artifact_ref']),
+    }));
     expect(plan.workflowDraft.starterCandidates[0]?.task).toBe('alert-dispatch');
     expect(plan.sharedEnablementPlan.futureMilestones[0]).toContain('shared MCP');
   });

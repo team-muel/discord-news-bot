@@ -59,11 +59,14 @@ export type HermesRuntimeRemediationParams = OpenJarvisAutopilotStatusParams & {
   actionId?: string | null;
   dryRun?: boolean;
   visibleTerminal?: boolean;
+  autoLaunchQueuedChat?: boolean;
+  autoLaunchQueuedChatContextProfile?: string | null;
 };
 
 export type HermesRuntimeQueueObjectiveParams = OpenJarvisAutopilotStatusParams & {
   objective?: string | null;
   objectives?: string[] | null;
+  replaceExisting?: boolean;
   dryRun?: boolean;
 };
 
@@ -80,10 +83,38 @@ export type HermesRuntimeQueueObjectiveResult = {
   error: string | null;
 };
 
+export type HermesRuntimeAutoQueueParams = OpenJarvisAutopilotStatusParams & {
+  dryRun?: boolean;
+  status?: OpenJarvisAutopilotStatus | null;
+  bundle?: OpenJarvisSessionOpenBundle | null;
+};
+
+export type HermesRuntimeAutoQueueResult = {
+  ok: boolean;
+  completion: 'updated' | 'skipped';
+  synthesizedObjectives: string[];
+  queueObjective: HermesRuntimeQueueObjectiveResult | null;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  errorCode: HermesRuntimeQueueObjectiveResult['errorCode'] | 'NO_SYNTHESIZED_OBJECTIVES' | null;
+  error: string | null;
+};
+
+export type HermesRuntimeContextProfile =
+  | 'default'
+  | 'auto'
+  | 'delegated-operator'
+  | 'scout'
+  | 'executor'
+  | 'distiller'
+  | 'guardian';
+
 export type HermesRuntimeLaunchChatParams = OpenJarvisAutopilotStatusParams & {
   objective?: string | null;
   prompt?: string | null;
   chatMode?: string | null;
+  contextProfile?: string | null;
   addFilePaths?: string[] | null;
   maximize?: boolean;
   newWindow?: boolean;
@@ -95,6 +126,7 @@ export type HermesRuntimeLaunchChatResult = {
   ok: boolean;
   completion: 'queued' | 'skipped';
   objective: string | null;
+  contextProfile: HermesRuntimeContextProfile | null;
   prompt: string | null;
   addFilePaths: string[];
   command: string | null;
@@ -110,6 +142,7 @@ export type HermesRuntimeLaunchChatResult = {
 export type HermesSessionStartPrepParams = OpenJarvisAutopilotStatusParams & {
   objective?: string | null;
   objectives?: string[] | null;
+  contextProfile?: string | null;
   title?: string | null;
   guildId?: string | null;
   requesterId?: string | null;
@@ -118,6 +151,7 @@ export type HermesSessionStartPrepParams = OpenJarvisAutopilotStatusParams & {
   startSupervisor?: boolean;
   dryRun?: boolean;
   visibleTerminal?: boolean;
+  autoLaunchQueuedChat?: boolean;
 };
 
 export type HermesSessionStartPrepResult = {
@@ -148,12 +182,158 @@ const DEFAULT_HERMES_RUNTIME_CHAT_TITLE = 'Hermes Runtime Handoff';
 const DEFAULT_HERMES_RUNTIME_REQUESTER_ID = 'hermes-runtime';
 const DEFAULT_HERMES_CHAT_MODE = 'agent';
 const DEFAULT_HANDOFF_PACKET_RELATIVE_PATH = 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md';
+const DEFAULT_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'default';
+const AUTO_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'auto';
+const DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'delegated-operator';
+const SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'scout';
+const EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'executor';
+const DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'distiller';
+const GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'guardian';
+const MAX_HERMES_RUNTIME_LAUNCH_FILES = 12;
 const SAFE_QUEUE_SECTION_HEADING = 'Safe Autonomous Queue For Hermes';
 const MAX_SAFE_QUEUE_ITEMS = 12;
+const HERMES_RUNTIME_CONTEXT_PROFILE_SET = new Set<HermesRuntimeContextProfile>([
+  DEFAULT_HERMES_RUNTIME_CONTEXT_PROFILE,
+  AUTO_HERMES_RUNTIME_CONTEXT_PROFILE,
+  DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE,
+  SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE,
+  EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE,
+  DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE,
+  GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE,
+]);
+const HERMES_SHARED_CONTEXT_FILE_CANDIDATES = [
+  'docs/TEAM_SHARED_OBSIDIAN_START_HERE.md',
+  'docs/ARCHITECTURE_INDEX.md',
+  'docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md',
+  'docs/planning/EXECUTION_BOARD.md',
+  'docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md',
+  'docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md',
+  'docs/planning/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md',
+];
+const HERMES_DELEGATED_CONTEXT_FILE_CANDIDATES = [
+  ...HERMES_SHARED_CONTEXT_FILE_CANDIDATES,
+  'docs/adr/ADR-008-multi-plane-operating-model.md',
+  'docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md',
+  'docs/CHANGELOG-ARCH.md',
+];
+const HERMES_SCOUT_CONTEXT_FILE_CANDIDATES = [
+  ...HERMES_SHARED_CONTEXT_FILE_CANDIDATES,
+  'docs/adr/ADR-008-multi-plane-operating-model.md',
+  'docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md',
+  'docs/planning/README.md',
+  'docs/RUNBOOK_MUEL_PLATFORM.md',
+  'docs/CHANGELOG-ARCH.md',
+];
+const HERMES_EXECUTOR_CONTEXT_FILE_CANDIDATES = [
+  'docs/ARCHITECTURE_INDEX.md',
+  'docs/adr/ADR-008-multi-plane-operating-model.md',
+  'docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md',
+  'docs/planning/EXECUTION_BOARD.md',
+  'docs/RUNBOOK_MUEL_PLATFORM.md',
+  'docs/CHANGELOG-ARCH.md',
+];
+const HERMES_DISTILLER_CONTEXT_FILE_CANDIDATES = [
+  'docs/CHANGELOG-ARCH.md',
+  'docs/planning/README.md',
+  'docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md',
+  'docs/planning/OBSIDIAN_DEVELOPMENT_ARCHAEOLOGY.md',
+  'docs/TEAM_SHARED_OBSIDIAN_START_HERE.md',
+];
+const HERMES_GUARDIAN_CONTEXT_FILE_CANDIDATES = [
+  'docs/planning/EXECUTION_BOARD.md',
+  'docs/RUNBOOK_MUEL_PLATFORM.md',
+  'docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md',
+  'docs/CHANGELOG-ARCH.md',
+];
+const HERMES_SCOUT_OBJECTIVE_PATTERNS = [
+  /research/i,
+  /investigat/i,
+  /map/i,
+  /analy(s|z)/i,
+  /compare/i,
+  /survey/i,
+  /explor/i,
+  /upstream/i,
+  /github/i,
+  /deepwiki/i,
+  /roadmap/i,
+  /vision/i,
+  /context/i,
+  /archaeolog/i,
+  /probe/i,
+  /audit/i,
+];
+const HERMES_EXECUTOR_OBJECTIVE_PATTERNS = [
+  /implement/i,
+  /fix/i,
+  /wire/i,
+  /refactor/i,
+  /extract/i,
+  /patch/i,
+  /update/i,
+  /reduce/i,
+  /optimiz/i,
+  /rename/i,
+  /migrat/i,
+  /test/i,
+  /remove/i,
+  /add/i,
+];
+const HERMES_DISTILLER_OBJECTIVE_PATTERNS = [
+  /distill/i,
+  /summari(s|z)e/i,
+  /promot/i,
+  /closeout/i,
+  /handoff/i,
+  /retro/i,
+  /document/i,
+  /wiki/i,
+  /changelog/i,
+  /playbook/i,
+  /decision/i,
+];
+const HERMES_GUARDIAN_OBJECTIVE_PATTERNS = [
+  /guard/i,
+  /watch/i,
+  /monitor/i,
+  /supervisor/i,
+  /stale/i,
+  /reentry/i,
+  /health/i,
+  /recover/i,
+  /rollback/i,
+  /queue/i,
+  /gate/i,
+  /wait/i,
+  /ack/i,
+];
 
 const compact = (value: unknown): string => String(value || '').trim();
 
 const normalizeObjective = (value: unknown): string => compact(value).replace(/\s+/g, ' ');
+
+const objectiveKey = (value: unknown): string => normalizeObjective(value).toLowerCase();
+
+const AUTONOMOUS_QUEUE_SYNTHESIS_REJECT_PATTERNS = [
+  /^continue the current workflow/i,
+  /^keep workflow session/i,
+  /^keep launch manifest\/log/i,
+  /^refresh the active continuity packet/i,
+  /^refresh the active progress packet/i,
+  /^refresh workstream state/i,
+  /^restart the next bounded automation cycle/i,
+  /^wait for the next gpt objective/i,
+  /^promote durable operator-visible outcomes/i,
+  /^start from the deterministic api path first/i,
+];
+
+const isSynthesisObjectiveCandidate = (value: unknown): boolean => {
+  const normalized = normalizeObjective(value);
+  if (!normalized) {
+    return false;
+  }
+  return !AUTONOMOUS_QUEUE_SYNTHESIS_REJECT_PATTERNS.some((pattern) => pattern.test(normalized));
+};
 
 const uniqueStrings = (values: Array<string | null | undefined>): string[] => {
   const seen = new Set<string>();
@@ -167,6 +347,26 @@ const uniqueStrings = (values: Array<string | null | undefined>): string[] => {
     result.push(normalized);
   }
   return result;
+};
+
+const synthesizeRuntimeQueuedObjectives = (params: {
+  status: OpenJarvisAutopilotStatus;
+  bundle: OpenJarvisSessionOpenBundle;
+}): string[] => {
+  const currentObjectives = new Set([
+    objectiveKey(params.status.workflow.objective),
+    objectiveKey(params.bundle.objective),
+    objectiveKey(params.bundle.compact_bootstrap.objective),
+    objectiveKey(params.status.resume_state && typeof params.status.resume_state === 'object'
+      ? (params.status.resume_state as Record<string, unknown>).objective
+      : null),
+  ].filter(Boolean));
+
+  return uniqueStrings([
+    compact(params.bundle.compact_bootstrap.next_queue_head),
+    ...params.bundle.capability_demands.map((entry) => compact(entry.objective)),
+    ...(params.status.workflow.lastCapabilityDemands || []).map((entry) => compact(entry.objective)),
+  ]).filter((objective) => isSynthesisObjectiveCandidate(objective) && !currentObjectives.has(objectiveKey(objective)));
 };
 
 const toList = (value: unknown): string[] => {
@@ -195,6 +395,114 @@ const resolveVaultAbsolutePath = (vaultPath: string, relativePath: string): stri
   return relative ? path.resolve(vaultPath, relative) : null;
 };
 
+const normalizeHermesRuntimeContextProfile = (value: unknown): HermesRuntimeContextProfile => {
+  const normalized = compact(value).toLowerCase() as HermesRuntimeContextProfile;
+  return HERMES_RUNTIME_CONTEXT_PROFILE_SET.has(normalized)
+    ? normalized
+    : DEFAULT_HERMES_RUNTIME_CONTEXT_PROFILE;
+};
+
+const matchesHermesContextProfilePattern = (value: string, patterns: RegExp[]): boolean => {
+  return patterns.some((pattern) => pattern.test(value));
+};
+
+const inferHermesRuntimeContextProfile = (params: {
+  requestedProfile: HermesRuntimeContextProfile;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+  status: OpenJarvisAutopilotStatus;
+}): HermesRuntimeContextProfile => {
+  if (params.requestedProfile !== AUTO_HERMES_RUNTIME_CONTEXT_PROFILE) {
+    return params.requestedProfile;
+  }
+
+  const signalText = [
+    params.objective,
+    compact(params.bundle.decision.summary),
+    compact(params.bundle.decision.next_action),
+    compact(params.bundle.decision.promote_as),
+    compact(params.bundle.recall.blocked_action),
+    compact(params.bundle.recall.next_action),
+    ...params.bundle.capability_demands.map((entry) => compact(entry.summary)),
+    ...params.bundle.capability_demands.map((entry) => compact(entry.missing_capability)),
+    ...params.bundle.hermes_runtime.blockers,
+    ...params.bundle.hermes_runtime.next_actions,
+    compact(params.status.workflow.lastDecisionDistillate?.summary),
+    compact(params.status.workflow.lastDecisionDistillate?.nextAction),
+  ].join(' ');
+
+  if (
+    params.bundle.hermes_runtime.awaiting_reentry_acknowledgment_stale === true
+    || matchesHermesContextProfilePattern(signalText, HERMES_GUARDIAN_OBJECTIVE_PATTERNS)
+  ) {
+    return GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE;
+  }
+
+  if (
+    compact(params.bundle.workflow.status).toLowerCase() === 'released'
+    && matchesHermesContextProfilePattern(signalText, HERMES_DISTILLER_OBJECTIVE_PATTERNS)
+  ) {
+    return DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE;
+  }
+
+  if (matchesHermesContextProfilePattern(signalText, HERMES_SCOUT_OBJECTIVE_PATTERNS)) {
+    return SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE;
+  }
+
+  if (matchesHermesContextProfilePattern(signalText, HERMES_EXECUTOR_OBJECTIVE_PATTERNS)) {
+    return EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE;
+  }
+
+  return DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE;
+};
+
+const resolveExistingRepoRelativePath = (value: unknown): string | null => {
+  const normalized = compact(value).replace(/\\/g, '/');
+  if (!normalized || path.isAbsolute(normalized) || normalized.startsWith('..')) {
+    return null;
+  }
+
+  const absolutePath = path.resolve(REPO_ROOT, normalized);
+  const relativePath = path.relative(REPO_ROOT, absolutePath).replace(/\\/g, '/');
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath) || !fs.existsSync(absolutePath)) {
+    return null;
+  }
+
+  return relativePath;
+};
+
+const resolveHermesContextProfileCandidateFiles = (profile: HermesRuntimeContextProfile): string[] => {
+  switch (profile) {
+    case DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return HERMES_DELEGATED_CONTEXT_FILE_CANDIDATES;
+    case SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return HERMES_SCOUT_CONTEXT_FILE_CANDIDATES;
+    case EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return HERMES_EXECUTOR_CONTEXT_FILE_CANDIDATES;
+    case DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return HERMES_DISTILLER_CONTEXT_FILE_CANDIDATES;
+    case GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return HERMES_GUARDIAN_CONTEXT_FILE_CANDIDATES;
+    default:
+      return [];
+  }
+};
+
+const collectHermesContextProfileFiles = (
+  profile: HermesRuntimeContextProfile,
+  bundle: OpenJarvisSessionOpenBundle,
+): string[] => {
+  return uniqueStrings([
+    ...resolveHermesContextProfileCandidateFiles(profile),
+    ...toList(bundle.activation_pack.read_next),
+    ...toList(bundle.read_first),
+    ...toList(bundle.compact_bootstrap.open_later),
+    ...bundle.evidence_refs.map((ref) => compact(ref.locator)),
+  ])
+    .map((entry) => resolveExistingRepoRelativePath(entry))
+    .filter((entry): entry is string => Boolean(entry));
+};
+
 const shouldPreferSharedObsidianIngress = (): boolean => {
   const runtime = getObsidianAdapterRuntimeStatus();
   return runtime.selectedByCapability?.write_note === 'remote-mcp'
@@ -216,12 +524,16 @@ const extractBulletSection = (content: string, heading: string): string[] => {
       break;
     }
     const match = line.match(/^\s*-\s+(.+)$/);
-    if (match?.[1]) {
-      sectionLines.push(normalizeObjective(match[1]));
+    const item = normalizeObjective(match?.[1]);
+    if (item && item !== '(none)') {
+      sectionLines.push(item);
     }
   }
   return uniqueStrings(sectionLines);
 };
+
+const areStringListsEqual = (left: readonly string[], right: readonly string[]): boolean => left.length === right.length
+  && left.every((entry, index) => entry === right[index]);
 
 const replaceBulletSection = (content: string, heading: string, items: string[]): string => {
   const normalized = String(content || '').replace(/\r\n/g, '\n').trimEnd();
@@ -305,10 +617,11 @@ const writeVaultDocument = async (params: {
     skipKnowledgeCompilation: true,
   };
 
+  let remoteWritePath: string | null = null;
   if (preferSharedIngress) {
     const writeResult = await writeObsidianNoteWithAdapter(writeInput);
     if (writeResult?.path) {
-      return writeResult.path;
+      remoteWritePath = writeResult.path;
     }
   }
 
@@ -321,7 +634,7 @@ const writeVaultDocument = async (params: {
     return writeResult?.path || normalized;
   }
 
-  return normalized;
+  return remoteWritePath || normalized;
 };
 
 const resolveHandoffPacketRelativePath = (resumeState: Record<string, unknown>): string => {
@@ -343,11 +656,18 @@ const buildArtifactRefLabel = (ref: {
   locator: string;
   refKind?: string | null;
   title?: string | null;
+  githubSettlementKind?: string | null;
   sourceStepName?: string | null;
 }): string => {
   const locator = compact(ref.locator) || '(missing locator)';
   const label = compact(ref.title) ? `${locator} - ${compact(ref.title)}` : locator;
-  const meta = [compact(ref.refKind), compact(ref.sourceStepName)].filter(Boolean);
+  const refKind = compact(ref.refKind);
+  const githubSettlementKind = compact(ref.githubSettlementKind);
+  const meta = [
+    refKind,
+    githubSettlementKind && githubSettlementKind !== refKind ? `github=${githubSettlementKind}` : null,
+    compact(ref.sourceStepName),
+  ].filter(Boolean);
   return meta.length > 0 ? `${label} (${meta.join(', ')})` : label;
 };
 
@@ -376,6 +696,12 @@ const buildCapabilityDemandLabel = (demand: {
     compact(demand.cheapest_enablement_path) ? `path=${compact(demand.cheapest_enablement_path)}` : null,
   ].filter(Boolean);
   return meta.length > 0 ? `${summary} (${meta.join('; ')})` : summary;
+};
+
+const buildHermesReentryProfileFlag = (contextProfile: HermesRuntimeContextProfile): string => {
+  return contextProfile === DEFAULT_HERMES_RUNTIME_CONTEXT_PROFILE
+    ? ''
+    : ` --profile=${contextProfile}`;
 };
 
 const buildHermesRuntimeChatRequest = (params: {
@@ -447,6 +773,18 @@ const buildHermesRuntimeChatRequest = (params: {
     `- runtime_lane: ${compact(workflow.runtime_lane) || '(unknown)'}`,
     `- status: ${compact(workflow.status) || '(unknown)'}`,
     `- route_mode: ${compact(workflow.route_mode) || '(unknown)'}`,
+  );
+
+  lines.push(
+    '',
+    'Route Guidance',
+    `- recommended_mode: ${compact(bundle.routing?.recommended_mode) || '(unknown)'}`,
+    `- primary_path_type: ${compact(bundle.routing?.primary_path_type) || '(unknown)'}`,
+    `- hot_state: ${compact(bundle.routing?.hot_state) || '(unknown)'}`,
+    `- orchestration: ${compact(bundle.routing?.orchestration) || '(unknown)'}`,
+    `- semantic_owner: ${compact(bundle.routing?.semantic_owner) || '(unknown)'}`,
+    `- artifact_plane: ${compact(bundle.routing?.artifact_plane) || '(unknown)'}`,
+    `- candidate_mcp_tools: ${toList(bundle.routing?.candidate_mcp_tools).join(', ') || '(none)'}`,
   );
 
   lines.push(
@@ -563,12 +901,75 @@ const resolveProgressPacketAbsolutePath = (params: {
   return path.resolve(vaultPath, relativePath);
 };
 
+const includesObjectiveText = (line: string, objective: string): boolean => {
+  const normalizedLine = normalizeObjective(line).toLowerCase();
+  const normalizedObjective = normalizeObjective(objective).toLowerCase();
+  return Boolean(normalizedLine && normalizedObjective) && normalizedLine.includes(normalizedObjective);
+};
+
+const buildObjectiveAwareLaunchSections = (params: {
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+  status: OpenJarvisAutopilotStatus;
+}): {
+  activateFirst: string[];
+  readNext: string[];
+  workflowCurrentObjective: string;
+  launchTargetSource: string | null;
+} => {
+  const { objective, bundle, status } = params;
+  const workflowCurrentObjective = normalizeObjective(status.workflow.objective);
+  const bundleTargetObjective = normalizeObjective(bundle.activation_pack.target_objective);
+  const objectiveCandidate = status.autonomous_goal_candidates.find(
+    (entry) => normalizeObjective(entry?.objective) === objective,
+  ) || null;
+  const staleObjectives = uniqueStrings([
+    bundleTargetObjective || null,
+    workflowCurrentObjective || null,
+    normalizeObjective(bundle.compact_bootstrap.objective),
+    ...status.autonomous_goal_candidates.map((entry) => normalizeObjective(entry?.objective)),
+  ]).filter((candidateObjective) => candidateObjective !== objective);
+  const filterStaleLines = (values: string[]): string[] => values.filter((value) => {
+    const normalizedValue = normalizeObjective(value);
+    return Boolean(normalizedValue)
+      && !staleObjectives.some((candidateObjective) => includesObjectiveText(normalizedValue, candidateObjective));
+  });
+
+  return {
+    activateFirst: uniqueStrings([
+      `treat ${objective} as the active launch target for this turn`,
+      objectiveCandidate?.source_path ? `open ${objectiveCandidate.source_path} first and continue ${objective}` : '',
+      ...filterStaleLines(toList(bundle.activation_pack.activate_first)),
+    ]).slice(0, 4),
+    readNext: uniqueStrings([
+      objectiveCandidate?.source_path || null,
+      ...filterStaleLines([
+        ...toList(bundle.activation_pack.read_next),
+        ...toList(bundle.read_first),
+      ]),
+    ]).slice(0, 4),
+    workflowCurrentObjective,
+    launchTargetSource: compact(objectiveCandidate?.source) || null,
+  };
+};
+
 const buildHermesRuntimeLaunchPrompt = (params: {
   objective: string;
   bundle: OpenJarvisSessionOpenBundle;
   status: OpenJarvisAutopilotStatus;
+  contextProfile: HermesRuntimeContextProfile;
 }): string => {
-  const { objective, bundle, status } = params;
+  const {
+    objective,
+    bundle,
+    status,
+    contextProfile,
+  } = params;
+  const launchSections = buildObjectiveAwareLaunchSections({
+    objective,
+    bundle,
+    status,
+  });
   const lines = [
     'Continue the next bounded local autonomy task for this workspace.',
     `Primary objective: ${objective}`,
@@ -588,11 +989,8 @@ const buildHermesRuntimeLaunchPrompt = (params: {
     `- queued_objectives_available: ${String(bundle.hermes_runtime.queued_objectives_available)}`,
   ];
 
-  appendSection(lines, 'Activate First', toList(bundle.activation_pack.activate_first).slice(0, 4));
-  appendSection(lines, 'Read Next', uniqueStrings([
-    ...toList(bundle.activation_pack.read_next),
-    ...toList(bundle.read_first),
-  ]).slice(0, 4));
+  appendSection(lines, 'Activate First', launchSections.activateFirst);
+  appendSection(lines, 'Read Next', launchSections.readNext);
   appendSection(lines, 'Tool Calls', toList(bundle.activation_pack.tool_calls).slice(0, 4));
   appendSection(lines, 'Commands', toList(bundle.activation_pack.commands).slice(0, 4));
   appendSection(lines, 'API Surfaces', toList(bundle.activation_pack.api_surfaces).slice(0, 4));
@@ -605,22 +1003,183 @@ const buildHermesRuntimeLaunchPrompt = (params: {
     'Decision Hints',
     `- latest_decision: ${compact(bundle.decision.summary) || '(none)'}`,
     `- latest_recall_blocker: ${compact(bundle.recall.blocked_action) || '(none)'}`,
-    `- current_next_action: ${compact(status.workflow.objective) || '(unknown)'}`,
+    `- launch_target: ${objective}`,
+    `- launch_target_source: ${launchSections.launchTargetSource || '(none)'}`,
+    `- workflow_current_objective: ${launchSections.workflowCurrentObjective || '(unknown)'}`,
     '',
     'Turn Closeout',
     '- before ending the turn, acknowledge the result back into Hermes hot-state with the reentry ack command',
-    '- completed example: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"',
-    '- blocked example: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=blocked --summary="<blocker summary>" --blockedAction="<blocked action>" --nextAction="<required approval or recall step>"',
-    '- failed example: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=failed --summary="<failure summary>" --blockedAction="<failed action>" --nextAction="<recovery step>"',
+    `- completed example: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed${buildHermesReentryProfileFlag(contextProfile)} --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"`,
+    `- blocked example: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=blocked${buildHermesReentryProfileFlag(contextProfile)} --summary="<blocker summary>" --blockedAction="<blocked action>" --nextAction="<required approval or recall step>"`,
+    `- failed example: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=failed${buildHermesReentryProfileFlag(contextProfile)} --summary="<failure summary>" --blockedAction="<failed action>" --nextAction="<recovery step>"`,
     '- use the --name=value form exactly; the command records workflow events and can restart the queue-aware supervisor when safe',
   );
 
   return lines.join('\n').trim();
 };
 
+const buildHermesScoutLaunchPrompt = (params: {
+  basePrompt: string;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+}): string => {
+  const profileFiles = collectHermesContextProfileFiles(SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE, params.bundle).slice(0, 8);
+  const lines = [
+    params.basePrompt,
+    '',
+    'Scout Contract',
+    '- treat this turn as evidence gathering, route mapping, and upstream clarification before mutation',
+    '- prefer shared Obsidian, shared MCP, GitHub, and DeepWiki surfaces before broad local markdown archaeology',
+    '- keep the multi-plane split explicit: GitHub is the artifact and review plane, Supabase is hot-state, and shared Obsidian is the semantic owner',
+    '- return a bounded next step with evidence refs, a short decision distillate, and any capability demand that blocks cheap progress',
+  ];
+
+  appendSection(lines, 'Scout Context Files', profileFiles);
+  appendSection(lines, 'Scout Outputs', [
+    'evidence refs with the exact docs, repo paths, or upstream sources that mattered',
+    'one bounded next action that an executor profile can pick up without rereading everything',
+    'one capability demand when a missing tool, source, or adapter blocks cheap progress',
+  ]);
+
+  return lines.join('\n').trim();
+};
+
+const buildHermesExecutorLaunchPrompt = (params: {
+  basePrompt: string;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+}): string => {
+  const profileFiles = collectHermesContextProfileFiles(EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE, params.bundle).slice(0, 8);
+  const lines = [
+    params.basePrompt,
+    '',
+    'Executor Contract',
+    '- stay inside the current bounded implementation slice and prefer small reversible edits over broad exploration',
+    '- reuse the current architecture and runtime control surfaces rather than inventing parallel abstractions',
+    '- validate with targeted tests and typecheck before closing out',
+  ];
+
+  appendSection(lines, 'Executor Context Files', profileFiles);
+  appendSection(lines, 'Executor Validation', [
+    'typecheck the touched slice before closeout when code changed',
+    'record the exact changed paths or commands that produced the verified outcome',
+    'if the work turns into research, stop and relaunch with scout or delegated-operator instead of mixing roles',
+  ]);
+
+  return lines.join('\n').trim();
+};
+
+const buildHermesDistillerLaunchPrompt = (params: {
+  basePrompt: string;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+}): string => {
+  const profileFiles = collectHermesContextProfileFiles(DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE, params.bundle).slice(0, 8);
+  const lines = [
+    params.basePrompt,
+    '',
+    'Distiller Contract',
+    '- treat this turn as closeout, compression, and shared-knowledge promotion work rather than new implementation',
+    '- reduce the turn into a reusable summary, next action, evidence refs, and a promotion-worthy artifact when operator guidance changed',
+    '- prefer changelog, development archaeology, and shared wiki mirror updates over leaving knowledge trapped in workflow events only',
+  ];
+
+  appendSection(lines, 'Distiller Context Files', profileFiles);
+  appendSection(lines, 'Distiller Closeout Expectations', [
+    'write a one-line summary that can become a decision distillate without cleanup',
+    'state whether the result should be promoted into shared knowledge and why',
+    'if operator-visible guidance changed, use the reentry ack closeout so the shared knowledge mirror is refreshed',
+  ]);
+
+  return lines.join('\n').trim();
+};
+
+const buildHermesGuardianLaunchPrompt = (params: {
+  basePrompt: string;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+}): string => {
+  const profileFiles = collectHermesContextProfileFiles(GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE, params.bundle).slice(0, 8);
+  const lines = [
+    params.basePrompt,
+    '',
+    'Guardian Contract',
+    '- prioritize queue health, stale reentry prevention, supervisor continuity, and safe recovery boundaries',
+    '- prefer existing remediation actions and restart contracts before inventing new automation',
+    '- if the issue is architectural rather than operational, stop and hand it back with a concise blocker and next action',
+  ];
+
+  appendSection(lines, 'Guardian Context Files', profileFiles);
+  appendSection(lines, 'Guardian Checks', [
+    'confirm whether reentry acknowledgment, queue launch state, and supervisor liveness are aligned',
+    'treat rollback, recovery, and operator-visible guardrails as first-class outputs',
+    'record the exact blocker or recovery step in closeout so the next cycle does not rediscover it',
+  ]);
+
+  return lines.join('\n').trim();
+};
+
+const buildHermesDelegatedLaunchPrompt = (params: {
+  basePrompt: string;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+}): string => {
+  const delegatedFiles = collectHermesContextProfileFiles(DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE, params.bundle).slice(0, 8);
+  const lines = [
+    params.basePrompt,
+    '',
+    'Delegated Leverage Contract',
+    '- do not stay inside a single pre-baked Hermes role; combine terminal, file, git, browser, GitHub, Obsidian, research, and delegation surfaces when they reduce reacquisition cost',
+    '- start from the compact session-open bundle and the attached canonical docs before broad local archaeology',
+    '- prefer shared Obsidian and shared MCP knowledge surfaces first when intent, roadmap, decision history, or operator context is involved',
+    '- keep the multi-plane ownership split explicit: GitHub settles repo-visible artifacts, Supabase carries hot-state, and shared Obsidian keeps durable meaning',
+    '- when an upstream repository, package, or external tool behavior matters, use GitHub or DeepWiki style research before guessing from stale memory',
+    '- treat roadmap, execution-board, and runtime-contract docs as live constraints for bounded objective selection and closeout quality',
+    '- compress useful findings back into evidence refs, decision distillates, capability demands, and the next bounded action instead of leaving raw transcript residue',
+  ];
+
+  appendSection(lines, 'Canonical Context Files', delegatedFiles);
+  appendSection(lines, 'Preferred Research Surfaces', [
+    'shared Obsidian and shared MCP for roadmap, vision, operator docs, and prior decisions',
+    'GitHub or DeepWiki for upstream repository behavior and feature documentation',
+    'local repo code, runtime artifacts, and packet state only after the compact bundle narrows the question',
+  ]);
+  appendSection(lines, 'Leverage Goals', [
+    `use Hermes as a delegated local operator for ${params.objective}`,
+    'expand beyond packet upkeep when bounded research, repo archaeology, or tool orchestration will cheaply unblock the objective',
+    'leave a reusable bounded closeout that the next GPT turn can consume without replaying the whole investigation',
+  ]);
+
+  return lines.join('\n').trim();
+};
+
+const buildHermesContextProfilePrompt = (params: {
+  basePrompt: string;
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+  contextProfile: HermesRuntimeContextProfile;
+}): string => {
+  switch (params.contextProfile) {
+    case DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return buildHermesDelegatedLaunchPrompt(params);
+    case SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return buildHermesScoutLaunchPrompt(params);
+    case EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return buildHermesExecutorLaunchPrompt(params);
+    case DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return buildHermesDistillerLaunchPrompt(params);
+    case GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE:
+      return buildHermesGuardianLaunchPrompt(params);
+    default:
+      return params.basePrompt;
+  }
+};
+
 const collectRuntimeLaunchFiles = (params: {
   status: OpenJarvisAutopilotStatus;
+  bundle: OpenJarvisSessionOpenBundle;
   objective: string;
+  contextProfile: HermesRuntimeContextProfile;
   addFilePaths?: string[] | null;
 }): string[] => {
   const resumeState = (params.status.resume_state && typeof params.status.resume_state === 'object')
@@ -635,10 +1194,11 @@ const collectRuntimeLaunchFiles = (params: {
     : null;
   return uniqueStrings([
     ...(Array.isArray(params.addFilePaths) ? params.addFilePaths : []),
+    ...collectHermesContextProfileFiles(params.contextProfile, params.bundle),
     compact(resumeState.progress_packet_path),
     compact(resumeState.handoff_packet_path),
     normalizedCandidatePath,
-  ]);
+  ]).slice(0, MAX_HERMES_RUNTIME_LAUNCH_FILES);
 };
 
 export const createOpenJarvisHermesRuntimeChatNote = async (
@@ -715,6 +1275,8 @@ export const createOpenJarvisHermesRuntimeChatNote = async (
       state_projection: workflowSource.toLowerCase() === 'supabase'
         ? 'supabase-hot-state-to-obsidian-projection'
         : 'runtime-hot-state-to-obsidian-projection',
+      route_recommended_mode: compact(bundle.routing?.recommended_mode) || null,
+      route_artifact_plane: compact(bundle.routing?.artifact_plane) || null,
       decision_summary: compact(bundle.decision.summary) || null,
       decision_next_action: compact(bundle.decision.next_action) || null,
       decision_tags: decisionTags.length > 0 ? decisionTags : null,
@@ -755,6 +1317,7 @@ export const enqueueOpenJarvisHermesRuntimeObjectives = async (
   const startedAt = new Date().toISOString();
   const startedMs = Date.now();
   const dryRun = params.dryRun === true;
+  const replaceExisting = params.replaceExisting === true;
   const requestedObjectives = uniqueStrings([
     compact(params.objective),
     ...toList(params.objectives),
@@ -809,10 +1372,12 @@ export const enqueueOpenJarvisHermesRuntimeObjectives = async (
   }
 
   const existingQueue = extractBulletSection(handoffContent, SAFE_QUEUE_SECTION_HEADING);
-  const queuedObjectives = uniqueStrings([
-    ...requestedObjectives,
-    ...existingQueue,
-  ]).slice(0, MAX_SAFE_QUEUE_ITEMS);
+  const queuedObjectives = uniqueStrings(replaceExisting
+    ? requestedObjectives
+    : [
+      ...requestedObjectives,
+      ...existingQueue,
+    ]).slice(0, MAX_SAFE_QUEUE_ITEMS);
   const handoffPacketPath = resolveVaultRelativePath(vaultPath, handoffPacketRelativePath)
     || resolveVaultAbsolutePath(vaultPath, handoffPacketRelativePath);
 
@@ -845,7 +1410,7 @@ export const enqueueOpenJarvisHermesRuntimeObjectives = async (
     });
   }
 
-  const completion = requestedObjectives.some((objective) => !existingQueue.includes(objective)) ? 'updated' : 'skipped';
+  const completion = areStringListsEqual(queuedObjectives, existingQueue) ? 'skipped' : 'updated';
   return finalize({
     ok: true,
     completion,
@@ -853,6 +1418,83 @@ export const enqueueOpenJarvisHermesRuntimeObjectives = async (
     handoffPacketPath: writtenHandoffPacketPath,
     errorCode: null,
     error: null,
+  });
+};
+
+export const autoQueueOpenJarvisHermesRuntimeObjectives = async (
+  params: HermesRuntimeAutoQueueParams = {},
+): Promise<HermesRuntimeAutoQueueResult> => {
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
+  const finalize = (partial: Omit<HermesRuntimeAutoQueueResult, 'startedAt' | 'finishedAt' | 'durationMs'>): HermesRuntimeAutoQueueResult => ({
+    ...partial,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedMs,
+  });
+
+  const status = params.status || await getOpenJarvisAutopilotStatus(params);
+  const bundle = params.bundle || await getOpenJarvisSessionOpenBundle({
+    ...params,
+    status,
+  });
+  const capacity = status.capacity && typeof status.capacity === 'object'
+    ? status.capacity as Record<string, unknown>
+    : null;
+  const loopAction = compact(capacity?.loop_action).toLowerCase();
+
+  if (status.hermes_runtime.queued_objectives_available === true && status.autonomous_goal_candidates.length > 0) {
+    return finalize({
+      ok: true,
+      completion: 'skipped',
+      synthesizedObjectives: [],
+      queueObjective: null,
+      errorCode: null,
+      error: null,
+    });
+  }
+
+  if (loopAction === 'escalate') {
+    return finalize({
+      ok: true,
+      completion: 'skipped',
+      synthesizedObjectives: [],
+      queueObjective: null,
+      errorCode: null,
+      error: null,
+    });
+  }
+
+  const synthesizedObjectives = synthesizeRuntimeQueuedObjectives({
+    status,
+    bundle,
+  });
+
+  if (synthesizedObjectives.length === 0) {
+    return finalize({
+      ok: true,
+      completion: 'skipped',
+      synthesizedObjectives: [],
+      queueObjective: null,
+      errorCode: 'NO_SYNTHESIZED_OBJECTIVES',
+      error: 'no bounded queued objective could be synthesized from the current Hermes runtime state',
+    });
+  }
+
+  const queueObjective = await enqueueOpenJarvisHermesRuntimeObjectives({
+    ...params,
+    objective: null,
+    objectives: synthesizedObjectives,
+    dryRun: params.dryRun === true,
+  });
+
+  return finalize({
+    ok: queueObjective.ok,
+    completion: queueObjective.ok ? queueObjective.completion : 'skipped',
+    synthesizedObjectives,
+    queueObjective,
+    errorCode: queueObjective.ok ? null : queueObjective.errorCode,
+    error: queueObjective.ok ? null : queueObjective.error,
   });
 };
 
@@ -928,6 +1570,8 @@ export const prepareOpenJarvisHermesSessionStart = async (
         vaultPath,
         dryRun: params.dryRun === true,
         visibleTerminal: params.visibleTerminal !== false,
+        autoLaunchQueuedChat: params.autoLaunchQueuedChat === true,
+        autoLaunchQueuedChatContextProfile: params.contextProfile || null,
       })
       : null;
 
@@ -978,6 +1622,7 @@ export const launchOpenJarvisHermesChatSession = async (
   const startedAt = new Date().toISOString();
   const startedMs = Date.now();
   const dryRun = params.dryRun === true;
+  const requestedContextProfile = normalizeHermesRuntimeContextProfile(params.contextProfile);
 
   const finalize = (partial: Omit<HermesRuntimeLaunchChatResult, 'startedAt' | 'finishedAt' | 'durationMs'>): HermesRuntimeLaunchChatResult => ({
     ...partial,
@@ -995,6 +1640,7 @@ export const launchOpenJarvisHermesChatSession = async (
       ok: false,
       completion: 'skipped',
       objective: null,
+      contextProfile: null,
       prompt: null,
       addFilePaths: [],
       command: null,
@@ -1008,14 +1654,29 @@ export const launchOpenJarvisHermesChatSession = async (
     ...params,
     status,
   });
-  const prompt = compact(params.prompt) || buildHermesRuntimeLaunchPrompt({
+  const contextProfile = inferHermesRuntimeContextProfile({
+    requestedProfile: requestedContextProfile,
     objective: resolvedObjective,
     bundle,
     status,
   });
+  const basePrompt = compact(params.prompt) || buildHermesRuntimeLaunchPrompt({
+    objective: resolvedObjective,
+    bundle,
+    status,
+    contextProfile,
+  });
+  const prompt = buildHermesContextProfilePrompt({
+    basePrompt,
+    objective: resolvedObjective,
+    bundle,
+    contextProfile,
+  });
   const addFilePaths = collectRuntimeLaunchFiles({
     status,
+    bundle,
     objective: resolvedObjective,
+    contextProfile,
     addFilePaths: params.addFilePaths || null,
   });
   const resumeState = (status.resume_state && typeof status.resume_state === 'object')
@@ -1041,6 +1702,7 @@ export const launchOpenJarvisHermesChatSession = async (
     ok: bridgeResult.ok,
     completion: bridgeResult.completion === 'completed' ? 'queued' : bridgeResult.completion,
     objective: resolvedObjective,
+    contextProfile,
     prompt,
     addFilePaths,
     command: bridgeResult.command,
@@ -1064,6 +1726,9 @@ const buildGoalCycleCommand = (params: {
   capacityTarget?: number | null;
   gcpCapacityRecoveryRequested?: boolean;
   visibleTerminal?: boolean;
+  autoLaunchQueuedChat?: boolean;
+  autoLaunchQueuedChatContextProfile?: string | null;
+  dryRun?: boolean;
 }): string[] => {
   const args = [
     'scripts/run-openjarvis-goal-cycle.mjs',
@@ -1072,6 +1737,7 @@ const buildGoalCycleCommand = (params: {
     '--autoSelectQueuedObjective=true',
     '--maxCycles=0',
     '--maxIdleChecks=0',
+    `--dryRun=${params.dryRun === true ? 'true' : 'false'}`,
     `--visibleTerminal=${params.visibleTerminal === false ? 'false' : 'true'}`,
   ];
 
@@ -1092,6 +1758,13 @@ const buildGoalCycleCommand = (params: {
   }
   if (params.gcpCapacityRecoveryRequested === true) {
     args.push('--gcpCapacityRecovery=true');
+  }
+  if (params.autoLaunchQueuedChat === true) {
+    args.push('--autoLaunchQueuedChat=true');
+  }
+  const autoLaunchQueuedChatContextProfile = compact(params.autoLaunchQueuedChatContextProfile);
+  if (autoLaunchQueuedChatContextProfile) {
+    args.push(`--autoLaunchQueuedChatContextProfile=${autoLaunchQueuedChatContextProfile}`);
   }
 
   return args;
@@ -1145,6 +1818,9 @@ export const runOpenJarvisHermesRuntimeRemediation = async (
       capacityTarget: params.capacityTarget ?? null,
       gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested === true,
       visibleTerminal: params.visibleTerminal !== false,
+      autoLaunchQueuedChat: params.autoLaunchQueuedChat === true,
+      autoLaunchQueuedChatContextProfile: params.autoLaunchQueuedChatContextProfile || null,
+      dryRun,
     });
     const command = ['node', ...commandArgs].join(' ');
 

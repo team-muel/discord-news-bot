@@ -95,11 +95,15 @@ export type WorkflowRecallRequestSummary = {
 };
 
 export type WorkflowArtifactRefKind = 'repo-file' | 'vault-note' | 'log' | 'url' | 'git-ref' | 'workflow-session' | 'other';
+export type WorkflowArtifactPlane = 'github' | 'obsidian' | 'hot-state' | 'external' | 'other';
+export type WorkflowGithubSettlementKind = 'repo-file' | 'branch' | 'commit' | 'pull-request' | 'issue' | 'ci-run' | 'review' | 'release' | 'other';
 
 export type WorkflowArtifactRef = {
   locator: string;
   refKind: WorkflowArtifactRefKind;
   title?: string;
+  artifactPlane?: WorkflowArtifactPlane;
+  githubSettlementKind?: WorkflowGithubSettlementKind;
 };
 
 export type WorkflowArtifactRefBatch = {
@@ -116,6 +120,8 @@ export type WorkflowArtifactRefSummary = {
   locator: string;
   refKind: WorkflowArtifactRefKind;
   title: string | null;
+  artifactPlane: WorkflowArtifactPlane | null;
+  githubSettlementKind: WorkflowGithubSettlementKind | null;
   runtimeLane: WorkflowRuntimeLane;
   sourceStepName: string | null;
   sourceEvent: string | null;
@@ -153,6 +159,7 @@ export type WorkflowCapabilityDemand = {
   cheapestEnablementPath?: string;
   proposedOwner?: string;
   evidenceRefs?: string[];
+  evidenceRefDetails?: WorkflowArtifactRef[];
   recallCondition?: string;
   runtimeLane?: WorkflowRuntimeLane;
   sourceEvent?: string;
@@ -178,6 +185,7 @@ export type WorkflowCapabilityDemandSummary = {
   cheapestEnablementPath: string | null;
   proposedOwner: string | null;
   evidenceRefs: string[];
+  evidenceRefDetails: WorkflowArtifactRefSummary[];
   recallCondition: string | null;
   runtimeLane: WorkflowRuntimeLane;
   sourceEvent: string | null;

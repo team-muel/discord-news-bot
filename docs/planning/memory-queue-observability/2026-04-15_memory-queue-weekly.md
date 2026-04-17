@@ -1,17 +1,17 @@
 # Memory Queue Observability Weekly Report
 
-- generated_at: 2026-04-15T03:41:03.373Z
+- generated_at: 2026-04-15T16:25:31.412Z
 - window_days: 7
 - guild_id: *
-- baseline_from: 2026-04-08T03:41:03.373Z
-- baseline_to: 2026-04-15T03:41:03.373Z
+- baseline_from: 2026-04-08T16:25:31.413Z
+- baseline_to: 2026-04-15T16:25:31.412Z
 
 ## Queue Summary
 
-- jobs_total: 0
+- jobs_total: 40
 - jobs_queued: 0
 - jobs_running: 0
-- jobs_completed: 0
+- jobs_completed: 40
 - jobs_failed: 0
 - jobs_deadlettered: 0
 - retry_rate_pct: 0

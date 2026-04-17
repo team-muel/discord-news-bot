@@ -52,7 +52,9 @@ Core multi-agent session lifecycle, policy, telemetry, governance, reasoning, an
 - `agent/agentOutcomeContract.ts` — Outcome contract types
 - `agent/agentSocialQualitySnapshotService.ts` — Social quality snapshot
 - `agent/agentWorkerApprovalGateSnapshotService.ts` — Worker approval gate snapshot
+- `multiAgentConfig.ts` — Multi-agent facade-safe host constants extracted from the runtime hub
 - `multiAgentService.ts` — Session orchestration hub (start/cancel/execute sessions)
+- `multiAgentSnapshot.ts` — Runtime snapshot builder and recent outcome cache helpers
 - `multiAgentReasoningStrategies.ts` — ToT/self-refine/least-to-most/beam eval strategies (extracted)
 - `multiAgentTypes.ts` — Shared type definitions (AgentSession, AgentStep, etc.)
 - `multiAgentRuntimeQueue.ts` — Queue and concurrency management
@@ -62,6 +64,14 @@ Composable skill registry, execution engine, and action implementations.
 - `skills/engine.ts` — Skill execution coordinator
 - `skills/registry.ts` — Skill registration and lookup
 - `skills/actionRunner.ts` — Action governance wrapper
+- `skills/actionRunnerArtifacts.ts` — Artifact display, workflow ref extraction, and news artifact parsing helpers
+- `skills/actionRunnerConfig.ts` — Action-runner env/config extraction and policy allowlists
+- `skills/actionRunnerExecution.ts` — Shared action invoke/retry/cache/circuit primitives for runner and pipeline execution
+- `skills/actionRunnerGovernance.ts` — Guild policy, approval-required, and high-risk action gate helper
+- `skills/actionRunnerNewsCapture.ts` — External news capture policy gate, dedupe, and memory persistence helper
+- `skills/actionRunnerPipelinePersistence.ts` — Goal-pipeline session start, state transitions, step persistence, and closeout lifecycle helper
+- `skills/actionRunnerState.ts` — Action-runner caches, gate verdict store, and utility score state
+- `skills/actionRunnerWorkflowCloseout.ts` — Pipeline closeout distillate and capability-demand builder
 - `skills/actions/` — Individual action implementations (web, rag, news, code, etc.)
 
 ### Observer Layer (`observer/`)
@@ -140,8 +150,8 @@ State graph execution for agent sessions.
 - `langgraph/stateContract.ts` — State shape and trace utilities
 - `langgraph/executor.ts` — Graph execution engine
 - `langgraph/nodes/` — Individual node implementations
-- `langgraph/sessionRuntime/` — Branch execution strategies
-- `langgraph/runtimeSupport/` — Budget, formatting, evaluation helpers
+- `langgraph/sessionRuntime/` — Branch execution strategies, session-prelude wrappers, and full-review/HITL deliberation helpers
+- `langgraph/runtimeSupport/` — Budget, routing, bootstrap, session-state/checkpoint/retry-resume mutation, formatting, evaluation, and terminal fallback/finalization helpers
 
 ### External Tools (`tools/`)
 External CLI tool integration and execution.

@@ -126,6 +126,8 @@ const buildReadNext = ({ objectiveClass, requiresDurableKnowledge }) => {
 
   if (objectiveClass === 'shared-mcp-bootstrap') {
     docs.push('docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md');
+    docs.push('docs/adr/ADR-008-multi-plane-operating-model.md');
+    docs.push('docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md');
     docs.push('docs/SKILLSET_LAYER.md');
   }
 

@@ -232,6 +232,18 @@ const buildCommandString = (codeCliPath: string, args: string[]): string => {
   return [codeCliPath, ...args].map((item) => item.includes(' ') ? `"${item}"` : item).join(' ');
 };
 
+const resolveCodeLaunchPath = (codeCliPath: string): string => {
+  if (!(process.platform === 'win32' && codeCliPath.toLowerCase().endsWith('code.cmd'))) {
+    return codeCliPath;
+  }
+
+  const candidatePaths = [
+    path.resolve(path.dirname(codeCliPath), 'Code.exe'),
+    path.resolve(path.dirname(codeCliPath), '..', 'Code.exe'),
+  ];
+  return candidatePaths.find((candidatePath) => fs.existsSync(candidatePath)) || codeCliPath;
+};
+
 const quotePowerShellLiteral = (value: string): string => {
   const normalized = String(value || '');
   if (!normalized) {
@@ -245,15 +257,16 @@ export const buildHermesVsCodeBridgePowerShellCommand = (codeCliPath: string, ar
 };
 
 const executeCodeCli = async (codeCliPath: string, args: string[]): Promise<{ stdoutLines: string[]; stderrLines: string[] }> => {
-  if (process.platform === 'win32' && codeCliPath.toLowerCase().endsWith('.cmd')) {
-    await queueCodeCli(codeCliPath, args);
+  const launchPath = resolveCodeLaunchPath(codeCliPath);
+  if (process.platform === 'win32' && launchPath.toLowerCase().endsWith('.cmd')) {
+    await queueCodeCli(launchPath, args);
     return {
       stdoutLines: [],
       stderrLines: [],
     };
   }
 
-  const { stdout, stderr } = await execFileAsync(codeCliPath, args, {
+  const { stdout, stderr } = await execFileAsync(launchPath, args, {
     cwd: REPO_ROOT,
     timeout: COMMAND_TIMEOUT_MS,
     windowsHide: true,
@@ -265,19 +278,20 @@ const executeCodeCli = async (codeCliPath: string, args: string[]): Promise<{ st
 };
 
 const queueCodeCli = async (codeCliPath: string, args: string[]): Promise<number | null> => {
-  const child = process.platform === 'win32' && codeCliPath.toLowerCase().endsWith('.cmd')
+  const launchPath = resolveCodeLaunchPath(codeCliPath);
+  const child = process.platform === 'win32' && launchPath.toLowerCase().endsWith('.cmd')
     ? spawn('powershell.exe', [
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      buildHermesVsCodeBridgePowerShellCommand(codeCliPath, args),
+      buildHermesVsCodeBridgePowerShellCommand(launchPath, args),
     ], {
       cwd: REPO_ROOT,
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
     })
-    : spawn(codeCliPath, args, {
+    : spawn(launchPath, args, {
       cwd: REPO_ROOT,
       detached: true,
       stdio: 'ignore',
@@ -599,7 +613,7 @@ export const runHermesVsCodeBridge = async (params: HermesVsCodeBridgeRunParams)
     });
   }
 
-  const command = buildCommandString(codeCliPath, resolvedAction.args);
+  const command = buildCommandString(resolveCodeLaunchPath(codeCliPath), resolvedAction.args);
 
   if (dryRun) {
     return finalize({

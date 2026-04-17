@@ -6,9 +6,16 @@ import { spawn } from 'node:child_process';
 
 import { parseArg, parseBool } from './lib/cliArgs.mjs';
 import { appendWorkflowEvent, readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
+import { autoQueueOpenJarvisHermesRuntimeObjectives } from '../src/services/openjarvis/openjarvisHermesRuntimeControlService.ts';
+import {
+  promoteKnowledgeToObsidian,
+  type ObsidianKnowledgePromoteArtifactKind,
+  type ObsidianKnowledgePromoteResult,
+} from '../src/services/obsidian/knowledgeCompilerService.ts';
 
 export type ReentryCompletionStatus = 'completed' | 'blocked' | 'failed';
 export type ReentryRestartMode = 'auto' | 'always' | 'never';
+export type ReentryContextProfile = 'default' | 'auto' | 'delegated-operator' | 'scout' | 'executor' | 'distiller' | 'guardian';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -17,6 +24,9 @@ type ReentryAckParams = {
   nextAction?: string | null;
   blockedAction?: string | null;
   completionStatus?: string | null;
+  profile?: string | null;
+  promoteImmediately?: boolean;
+  promotionArtifactKind?: string | null;
   sessionPath?: string | null;
   sessionId?: string | null;
   runtimeLane?: string | null;
@@ -37,10 +47,31 @@ type ReentryRestartResult = {
   reason: string | null;
 };
 
+type ReentryAutoQueueResult = {
+  requested: boolean;
+  completion: 'updated' | 'skipped';
+  synthesizedObjectives: string[];
+  queuedObjectives: string[];
+  handoffPacketPath: string | null;
+  errorCode: string | null;
+  error: string | null;
+};
+
+type ReentryKnowledgePromotionResult = {
+  requested: boolean;
+  profile: ReentryContextProfile | null;
+  artifactKind: ObsidianKnowledgePromoteArtifactKind | null;
+  status: 'written' | 'partial' | 'skipped';
+  targetPath: string | null;
+  writtenArtifacts: string[];
+  skippedReasons: string[];
+};
+
 export type ReentryAckResult = {
   ok: boolean;
   completion: 'recorded' | 'skipped';
   completionStatus: ReentryCompletionStatus;
+  profile: ReentryContextProfile | null;
   objective: string | null;
   sessionId: string | null;
   sessionPath: string | null;
@@ -51,6 +82,8 @@ export type ReentryAckResult = {
   recordedEventTypes: string[];
   loopPath: string | null;
   manifestPath: string | null;
+  autoQueueObjective: ReentryAutoQueueResult | null;
+  knowledgePromotion: ReentryKnowledgePromotionResult | null;
   restartSupervisor: ReentryRestartResult;
   error: string | null;
 };
@@ -61,6 +94,28 @@ type WorkflowAppendResult = Awaited<ReturnType<typeof appendWorkflowEvent>>;
 type ReentryAckDependencies = {
   readLatestWorkflowState: (params?: Record<string, unknown>) => Promise<WorkflowStateReadResult>;
   appendWorkflowEvent: (params?: Record<string, unknown>) => Promise<WorkflowAppendResult>;
+  autoQueueNextObjectives: (params?: {
+    sessionPath?: string | null;
+    sessionId?: string | null;
+    runtimeLane?: string | null;
+    capacityTarget?: number | null;
+    gcpCapacityRecoveryRequested?: boolean;
+    dryRun?: boolean;
+  }) => Promise<Omit<ReentryAutoQueueResult, 'requested'>>;
+  promoteKnowledge: (params: {
+    artifactKind: ObsidianKnowledgePromoteArtifactKind;
+    title: string;
+    content: string;
+    sources: string[];
+    confidence?: number;
+    tags?: string[];
+    owner?: string;
+    canonicalKey?: string;
+    nextAction?: string;
+    supersedes?: string[];
+    validAt?: string;
+    allowOverwrite?: boolean;
+  }) => Promise<ObsidianKnowledgePromoteResult>;
   spawnGoalCycle: (args: string[]) => Promise<{ started: boolean; pid: number | null; command: string }>;
 };
 
@@ -69,6 +124,27 @@ const LAUNCHES_DIR = path.join(ROOT, 'tmp', 'autonomy', 'launches');
 const DEFAULT_LOOP_PATH = path.join(LAUNCHES_DIR, 'latest-interactive-goal-loop.json');
 const DEFAULT_MANIFEST_PATH = path.join(LAUNCHES_DIR, 'latest-interactive-goal.json');
 const GOAL_CYCLE_SCRIPT = path.join('scripts', 'run-openjarvis-goal-cycle.mjs');
+const DEFAULT_REENTRY_CONTEXT_PROFILE: ReentryContextProfile = 'default';
+const AUTO_REENTRY_CONTEXT_PROFILE: ReentryContextProfile = 'auto';
+const DISTILLER_REENTRY_CONTEXT_PROFILE: ReentryContextProfile = 'distiller';
+const GUARDIAN_REENTRY_CONTEXT_PROFILE: ReentryContextProfile = 'guardian';
+const VALID_REENTRY_CONTEXT_PROFILES = new Set<ReentryContextProfile>([
+  'default',
+  'auto',
+  'delegated-operator',
+  'scout',
+  'executor',
+  'distiller',
+  'guardian',
+]);
+const VALID_REENTRY_PROMOTION_ARTIFACT_KINDS = new Set<ObsidianKnowledgePromoteArtifactKind>([
+  'note',
+  'requirement',
+  'ops-note',
+  'contract',
+  'retrofit',
+  'lesson',
+]);
 
 const compact = (value: unknown): string => String(value || '').trim();
 const toNullableString = (value: unknown): string | null => compact(value) || null;
@@ -146,6 +222,148 @@ export const normalizeReentryCompletionStatus = (value: unknown): ReentryComplet
   return 'completed';
 };
 
+export const normalizeReentryContextProfile = (value: unknown): ReentryContextProfile => {
+  const normalized = compact(value).toLowerCase() as ReentryContextProfile;
+  return VALID_REENTRY_CONTEXT_PROFILES.has(normalized)
+    ? normalized
+    : DEFAULT_REENTRY_CONTEXT_PROFILE;
+};
+
+const resolveReentryContextProfile = (params: {
+  requestedProfile?: string | null;
+  fallbackProfile?: string | null;
+}): ReentryContextProfile => {
+  const requested = normalizeReentryContextProfile(params.requestedProfile);
+  if (requested !== AUTO_REENTRY_CONTEXT_PROFILE) {
+    return requested;
+  }
+
+  const fallback = normalizeReentryContextProfile(params.fallbackProfile);
+  return fallback === AUTO_REENTRY_CONTEXT_PROFILE
+    ? DEFAULT_REENTRY_CONTEXT_PROFILE
+    : fallback;
+};
+
+const normalizePromotionArtifactKind = (value: unknown): ObsidianKnowledgePromoteArtifactKind | null => {
+  const normalized = compact(value).toLowerCase() as ObsidianKnowledgePromoteArtifactKind;
+  return VALID_REENTRY_PROMOTION_ARTIFACT_KINDS.has(normalized)
+    ? normalized
+    : null;
+};
+
+const shouldPromoteReentryKnowledge = (params: {
+  completionStatus: ReentryCompletionStatus;
+  profile: ReentryContextProfile;
+  promoteImmediately: boolean;
+  summary: string | null;
+  nextAction: string | null;
+  blockedAction: string | null;
+}): boolean => {
+  if (params.promoteImmediately) {
+    return true;
+  }
+
+  if (!params.summary && !params.nextAction && !params.blockedAction) {
+    return false;
+  }
+
+  if (params.profile === DISTILLER_REENTRY_CONTEXT_PROFILE) {
+    return true;
+  }
+
+  if (params.profile === GUARDIAN_REENTRY_CONTEXT_PROFILE && params.completionStatus !== 'completed') {
+    return true;
+  }
+
+  return false;
+};
+
+const resolveReentryPromotionArtifactKind = (params: {
+  explicitArtifactKind?: string | null;
+  completionStatus: ReentryCompletionStatus;
+  profile: ReentryContextProfile;
+}): ObsidianKnowledgePromoteArtifactKind => {
+  const explicit = normalizePromotionArtifactKind(params.explicitArtifactKind);
+  if (explicit) {
+    return explicit;
+  }
+
+  if (params.profile === GUARDIAN_REENTRY_CONTEXT_PROFILE) {
+    return 'ops-note';
+  }
+  if (params.profile === DISTILLER_REENTRY_CONTEXT_PROFILE) {
+    return params.completionStatus === 'completed' ? 'lesson' : 'ops-note';
+  }
+  return params.completionStatus === 'completed' ? 'note' : 'ops-note';
+};
+
+const buildReentryDecisionPromoteAs = (params: {
+  completionStatus: ReentryCompletionStatus;
+  profile: ReentryContextProfile;
+}): string => {
+  if (params.completionStatus !== 'completed') {
+    return 'improvement';
+  }
+  if (params.profile === GUARDIAN_REENTRY_CONTEXT_PROFILE) {
+    return 'runtime_snapshot';
+  }
+  if (params.profile === DISTILLER_REENTRY_CONTEXT_PROFILE) {
+    return 'development_slice';
+  }
+  if (params.profile === 'scout') {
+    return 'repository_context';
+  }
+  return 'development_slice';
+};
+
+const buildReentryPromotionTitle = (params: {
+  acknowledgedAt: string;
+  objective: string | null;
+  completionStatus: ReentryCompletionStatus;
+  profile: ReentryContextProfile;
+}): string => {
+  const objective = compact(params.objective) || 'workspace objective';
+  const timestamp = params.acknowledgedAt.replace(/[:]/g, '-');
+  return `Hermes ${params.profile} ${params.completionStatus} closeout ${timestamp} ${objective}`;
+};
+
+const buildReentryPromotionContent = (params: {
+  objective: string | null;
+  summary: string | null;
+  nextAction: string | null;
+  blockedAction: string | null;
+  completionStatus: ReentryCompletionStatus;
+  profile: ReentryContextProfile;
+  runtimeLane: string | null;
+  sessionId: string | null;
+  sessionPath: string | null;
+  sources: string[];
+}): string => {
+  const operatorMeaning = params.completionStatus === 'completed'
+    ? 'This Hermes closeout completed a bounded turn and leaves a reusable next step for the next operator or agent handoff.'
+    : 'This Hermes closeout captured a blocker or recovery boundary so the next turn does not rediscover the same failure from scratch.';
+
+  return [
+    `# Hermes ${params.profile} closeout`,
+    '',
+    '## Summary',
+    `- completion_status: ${params.completionStatus}`,
+    `- objective: ${params.objective || '(unknown)'}`,
+    `- summary: ${params.summary || '(none)'}`,
+    `- next_action: ${params.nextAction || '(none)'}`,
+    `- blocked_action: ${params.blockedAction || '(none)'}`,
+    `- runtime_lane: ${params.runtimeLane || '(unknown)'}`,
+    `- session_id: ${params.sessionId || '(unknown)'}`,
+    `- session_path: ${params.sessionPath || '(none)'}`,
+    '',
+    '## Operator Meaning',
+    operatorMeaning,
+    '',
+    '## Provenance',
+    ...params.sources.map((source) => `- ${source}`),
+  ].join('\n');
+};
+
 export const normalizeReentryRestartMode = (value: unknown): ReentryRestartMode => {
   const normalized = compact(value).toLowerCase();
   if (normalized === 'always') {
@@ -180,6 +398,7 @@ export const buildGoalCycleRestartArgs = (params: {
   autoRestartOnRelease?: boolean;
   continueUntilCapacity?: boolean;
   restartVisibleTerminal?: boolean;
+  autoLaunchQueuedChatContextProfile?: string | null;
 }): string[] => {
   const args = [
     GOAL_CYCLE_SCRIPT,
@@ -222,6 +441,11 @@ export const buildGoalCycleRestartArgs = (params: {
 
   if (params.continueUntilCapacity === true) {
     args.push('--continueUntilCapacity=true');
+  }
+
+  const autoLaunchQueuedChatContextProfile = compact(params.autoLaunchQueuedChatContextProfile);
+  if (autoLaunchQueuedChatContextProfile) {
+    args.push(`--autoLaunchQueuedChatContextProfile=${autoLaunchQueuedChatContextProfile}`);
   }
 
   return args;
@@ -301,6 +525,26 @@ const defaultSpawnGoalCycle = async (args: string[]): Promise<{ started: boolean
 const defaultDependencies: ReentryAckDependencies = {
   readLatestWorkflowState,
   appendWorkflowEvent,
+  autoQueueNextObjectives: async (params = {}) => {
+    const result = await autoQueueOpenJarvisHermesRuntimeObjectives({
+      sessionPath: params.sessionPath || null,
+      sessionId: params.sessionId || null,
+      runtimeLane: params.runtimeLane || null,
+      capacityTarget: params.capacityTarget ?? null,
+      gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
+      dryRun: params.dryRun === true,
+    });
+
+    return {
+      completion: result.completion,
+      synthesizedObjectives: result.synthesizedObjectives,
+      queuedObjectives: result.queueObjective?.queuedObjectives || [],
+      handoffPacketPath: result.queueObjective?.handoffPacketPath || null,
+      errorCode: result.errorCode,
+      error: result.error,
+    };
+  },
+  promoteKnowledge: promoteKnowledgeToObsidian,
   spawnGoalCycle: defaultSpawnGoalCycle,
 };
 
@@ -321,6 +565,12 @@ const resolveContext = async (params: ReentryAckParams, deps: ReentryAckDependen
     || toNullableString(lastLaunch.runtime_lane)
     || toNullableString(loopState?.runtime_lane)
     || toNullableString(manifest?.runtime_lane);
+  const lastLaunchChat = isRecord(lastLaunch.chat_launch) ? lastLaunch.chat_launch : null;
+  const lastLaunchContextProfile = toNullableString(lastLaunch.context_profile)
+    || toNullableString(lastLaunchChat?.contextProfile);
+  const autoLaunchQueuedChatContextProfile = toNullableString(loopState?.auto_launch_queued_chat_context_profile)
+    || toNullableString(manifest?.auto_launch_queued_chat_context_profile)
+    || lastLaunchContextProfile;
 
   const workflowState = await deps.readLatestWorkflowState({
     sessionPath,
@@ -344,6 +594,8 @@ const resolveContext = async (params: ReentryAckParams, deps: ReentryAckDependen
     objective: toNullableString(lastLaunch.objective)
       || toNullableString(manifest?.objective)
       || toNullableString(resolvedSession?.metadata?.objective),
+    lastLaunchContextProfile,
+    autoLaunchQueuedChatContextProfile,
     routeMode: toNullableString(loopState?.route_mode)
       || toNullableString(manifest?.route_mode)
       || toNullableString(resolvedSession?.metadata?.route_mode),
@@ -363,14 +615,20 @@ export const acknowledgeOpenJarvisReentry = async (
   const summary = toNullableString(params.summary);
   const nextAction = toNullableString(params.nextAction);
   const blockedAction = toNullableString(params.blockedAction);
+  const promoteImmediately = params.promoteImmediately === true;
   const dryRun = params.dryRun === true;
 
   const context = await resolveContext(params, deps);
+  const profile = resolveReentryContextProfile({
+    requestedProfile: params.profile || null,
+    fallbackProfile: context.lastLaunchContextProfile || context.autoLaunchQueuedChatContextProfile || null,
+  });
   if (!context.sessionId) {
     return {
       ok: false,
       completion: 'skipped',
       completionStatus,
+      profile,
       objective: context.objective,
       sessionId: null,
       sessionPath: context.sessionPath ? toRelative(context.sessionPath) : null,
@@ -381,6 +639,8 @@ export const acknowledgeOpenJarvisReentry = async (
       recordedEventTypes: [],
       loopPath: toRelative(context.loopPath),
       manifestPath: toRelative(context.manifestPath),
+      autoQueueObjective: null,
+      knowledgePromotion: null,
       restartSupervisor: {
         requested: false,
         mode: restartMode,
@@ -395,7 +655,12 @@ export const acknowledgeOpenJarvisReentry = async (
   }
 
   const ackDecisionReason = summary || `${completionStatus} VS Code GPT reentry acknowledged`;
+  const decisionPromoteAs = buildReentryDecisionPromoteAs({
+    completionStatus,
+    profile,
+  });
   const recordedEventTypes: string[] = [];
+  const acknowledgedAt = new Date().toISOString();
 
   const baseEventParams = {
     sessionPath: context.sessionPath,
@@ -413,6 +678,7 @@ export const acknowledgeOpenJarvisReentry = async (
       summary,
       next_action: nextAction,
       blocked_action: blockedAction,
+      context_profile: profile,
       runtime_lane: context.runtimeLane,
       source: 'vscode-chat',
       manifest_path: toRelative(context.manifestPath),
@@ -430,8 +696,8 @@ export const acknowledgeOpenJarvisReentry = async (
         next_action: nextAction,
         runtime_lane: context.runtimeLane,
         source_event: 'reentry_acknowledged',
-        promote_as: 'development_slice',
-        tags: ['hermes', 'reentry', 'vscode-chat', completionStatus],
+        promote_as: decisionPromoteAs,
+        tags: ['hermes', 'reentry', 'vscode-chat', completionStatus, profile],
       },
     });
     recordedEventTypes.push('decision_distillate');
@@ -453,6 +719,137 @@ export const acknowledgeOpenJarvisReentry = async (
     recordedEventTypes.push('recall_request');
   }
 
+  let knowledgePromotion: ReentryKnowledgePromotionResult | null = null;
+  const shouldPromoteKnowledge = shouldPromoteReentryKnowledge({
+    completionStatus,
+    profile,
+    promoteImmediately,
+    summary,
+    nextAction,
+    blockedAction,
+  });
+  if (shouldPromoteKnowledge) {
+    const artifactKind = resolveReentryPromotionArtifactKind({
+      explicitArtifactKind: params.promotionArtifactKind || null,
+      completionStatus,
+      profile,
+    });
+    const sources = [
+      toRelative(context.sessionPath),
+      toRelative(context.loopPath),
+      toRelative(context.manifestPath),
+      context.sessionId ? `workflow-session:${context.sessionId}` : null,
+    ].filter((entry): entry is string => Boolean(entry));
+    const title = buildReentryPromotionTitle({
+      acknowledgedAt,
+      objective: context.objective,
+      completionStatus,
+      profile,
+    });
+    const content = buildReentryPromotionContent({
+      objective: context.objective,
+      summary,
+      nextAction,
+      blockedAction,
+      completionStatus,
+      profile,
+      runtimeLane: context.runtimeLane,
+      sessionId: context.sessionId,
+      sessionPath: toRelative(context.sessionPath),
+      sources,
+    });
+
+    if (dryRun) {
+      knowledgePromotion = {
+        requested: true,
+        profile,
+        artifactKind,
+        status: 'skipped',
+        targetPath: null,
+        writtenArtifacts: [],
+        skippedReasons: ['dry_run'],
+      };
+    } else {
+      const promotionResult = await deps.promoteKnowledge({
+        artifactKind,
+        title,
+        content,
+        sources,
+        confidence: completionStatus === 'completed' ? 0.84 : 0.72,
+        tags: ['hermes', 'reentry', profile, completionStatus],
+        owner: 'hermes',
+        canonicalKey: context.sessionId ? `hermes-reentry:${context.sessionId}:${profile}` : undefined,
+        nextAction: nextAction || undefined,
+        validAt: acknowledgedAt,
+      });
+      knowledgePromotion = {
+        requested: true,
+        profile,
+        artifactKind,
+        status: promotionResult.status,
+        targetPath: promotionResult.targetPath,
+        writtenArtifacts: promotionResult.writtenArtifacts,
+        skippedReasons: promotionResult.skippedReasons,
+      };
+
+      const knowledgeRefs = [
+        ...(promotionResult.targetPath ? [promotionResult.targetPath] : []),
+        ...promotionResult.writtenArtifacts,
+      ];
+      if (knowledgeRefs.length > 0) {
+        await deps.appendWorkflowEvent({
+          ...baseEventParams,
+          eventType: 'artifact_ref',
+          decisionReason: ackDecisionReason,
+          payload: {
+            runtime_lane: context.runtimeLane,
+            source_step_name: `hermes-closeout:${profile}`,
+            source_event: 'reentry_acknowledged',
+            refs: knowledgeRefs.map((locator) => ({
+              locator,
+              ref_kind: 'vault-note',
+              title,
+            })),
+          },
+        });
+        recordedEventTypes.push('artifact_ref');
+      }
+    }
+  }
+
+  const autoSelectQueuedObjective = toBoolean(
+    context.loopState?.auto_select_queued_objective,
+    toBoolean(context.manifest?.auto_select_queued_objective),
+  );
+  let autoQueueObjective: ReentryAutoQueueResult | null = null;
+
+  if (completionStatus === 'completed' && autoSelectQueuedObjective) {
+    try {
+      const autoQueueResult = await deps.autoQueueNextObjectives({
+        sessionPath: context.sessionPath,
+        sessionId: context.sessionId,
+        runtimeLane: context.runtimeLane,
+        capacityTarget: context.capacityTarget,
+        gcpCapacityRecoveryRequested: context.gcpCapacityRecoveryRequested,
+        dryRun,
+      });
+      autoQueueObjective = {
+        requested: true,
+        ...autoQueueResult,
+      };
+    } catch (error) {
+      autoQueueObjective = {
+        requested: true,
+        completion: 'skipped',
+        synthesizedObjectives: [],
+        queuedObjectives: [],
+        handoffPacketPath: null,
+        errorCode: 'AUTO_QUEUE_FAILED',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   const restartDecision = shouldRestartGoalCycleAfterReentry({
     completionStatus,
     restartMode,
@@ -470,6 +867,7 @@ export const acknowledgeOpenJarvisReentry = async (
       autoRestartOnRelease: context.autoRestartOnRelease,
       continueUntilCapacity: context.continueUntilCapacity,
       restartVisibleTerminal: params.restartVisibleTerminal === true,
+      autoLaunchQueuedChatContextProfile: context.autoLaunchQueuedChatContextProfile,
     })
     : null;
   const restartCommand = restartArgs ? ['node', ...restartArgs].join(' ') : null;
@@ -494,10 +892,10 @@ export const acknowledgeOpenJarvisReentry = async (
     };
   }
 
-  const acknowledgedAt = new Date().toISOString();
   const reentryAck = {
     acknowledged_at: acknowledgedAt,
     completion_status: completionStatus,
+    context_profile: profile,
     objective: context.objective,
     summary,
     next_action: nextAction,
@@ -505,6 +903,8 @@ export const acknowledgeOpenJarvisReentry = async (
     runtime_lane: context.runtimeLane,
     source: 'vscode-chat',
     recorded_event_types: recordedEventTypes,
+    auto_queue_objective: autoQueueObjective,
+    knowledge_promotion: knowledgePromotion,
     restart_supervisor: restartSupervisor,
   };
 
@@ -538,6 +938,7 @@ export const acknowledgeOpenJarvisReentry = async (
     ok: true,
     completion: 'recorded',
     completionStatus,
+    profile,
     objective: context.objective,
     sessionId: context.sessionId,
     sessionPath: toRelative(context.sessionPath),
@@ -548,6 +949,8 @@ export const acknowledgeOpenJarvisReentry = async (
     recordedEventTypes,
     loopPath: toRelative(context.loopPath),
     manifestPath: toRelative(context.manifestPath),
+    autoQueueObjective,
+    knowledgePromotion,
     restartSupervisor,
     error: null,
   };
@@ -559,6 +962,9 @@ async function main() {
     nextAction: toNullableString(parseArg('nextAction', '')),
     blockedAction: toNullableString(parseArg('blockedAction', '')),
     completionStatus: toNullableString(parseArg('completionStatus', 'completed')),
+    profile: toNullableString(parseArg('profile', '')),
+    promoteImmediately: parseBool(parseArg('promoteImmediately', 'false'), false),
+    promotionArtifactKind: toNullableString(parseArg('promotionArtifactKind', '')),
     sessionPath: toNullableString(parseArg('sessionPath', '')),
     sessionId: toNullableString(parseArg('sessionId', '')),
     runtimeLane: toNullableString(parseArg('runtimeLane', '')),

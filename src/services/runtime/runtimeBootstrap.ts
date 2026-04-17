@@ -9,6 +9,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 import { startRuntimeAlerts } from './runtimeAlertService';
 import { startOpencodePublishWorker } from '../opencode/opencodePublishWorker';
 import { startBotAutoRecovery } from './botAutoRecoveryService';
+import { startLocalAutonomySupervisorLoop } from './localAutonomySupervisorService';
 import {
   bootstrapPgCronJobs,
   getPgCronReplacedLoopsFromBootstrap,
@@ -213,6 +214,7 @@ export const startServerProcessRuntime = (): void => {
   startOpencodePublishWorker();
   startRuntimeAlerts();
   startBotAutoRecovery();
+  startLocalAutonomySupervisorLoop();
 
   // Delegate sprint, MCP, sandbox, adapters, signal bus, observer
   bootstrapServerInfrastructure(isPgCronOwned);

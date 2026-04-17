@@ -58,7 +58,7 @@ Shared/team repo analysis는 `gcpCompute`를 기본 truth surface로 보고, `mu
 
 | Gap | Priority | Notes |
 |-----|----------|-------|
-| OpenClaw gateway integration for Discord requests | M-24 | `OPENCLAW_GATEWAY_URL` env required; gateway health gates execution |
+| Channel ingress abstraction for Discord requests | M-24 | Current Discord path prefers OpenClaw (`OPENCLAW_GATEWAY_URL`) when healthy; target is a pluggable ingress contract that can later host Chat SDK without changing routing or state ownership |
 | `/스프린트` command for Discord-triggered sprint | future | Currently admin-only via HTTP API |
 | Sprint progress visible in Discord | partial | Session updates work; sprint phase updates not threaded |
 | Thread-based code collaboration UI | ✅ Exists | `만들어줘` → code thread pattern |
@@ -178,7 +178,7 @@ Ordered by strategic importance:
 
 3. **[M-23] Doc consolidation** — Merge `docs/archive/` documents that have valuable content into living docs. Remove or timestamp-archive the rest.
 
-4. **[M-24] Discord surface via OpenClaw** — Route `/해줘` and `뮤엘 ...` through OpenClaw gateway when available (`OPENCLAW_ENABLED=true`, gateway health passes). This gives Discord users access to the full agent capability stack.
+4. **[M-24] Channel ingress abstraction** — Keep the current Discord/OpenClaw ingress as the first adapter, but split ingress normalization from runtime routing so a future Chat SDK surface can reuse the same policy, fallback, and state-ownership boundaries. Hermes remains the complementary continuity lane, not a competing primary ingress.
 
 5. **[Phase I] Synthesis layer** — Implement intent → multi-agent plan synthesis. This is the missing link between "observing problems" and "deciding what to do about them".
 

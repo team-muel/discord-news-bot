@@ -19,40 +19,52 @@
 
 - 각 항목은 `M-xx` milestone ID를 반드시 포함한다.
 
+## Autonomous Focus (Single Objective Override)
+
+1. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
+   - 자율 루프는 이 섹션이 비워질 때까지 이 목표만 계속 재할당한다.
+   - 얽힌 command/router/service 경계 리팩토링
+   - 반복 장애, 경고, 회귀 경로 디버깅
+   - oversized service 분해 + 순환 의존성 해소
+   - dead code / duplicate utility / stale fallback pruning
+   - 성능 병목과 과도한 복잡도 동시 축소
+
 ## Active Now (WIP <= 3)
+
+1. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
+   - 단일 focus override 활성 상태
+   - 얽힌 서비스 경계 리팩토링
+   - 재발 버그와 운영 경고 디버깅
+   - 잔여 root-level 서비스 파일 → 하위 디렉토리 이동
+   - 순환 의존성 탐지 + 해소
+   - stale fallback / 중복 유틸리티 정리
+
+## Queued Now (Approved, Not In Active WIP)
 
 1. [M-19] User CRM 심화 + Social Graph 고도화
    - 코호트 세그먼트 자동 태깅 (power_user/casual/dormant)
    - communityGraphService 클러스터 탐지 (connected component → community_clusters)
    - 에스컬레이션 패턴 탐지 (escalation_signals)
    - CRM snapshot에 social graph 요약 포함
-
 2. [M-20] LLM 레이턴시 SLO 자동 Fallback
    - p95 > LATENCY_P95_THRESHOLD_MS 시 자동 provider 다운그레이드
    - p95 레이턴시를 go/no-go gate 판정 입력에 포함
    - 세션 품질 집계: 기존 quality_score 기반 SQL view (코드 최소화)
-
-3. [M-21] 서비스 모듈 유지보수성 개선
-   - 잔여 root-level 서비스 파일 → 하위 디렉토리 이동
-   - 순환 의존성 탐지 + 해소
-   - 서비스 간 계약 interface 파일 분리 (types/)
-
-## Queued Now (Approved, Not In Active WIP)
-
-1. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-21 완료 후 승격
+3. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-21 완료 후 승격
    - `muelUnified` 로컬 stdio 진입점을 `.vscode/mcp.json`에 추가 (현재 GCP SSH만)
    - NemoClaw / n8n 어댑터 통합 테스트 또는 헬스 페이지 문서화
    - 어댑터 활용률 대시보드 (성공률, p95 레이턴시 per tool) 추가
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 4
-2. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
+4. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
    - `docs/archive/` 가치 있는 내용을 living doc으로 통합
    - MCP Tool Spec v2 기준으로 관련 문서 정렬 완료 (2026-04-05 일부 완료)
    - Obsidian 중심 운영체계 기준 문서 3종 고정: `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`, `OBSIDIAN_OBJECT_MODEL.md`, `OBSIDIAN_TRANSITION_PLAN.md`
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 5
-3. [M-24] Discord 표면 OpenClaw 연동 — M-22 이후 또는 병행 가능
-   - `/해줘`, `뮤엘 ...` 메시지를 `OPENCLAW_ENABLED=true` + gateway health 통과 시 OpenClaw로 라우팅
-   - 게이트웨이 실패 시 기존 action runner 폴백 유지
-   - 진입점: `src/discord/runtime/commandRouter.ts` OpenClaw 분기 강화
+5. [M-24] 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비) — M-21 종료 후 재개
+   - 현재 구현 기준 ingress는 Discord → 기존 router → OpenClaw 우선 경로를 유지하되, 목표 산출물은 OpenClaw 고정이 아니라 채널 ingress 계약 분리다
+   - `/해줘`, `뮤엘 ...` 경로는 계속 `OPENCLAW_ENABLED=true` + gateway health 통과 시 OpenClaw를 우선 사용하고, 실패 시 기존 action runner 폴백을 유지한다
+   - 다음 단계는 Discord/OpenClaw 진입을 공통 ingress envelope로 감싸 future Chat SDK adapter가 같은 routing/policy contract를 재사용하게 만드는 것이다
+   - Hermes는 continuity/operator lane으로 유지하고, Supabase/Obsidian/OpenJarvis ownership은 바꾸지 않는다
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 2
 
 ## Closed on 2026-04-06

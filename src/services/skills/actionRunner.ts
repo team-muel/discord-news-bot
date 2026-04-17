@@ -1,30 +1,19 @@
 import crypto from 'crypto';
-import path from 'node:path';
 // Cross-domain imports via barrel exports (domain boundary contracts)
-import { buildNewsFingerprint, isNewsFingerprinted, recordNewsFingerprint } from '../news';
 import { getDynamicAction } from '../workerGeneration';
-import { createMemoryItem, buildWorkerApprovalGateSnapshot } from '../agent';
 import { compilePromptGoal } from '../infra';
 // Root-level service imports (no barrel available)
-import { decideFinopsAction, estimateActionExecutionCostUsd, getFinopsBudgetStatus } from '../finopsService';
-import { logStructuredError } from '../structuredErrorLogService';
-import { normalizeActionInput, normalizeActionResult, toWorkerExecutionError } from '../workerExecution';
+import { decideFinopsAction, estimateActionExecutionCostUsd } from '../finopsService';
 import { getGateProviderProfileOverride, setGateProviderProfileOverride, type LlmProviderProfile } from '../llmClient';
 // Within-domain imports
 import { getAction } from './actions/registry';
 import { planActions } from './actions/planner';
 import { getActionRunnerMode, isActionAllowed } from './actions/policy';
 import {
-  EXECUTOR_ACTION_CANONICAL_NAME,
-  parseActionReflectionArtifact,
-  normalizeActionNameList,
   type ActionExecutionResult,
 } from './actions/types';
-import { createActionApprovalRequest, getGuildActionPolicy, listGuildAllowedDomains } from './actionGovernanceStore';
 import { logActionExecutionEvent } from './actionExecutionLogService';
-import { parseBooleanEnv, parseBoundedNumberEnv, parseCsvList, parseMinIntEnv, parseStringEnv } from '../../utils/env';
-import { TtlCache } from '../../utils/ttlCache';
-import { CircuitBreaker } from '../../utils/circuitBreaker';
+import { parseBooleanEnv } from '../../utils/env';
 import logger from '../../logger';
 import {
   type FailureDiagnostics,
@@ -37,15 +26,45 @@ import {
   getActionRunnerDiagnosticsSnapshot,
   recordFailureCode,
 } from './actionRunnerDiagnostics';
+import {
+  ACTION_CACHE_ENABLED,
+  ACTION_CACHE_TTL_MS,
+  ACTION_CIRCUIT_BREAKER_ENABLED,
+  ACTION_FINOPS_DEGRADED_RETRY_MAX,
+  ACTION_FINOPS_DEGRADED_TIMEOUT_MS,
+  ACTION_RETRY_MAX,
+  ACTION_RUNNER_ENABLED,
+  ACTION_RUNNER_MODE,
+  ACTION_TIMEOUT_MS,
+  GATE_VERDICT_ENFORCEMENT_ENABLED,
+  HIGH_RISK_APPROVAL_ACTIONS,
+  isActionCacheable,
+  isGovernanceFastPathEligible,
+} from './actionRunnerConfig';
+import {
+  actionCircuitBreaker,
+  getFinopsBudgetStatusSafely,
+  getLatestGateVerdict,
+} from './actionRunnerState';
+import {
+  extractWorkflowArtifactRefs,
+  formatActionArtifactsForDisplay,
+} from './actionRunnerArtifacts';
+import {
+  buildActionCacheKey,
+  executeResolvedAction,
+  getCachedActionResult,
+  isActionCircuitOpen,
+  storeCachedActionResult,
+} from './actionRunnerExecution';
+import { evaluateActionGovernanceGate } from './actionRunnerGovernance';
+import { captureExternalNewsMemory } from './actionRunnerNewsCapture';
 
 // Re-export for backward compatibility
 export { getActionRunnerDiagnosticsSnapshot, type ActionRunnerDiagnosticsSnapshot } from './actionRunnerDiagnostics';
 export type { SkillActionResult, FailureDiagnostics } from './actionRunnerDiagnostics';
-
-/** Actions that require approval_required enforcement regardless of guild policy runMode. */
-const HIGH_RISK_APPROVAL_ACTIONS: ReadonlySet<string> = new Set(
-  normalizeActionNameList(parseCsvList(process.env.HIGH_RISK_APPROVAL_ACTIONS || EXECUTOR_ACTION_CANONICAL_NAME)),
-);
+export { getActionUtilityScore, __resetActionRunnerStateForTests as __resetActionRunnerForTests } from './actionRunnerState';
+export { extractWorkflowArtifactRefs, formatActionArtifactsForDisplay } from './actionRunnerArtifacts';
 
 /**
  * D-06: Sync HIGH_RISK_APPROVAL_ACTIONS to OpenShell network policy YAML.
@@ -80,36 +99,6 @@ export const syncHighRiskActionsToSandboxPolicy = async (): Promise<{ synced: bo
   }
 };
 
-/** Gate verdict enforcement: block execution when latest gate-run overall = 'no-go'. */
-const GATE_VERDICT_ENFORCEMENT_ENABLED = parseBooleanEnv(process.env.GATE_VERDICT_ENFORCEMENT_ENABLED, false);
-const GATE_VERDICT_CACHE_TTL_MS = parseMinIntEnv(process.env.GATE_VERDICT_CACHE_TTL_MS, 5 * 60_000, 30_000);
-let cachedGateVerdict: Map<string, { overall: string; providerProfileTarget: string | null; fetchedAt: number }> = new Map();
-
-const getLatestGateVerdict = async (guildId: string): Promise<{ overall: string | null; providerProfileTarget: string | null }> => {
-  const now = Date.now();
-  const cached = cachedGateVerdict.get(guildId);
-  if (cached && (now - cached.fetchedAt) < GATE_VERDICT_CACHE_TTL_MS) {
-    return { overall: cached.overall, providerProfileTarget: cached.providerProfileTarget };
-  }
-  try {
-    const snapshot = await buildWorkerApprovalGateSnapshot({ guildId });
-    const gate = snapshot?.globalArtifacts?.latestGateDecision;
-    const overall = gate?.overall || null;
-    const providerProfileTarget = (gate as Record<string, unknown> | null)?.providerProfileTarget as string | null ?? null;
-    cachedGateVerdict.set(guildId, { overall: overall || 'unknown', providerProfileTarget, fetchedAt: now });
-    // Evict oldest entries if map grows too large
-    if (cachedGateVerdict.size > 100) {
-      const first = cachedGateVerdict.keys().next().value;
-      if (first !== undefined) cachedGateVerdict.delete(first);
-    }
-    return { overall, providerProfileTarget };
-  } catch (err) {
-    logger.debug('[ACTION-RUNNER] guild-policy lookup failed guildId=%s: %s', guildId, getErrorMessage(err));
-    const cached = cachedGateVerdict.get(guildId);
-    return { overall: cached?.overall || null, providerProfileTarget: cached?.providerProfileTarget || null };
-  }
-};
-
 type GoalActionInput = {
   goal: string;
   guildId: string;
@@ -119,645 +108,11 @@ type GoalActionInput = {
   runtimeLane?: string;
 };
 
-const ACTION_RUNNER_ENABLED = parseBooleanEnv(process.env.ACTION_RUNNER_ENABLED, true);
-const ACTION_RETRY_MAX = parseMinIntEnv(process.env.ACTION_RETRY_MAX, 2, 0);
-const ACTION_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_TIMEOUT_MS, 15_000, 1000);
-const ACTION_CIRCUIT_BREAKER_ENABLED = parseBooleanEnv(process.env.ACTION_CIRCUIT_BREAKER_ENABLED, true);
-const ACTION_CIRCUIT_FAILURE_THRESHOLD = parseMinIntEnv(process.env.ACTION_CIRCUIT_FAILURE_THRESHOLD, 3, 1);
-const ACTION_CIRCUIT_OPEN_MS = parseMinIntEnv(process.env.ACTION_CIRCUIT_OPEN_MS, 60_000, 5_000);
-const ACTION_FINOPS_DEGRADED_RETRY_MAX = parseMinIntEnv(process.env.ACTION_FINOPS_DEGRADED_RETRY_MAX, 1, 0);
-const ACTION_FINOPS_DEGRADED_TIMEOUT_MS = parseMinIntEnv(process.env.ACTION_FINOPS_DEGRADED_TIMEOUT_MS, 8_000, 1000);
-const ACTION_RUNNER_MODE = getActionRunnerMode();
-const ACTION_CACHE_ENABLED = parseBooleanEnv(process.env.ACTION_CACHE_ENABLED, true);
-const ACTION_CACHE_TTL_MS = parseMinIntEnv(process.env.ACTION_CACHE_TTL_MS, 10 * 60_000, 1000);
-const ACTION_CACHE_MAX_ENTRIES = parseMinIntEnv(process.env.ACTION_CACHE_MAX_ENTRIES, 1000, 50);
-const ACTION_GOVERNANCE_FAST_PATH_ENABLED = parseBooleanEnv(process.env.ACTION_GOVERNANCE_FAST_PATH_ENABLED, true);
-
-/** Read-only actions that skip guild policy + FinOps + gate-verdict governance. */
-const GOVERNANCE_FAST_PATH_ACTIONS: ReadonlySet<string> = new Set(
-  parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '').length > 0
-    ? parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '')
-    : [
-      'web.search',
-      'web.fetch',
-      'news.google.search',
-      'news.verify',
-      'rag.retrieve',
-      'community.search',
-      'stock.quote',
-      'stock.chart',
-      'youtube.search.first',
-      'db.supabase.read',
-      'investment.analysis',
-    ],
-);
-
-const isGovernanceFastPathEligible = (actionName: string): boolean => {
-  return ACTION_GOVERNANCE_FAST_PATH_ENABLED && GOVERNANCE_FAST_PATH_ACTIONS.has(actionName);
-};
-
-const ACTION_NEWS_CAPTURE_ENABLED = parseBooleanEnv(process.env.ACTION_NEWS_CAPTURE_ENABLED, true);
-const ACTION_NEWS_CAPTURE_TTL_MS = parseMinIntEnv(process.env.ACTION_NEWS_CAPTURE_TTL_MS, 6 * 60 * 60_000, 60_000);
-const ACTION_NEWS_CAPTURE_MIN_ITEMS = parseBoundedNumberEnv(process.env.ACTION_NEWS_CAPTURE_MIN_ITEMS, 2, 1, 5);
-const ACTION_NEWS_CAPTURE_MAX_AGE_HOURS = parseBoundedNumberEnv(process.env.ACTION_NEWS_CAPTURE_MAX_AGE_HOURS, 72, 6, 720);
-const ACTION_NEWS_CAPTURE_MAX_ITEMS = parseBoundedNumberEnv(process.env.ACTION_NEWS_CAPTURE_MAX_ITEMS, 5, 1, 20);
-const ACTION_NEWS_CAPTURE_SOURCE = parseStringEnv(process.env.ACTION_NEWS_CAPTURE_SOURCE, 'google_news_rss') || 'google_news_rss';
-const FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS = parseMinIntEnv(process.env.FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS, 5 * 60_000, 30_000);
-const DEFAULT_CACHEABLE_ACTIONS = [
-  'code.generate',
-  'rag.retrieve',
-  'news.google.search',
-  'news.verify',
-  'community.search',
-  'web.fetch',
-  'web.search',
-  'youtube.search.first',
-  'stock.quote',
-  'stock.chart',
-  'db.supabase.read',
-];
-const ACTION_CACHEABLE_ACTION_SET = new Set(
-  parseCsvList(process.env.ACTION_CACHEABLE_ACTIONS),
-);
-if (ACTION_CACHEABLE_ACTION_SET.size === 0) {
-  for (const actionName of DEFAULT_CACHEABLE_ACTIONS) {
-    ACTION_CACHEABLE_ACTION_SET.add(actionName);
-  }
-}
-
-const actionResultCache = new TtlCache<{
-  name: string;
-  summary: string;
-  artifacts: string[];
-  verification: string[];
-  agentRole?: 'operate' | 'implement' | 'review' | 'architect';
-  handoff?: {
-    fromAgent: 'operate' | 'implement' | 'review' | 'architect';
-    toAgent: 'operate' | 'implement' | 'review' | 'architect';
-    reason?: string;
-    evidenceId?: string;
-  };
-}>(ACTION_CACHE_MAX_ENTRIES);
-
-const actionCircuitBreaker = new CircuitBreaker({
-  failureThreshold: ACTION_CIRCUIT_FAILURE_THRESHOLD,
-  cooldownMs: ACTION_CIRCUIT_OPEN_MS,
-  maxEntries: 500,
-});
-
-// Per-action utility scores: rolling success rate for planner feedback
-const actionUtilityScores = new Map<string, { runs: number; successes: number; lastFailedAt: number }>();
-const ACTION_UTILITY_MAX_ACTIONS = 100;
-
-const updateActionUtility = (actionName: string, succeeded: boolean): void => {
-  const current = actionUtilityScores.get(actionName) || { runs: 0, successes: 0, lastFailedAt: 0 };
-  current.runs += 1;
-  if (succeeded) {
-    current.successes += 1;
-  } else {
-    current.lastFailedAt = Date.now();
-  }
-  actionUtilityScores.set(actionName, current);
-  if (actionUtilityScores.size > ACTION_UTILITY_MAX_ACTIONS) {
-    const first = actionUtilityScores.keys().next().value;
-    if (first !== undefined) actionUtilityScores.delete(first);
-  }
-};
-
-export const getActionUtilityScore = (actionName: string): { successRate: number; runs: number; recentlyFailed: boolean } => {
-  const entry = actionUtilityScores.get(actionName);
-  if (!entry || entry.runs === 0) return { successRate: 1, runs: 0, recentlyFailed: false };
-  return {
-    successRate: entry.successes / entry.runs,
-    runs: entry.runs,
-    recentlyFailed: (Date.now() - entry.lastFailedAt) < 60_000,
-  };
-};
-
-let lastFinopsBudgetFetchErrorLogAt = 0;
-
-const getFinopsBudgetStatusSafely = async (guildId: string) => {
-  try {
-    return await getFinopsBudgetStatus(guildId);
-  } catch (error) {
-    const now = Date.now();
-    if (now - lastFinopsBudgetFetchErrorLogAt >= FINOPS_BUDGET_FETCH_LOG_THROTTLE_MS) {
-      lastFinopsBudgetFetchErrorLogAt = now;
-      logger.warn(
-        '[ACTION-RUNNER] FinOps budget lookup failed; fallback to normal mode (throttled): %s',
-        getErrorMessage(error),
-      );
-    }
-    return null;
-  }
-};
-
-const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
-
-const ACTION_NEWS_CAPTURE_ALLOW_GUILDS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_ALLOW_GUILDS));
-const ACTION_NEWS_CAPTURE_DENY_GUILDS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_DENY_GUILDS));
-const ACTION_NEWS_CAPTURE_DENY_USERS = new Set(parseCsvList(process.env.ACTION_NEWS_CAPTURE_DENY_USERS));
-const ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS = new Set(
-  Array.from(parseCsvList(process.env.ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS))
-    .map((domain) => domain.toLowerCase().replace(/^\*\./, '').replace(/^www\./, ''))
-    .filter(Boolean),
-);
-
-const stableStringify = (value: unknown): string => {
-  if (value === null || value === undefined) return 'null';
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
-  }
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([k, v]) => `${k}:${stableStringify(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-};
-
-const isActionCacheable = (actionName: string): boolean => ACTION_CACHEABLE_ACTION_SET.has(actionName);
-
-const buildActionCacheKey = (params: {
-  guildId: string;
-  actionName: string;
-  goal: string;
-  args: Record<string, unknown>;
-}): string => {
-  const goal = compact(params.goal).toLowerCase().slice(0, 500);
-  const args = stableStringify(params.args || {});
-  return [params.guildId, params.actionName, goal, args].join('|');
-};
-
-const extractUrlFromArtifact = (artifact: string): string | null => {
-  const lines = String(artifact || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  for (const line of lines) {
-    if (/^https?:\/\//i.test(line)) {
-      return line;
-    }
-  }
-
-  const inline = String(artifact || '').match(/https?:\/\/\S+/i);
-  return inline?.[0] || null;
-};
-
-export const formatActionArtifactsForDisplay = (artifacts: string[]): {
-  artifactLines: string[];
-  reflectionLines: string[];
-} => {
-  const artifactLines: string[] = [];
-  const reflectionLines: string[] = [];
-
-  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
-    const reflection = parseActionReflectionArtifact(artifact);
-    if (!reflection) {
-      artifactLines.push(artifact);
-      continue;
-    }
-
-    reflectionLines.push(`plane=${reflection.plane}`);
-    reflectionLines.push(`concern=${reflection.concern}`);
-    reflectionLines.push(`next_path=${reflection.nextPath}`);
-    reflectionLines.push(`customer_impact=${reflection.customerImpact}`);
-  }
-
-  return {
-    artifactLines,
-    reflectionLines,
-  };
-};
-
-const normalizeArtifactLocator = (value: string): string => String(value || '').trim().replace(/\\/g, '/');
-
-const looksLikePathArtifact = (value: string): boolean => {
-  const normalized = normalizeArtifactLocator(value);
-  if (!normalized || /\r|\n/.test(normalized)) {
-    return false;
-  }
-  if (/^https?:\/\//i.test(normalized)) {
-    return false;
-  }
-  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('/') || normalized.startsWith('./') || normalized.startsWith('../')) {
-    return true;
-  }
-  return /^(src|docs|plans|ops|guilds|chat|retros|tmp|config|scripts)\/.+/.test(normalized)
-    || /^[^\s]+\/(?:[^\s].*)\.[A-Za-z0-9]{1,10}$/.test(normalized);
-};
-
-const inferWorkflowArtifactRefKind = (locator: string): import('../workflow').WorkflowArtifactRefKind => {
-  const normalized = normalizeArtifactLocator(locator).toLowerCase();
-  if (/^https?:\/\//.test(normalized)) {
-    return 'url';
-  }
-  if (normalized.startsWith('workflow session:') || normalized.startsWith('supabase:') || normalized.startsWith('local-file:')) {
-    return 'workflow-session';
-  }
-  if (normalized.endsWith('.log') || /(^|\/)(logs?|tmp)\//.test(normalized)) {
-    return 'log';
-  }
-  if (normalized.endsWith('.md') && (/^\/vault\//.test(normalized) || /^(chat|guilds|ops|plans|retros)\//.test(normalized))) {
-    return 'vault-note';
-  }
-  if (/^[0-9a-f]{7,40}$/i.test(normalized) || normalized.startsWith('branch:')) {
-    return 'git-ref';
-  }
-  if (looksLikePathArtifact(normalized)) {
-    return 'repo-file';
-  }
-  return 'other';
-};
-
-export const extractWorkflowArtifactRefs = (artifacts: string[]): import('../workflow').WorkflowArtifactRef[] => {
-  const refs: import('../workflow').WorkflowArtifactRef[] = [];
-  const seen = new Set<string>();
-
-  const pushRef = (ref: import('../workflow').WorkflowArtifactRef | null) => {
-    if (!ref || !ref.locator) {
-      return;
-    }
-    const locator = normalizeArtifactLocator(ref.locator);
-    if (!locator) {
-      return;
-    }
-    const dedupeKey = `${ref.refKind}:${locator}`;
-    if (seen.has(dedupeKey)) {
-      return;
-    }
-    seen.add(dedupeKey);
-    refs.push({
-      locator,
-      refKind: ref.refKind,
-      title: ref.title ? String(ref.title).trim() || undefined : undefined,
-    });
-  };
-
-  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
-    const text = String(artifact || '').trim();
-    if (!text) {
-      continue;
-    }
-
-    const reflection = parseActionReflectionArtifact(text);
-    if (reflection) {
-      pushRef({
-        locator: reflection.nextPath,
-        refKind: inferWorkflowArtifactRefKind(reflection.nextPath),
-        title: `${reflection.concern} reflection target`,
-      });
-      continue;
-    }
-
-    const newsArtifact = parseNewsArtifact(text);
-    if (newsArtifact) {
-      pushRef({
-        locator: newsArtifact.canonicalUrl,
-        refKind: 'url',
-        title: newsArtifact.title,
-      });
-      continue;
-    }
-
-    const branchMatch = text.match(/^branch:\s*(.+)$/i);
-    if (branchMatch) {
-      const branchName = branchMatch[1].trim();
-      pushRef({ locator: `branch:${branchName}`, refKind: 'git-ref', title: branchName });
-      continue;
-    }
-
-    const commitMatch = text.match(/^commit:\s*([0-9a-f]{7,40})$/i);
-    if (commitMatch) {
-      pushRef({ locator: commitMatch[1], refKind: 'git-ref', title: `commit ${commitMatch[1].slice(0, 12)}` });
-      continue;
-    }
-
-    const workflowSessionMatch = text.match(/^workflow session:\s*(.+)$/i);
-    if (workflowSessionMatch) {
-      const locator = workflowSessionMatch[1].trim();
-      pushRef({ locator, refKind: 'workflow-session', title: locator });
-      continue;
-    }
-
-    const pathCandidate = text.split(/\r?\n/, 1)[0].trim();
-    if (looksLikePathArtifact(pathCandidate)) {
-      const locator = normalizeArtifactLocator(pathCandidate);
-      pushRef({
-        locator,
-        refKind: inferWorkflowArtifactRefKind(locator),
-        title: path.posix.basename(locator) || locator,
-      });
-      continue;
-    }
-
-    const url = extractUrlFromArtifact(text);
-    if (url) {
-      const canonicalUrl = canonicalizeUrl(url);
-      pushRef({ locator: canonicalUrl, refKind: 'url' });
-    }
-  }
-
-  return refs.slice(0, 8);
-};
-
 const pushActionArtifactSections = (lines: string[], artifacts: string[]): void => {
   const display = formatActionArtifactsForDisplay(artifacts);
   lines.push(display.artifactLines.length > 0 ? `산출물:\n${display.artifactLines.map((line) => `- ${line}`).join('\n')}` : '산출물: 없음');
   if (display.reflectionLines.length > 0) {
     lines.push(`반영 가이드:\n${display.reflectionLines.map((line) => `- ${line}`).join('\n')}`);
-  }
-};
-
-type ParsedNewsArtifact = {
-  title: string;
-  url: string;
-  domain: string;
-  publishedAt: string | null;
-  canonicalUrl: string;
-  raw: string;
-};
-
-const extractRequestedUserId = (requestedBy: string): string => {
-  const text = String(requestedBy || '').trim();
-  if (/^\d{6,30}$/.test(text)) {
-    return text;
-  }
-  const match = text.match(/(\d{6,30})/);
-  return match?.[1] || '';
-};
-
-const normalizeDomain = (hostname: string): string => {
-  return String(hostname || '').trim().toLowerCase().replace(/^www\./, '');
-};
-
-const canonicalizeUrl = (urlText: string): string => {
-  try {
-    const url = new URL(urlText);
-    const trackingKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'];
-    for (const key of trackingKeys) {
-      url.searchParams.delete(key);
-    }
-    url.hash = '';
-    return url.toString();
-  } catch (err) {
-    logger.debug('[ACTION-RUNNER] url-parse fallback: %s', getErrorMessage(err));
-    return urlText.trim();
-  }
-};
-
-const parsePublishedAt = (metaText: string): string | null => {
-  const normalized = String(metaText || '').trim();
-  if (!normalized) {
-    return null;
-  }
-  const parsed = Date.parse(normalized);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  return new Date(parsed).toISOString();
-};
-
-const parseNewsArtifact = (artifact: string): ParsedNewsArtifact | null => {
-  const lines = String(artifact || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const url = extractUrlFromArtifact(artifact);
-  if (!url) {
-    return null;
-  }
-
-  let domain = '';
-  try {
-    domain = normalizeDomain(new URL(url).hostname);
-  } catch (err) {
-    logger.debug('[ACTION-RUNNER] domain extraction failed url=%s: %s', url?.slice(0, 80), getErrorMessage(err));
-    return null;
-  }
-
-  const title = (lines[0] && !/^https?:\/\//i.test(lines[0])) ? lines[0] : `news@${domain}`;
-  const metaLine = lines.length >= 3 ? lines[2] : '';
-  const publishedAt = parsePublishedAt(metaLine.includes('|') ? metaLine.split('|').pop() || '' : metaLine);
-
-  return {
-    title,
-    url,
-    domain,
-    publishedAt,
-    canonicalUrl: canonicalizeUrl(url),
-    raw: artifact,
-  };
-};
-
-const isNewsCaptureAllowedByPolicy = async (params: {
-  guildId: string;
-  requestedBy: string;
-}): Promise<boolean> => {
-  if (ACTION_NEWS_CAPTURE_ALLOW_GUILDS.size > 0 && !ACTION_NEWS_CAPTURE_ALLOW_GUILDS.has(params.guildId)) {
-    return false;
-  }
-  if (ACTION_NEWS_CAPTURE_DENY_GUILDS.has(params.guildId)) {
-    return false;
-  }
-
-  const requestedUserId = extractRequestedUserId(params.requestedBy);
-  if (requestedUserId && ACTION_NEWS_CAPTURE_DENY_USERS.has(requestedUserId)) {
-    return false;
-  }
-
-  try {
-    const capturePolicy = await getGuildActionPolicy(params.guildId, 'news.capture.external');
-    if (!capturePolicy.enabled || capturePolicy.runMode === 'disabled' || capturePolicy.runMode === 'approval_required') {
-      return false;
-    }
-  } catch (err) {
-    logger.debug('[ACTION-RUNNER] capture-policy check failed guildId=%s: %s', params.guildId, getErrorMessage(err));
-    return false;
-  }
-
-  return true;
-};
-
-const captureExternalNewsMemory = async (params: {
-  guildId: string;
-  requestedBy: string;
-  goal: string;
-  artifacts: string[];
-}) => {
-  if (!ACTION_NEWS_CAPTURE_ENABLED) {
-    return;
-  }
-
-  if (!(await isNewsCaptureAllowedByPolicy({ guildId: params.guildId, requestedBy: params.requestedBy }))) {
-    return;
-  }
-
-  const maxAgeMs = ACTION_NEWS_CAPTURE_MAX_AGE_HOURS * 60 * 60 * 1000;
-  const nowMs = Date.now();
-
-  let dbDomains: Set<string> = new Set();
-  try {
-    const dbDomainList = await listGuildAllowedDomains(params.guildId);
-    dbDomains = new Set(dbDomainList);
-  } catch (err) {
-    logger.debug('[ACTION-RUNNER] domains DB load failed guildId=%s: %s', params.guildId, getErrorMessage(err));
-    return;
-  }
-  const effectiveDomainFilter = new Set([...ACTION_NEWS_CAPTURE_ALLOWED_DOMAINS, ...dbDomains]);
-
-  const parsed = params.artifacts
-    .map((artifact) => parseNewsArtifact(artifact))
-    .filter((item): item is ParsedNewsArtifact => Boolean(item))
-    .filter((item) => {
-      if (effectiveDomainFilter.size === 0) {
-        return true;
-      }
-      for (const allowed of effectiveDomainFilter) {
-        if (item.domain === allowed || item.domain.endsWith(`.${allowed}`)) {
-          return true;
-        }
-      }
-      return false;
-    })
-    .filter((item) => {
-      if (!item.publishedAt) {
-        return true;
-      }
-      const publishedMs = Date.parse(item.publishedAt);
-      if (!Number.isFinite(publishedMs)) {
-        return true;
-      }
-      return (nowMs - publishedMs) <= maxAgeMs;
-    });
-
-  const deduped: ParsedNewsArtifact[] = [];
-  const seenUrl = new Set<string>();
-  const seenTitle = new Set<string>();
-  for (const item of parsed) {
-    const titleKey = item.title.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (seenUrl.has(item.canonicalUrl) || seenTitle.has(titleKey)) {
-      continue;
-    }
-    seenUrl.add(item.canonicalUrl);
-    seenTitle.add(titleKey);
-    deduped.push(item);
-    if (deduped.length >= ACTION_NEWS_CAPTURE_MAX_ITEMS) {
-      break;
-    }
-  }
-
-  if (deduped.length < ACTION_NEWS_CAPTURE_MIN_ITEMS) {
-    return;
-  }
-
-  const links = deduped.map((item) => item.canonicalUrl);
-
-  if (links.length === 0) {
-    return;
-  }
-
-  const fingerprint = buildNewsFingerprint({
-    guildId: params.guildId,
-    goal: params.goal,
-    canonicalUrls: links,
-  });
-  const digest = fingerprint.slice(0, 16);
-
-  const alreadySeen = await isNewsFingerprinted({
-    guildId: params.guildId,
-    fingerprint,
-    ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
-  });
-  if (alreadySeen) {
-    return;
-  }
-
-  const uniqueDomains = new Set(deduped.map((item) => item.domain)).size;
-  const freshWithin24h = deduped.filter((item) => {
-    if (!item.publishedAt) {
-      return false;
-    }
-    const ts = Date.parse(item.publishedAt);
-    return Number.isFinite(ts) && (nowMs - ts) <= 24 * 60 * 60 * 1000;
-  }).length;
-  const diversityScore = uniqueDomains / Math.max(1, deduped.length);
-  const freshnessScore = freshWithin24h / Math.max(1, deduped.length);
-  const coverageScore = Math.min(1, deduped.length / ACTION_NEWS_CAPTURE_MAX_ITEMS);
-  const qualityScore = Math.max(0, Math.min(1, 0.4 * coverageScore + 0.35 * diversityScore + 0.25 * freshnessScore));
-  const confidence = Math.max(0.45, Math.min(0.85, 0.5 + qualityScore * 0.3));
-
-  const compactGoal = params.goal.replace(/\s+/g, ' ').trim().slice(0, 90) || '외부 뉴스';
-  const content = [
-    `query: ${compactGoal}`,
-    `source: ${ACTION_NEWS_CAPTURE_SOURCE}`,
-    `quality_score: ${qualityScore.toFixed(3)}`,
-    `unique_domains: ${uniqueDomains}`,
-    `fresh_within_24h: ${freshWithin24h}`,
-    'items:',
-    ...deduped.map((item) => `- ${item.raw.replace(/\r?\n/g, ' | ')}`),
-  ].join('\n');
-
-  try {
-    await createMemoryItem({
-      guildId: params.guildId,
-      type: 'semantic',
-      title: `외부뉴스: ${compactGoal}`,
-      content,
-      tags: [
-        'external-news',
-        'google-news',
-        'auto-captured',
-        `quality:${Math.round(qualityScore * 100)}`,
-        `domains:${uniqueDomains}`,
-        `dedupe:${digest}`,
-      ],
-      confidence,
-      actorId: String(params.requestedBy || 'system:action-runner'),
-      source: {
-        sourceKind: 'system',
-        sourceRef: links[0],
-        excerpt: deduped[0]?.raw.slice(0, 500) || undefined,
-      },
-    });
-    await recordNewsFingerprint({
-      guildId: params.guildId,
-      fingerprint,
-      goal: params.goal,
-      ttlMs: ACTION_NEWS_CAPTURE_TTL_MS,
-    });
-  } catch (err) {
-    logger.debug('[ACTION-RUNNER] news memory-persist failed: %s', getErrorMessage(err));
-  }
-};
-
-const isCircuitOpen = (actionName: string): boolean => {
-  if (!ACTION_CIRCUIT_BREAKER_ENABLED) return false;
-  return actionCircuitBreaker.isOpen(actionName);
-};
-
-const recordSuccess = (actionName: string) => {
-  updateActionUtility(actionName, true);
-  if (ACTION_CIRCUIT_BREAKER_ENABLED) actionCircuitBreaker.recordSuccess(actionName);
-};
-
-const recordFailure = (actionName: string) => {
-  updateActionUtility(actionName, false);
-  if (ACTION_CIRCUIT_BREAKER_ENABLED) actionCircuitBreaker.recordFailure(actionName);
-};
-
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-  let timeout: NodeJS.Timeout | null = null;
-  try {
-    const timeoutPromise = new Promise<T>((_, reject) => {
-      timeout = setTimeout(() => reject(new Error('ACTION_TIMEOUT')), timeoutMs);
-    });
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
   }
 };
 
@@ -960,129 +315,45 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       continue;
     }
 
-    // Governance fast-path: read-only actions skip guild policy / FinOps / approval gates.
-    const fastPath = isGovernanceFastPathEligible(action.name);
-
-    if (!fastPath) {
-    let governance;
-    try {
-      governance = await getGuildActionPolicy(input.guildId, action.name);
-    } catch (err) {
-      logger.warn('[ACTION-RUNNER] action-governance failed action=%s guildId=%s: %s', action.name, input.guildId, getErrorMessage(err));
-      recordFailureCategory('ACTION_POLICY_UNAVAILABLE');
+    const governanceGate = await evaluateActionGovernanceGate({
+      guildId: input.guildId,
+      requestedBy: input.requestedBy,
+      goal: input.goal,
+      actionName: action.name,
+      actionArgs: planned.args || {},
+      fastPath: isGovernanceFastPathEligible(action.name),
+    });
+    if (!governanceGate.proceed) {
+      recordFailureCategory(governanceGate.error);
+      handledAny = handledAny || governanceGate.handledAny;
       lines.push(`액션: ${action.name}`);
-      lines.push('상태: 실패 (ACTION_POLICY_UNAVAILABLE)');
+      lines.push(governanceGate.lineStatus);
       await logActionExecutionEvent({
         guildId: input.guildId,
         requestedBy: input.requestedBy,
         goal: input.goal,
         actionName: action.name,
         ok: false,
-        summary: '길드 액션 정책 조회 실패로 실행이 차단되었습니다.',
-        artifacts: [],
-        verification: ['tenant action policy unavailable'],
+        summary: governanceGate.summary,
+        artifacts: governanceGate.artifacts,
+        verification: governanceGate.verification,
         durationMs: 0,
         retryCount: 0,
         circuitOpen: false,
-        error: 'ACTION_POLICY_UNAVAILABLE',
+        error: governanceGate.error,
         estimatedCostUsd: 0,
         finopsMode,
       });
       pushActionResult({
         ok: false,
         name: action.name,
-        summary: '길드 액션 정책 조회 실패로 실행이 차단되었습니다.',
-        artifacts: [],
-        verification: ['tenant action policy unavailable'],
-        error: 'ACTION_POLICY_UNAVAILABLE',
+        summary: governanceGate.summary,
+        artifacts: governanceGate.artifacts,
+        verification: governanceGate.verification,
+        error: governanceGate.error,
       });
       continue;
     }
-
-    if (!governance.enabled || governance.runMode === 'disabled') {
-      recordFailureCategory('ACTION_DISABLED_BY_POLICY');
-      lines.push(`액션: ${action.name}`);
-      lines.push('상태: 실패 (ACTION_DISABLED_BY_POLICY)');
-      await logActionExecutionEvent({
-        guildId: input.guildId,
-        requestedBy: input.requestedBy,
-        goal: input.goal,
-        actionName: action.name,
-        ok: false,
-        summary: '길드 액션 정책에서 비활성화된 액션입니다.',
-        artifacts: [],
-        verification: ['tenant action policy disabled'],
-        durationMs: 0,
-        retryCount: 0,
-        circuitOpen: false,
-        error: 'ACTION_DISABLED_BY_POLICY',
-        estimatedCostUsd: 0,
-        finopsMode,
-      });
-      pushActionResult({
-        ok: false,
-        name: action.name,
-        summary: '길드 액션 정책에서 비활성화된 액션입니다.',
-        artifacts: [],
-        verification: ['tenant action policy disabled'],
-        error: 'ACTION_DISABLED_BY_POLICY',
-      });
-      continue;
-    }
-
-    const autoApprovalRequired = action.name === 'privacy.forget.guild'
-      && !String(input.requestedBy || '').startsWith('system:');
-    const highRiskActionGuard = HIGH_RISK_APPROVAL_ACTIONS.has(action.name)
-      && governance.runMode === 'auto';
-    const effectiveRunMode = (autoApprovalRequired || highRiskActionGuard)
-      ? 'approval_required'
-      : governance.runMode;
-
-    if (effectiveRunMode === 'approval_required') {
-      recordFailureCategory('ACTION_APPROVAL_REQUIRED');
-      handledAny = true;
-      const request = await createActionApprovalRequest({
-        guildId: input.guildId,
-        requestedBy: input.requestedBy,
-        goal: input.goal,
-        actionName: action.name,
-        actionArgs: planned.args || {},
-        reason: autoApprovalRequired
-          ? 'high-risk action guard: privacy.forget.guild'
-          : highRiskActionGuard
-            ? `high-risk action guard: ${action.name}`
-            : 'action policy run_mode=approval_required',
-      });
-
-      lines.push(`액션: ${action.name}`);
-      lines.push(`상태: 승인 대기 (requestId=${request.id})`);
-      await logActionExecutionEvent({
-        guildId: input.guildId,
-        requestedBy: input.requestedBy,
-        goal: input.goal,
-        actionName: action.name,
-        ok: false,
-        summary: '승인 게이트에 의해 실행이 보류되었습니다.',
-        artifacts: [request.id],
-        verification: ['tenant action policy approval_required'],
-        durationMs: 0,
-        retryCount: 0,
-        circuitOpen: false,
-        error: 'ACTION_APPROVAL_REQUIRED',
-        estimatedCostUsd: 0,
-        finopsMode,
-      });
-      pushActionResult({
-        ok: false,
-        name: action.name,
-        summary: '승인 게이트에 의해 실행이 보류되었습니다.',
-        artifacts: [request.id],
-        verification: ['tenant action policy approval_required'],
-        error: 'ACTION_APPROVAL_REQUIRED',
-      });
-      continue;
-    }
-    } // end !fastPath governance block
 
     handledAny = true;
 
@@ -1109,7 +380,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       continue;
     }
 
-    if (isCircuitOpen(action.name)) {
+    if (isActionCircuitOpen(action.name)) {
       recordFailureCategory('CIRCUIT_OPEN');
       const message = `상태: 실패 (CIRCUIT_OPEN)`;
       lines.push(`액션: ${action.name}`);
@@ -1141,25 +412,6 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       continue;
     }
 
-    let attempt = 0;
-    let final: {
-      ok: boolean;
-      name: string;
-      summary: string;
-      artifacts: string[];
-      verification: string[];
-      error?: string;
-      durationMs?: number;
-      agentRole?: 'operate' | 'implement' | 'review' | 'architect';
-      handoff?: {
-        fromAgent: 'operate' | 'implement' | 'review' | 'architect';
-        toAgent: 'operate' | 'implement' | 'review' | 'architect';
-        reason?: string;
-        evidenceId?: string;
-      };
-    } | null = null;
-    const startedAt = Date.now();
-
     const effectiveRetryMax = finopsMode === 'degraded'
       ? Math.min(ACTION_RETRY_MAX, ACTION_FINOPS_DEGRADED_RETRY_MAX)
       : ACTION_RETRY_MAX;
@@ -1178,7 +430,7 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       : '';
 
     if (cacheEligible && cacheKey) {
-      const cached = actionResultCache.get(cacheKey);
+      const cached = getCachedActionResult(cacheKey);
       if (cached) {
         lines.push(`액션: ${cached.name}`);
         lines.push(`${cached.summary} (cache hit)`);
@@ -1224,73 +476,20 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
       }
     }
 
-    while (attempt <= effectiveRetryMax) {
-      attempt += 1;
-      final = await withTimeout(Promise.resolve().then(() => {
-        const executionInput = normalizeActionInput({
-          actionName: action.name,
-          input: {
-            goal: executionGoal,
-            args: planned.args,
-            guildId: input.guildId,
-            requestedBy: input.requestedBy,
-          },
-        });
-        return action.execute(executionInput);
-      }), effectiveTimeoutMs)
-        .then((result) => normalizeActionResult({ actionName: action.name, result }))
-        .catch(async (error) => {
-          const normalized = toWorkerExecutionError(error, 'UNKNOWN_ERROR');
-          await logStructuredError({
-            code: normalized.code,
-            source: 'skills.actionRunner.execute',
-            message: normalized.message,
-            guildId: input.guildId,
-            actionName: action.name,
-            meta: {
-              retryable: normalized.retryable,
-              attempt,
-              retryMax: effectiveRetryMax,
-              ...(normalized.meta || {}),
-            },
-            severity: normalized.retryable ? 'warn' : 'error',
-          }, error);
-
-          const message = normalized.code || normalized.message;
-          const verification = [`error_code=${normalized.code}`];
-          if (!normalized.retryable) {
-            verification.push('retryable=false');
-          }
-
-        return {
-          ok: false,
-          name: action.name,
-          summary: '액션 실행 실패',
-          artifacts: [],
-            verification,
-          error: message,
-        };
-        });
-
-      if (final.ok) {
-        break;
-      }
-
-      const shouldStopRetry = final.error === 'ACTION_INPUT_INVALID'
-        || final.error === 'ACTION_RESULT_INVALID';
-      if (shouldStopRetry) {
-        break;
-      }
-    }
-
-    const durationMs = Date.now() - startedAt;
-    if (!final) {
-      continue;
-    }
-    final.durationMs = durationMs;
+    const executed = await executeResolvedAction({
+      action,
+      goal: executionGoal,
+      args: planned.args || {},
+      guildId: input.guildId,
+      requestedBy: input.requestedBy,
+      retryMax: effectiveRetryMax,
+      timeoutMs: effectiveTimeoutMs,
+    });
+    const final = executed.final;
+    const attempt = executed.attemptCount;
+    const durationMs = executed.durationMs;
 
     if (final.ok) {
-      recordSuccess(action.name);
       hasSuccess = true;
       if (final.name === 'news.google.search') {
         await captureExternalNewsMemory({
@@ -1301,17 +500,13 @@ export const runGoalActions = async (input: GoalActionInput): Promise<SkillActio
         });
       }
       if (cacheEligible && cacheKey) {
-        actionResultCache.set(cacheKey, {
-          name: final.name,
-          summary: final.summary,
-          artifacts: [...(final.artifacts || [])],
-          verification: [...(final.verification || [])],
-          agentRole: final.agentRole,
-          handoff: final.handoff,
-        }, ACTION_CACHE_TTL_MS);
+        storeCachedActionResult({
+          cacheKey,
+          ttlMs: ACTION_CACHE_TTL_MS,
+          result: final,
+        });
       }
     } else {
-      recordFailure(action.name);
       recordFailureCategory(final.error);
       if (isExternalUnavailableError(final.error)) {
         externalUnavailable = true;
@@ -1400,184 +595,29 @@ import {
   executePipeline,
   actionChainToPipelinePlan,
   createPipelineContext,
-  type PipelineResult,
   type PipelineStep,
-  type PipelineStepResult,
   type PipelineContext as PipelineCtx,
   type StepExecutor,
 } from './pipelineEngine';
-// Cross-domain import via barrel export (domain boundary contract)
-import {
-  generateSessionId,
-  createWorkflowSession,
-  inferWorkflowRuntimeLane,
-  recordWorkflowArtifactRefs,
-  recordWorkflowCapabilityDemands,
-  recordWorkflowDecisionDistillate,
-  recordWorkflowRecallRequest,
-  updateWorkflowSessionStatus,
-  insertWorkflowStep,
-  updateWorkflowStep,
-  recordWorkflowEvent,
-  type WorkflowCapabilityDemandBatch,
-  type WorkflowDecisionDistillate,
-} from '../workflow';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { buildWorkflowCloseoutArtifacts as buildWorkflowCloseoutArtifactsInternal } from './actionRunnerWorkflowCloseout';
+import {
+  finalizeGoalPipelineSession,
+  initializeGoalPipelineSession,
+  persistGoalPipelineSteps,
+  persistPlannerEmptyPipelineCloseout,
+  recordGoalPipelineReplan,
+  transitionGoalPipelineToExecuting,
+} from './actionRunnerPipelinePersistence';
 
 const PIPELINE_MODE_ENABLED = parseBooleanEnv(process.env.PIPELINE_MODE_ENABLED, false);
 
-type WorkflowCloseoutArtifacts = {
-  decisionDistillate: Omit<WorkflowDecisionDistillate, 'sessionId' | 'runtimeLane'>;
-  capabilityDemands: WorkflowCapabilityDemandBatch['demands'];
-  capabilityDemandPayload: Record<string, unknown>;
+const extractCloseoutEvidenceRefs = (artifacts: string[]) => {
+  return extractWorkflowArtifactRefs(artifacts);
 };
 
-const buildCapabilityDemandEvidenceRefs = (steps: Pick<PipelineStepResult, 'artifacts'>[]): string[] => {
-  const seen = new Set<string>();
-  const refs: string[] = [];
-
-  for (const step of steps) {
-    for (const ref of extractWorkflowArtifactRefs(step.artifacts || [])) {
-      const locator = compact(ref.locator);
-      if (!locator || seen.has(locator)) {
-        continue;
-      }
-      seen.add(locator);
-      refs.push(locator);
-      if (refs.length >= 4) {
-        return refs;
-      }
-    }
-  }
-
-  return refs;
-};
-
-const inferCloseoutCapabilityDemandOwner = (step: Pick<PipelineStepResult, 'error'> | null): string => {
-  const error = compact(step?.error).toUpperCase();
-  if (error === 'ACTION_NOT_ALLOWED' || error === 'CIRCUIT_OPEN') {
-    return 'operator';
-  }
-  return 'gpt';
-};
-
-export const buildWorkflowCloseoutArtifacts = (params: {
-  goal: string;
-  guildId: string;
-  finalStatus: 'released' | 'failed';
-  sourceEvent: 'recall_request' | 'session_complete';
-  plannerActionCount?: number;
-  stepCount?: number;
-  failedSteps?: PipelineStepResult[];
-  replanned?: boolean;
-  replanCount?: number;
-}): WorkflowCloseoutArtifacts => {
-  const normalizedGoal = compact(params.goal).slice(0, 500);
-  const failedSteps = Array.isArray(params.failedSteps) ? params.failedSteps.filter((step) => !step.ok) : [];
-  const isPlannerEmpty = Number(params.plannerActionCount ?? -1) === 0;
-
-  if (isPlannerEmpty) {
-    return {
-      decisionDistillate: {
-        summary: 'Planner could not produce any executable actions inside the current boundary.',
-        nextAction: 'clarify the goal or expand the approved action surface before retrying',
-        sourceEvent: params.sourceEvent,
-        promoteAs: 'requirement',
-        tags: ['goal-pipeline', 'planner-empty'],
-        payload: {
-          goal: normalizedGoal,
-          guild_id: params.guildId,
-          planner_action_count: 0,
-        },
-      },
-      capabilityDemands: [{
-        summary: 'Planner produced no executable actions inside the current boundary.',
-        objective: normalizedGoal,
-        missingCapability: 'executable plan inside current boundary',
-        missingSource: 'planner',
-        failedOrInsufficientRoute: 'planActions',
-        cheapestEnablementPath: 'clarify the goal or expand the approved action surface before retrying',
-        proposedOwner: 'gpt',
-        recallCondition: 'Planner produced no executable actions; GPT recall required',
-        tags: ['goal-pipeline', 'planner-empty'],
-      }],
-      capabilityDemandPayload: {
-        goal: normalizedGoal,
-        guild_id: params.guildId,
-        planner_action_count: 0,
-      },
-    };
-  }
-
-  const nextAction = params.finalStatus === 'released'
-    ? 'promote durable operator-visible outcomes into Obsidian if the result should persist'
-    : 'inspect the failed steps and revise the objective, policy boundary, or execution plan';
-  const recallCondition = params.replanned
-    ? 'Pipeline failed after replanning; GPT recall required'
-    : 'Pipeline failed; GPT recall required';
-  const failureTags = params.replanned ? ['goal-pipeline', 'failed', 'replanned'] : ['goal-pipeline', 'failed'];
-  const capabilityDemands = params.finalStatus === 'released'
-    ? []
-    : failedSteps.length > 0
-      ? failedSteps.slice(0, 3).map((step) => ({
-        summary: compact(step.error) === 'ACTION_NOT_ALLOWED'
-          ? `Pipeline step ${step.stepName} was blocked by policy and needs a narrower route or approval.`
-          : compact(step.error) === 'ACTION_NOT_IMPLEMENTED'
-            ? `Pipeline step ${step.stepName} has no executable implementation on the current action surface.`
-            : `Pipeline step ${step.stepName} failed before release and still needs enablement.`,
-        objective: normalizedGoal,
-        missingCapability: compact(step.error) || step.stepName,
-        missingSource: compact(step.error) === 'ACTION_NOT_IMPLEMENTED' ? 'action-surface' : undefined,
-        failedOrInsufficientRoute: step.stepName,
-        cheapestEnablementPath: nextAction,
-        proposedOwner: inferCloseoutCapabilityDemandOwner(step),
-        evidenceRefs: buildCapabilityDemandEvidenceRefs([step]),
-        recallCondition,
-        tags: failureTags,
-      }))
-      : [{
-        summary: 'Pipeline failed before release and still needs a narrower or better enabled route.',
-        objective: normalizedGoal,
-        missingCapability: 'bounded route stability',
-        failedOrInsufficientRoute: 'goal-pipeline',
-        cheapestEnablementPath: nextAction,
-        proposedOwner: 'gpt',
-        recallCondition,
-        tags: failureTags,
-      }];
-
-  return {
-    decisionDistillate: {
-      summary: params.finalStatus === 'released'
-        ? `Pipeline released after ${params.stepCount ?? 0} bounded steps.`
-        : params.replanned
-          ? 'Pipeline failed after replanning and now needs GPT boundary review.'
-          : 'Pipeline failed before release and now needs GPT boundary review.',
-      nextAction,
-      sourceEvent: params.sourceEvent,
-      promoteAs: 'development_slice',
-      tags: params.finalStatus === 'released' ? ['goal-pipeline', 'released'] : ['goal-pipeline', 'failed'],
-      payload: {
-        goal: normalizedGoal,
-        guild_id: params.guildId,
-        final_status: params.finalStatus,
-        replanned: Boolean(params.replanned),
-        replan_count: params.replanCount ?? 0,
-        step_count: params.stepCount ?? 0,
-        failed_step_names: failedSteps.map((step) => step.stepName),
-      },
-    },
-    capabilityDemands,
-    capabilityDemandPayload: {
-      goal: normalizedGoal,
-      guild_id: params.guildId,
-      final_status: params.finalStatus,
-      replanned: Boolean(params.replanned),
-      replan_count: params.replanCount ?? 0,
-      step_count: params.stepCount ?? 0,
-      failed_step_names: failedSteps.map((step) => step.stepName),
-    },
-  };
+export const buildWorkflowCloseoutArtifacts = (params: Parameters<typeof buildWorkflowCloseoutArtifactsInternal>[0]) => {
+  return buildWorkflowCloseoutArtifactsInternal(params, extractCloseoutEvidenceRefs);
 };
 
 /**
@@ -1607,32 +647,11 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
     };
   }
 
-  const sessionId = generateSessionId();
-  const workflowRuntimeLane = inferWorkflowRuntimeLane({
-    workflowName: 'goal-pipeline',
-    scope: input.guildId,
-    metadata: input.runtimeLane ? { runtime_lane: input.runtimeLane } : undefined,
-  });
-
-  // Persist workflow session
-  await createWorkflowSession({
-    sessionId,
-    workflowName: 'goal-pipeline',
-    stage: 'planning',
-    scope: input.guildId,
-    status: 'proposed',
-    metadata: {
-      runtime_lane: workflowRuntimeLane,
-      requested_by: input.requestedBy,
-    },
-  });
-
-  await recordWorkflowEvent({
-    sessionId,
-    eventType: 'session_start',
-    toState: 'proposed',
-    decisionReason: `Goal: ${input.goal.slice(0, 200)}`,
-    payload: { guildId: input.guildId, requestedBy: input.requestedBy, runtime_lane: workflowRuntimeLane },
+  const { sessionId, workflowRuntimeLane } = await initializeGoalPipelineSession({
+    goal: input.goal,
+    guildId: input.guildId,
+    requestedBy: input.requestedBy,
+    runtimeLane: input.runtimeLane,
   });
 
   // Plan actions
@@ -1648,38 +667,21 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
     sessionId,
   });
   if (!chain.actions || chain.actions.length === 0) {
-    const closeoutArtifacts = buildWorkflowCloseoutArtifacts({
-      goal: planningGoal,
-      guildId: input.guildId,
-      finalStatus: 'failed',
-      sourceEvent: 'recall_request',
-      plannerActionCount: 0,
-    });
-    await updateWorkflowSessionStatus(sessionId, 'failed', true);
-    await recordWorkflowRecallRequest({
-      sessionId,
-      decisionReason: 'Planner produced no executable actions; GPT recall required',
-      blockedAction: 'planActions',
-      nextAction: 'clarify the goal or expand the approved action surface before retrying',
-      requestedBy: input.requestedBy,
-      runtimeLane: workflowRuntimeLane,
-      payload: {
-        goal: planningGoal.slice(0, 500),
-        guild_id: input.guildId,
-        planner_action_count: 0,
+    const closeoutArtifacts = buildWorkflowCloseoutArtifactsInternal(
+      {
+        goal: planningGoal,
+        guildId: input.guildId,
+        finalStatus: 'failed',
+        sourceEvent: 'recall_request',
+        plannerActionCount: 0,
       },
-    });
-    await recordWorkflowDecisionDistillate({
+      extractCloseoutEvidenceRefs,
+    );
+    await persistPlannerEmptyPipelineCloseout({
       sessionId,
-      runtimeLane: workflowRuntimeLane,
-      ...closeoutArtifacts.decisionDistillate,
-    });
-    await recordWorkflowCapabilityDemands({
-      sessionId,
-      runtimeLane: workflowRuntimeLane,
-      sourceEvent: closeoutArtifacts.decisionDistillate.sourceEvent,
-      demands: closeoutArtifacts.capabilityDemands,
-      payload: closeoutArtifacts.capabilityDemandPayload,
+      workflowRuntimeLane,
+      requestedBy: input.requestedBy,
+      closeoutArtifacts,
     });
     return {
       handled: false,
@@ -1690,13 +692,9 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
     };
   }
 
-  await updateWorkflowSessionStatus(sessionId, 'executing');
-  await recordWorkflowEvent({
+  await transitionGoalPipelineToExecuting({
     sessionId,
-    eventType: 'state_transition',
-    fromState: 'proposed',
-    toState: 'executing',
-    decisionReason: `Planned ${chain.actions.length} actions`,
+    plannedActionCount: chain.actions.length,
   });
 
   // Convert planner output to pipeline plan
@@ -1732,7 +730,7 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
       };
     }
 
-    if (isCircuitOpen(actionName)) {
+    if (isActionCircuitOpen(actionName)) {
       return {
         ok: false,
         name: actionName,
@@ -1743,42 +741,17 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
       };
     }
 
-    const executionInput = normalizeActionInput({
-      actionName: action.name,
-      input: {
-        goal: pipeCtx.goal,
-        args,
-        guildId: pipeCtx.guildId,
-        requestedBy: pipeCtx.requestedBy,
-      },
-    });
-
-    const effectiveTimeoutMs = ACTION_TIMEOUT_MS;
-
-    try {
-      const result = await withTimeout(
-        Promise.resolve(action.execute(executionInput)),
-        effectiveTimeoutMs,
-      ).then((r) => normalizeActionResult({ actionName: action.name, result: r }));
-
-      if (result.ok) {
-        recordSuccess(action.name);
-      } else {
-        recordFailure(action.name);
-      }
-      return result;
-    } catch (error) {
-      recordFailure(action.name);
-      const normalized = toWorkerExecutionError(error, 'UNKNOWN_ERROR');
-      return {
-        ok: false,
-        name: action.name,
-        summary: 'Action execution failed',
-        artifacts: [],
-        verification: [`error_code=${normalized.code}`],
-        error: normalized.code || normalized.message,
-      };
-    }
+    return (await executeResolvedAction({
+      action,
+      goal: pipeCtx.goal,
+      args,
+      guildId: pipeCtx.guildId,
+      requestedBy: pipeCtx.requestedBy,
+      retryMax: 0,
+      timeoutMs: ACTION_TIMEOUT_MS,
+      failureSummary: 'Action execution failed',
+      errorSource: 'skills.actionRunner.pipelineStep',
+    })).final;
   };
 
   // Replanner: re-invokes the LLM planner with context about what failed
@@ -1792,11 +765,10 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
       });
       if (!replanChain.actions || replanChain.actions.length === 0) return [];
 
-      await recordWorkflowEvent({
+      await recordGoalPipelineReplan({
         sessionId,
-        eventType: 'replan',
-        decisionReason: replanGoal.slice(0, 500),
-        payload: { newActionCount: replanChain.actions.length },
+        replanGoal,
+        newActionCount: replanChain.actions.length,
       });
 
       return replanChain.actions.map((a, i) => ({
@@ -1816,123 +788,40 @@ export const runGoalPipeline = async (input: GoalActionInput): Promise<SkillActi
   // Execute pipeline
   const pipelineResult = await executePipeline(plan, stepExecutor, replanner, ctx);
 
-  // Persist each step result
-  for (let i = 0; i < pipelineResult.steps.length; i++) {
-    const step = pipelineResult.steps[i];
-    const artifactRefs = extractWorkflowArtifactRefs(step.artifacts);
-    await insertWorkflowStep({
-      sessionId,
-      stepOrder: i + 1,
-      stepName: step.stepName,
-      agentRole: step.agentRole,
-      status: step.ok ? 'passed' : 'failed',
-      durationMs: step.durationMs,
-      details: {
-        type: step.stepType,
-        error: step.error,
-        outputCount: step.output.length,
-        artifactCount: step.artifacts.length,
-      },
-    });
-
-    // Log to execution log for continuity with existing diagnostics
-    await logActionExecutionEvent({
-      guildId: input.guildId,
-      requestedBy: input.requestedBy,
-      goal: input.goal,
-      actionName: step.stepName,
-      ok: step.ok,
-      summary: step.ok ? 'Pipeline step passed' : `Pipeline step failed: ${step.error || 'unknown'}`,
-      artifacts: step.artifacts,
-      verification: [`pipeline_session=${sessionId}`, `step_type=${step.stepType}`],
-      durationMs: step.durationMs,
-      retryCount: 0,
-      circuitOpen: false,
-      error: step.error,
-      estimatedCostUsd: 0,
-      finopsMode: 'normal',
-      agentRole: step.agentRole,
-    });
-
-    await recordWorkflowArtifactRefs({
-      sessionId,
-      refs: artifactRefs,
-      runtimeLane: workflowRuntimeLane,
-      sourceStepName: step.stepName,
-      sourceEvent: step.ok ? 'step_passed' : 'step_failed',
-      payload: {
-        step_type: step.stepType,
-        agent_role: step.agentRole,
-      },
-    });
-  }
-
-  const failedSteps = pipelineResult.steps.filter((s) => !s.ok);
-  const closeoutArtifacts = buildWorkflowCloseoutArtifacts({
-    goal: executionGoal,
+  await persistGoalPipelineSteps({
+    sessionId,
+    workflowRuntimeLane,
     guildId: input.guildId,
-    finalStatus: pipelineResult.ok ? 'released' : 'failed',
-    sourceEvent: 'session_complete',
-    stepCount: pipelineResult.steps.length,
-    failedSteps,
-    replanned: pipelineResult.replanned,
-    replanCount: pipelineResult.replanCount,
+    requestedBy: input.requestedBy,
+    goal: input.goal,
+    steps: pipelineResult.steps,
+    extractArtifactRefs: extractWorkflowArtifactRefs,
   });
 
-  // Finalize session
-  const finalStatus = pipelineResult.ok ? 'released' : 'failed';
-  await updateWorkflowSessionStatus(sessionId, finalStatus, true);
-  await recordWorkflowEvent({
-    sessionId,
-    eventType: 'session_complete',
-    fromState: 'executing',
-    toState: finalStatus,
-    decisionReason: pipelineResult.ok
-      ? `Pipeline completed: ${pipelineResult.steps.length} steps`
-      : `Pipeline failed: ${pipelineResult.steps.filter((s) => !s.ok).length} failed steps`,
-    payload: {
-      totalDurationMs: pipelineResult.totalDurationMs,
+  const failedSteps = pipelineResult.steps.filter((s) => !s.ok);
+  const closeoutArtifacts = buildWorkflowCloseoutArtifactsInternal(
+    {
+      goal: executionGoal,
+      guildId: input.guildId,
+      finalStatus: pipelineResult.ok ? 'released' : 'failed',
+      sourceEvent: 'session_complete',
+      stepCount: pipelineResult.steps.length,
+      failedSteps,
       replanned: pipelineResult.replanned,
       replanCount: pipelineResult.replanCount,
     },
-  });
+    extractCloseoutEvidenceRefs,
+  );
 
-  await recordWorkflowDecisionDistillate({
+  await finalizeGoalPipelineSession({
     sessionId,
-    runtimeLane: workflowRuntimeLane,
-    ...closeoutArtifacts.decisionDistillate,
+    workflowRuntimeLane,
+    requestedBy: input.requestedBy,
+    goal: executionGoal,
+    pipelineResult,
+    failedSteps,
+    closeoutArtifacts,
   });
-  await recordWorkflowCapabilityDemands({
-    sessionId,
-    runtimeLane: workflowRuntimeLane,
-    sourceEvent: closeoutArtifacts.decisionDistillate.sourceEvent,
-    demands: closeoutArtifacts.capabilityDemands,
-    payload: closeoutArtifacts.capabilityDemandPayload,
-  });
-
-  if (!pipelineResult.ok) {
-    await recordWorkflowRecallRequest({
-      sessionId,
-      decisionReason: pipelineResult.replanned
-        ? 'Pipeline failed after replanning; GPT recall required'
-        : 'Pipeline failed; GPT recall required',
-      blockedAction: failedSteps[0]?.stepName,
-      nextAction: 'inspect the failed steps and revise the objective, policy boundary, or execution plan',
-      requestedBy: input.requestedBy,
-      runtimeLane: workflowRuntimeLane,
-      failedStepNames: failedSteps.map((step) => step.stepName),
-      payload: {
-        goal: executionGoal.slice(0, 500),
-        guild_id: input.guildId,
-        replanned: pipelineResult.replanned,
-        replan_count: pipelineResult.replanCount,
-        failed_steps: failedSteps.map((step) => ({
-          step_name: step.stepName,
-          error: step.error || null,
-        })),
-      },
-    });
-  }
 
   // Build output
   const lines: string[] = ['파이프라인 실행 결과'];

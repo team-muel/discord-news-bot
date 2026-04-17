@@ -18,6 +18,7 @@ Keep the platform stable while shipping fast improvements for Discord operations
 - For risky edits, add guardrails and fail-safe behavior.
 - Keep docs in sync when changing behavior that impacts operators.
 - Keep workflows and scripts idempotent for unattended runs.
+- When durable user direction is already established, default to end-to-end autonomous execution instead of waiting for stepwise prompting.
 
 ## Team Collaboration Stance
 
@@ -25,7 +26,9 @@ Keep the platform stable while shipping fast improvements for Discord operations
 - Prefer registering durable behavior policies, workflow contracts, and prompt conventions in repo-shared instructions or canonical planning docs so the rest of the team can reuse them.
 - If a workflow already exists in this repository, extend or refine that canonical path instead of inventing a parallel ad hoc process.
 - When a collaboration rule becomes stable, land it in both the always-on agent instruction surface and a share-safe or backfillable repo doc in the same change window.
+- If the user has already set a stable operating direction, act as a full-autonomy local-first compute and GUI agent by default: start from Obsidian/shared knowledge, use existing tools first, create missing tools or automation when recurring gaps appear, save durable artifacts automatically, and escalate only for real policy, destructive, or architecture-boundary blockers.
 - Do not assume every teammate or agent has local OpenJarvis or Hermes available. Treat those as optional local continuity or acceleration lanes unless runtime docs explicitly mark a shared deployed surface, and keep shared Obsidian plus repo-backed runtime surfaces as the required team entrypoint.
+- When token or context economics favor delegation, treat OpenClaw and multi-agent orchestration as available delegated tools rather than exceptional escalation paths.
 
 ## Tech Stack
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "updatedAt": "2026-04-15",
+  "updatedAt": "2026-04-17",
   "description": "Repository-source backfill catalog for canonical Obsidian system docs, operating-model docs, and retrieval-eval targets.",
   "policy": {
     "humanFirst": true,
@@ -137,10 +137,32 @@
       ]
     },
     {
+      "id": "control-multica-playbook",
+      "title": "Multica Control Plane Playbook",
+      "sourcePath": "docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md",
+      "targetPath": "ops/control-tower/MULTICA_CONTROL_PLANE_PLAYBOOK.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "multica", "agent-orchestration", "local-runtime"],
+      "intent": "operations",
+      "queries": [
+        "multica control plane playbook",
+        "multica workspace roles",
+        "hermes claude openclaw role cards",
+        "multica issue topology",
+        "local agent control plane"
+      ]
+    },
+    {
       "id": "control-secret-rotation-rollout",
       "title": "Secret Rotation And Shared Supabase RO Rollout",
       "sourcePath": "docs/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md",
       "targetPath": "ops/security/SECRET_ROTATION_AND_SUPABASE_RO_ROLLOUT.md",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "security-operations",
       "audience": "operator-primary",
@@ -199,6 +221,7 @@
       "title": "Local Collaborative Agent Workflow",
       "sourcePath": "docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md",
       "targetPath": "ops/contexts/repos/team-muel_discord-news-bot/LOCAL_COLLAB_AGENT_WORKFLOW.md",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "repository-context",
       "audience": "shared",
@@ -214,10 +237,33 @@
       ]
     },
     {
+      "id": "reference-agent-orchestration-prior-art",
+      "title": "Agent Orchestration Prior Art",
+      "sourcePath": "docs/planning/AGENT_ORCHESTRATION_PRIOR_ART.md",
+      "targetPath": "ops/architecture/AGENT_ORCHESTRATION_PRIOR_ART.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "architecture", "orchestration", "prior-art", "ecosystem"],
+      "intent": "architecture",
+      "queries": [
+        "agent orchestration prior art",
+        "external orchestration reference",
+        "gbrain orchestration reference",
+        "future multi agent prior art",
+        "local first brain reference"
+      ]
+    },
+    {
       "id": "service-unified-mcp-profile",
       "title": "IDE MCP Workspace Setup",
       "sourcePath": "docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md",
       "targetPath": "ops/services/unified-mcp/PROFILE.md",
+      "sourceMode": "compatibility-stub",
       "plane": "runtime",
       "concern": "service-memory",
       "audience": "shared",
@@ -570,7 +616,7 @@
       "title": "Obsidian Digital Twin Constitution",
       "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md",
       "targetPath": "ops/control-tower/OBSIDIAN_DIGITAL_TWIN_CONSTITUTION.md",
-      "sourceMode": "full-source",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "obsidian-operating-model",
       "audience": "operator-primary",
@@ -590,7 +636,7 @@
       "title": "Obsidian Digital Twin Note Schema",
       "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md",
       "targetPath": "ops/control-tower/OBSIDIAN_DIGITAL_TWIN_NOTE_SCHEMA.md",
-      "sourceMode": "full-source",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "obsidian-operating-model",
       "audience": "shared",
@@ -610,7 +656,7 @@
       "title": "Obsidian Digital Twin Note Templates",
       "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md",
       "targetPath": "ops/control-tower/OBSIDIAN_DIGITAL_TWIN_NOTE_TEMPLATES.md",
-      "sourceMode": "full-source",
+      "sourceMode": "compatibility-stub",
       "plane": "control",
       "concern": "obsidian-operating-model",
       "audience": "shared",
@@ -650,7 +696,7 @@
       "title": "Obsidian Digital Twin Ingest Workflow",
       "sourcePath": "docs/planning/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md",
       "targetPath": "plans/runtime/OBSIDIAN_DIGITAL_TWIN_INGEST_WORKFLOW.md",
-      "sourceMode": "full-source",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "obsidian-operating-model",
       "audience": "operator-primary",
@@ -712,7 +758,7 @@
       "title": "Hermes Obsidian Minimum Bootstrap",
       "sourcePath": "docs/planning/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md",
       "targetPath": "plans/runtime/HERMES_OBSIDIAN_MINIMUM_BOOTSTRAP.md",
-      "sourceMode": "full-source",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "managed-agents-model",
       "audience": "shared",
@@ -795,7 +841,7 @@
       "title": "OpenJarvis Unattended Autonomy Setup",
       "sourcePath": "docs/planning/OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md",
       "targetPath": "plans/runtime/OPENJARVIS_UNATTENDED_AUTONOMY_SETUP.md",
-      "sourceMode": "full-source",
+      "sourceMode": "compatibility-stub",
       "plane": "learning",
       "concern": "managed-agents-model",
       "audience": "operator-primary",
@@ -892,6 +938,28 @@
         "repository context discord news bot",
         "team muel discord news bot repo context",
         "primary runtime repo context"
+      ]
+    },
+    {
+      "id": "repo-context-discord-news-bot-beginner-appendix",
+      "title": "Repository Context Appendix - Beginner To System Builder",
+      "sourcePath": "docs/planning/contexts/team-muel_discord-news-bot_beginner-to-system-builder-appendix.md",
+      "targetPath": "ops/contexts/repos/team-muel_discord-news-bot/BEGINNER_TO_SYSTEM_BUILDER_APPENDIX.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "development-archaeology",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["context", "repository", "development-archaeology", "portfolio", "evidence"],
+      "intent": "architecture",
+      "queries": [
+        "discord news bot beginner appendix",
+        "beginner to system builder appendix",
+        "portfolio archaeology appendix",
+        "constraint driven growth repo context",
+        "how this repo grew into an ai engineering system"
       ]
     },
     {
@@ -1382,6 +1450,26 @@
         "adr 007 multi platform surface abstraction",
         "multi platform surface abstraction adr",
         "surface abstraction decision"
+      ]
+    },
+    {
+      "id": "adr-008-multi-plane-operating-model",
+      "title": "ADR-008 Multi-Plane Operating Model",
+      "sourcePath": "docs/adr/ADR-008-multi-plane-operating-model.md",
+      "targetPath": "plans/requirements/decision-codify-a-stronger-repository-operating-model-where-multica-is-the-visib.md",
+      "sourceMode": "compatibility-stub",
+      "plane": "control",
+      "concern": "architecture-decision",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["decision", "adr", "multica", "workflow-kernel", "artifact-plane"],
+      "intent": "architecture",
+      "queries": [
+        "adr 008 multi plane operating model",
+        "multica supabase n8n github plane ownership",
+        "multi plane operating model adr"
       ]
     },
     {

@@ -13,7 +13,7 @@
 
 import { readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerExternalAdapter, getExternalAdapter } from './externalAdapterRegistry';
 import { KNOWN_ADAPTER_IDS, type ExternalToolAdapter } from './externalAdapterTypes';
 import logger from '../../logger';
@@ -32,6 +32,8 @@ const SKIP_FILES = new Set([
 /** Pattern: files ending in Adapter.ts/.js or CliAdapter.ts/.js (not test files). */
 const ADAPTER_FILE_PATTERN = /(?:Adapter|CliAdapter)\.(ts|js)$/;
 const TEST_FILE_PATTERN = /\.(?:test|spec)\.(ts|js)$/;
+
+export const resolveAdapterImportSpec = (modulePath: string): string => pathToFileURL(modulePath).href;
 
 /**
  * Scan adapters directory and register any new ExternalToolAdapter exports.
@@ -57,7 +59,8 @@ export const autoLoadAdapters = async (): Promise<{ loaded: number; skipped: str
   for (const file of candidates) {
     try {
       const modulePath = join(ADAPTERS_DIR, file);
-      const mod = await import(modulePath) as Record<string, unknown>;
+      const importSpec = resolveAdapterImportSpec(modulePath);
+      const mod = await import(importSpec) as Record<string, unknown>;
 
       // Find exported ExternalToolAdapter-shaped objects
       for (const [exportName, value] of Object.entries(mod)) {

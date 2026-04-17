@@ -85,7 +85,7 @@ export const NEMOCLAW_ENABLED = parseBooleanEnv(process.env.NEMOCLAW_ENABLED, fa
 export const NEMOCLAW_DISABLED = parseBooleanEnv(process.env.NEMOCLAW_DISABLED, false);
 // Shell-safe identifier: only alphanumeric, dots, underscores, hyphens allowed.
 export const NEMOCLAW_SANDBOX_NAME = parseSanitizedStringEnv(process.env.NEMOCLAW_SANDBOX_NAME, 'muel-assistant', /[^a-zA-Z0-9._-]/g);
-export const NEMOCLAW_INFERENCE_MODEL = parseStringEnv(process.env.NEMOCLAW_INFERENCE_MODEL, 'qwen2.5:7b-instruct');
+export const NEMOCLAW_INFERENCE_MODEL = parseStringEnv(process.env.NEMOCLAW_INFERENCE_MODEL, 'qwen2.5:7b');
 export const NEMOCLAW_SANDBOX_OLLAMA_URL = parseStringEnv(process.env.NEMOCLAW_SANDBOX_OLLAMA_URL, 'http://localhost:11434');
 
 // ── OpenShell ──

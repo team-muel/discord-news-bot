@@ -10,6 +10,8 @@ try {
 
 const trim = (value) => String(value ?? '').trim();
 
+const looksLikeLiteLlmAlias = (value) => /^muel[-_a-z0-9]*$/i.test(trim(value));
+
 const parseServeUrl = () => {
   const fallback = { host: '127.0.0.1', port: '8000' };
   const raw = trim(process.env.OPENJARVIS_SERVE_URL);
@@ -28,6 +30,36 @@ const parseServeUrl = () => {
   }
 };
 
+const resolveEngine = () => {
+  const configured = trim(process.env.OPENJARVIS_ENGINE);
+  if (configured) {
+    return configured;
+  }
+
+  const openjarvisModel = trim(process.env.OPENJARVIS_MODEL);
+  if (looksLikeLiteLlmAlias(openjarvisModel) || looksLikeLiteLlmAlias(process.env.LITELLM_MODEL)) {
+    return 'litellm';
+  }
+  if (openjarvisModel || trim(process.env.OLLAMA_MODEL)) {
+    return 'ollama';
+  }
+  return 'litellm';
+};
+
+const resolveModel = (engine) => {
+  const configured = trim(process.env.OPENJARVIS_MODEL);
+  if (configured) {
+    return configured;
+  }
+  if (engine === 'ollama') {
+    return trim(process.env.OLLAMA_MODEL);
+  }
+  if (engine === 'litellm') {
+    return trim(process.env.LITELLM_MODEL);
+  }
+  return '';
+};
+
 const apiKey = trim(process.env.OPENJARVIS_API_KEY || process.env.OPENJARVIS_SERVE_API_KEY);
 if (!apiKey) {
   console.error('[openjarvis] OPENJARVIS_SERVE_API_KEY or OPENJARVIS_API_KEY is required.');
@@ -36,8 +68,8 @@ if (!apiKey) {
 }
 
 const { host, port } = parseServeUrl();
-const engine = trim(process.env.OPENJARVIS_ENGINE || 'litellm') || 'litellm';
-const model = trim(process.env.OPENJARVIS_MODEL);
+const engine = resolveEngine();
+const model = resolveModel(engine);
 const agent = trim(process.env.OPENJARVIS_AGENT);
 const env = {
   ...process.env,

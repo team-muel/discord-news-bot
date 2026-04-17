@@ -58,7 +58,7 @@ vi.mock('../config', async () => {
   return copy;
 });
 
-import { generateText, getLlmRuntimeSnapshot, isAnyLlmConfigured, resolveLlmProvider } from './llmClient';
+import { generateText, getLlmRuntimeSnapshot, isAnyLlmConfigured, resolveLlmProvider, resetGateProviderProfileOverride, setGateProviderProfileOverride } from './llmClient';
 import { preflightProviderChain, resetProviderRuntimeReadiness } from './llm/providers';
 import { resetLlmRoutingCaches, resolveProviderChain } from './llm/routing';
 
@@ -99,6 +99,7 @@ describe('isAnyLlmConfigured', () => {
     clearLlmEnv();
     resetProviderRuntimeReadiness();
     resetLlmRoutingCaches();
+    resetGateProviderProfileOverride();
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -198,13 +199,13 @@ describe('resolveLlmProvider', () => {
 
   it('AI_PROVIDER=local + OLLAMA_MODEL → ollama', () => {
     vi.stubEnv('AI_PROVIDER', 'local');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     expect(resolveLlmProvider()).toBe('ollama');
   });
 
   it('LLM_PROVIDER_BASE_ORDER가 local-first이면 ollama를 우선 선택한다', () => {
     vi.stubEnv('OPENAI_API_KEY', 'sk-primary');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'ollama,openai');
     expect(resolveLlmProvider()).toBe('ollama');
   });
@@ -294,7 +295,7 @@ describe('generateText', () => {
     vi.stubEnv('AI_PROVIDER', 'openclaw');
     vi.stubEnv('OPENCLAW_BASE_URL', 'http://gateway.example');
     vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'openclaw,openai,ollama');
 
     const chain = resolveProviderChain(
@@ -308,7 +309,7 @@ describe('generateText', () => {
 
   it('operations capability는 openjarvis orchestration lane을 먼저 둔다', () => {
     vi.stubEnv('AI_PROVIDER', 'ollama');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     vi.stubEnv('OPENJARVIS_ENABLED', 'true');
     vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'ollama,openjarvis');
 
@@ -323,11 +324,11 @@ describe('generateText', () => {
 
   it('runtime snapshot은 workflow binding과 effective profile을 노출한다', async () => {
     vi.stubEnv('AI_PROVIDER', 'ollama');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     vi.stubEnv('OPENJARVIS_ENABLED', 'true');
     vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'ollama,openjarvis');
     vi.stubEnv('LLM_PROVIDER_POLICY_ACTIONS', 'operate.ops=openjarvis,ollama');
-    vi.stubEnv('LLM_WORKFLOW_MODEL_BINDINGS', 'operate.ops=openjarvis:qwen2.5:7b-instruct');
+    vi.stubEnv('LLM_WORKFLOW_MODEL_BINDINGS', 'operate.ops=openjarvis:qwen2.5:7b');
     vi.stubEnv('LLM_WORKFLOW_PROFILE_DEFAULTS', 'operate.ops=quality-optimized');
 
     const mockFetch = vi.fn(async (input: unknown) => {
@@ -346,15 +347,44 @@ describe('generateText', () => {
 
     expect(snapshot.routingCapability).toBe('operations');
     expect(snapshot.actionPolicyProviders).toEqual(['openjarvis', 'ollama']);
-    expect(snapshot.workflowBinding).toEqual({ provider: 'openjarvis', model: 'qwen2.5:7b-instruct' });
+    expect(snapshot.workflowBinding).toEqual({ provider: 'openjarvis', model: 'qwen2.5:7b' });
     expect(snapshot.workflowProfile).toBe('quality-optimized');
+    expect(snapshot.gateProviderProfile).toBe(null);
     expect(snapshot.effectiveProviderProfile).toBe('quality-optimized');
     expect(snapshot.readyChain.slice(0, 2)).toEqual(['openjarvis', 'ollama']);
   });
 
+  it('runtime snapshot은 활성 gate override profile을 별도 노출한다', async () => {
+    vi.stubEnv('AI_PROVIDER', 'ollama');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
+    vi.stubEnv('OPENJARVIS_ENABLED', 'true');
+    vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'ollama,openjarvis');
+    vi.stubEnv('LLM_WORKFLOW_PROFILE_DEFAULTS', 'operate.ops=quality-optimized');
+
+    const mockFetch = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith('/api/tags')) {
+        return { ok: true, status: 200, json: async () => ({ models: [] }) };
+      }
+      if (url.endsWith('/health')) {
+        return { ok: true, status: 200, text: async () => 'ok' };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    setGateProviderProfileOverride('cost-optimized', 'guild-1');
+
+    const snapshot = await getLlmRuntimeSnapshot({ actionName: 'operate.ops', guildId: 'guild-1' });
+
+    expect(snapshot.workflowProfile).toBe('quality-optimized');
+    expect(snapshot.gateProviderProfile).toBe('cost-optimized');
+    expect(snapshot.effectiveProviderProfile).toBe('cost-optimized');
+  });
+
   it('preflight는 죽은 litellm health endpoint를 체인에서 제외한다', async () => {
     vi.stubEnv('LITELLM_ENABLED', 'true');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'litellm,ollama');
 
     const mockFetch = vi.fn(async (input: unknown) => {
@@ -375,7 +405,7 @@ describe('generateText', () => {
     vi.stubEnv('LITELLM_ENABLED', 'true');
     vi.stubEnv('LITELLM_BASE_URL', 'http://127.0.0.1:4000');
     vi.stubEnv('LITELLM_MODEL', 'muel-local');
-    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b-instruct');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
     vi.stubEnv('LLM_PROVIDER_BASE_ORDER', 'litellm,ollama');
     vi.stubEnv('LLM_PROVIDER_FALLBACK_CHAIN', 'ollama');
     vi.stubEnv('LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED', 'false');

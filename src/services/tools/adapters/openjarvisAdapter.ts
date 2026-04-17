@@ -218,6 +218,35 @@ const resolveManagedAgentLimit = (
   return Math.min(parsed, max);
 };
 
+const resolveSchedulerTaskStatus = (args: Record<string, unknown>): string => {
+  const raw = String(args.status ?? '').trim().toLowerCase();
+  return ['active', 'paused', 'completed', 'cancelled'].includes(raw)
+    ? raw
+    : '';
+};
+
+const resolveSchedulerPrompt = (args: Record<string, unknown>): string => {
+  const raw = String(args.prompt ?? '').trim();
+  return raw ? stripShellMeta(raw) : '';
+};
+
+const resolveSchedulerScheduleType = (args: Record<string, unknown>): string => {
+  const raw = String(args.scheduleType ?? args.schedule_type ?? args.type ?? '').trim().toLowerCase();
+  return ['cron', 'interval', 'once'].includes(raw)
+    ? raw
+    : '';
+};
+
+const resolveSchedulerScheduleValue = (args: Record<string, unknown>): string => {
+  const raw = String(args.scheduleValue ?? args.schedule_value ?? args.value ?? '').trim();
+  return raw ? stripShellMeta(raw) : '';
+};
+
+const resolveSchedulerTools = (args: Record<string, unknown>): string => {
+  const tools = resolveJarvisToolNames(args.tools);
+  return tools.join(',');
+};
+
 const buildManagedAgentPath = (agentId: string, suffix = ''): string => (
   `/v1/managed-agents/${encodeURIComponent(agentId)}${suffix}`
 );
@@ -355,7 +384,7 @@ const TIMEOUT_MS = 30_000;
 const ENABLED = CONFIG_OPENJARVIS_ENABLED;
 const EXPLICITLY_DISABLED = CONFIG_OPENJARVIS_DISABLED;
 const SERVE_URL = CONFIG_OPENJARVIS_SERVE_URL;
-const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b-instruct';
+const MODEL = CONFIG_OPENJARVIS_MODEL || 'qwen2.5:7b';
 const SERVE_API_KEY = parseStringEnv(process.env.OPENJARVIS_API_KEY, '');
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -499,7 +528,7 @@ const formatManagedAgentStateLines = (state: Record<string, unknown>): string[] 
 
 export const openjarvisAdapter: ExternalToolAdapter = {
   id: 'openjarvis',
-  description: 'Stanford OpenJarvis — local-first personal AI framework. Q&A, server inventory, managed agent lifecycle, state and traces, optimization, benchmarks, memory, evaluation, and telemetry.',
+  description: 'Stanford OpenJarvis — local-first personal AI framework. Q&A, server inventory, managed agent lifecycle, state and traces, optimization, benchmarks, memory, evaluation, telemetry, and scheduler control.',
   capabilities: [
     'jarvis.ask', 'jarvis.server.info', 'jarvis.models.list', 'jarvis.tools.list',
     'jarvis.agents.health', 'jarvis.recommended-model',
@@ -509,7 +538,10 @@ export const openjarvisAdapter: ExternalToolAdapter = {
     'jarvis.agent.tasks.list', 'jarvis.agent.traces.list', 'jarvis.agent.trace.get',
     'jarvis.serve', 'jarvis.optimize', 'jarvis.bench', 'jarvis.feedback',
     'jarvis.research', 'jarvis.digest', 'jarvis.memory.index', 'jarvis.memory.search',
-    'jarvis.eval', 'jarvis.telemetry', 'jarvis.scheduler.list', 'jarvis.skill.search',
+    'jarvis.eval', 'jarvis.telemetry',
+    'jarvis.scheduler.create', 'jarvis.scheduler.list', 'jarvis.scheduler.pause',
+    'jarvis.scheduler.resume', 'jarvis.scheduler.cancel', 'jarvis.scheduler.logs',
+    'jarvis.skill.search',
   ],
   liteCapabilities: [
     'jarvis.ask',
@@ -1175,12 +1207,64 @@ export const openjarvisAdapter: ExternalToolAdapter = {
           return makeResult(true, 'Telemetry stats via CLI', telOut.trim().split('\n').slice(0, 20));
         }
 
-        // ── Scheduler: List scheduled tasks ──
+        // ── Scheduler: Create / list / control / logs ──
+        case 'jarvis.scheduler.create': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler create requires CLI', [], 'CLI_REQUIRED');
+          const prompt = resolveSchedulerPrompt(args);
+          const scheduleType = resolveSchedulerScheduleType(args);
+          const scheduleValue = resolveSchedulerScheduleValue(args);
+          if (!prompt || !scheduleType || !scheduleValue) {
+            return makeResult(false, 'prompt, scheduleType, and scheduleValue are required', [], 'MISSING_PARAMETERS');
+          }
+          const schedArgs = ['scheduler', 'create', prompt, '--type', scheduleType, '--value', scheduleValue];
+          const agent = resolveJarvisAskAgentName(args);
+          const tools = resolveSchedulerTools(args);
+          if (agent) schedArgs.push('--agent', agent);
+          if (tools) schedArgs.push('--tools', tools);
+          const { stdout: createOut } = await runCli(schedArgs);
+          return makeResult(true, 'Scheduler task created', createOut.trim().split('\n').slice(0, 20));
+        }
+
         case 'jarvis.scheduler.list': {
-          // CLI only: jarvis scheduler list
           if (cliAvailable === false) return makeResult(false, 'jarvis scheduler requires CLI', [], 'CLI_REQUIRED');
-          const { stdout: schedOut } = await runCli(['scheduler', 'list']);
+          const schedArgs = ['scheduler', 'list'];
+          const status = resolveSchedulerTaskStatus(args);
+          if (status) schedArgs.push('--status', status);
+          const { stdout: schedOut } = await runCli(schedArgs);
           return makeResult(true, 'Scheduler tasks listed', schedOut.trim().split('\n').slice(0, 20));
+        }
+
+        case 'jarvis.scheduler.pause': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler pause requires CLI', [], 'CLI_REQUIRED');
+          const taskId = String(args.taskId ?? args.task_id ?? '').trim();
+          if (!taskId) return makeResult(false, 'taskId is required', [], 'MISSING_TASK_ID');
+          const { stdout: pauseOut } = await runCli(['scheduler', 'pause', stripShellMeta(taskId)]);
+          return makeResult(true, 'Scheduler task paused', pauseOut.trim().split('\n').slice(0, 20));
+        }
+
+        case 'jarvis.scheduler.resume': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler resume requires CLI', [], 'CLI_REQUIRED');
+          const taskId = String(args.taskId ?? args.task_id ?? '').trim();
+          if (!taskId) return makeResult(false, 'taskId is required', [], 'MISSING_TASK_ID');
+          const { stdout: resumeOut } = await runCli(['scheduler', 'resume', stripShellMeta(taskId)]);
+          return makeResult(true, 'Scheduler task resumed', resumeOut.trim().split('\n').slice(0, 20));
+        }
+
+        case 'jarvis.scheduler.cancel': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler cancel requires CLI', [], 'CLI_REQUIRED');
+          const taskId = String(args.taskId ?? args.task_id ?? '').trim();
+          if (!taskId) return makeResult(false, 'taskId is required', [], 'MISSING_TASK_ID');
+          const { stdout: cancelOut } = await runCli(['scheduler', 'cancel', stripShellMeta(taskId)]);
+          return makeResult(true, 'Scheduler task cancelled', cancelOut.trim().split('\n').slice(0, 20));
+        }
+
+        case 'jarvis.scheduler.logs': {
+          if (cliAvailable === false) return makeResult(false, 'jarvis scheduler logs requires CLI', [], 'CLI_REQUIRED');
+          const taskId = String(args.taskId ?? args.task_id ?? '').trim();
+          if (!taskId) return makeResult(false, 'taskId is required', [], 'MISSING_TASK_ID');
+          const limit = resolveManagedAgentLimit(args, 10, 50);
+          const { stdout: logsOut } = await runCli(['scheduler', 'logs', stripShellMeta(taskId), '--limit', String(limit)]);
+          return makeResult(true, 'Scheduler task logs retrieved', logsOut.trim().split('\n').slice(0, 20));
         }
 
         // ── Skill Search: search available skills ──

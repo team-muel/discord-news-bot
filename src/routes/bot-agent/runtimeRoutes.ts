@@ -36,7 +36,14 @@ import {
   prepareOpenJarvisHermesSessionStart,
   runOpenJarvisHermesRuntimeRemediation,
 } from '../../services/openjarvis/openjarvisHermesRuntimeControlService';
-import { getOpenJarvisMemorySyncStatus, runOpenJarvisMemorySync } from '../../services/openjarvis/openjarvisMemorySyncStatusService';
+import {
+  ensureOpenJarvisMemorySyncSchedule,
+  getOpenJarvisMemorySyncStatus,
+  getOpenJarvisMemorySyncScheduleStatus,
+  runOpenJarvisManagedMemoryMaintenance,
+  runOpenJarvisMemorySync,
+  startOpenJarvisSchedulerDaemon,
+} from '../../services/openjarvis/openjarvisMemorySyncStatusService';
 import { getHermesVsCodeBridgeStatus, runHermesVsCodeBridge } from '../../services/runtime/hermesVsCodeBridgeService';
 import { buildGoNoGoReport } from '../../services/goNoGoService';
 import { buildToolLearningWeeklyReport } from '../../services/toolLearningService';
@@ -57,6 +64,7 @@ import { getLatestObsidianGraphAuditSnapshot, getObsidianGraphAuditLoopStats } f
 import { getObsidianRetrievalBoundarySnapshot } from '../../services/obsidian/obsidianRagService';
 import { getObsidianAdapterRuntimeStatus, getObsidianVaultLiveHealthStatus } from '../../services/obsidian/router';
 import { loadOperatingBaseline } from '../../services/runtime/operatingBaseline';
+import { getLocalAutonomySupervisorLoopStats } from '../../services/runtime/localAutonomySupervisorService';
 import { getPendingIntentCount } from '../../services/intent';
 import { sanitizeRecord, toBoundedInt, toStringParam } from '../../utils/validation';
 import { getObsidianVaultRoot, getObsidianVaultRuntimeInfo, type ObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
@@ -68,6 +76,7 @@ import {
 } from '../../services/sprint/selfImprovementLoop';
 import { syncHighRiskActionsToSandboxPolicy } from '../../services/skills/actionRunner';
 import { getSupabaseClient, isSupabaseConfigured } from '../../services/supabaseClient';
+import { buildDoctorReport } from '../../../scripts/local-ai-stack-control.mjs';
 
 import { BotAgentRouteDeps } from './types';
 import {
@@ -84,6 +93,7 @@ const EXECUTOR_ACTION_CANONICAL_NAME = 'implement.execute';
 const EXECUTOR_ACTION_LEGACY_NAME = 'opencode.execute';
 const EXECUTOR_WORKER_ENV_CANONICAL_KEY = 'MCP_IMPLEMENT_WORKER_URL';
 const EXECUTOR_WORKER_ENV_LEGACY_KEY = 'MCP_OPENCODE_WORKER_URL';
+const LOCAL_AUTONOMY_PROFILE = 'local-nemoclaw-max-delegation';
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -133,6 +143,7 @@ const toStringArrayParam = (value: unknown): string[] => {
 
 const buildOpenJarvisAutopilotStatusParams = (query: Record<string, unknown> | null | undefined) => ({
   sessionPath: toStringParam(query?.sessionPath) || null,
+  sessionId: toStringParam(query?.sessionId) || null,
   vaultPath: toStringParam(query?.vaultPath) || null,
   capacityTarget: toOptionalBoundedInt(query?.capacityTarget, 100),
   gcpCapacityRecoveryRequested: parseBool(toStringParam(query?.gcpCapacityRecovery) || undefined, false),
@@ -377,7 +388,7 @@ export const buildOperatorSnapshot = async (params: {
       ? `operator snapshot runtime readiness for guild ${guildId}`
       : 'operator snapshot runtime readiness and shared knowledge state');
 
-  const [vaultHealth, graphAudit, retrievalBoundary, schedulerPolicy, workerHealth, internalKnowledge] = await Promise.all([
+  const [vaultHealth, graphAudit, retrievalBoundary, schedulerPolicy, workerHealth, internalKnowledge, localAutonomy, openjarvisScheduler] = await Promise.all([
     getObsidianVaultLiveHealthStatus(),
     getLatestObsidianGraphAuditSnapshot(),
     getObsidianRetrievalBoundarySnapshot(),
@@ -393,6 +404,12 @@ export const buildOperatorSnapshot = async (params: {
         maxFacts: 4,
         audience: 'ops',
       }).catch(() => null)
+      : Promise.resolve(null),
+    includeRuntime
+      ? buildDoctorReport({ profile: LOCAL_AUTONOMY_PROFILE }).catch(() => null)
+      : Promise.resolve(null),
+    includeRuntime || includeDocs
+      ? getOpenJarvisMemorySyncScheduleStatus().catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -469,11 +486,13 @@ export const buildOperatorSnapshot = async (params: {
         retrievalEvalLoop: getRetrievalEvalLoopStats(),
         rewardSignalLoop: getRewardSignalLoopStatus(),
         evalAutoPromoteLoop: getEvalAutoPromoteLoopStatus(),
+        localAutonomySupervisorLoop: getLocalAutonomySupervisorLoopStats(),
       },
       controlSurfaces: {
         obsidianMaintenance: getObsidianMaintenanceControlSurface(),
         evalMaintenance: getEvalMaintenanceControlSurface(),
       },
+      localAutonomy,
     }
     : undefined;
   const decisionTrace = summarizeDecisionTrace(decisionTraceResult);
@@ -488,8 +507,10 @@ export const buildOperatorSnapshot = async (params: {
     openjarvis: includeDocs || includeRuntime
       ? {
         memorySync: openjarvisMemorySync,
+        scheduler: openjarvisScheduler,
       }
       : undefined,
+    localAutonomy: includeRuntime ? localAutonomy : undefined,
     obsidian: includeDocs
       ? {
         vaultPathConfigured: Boolean(getObsidianVaultRoot()),
@@ -861,6 +882,8 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       const advisoryWorkersHealth = await getAgentRoleWorkersHealthSnapshot();
       const llmRuntime = await getLlmRuntimeSnapshot({ guildId: guildId || undefined, actionName });
       const openjarvisMemorySync = getOpenJarvisMemorySyncStatus();
+      const openjarvisMemorySyncSchedule = await getOpenJarvisMemorySyncScheduleStatus();
+      const localAutonomy = await buildDoctorReport({ profile: LOCAL_AUTONOMY_PROFILE });
       const openjarvisAutopilot = await getOpenJarvisAutopilotStatus(buildOpenJarvisAutopilotStatusParams(
         sanitizeRecord(req.query),
       ));
@@ -874,6 +897,8 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         advisoryWorkersHealth,
         llmRuntime,
         openjarvisMemorySync,
+        openjarvisMemorySyncSchedule,
+        localAutonomy,
         openjarvisAutopilot,
         notes: {
           guildScoped: Boolean(guildId),
@@ -925,12 +950,14 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
         objective: toStringParam(req.body?.objective) || null,
         objectives: toStringArrayParam(req.body?.objectives),
+        contextProfile: toStringParam(req.body?.contextProfile) || null,
         title: toStringParam(req.body?.title) || null,
         guildId: toStringParam(req.body?.guildId) || null,
         createChatNote: parseBool(String(req.body?.createChatNote ?? 'true'), true),
         startSupervisor: parseBool(String(req.body?.startSupervisor ?? 'true'), true),
         dryRun: parseBool(String(req.body?.dryRun ?? 'false'), false),
         visibleTerminal: parseBool(String(req.body?.visibleTerminal ?? 'true'), true),
+        autoLaunchQueuedChat: parseBool(String(req.body?.autoLaunchQueuedChat ?? 'false'), false),
         requesterId,
         requesterKind: (req as { user?: unknown }).user ? 'session' : 'bearer',
       });
@@ -975,6 +1002,9 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         ...buildOpenJarvisAutopilotStatusParams(sanitizeRecord(req.body)),
         objective: toStringParam(req.body?.objective) || null,
         objectives: toStringArrayParam(req.body?.objectives),
+        ...(req.body?.replaceExisting !== undefined || req.body?.replace_existing !== undefined
+          ? { replaceExisting: parseBool(String(req.body?.replaceExisting ?? req.body?.replace_existing ?? 'false'), false) }
+          : {}),
       });
 
       if (!result.ok) {
@@ -999,6 +1029,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         objective: toStringParam(req.body?.objective) || null,
         prompt: toStringParam(req.body?.prompt) || null,
         chatMode: toStringParam(req.body?.chatMode) || null,
+        contextProfile: toStringParam(req.body?.contextProfile) || null,
         addFilePaths: toStringArrayParam(req.body?.addFilePaths),
         maximize: parseBool(String(req.body?.maximize ?? 'true'), true),
         newWindow: parseBool(String(req.body?.newWindow ?? 'false'), false),
@@ -1070,6 +1101,85 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
     }
   });
 
+  router.post('/agent/runtime/openjarvis/memory-sync/managed', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    const dryRun = parseBool(String(req.body?.dryRun ?? 'false'), false);
+    const force = parseBool(String(req.body?.force ?? 'false'), false);
+    const guildId = toStringParam(req.body?.guildId) || undefined;
+    const agentName = toStringParam(req.body?.agentName || req.body?.agent_name) || undefined;
+    const timeoutMs = toBoundedInt(req.body?.timeoutMs ?? req.body?.timeout_ms, 1_000, { min: 1_000, max: 10 * 60 * 1_000 }) || undefined;
+
+    try {
+      const result = await runOpenJarvisManagedMemoryMaintenance({
+        dryRun,
+        force,
+        guildId,
+        agentName,
+        timeoutMs,
+      });
+      if (!result.ok) {
+        return res.status(500).json({ ok: false, result });
+      }
+      return res.status(200).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/agent/runtime/openjarvis/scheduler', requireAdmin, async (_req, res, next) => {
+    try {
+      const scheduler = await getOpenJarvisMemorySyncScheduleStatus();
+      return res.json({ ok: true, scheduler });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/memory-sync/schedule', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    const dryRun = parseBool(String(req.body?.dryRun ?? 'false'), false);
+    const scheduleType = toStringParam(req.body?.scheduleType || req.body?.schedule_type) || undefined;
+    const scheduleValue = toStringParam(req.body?.scheduleValue || req.body?.schedule_value) || undefined;
+    const prompt = toStringParam(req.body?.prompt) || undefined;
+    const agent = toStringParam(req.body?.agent) || undefined;
+    const toolsRaw = Array.isArray(req.body?.tools)
+      ? req.body.tools.map((entry: unknown) => String(entry || '').trim()).filter(Boolean)
+      : toStringParam(req.body?.tools) || undefined;
+
+    try {
+      const result = await ensureOpenJarvisMemorySyncSchedule({
+        dryRun,
+        prompt,
+        scheduleType,
+        scheduleValue,
+        agent,
+        tools: toolsRaw,
+      });
+      if (!result.ok) {
+        return res.status(500).json({ ok: false, result });
+      }
+      return res.status(result.completion === 'skipped' ? 200 : 201).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/agent/runtime/openjarvis/scheduler/start', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    const dryRun = parseBool(String(req.body?.dryRun ?? 'false'), false);
+    const pollIntervalSeconds = toBoundedInt(req.body?.pollIntervalSeconds ?? req.body?.poll_interval_seconds, 60, { min: 5, max: 3600 }) || 60;
+
+    try {
+      const result = await startOpenJarvisSchedulerDaemon({
+        dryRun,
+        pollIntervalSeconds,
+      });
+      if (!result.ok) {
+        return res.status(500).json({ ok: false, result });
+      }
+      return res.status(202).json({ ok: true, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/agent/runtime/openjarvis/hermes-runtime/remediate', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
     try {
       const result = await runOpenJarvisHermesRuntimeRemediation({
@@ -1077,6 +1187,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
         actionId: toStringParam(req.body?.actionId || req.body?.action_id) || null,
         dryRun: parseBool(String(req.body?.dryRun ?? 'false'), false),
         visibleTerminal: parseBool(String(req.body?.visibleTerminal ?? 'true'), true),
+        autoLaunchQueuedChat: parseBool(String(req.body?.autoLaunchQueuedChat ?? 'false'), false),
       });
 
       if (!result.ok) {
@@ -1254,6 +1365,7 @@ export function registerBotAgentRuntimeRoutes(deps: BotAgentRouteDeps): void {
       retrievalEvalLoop: getRetrievalEvalLoopStats(),
       rewardSignalLoop: getRewardSignalLoopStatus(),
       evalAutoPromoteLoop: getEvalAutoPromoteLoopStatus(),
+      localAutonomySupervisorLoop: getLocalAutonomySupervisorLoopStats(),
       obsidianMaintenanceControl: getObsidianMaintenanceControlSurface(),
       evalMaintenanceControl: getEvalMaintenanceControlSurface(),
       generatedAt: new Date().toISOString(),

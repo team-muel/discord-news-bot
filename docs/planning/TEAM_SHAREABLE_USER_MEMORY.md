@@ -14,8 +14,10 @@ Status: Share-safe extract (2026-04-15)
 - 프롬프트 템플릿을 사용자의 필수 준비물로 요구하지 않는다.
 - 안정적인 행동 방침, workflow contract, prompt 관례는 ad hoc 대화나 개인 메모에만 두지 말고 repo-shared instructions 또는 canonical planning doc에 등록한다.
 - 이미 합의된 workflow가 있으면 새 parallel process를 만들기보다 기존 canonical path를 확장한다.
+- 사용자가 durable direction을 이미 세웠다면, agent는 full-autonomy local-first compute/GUI mode를 기본값으로 취급한다. Obsidian/shared knowledge부터 시작하고, 기존 도구를 먼저 쓰고, 반복 갭은 도구나 자동화로 메우며, durable artifact를 같은 change window 안에서 남긴다.
 - shared Obsidian promotion은 control-plane hardening과 분리된 별도 업무가 아니라, operator-visible change의 same-window close-out 또는 definition-of-done으로 다룬다.
 - 이 저장소에서는 graph-first Obsidian retrieval을 기본으로 두고, chunk-first RAG는 fallback으로만 취급한다.
+- 토큰 비용이나 context window 경제성이 더 좋으면 OpenClaw와 multi-agent orchestration을 예외가 아니라 정상적인 delegated execution 옵션으로 본다.
 
 ## Output And Safety Preferences
 

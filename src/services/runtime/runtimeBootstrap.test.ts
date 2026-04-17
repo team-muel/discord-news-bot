@@ -15,6 +15,7 @@ const autoSyncGuildTopologiesOnReady = vi.fn(() => Promise.resolve());
 const startRuntimeAlerts = vi.fn();
 const startOpencodePublishWorker = vi.fn();
 const startBotAutoRecovery = vi.fn();
+const startLocalAutonomySupervisorLoop = vi.fn();
 const startLoginSessionCleanupLoop = vi.fn();
 const bootstrapPgCronJobs = vi.fn<
   () => Promise<{
@@ -64,6 +65,7 @@ vi.mock('../discord-support/discordTopologySyncService', () => ({ autoSyncGuildT
 vi.mock('./runtimeAlertService', () => ({ startRuntimeAlerts }));
 vi.mock('../opencode/opencodePublishWorker', () => ({ startOpencodePublishWorker }));
 vi.mock('./botAutoRecoveryService', () => ({ startBotAutoRecovery }));
+vi.mock('./localAutonomySupervisorService', () => ({ startLocalAutonomySupervisorLoop }));
 vi.mock('../../discord/auth', () => ({ startLoginSessionCleanupLoop }));
 vi.mock('../infra/pgCronBootstrapService', () => ({
   bootstrapPgCronJobs,
@@ -103,6 +105,7 @@ describe('runtimeBootstrap', () => {
     expect(startOpencodePublishWorker).toHaveBeenCalledTimes(1);
     expect(startRuntimeAlerts).toHaveBeenCalledTimes(1);
     expect(startBotAutoRecovery).toHaveBeenCalledTimes(1);
+    expect(startLocalAutonomySupervisorLoop).toHaveBeenCalledTimes(1);
 
     expect(runtime.getRuntimeBootstrapState()).toMatchObject({
       serverStarted: true,

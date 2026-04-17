@@ -1,6 +1,6 @@
 # Stage Rollback Runbook Auto-Check
 
-- generated_at: 2026-04-15T03:41:27.381Z
+- generated_at: 2026-04-15T16:35:15.985Z
 - verdict: PASS
 - checkpoints: 5
 - passed: 5
@@ -10,7 +10,7 @@
 
 - [x] Rehearsal evidence freshness (<= maxSummaryAgeHours)
   - status: OK
-  - detail: age_hours=0.0, generated_at=2026-04-15T03:41:02.202Z
+  - detail: age_hours=0.2, generated_at=2026-04-15T16:25:30.978Z
 - [x] P95 recovery SLA (<= maxRecoveryMinutes)
   - status: OK
   - detail: p95_elapsed_ms=0, limit_ms=600000
@@ -19,7 +19,7 @@
   - detail: fail=0, max=0
 - [x] No-go decision triggers rollback procedure
   - status: OK
-  - detail: evidence: 2026-04-11_gate-20260411-183824.json, rollback_type=stage
+  - detail: no no-go runs with rollback required in recent history (not required)
 - [x] Post-rollback health endpoints available
   - status: OK
   - detail: GET /health + GET /ready configured (runtime verified at startup)

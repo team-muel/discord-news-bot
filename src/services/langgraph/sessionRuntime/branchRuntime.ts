@@ -17,7 +17,7 @@ import type {
   AgentSession,
   AgentSessionStatus,
   AgentStep,
-} from '../../multiAgentService';
+} from '../../multiAgentTypes';
 
 type TotPolicySnapshot = {
   activeEnabled: boolean;
@@ -34,8 +34,19 @@ type GotPolicySnapshot = {
   minSelectedScore: number;
 };
 
-type BranchRuntimeDependencies = FullReviewRuntimeDependencies & FullReviewDeliberationDependencies & {
-  traceShadowNode: (session: AgentSession, node: 'plan_actions' | 'execute_actions' | 'critic_review' | 'policy_gate' | 'compose_response', note?: string) => void;
+type BranchTraceNode =
+  | 'plan_actions'
+  | 'execute_actions'
+  | 'critic_review'
+  | 'policy_gate'
+  | 'compose_response'
+  | 'requested_skill_run'
+  | 'requested_skill_refine'
+  | 'fast_path_run'
+  | 'fast_path_refine';
+
+export type BranchRuntimeDependencies = FullReviewRuntimeDependencies & FullReviewDeliberationDependencies & {
+  traceShadowNode: (session: AgentSession, node: BranchTraceNode, note?: string) => void;
   finalizeTaskResult: (params: {
     session: AgentSession;
     taskGoal: string;
@@ -69,12 +80,194 @@ type BranchRuntimeDependencies = FullReviewRuntimeDependencies & FullReviewDelib
   }) => Promise<TotShadowBest | null>;
 };
 
-type BranchRuntimeConstants = {
+export type BranchRuntimeConstants = {
   sessionTimeoutMs: number;
   stepTimeoutMs: number;
   ormPassThreshold: number;
   ormReviewThreshold: number;
   totCandidatePairRecordTask: string;
+};
+
+export const runRequestedSkillExecutionNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  sessionStartedAtMs: number;
+  planner: AgentStep;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runStep'>;
+  sessionTimeoutMs: number;
+  traceNode: 'plan_actions' | 'requested_skill_run';
+}): Promise<string> => {
+  const { session, taskGoal, sessionStartedAtMs, planner, dependencies, sessionTimeoutMs, traceNode } = params;
+  if (!session.requestedSkillId) {
+    throw new Error('REQUESTED_SKILL_BRANCH_UNAVAILABLE');
+  }
+
+  ensureSessionBudget(sessionStartedAtMs, sessionTimeoutMs);
+  dependencies.traceShadowNode(session, traceNode, `requested_skill=${session.requestedSkillId}`);
+  return dependencies.runStep(
+    session,
+    planner,
+    session.requestedSkillId,
+    () => taskGoal,
+    undefined,
+  );
+};
+
+export const runRequestedSkillRefineNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  currentDraft: string;
+  sessionStartedAtMs: number;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runSelfRefineLite'>;
+  traceNode: 'execute_actions' | 'requested_skill_refine';
+}): Promise<string> => {
+  const { session, taskGoal, currentDraft, sessionStartedAtMs, dependencies, traceNode } = params;
+  const refinedResult = await dependencies.runSelfRefineLite({
+    session,
+    taskGoal,
+    currentDraft,
+    sessionStartedAtMs,
+    traceLabel: 'single_skill',
+  });
+  dependencies.traceShadowNode(session, traceNode, session.requestedSkillId || 'requested_skill');
+  return refinedResult;
+};
+
+export const runFastPathExecutionNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  sessionStartedAtMs: number;
+  researcher: AgentStep;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runStep'>;
+  sessionTimeoutMs: number;
+  traceNode: 'execute_actions' | 'fast_path_run';
+}): Promise<string> => {
+  const { session, taskGoal, sessionStartedAtMs, researcher, dependencies, sessionTimeoutMs, traceNode } = params;
+  ensureSessionBudget(sessionStartedAtMs, sessionTimeoutMs);
+  dependencies.traceShadowNode(session, traceNode, 'fast_path');
+  return dependencies.runStep(session, researcher, 'ops-execution', () => [
+    '우선순위: 빠름',
+    '요구사항: 중간 과정 없이 최종 결과물만 제시',
+    `목표: ${taskGoal}`,
+    '출력: 바로 사용할 수 있는 결과물 텍스트',
+  ].join('\n'), undefined);
+};
+
+export const runFastPathRefineNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  currentDraft: string;
+  sessionStartedAtMs: number;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runSelfRefineLite'>;
+  traceNode: 'compose_response' | 'fast_path_refine';
+}): Promise<string> => {
+  const { session, taskGoal, currentDraft, sessionStartedAtMs, dependencies, traceNode } = params;
+  const refinedResult = await dependencies.runSelfRefineLite({
+    session,
+    taskGoal,
+    currentDraft,
+    sessionStartedAtMs,
+    traceLabel: 'fast_path',
+  });
+  dependencies.traceShadowNode(session, traceNode, 'fast_path');
+  return refinedResult;
+};
+
+const applyExecutionDraftState = (params: {
+  session: AgentSession;
+  executionDraft: string;
+  ensureShadowGraph: (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
+}) => {
+  const { session, executionDraft, ensureShadowGraph } = params;
+  session.shadowGraph = {
+    ...ensureShadowGraph(session),
+    executionDraft,
+  };
+  return ensureShadowGraph(session);
+};
+
+const applyFinalCandidateState = (params: {
+  session: AgentSession;
+  finalCandidate: string;
+  ensureShadowGraph: (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
+}) => {
+  const { session, finalCandidate, ensureShadowGraph } = params;
+  session.shadowGraph = {
+    ...ensureShadowGraph(session),
+    finalCandidate,
+    selectedFinalRaw: finalCandidate,
+  };
+  return ensureShadowGraph(session);
+};
+
+export const runRequestedSkillExecutionStateNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  sessionStartedAtMs: number;
+  planner: AgentStep;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runStep'>;
+  sessionTimeoutMs: number;
+  ensureShadowGraph: (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
+  traceNode: 'requested_skill_run';
+}): Promise<NonNullable<AgentSession['shadowGraph']>> => {
+  const executionDraft = await runRequestedSkillExecutionNode(params);
+  return applyExecutionDraftState({
+    session: params.session,
+    executionDraft,
+    ensureShadowGraph: params.ensureShadowGraph,
+  });
+};
+
+export const runRequestedSkillRefineStateNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  currentDraft: string;
+  sessionStartedAtMs: number;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runSelfRefineLite'>;
+  ensureShadowGraph: (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
+  traceNode: 'requested_skill_refine';
+}): Promise<NonNullable<AgentSession['shadowGraph']>> => {
+  const finalCandidate = await runRequestedSkillRefineNode(params);
+  return applyFinalCandidateState({
+    session: params.session,
+    finalCandidate,
+    ensureShadowGraph: params.ensureShadowGraph,
+  });
+};
+
+export const runFastPathExecutionStateNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  sessionStartedAtMs: number;
+  researcher: AgentStep;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runStep'>;
+  sessionTimeoutMs: number;
+  ensureShadowGraph: (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
+  traceNode: 'fast_path_run';
+}): Promise<NonNullable<AgentSession['shadowGraph']>> => {
+  const executionDraft = await runFastPathExecutionNode(params);
+  return applyExecutionDraftState({
+    session: params.session,
+    executionDraft,
+    ensureShadowGraph: params.ensureShadowGraph,
+  });
+};
+
+export const runFastPathRefineStateNode = async (params: {
+  session: AgentSession;
+  taskGoal: string;
+  currentDraft: string;
+  sessionStartedAtMs: number;
+  dependencies: Pick<BranchRuntimeDependencies, 'traceShadowNode' | 'runSelfRefineLite'>;
+  ensureShadowGraph: (session: AgentSession) => NonNullable<AgentSession['shadowGraph']>;
+  traceNode: 'fast_path_refine';
+}): Promise<NonNullable<AgentSession['shadowGraph']>> => {
+  const finalCandidate = await runFastPathRefineNode(params);
+  return applyFinalCandidateState({
+    session: params.session,
+    finalCandidate,
+    ensureShadowGraph: params.ensureShadowGraph,
+  });
 };
 
 const completeSession = (params: {
@@ -101,32 +294,28 @@ const executeRequestedSkillBranch = async (params: {
   session: AgentSession;
   taskGoal: string;
   sessionStartedAtMs: number;
+  planner: AgentStep;
   dependencies: BranchRuntimeDependencies;
   constants: BranchRuntimeConstants;
 }): Promise<AgentSessionStatus> => {
-  const { session, taskGoal, sessionStartedAtMs, dependencies, constants } = params;
-  if (!session.requestedSkillId) {
-    throw new Error('REQUESTED_SKILL_BRANCH_UNAVAILABLE');
-  }
-
-  ensureSessionBudget(sessionStartedAtMs, constants.sessionTimeoutMs);
-  const singleSkillStep = session.steps[0];
-  dependencies.traceShadowNode(session, 'plan_actions', `requested_skill=${session.requestedSkillId}`);
-  const singleResult = await dependencies.runStep(
+  const { session, taskGoal, sessionStartedAtMs, planner, dependencies, constants } = params;
+  const singleResult = await runRequestedSkillExecutionNode({
     session,
-    singleSkillStep,
-    session.requestedSkillId,
-    () => taskGoal,
-    undefined,
-  );
-  const refinedResult = await dependencies.runSelfRefineLite({
+    taskGoal,
+    sessionStartedAtMs,
+    planner,
+    dependencies,
+    sessionTimeoutMs: constants.sessionTimeoutMs,
+    traceNode: 'plan_actions',
+  });
+  const refinedResult = await runRequestedSkillRefineNode({
     session,
     taskGoal,
     currentDraft: singleResult,
     sessionStartedAtMs,
-    traceLabel: 'single_skill',
+    dependencies,
+    traceNode: 'execute_actions',
   });
-  dependencies.traceShadowNode(session, 'execute_actions', session.requestedSkillId);
   dependencies.traceShadowNode(session, 'compose_response', 'single_skill');
 
   return completeSession({
@@ -147,22 +336,23 @@ const executeFastPathBranch = async (params: {
   constants: BranchRuntimeConstants;
 }): Promise<AgentSessionStatus> => {
   const { session, taskGoal, sessionStartedAtMs, researcher, dependencies, constants } = params;
-  ensureSessionBudget(sessionStartedAtMs, constants.sessionTimeoutMs);
-  dependencies.traceShadowNode(session, 'execute_actions', 'fast_path');
-  const fastDraft = await dependencies.runStep(session, researcher, 'ops-execution', () => [
-    '우선순위: 빠름',
-    '요구사항: 중간 과정 없이 최종 결과물만 제시',
-    `목표: ${taskGoal}`,
-    '출력: 바로 사용할 수 있는 결과물 텍스트',
-  ].join('\n'), undefined);
-  const fastRefined = await dependencies.runSelfRefineLite({
+  const fastDraft = await runFastPathExecutionNode({
+    session,
+    taskGoal,
+    sessionStartedAtMs,
+    researcher,
+    dependencies,
+    sessionTimeoutMs: constants.sessionTimeoutMs,
+    traceNode: 'execute_actions',
+  });
+  const fastRefined = await runFastPathRefineNode({
     session,
     taskGoal,
     currentDraft: fastDraft,
     sessionStartedAtMs,
-    traceLabel: 'fast_path',
+    dependencies,
+    traceNode: 'compose_response',
   });
-  dependencies.traceShadowNode(session, 'compose_response', 'fast_path');
 
   return completeSession({
     session,
@@ -327,7 +517,10 @@ export const executeSessionBranchRuntime = async (params: {
   };
 
   if (params.strategy === 'requested_skill') {
-    return executeRequestedSkillBranch(common);
+    return executeRequestedSkillBranch({
+      ...common,
+      planner: params.planner,
+    });
   }
 
   if (params.strategy === 'fast_path') {

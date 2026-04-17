@@ -563,6 +563,7 @@ describe('toolAdapter runtime lanes', () => {
     expect(mockPrepareOpenJarvisHermesSessionStart).toHaveBeenCalledWith({
       objective: 'stabilize the next GPT relaunch objective',
       objectives: [],
+      contextProfile: null,
       title: null,
       guildId: null,
       createChatNote: true,
@@ -665,6 +666,7 @@ describe('toolAdapter runtime lanes', () => {
       name: 'automation.hermes_runtime.queue_objective',
       arguments: {
         objective: 'stabilize the next GPT relaunch objective',
+        replaceExisting: true,
         runtimeLane: 'operator-personal',
       },
     });
@@ -673,6 +675,7 @@ describe('toolAdapter runtime lanes', () => {
     expect(mockEnqueueOpenJarvisHermesRuntimeObjectives).toHaveBeenCalledWith({
       objective: 'stabilize the next GPT relaunch objective',
       objectives: [],
+      replaceExisting: true,
       sessionPath: null,
       vaultPath: null,
       capacityTarget: null,
@@ -688,6 +691,7 @@ describe('toolAdapter runtime lanes', () => {
       name: 'automation.hermes_runtime.chat_launch',
       arguments: {
         objective: 'stabilize the next GPT relaunch objective',
+        contextProfile: 'delegated-operator',
         runtimeLane: 'operator-personal',
         addFilePaths: ['docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md'],
       },
@@ -698,6 +702,7 @@ describe('toolAdapter runtime lanes', () => {
       objective: 'stabilize the next GPT relaunch objective',
       prompt: null,
       chatMode: null,
+      contextProfile: 'delegated-operator',
       addFilePaths: ['docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md'],
       maximize: true,
       newWindow: false,

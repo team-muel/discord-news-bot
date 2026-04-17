@@ -290,12 +290,13 @@ const MCP_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'automation.hermes_runtime.queue_objective',
-    description: 'Hermes continuity handoff packet의 Safe Autonomous Queue에 다음 bounded objective를 추가합니다.',
+    description: 'Hermes continuity handoff packet의 Safe Autonomous Queue에 다음 bounded objective를 추가하거나 단일 목표로 재설정합니다.',
     inputSchema: {
       type: 'object',
       properties: {
         objective: { type: 'string' },
         objectives: { type: 'array', items: { type: 'string' } },
+        replaceExisting: { type: 'boolean' },
         sessionPath: { type: 'string' },
         vaultPath: { type: 'string' },
         capacityTarget: { type: 'number' },
@@ -314,6 +315,7 @@ const MCP_TOOLS: McpToolSpec[] = [
         objective: { type: 'string' },
         prompt: { type: 'string' },
         chatMode: { type: 'string' },
+        contextProfile: { type: 'string', enum: ['default', 'auto', 'delegated-operator', 'scout', 'executor', 'distiller', 'guardian'] },
         addFilePaths: { type: 'array', items: { type: 'string' } },
         maximize: { type: 'boolean' },
         newWindow: { type: 'boolean' },
@@ -336,6 +338,7 @@ const MCP_TOOLS: McpToolSpec[] = [
       properties: {
         objective: { type: 'string' },
         objectives: { type: 'array', items: { type: 'string' } },
+        contextProfile: { type: 'string', enum: ['default', 'auto', 'delegated-operator', 'scout', 'executor', 'distiller', 'guardian'] },
         title: { type: 'string' },
         guildId: { type: 'string' },
         createChatNote: { type: 'boolean' },
@@ -612,6 +615,7 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
     const result = await enqueueOpenJarvisHermesRuntimeObjectives({
       objective: compact(args.objective) || null,
       objectives: Array.isArray(args.objectives) ? args.objectives.map((entry) => compact(entry)).filter(Boolean) : [],
+      ...(args.replaceExisting === true ? { replaceExisting: true } : {}),
       sessionPath: compact(args.sessionPath) || null,
       vaultPath: compact(args.vaultPath) || null,
       capacityTarget: Number.isFinite(Number(args.capacityTarget)) ? Number(args.capacityTarget) : null,
@@ -628,6 +632,7 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
       objective: compact(args.objective) || null,
       prompt: compact(args.prompt) || null,
       chatMode: compact(args.chatMode) || null,
+      contextProfile: compact(args.contextProfile) || null,
       addFilePaths: Array.isArray(args.addFilePaths) ? args.addFilePaths.map((entry) => compact(entry)).filter(Boolean) : [],
       maximize: args.maximize !== false,
       newWindow: args.newWindow === true,
@@ -648,6 +653,7 @@ export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolC
     const result = await prepareOpenJarvisHermesSessionStart({
       objective: compact(args.objective) || null,
       objectives: Array.isArray(args.objectives) ? args.objectives.map((entry) => compact(entry)).filter(Boolean) : [],
+      contextProfile: compact(args.contextProfile) || null,
       title: compact(args.title) || null,
       guildId: compact(args.guildId) || null,
       createChatNote: args.createChatNote !== false,

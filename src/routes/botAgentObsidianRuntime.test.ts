@@ -12,13 +12,17 @@ const {
   mockGetOpenJarvisAutopilotStatus,
   mockGetOpenJarvisSessionOpenBundle,
   mockGetOpenJarvisMemorySyncStatus,
+  mockGetOpenJarvisMemorySyncScheduleStatus,
   mockCreateOpenJarvisHermesRuntimeChatNote,
   mockEnqueueOpenJarvisHermesRuntimeObjectives,
   mockLaunchOpenJarvisHermesChatSession,
   mockPrepareOpenJarvisHermesSessionStart,
   mockRunOpenJarvisHermesRuntimeRemediation,
   mockRunHermesVsCodeBridge,
+  mockEnsureOpenJarvisMemorySyncSchedule,
+  mockRunOpenJarvisManagedMemoryMaintenance,
   mockRunOpenJarvisMemorySync,
+  mockStartOpenJarvisSchedulerDaemon,
   mockGetObsidianAdapterRuntimeStatus,
   mockGetObsidianVaultLiveHealthStatus,
   mockGetObsidianRetrievalBoundarySnapshot,
@@ -58,6 +62,8 @@ const {
   mockResolveAgentPersonalizationSnapshot,
   mockSummarizeOpencodeQueueReadiness,
   mockLoadOperatingBaseline,
+  mockBuildDoctorReport,
+  mockGetLocalAutonomySupervisorLoopStats,
 } = vi.hoisted(() => ({
   mockBuildAgentRuntimeReadinessReport: vi.fn(),
   mockGetAgentRoleWorkersHealthSnapshot: vi.fn(),
@@ -67,13 +73,17 @@ const {
   mockGetOpenJarvisAutopilotStatus: vi.fn(),
   mockGetOpenJarvisSessionOpenBundle: vi.fn(),
   mockGetOpenJarvisMemorySyncStatus: vi.fn(),
+  mockGetOpenJarvisMemorySyncScheduleStatus: vi.fn(),
   mockCreateOpenJarvisHermesRuntimeChatNote: vi.fn(),
   mockEnqueueOpenJarvisHermesRuntimeObjectives: vi.fn(),
   mockLaunchOpenJarvisHermesChatSession: vi.fn(),
   mockPrepareOpenJarvisHermesSessionStart: vi.fn(),
   mockRunOpenJarvisHermesRuntimeRemediation: vi.fn(),
   mockRunHermesVsCodeBridge: vi.fn(),
+  mockEnsureOpenJarvisMemorySyncSchedule: vi.fn(),
+  mockRunOpenJarvisManagedMemoryMaintenance: vi.fn(),
   mockRunOpenJarvisMemorySync: vi.fn(),
+  mockStartOpenJarvisSchedulerDaemon: vi.fn(),
   mockGetObsidianAdapterRuntimeStatus: vi.fn(),
   mockGetObsidianVaultLiveHealthStatus: vi.fn(),
   mockGetObsidianRetrievalBoundarySnapshot: vi.fn(),
@@ -113,6 +123,8 @@ const {
   mockResolveAgentPersonalizationSnapshot: vi.fn(),
   mockSummarizeOpencodeQueueReadiness: vi.fn(),
   mockLoadOperatingBaseline: vi.fn(),
+  mockBuildDoctorReport: vi.fn(),
+  mockGetLocalAutonomySupervisorLoopStats: vi.fn(),
 }));
 
 vi.mock('../middleware/auth', () => ({
@@ -203,13 +215,25 @@ vi.mock('../services/runtime/operatingBaseline', () => ({
   loadOperatingBaseline: mockLoadOperatingBaseline,
 }));
 
+vi.mock('../services/runtime/localAutonomySupervisorService', () => ({
+  getLocalAutonomySupervisorLoopStats: mockGetLocalAutonomySupervisorLoopStats,
+}));
+
+vi.mock('../../scripts/local-ai-stack-control.mjs', () => ({
+  buildDoctorReport: mockBuildDoctorReport,
+}));
+
 vi.mock('../services/runtime/runtimeSchedulerPolicyService', () => ({
   getRuntimeSchedulerPolicySnapshot: mockGetRuntimeSchedulerPolicySnapshot,
 }));
 
 vi.mock('../services/openjarvis/openjarvisMemorySyncStatusService', () => ({
+  ensureOpenJarvisMemorySyncSchedule: mockEnsureOpenJarvisMemorySyncSchedule,
   getOpenJarvisMemorySyncStatus: mockGetOpenJarvisMemorySyncStatus,
+  getOpenJarvisMemorySyncScheduleStatus: mockGetOpenJarvisMemorySyncScheduleStatus,
+  runOpenJarvisManagedMemoryMaintenance: mockRunOpenJarvisManagedMemoryMaintenance,
   runOpenJarvisMemorySync: mockRunOpenJarvisMemorySync,
+  startOpenJarvisSchedulerDaemon: mockStartOpenJarvisSchedulerDaemon,
 }));
 
 vi.mock('../services/openjarvis/openjarvisHermesRuntimeControlService', () => ({
@@ -743,6 +767,104 @@ describe('bot agent Obsidian runtime routes', () => {
       },
       issues: [],
     });
+    mockGetOpenJarvisMemorySyncScheduleStatus.mockResolvedValue({
+      available: true,
+      healthy: true,
+      configuredPrompt: 'Check discord-news-bot memory sync',
+      configuredAgent: 'orchestrator',
+      configuredTools: [],
+      configuredScheduleType: 'interval',
+      configuredScheduleValue: '3600',
+      daemonCommand: 'jarvis scheduler start --poll-interval 60',
+      daemonRecommended: true,
+      taskId: 'task-1',
+      taskStatus: 'active',
+      taskScheduleType: 'interval',
+      nextRun: '2026-04-11T01:00:00.000Z',
+      matchingTaskCount: 1,
+      activeTaskCount: 2,
+      issues: [],
+      tasks: [
+        {
+          id: 'task-1',
+          prompt: 'Check discord-news-bot memory sync',
+          scheduleType: 'interval',
+          scheduleValue: null,
+          status: 'active',
+          nextRun: '2026-04-11T01:00:00.000Z',
+          agent: 'orchestrator',
+          rawLine: 'task-1  Check discord-news-bot memory sync  interval  active  2026-04-11T01:00:00.000Z  orchestrator',
+        },
+      ],
+    });
+    mockEnsureOpenJarvisMemorySyncSchedule.mockResolvedValue({
+      ok: true,
+      dryRun: false,
+      completion: 'created',
+      command: 'jarvis scheduler create "Check discord-news-bot memory sync" --type interval --value 3600 --agent orchestrator',
+      taskId: 'task-1',
+      taskCreated: true,
+      taskResumed: false,
+      configuredPrompt: 'Check discord-news-bot memory sync',
+      configuredAgent: 'orchestrator',
+      configuredTools: [],
+      configuredScheduleType: 'interval',
+      configuredScheduleValue: '3600',
+      statusBefore: {
+        available: false,
+        healthy: false,
+        configuredPrompt: 'Check discord-news-bot memory sync',
+        configuredAgent: 'orchestrator',
+        configuredTools: [],
+        configuredScheduleType: 'interval',
+        configuredScheduleValue: '3600',
+        daemonCommand: 'jarvis scheduler start --poll-interval 60',
+        daemonRecommended: false,
+        taskId: null,
+        taskStatus: null,
+        taskScheduleType: null,
+        nextRun: null,
+        matchingTaskCount: 0,
+        activeTaskCount: 0,
+        issues: ['No matching OpenJarvis memory-sync scheduler task is currently registered.'],
+        tasks: [],
+      },
+      statusAfter: {
+        available: true,
+        healthy: true,
+        configuredPrompt: 'Check discord-news-bot memory sync',
+        configuredAgent: 'orchestrator',
+        configuredTools: [],
+        configuredScheduleType: 'interval',
+        configuredScheduleValue: '3600',
+        daemonCommand: 'jarvis scheduler start --poll-interval 60',
+        daemonRecommended: true,
+        taskId: 'task-1',
+        taskStatus: 'active',
+        taskScheduleType: 'interval',
+        nextRun: '2026-04-11T01:00:00.000Z',
+        matchingTaskCount: 1,
+        activeTaskCount: 2,
+        issues: [],
+        tasks: [],
+      },
+      warnings: [],
+      startedAt: '2026-04-15T00:00:00.000Z',
+      finishedAt: '2026-04-15T00:00:01.000Z',
+      durationMs: 1000,
+      error: null,
+    });
+    mockStartOpenJarvisSchedulerDaemon.mockResolvedValue({
+      ok: true,
+      dryRun: false,
+      completion: 'queued',
+      command: 'jarvis scheduler start --poll-interval 60',
+      pid: 7788,
+      startedAt: '2026-04-15T00:00:00.000Z',
+      finishedAt: '2026-04-15T00:00:01.000Z',
+      durationMs: 1000,
+      error: null,
+    });
     mockGetOpenJarvisAutopilotStatus.mockResolvedValue({
       ok: true,
       summary_path: 'tmp/autonomy/openjarvis-unattended-last-run.json',
@@ -1144,8 +1266,9 @@ describe('bot agent Obsidian runtime routes', () => {
       actionName: null,
       routingCapability: 'general',
       actionPolicyProviders: ['openjarvis', 'ollama'],
-      workflowBinding: { provider: 'openjarvis', model: 'qwen2.5:7b-instruct' },
+      workflowBinding: { provider: 'openjarvis', model: 'qwen2.5:7b' },
       workflowProfile: 'quality-optimized',
+      gateProviderProfile: null,
       effectiveProviderProfile: 'quality-optimized',
       configuredProviders: ['ollama', 'litellm'],
       resolvedChain: ['ollama', 'litellm'],
@@ -1154,6 +1277,84 @@ describe('bot agent Obsidian runtime routes', () => {
         { provider: 'ollama', configured: true, status: 'ready', checkedAt: Date.now(), reason: null, cooldownUntil: null, consecutiveFailures: 0 },
         { provider: 'litellm', configured: true, status: 'unreachable', checkedAt: Date.now(), reason: 'connect ECONNREFUSED', cooldownUntil: Date.now() + 1000, consecutiveFailures: 1 },
       ],
+    });
+    mockBuildDoctorReport.mockResolvedValue({
+      ok: false,
+      action: 'doctor',
+      checkedAt: '2026-04-15T00:00:00.000Z',
+      profile: {
+        requested: 'local-nemoclaw-max-delegation',
+        applyCommand: 'npm run env:profile:local-nemoclaw-max-delegation',
+      },
+      plan: {
+        litellm: true,
+        n8n: true,
+        openjarvis: true,
+        opencodeWorker: true,
+        requiresOllama: true,
+      },
+      failures: ['Local OpenJarvis serve is enabled but /v1/models is unreachable with auth.'],
+      warnings: ['Interactive external lanes are enabled, but this control surface does not auto-start WSL or dashboard-managed runtimes.'],
+      nextSteps: ['npm run openjarvis:serve:local'],
+      services: {
+        ollama: { reachable: true, status: 200 },
+        litellm: { reachable: true, status: 200 },
+        openjarvis: { reachable: false, status: 0, authConfigured: true, error: 'fetch failed' },
+        opencodeWorker: { reachable: true, status: 200, allowWrite: false },
+        n8n: { reachable: true, healthzStatus: 200 },
+      },
+      obsidian: {
+        mode: 'direct-vault-primary',
+        source: 'runtime',
+      },
+      workflowState: {
+        available: true,
+        source: 'supabase',
+        sessionId: 'openjarvis-1',
+        status: 'released',
+        objective: 'weekly unattended autonomy cycle',
+        runtimeLane: 'operator-personal',
+      },
+      memoryProjection: {
+        present: true,
+        fresh: true,
+        indexedStatus: 'completed',
+        totalDocs: 11,
+      },
+      manualLanes: {
+        openclawEnabled: true,
+        nemoclawEnabled: true,
+        openshellEnabled: true,
+      },
+    });
+    mockGetLocalAutonomySupervisorLoopStats.mockReturnValue({
+      name: '[LOCAL-AUTONOMY-SUPERVISOR]',
+      started: true,
+      running: false,
+      intervalMs: 300000,
+      runCount: 2,
+      lastRunAt: '2026-04-15T00:00:00.000Z',
+      lastSummary: 'doctor=true failures=0 hermes=partial supervisor:queued',
+      lastErrorAt: null,
+      enabled: true,
+      profile: 'local-nemoclaw-max-delegation',
+      plan: {
+        litellm: true,
+        n8n: true,
+        openjarvis: true,
+        opencodeWorker: true,
+        requiresOllama: true,
+      },
+      lastDoctorOk: true,
+      lastDoctorFailures: [],
+      lastDoctorNextSteps: [],
+      lastUpOk: true,
+      lastUpAt: '2026-04-15T00:00:00.000Z',
+      lastHermesReadiness: 'partial',
+      lastSupervisorAlive: false,
+      lastSupervisorAction: 'supervisor:queued',
+      lastSupervisorQueuedAt: '2026-04-15T00:00:01.000Z',
+      lastSupervisorPid: 1234,
     });
   });
 
@@ -1246,6 +1447,11 @@ describe('bot agent Obsidian runtime routes', () => {
       retrievalEvalLoop: { enabled: true, running: false },
       rewardSignalLoop: { enabled: true, intervalHours: 6, running: false },
       evalAutoPromoteLoop: { enabled: true, intervalHours: 6, running: false },
+      localAutonomySupervisorLoop: {
+        enabled: true,
+        intervalMs: 300000,
+        lastSupervisorAction: 'supervisor:queued',
+      },
       obsidianMaintenanceControl: { executor: 'repo-runtime', tasks: ['lore-sync', 'graph-audit'] },
       evalMaintenanceControl: { executor: 'repo-runtime', tasks: ['retrieval-eval', 'reward-signal', 'auto-promote'] },
     });
@@ -1357,12 +1563,30 @@ describe('bot agent Obsidian runtime routes', () => {
             status: 'fresh',
             memoryIndex: { status: 'completed' },
           },
+          scheduler: {
+            taskStatus: 'active',
+            configuredScheduleType: 'interval',
+          },
+        },
+        localAutonomy: {
+          ok: false,
+          profile: { requested: 'local-nemoclaw-max-delegation' },
+          failures: ['Local OpenJarvis serve is enabled but /v1/models is unreachable with auth.'],
+          nextSteps: ['npm run openjarvis:serve:local'],
         },
         runtime: {
           schedulerPolicy: { summary: { total: 4 } },
+          localAutonomy: {
+            ok: false,
+            profile: { requested: 'local-nemoclaw-max-delegation' },
+          },
           loops: {
             memoryJobRunner: { running: true },
             obsidianGraphAuditLoop: { enabled: true, intervalMin: 360, lastStatus: 'success' },
+            localAutonomySupervisorLoop: {
+              enabled: true,
+              lastSupervisorAction: 'supervisor:queued',
+            },
           },
         },
         obsidian: {
@@ -1439,6 +1663,10 @@ describe('bot agent Obsidian runtime routes', () => {
         healthy: true,
         memoryIndex: { status: 'completed' },
       },
+      openjarvisMemorySyncSchedule: {
+        taskStatus: 'active',
+        configuredScheduleType: 'interval',
+      },
       openjarvisAutopilot: {
         workflow: {
           session_id: 'openjarvis-1',
@@ -1481,13 +1709,20 @@ describe('bot agent Obsidian runtime routes', () => {
       },
       llmRuntime: {
         selectedProvider: 'ollama',
-        workflowBinding: { provider: 'openjarvis', model: 'qwen2.5:7b-instruct' },
+        gateProviderProfile: null,
+        workflowBinding: { provider: 'openjarvis', model: 'qwen2.5:7b' },
         effectiveProviderProfile: 'quality-optimized',
         readyChain: ['ollama'],
         providers: [
           { provider: 'ollama', status: 'ready' },
           { provider: 'litellm', status: 'unreachable' },
         ],
+      },
+      localAutonomy: {
+        ok: false,
+        profile: { requested: 'local-nemoclaw-max-delegation' },
+        failures: ['Local OpenJarvis serve is enabled but /v1/models is unreachable with auth.'],
+        nextSteps: ['npm run openjarvis:serve:local'],
       },
       notes: {
         guildScoped: true,
@@ -1523,6 +1758,7 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockGetOpenJarvisAutopilotStatus).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: 95,
       gcpCapacityRecoveryRequested: true,
       runtimeLane: 'operator-personal',
@@ -1590,6 +1826,7 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockGetOpenJarvisSessionOpenBundle).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: 95,
       gcpCapacityRecoveryRequested: false,
       runtimeLane: 'operator-personal',
@@ -1684,17 +1921,20 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockPrepareOpenJarvisHermesSessionStart).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: null,
       gcpCapacityRecoveryRequested: false,
       runtimeLane: 'operator-personal',
       objective: 'stabilize the next GPT relaunch objective',
       objectives: [],
+      contextProfile: null,
       title: null,
       guildId: null,
       createChatNote: true,
       startSupervisor: true,
       dryRun: false,
       visibleTerminal: true,
+      autoLaunchQueuedChat: false,
       requesterId: 'admin-user',
       requesterKind: 'session',
     });
@@ -1734,6 +1974,7 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockCreateOpenJarvisHermesRuntimeChatNote).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: null,
       gcpCapacityRecoveryRequested: false,
       runtimeLane: 'operator-personal',
@@ -1766,6 +2007,7 @@ describe('bot agent Obsidian runtime routes', () => {
     const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/hermes-runtime/queue-objective', {
       body: {
         objective: 'stabilize the next GPT relaunch objective',
+        replaceExisting: true,
         runtimeLane: 'operator-personal',
       },
     });
@@ -1773,11 +2015,13 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockEnqueueOpenJarvisHermesRuntimeObjectives).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: null,
       gcpCapacityRecoveryRequested: false,
       runtimeLane: 'operator-personal',
       objective: 'stabilize the next GPT relaunch objective',
       objectives: [],
+      replaceExisting: true,
     });
     expect(res.statusCode).toBe(201);
     expect(res.body).toMatchObject({
@@ -1811,12 +2055,14 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockLaunchOpenJarvisHermesChatSession).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: null,
       gcpCapacityRecoveryRequested: false,
       runtimeLane: 'operator-personal',
       objective: 'stabilize the next GPT relaunch objective',
       prompt: null,
       chatMode: null,
+      contextProfile: null,
       addFilePaths: ['docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md'],
       maximize: true,
       newWindow: false,
@@ -1855,12 +2101,14 @@ describe('bot agent Obsidian runtime routes', () => {
     expect(mockRunOpenJarvisHermesRuntimeRemediation).toHaveBeenCalledWith({
       sessionPath: null,
       vaultPath: null,
+      sessionId: null,
       capacityTarget: null,
       gcpCapacityRecoveryRequested: false,
       runtimeLane: 'operator-personal',
       actionId: 'start-supervisor-loop',
       dryRun: false,
       visibleTerminal: true,
+      autoLaunchQueuedChat: false,
     });
     expect(res.statusCode).toBe(202);
     expect(res.body).toMatchObject({
@@ -1960,6 +2208,171 @@ describe('bot agent Obsidian runtime routes', () => {
         completion: 'queued',
         pid: 9876,
         command: 'node --import tsx scripts/sync-openjarvis-memory.ts --force=true --guildId=guild-1',
+      },
+    });
+  });
+
+  it('runs managed OpenJarvis memory maintenance from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    mockRunOpenJarvisManagedMemoryMaintenance.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      force: true,
+      guildId: 'guild-1',
+      agentName: 'repo-memory-maintainer',
+      agentId: 'agent-1',
+      agentCreated: false,
+      managedAgentReady: true,
+      managedMessageAccepted: true,
+      managedRunTriggered: true,
+      latestTraceId: 'trace-1',
+      latestTraceOutcome: 'success',
+      feedbackRecorded: true,
+      feedbackScore: 1,
+      completion: 'completed',
+      syncExecution: {
+        ok: true,
+        command: 'node --import tsx scripts/sync-openjarvis-memory.ts --force=true --guildId=guild-1',
+        exitCode: 0,
+        stdoutLines: ['projection prepared'],
+        stderrLines: [],
+        error: null,
+      },
+      statusBefore: mockGetOpenJarvisMemorySyncStatus(),
+      statusAfter: mockGetOpenJarvisMemorySyncStatus(),
+      warnings: [],
+      startedAt: '2026-04-15T00:00:00.000Z',
+      finishedAt: '2026-04-15T00:00:01.000Z',
+      durationMs: 1000,
+      error: null,
+    });
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/memory-sync/managed', {
+      body: {
+        dryRun: false,
+        force: true,
+        guildId: 'guild-1',
+        agentName: 'repo-memory-maintainer',
+        timeoutMs: 90_000,
+      },
+    });
+
+    expect(mockRunOpenJarvisManagedMemoryMaintenance).toHaveBeenCalledWith({
+      dryRun: false,
+      force: true,
+      guildId: 'guild-1',
+      agentName: 'repo-memory-maintainer',
+      timeoutMs: 90_000,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'completed',
+        agentId: 'agent-1',
+        latestTraceId: 'trace-1',
+      },
+    });
+  });
+
+  it('returns OpenJarvis scheduler status from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/runtime/openjarvis/scheduler');
+
+    expect(mockGetOpenJarvisMemorySyncScheduleStatus).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      scheduler: {
+        taskId: 'task-1',
+        taskStatus: 'active',
+      },
+    });
+  });
+
+  it('ensures the OpenJarvis memory-sync schedule from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/memory-sync/schedule', {
+      body: {
+        dryRun: false,
+        scheduleType: 'interval',
+        scheduleValue: '3600',
+      },
+    });
+
+    expect(mockEnsureOpenJarvisMemorySyncSchedule).toHaveBeenCalledWith({
+      dryRun: false,
+      prompt: undefined,
+      scheduleType: 'interval',
+      scheduleValue: '3600',
+      agent: undefined,
+      tools: undefined,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'created',
+        taskId: 'task-1',
+      },
+    });
+  });
+
+  it('starts the OpenJarvis scheduler daemon from the runtime admin route', async () => {
+    const { registerBotAgentRuntimeRoutes } = await import('./bot-agent/runtimeRoutes');
+    const router = Router();
+
+    registerBotAgentRuntimeRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/runtime/openjarvis/scheduler/start', {
+      body: {
+        dryRun: false,
+        pollIntervalSeconds: 90,
+      },
+    });
+
+    expect(mockStartOpenJarvisSchedulerDaemon).toHaveBeenCalledWith({
+      dryRun: false,
+      pollIntervalSeconds: 90,
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({
+      ok: true,
+      result: {
+        completion: 'queued',
+        pid: 7788,
       },
     });
   });
