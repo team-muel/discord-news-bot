@@ -1,6 +1,6 @@
 # GCP Worker Cost/Health Report
 
-- checkedAt: 2026-04-17T13:59:01.047Z
+- checkedAt: 2026-04-17T19:31:42.874Z
 - period: weekly
 - ok: false
 - projectId: gen-lang-client-0405212361
@@ -27,7 +27,6 @@
 - operateWorker: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/operate/health>
 - openjarvisServe: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/openjarvis/health>
 - unifiedMcp: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/mcp/health>
-- litellmProxy: ok=true status=200 checkedUrl=<https://muel-litellm-proxy.onrender.com/health/liveliness>
 
 ## Static IP
 
