@@ -8,6 +8,7 @@ import { getExternalAdapterStatus } from '../services/tools/externalAdapterRegis
 import { getDelegationStatus } from '../services/automation/n8nDelegationService';
 import { getRuntimeBootstrapState } from '../services/runtime/runtimeBootstrap';
 import { getServerInfrastructureStartupSnapshot } from '../services/runtime/bootstrapServerInfra';
+import { getRuntimeSchedulerPolicySnapshot } from '../services/runtime/runtimeSchedulerPolicyService';
 import { getLastMigrationValidation } from '../utils/migrationRegistry';
 import { getObsidianVaultRoot } from '../utils/obsidianEnv';
 import { existsSync, readdirSync } from 'node:fs';
@@ -197,6 +198,7 @@ export function createHealthRouter(): Router {
 
     // Obsidian vault readiness
     let obsidianStatus: HealthResponse['obsidian'];
+    let schedulerPolicySummary: HealthResponse['schedulerPolicySummary'];
     const vaultPath = getObsidianVaultRoot();
     if (vaultPath) {
       const vaultExists = existsSync(vaultPath);
@@ -221,6 +223,12 @@ export function createHealthRouter(): Router {
       };
     }
 
+    try {
+      schedulerPolicySummary = (await getRuntimeSchedulerPolicySnapshot()).summary;
+    } catch {
+      // Non-critical: do not fail public health if scheduler snapshot is unavailable.
+    }
+
     const payload: HealthResponse = {
       status: runtimeHealth.status,
       botStatusGrade: runtimeHealth.botStatusGrade,
@@ -229,6 +237,7 @@ export function createHealthRouter(): Router {
       automation,
       ...(n8nStatus ? { n8n: n8nStatus } : {}),
       ...(obsidianStatus ? { obsidian: obsidianStatus } : {}),
+      ...(schedulerPolicySummary ? { schedulerPolicySummary } : {}),
       migrations: getLastMigrationValidation(),
       ...buildRuntimeDiagnosticsPayload(runtimeBootstrap, startup, includeSensitiveDiagnostics),
     };

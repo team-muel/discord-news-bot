@@ -24,7 +24,7 @@ Current first slice note:
 
 ## LLM Provider (Harness)
 
-- AI_PROVIDER=openai|gemini|anthropic|huggingface|openclaw|ollama
+- AI_PROVIDER=openjarvis|litellm|ollama|openclaw|openai|gemini|anthropic|huggingface
 - OPENAI_API_KEY=[secret] (if openai)
 - GEMINI_API_KEY=[secret] (if gemini)
 - ANTHROPIC_API_KEY=[secret] (if anthropic)
@@ -41,12 +41,12 @@ Current first slice note:
 
 Provider fallback controls:
 
-- LLM_PROVIDER_BASE_ORDER=openai,anthropic,gemini,huggingface,openclaw,ollama (optional, base provider selection order when AI_PROVIDER is unset)
-- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false (optional)
-- LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER=openclaw,openai,anthropic,gemini,huggingface,ollama (optional)
+- LLM_PROVIDER_BASE_ORDER=openjarvis,litellm,ollama (optional, leave empty to use the canonical chain)
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true (optional)
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER=openjarvis,litellm,ollama (optional)
 - LLM_PROVIDER_MAX_ATTEMPTS=2 (optional, 1~6)
-- LLM_PROVIDER_FALLBACK_CHAIN=openclaw,openai,anthropic,gemini,huggingface,ollama (optional)
-- LLM_PROVIDER_POLICY_ACTIONS=rag.retrieve=openclaw,openai;code.generate=openclaw,anthropic (optional)
+- LLM_PROVIDER_FALLBACK_CHAIN=litellm,ollama (optional override chain)
+- LLM_PROVIDER_POLICY_ACTIONS=intent.route=openclaw,litellm;operate.ops=openjarvis,litellm,ollama (optional)
 
 ## Agent Runtime Controls
 
@@ -372,8 +372,9 @@ Provider fallback controls:
 - Render restart/deploy health should follow `/ready`, not `/health`, because `/health` remains informative during partial readiness.
 - If multiple providers are configured, `AI_PROVIDER` selects priority.
 - If no provider configuration exists, `/뮤엘`, `/해줘`, and `/시작` session creation fails by design.
-- 비용 최소화가 목표라면 `AI_PROVIDER=ollama`와 소형 모델(예: qwen2.5:3b-instruct) 조합을 권장합니다.
-- local-first hybrid가 목표라면 `AI_PROVIDER=ollama`, `LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface`, `LLM_WORKFLOW_MODEL_BINDINGS=operate.ops=openjarvis:<model>;eval.*=openjarvis:<model>;worker.*=openjarvis:<model>`, `LLM_WORKFLOW_PROFILE_DEFAULTS=operate.ops=quality-optimized;eval.*=quality-optimized;worker.*=quality-optimized`, `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true` 조합을 권장합니다.
+- 기본 lane은 `AI_PROVIDER=openjarvis`, `LITELLM_MODEL=muel-balanced`, `OLLAMA_MODEL=<local-model>` 조합입니다.
+- 비용 최소화가 목표라면 `OLLAMA_MODEL`과 `LLM_WORKFLOW_PROFILE_DEFAULTS=action.code.*=cost-optimized;chat.*=cost-optimized;memory.*=cost-optimized` 같이 quality/cost posture만 조정하고, canonical provider chain은 유지하는 편이 drift가 적습니다.
+- local-first hybrid가 목표라면 `AI_PROVIDER=openjarvis`, `OPENJARVIS_ENABLED=true`, `LITELLM_MODEL=muel-balanced`, `LLM_PROVIDER_BASE_ORDER=`(empty), `LLM_PROVIDER_FALLBACK_CHAIN=`(empty), `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`, `LLM_WORKFLOW_MODEL_BINDINGS=operate.ops=openjarvis:<model>;eval.*=openjarvis:<model>;worker.*=openjarvis:<model>`, `LLM_WORKFLOW_PROFILE_DEFAULTS=operate.ops=quality-optimized;eval.*=quality-optimized;worker.*=quality-optimized`, `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true` 조합을 권장합니다.
 - `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps the compact slash surface (`/뮤엘`, `/해줘`, `/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`, `/프로필`, `/메모`, `/만들어줘`) and enables mention-first chat UX.
 - `DISCORD_LOGIN_SESSION_TTL_MS` controls how long a non-admin login session stays active for subscription add/remove.
 - `DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS` enables sliding expiration; sessions accessed near expiry are extended.
@@ -384,7 +385,7 @@ Provider fallback controls:
 - GCP VM이 다운되면 `script-cli` 또는 `native-cli`로 자동 fallback됩니다.
 - 뉴스 모니터 candidate source 우선순위는 `n8n -> MCP worker -> local fallback` 입니다. `/구독` 응답과 로그에서 현재 source를 확인하세요.
 - Obsidian shared-vault health는 `/api/bot/agent/obsidian/runtime`, knowledge compiler lint는 `/api/bot/agent/obsidian/knowledge-control?artifact=lint` 로 확인하세요.
-- LiteLLM 프록시를 사용하려면 `AI_PROVIDER=openclaw` + `OPENCLAW_BASE_URL=[litellm-endpoint]` 조합으로 서버 측 provider 경로를 고정하세요.
+- LiteLLM 프록시를 기본 remote broker로 쓰려면 `LITELLM_BASE_URL=[litellm-endpoint]`, `LITELLM_MODEL=muel-balanced`, 그리고 `AI_PROVIDER=openjarvis` 또는 `AI_PROVIDER=litellm` 조합을 사용하세요.
 - HF canary A/B를 운영하려면 `LLM_EXPERIMENT_ENABLED=true`, `LLM_EXPERIMENT_HF_PERCENT`, `LLM_EXPERIMENT_GUILD_ALLOWLIST`를 함께 설정하고 `/api/bot/agent/llm/experiments/summary`로 arm별 성공률/지연/비용을 확인하세요.
 - 확장 유틸리티 점검: `/api/bot/agent/runtime/supabase/extensions`, `/api/bot/agent/runtime/supabase/cron-jobs`, `/api/bot/agent/runtime/supabase/hypopg/candidates`.
 - Untrusted chat input is sanitized before passing to Obsidian CLI (control chars, traversal tokens, shell metacharacters removed) and guild-scoped markdown path resolution is constrained under `OBSIDIAN_VAULT_PATH`.
@@ -423,14 +424,17 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 
 ## Local-First Hybrid Profile (Local Reasoning + Remote Automation)
 
-Use this profile when 로컬 머신이 켜져 있을 때는 Ollama를 우선 사용하되, 운영 unattended autonomy는 원격 worker로 유지하려는 경우:
+Use this profile when OpenJarvis should stay as the control surface, LiteLLM should stay the remote broker, Ollama should stay the local engine, and unattended autonomy should still run through a remote worker:
 
-- AI_PROVIDER=ollama
+- AI_PROVIDER=openjarvis
+- OPENJARVIS_ENABLED=true
+- OPENJARVIS_MODEL=[required OpenJarvis model or alias]
 - OLLAMA_MODEL=[required]
 - OLLAMA_BASE_URL=`http://127.0.0.1:11434`
-- LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface
-- LLM_PROVIDER_FALLBACK_CHAIN=openclaw,anthropic,openai,gemini,huggingface
-- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false
+- LITELLM_MODEL=muel-balanced
+- LLM_PROVIDER_BASE_ORDER=
+- LLM_PROVIDER_FALLBACK_CHAIN=
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
 - MCP_IMPLEMENT_WORKER_URL=`http://127.0.0.1:8787` (로컬 worker) 또는 실제 원격 worker URL
 - MCP_OPENCODE_TOOL_NAME=opencode.run
@@ -439,8 +443,8 @@ Use this profile when 로컬 머신이 켜져 있을 때는 Ollama를 우선 사
 
 운영 규칙:
 
-- 로컬 Ollama는 추론 우선 경로이지만 단일 장애점으로 두지 않는다.
-- 원격 fallback provider를 최소 1개 이상 유지한다.
+- LiteLLM는 remote alias broker이고, Ollama는 LiteLLM 내부 alias가 아니라 direct local fallback engine으로 유지한다.
+- 로컬 Ollama는 fallback engine이지만 단일 장애점으로 두지 않는다.
 - unattended automation은 worker fail-closed를 유지한다. 로컬 worker를 쓰는 경우 PC가 꺼지면 autonomy도 함께 중단된다.
 
 ## OpenClaw-Centered Local Stack Profile (Daemon-First Local Assistant)
@@ -454,8 +458,10 @@ Use this profile when OpenClaw Gateway should be the always-on local ingress, wh
 - OPENCLAW_BASE_URL=`http://127.0.0.1:18789`
 - OLLAMA_MODEL=[required fallback model]
 - OLLAMA_BASE_URL=`http://127.0.0.1:11434`
-- LLM_PROVIDER_BASE_ORDER=openclaw,ollama,litellm,openjarvis,anthropic,openai,gemini,huggingface
-- LLM_PROVIDER_FALLBACK_CHAIN=ollama,litellm,openjarvis,anthropic,openai,gemini,huggingface
+- LITELLM_MODEL=muel-balanced
+- LLM_PROVIDER_BASE_ORDER=
+- LLM_PROVIDER_FALLBACK_CHAIN=
+- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true
 - OPENJARVIS_REQUIRE_OPENCODE_WORKER=true
 - MCP_IMPLEMENT_WORKER_URL=`http://127.0.0.1:8787` (fully local) or the real remote worker URL
 - ACTION_MCP_DELEGATION_ENABLED=true
@@ -464,14 +470,15 @@ Use this profile when OpenClaw Gateway should be the always-on local ingress, wh
 Operating rules:
 
 - OpenClaw owns the local session ingress, not the durable knowledge plane.
+- OpenClaw direct completions are an opt-in lane; remote cloud escalation should still go through LiteLLM rather than raw provider chaining.
 - Leave `OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_API_KEY` blank only if the local gateway is intentionally unauthenticated.
 - If you want remote fail-closed implement execution while keeping local OpenClaw ingress, override `MCP_IMPLEMENT_WORKER_URL` after applying the profile.
 
 ## NemoClaw-Centered Local Stack Profile (Hardened Review Lane First)
 
-Use this profile when the target is a Windows + WSL local stack with NemoClaw/OpenShell as the hardened review lane, a host Ollama Nemotron 8B model as the primary direct reasoning lane, and OpenJarvis still pinned to the validated Qwen workflow lane:
+Use this profile when the target is a Windows + WSL local stack with NemoClaw/OpenShell as the hardened review lane, OpenJarvis as the control surface, LiteLLM as the remote broker, and a host Ollama Nemotron 8B model as the local fallback lane:
 
-- AI_PROVIDER=ollama
+- AI_PROVIDER=openjarvis
 - OLLAMA_MODEL=`hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M`
 - OLLAMA_BASE_URL=`http://127.0.0.1:11434`
 - OPENJARVIS_MODEL=`qwen2.5:7b-instruct`

@@ -14,7 +14,10 @@ import { recordWorkflowCapabilityDemands } from '../workflow/workflowPersistence
 const LOCAL_AUTONOMY_PROFILE = 'local-nemoclaw-max-delegation';
 const LOCAL_AUTONOMY_RUNTIME_LANE = 'operator-personal';
 const LOCAL_AUTONOMY_SUPERVISOR_INTERVAL_MS = 5 * 60 * 1000;
-const LOCAL_AUTONOMY_AUTO_LAUNCH_QUEUED_CHAT = true;
+
+type QueueLaunchMode = 'manual' | 'chat' | 'swarm';
+
+const LOCAL_AUTONOMY_DEFAULT_QUEUE_LAUNCH_MODE: QueueLaunchMode = 'chat';
 
 type ManagedPlan = ReturnType<typeof buildManagedServicePlan>;
 
@@ -30,6 +33,8 @@ type LocalAutonomySupervisorState = {
   lastQueuedObjectivesAvailable: boolean | null;
   lastSupervisorAlive: boolean | null;
   lastSupervisorAutoLaunchQueuedChat: boolean | null;
+  lastSupervisorAutoLaunchQueuedSwarm: boolean | null;
+  lastSupervisorQueueLaunchMode: QueueLaunchMode | null;
   lastAwaitingReentryAcknowledgment: boolean | null;
   lastAwaitingReentryAcknowledgmentStale: boolean | null;
   lastAwaitingReentrySyncKey: string | null;
@@ -51,6 +56,8 @@ const createEmptyState = (): LocalAutonomySupervisorState => ({
   lastQueuedObjectivesAvailable: null,
   lastSupervisorAlive: null,
   lastSupervisorAutoLaunchQueuedChat: null,
+  lastSupervisorAutoLaunchQueuedSwarm: null,
+  lastSupervisorQueueLaunchMode: null,
   lastAwaitingReentryAcknowledgment: null,
   lastAwaitingReentryAcknowledgmentStale: null,
   lastAwaitingReentrySyncKey: null,
@@ -118,6 +125,42 @@ const isProcessAlive = (pid: unknown): boolean => {
   } catch {
     return false;
   }
+};
+
+const resolveObservedQueueLaunchMode = (supervisor: Record<string, unknown> | null | undefined): QueueLaunchMode => {
+  if (supervisor?.auto_launch_queued_swarm === true) {
+    return 'swarm';
+  }
+  if (supervisor?.auto_launch_queued_chat === true) {
+    return 'chat';
+  }
+  return 'manual';
+};
+
+const resolveDesiredQueueLaunchMode = (observedMode: QueueLaunchMode): QueueLaunchMode => (
+  observedMode === 'swarm'
+    ? 'swarm'
+    : LOCAL_AUTONOMY_DEFAULT_QUEUE_LAUNCH_MODE
+);
+
+const formatQueueLaunchModeSummary = (mode: QueueLaunchMode | null): string => {
+  if (mode === 'swarm') {
+    return 'swarm';
+  }
+  if (mode === 'chat') {
+    return 'chat';
+  }
+  return 'manual';
+};
+
+const formatSupervisorActionMode = (mode: QueueLaunchMode): string => {
+  if (mode === 'swarm') {
+    return 'swarm';
+  }
+  if (mode === 'chat') {
+    return 'auto-chat';
+  }
+  return 'manual-chat';
 };
 
 const stopRunningProcess = (pid: unknown): boolean => {
@@ -188,13 +231,17 @@ export const runLocalAutonomySupervisorCycle = async (): Promise<string> => {
   const supervisorAlive = autopilot.hermes_runtime.supervisor_alive === true;
   const supervisorPid = Number(autopilot.supervisor?.supervisor_pid);
   const workflowStatus = String(autopilot.workflow?.status || '').trim().toLowerCase();
+  const observedQueueLaunchMode = resolveObservedQueueLaunchMode(autopilot.supervisor as Record<string, unknown> | null);
+  const desiredQueueLaunchMode = resolveDesiredQueueLaunchMode(observedQueueLaunchMode);
   const awaitingReentryAcknowledgment = autopilot.supervisor?.awaiting_reentry_acknowledgment === true;
   const awaitingReentryAcknowledgmentStale = autopilot.hermes_runtime.awaiting_reentry_acknowledgment_stale === true
     || autopilot.supervisor?.awaiting_reentry_acknowledgment_stale === true;
   state.lastHermesReadiness = autopilot.hermes_runtime.readiness || null;
   state.lastQueuedObjectivesAvailable = queuedObjectivesAvailable;
   state.lastSupervisorAlive = supervisorAlive;
-  state.lastSupervisorAutoLaunchQueuedChat = autopilot.supervisor?.auto_launch_queued_chat === true;
+  state.lastSupervisorAutoLaunchQueuedChat = observedQueueLaunchMode === 'chat';
+  state.lastSupervisorAutoLaunchQueuedSwarm = observedQueueLaunchMode === 'swarm';
+  state.lastSupervisorQueueLaunchMode = observedQueueLaunchMode;
   state.lastAwaitingReentryAcknowledgment = awaitingReentryAcknowledgment;
   state.lastAwaitingReentryAcknowledgmentStale = awaitingReentryAcknowledgmentStale;
   state.lastSupervisorPid = Number.isInteger(supervisorPid) && supervisorPid > 0 ? supervisorPid : null;
@@ -252,9 +299,9 @@ export const runLocalAutonomySupervisorCycle = async (): Promise<string> => {
               summary: 'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment and is blocking the next autonomous cycle.',
               objective: autopilot.workflow?.objective || undefined,
               missingCapability: 'stale_reentry_acknowledgment',
-              missingSource: startedAt ? `waiting-since:${startedAt}` : 'queued_chat_launched',
-              failedOrInsufficientRoute: 'queued_chat_launched -> reentry_acknowledged',
-              cheapestEnablementPath: 'inspect the pending queued VS Code chat turn and run openjarvis:hermes:runtime:reentry-ack before allowing the next autonomous cycle',
+              missingSource: startedAt ? `waiting-since:${startedAt}` : 'queued_gpt_handoff_launched',
+              failedOrInsufficientRoute: 'queued_gpt_handoff_launched -> reentry_acknowledged',
+              cheapestEnablementPath: 'inspect the pending queued VS Code GPT handoff and run openjarvis:hermes:runtime:reentry-ack before allowing the next autonomous cycle',
               proposedOwner: 'hermes',
               evidenceRefs: ['plans/execution/HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md'],
               recallCondition,
@@ -289,11 +336,11 @@ export const runLocalAutonomySupervisorCycle = async (): Promise<string> => {
       ? 'supervisor:awaiting-reentry-ack:stale'
       : 'supervisor:awaiting-reentry-ack';
     actions.push(state.lastSupervisorAction);
-    return `doctor=true failures=0 hermes=${state.lastHermesReadiness || 'unknown'} queue=${queuedObjectivesAvailable ? 'ready' : 'empty'} chat=${state.lastSupervisorAutoLaunchQueuedChat ? 'auto' : 'manual'} reentry=${awaitingReentryAcknowledgmentStale ? 'stale-ack' : 'awaiting-ack'} ${actions.join(' ')}`.trim();
+    return `doctor=true failures=0 hermes=${state.lastHermesReadiness || 'unknown'} queue=${queuedObjectivesAvailable ? 'ready' : 'empty'} mode=${formatQueueLaunchModeSummary(state.lastSupervisorQueueLaunchMode)} reentry=${awaitingReentryAcknowledgmentStale ? 'stale-ack' : 'awaiting-ack'} ${actions.join(' ')}`.trim();
   }
 
   const needsSupervisorModeUpgrade = supervisorAlive
-    && state.lastSupervisorAutoLaunchQueuedChat !== true
+    && observedQueueLaunchMode !== desiredQueueLaunchMode
     && workflowStatus !== 'executing';
 
   if (!supervisorAlive || needsSupervisorModeUpgrade) {
@@ -304,11 +351,11 @@ export const runLocalAutonomySupervisorCycle = async (): Promise<string> => {
     if (needsSupervisorModeUpgrade) {
       const stopped = stopRunningProcess(supervisorPid);
       if (!stopped) {
-        state.lastSupervisorAction = 'supervisor:upgrade-failed:manual-chat';
+        state.lastSupervisorAction = `supervisor:upgrade-failed:${formatSupervisorActionMode(observedQueueLaunchMode)}`;
         actions.push(state.lastSupervisorAction);
-        return `doctor=true failures=0 hermes=${state.lastHermesReadiness || 'unknown'} queue=${queuedObjectivesAvailable ? 'ready' : 'empty'} chat=manual ${actions.join(' ')}`.trim();
+        return `doctor=true failures=0 hermes=${state.lastHermesReadiness || 'unknown'} queue=${queuedObjectivesAvailable ? 'ready' : 'empty'} mode=${formatQueueLaunchModeSummary(state.lastSupervisorQueueLaunchMode)} ${actions.join(' ')}`.trim();
       }
-      actions.push('supervisor:manual-chat-stopped');
+      actions.push(`supervisor:${formatSupervisorActionMode(observedQueueLaunchMode)}-stopped`);
     }
 
     if (canStartSupervisor) {
@@ -317,13 +364,23 @@ export const runLocalAutonomySupervisorCycle = async (): Promise<string> => {
         actionId: 'start-supervisor-loop',
         dryRun: false,
         visibleTerminal: false,
-        autoLaunchQueuedChat: LOCAL_AUTONOMY_AUTO_LAUNCH_QUEUED_CHAT,
+        autoLaunchQueuedChat: desiredQueueLaunchMode === 'chat',
+        autoLaunchQueuedSwarm: desiredQueueLaunchMode === 'swarm',
+        autoLaunchQueuedSwarmIncludeDistiller: autopilot.supervisor?.auto_launch_queued_swarm_include_distiller === true,
+        autoLaunchQueuedSwarmExecutorWorktreePath: typeof autopilot.supervisor?.auto_launch_queued_swarm_executor_worktree_path === 'string'
+          ? autopilot.supervisor.auto_launch_queued_swarm_executor_worktree_path
+          : null,
+        autoLaunchQueuedSwarmExecutorArtifactBudget: Array.isArray(autopilot.supervisor?.auto_launch_queued_swarm_executor_artifact_budget)
+          ? autopilot.supervisor.auto_launch_queued_swarm_executor_artifact_budget.map((entry) => String(entry || '').trim()).filter(Boolean)
+          : [],
       });
       if (remediation.ok) {
-        state.lastSupervisorAutoLaunchQueuedChat = LOCAL_AUTONOMY_AUTO_LAUNCH_QUEUED_CHAT;
+        state.lastSupervisorAutoLaunchQueuedChat = desiredQueueLaunchMode === 'chat';
+        state.lastSupervisorAutoLaunchQueuedSwarm = desiredQueueLaunchMode === 'swarm';
+        state.lastSupervisorQueueLaunchMode = desiredQueueLaunchMode;
       }
       state.lastSupervisorAction = remediation.ok
-        ? `supervisor:${needsSupervisorModeUpgrade ? 'upgraded' : remediation.completion}:${LOCAL_AUTONOMY_AUTO_LAUNCH_QUEUED_CHAT ? 'auto-chat' : 'manual-chat'}`
+        ? `supervisor:${needsSupervisorModeUpgrade ? 'upgraded' : remediation.completion}:${formatSupervisorActionMode(desiredQueueLaunchMode)}`
         : `supervisor:error:${remediation.errorCode || 'unknown'}`;
       state.lastSupervisorQueuedAt = remediation.startedAt;
       state.lastSupervisorPid = remediation.pid;
@@ -333,13 +390,11 @@ export const runLocalAutonomySupervisorCycle = async (): Promise<string> => {
       actions.push(state.lastSupervisorAction);
     }
   } else {
-    state.lastSupervisorAction = state.lastSupervisorAutoLaunchQueuedChat
-      ? 'supervisor:alive:auto-chat'
-      : 'supervisor:alive:manual-chat';
+    state.lastSupervisorAction = `supervisor:alive:${formatSupervisorActionMode(observedQueueLaunchMode)}`;
     actions.push(state.lastSupervisorAction);
   }
 
-  return `doctor=true failures=0 hermes=${state.lastHermesReadiness || 'unknown'} queue=${queuedObjectivesAvailable ? 'ready' : 'empty'} chat=${state.lastSupervisorAutoLaunchQueuedChat ? 'auto' : 'manual'} ${actions.join(' ')}`.trim();
+  return `doctor=true failures=0 hermes=${state.lastHermesReadiness || 'unknown'} queue=${queuedObjectivesAvailable ? 'ready' : 'empty'} mode=${formatQueueLaunchModeSummary(state.lastSupervisorQueueLaunchMode)} ${actions.join(' ')}`.trim();
 };
 
 const loop = new BackgroundLoop(runLocalAutonomySupervisorCycle, {
@@ -376,6 +431,8 @@ export const getLocalAutonomySupervisorLoopStats = () => ({
   lastQueuedObjectivesAvailable: state.lastQueuedObjectivesAvailable,
   lastSupervisorAlive: state.lastSupervisorAlive,
   lastSupervisorAutoLaunchQueuedChat: state.lastSupervisorAutoLaunchQueuedChat,
+  lastSupervisorAutoLaunchQueuedSwarm: state.lastSupervisorAutoLaunchQueuedSwarm,
+  lastSupervisorQueueLaunchMode: state.lastSupervisorQueueLaunchMode,
   lastAwaitingReentryAcknowledgment: state.lastAwaitingReentryAcknowledgment,
   lastAwaitingReentryAcknowledgmentStale: state.lastAwaitingReentryAcknowledgmentStale,
   lastAwaitingReentrySyncKey: state.lastAwaitingReentrySyncKey,

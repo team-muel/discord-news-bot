@@ -75,6 +75,28 @@ What is not acceptable is making the user manually relay the same intent twice j
 
 If the loop requires the user to routinely forward prompts into Hermes, the collaboration boundary is underdesigned.
 
+## Bounded Parallel Worker Rule
+
+Single ingress remains the user-facing compatibility contract.
+That does not forbid bounded parallel GPT workers behind the coordinator.
+
+The allowed swarm shape is:
+
+- one coordinator GPT turn owns the active workstream objective
+- Hermes owns continuity, queueing, launch, and restart boundaries
+- up to three bounded GPT worker turns may run in parallel when each one has a distinct shard, artifact budget, and recall condition
+- OpenClaw remains a local personal asset agent only and does not own shared routing, swarm scheduling, or semantic state
+
+Parallelism must fail closed under these guardrails:
+
+- one wave objective per coordinator
+- one bounded shard per worker
+- one artifact budget per worker
+- separate worktree roots for code-writing workers when available
+- explicit wave and shard metadata carried through reentry acknowledgment closeout
+
+If those guards are missing, the system should fall back to the simpler single-worker compatibility loop instead of pretending unrestricted parallelism is safe.
+
 ## Economic Rule
 
 The system must optimize for reasoning value per token and per context window.

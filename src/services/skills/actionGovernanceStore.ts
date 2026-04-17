@@ -503,6 +503,42 @@ export const listActionApprovalRequests = async (params: {
   }
 };
 
+export const getActionApprovalRequest = async (requestId: string): Promise<ActionApprovalRequest | null> => {
+  const normalizedRequestId = String(requestId || '').trim();
+  if (!normalizedRequestId) {
+    return null;
+  }
+
+  const memoryRow = memoryApprovals.get(normalizedRequestId) || null;
+
+  if (!isSupabaseConfigured()) {
+    return memoryRow;
+  }
+
+  try {
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from(ACTION_APPROVAL_TABLE)
+      .select('*')
+      .eq('id', normalizedRequestId)
+      .maybeSingle();
+
+    if (error || !data) {
+      return memoryRow;
+    }
+
+    const merged = mergeApprovalRows([
+      normalizeApprovalRow(data),
+      ...(memoryRow ? [memoryRow] : []),
+    ], 1);
+
+    return merged[0] || null;
+  } catch (err) {
+    logger.debug('[GOVERNANCE] approval get failed requestId=%s: %s', normalizedRequestId, getErrorMessage(err));
+    return memoryRow;
+  }
+};
+
 export const decideActionApprovalRequest = async (params: {
   requestId: string;
   decision: 'approve' | 'reject';

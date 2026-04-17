@@ -16,6 +16,13 @@ export type OperatingBaselineService = {
   alwaysOn?: boolean;
 };
 
+export type OperatingBaselineCapabilityAuditFinding = {
+  id?: string;
+  status?: 'optional-lane' | 'accepted-gap';
+  summary?: string;
+  rationale?: string;
+};
+
 export type OperatingBaselineDocument = {
   schemaVersion: number;
   updatedAt: string;
@@ -35,6 +42,7 @@ export type OperatingBaselineDocument = {
   services?: Record<string, OperatingBaselineService>;
   lanes?: {
     alwaysOnRequired?: string[];
+    optInRemoteProviderLanes?: string[];
     localAccelerationOnly?: string[];
   };
   readiness?: {
@@ -42,7 +50,15 @@ export type OperatingBaselineDocument = {
       command?: string;
       meaning?: string;
     };
+    localLearningLoopCheck?: {
+      command?: string;
+      meaning?: string;
+    };
     alwaysOnChecks?: string[];
+    optionalLaneChecks?: string[];
+  };
+  capabilityAudit?: {
+    acknowledgedFindings?: OperatingBaselineCapabilityAuditFinding[];
   };
   externalOssRoles?: Record<string, string>;
 };
@@ -52,6 +68,7 @@ export type OperatingBaselineSummary = {
   memoryGb: number | null;
   publicBaseUrl: string;
   alwaysOnRequired: string[];
+  optInRemoteProviderLanes: string[];
   localAccelerationOnly: string[];
   localHybridMeaning: string;
   openjarvisRole: string;
@@ -88,6 +105,9 @@ export const summarizeOperatingBaseline = (
   const alwaysOnRequired = isStringArray(baseline?.lanes?.alwaysOnRequired)
     ? baseline?.lanes?.alwaysOnRequired || []
     : [];
+  const optInRemoteProviderLanes = isStringArray(baseline?.lanes?.optInRemoteProviderLanes)
+    ? baseline?.lanes?.optInRemoteProviderLanes || []
+    : [];
   const localAccelerationOnly = isStringArray(baseline?.lanes?.localAccelerationOnly)
     ? baseline?.lanes?.localAccelerationOnly || []
     : [];
@@ -99,6 +119,7 @@ export const summarizeOperatingBaseline = (
       : null,
     publicBaseUrl: String(baseline?.gcpWorker?.publicBaseUrl || '').trim() || 'unknown',
     alwaysOnRequired,
+    optInRemoteProviderLanes,
     localAccelerationOnly,
     localHybridMeaning: String(baseline?.readiness?.localHybridCheck?.meaning || '').trim()
       || 'Local hybrid checks validate local readiness only.',

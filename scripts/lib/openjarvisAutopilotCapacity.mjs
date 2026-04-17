@@ -104,6 +104,27 @@ const collectServiceCanonicalCandidates = (service = {}) => [
   .map((value) => String(value || '').trim())
   .filter(Boolean);
 
+const countEnabledSharedWrapperServers = (rawValue) => {
+  const raw = String(rawValue || '').trim();
+  if (!raw || raw === '[]') {
+    return 0;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return 0;
+    }
+
+    return parsed.filter((entry) => entry
+      && typeof entry === 'object'
+      && entry.enabled !== false
+      && String(entry.audience || '').trim().toLowerCase() !== 'operator').length;
+  } catch {
+    return 0;
+  }
+};
+
 export const buildGcpNativeAutopilotContext = (params = {}) => {
   const env = params.env || process.env;
   const operatingBaselinePath = params.operatingBaselinePath || DEFAULT_OPERATING_BASELINE_PATH;
@@ -113,6 +134,7 @@ export const buildGcpNativeAutopilotContext = (params = {}) => {
   const opencodeWorkerRequired = parseBool(env.OPENJARVIS_REQUIRE_OPENCODE_WORKER);
   const obsidianRemoteMcpEnabled = parseBool(env.OBSIDIAN_REMOTE_MCP_ENABLED);
   const localOllamaEnabled = Boolean(String(env.OLLAMA_BASE_URL || '').trim());
+  const sharedMcpUpstreamConfiguredCount = countEnabledSharedWrapperServers(env.MCP_UPSTREAM_SERVERS);
 
   if (!operatingBaseline?.services) {
     return {
@@ -131,6 +153,8 @@ export const buildGcpNativeAutopilotContext = (params = {}) => {
       local_ollama_enabled: localOllamaEnabled,
       openjarvis_remote_preferred: false,
       shared_mcp_remote_preferred: false,
+      shared_mcp_upstream_configured_count: sharedMcpUpstreamConfiguredCount,
+      shared_mcp_wrapper_ready: false,
       services: {},
     };
   }
@@ -189,6 +213,8 @@ export const buildGcpNativeAutopilotContext = (params = {}) => {
     local_ollama_enabled: localOllamaEnabled,
     openjarvis_remote_preferred: services.openjarvisServe?.canonical_match === true,
     shared_mcp_remote_preferred: services.unifiedMcp?.canonical_match === true,
+    shared_mcp_upstream_configured_count: sharedMcpUpstreamConfiguredCount,
+    shared_mcp_wrapper_ready: services.unifiedMcp?.canonical_match === true && sharedMcpUpstreamConfiguredCount > 0,
     services,
   };
 };
@@ -209,7 +235,7 @@ const inferGcpNativeCapacity = (gcpNativeLike) => {
   const routingScore = (gcpNativeLike.strict_routing_enabled ? 10 : 0)
     + (gcpNativeLike.opencode_worker_required ? 10 : 0)
     + (gcpNativeLike.delegation_enabled ? 5 : 0)
-    + (gcpNativeLike.obsidian_remote_mcp_enabled && gcpNativeLike.shared_mcp_remote_preferred ? 5 : 0);
+    + (gcpNativeLike.obsidian_remote_mcp_enabled && gcpNativeLike.shared_mcp_wrapper_ready ? 5 : 0);
   const score = clamp(surfaceScore + routingScore, 0, 100);
 
   if (wiredSurfaceCount === requiredSurfaceCount) {
@@ -246,12 +272,24 @@ const inferGcpNativeCapacity = (gcpNativeLike) => {
     pushUnique(blockers, 'OpenJarvis serve still prefers a local-only surface');
   }
 
-  if (gcpNativeLike.shared_mcp_remote_preferred && gcpNativeLike.obsidian_remote_mcp_enabled) {
-    pushUnique(strengths, 'shared MCP and remote Obsidian are anchored to the canonical GCP lane');
+  if (gcpNativeLike.shared_mcp_remote_preferred) {
+    pushUnique(strengths, 'shared MCP service points at the canonical GCP lane');
+  } else {
+    pushUnique(blockers, 'shared MCP is not yet anchored to the canonical GCP lane');
+  }
+
+  if (gcpNativeLike.shared_mcp_wrapper_ready) {
+    pushUnique(strengths, 'shared MCP wrapper namespaces are configured for the active lane');
+  } else if (gcpNativeLike.shared_mcp_remote_preferred) {
+    pushUnique(blockers, 'shared MCP URL is wired but no enabled MCP_UPSTREAM_SERVERS namespace is configured');
+  }
+
+  if (gcpNativeLike.obsidian_remote_mcp_enabled) {
+    pushUnique(strengths, 'remote Obsidian MCP is explicitly enabled for the active lane');
   } else if (gcpNativeLike.shared_mcp_remote_preferred) {
     pushUnique(blockers, 'shared MCP is remote but remote Obsidian MCP is not explicitly enabled');
   } else {
-    pushUnique(blockers, 'shared MCP is not yet anchored to the canonical GCP lane');
+    pushUnique(blockers, 'remote Obsidian MCP is not explicitly enabled for the active lane');
   }
 
   let primaryReason = 'gcp_native_capacity_below_target';
@@ -259,6 +297,10 @@ const inferGcpNativeCapacity = (gcpNativeLike) => {
     primaryReason = 'gcp_openjarvis_serve_not_remote';
   } else if (!gcpNativeLike.shared_mcp_remote_preferred) {
     primaryReason = 'gcp_shared_mcp_not_remote';
+  } else if (!gcpNativeLike.shared_mcp_wrapper_ready) {
+    primaryReason = 'gcp_shared_mcp_wrapper_not_configured';
+  } else if (!gcpNativeLike.obsidian_remote_mcp_enabled) {
+    primaryReason = 'gcp_remote_obsidian_not_enabled';
   } else if (wiredSurfaceCount < requiredSurfaceCount) {
     primaryReason = 'gcp_role_worker_surfaces_incomplete';
   } else if (!gcpNativeLike.strict_routing_enabled) {

@@ -193,11 +193,11 @@ export const OBSIDIAN_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'obsidian.knowledge.control',
-    description: 'Knowledge compiler 상태, human-first access profile, repo-to-vault catalog coverage, control-tower metadata, artifact 본문, 그리고 reflection bundle 추천을 조회합니다.',
+    description: 'Knowledge compiler 상태, human-first access profile, repo-to-vault catalog coverage, control-tower metadata, supervisor 상태, artifact 본문, 그리고 reflection bundle 추천을 조회합니다.',
     inputSchema: {
       type: 'object',
       properties: {
-        artifact: { type: 'string', description: 'index|log|lint|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug> 또는 생성된 artifact 경로' },
+        artifact: { type: 'string', description: 'index|log|lint|supervisor|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug> 또는 생성된 artifact 경로' },
         bundleFor: { type: 'string', description: 'control-tower alias 또는 vault 상대 경로. reflection bundle 추천을 반환합니다.' },
       },
       additionalProperties: false,
@@ -708,7 +708,7 @@ export const callObsidianMcpTool = async (request: McpToolCallRequest): Promise<
 
     const artifactPath = resolveObsidianKnowledgeArtifactPath(artifactRequest);
     if (!artifactPath) {
-      return toTextResult('artifact must be index|log|lint|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug>', true);
+      return toTextResult('artifact must be index|log|lint|supervisor|blueprint|canonical-map|cadence|gate-entrypoints|topic:<slug>|entity:<slug>', true);
     }
 
     const content = await readObsidianFileWithAdapter({

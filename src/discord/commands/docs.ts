@@ -5,6 +5,7 @@ import { getSemanticAnswerCache, putSemanticAnswerCache } from '../../services/s
 import { buildRagQueryPlanForGuild } from '../../services/taskRoutingService';
 import { recordTaskRoutingMetric } from '../../services/taskRoutingMetricsService';
 import { DISCORD_MESSAGES } from '../messages';
+import type { DiscordIngressExecutionHandler, DiscordIngressTelemetry } from '../runtime/discordIngressAdapter';
 import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
 import { seedFeedbackReactions } from '../session';
@@ -23,15 +24,45 @@ type DocsDeps = {
   generateText: (params: LlmTextRequest) => Promise<string>;
   isAnyLlmConfigured: () => boolean;
   getErrorMessage: (error: unknown) => string;
-  routeOpenClawDiscordIngress?: (params: {
-    request: string;
-    guildId: string | null;
-    userId: string;
-    channel: ChatInputCommandInteraction['channel'];
-    entryLabel: string;
-    surface: 'docs-command';
-  }) => Promise<{ answer: string } | null>;
+  executeDocsCommandIngress?: DiscordIngressExecutionHandler;
 };
+
+type IngressResponseTone = 'info' | 'warn' | 'error';
+
+type IngressResponsePayload = {
+  title: string;
+  body: string;
+  tone: IngressResponseTone;
+  seedFeedback?: boolean;
+};
+
+type IngressFollowUpPayload = IngressResponsePayload & {
+  ephemeral?: boolean;
+};
+
+type IngressResponseSinkV1 = {
+  ack: () => Promise<void>;
+  updateProgress: (payload: IngressResponsePayload) => Promise<void>;
+  final: (payload: IngressResponsePayload) => Promise<void>;
+  followUp: (payload: IngressFollowUpPayload) => Promise<void>;
+};
+
+type DocsAskRequestV1 = {
+  question: string;
+  guildId: string | null;
+  userId: string;
+  channel: ChatInputCommandInteraction['channel'];
+  entryLabel: string;
+  replyMode: 'private' | 'public';
+  correlationId: string;
+  accessNotice: string;
+};
+
+const EMBED_BY_TONE = {
+  info: EMBED_INFO,
+  warn: EMBED_WARN,
+  error: EMBED_ERROR,
+} as const;
 
 const formatMetadataSignalsLine = (signals?: RAGQueryResult['metadataSignals']): string => {
   if (!signals) {
@@ -41,75 +72,141 @@ const formatMetadataSignalsLine = (signals?: RAGQueryResult['metadataSignals']):
   return `메타데이터 판단: active ${signals.activeDocs}, invalid ${signals.invalidDocs}, superseded ${signals.supersededDocs}, sourced ${signals.sourcedDocs}`;
 };
 
+const toIngressMetricExtra = (
+  telemetry: DiscordIngressTelemetry | null | undefined,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  if (!telemetry) {
+    return extra;
+  }
+
+  return {
+    ...extra,
+    ingress: {
+      correlationId: telemetry.correlationId,
+      selectedAdapterId: telemetry.selectedAdapterId,
+      adapterId: telemetry.adapterId,
+      routeDecision: telemetry.routeDecision,
+      fallbackReason: telemetry.fallbackReason,
+      shadowMode: telemetry.shadowMode,
+      surface: telemetry.surface,
+    },
+  };
+};
+
+const createDocsAskResponseSink = (
+  interaction: ChatInputCommandInteraction,
+  shared: boolean,
+): IngressResponseSinkV1 => {
+  let acked = false;
+
+  const ensureAcked = async () => {
+    if (acked) {
+      return;
+    }
+    await interaction.deferReply({ ephemeral: !shared });
+    acked = true;
+  };
+
+  const renderCard = (payload: IngressResponsePayload | IngressFollowUpPayload) => {
+    return buildUserCard(payload.title, payload.body, EMBED_BY_TONE[payload.tone]);
+  };
+
+  return {
+    ack: ensureAcked,
+    updateProgress: async (payload) => {
+      await ensureAcked();
+      await interaction.editReply(renderCard(payload));
+    },
+    final: async (payload) => {
+      await ensureAcked();
+      await interaction.editReply(renderCard(payload));
+      if (!payload.seedFeedback) {
+        return;
+      }
+      const reply = await interaction.fetchReply().catch(() => null);
+      await seedFeedbackReactions(reply).catch(() => {});
+    },
+    followUp: async (payload) => {
+      await ensureAcked();
+      await interaction.followUp({
+        ...renderCard(payload),
+        ephemeral: payload.ephemeral ?? !shared,
+      });
+    },
+  };
+};
+
 export const createDocsHandlers = (deps: DocsDeps) => {
   /**
    * /물어봐 <질문> — RAG 검색 후 LLM이 문서 기반으로 답변
    */
-  const handleAskCommand = async (interaction: ChatInputCommandInteraction) => {
-    const access = await ensureFeatureAccess(interaction);
-    if (!access.ok && access.reason === 'guild_only') {
-      await interaction.reply({
-        ...buildUserCard(DISCORD_MESSAGES.docs.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN),
-        ephemeral: true,
-      });
-      return;
-    }
-    if (!access.ok) {
-      await interaction.reply({
-        ...buildUserCard(DISCORD_MESSAGES.docs.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
-        ephemeral: true,
-      });
-      return;
-    }
-    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
-
-    const shared = deps.getReplyVisibility(interaction) === 'public';
-    await interaction.deferReply({ ephemeral: !shared });
-
-    const question = (interaction.options.getString('질문', true) || '').trim();
-    if (!question) {
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleInputError, DISCORD_MESSAGES.docs.askInputRequired, EMBED_WARN));
-      return;
-    }
-
-    const openClawResult = deps.routeOpenClawDiscordIngress
-      ? await deps.routeOpenClawDiscordIngress({
-        request: question,
-        guildId: interaction.guildId,
-        userId: interaction.user.id,
-        channel: interaction.channel,
-        entryLabel: `/${interaction.commandName}`,
+  const handleDocsAskRequest = async (
+    request: DocsAskRequestV1,
+    sink: IngressResponseSinkV1,
+  ) => {
+    const ingressExecution = deps.executeDocsCommandIngress
+      ? await deps.executeDocsCommandIngress({
+        request: request.question,
+        guildId: request.guildId,
+        userId: request.userId,
+        channel: request.channel,
+        correlationId: request.correlationId,
+        entryLabel: request.entryLabel,
         surface: 'docs-command',
+        replyMode: request.replyMode,
+        tenantLane: 'operator-personal',
       }).catch(() => {
         return null;
       })
       : null;
-    if (openClawResult?.answer) {
+    const ingressTelemetry = ingressExecution?.telemetry ?? null;
+    if (ingressExecution?.result?.answer) {
+      if (request.guildId) {
+        void recordTaskRoutingMetric({
+          guildId: request.guildId,
+          requestedBy: request.userId,
+          goal: request.question,
+          channel: 'docs',
+          route: 'knowledge',
+          confidence: 1,
+          reasons: ['discord_ingress_adapter_accept'],
+          status: 'success',
+          durationMs: 0,
+          extra: toIngressMetricExtra(ingressTelemetry, {
+            continuityQueued: ingressExecution.result.continuityQueued,
+          }),
+        });
+      }
+
       const body = [
-        openClawResult.answer.slice(0, DISCORD_DOCS_ANSWER_LIMIT),
-        accessNotice,
+        ingressExecution.result.answer.slice(0, DISCORD_DOCS_ANSWER_LIMIT),
+        request.accessNotice,
       ].filter(Boolean).join('\n');
-      await interaction.editReply(
-        buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
-      );
-      const reply = await interaction.fetchReply().catch(() => null);
-      await seedFeedbackReactions(reply);
+      await sink.final({
+        title: DISCORD_MESSAGES.docs.askTitle(request.question.slice(0, 40)),
+        body: body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT),
+        tone: 'info',
+        seedFeedback: true,
+      });
       return;
     }
 
-    const ragPlan = await buildRagQueryPlanForGuild(question, interaction.guildId || undefined);
+    const ragPlan = await buildRagQueryPlanForGuild(request.question, request.guildId || undefined);
 
-    await interaction.editReply(
-      buildUserCard(DISCORD_MESSAGES.docs.titleSearching, DISCORD_MESSAGES.docs.searchingFor(question.slice(0, 60)), EMBED_INFO),
-    );
+    await sink.updateProgress({
+      title: DISCORD_MESSAGES.docs.titleSearching,
+      body: DISCORD_MESSAGES.docs.searchingFor(request.question.slice(0, 60)),
+      tone: 'info',
+    });
 
-    if (interaction.guildId) {
-      const cacheHit = await getSemanticAnswerCache({ guildId: interaction.guildId, question });
+    if (request.guildId) {
+      const cacheHit = await getSemanticAnswerCache({ guildId: request.guildId, question: request.question });
       if (cacheHit) {
         void recordTaskRoutingMetric({
-          guildId: interaction.guildId,
-          requestedBy: interaction.user.id,
-          goal: question,
+          guildId: request.guildId,
+          requestedBy: request.userId,
+          goal: request.question,
           channel: 'docs',
           route: ragPlan.route,
           confidence: ragPlan.confidence,
@@ -117,10 +214,10 @@ export const createDocsHandlers = (deps: DocsDeps) => {
           overrideUsed: ragPlan.overrideUsed,
           status: 'success',
           durationMs: 0,
-          extra: {
+          extra: toIngressMetricExtra(ingressTelemetry, {
             cacheHit: true,
             sourceCount: cacheHit.sourceFiles.length,
-          },
+          }),
         });
         const body = [
           cacheHit.answer.slice(0, DISCORD_DOCS_ANSWER_LIMIT),
@@ -128,35 +225,40 @@ export const createDocsHandlers = (deps: DocsDeps) => {
           `캐시 응답 (semantic=${cacheHit.similarity})`,
           cacheHit.intent ? `intent: ${cacheHit.intent}` : '',
           cacheHit.sourceFiles.length > 0 ? `소스: ${cacheHit.sourceFiles.slice(0, 6).join(', ')}` : '',
-          accessNotice,
+          request.accessNotice,
         ].filter(Boolean).join('\n');
-        await interaction.editReply(
-          buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
-        );
-        const cachedReply = await interaction.fetchReply().catch(() => null);
-        await seedFeedbackReactions(cachedReply);
+        await sink.final({
+          title: DISCORD_MESSAGES.docs.askTitle(request.question.slice(0, 40)),
+          body: body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT),
+          tone: 'info',
+          seedFeedback: true,
+        });
         return;
       }
     }
 
     let ragResult: RAGQueryResult;
     try {
-      ragResult = await deps.queryObsidianRAG(question, {
+      ragResult = await deps.queryObsidianRAG(request.question, {
         maxDocs: ragPlan.maxDocs,
         contextMode: ragPlan.contextMode,
-        guildId: interaction.guildId || undefined,
+        guildId: request.guildId || undefined,
       });
     } catch (error) {
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.docs.titleSearchError, deps.getErrorMessage(error), EMBED_ERROR));
+      await sink.final({
+        title: DISCORD_MESSAGES.docs.titleSearchError,
+        body: deps.getErrorMessage(error),
+        tone: 'error',
+      });
       return;
     }
 
     if (ragResult.documentCount === 0) {
-      if (interaction.guildId) {
+      if (request.guildId) {
         void recordTaskRoutingMetric({
-          guildId: interaction.guildId,
-          requestedBy: interaction.user.id,
-          goal: question,
+          guildId: request.guildId,
+          requestedBy: request.userId,
+          goal: request.question,
           channel: 'docs',
           route: ragPlan.route,
           confidence: ragPlan.confidence,
@@ -164,24 +266,21 @@ export const createDocsHandlers = (deps: DocsDeps) => {
           overrideUsed: ragPlan.overrideUsed,
           status: 'failed',
           durationMs: ragResult.executionTimeMs,
-          extra: {
+          extra: toIngressMetricExtra(ingressTelemetry, {
             cacheHit: false,
             documentCount: 0,
             ragIntent: ragResult.intent,
-          },
+          }),
         });
       }
-      await interaction.editReply(
-        buildUserCard(
-          DISCORD_MESSAGES.docs.titleNoDocument,
-          DISCORD_MESSAGES.docs.noDocumentLines(question.slice(0, 60), ragResult.intent).join('\n'),
-          EMBED_WARN,
-        ),
-      );
+      await sink.final({
+        title: DISCORD_MESSAGES.docs.titleNoDocument,
+        body: DISCORD_MESSAGES.docs.noDocumentLines(request.question.slice(0, 60), ragResult.intent).join('\n'),
+        tone: 'warn',
+      });
       return;
     }
 
-    // LLM이 구성된 경우 문서 컨텍스트를 기반으로 답변 생성
     let answer: string = DISCORD_MESSAGES.docs.llmNotConfigured;
     if (deps.isAnyLlmConfigured() && ragResult.documentContext) {
       try {
@@ -202,7 +301,7 @@ export const createDocsHandlers = (deps: DocsDeps) => {
         ].filter(Boolean).join('\n');
 
         const user = [
-          `질문: ${question}`,
+          `질문: ${request.question}`,
           '',
           '=== 참고 문서 컨텍스트 ===',
           ragResult.documentContext.slice(0, DISCORD_DOCS_CONTEXT_LIMIT),
@@ -211,7 +310,6 @@ export const createDocsHandlers = (deps: DocsDeps) => {
 
         answer = await deps.generateText({ system, user, maxTokens: DISCORD_DOCS_LLM_MAX_TOKENS, actionName: 'docs.qa' });
       } catch {
-        // LLM 실패 시 원본 컨텍스트 일부를 그대로 표시
         answer = clipDocsFallbackContext(ragResult.documentContext) + DISCORD_MESSAGES.docs.llmFallbackSuffix;
       }
     }
@@ -236,14 +334,14 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       ragResult.graphDensity
         ? DISCORD_MESSAGES.docs.graphDensityLine(ragResult.graphDensity.avgBacklinks, ragResult.graphDensity.maxBacklinks, ragResult.graphDensity.connectedRatio)
         : '',
-      accessNotice,
+      request.accessNotice,
     ].filter(Boolean).join('\n');
 
-    if (interaction.guildId) {
+    if (request.guildId) {
       void recordTaskRoutingMetric({
-        guildId: interaction.guildId,
-        requestedBy: interaction.user.id,
-        goal: question,
+        guildId: request.guildId,
+        requestedBy: request.userId,
+        goal: request.question,
         channel: 'docs',
         route: ragPlan.route,
         confidence: ragPlan.confidence,
@@ -251,19 +349,19 @@ export const createDocsHandlers = (deps: DocsDeps) => {
         overrideUsed: ragPlan.overrideUsed,
         status: 'success',
         durationMs: ragResult.executionTimeMs,
-        extra: {
+        extra: toIngressMetricExtra(ingressTelemetry, {
           cacheHit: false,
           documentCount: ragResult.documentCount,
           ragIntent: ragResult.intent,
           contextMode: ragResult.contextMode,
-        },
+        }),
       });
     }
 
-    if (interaction.guildId && truncatedAnswer && ragResult.documentCount > 0) {
+    if (request.guildId && truncatedAnswer && ragResult.documentCount > 0) {
       void putSemanticAnswerCache({
-        guildId: interaction.guildId,
-        question,
+        guildId: request.guildId,
+        question: request.question,
         answer: truncatedAnswer,
         intent: ragResult.intent,
         sourceFiles: ragResult.sourceFiles,
@@ -274,11 +372,56 @@ export const createDocsHandlers = (deps: DocsDeps) => {
       });
     }
 
-    await interaction.editReply(
-      buildUserCard(DISCORD_MESSAGES.docs.askTitle(question.slice(0, 40)), body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT), EMBED_INFO),
-    );
-    const askReply = await interaction.fetchReply().catch(() => null);
-    await seedFeedbackReactions(askReply);
+    await sink.final({
+      title: DISCORD_MESSAGES.docs.askTitle(request.question.slice(0, 40)),
+      body: body.slice(0, DISCORD_DOCS_MESSAGE_LIMIT),
+      tone: 'info',
+      seedFeedback: true,
+    });
+  };
+
+  const handleAskCommand = async (interaction: ChatInputCommandInteraction) => {
+    const access = await ensureFeatureAccess(interaction);
+    if (!access.ok && access.reason === 'guild_only') {
+      await interaction.reply({
+        ...buildUserCard(DISCORD_MESSAGES.docs.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN),
+        ephemeral: true,
+      });
+      return;
+    }
+    if (!access.ok) {
+      await interaction.reply({
+        ...buildUserCard(DISCORD_MESSAGES.docs.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN),
+        ephemeral: true,
+      });
+      return;
+    }
+    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
+
+    const shared = deps.getReplyVisibility(interaction) === 'public';
+    const sink = createDocsAskResponseSink(interaction, shared);
+    await sink.ack();
+
+    const question = (interaction.options.getString('질문', true) || '').trim();
+    if (!question) {
+      await sink.final({
+        title: DISCORD_MESSAGES.docs.titleInputError,
+        body: DISCORD_MESSAGES.docs.askInputRequired,
+        tone: 'warn',
+      });
+      return;
+    }
+
+    await handleDocsAskRequest({
+      question,
+      guildId: interaction.guildId,
+      userId: interaction.user.id,
+      channel: interaction.channel,
+      entryLabel: `/${interaction.commandName}`,
+      replyMode: shared ? 'public' : 'private',
+      correlationId: interaction.id,
+      accessNotice,
+    }, sink);
   };
 
   /**

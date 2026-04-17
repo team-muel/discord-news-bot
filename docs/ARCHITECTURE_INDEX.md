@@ -303,7 +303,8 @@ Base provider resolution (when request provider is omitted):
 
 1. `AI_PROVIDER` preferred value if configured
 2. `LLM_PROVIDER_BASE_ORDER` if configured
-3. default fallback priority: `openjarvis` -> `litellm` -> `ollama` -> `openclaw` -> `anthropic` -> `openai` -> `gemini` -> `kimi` -> `huggingface`
+3. default fallback priority: `openjarvis` -> `litellm` -> `ollama`
+4. compatibility escape hatch when the canonical lane is unavailable: `anthropic` -> `openai` -> `gemini` -> `kimi` -> `huggingface` -> `openclaw`
 
 Fallback chain composition:
 
@@ -312,8 +313,8 @@ Fallback chain composition:
 3. workflow model binding/profile defaults (`LLM_WORKFLOW_MODEL_BINDINGS`, `LLM_WORKFLOW_PROFILE_DEFAULTS`) for action-scoped provider/model and quality posture
 4. `LLM_PROVIDER_FALLBACK_CHAIN`
 5. base resolver provider
-6. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openjarvis`, `litellm`, `ollama`, `openclaw`, `anthropic`, `openai`, `gemini`, `kimi`, `huggingface`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
-7. capability-aware reorder derived from `actionName` (chat/code/memory/review/ops). When `OPENJARVIS_ENABLED=true`, OpenJarvis is treated as the preferred control surface and lower-level inference providers remain fallback engines.
+6. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER` or default automatic order (`openjarvis`, `litellm`, `ollama`) when `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
+7. capability-aware reorder derived from `actionName` (chat/code/memory/review/ops). The canonical lane stays `openjarvis -> litellm -> ollama`; direct cloud providers, Hugging Face, and OpenClaw only appear when a profile or policy explicitly introduces them.
 8. runtime readiness pruning for probeable local providers (`ollama`, `litellm`, `openjarvis`) before live call attempts
 
 Guardrails:

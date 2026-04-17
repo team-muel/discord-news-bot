@@ -6,7 +6,10 @@ import { spawn } from 'node:child_process';
 
 import { parseArg, parseBool } from './lib/cliArgs.mjs';
 import { appendWorkflowEvent, readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
-import { autoQueueOpenJarvisHermesRuntimeObjectives } from '../src/services/openjarvis/openjarvisHermesRuntimeControlService.ts';
+import {
+  autoQueueOpenJarvisHermesRuntimeObjectives,
+  recordOpenJarvisHermesSwarmCloseout,
+} from '../src/services/openjarvis/openjarvisHermesRuntimeControlService.ts';
 import {
   promoteKnowledgeToObsidian,
   type ObsidianKnowledgePromoteArtifactKind,
@@ -33,6 +36,12 @@ type ReentryAckParams = {
   restartSupervisor?: string | null;
   restartVisibleTerminal?: boolean;
   dryRun?: boolean;
+  vaultPath?: string | null;
+  swarmBoardPath?: string | null;
+  shardPath?: string | null;
+  waveId?: string | null;
+  shardId?: string | null;
+  workerRole?: string | null;
   loopPath?: string | null;
   manifestPath?: string | null;
 };
@@ -67,6 +76,18 @@ type ReentryKnowledgePromotionResult = {
   skippedReasons: string[];
 };
 
+type ReentrySwarmCloseoutResult = {
+  requested: boolean;
+  completion: 'updated' | 'skipped';
+  waveId: string | null;
+  shardId: string | null;
+  workerRole: string | null;
+  boardPath: string | null;
+  shardPath: string | null;
+  errorCode: string | null;
+  error: string | null;
+};
+
 export type ReentryAckResult = {
   ok: boolean;
   completion: 'recorded' | 'skipped';
@@ -84,6 +105,7 @@ export type ReentryAckResult = {
   manifestPath: string | null;
   autoQueueObjective: ReentryAutoQueueResult | null;
   knowledgePromotion: ReentryKnowledgePromotionResult | null;
+  swarmCloseout: ReentrySwarmCloseoutResult | null;
   restartSupervisor: ReentryRestartResult;
   error: string | null;
 };
@@ -116,6 +138,19 @@ type ReentryAckDependencies = {
     validAt?: string;
     allowOverwrite?: boolean;
   }) => Promise<ObsidianKnowledgePromoteResult>;
+  recordSwarmCloseout: (params: {
+    vaultPath?: string | null;
+    boardPath?: string | null;
+    shardPath?: string | null;
+    waveId?: string | null;
+    shardId?: string | null;
+    workerRole?: string | null;
+    completionStatus: ReentryCompletionStatus;
+    summary?: string | null;
+    nextAction?: string | null;
+    blockedAction?: string | null;
+    dryRun?: boolean;
+  }) => Promise<Omit<ReentrySwarmCloseoutResult, 'requested'>>;
   spawnGoalCycle: (args: string[]) => Promise<{ started: boolean; pid: number | null; command: string }>;
 };
 
@@ -161,7 +196,8 @@ const resolveRootPath = (value: string | null | undefined): string | null => {
   if (!normalized) {
     return null;
   }
-  return path.isAbsolute(normalized) ? path.resolve(normalized) : path.resolve(ROOT, normalized);
+  // Preserve caller-provided absolute path formatting so restart args stay stable across Windows path styles.
+  return path.isAbsolute(normalized) ? normalized : path.resolve(ROOT, normalized);
 };
 
 const readJsonFile = <T = JsonRecord>(filePath: string | null): T | null => {
@@ -209,7 +245,33 @@ const toNumberOrNull = (value: unknown): number | null => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const toStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => compact(entry)).filter(Boolean);
+  }
+  const normalized = compact(value);
+  if (!normalized) {
+    return [];
+  }
+  return normalized.split(',').map((entry) => compact(entry)).filter(Boolean);
+};
+
 const isRecord = (value: unknown): value is JsonRecord => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const resolveQueuedLaunchMode = (params: {
+  loopState?: JsonRecord | null;
+  manifest?: JsonRecord | null;
+}): 'chat' | 'swarm' | 'manual' => {
+  const autoLaunchQueuedSwarm = toBoolean(params.loopState?.auto_launch_queued_swarm, toBoolean(params.manifest?.auto_launch_queued_swarm));
+  if (autoLaunchQueuedSwarm) {
+    return 'swarm';
+  }
+  const autoLaunchQueuedChat = toBoolean(params.loopState?.auto_launch_queued_chat, toBoolean(params.manifest?.auto_launch_queued_chat));
+  if (autoLaunchQueuedChat) {
+    return 'chat';
+  }
+  return 'manual';
+};
 
 export const normalizeReentryCompletionStatus = (value: unknown): ReentryCompletionStatus => {
   const normalized = compact(value).toLowerCase();
@@ -399,17 +461,26 @@ export const buildGoalCycleRestartArgs = (params: {
   continueUntilCapacity?: boolean;
   restartVisibleTerminal?: boolean;
   autoLaunchQueuedChatContextProfile?: string | null;
+  autoLaunchQueuedSwarm?: boolean;
+  autoLaunchQueuedSwarmIncludeDistiller?: boolean;
+  autoLaunchQueuedSwarmExecutorWorktreePath?: string | null;
+  autoLaunchQueuedSwarmExecutorArtifactBudget?: string[];
 }): string[] => {
   const args = [
     GOAL_CYCLE_SCRIPT,
     '--resumeFromPackets=true',
     '--continuousLoop=true',
     '--autoSelectQueuedObjective=true',
-    '--autoLaunchQueuedChat=true',
     '--maxCycles=0',
     '--maxIdleChecks=0',
     `--visibleTerminal=${params.restartVisibleTerminal === true ? 'true' : 'false'}`,
   ];
+
+  if (params.autoLaunchQueuedSwarm === true) {
+    args.push('--autoLaunchQueuedSwarm=true');
+  } else {
+    args.push('--autoLaunchQueuedChat=true');
+  }
 
   const sessionPath = resolveRootPath(params.sessionPath || null);
   if (sessionPath) {
@@ -444,7 +515,18 @@ export const buildGoalCycleRestartArgs = (params: {
   }
 
   const autoLaunchQueuedChatContextProfile = compact(params.autoLaunchQueuedChatContextProfile);
-  if (autoLaunchQueuedChatContextProfile) {
+  if (params.autoLaunchQueuedSwarm === true) {
+    if (params.autoLaunchQueuedSwarmIncludeDistiller === true) {
+      args.push('--autoLaunchQueuedSwarmIncludeDistiller=true');
+    }
+    const executorWorktreePath = resolveRootPath(params.autoLaunchQueuedSwarmExecutorWorktreePath || null);
+    if (executorWorktreePath) {
+      args.push(`--autoLaunchQueuedSwarmExecutorWorktreePath=${executorWorktreePath}`);
+    }
+    if (Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget) && params.autoLaunchQueuedSwarmExecutorArtifactBudget.length > 0) {
+      args.push(`--autoLaunchQueuedSwarmExecutorArtifactBudget=${params.autoLaunchQueuedSwarmExecutorArtifactBudget.join(',')}`);
+    }
+  } else if (autoLaunchQueuedChatContextProfile) {
     args.push(`--autoLaunchQueuedChatContextProfile=${autoLaunchQueuedChatContextProfile}`);
   }
 
@@ -474,16 +556,18 @@ export const shouldRestartGoalCycleAfterReentry = (params: {
     return { requested: false, reason: 'completion_not_restartable' };
   }
 
-  const autoLaunchQueuedChat = toBoolean(params.loopState?.auto_launch_queued_chat, toBoolean(params.manifest?.auto_launch_queued_chat));
   const autoSelectQueuedObjective = toBoolean(params.loopState?.auto_select_queued_objective, toBoolean(params.manifest?.auto_select_queued_objective));
+  const queuedLaunchMode = resolveQueuedLaunchMode(params);
   const queuedStopReason = compact(params.loopState?.stop_reason || params.loopState?.last_reason).toLowerCase();
   const waitingForAck = toBoolean(params.loopState?.awaiting_reentry_acknowledgment, false)
     || toBoolean(params.manifest?.awaiting_reentry_acknowledgment, false)
     || queuedStopReason === 'queued_chat_launched'
-    || queuedStopReason === 'queued-chat-launched';
+    || queuedStopReason === 'queued-chat-launched'
+    || queuedStopReason === 'queued_swarm_launched'
+    || queuedStopReason === 'queued-swarm-launched';
 
-  if (!autoLaunchQueuedChat || !autoSelectQueuedObjective) {
-    return { requested: false, reason: 'queue_chat_restart_not_enabled' };
+  if (queuedLaunchMode === 'manual' || !autoSelectQueuedObjective) {
+    return { requested: false, reason: 'queue_restart_not_enabled' };
   }
 
   if (!waitingForAck) {
@@ -545,6 +629,32 @@ const defaultDependencies: ReentryAckDependencies = {
     };
   },
   promoteKnowledge: promoteKnowledgeToObsidian,
+  recordSwarmCloseout: async (params) => {
+    const result = await recordOpenJarvisHermesSwarmCloseout({
+      vaultPath: params.vaultPath || null,
+      boardPath: params.boardPath || null,
+      shardPath: params.shardPath || null,
+      waveId: params.waveId || null,
+      shardId: params.shardId || null,
+      workerRole: params.workerRole || null,
+      completionStatus: params.completionStatus,
+      summary: params.summary || null,
+      nextAction: params.nextAction || null,
+      blockedAction: params.blockedAction || null,
+      dryRun: params.dryRun === true,
+    });
+
+    return {
+      completion: result.completion,
+      waveId: result.waveId,
+      shardId: result.shardId,
+      workerRole: result.workerRole,
+      boardPath: result.boardPath,
+      shardPath: result.shardPath,
+      errorCode: result.errorCode,
+      error: result.error,
+    };
+  },
   spawnGoalCycle: defaultSpawnGoalCycle,
 };
 
@@ -566,11 +676,25 @@ const resolveContext = async (params: ReentryAckParams, deps: ReentryAckDependen
     || toNullableString(loopState?.runtime_lane)
     || toNullableString(manifest?.runtime_lane);
   const lastLaunchChat = isRecord(lastLaunch.chat_launch) ? lastLaunch.chat_launch : null;
+  const queueLaunchMode = resolveQueuedLaunchMode({ loopState, manifest });
   const lastLaunchContextProfile = toNullableString(lastLaunch.context_profile)
     || toNullableString(lastLaunchChat?.contextProfile);
   const autoLaunchQueuedChatContextProfile = toNullableString(loopState?.auto_launch_queued_chat_context_profile)
     || toNullableString(manifest?.auto_launch_queued_chat_context_profile)
     || lastLaunchContextProfile;
+  const autoLaunchQueuedSwarm = queueLaunchMode === 'swarm';
+  const autoLaunchQueuedSwarmIncludeDistiller = toBoolean(
+    loopState?.auto_launch_queued_swarm_include_distiller,
+    toBoolean(manifest?.auto_launch_queued_swarm_include_distiller),
+  );
+  const autoLaunchQueuedSwarmExecutorWorktreePath = resolveRootPath(
+    toNullableString(loopState?.auto_launch_queued_swarm_executor_worktree_path)
+      || toNullableString(manifest?.auto_launch_queued_swarm_executor_worktree_path),
+  );
+  const autoLaunchQueuedSwarmExecutorArtifactBudget = toStringArray(
+    loopState?.auto_launch_queued_swarm_executor_artifact_budget
+      ?? manifest?.auto_launch_queued_swarm_executor_artifact_budget,
+  );
 
   const workflowState = await deps.readLatestWorkflowState({
     sessionPath,
@@ -594,8 +718,13 @@ const resolveContext = async (params: ReentryAckParams, deps: ReentryAckDependen
     objective: toNullableString(lastLaunch.objective)
       || toNullableString(manifest?.objective)
       || toNullableString(resolvedSession?.metadata?.objective),
+    queueLaunchMode,
     lastLaunchContextProfile,
     autoLaunchQueuedChatContextProfile,
+    autoLaunchQueuedSwarm,
+    autoLaunchQueuedSwarmIncludeDistiller,
+    autoLaunchQueuedSwarmExecutorWorktreePath,
+    autoLaunchQueuedSwarmExecutorArtifactBudget,
     routeMode: toNullableString(loopState?.route_mode)
       || toNullableString(manifest?.route_mode)
       || toNullableString(resolvedSession?.metadata?.route_mode),
@@ -617,6 +746,12 @@ export const acknowledgeOpenJarvisReentry = async (
   const blockedAction = toNullableString(params.blockedAction);
   const promoteImmediately = params.promoteImmediately === true;
   const dryRun = params.dryRun === true;
+  const waveId = toNullableString(params.waveId);
+  const shardId = toNullableString(params.shardId);
+  const workerRole = toNullableString(params.workerRole) || params.profile || null;
+  const swarmBoardPath = toNullableString(params.swarmBoardPath);
+  const shardPath = toNullableString(params.shardPath);
+  const vaultPath = toNullableString(params.vaultPath);
 
   const context = await resolveContext(params, deps);
   const profile = resolveReentryContextProfile({
@@ -641,6 +776,7 @@ export const acknowledgeOpenJarvisReentry = async (
       manifestPath: toRelative(context.manifestPath),
       autoQueueObjective: null,
       knowledgePromotion: null,
+      swarmCloseout: null,
       restartSupervisor: {
         requested: false,
         mode: restartMode,
@@ -668,55 +804,101 @@ export const acknowledgeOpenJarvisReentry = async (
     runtimeLane: context.runtimeLane,
   };
 
-  await deps.appendWorkflowEvent({
-    ...baseEventParams,
-    eventType: 'reentry_acknowledged',
-    decisionReason: ackDecisionReason,
-    payload: {
-      objective: context.objective,
-      completion_status: completionStatus,
-      summary,
-      next_action: nextAction,
-      blocked_action: blockedAction,
-      context_profile: profile,
-      runtime_lane: context.runtimeLane,
-      source: 'vscode-chat',
-      manifest_path: toRelative(context.manifestPath),
-      loop_path: toRelative(context.loopPath),
-    },
-  });
-  recordedEventTypes.push('reentry_acknowledged');
-
-  if (summary || nextAction) {
+  if (!dryRun) {
     await deps.appendWorkflowEvent({
       ...baseEventParams,
-      eventType: 'decision_distillate',
+      eventType: 'reentry_acknowledged',
       decisionReason: ackDecisionReason,
       payload: {
+        objective: context.objective,
+        completion_status: completionStatus,
+        summary,
         next_action: nextAction,
+        blocked_action: blockedAction,
+        context_profile: profile,
         runtime_lane: context.runtimeLane,
-        source_event: 'reentry_acknowledged',
-        promote_as: decisionPromoteAs,
-        tags: ['hermes', 'reentry', 'vscode-chat', completionStatus, profile],
+        wave_id: waveId,
+        shard_id: shardId,
+        worker_role: workerRole,
+        swarm_board_path: swarmBoardPath,
+        shard_path: shardPath,
+        source: 'vscode-chat',
+        manifest_path: toRelative(context.manifestPath),
+        loop_path: toRelative(context.loopPath),
       },
     });
-    recordedEventTypes.push('decision_distillate');
+    recordedEventTypes.push('reentry_acknowledged');
+  }
+
+  if (summary || nextAction) {
+    if (!dryRun) {
+      await deps.appendWorkflowEvent({
+        ...baseEventParams,
+        eventType: 'decision_distillate',
+        decisionReason: ackDecisionReason,
+        payload: {
+          next_action: nextAction,
+          runtime_lane: context.runtimeLane,
+          source_event: 'reentry_acknowledged',
+          promote_as: decisionPromoteAs,
+          tags: ['hermes', 'reentry', 'vscode-chat', completionStatus, profile, ...(waveId || shardId ? ['swarm'] : [])],
+        },
+      });
+      recordedEventTypes.push('decision_distillate');
+    }
   }
 
   if (completionStatus !== 'completed') {
-    await deps.appendWorkflowEvent({
-      ...baseEventParams,
-      eventType: 'recall_request',
-      decisionReason: ackDecisionReason,
-      payload: {
-        blocked_action: blockedAction || (completionStatus === 'failed' ? 'recover failed GPT closeout' : 'approval_or_policy_boundary'),
-        next_action: nextAction,
-        requested_by: 'vscode-chat-reentry',
-        runtime_lane: context.runtimeLane,
-        failed_step_names: [],
-      },
-    });
-    recordedEventTypes.push('recall_request');
+    if (!dryRun) {
+      await deps.appendWorkflowEvent({
+        ...baseEventParams,
+        eventType: 'recall_request',
+        decisionReason: ackDecisionReason,
+        payload: {
+          blocked_action: blockedAction || (completionStatus === 'failed' ? 'recover failed GPT closeout' : 'approval_or_policy_boundary'),
+          next_action: nextAction,
+          requested_by: 'vscode-chat-reentry',
+          runtime_lane: context.runtimeLane,
+          failed_step_names: [],
+        },
+      });
+      recordedEventTypes.push('recall_request');
+    }
+  }
+
+  let swarmCloseout: ReentrySwarmCloseoutResult | null = null;
+  if (swarmBoardPath || shardPath || waveId || shardId) {
+    try {
+      const swarmCloseoutResult = await deps.recordSwarmCloseout({
+        vaultPath,
+        boardPath: swarmBoardPath,
+        shardPath,
+        waveId,
+        shardId,
+        workerRole: workerRole || profile,
+        completionStatus,
+        summary,
+        nextAction,
+        blockedAction,
+        dryRun,
+      });
+      swarmCloseout = {
+        requested: true,
+        ...swarmCloseoutResult,
+      };
+    } catch (error) {
+      swarmCloseout = {
+        requested: true,
+        completion: 'skipped',
+        waveId,
+        shardId,
+        workerRole: workerRole || profile,
+        boardPath: swarmBoardPath,
+        shardPath,
+        errorCode: 'SWARM_CLOSEOUT_FAILED',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   let knowledgePromotion: ReentryKnowledgePromotionResult | null = null;
@@ -796,7 +978,7 @@ export const acknowledgeOpenJarvisReentry = async (
         ...(promotionResult.targetPath ? [promotionResult.targetPath] : []),
         ...promotionResult.writtenArtifacts,
       ];
-      if (knowledgeRefs.length > 0) {
+      if (!dryRun && knowledgeRefs.length > 0) {
         await deps.appendWorkflowEvent({
           ...baseEventParams,
           eventType: 'artifact_ref',
@@ -868,6 +1050,10 @@ export const acknowledgeOpenJarvisReentry = async (
       continueUntilCapacity: context.continueUntilCapacity,
       restartVisibleTerminal: params.restartVisibleTerminal === true,
       autoLaunchQueuedChatContextProfile: context.autoLaunchQueuedChatContextProfile,
+      autoLaunchQueuedSwarm: context.autoLaunchQueuedSwarm,
+      autoLaunchQueuedSwarmIncludeDistiller: context.autoLaunchQueuedSwarmIncludeDistiller,
+      autoLaunchQueuedSwarmExecutorWorktreePath: context.autoLaunchQueuedSwarmExecutorWorktreePath,
+      autoLaunchQueuedSwarmExecutorArtifactBudget: context.autoLaunchQueuedSwarmExecutorArtifactBudget,
     })
     : null;
   const restartCommand = restartArgs ? ['node', ...restartArgs].join(' ') : null;
@@ -901,14 +1087,20 @@ export const acknowledgeOpenJarvisReentry = async (
     next_action: nextAction,
     blocked_action: blockedAction,
     runtime_lane: context.runtimeLane,
-    source: 'vscode-chat',
+    source: context.queueLaunchMode === 'swarm' ? 'vscode-swarm' : 'vscode-chat',
+    wave_id: waveId,
+    shard_id: shardId,
+    worker_role: workerRole || profile,
+    swarm_board_path: swarmBoardPath,
+    shard_path: shardPath,
     recorded_event_types: recordedEventTypes,
     auto_queue_objective: autoQueueObjective,
     knowledge_promotion: knowledgePromotion,
+    swarm_closeout: swarmCloseout,
     restart_supervisor: restartSupervisor,
   };
 
-  if (context.loopState) {
+  if (!dryRun && context.loopState) {
     const nextLoopState = {
       ...context.loopState,
       awaiting_reentry_acknowledgment: false,
@@ -925,7 +1117,7 @@ export const acknowledgeOpenJarvisReentry = async (
     writeJsonFile(context.loopPath, nextLoopState);
   }
 
-  if (context.manifest) {
+  if (!dryRun && context.manifest) {
     const nextManifest = {
       ...context.manifest,
       awaiting_reentry_acknowledgment: false,
@@ -936,7 +1128,7 @@ export const acknowledgeOpenJarvisReentry = async (
 
   return {
     ok: true,
-    completion: 'recorded',
+    completion: dryRun ? 'skipped' : 'recorded',
     completionStatus,
     profile,
     objective: context.objective,
@@ -951,6 +1143,7 @@ export const acknowledgeOpenJarvisReentry = async (
     manifestPath: toRelative(context.manifestPath),
     autoQueueObjective,
     knowledgePromotion,
+    swarmCloseout,
     restartSupervisor,
     error: null,
   };
@@ -971,6 +1164,12 @@ async function main() {
     restartSupervisor: toNullableString(parseArg('restartSupervisor', 'auto')),
     restartVisibleTerminal: parseBool(parseArg('restartVisibleTerminal', 'false'), false),
     dryRun: parseBool(parseArg('dryRun', 'false'), false),
+    vaultPath: toNullableString(parseArg('vaultPath', '')),
+    swarmBoardPath: toNullableString(parseArg('swarmBoardPath', '')),
+    shardPath: toNullableString(parseArg('shardPath', '')),
+    waveId: toNullableString(parseArg('waveId', '')),
+    shardId: toNullableString(parseArg('shardId', '')),
+    workerRole: toNullableString(parseArg('workerRole', '')),
     loopPath: toNullableString(parseArg('loopPath', '')),
     manifestPath: toNullableString(parseArg('manifestPath', '')),
   });

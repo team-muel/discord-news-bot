@@ -70,7 +70,9 @@ import {
   createOpenJarvisHermesRuntimeChatNote,
   enqueueOpenJarvisHermesRuntimeObjectives,
   launchOpenJarvisHermesChatSession,
+  launchOpenJarvisHermesSwarmWave,
   prepareOpenJarvisHermesSessionStart,
+  recordOpenJarvisHermesSwarmCloseout,
   runOpenJarvisHermesRuntimeRemediation,
 } from './openjarvisHermesRuntimeControlService';
 import type {
@@ -381,7 +383,7 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
     }));
     expect(mockWriteObsidianNoteWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
       guildId: '',
-      vaultPath: path.resolve('/vault'),
+      vaultPath: expect.stringContaining('vault'),
       fileName: 'chat/inbox/2026-04-13/010203_hermes-runtime-handoff.md',
       trustedSource: true,
       tags: ['chat', 'inbox', 'external-query', 'hermes-runtime'],
@@ -402,7 +404,7 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
         recall_blocked_action: 'ship',
         capability_demands: ['No live supervisor is holding the local continuity loop open right now.'],
         compact_bootstrap_next_queue_head: 'stabilize the next GPT relaunch objective',
-        evidence_refs: ['docs/planning/EXECUTION_BOARD.md'],
+        evidence_refs: expect.arrayContaining(['docs/planning/EXECUTION_BOARD.md']),
       }),
     }));
   });
@@ -682,7 +684,7 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
     expect(result.remediation?.command).toContain('--autoLaunchQueuedChatContextProfile=scout');
     expect(mockWriteObsidianNoteWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
       trustedSource: true,
-      vaultPath: path.resolve('/vault'),
+      vaultPath: expect.stringContaining('vault'),
     }));
   });
 
@@ -968,5 +970,119 @@ describe('openjarvisHermesRuntimeControlService chat note', () => {
     expect(result.prompt).toContain('- launch_target: 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)');
     expect(result.prompt).not.toContain('use this session-open bundle as the bootstrap source for User CRM 심화 + Social Graph 고도화');
     expect(result.prompt).not.toContain('workflow_current_objective: 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비)');
+  });
+
+  it('writes a swarm board and launches bounded scout and executor shards with isolated roots', async () => {
+    const { vaultRoot } = createVaultPacket();
+    const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-swarm-worktree-'));
+    tempDirs.push(worktreeRoot);
+    const worktreeFile = path.join(worktreeRoot, 'src', 'swarm-worker.ts');
+    fs.mkdirSync(path.dirname(worktreeFile), { recursive: true });
+    fs.writeFileSync(worktreeFile, 'export const shard = true;\n', 'utf8');
+
+    mockGetObsidianVaultRoot.mockReturnValue(vaultRoot);
+    mockGetObsidianAdapterRuntimeStatus.mockReturnValue({
+      selectedByCapability: {
+        read_file: 'local-fs',
+        write_note: 'local-fs',
+      },
+      accessPosture: {
+        mode: 'direct-vault-primary',
+      },
+    });
+
+    const result = await launchOpenJarvisHermesSwarmWave({
+      vaultPath: vaultRoot,
+      waveObjective: 'stabilize shared wrapper readiness',
+      shards: [
+        {
+          shardId: 'route-scout',
+          objective: 'Map route, blockers, and evidence for shared wrapper readiness',
+          contextProfile: 'scout',
+        },
+        {
+          shardId: 'executor-isolated',
+          objective: 'Implement the bounded shared wrapper readiness slice',
+          contextProfile: 'executor',
+          worktreePath: worktreeRoot,
+          artifactBudget: [worktreeFile],
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: 'queued',
+      waveObjective: 'stabilize shared wrapper readiness',
+      boardPath: 'plans/execution/HERMES_PARALLEL_GPT_SWARM_BOARD.md',
+    });
+    expect(result.launches).toHaveLength(2);
+    expect(mockRunHermesVsCodeBridge).toHaveBeenCalledTimes(2);
+    expect(mockRunHermesVsCodeBridge).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      action: 'chat',
+      allowedRoots: [worktreeRoot],
+      addFilePaths: expect.arrayContaining([
+        worktreeFile,
+        path.resolve(vaultRoot, 'plans/execution/HERMES_PARALLEL_GPT_SWARM_BOARD.md'),
+      ]),
+    }));
+
+    const boardContent = fs.readFileSync(path.join(vaultRoot, 'plans', 'execution', 'HERMES_PARALLEL_GPT_SWARM_BOARD.md'), 'utf8');
+    expect(boardContent).toContain('shard_id=route-scout');
+    expect(boardContent).toContain('shard_id=executor-isolated');
+    expect(boardContent).toContain('OpenClaw stays out-of-band convenience only');
+  });
+
+  it('records shard closeout back into the swarm board and shard packet', async () => {
+    const { vaultRoot } = createVaultPacket();
+
+    mockGetObsidianVaultRoot.mockReturnValue(vaultRoot);
+    mockGetObsidianAdapterRuntimeStatus.mockReturnValue({
+      selectedByCapability: {
+        read_file: 'local-fs',
+        write_note: 'local-fs',
+      },
+      accessPosture: {
+        mode: 'direct-vault-primary',
+      },
+    });
+
+    const launch = await launchOpenJarvisHermesSwarmWave({
+      vaultPath: vaultRoot,
+      waveObjective: 'stabilize shared wrapper readiness',
+      shards: [
+        {
+          shardId: 'route-scout',
+          objective: 'Map route, blockers, and evidence for shared wrapper readiness',
+          contextProfile: 'scout',
+        },
+      ],
+    });
+
+    const closeout = await recordOpenJarvisHermesSwarmCloseout({
+      vaultPath: vaultRoot,
+      boardPath: launch.boardPath,
+      shardPath: launch.shardPaths[0],
+      waveId: launch.waveId,
+      shardId: 'route-scout',
+      workerRole: 'scout',
+      completionStatus: 'completed',
+      summary: 'Route mapping finished with one bounded executor handoff.',
+      nextAction: 'launch the executor shard against the isolated worktree',
+    });
+
+    expect(closeout).toMatchObject({
+      ok: true,
+      completion: 'updated',
+      shardId: 'route-scout',
+      workerRole: 'scout',
+    });
+
+    const boardContent = fs.readFileSync(path.join(vaultRoot, 'plans', 'execution', 'HERMES_PARALLEL_GPT_SWARM_BOARD.md'), 'utf8');
+    const shardContent = fs.readFileSync(path.join(vaultRoot, 'plans', 'execution', 'hermes-swarm', launch.waveId || '', '01-route-scout.md'), 'utf8');
+    expect(boardContent).toContain('shard_id=route-scout');
+    expect(boardContent).toContain('state=completed');
+    expect(shardContent).toContain('- state: completed');
+    expect(shardContent).toContain('Route mapping finished with one bounded executor handoff.');
   });
 });

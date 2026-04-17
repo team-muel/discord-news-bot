@@ -1,0 +1,146 @@
+{
+  "generated_at": "2026-04-17T12:17:22.834Z",
+  "run_id": "chat-sdk-cutover-20260417-121722",
+  "environment": "test",
+  "adapter_id": "openclaw",
+  "adapter_revision": "da348ab",
+  "shadow_mode": "mixed",
+  "rollout_percentage": "mixed",
+  "eligible_surfaces": [
+    "docs.ask",
+    "muel.prefixed"
+  ],
+  "policy_by_surface": {
+    "docs-command": {
+      "preferredAdapterId": "openclaw",
+      "hardDisable": true,
+      "shadowMode": false,
+      "rolloutPercentage": 25,
+      "mode": "rollback",
+      "lastUpdatedAt": "2026-04-17T12:00:00.000Z"
+    },
+    "muel-message": {
+      "preferredAdapterId": "openclaw",
+      "hardDisable": false,
+      "shadowMode": true,
+      "rolloutPercentage": 75,
+      "mode": "shadow",
+      "lastUpdatedAt": "2026-04-17T12:00:00.000Z"
+    }
+  },
+  "parity": {
+    "docs_ask": {
+      "verdict": "pending",
+      "reason": "no_live_evidence",
+      "observedCount": 0,
+      "selectedCount": 0
+    },
+    "muel_prefixed": {
+      "verdict": "pending",
+      "reason": "no_live_evidence",
+      "observedCount": 0,
+      "selectedCount": 0
+    },
+    "fallback": {
+      "verdict": "pass",
+      "reason": "covered by discord test project",
+      "observedFallbacks": 0
+    },
+    "continuity_private_thread": {
+      "verdict": "pass",
+      "reason": "covered by discord ingress adapter tests"
+    },
+    "sanitization": {
+      "verdict": "pass",
+      "reason": "covered by discord surface tests and current message clipping"
+    }
+  },
+  "operator_runtime": {
+    "verdict": "fail",
+    "reason": "runtime health degraded or scheduler policy snapshot unavailable",
+    "health": {
+      "healthy": false,
+      "status": "degraded",
+      "botStatusGrade": "offline",
+      "anyEnabled": true,
+      "allEnabledHealthy": false
+    },
+    "bot_ready": false,
+    "automation_healthy": false,
+    "scheduler_policy_summary": {
+      "total": 1,
+      "appOwned": 1,
+      "dbOwned": 0,
+      "enabled": 1,
+      "running": 0
+    },
+    "memory_queue": {
+      "deadlettered": 0
+    },
+    "memory_queue_error": null,
+    "memory_runner": {
+      "enabled": true
+    },
+    "runtime_alerts": {
+      "enabled": true
+    },
+    "structured_errors": 0
+  },
+  "rollback": {
+    "exercised": false,
+    "verdict": "pending",
+    "reason": "rollback not exercised and no forced fallback evidence observed",
+    "artifactPath": null
+  },
+  "evidence": {
+    "snapshot_path": "tmp/discord-ingress-cutover/latest.json",
+    "recent_events": [],
+    "command_checks": [
+      {
+        "label": "discord-tests",
+        "command": "npm run test:discord",
+        "ok": true,
+        "exitCode": 0,
+        "stdoutTail": "> muel-backend@0.0.0 test:discord\n> vitest run --project discord\n\n\n\u001b[1m\u001b[46m RUN \u001b[49m\u001b[22m \u001b[36mv4.1.0 \u001b[39m\u001b[90mC:/Muel_S/discord-news-bot\u001b[39m\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/bucketFlushUtils.test.ts \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/loginAttempt.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordReactionRewardService.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/discordIngressAdapter.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 238\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/docs.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 382\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m prefers the injected OpenClaw ingress for slash ask commands \u001b[33m 379\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtimePolicy.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 255\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b",
+        "stderrTail": "\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables an invalid coding override instead of widening back to the default pattern\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid coding intent regex rejected (syntax); override disabled\n\n\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables a ReDoS-suspect automation override instead of silently restoring the broad default\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid automation intent regex rejected (redos-suspect); override disabled",
+        "durationMs": 5747
+      },
+      {
+        "label": "typecheck",
+        "command": "npx tsc --noEmit",
+        "ok": false,
+        "exitCode": 2,
+        "stdoutTail": "src/services/runtime/localAutonomySupervisorService.test.ts(363,9): error TS2353: Object literal may only specify known properties, and 'auto_launch_queued_swarm_include_distiller' does not exist in type '{ supervisor_pid: number | null; auto_launch_queued_chat: boolean; auto_launch_queued_swarm: boolean; awaiting_reentry_acknowledgment: boolean; awaiting_reentry_acknowledgment_stale: boolean; awaiting_reentry_acknowledgment_started_at: string | null; }'.",
+        "stderrTail": "",
+        "durationMs": 12731
+      },
+      {
+        "label": "gate-validation",
+        "command": "npm run gates:validate:strict",
+        "ok": true,
+        "exitCode": 0,
+        "stdoutTail": "> muel-backend@0.0.0 gates:validate:strict\n> node scripts/validate-go-no-go-runs.mjs --requireChecklist=true --checklistSinceDays=1 --requireRuntimeArtifactPolicy=true && npm run gates:validate:docs-policy && npm run rehearsal:stage-rollback:validate:strict && npm run gates:runbook-checklist\n\n[GO-NO-GO][VALIDATE] validated 121 JSON run logs (no-go=16) checklist=on runtimeArtifactPolicy=on\n\n> muel-backend@0.0.0 gates:validate:docs-policy\n> node scripts/validate-provider-bootstrap-docs.mjs\n\n[DOCS-POLICY][OK] HF alias/fallback and startup DAG documentation consistency validated\n\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-16T19:37:59.215Z total_runs=0 fail=0 p95_elapsed_ms=0\n\n> muel-backend@0.0.0 gates:runbook-checklist\n> node scripts/validate-runbook-readiness-checklist.mjs\n\n[RUNBOOK-CHECKLIST] written: docs/planning/gate-runs/runbook-checklists/2026-04-17_runbook-checklist.md\n[RUNBOOK-CHECKLIST] verdict=PASS",
+        "stderrTail": "",
+        "durationMs": 1452
+      },
+      {
+        "label": "rollback-readiness-validation",
+        "command": "npm run rehearsal:stage-rollback:validate:strict",
+        "ok": true,
+        "exitCode": 0,
+        "stdoutTail": "> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-16T19:37:59.215Z total_runs=0 fail=0 p95_elapsed_ms=0",
+        "stderrTail": "",
+        "durationMs": 310
+      }
+    ],
+    "rollback_rehearsal_payload": null
+  },
+  "overall": "no-go",
+  "required_actions": [
+    "rerun and fix local gate stack failures: typecheck",
+    "collect live parity evidence for docs.ask (no_live_evidence)",
+    "collect live parity evidence for prefixed muel message (no_live_evidence)",
+    "exercise rollback or force fallback evidence (rollback not exercised and no forced fallback evidence observed)",
+    "stabilize operator runtime evidence (runtime health degraded or scheduler policy snapshot unavailable)"
+  ]
+}

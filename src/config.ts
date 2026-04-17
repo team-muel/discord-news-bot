@@ -21,6 +21,24 @@ export const DISCORD_MESSAGE_CONTENT_INTENT_ENABLED = parseBooleanEnv(
   process.env.DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
   true,
 );
+export const DISCORD_DOCS_INGRESS_ADAPTER = parseStringEnv(process.env.DISCORD_DOCS_INGRESS_ADAPTER, 'openclaw');
+export const DISCORD_DOCS_INGRESS_HARD_DISABLE = parseBooleanEnv(process.env.DISCORD_DOCS_INGRESS_HARD_DISABLE, false);
+export const DISCORD_DOCS_INGRESS_SHADOW_MODE = parseBooleanEnv(process.env.DISCORD_DOCS_INGRESS_SHADOW_MODE, false);
+export const DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT = parseBoundedNumberEnv(
+  process.env.DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT,
+  100,
+  0,
+  100,
+);
+export const DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER = parseStringEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER, 'openclaw');
+export const DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE = parseBooleanEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE, false);
+export const DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE = parseBooleanEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE, false);
+export const DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT = parseBoundedNumberEnv(
+  process.env.DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT,
+  100,
+  0,
+  100,
+);
 
 export const START_BOT = parseBooleanEnv(process.env.START_BOT, false);
 export const BOT_START_FAILURE_EXIT_ENABLED = parseBooleanEnv(

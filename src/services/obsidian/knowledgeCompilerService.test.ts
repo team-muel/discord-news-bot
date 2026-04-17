@@ -95,6 +95,16 @@ describe('knowledgeCompilerService', () => {
           { filePath: 'guilds/guild-1/chat/answers/2026-04-09/previous.md', name: 'previous', extension: 'md', sizeBytes: 0, modifiedAt: 10 },
         ];
       }
+      if (folder === 'ops/services/unified-mcp') {
+        return [
+          { filePath: 'ops/services/unified-mcp/RECOVERY.md', name: 'RECOVERY', extension: 'md', sizeBytes: 0, modifiedAt: 30 },
+        ];
+      }
+      if (folder === 'ops/control-tower') {
+        return [
+          { filePath: 'ops/control-tower/BLUEPRINT.md', name: 'BLUEPRINT', extension: 'md', sizeBytes: 0, modifiedAt: 25 },
+        ];
+      }
       return [];
     });
 
@@ -206,6 +216,20 @@ describe('knowledgeCompilerService', () => {
           'Canonical shared wiki object for the MCP tool contract.',
         ].join('\n');
       }
+      if (filePath === 'ops/services/unified-mcp/RECOVERY.md') {
+        return [
+          '---',
+          'title: Unified MCP Recovery Notes',
+          'status: active',
+          'canonical_key: service/unified-mcp-recovery',
+          'source_refs: [ops/incidents/2026-04-11_unified-mcp-routing.md]',
+          '---',
+          '',
+          '# Unified MCP Recovery Notes',
+          '',
+          'Recovery follow-up for the Unified MCP service lane.',
+        ].join('\n');
+      }
       return null;
     });
 
@@ -257,25 +281,34 @@ describe('knowledgeCompilerService', () => {
     expect(result.indexedNotes).toBe(2);
     expect(result.topics).toContain('development');
     expect(result.entityKey).toBe('chat/thread-1');
-    expect(mockWriteNote).toHaveBeenCalledTimes(5);
+    expect(mockWriteNote).toHaveBeenCalledTimes(6);
 
     const writtenPaths = mockWriteNote.mock.calls.map((call) => call[0].fileName);
     expect(writtenPaths).toContain('ops/knowledge-control/INDEX.md');
     expect(writtenPaths).toContain('ops/knowledge-control/LOG.md');
     expect(writtenPaths).toContain('ops/knowledge-control/LINT.md');
+    expect(writtenPaths).toContain('ops/knowledge-control/SUPERVISOR.md');
     expect(writtenPaths).toContain('ops/knowledge-control/topics/development.md');
     expect(writtenPaths).toContain('ops/knowledge-control/entities/chat-thread-1.md');
 
     const entityWrite = mockWriteNote.mock.calls.find((call) => call[0].fileName === 'ops/knowledge-control/entities/chat-thread-1.md');
     expect(entityWrite?.[0]?.content).toContain('Current answer');
     expect(entityWrite?.[0]?.content).toContain('thread-root');
+    expect(entityWrite?.[0]?.allowHighLinkDensity).toBe(true);
     expect(entityWrite?.[0]?.skipKnowledgeCompilation).toBe(true);
 
     const lintWrite = mockWriteNote.mock.calls.find((call) => call[0].fileName === 'ops/knowledge-control/LINT.md');
     expect(lintWrite?.[0]?.content).toContain('No lint issues detected.');
     expect(lintWrite?.[0]?.skipKnowledgeCompilation).toBe(true);
 
+    const supervisorWrite = mockWriteNote.mock.calls.find((call) => call[0].fileName === 'ops/knowledge-control/SUPERVISOR.md');
+    expect(supervisorWrite?.[0]?.content).toContain('Knowledge Control Supervisor');
+    expect(supervisorWrite?.[0]?.content).toContain('Priority Actions');
+    expect(supervisorWrite?.[0]?.content).toContain('Backfill missing shared wiki targets');
+    expect(supervisorWrite?.[0]?.skipKnowledgeCompilation).toBe(true);
+
     expect(result.artifacts).toContain('ops/knowledge-control/LINT.md');
+    expect(result.artifacts).toContain('ops/knowledge-control/SUPERVISOR.md');
 
     const stats = getObsidianKnowledgeCompilationStats();
     expect(stats.lastLintSummary).toMatchObject({
@@ -316,12 +349,28 @@ describe('knowledgeCompilerService', () => {
       enabled: true,
       queryParam: 'bundleFor',
     });
+    expect(surface.artifactSupport).toMatchObject({
+      enabled: true,
+      queryParam: 'artifact',
+    });
+    expect(surface.artifactSupport.acceptedAliases).toEqual(expect.arrayContaining([
+      'supervisor',
+      'topic:<slug>',
+      'entity:<slug>',
+    ]));
+    expect(surface.supervisor).toMatchObject({
+      alias: 'supervisor',
+      path: 'ops/knowledge-control/SUPERVISOR.md',
+      available: true,
+      includedInLastRun: true,
+    });
     expect(surface.pathIndex).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: 'ops/control-tower/BLUEPRINT.md', plane: 'control', concern: 'control-tower', generated: false }),
       expect.objectContaining({ path: 'ops/knowledge-control/INDEX.md', plane: 'record', concern: 'knowledge-control', generated: true }),
     ]));
     expect(resolveObsidianKnowledgeArtifactPath('blueprint')).toBe('ops/control-tower/BLUEPRINT.md');
     expect(resolveObsidianKnowledgeArtifactPath('canonical-map')).toBe('ops/control-tower/CANONICAL_MAP.md');
+    expect(resolveObsidianKnowledgeArtifactPath('supervisor')).toBe('ops/knowledge-control/SUPERVISOR.md');
 
     const bundle = buildObsidianKnowledgeReflectionBundle('ops/services/unified-mcp/PROFILE.md');
     expect(bundle).toMatchObject({
@@ -456,6 +505,7 @@ describe('knowledgeCompilerService', () => {
     });
     expect(mockWriteNote).toHaveBeenCalledWith(expect.objectContaining({
       fileName: 'ops/improvement/negative-knowledge/semantic-lint/CURRENT.md',
+      skipKnowledgeCompilation: true,
     }));
     expect(mockWriteNote.mock.calls.some((call) => String(call[0]?.fileName || '').includes('ops/improvement/negative-knowledge/semantic-lint/issues/'))).toBe(true);
 
@@ -525,5 +575,27 @@ describe('knowledgeCompilerService', () => {
     expect(result.compiled).toBe(false);
     expect(result.reason).toBe('raw_or_ops_path');
     expect(mockWriteNote).not.toHaveBeenCalled();
+  });
+
+  it('treats durable ops service notes as knowledge-bearing and scans focused service roots', async () => {
+    const { runKnowledgeCompilationForNote } = await import('./knowledgeCompilerService');
+
+    const result = await runKnowledgeCompilationForNote({
+      guildId: '',
+      vaultPath: '/vault',
+      filePath: 'ops/services/unified-mcp/PROFILE.md',
+      content: [
+        '# Unified MCP Profile',
+        '',
+        'Keep runtime recovery, routing, and documentation aligned for the shared service lane.',
+      ].join('\n'),
+    });
+
+    expect(result.compiled).toBe(true);
+    expect(mockListFiles).toHaveBeenCalledWith('/vault', 'ops/services/unified-mcp', 'md');
+    expect(mockListFiles).toHaveBeenCalledWith('/vault', 'ops/control-tower', 'md');
+    expect(mockWriteNote).toHaveBeenCalledWith(expect.objectContaining({
+      fileName: 'ops/knowledge-control/SUPERVISOR.md',
+    }));
   });
 });

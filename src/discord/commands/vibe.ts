@@ -7,6 +7,7 @@ import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP, DISCO
 import { seedFeedbackReactions } from '../session';
 import logger from '../../logger';
 import { acquireDistributedLease } from '../../services/infra/distributedLockService';
+import type { DiscordIngressExecutionHandler } from '../runtime/discordIngressAdapter';
 import {
   VIBE_MESSAGE_DEDUP_TTL_MS,
   VIBE_AUTO_WORKER_PROPOSAL_ENABLED,
@@ -35,20 +36,35 @@ type VibeDeps = {
     request: string;
     sessionId: string;
   }) => Promise<{ ok: boolean; approvalId?: string; error?: string }>;
-  routeOpenClawDiscordIngress?: (params: {
-    request: string;
-    guildId: string;
-    userId: string;
-    channel: Message['channel'];
-    messageId: string;
-    entryLabel: string;
-    surface: 'muel-message';
-  }) => Promise<{ answer: string } | null>;
+  executePrefixedMessageIngress?: DiscordIngressExecutionHandler;
+};
+
+type PrefixedMessageIngressRequestV1 = {
+  request: string;
+  guildId: string;
+  userId: string;
+  channel: Message['channel'];
+  messageId: string;
+  correlationId: string;
+  entryLabel: string;
+};
+
+type MessageIngressResponsePayload = {
+  content: string;
+  seedFeedback?: boolean;
+};
+
+type MessageIngressResponseSinkV1 = {
+  ack: () => Promise<void>;
+  updateProgress: (payload: MessageIngressResponsePayload) => Promise<void>;
+  final: (payload: MessageIngressResponsePayload) => Promise<void>;
+  followUp: (payload: MessageIngressResponsePayload) => Promise<void>;
 };
 
 const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
 const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
 const VIBE_MESSAGE_PREFIX_PATTERN = /^뮤엘(?:아)?(?:(?:\s*:\s*)|\s+|$)/;
+const MESSAGE_INGRESS_REPLY_LIMIT = 1_800;
 const PROCESSED_MESSAGE_TTL_MS = VIBE_MESSAGE_DEDUP_TTL_MS;
 const processedMessageUntilMs = new Map<string, number>();
 const VIBE_INSTANCE_ID = Math.random().toString(36).slice(2);
@@ -225,7 +241,89 @@ export const parseVibeRequestFromMessage = (message: Message): string => {
   return stripVibeMessagePrefix(text);
 };
 
+const clipMessageIngressContent = (value: string): string => {
+  return String(value || '').trim().slice(0, MESSAGE_INGRESS_REPLY_LIMIT);
+};
+
+const createMessageIngressResponseSink = (
+  message: Message,
+  getErrorMessage: (error: unknown) => string,
+): MessageIngressResponseSinkV1 => {
+  let primaryReply: Message | null = null;
+
+  const sendPrimaryReply = async (content: string): Promise<Message | null> => {
+    const clipped = clipMessageIngressContent(content);
+    if (!clipped) {
+      return primaryReply;
+    }
+
+    if (!primaryReply) {
+      primaryReply = await message.reply(clipped);
+      return primaryReply;
+    }
+
+    await primaryReply.edit(clipped);
+    return primaryReply;
+  };
+
+  return {
+    ack: async () => {},
+    updateProgress: async (payload) => {
+      await sendPrimaryReply(payload.content);
+    },
+    final: async (payload) => {
+      const reply = await sendPrimaryReply(payload.content);
+      if (!payload.seedFeedback || !reply) {
+        return;
+      }
+      await seedFeedbackReactions(reply).catch((error) => {
+        logVibeNonCritical('seedFeedbackReactions(discord ingress) failed', error, getErrorMessage);
+      });
+    },
+    followUp: async (payload) => {
+      const clipped = clipMessageIngressContent(payload.content);
+      if (!clipped) {
+        return;
+      }
+      await message.reply(clipped);
+    },
+  };
+};
+
 export const createVibeHandlers = (deps: VibeDeps) => {
+  const handlePrefixedMessageIngressRequest = async (
+    request: PrefixedMessageIngressRequestV1,
+    sink: MessageIngressResponseSinkV1,
+  ): Promise<boolean> => {
+    const ingressExecution = deps.executePrefixedMessageIngress
+      ? await deps.executePrefixedMessageIngress({
+        request: request.request,
+        guildId: request.guildId,
+        userId: request.userId,
+        channel: request.channel,
+        messageId: request.messageId,
+        correlationId: request.correlationId,
+        entryLabel: request.entryLabel,
+        surface: 'muel-message',
+        replyMode: 'channel',
+        tenantLane: 'operator-personal',
+      }).catch((error) => {
+        logger.debug('[VIBE] Discord ingress adapter failed: %s', deps.getErrorMessage(error));
+        return null;
+      })
+      : null;
+
+    if (!ingressExecution?.result?.answer) {
+      return false;
+    }
+
+    await sink.final({
+      content: ingressExecution.result.answer,
+      seedFeedback: true,
+    });
+    return true;
+  };
+
   const handleVibeCommand = async (interaction: ChatInputCommandInteraction) => {
     const access = await ensureFeatureAccess(interaction);
     if (!access.ok && access.reason === 'guild_only') {
@@ -435,24 +533,17 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       return;
     }
 
-    if (isPrefixed && deps.routeOpenClawDiscordIngress) {
-      const openClawResult = await deps.routeOpenClawDiscordIngress({
+    if (isPrefixed) {
+      const ingressHandled = await handlePrefixedMessageIngressRequest({
         request,
         guildId: message.guildId,
         userId: message.author.id,
         channel: message.channel,
         messageId: message.id,
+        correlationId: message.id,
         entryLabel: '뮤엘 메시지',
-        surface: 'muel-message',
-      }).catch((error) => {
-        logger.debug('[VIBE] OpenClaw Discord ingress failed: %s', deps.getErrorMessage(error));
-        return null;
-      });
-      if (openClawResult?.answer) {
-        const reply = await message.reply(openClawResult.answer.slice(0, 1_800));
-        await seedFeedbackReactions(reply).catch((error) => {
-          logVibeNonCritical('seedFeedbackReactions(openclaw ingress) failed', error, deps.getErrorMessage);
-        });
+      }, createMessageIngressResponseSink(message, deps.getErrorMessage));
+      if (ingressHandled) {
         return;
       }
     }

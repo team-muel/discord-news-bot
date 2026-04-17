@@ -397,12 +397,18 @@ For explicit GPT reactivation from the local IDE, Hermes no longer needs a full 
 
 That keeps the “bring GPT back” step explicit and bounded: Hermes may prepare the next approved objective, attach the continuity packet files as context, and start a fresh local chat session without pretending that an invisible persistent GPT process already exists.
 
-The same bounded handoff can now be driven directly by the queue-aware supervisor loop when `autoLaunchQueuedChat=true`. The operator-facing entrypoint is `npm run openjarvis:autopilot:queue:chat`, which combines queued-objective promotion with the native VS Code chat launch path. When that handoff succeeds, the loop stops at `queued_chat_launched` instead of pretending the newly opened GPT turn has already completed.
+The same bounded handoff can now be driven directly by the queue-aware supervisor loop in two explicit modes. `autoLaunchQueuedChat=true` keeps the single-turn VS Code Copilot relay path and uses the operator-facing entrypoint `npm run openjarvis:autopilot:queue:chat`. `autoLaunchQueuedSwarm=true` keeps the same queue-aware supervisor boundary but launches a bounded swarm wave through `npm run openjarvis:autopilot:queue:swarm`, optionally preserving worktree and distiller settings across restart. Both live entrypoints must execute with `--dryRun=false`; the matching inspection-only surfaces are `npm run openjarvis:autopilot:queue:chat:dry` and `npm run openjarvis:autopilot:queue:swarm:dry`. When either live handoff succeeds, the loop stops at `queued_chat_launched` or `queued_swarm_launched` instead of pretending the newly opened GPT handoff has already completed.
 
 For lower-level control or troubleshooting, Hermes also exposes the same bounded runtime actions through the thin helper CLI surface:
 
 - `npm run openjarvis:hermes:runtime:queue-objective`
 - `npm run openjarvis:hermes:runtime:chat-launch`
+
+Execution rule for this repo:
+
+- package scripts without a `:dry` suffix are the live operator entrypoints and must pass `--dryRun=false` explicitly
+- package scripts with a `:dry` suffix are the inspection-first entrypoints and must pass `--dryRun=true` explicitly
+- do not rely on the script default for `dryRun`; the goal-cycle script defaults to safe inspection, so live leverage requires the package entrypoint to opt into mutation on purpose
 
 This keeps the runtime contract additive: diagnostics remain readable, and the executable remediations stay explicit, bounded, and inspectable without forcing the operator to fetch the full session-open bundle first.
 
@@ -491,7 +497,7 @@ When the active objective is explicitly marked for bounded automation continuati
 
 When explicit continuation is closed and the operator has enabled queue-driven autonomy, Hermes should not pretend that a new GPT prompt is the only valid next step. It may promote the next approved bounded objective from the Safe Autonomous Queue first and then from `docs/planning/EXECUTION_BOARD.md` `Queued Now`, but only while escalation remains `none` and the loop is not crossing a policy or approval boundary. That keeps autonomous next-goal selection explicit, operator-auditable, and still bounded by the same recall rules.
 
-When the operator also enables `autoLaunchQueuedChat=true`, the queue-aware supervisor may use that selected next objective to seed a fresh VS Code chat turn through the same bounded bridge. That remains a relay step, not a claim that Hermes can observe or complete the new GPT reasoning session invisibly after launch.
+When the operator enables an explicit queue launch mode, the queue-aware supervisor may use that selected next objective to seed either a fresh VS Code chat turn through the bounded bridge (`autoLaunchQueuedChat=true`) or a bounded worker wave (`autoLaunchQueuedSwarm=true`). Both remain relay steps, not a claim that Hermes can observe or complete the new GPT reasoning session invisibly after launch.
 
 ## Next Cycle Plan
 

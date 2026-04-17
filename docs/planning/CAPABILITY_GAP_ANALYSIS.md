@@ -13,7 +13,7 @@ Use this before sprint planning. Every item here should have a milestone in the 
 
 ## 1. MCP Infrastructure — Current vs. Document
 
-### What is Built
+### MCP Built Today
 
 | Surface | Entry point | Status |
 | ------- | ----------- | ------ |
@@ -27,10 +27,10 @@ Use this before sprint planning. Every item here should have a milestone in the 
 
 Shared/team repo analysis는 `gcpCompute`를 기본 truth surface로 보고, `muelIndexing`는 local diff overlay가 필요할 때만 추가로 사용한다.
 
-### Gaps vs. Vision
+### MCP Gaps To Vision
 
 | Gap | Priority | Notes |
-|-----|----------|-------|
+| --- | -------- | ----- |
 | `muelUnified` not in local `.vscode/mcp.json` | M-22 | GCP VM only; local dev needs SSH workaround |
 | Auth context not propagated in MCP calls | future | Tools currently run without tenant scoping |
 | Per-tool rate limiting and quota enforcement | future | No MCP-level throttle; relies on action runner |
@@ -42,10 +42,10 @@ Shared/team repo analysis는 `gcpCompute`를 기본 truth surface로 보고, `mu
 
 ## 2. Discord Surface — Current vs. Expected
 
-### What is Built
+### Discord Built Today
 
 | Feature | Status | Entry |
-|---------|--------|-------|
+| ------- | ------ | ----- |
 | Slash commands (Korean) | ✅ 20+ commands | `src/discord/commandDefinitions.ts` |
 | Message prefix `뮤엘 ...` | ✅ Working | `src/discord/commands/vibe.ts` |
 | `ext.openclaw` relay option | ⚠️ Config-gated | `OPENCLAW_ENABLED`, gateway health check |
@@ -54,10 +54,10 @@ Shared/team repo analysis는 `gcpCompute`를 기본 truth surface로 보고, `mu
 | Session progress update | ✅ Working | `src/discord/commands/agent.ts` |
 | Community graph capture | ✅ Working | co_presence/reaction/reply/mention |
 
-### Gaps vs. Vision
+### Discord Gaps To Vision
 
 | Gap | Priority | Notes |
-|-----|----------|-------|
+| --- | -------- | ----- |
 | Channel ingress abstraction for Discord requests | M-24 | Current Discord path prefers OpenClaw (`OPENCLAW_GATEWAY_URL`) when healthy; target is a pluggable ingress contract that can later host Chat SDK without changing routing or state ownership |
 | `/스프린트` command for Discord-triggered sprint | future | Currently admin-only via HTTP API |
 | Sprint progress visible in Discord | partial | Session updates work; sprint phase updates not threaded |
@@ -73,7 +73,7 @@ The "harness engineering" vision from the 2026-04 direction: **agents that learn
 ### What is Built (Phase F/G/H)
 
 | Harness Component | Implementation | Status |
-|-------------------|---------------|--------|
+| ----------------- | -------------- | ------ |
 | **Observer Layer (F)** | `src/services/observer/observerOrchestrator.ts` | ✅ 6 channels scanning |
 | Error pattern detection | `observerOrchestrator` + `errorPatternScanner` | ✅ Active |
 | Memory gap detection | `memoryGapScanner` | ✅ Active |
@@ -92,24 +92,20 @@ The "harness engineering" vision from the 2026-04 direction: **agents that learn
 
 ### What is Missing (Phase I/J)
 
-| Phase | Component | Status | Notes |
-|-------|-----------|--------|-------|
-| **Synthesis (I)** | Intent → multi-agent plan synthesis | ❌ Not implemented | Needs planner integration |
-| **MetaCognition (J)** | System-level self-evaluation | ❌ Not implemented | Needs eval framework |
+- Synthesis (I): Intent → multi-agent plan synthesis. Status: not implemented. Notes: needs planner integration.
+- MetaCognition (J): System-level self-evaluation. Status: not implemented. Notes: needs eval framework.
 
 ### Recursive Learning Gap Analysis
 
-| Capability | Current | Gap |
-|------------|---------|-----|
-| Sprint outcome → Learning Journal | ✅ Working | `SPRINT_LEARNING_JOURNAL_ENABLED` |
-| Learning Journal → Next sprint plan | ✅ Working (75%+ confidence) | Auto-apply when `SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED=true` |
-| Cross-sprint pattern recognition | ✅ Working | `SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW` window |
-| Error pattern → Bugfix sprint | ✅ Working (`SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED`) | Approval gate still required |
-| Performance regression → Fix sprint | ✅ Working (`SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED`) | Approval gate still required |
-| Cross-loop improvement tracking | ⚠️ Config only | `SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED=false` |
-| Convergence → Sprint trigger | ✅ Working | Via Signal Bus + intentFormation |
-| **Proactive work initiation** | ⚠️ Partial | Observer scans; Intent forms; but Sprint approval still required in `approve-ship` mode |
-| **Full-auto operation** | ⚠️ Off by default | `SPRINT_AUTONOMY_LEVEL=full-auto` enables; not used in production |
+- Sprint outcome → Learning Journal: working. Gap: `SPRINT_LEARNING_JOURNAL_ENABLED`.
+- Learning Journal → Next sprint plan: working at 75%+ confidence. Gap: auto-apply only when `SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED=true`.
+- Cross-sprint pattern recognition: working. Gap: `SPRINT_LEARNING_JOURNAL_PATTERN_WINDOW` window.
+- Error pattern → Bugfix sprint: working via `SELF_IMPROVEMENT_BUGFIX_TRIGGER_ENABLED`. Gap: approval gate still required.
+- Performance regression → Fix sprint: working via `SELF_IMPROVEMENT_BENCH_REGRESSION_ENABLED`. Gap: approval gate still required.
+- Cross-loop improvement tracking: config only. Gap: `SELF_IMPROVEMENT_CROSS_LOOP_TRACKING_ENABLED=false`.
+- Convergence → Sprint trigger: working. Gap: Signal Bus + intentFormation only.
+- Proactive work initiation: partial. Gap: observer scans and intent forms, but sprint approval is still required in `approve-ship` mode.
+- Full-auto operation: off by default. Gap: `SPRINT_AUTONOMY_LEVEL=full-auto` exists but is not used in production.
 
 ---
 
@@ -117,26 +113,70 @@ The "harness engineering" vision from the 2026-04 direction: **agents that learn
 
 ### Adapter Status (as of 2026-04-05)
 
-| Adapter | Availability Check | Lite Mode | Active Usage |
-|---------|--------------------|-----------|-------------|
-| OpenShell | shell subprocess | N/A | `shell.run` via MCP |
-| NemoClaw | process + health check | No | Sprint review phase |
-| **OpenClaw** | gateway HTTP → CLI fallback | Yes | Agent relay, skill create |
-| OpenJarvis | HTTP `/v1/chat/completions` | Yes | Sprint ops phase |
-| n8n | HTTP health check | No | Workflow trigger |
-| DeepWiki | MCP URL | No | DeepWiki MCP (direct) |
-| Obsidian | CLI binary | No | Obsidian write/read operations |
-| Render | HTTP API | No | Deploy trigger |
+- OpenShell: availability check = shell subprocess. Lite mode: N/A. Active usage: `shell.run` via MCP.
+- NemoClaw: availability check = process + health check. Lite mode: no. Active usage: sprint review phase.
+- OpenClaw: availability check = gateway HTTP → CLI fallback. Lite mode: yes. Active usage: agent relay, skill create.
+- OpenJarvis: availability check = HTTP `/v1/chat/completions`. Lite mode: yes. Active usage: sprint ops phase.
+- n8n: availability check = HTTP health check. Lite mode: no. Active usage: workflow trigger.
+- DeepWiki: availability check = MCP URL. Lite mode: no. Active usage: DeepWiki MCP direct.
+- Obsidian: availability check = CLI binary. Lite mode: no. Active usage: Obsidian write/read operations.
+- Render: availability check = HTTP API. Lite mode: no. Active usage: deploy trigger.
 
 ### Target: 80%+ Utilization (M-22)
 
 Current estimated utilization rate: ~40% (4 of 8 adapters see regular use)
 
 Blockers:
+
 - NemoClaw: requires local process startup; not always available in CI/CD
 - n8n: requires configured n8n instance URL
 - Render: only used during ship phase
 - Obsidian CLI: requires local vault installation
+
+### Live Capability Unlock Snapshot (2026-04-17)
+
+Validated with:
+
+- `npm run capability:audit`
+- `npm run -s tools:probe -- --json`
+- `hermes.cmd skills list`
+- `npm run -s openjarvis:autopilot:status`
+- `npm run -s hermes:vscode:bridge:status`
+
+What is actually ready on this workstation right now:
+
+- `hermes-local-operator`: ready. Classification: local-only hands layer. Notes: OpenJarvis/Ollama-backed local continuity lane is usable and the VS Code bridge is configured for bounded `code chat` relaunch.
+- `local-workstation-executor`: ready. Classification: local-only actuator. Notes: PowerShell-backed bounded local command/browser/app/file path is live.
+- `n8n-router`: ready. Classification: deterministic router, still guardrailed. Notes: adapter is available and configured tasks exist, but the repo still treats n8n as the deterministic router layer rather than the semantic owner.
+- `remote-heavy-execution`: ready. Classification: always-on support lane. Notes: Render and the canonical GCP worker surfaces are wired enough to keep remote execution in play.
+- `obsidian-semantic-owner`: ready. Classification: durable semantic owner. Notes: shared/local Obsidian adapter path is healthy enough to keep operator knowledge promotion alive.
+
+What is available but intentionally guardrailed or catalog-limited:
+
+- Hermes skills: live state = `1 hub-installed, 74 builtin, 0 local`. Classification: guardrailed. Notes: no repo-local Hermes skill pack is loaded, which is acceptable until a repeated repo-specific workflow truly needs a local skill instead of a wrapper or script.
+- OpenJarvis adapter: live state = available, lite-mode. Classification: guardrailed. Notes: rich local agent, eval, optimize, and scheduler capabilities exist in the adapter, but the default tool catalog deliberately exposes only the narrower lite subset until route ownership is explicit.
+- OpenClaw adapter: live state = available, lite-mode. Classification: guardrailed. Notes: the adapter exists, but only chat/health are exposed in the lite catalog and the local gateway chat surface is not healthy enough for default ingress.
+- n8n, Obsidian, Render, Ollama, LiteLLM, `mcp-indexing`: live state = available, lite-mode. Classification: guardrailed. Notes: these lanes exist, but the catalog intentionally narrows the exposed capability set. Unlocking the full surface should be a deliberate routing decision, not a default.
+
+What is still disconnected and blocks promotion:
+
+- `gcpcompute-shared-mcp`: live state = missing in `automation.capability.catalog`. Classification: disconnected. Why it matters: `MCP_SHARED_MCP_URL` / `OBSIDIAN_REMOTE_MCP_URL` are wired, but `MCP_UPSTREAM_SERVERS` is unset, so no enabled `upstream.<namespace>.*` wrapper lane exists. The service URL is present, but the reusable shared wrapper path is not.
+
+Documented optional or accepted states:
+
+- `litellmProxy`: live state = reachable when configured. Classification: opt-in remote provider lane. Why it matters: direct LiteLLM/NVIDIA NIM routing remains available, but `LITELLM_BASE_URL` is no longer a controller-side always-on requirement.
+- OpenClaw gateway chat: live state = CLI installed, API unreachable. Classification: optional ingress lane. Why it matters: the local OpenClaw ingress path stays health-gated; CLI or lite-mode presence does not make it the default ingress owner.
+- Hermes local skill pack: live state = `0 local`. Classification: optional lane. Why it matters: the empty repo-local skill pack is acceptable until a repeated repo-specific workflow clearly needs a local skill instead of a shared wrapper or deterministic script.
+- DeepWiki adapter: live state = unavailable. Classification: optional lane. Why it matters: useful for repo-doc Q&A, but not an always-on blocker for the current control plane.
+- Standard external probe coverage: live state = 8 probe surfaces vs 12 adapter surfaces. Classification: accepted observability gap. Why it matters: `tools:probe` is not the full capability inventory. `capability:audit` is the canonical unlock surface until the low-level probe and adapter registry converge.
+
+Local-only vs. always-on ownership boundary:
+
+- **Always-on required**: `implementWorker`, `architectWorker`, `reviewWorker`, `operateWorker`, `openjarvisServe`, `unifiedMcp`
+- **Opt-in remote provider lanes**: `litellmProxy`
+- **Local acceleration only**: `localOllama`
+- **Operator-personal local lanes**: `hermes-local-operator`, `local-workstation-executor`, OpenClaw gateway, OpenShell/NemoClaw sandbox, local Obsidian adapter, local `mcp-indexing` dirty overlay
+- **Promote next, not immediately**: shared MCP wrappers after upstream federation is live; wider adapter capabilities only after routing/ownership/observability are explicit
 
 ---
 
@@ -152,25 +192,43 @@ Blockers:
 
 ### Drift Detected and Fixed (2026-04-05)
 
-| Document | Issue | Fix |
-|----------|-------|-----|
-| `docs/planning/mcp/MCP_TOOL_SPEC.md` | Missing `diag.llm`, missing Obsidian tools, missing ext.* adapters | Upgraded to v2 spec |
-| `docs/planning/mcp/MCP_ROLLOUT_1W.md` | Showed future tense for completed rollout | Updated to show completion + iteration 2 notes |
-| `docs/ARCHITECTURE_INDEX.md` | muelCore listed as 5 tools (was 6 after `diag.llm` added) | Fixed count |
+- `docs/planning/mcp/MCP_TOOL_SPEC.md`: issue = missing `diag.llm`, missing Obsidian tools, missing ext.* adapters. Fix = upgraded to v2 spec.
+- `docs/planning/mcp/MCP_ROLLOUT_1W.md`: issue = showed future tense for completed rollout. Fix = updated to show completion + iteration 2 notes.
+- `docs/ARCHITECTURE_INDEX.md`: issue = muelCore listed as 5 tools after `diag.llm` added. Fix = corrected the count.
 
 ### Remaining Drift
 
-| Document | Issue | Priority |
-|----------|-------|----------|
-| `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md` | May have stale adapter capability list | M-22 cleanup |
-| `docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md` | GCP VM setup steps may be outdated | Low (internal) |
-| `docs/archive/*` | Multiple archived docs that reference old role names | Non-urgent (archives) |
+- `docs/planning/EXTERNAL_TOOL_INTEGRATION_PLAN.md`: may have a stale adapter capability list. Priority: M-22 cleanup.
+- `docs/planning/GCP_OSS_INTEGRATION_BLUEPRINT.md`: GCP VM setup steps may be outdated. Priority: low, internal only.
+- `docs/archive/*`: multiple archived docs still reference old role names. Priority: non-urgent archives cleanup.
 
 ---
 
 ## 6. Recommended Next Actions
 
 Ordered by strategic importance:
+
+### 2026-04-17 Capability Unlock Order
+
+1. **Reconnect shared MCP as a real wrapper lane** — Set `MCP_UPSTREAM_SERVERS` to at least one enabled upstream namespace and fail readiness if only the raw service URL is wired. This is the highest-leverage unlock because it converts a machine-local service URL into a teammate-usable `upstream.*` lane.
+
+2. **Use `capability:audit` as the canonical unlock inventory** — The low-level external probe does not cover every adapter or catalog limit. Unlock decisions should start from the unified capability audit, not from `tools:probe` output alone.
+
+3. **Keep OpenClaw explicitly optional until the gateway chat surface is restored** — The current state is intentionally “installed but not route-safe.” Do not widen ingress ownership until the gateway chat surface is healthy again.
+
+4. **Keep Hermes local skills empty until a real repeated workflow demands them** — Prefer repo scripts or shared wrappers before adding personal/local skill packs. The current 0-local-skill state is a signal to add contracts, not necessarily a bug.
+
+5. **Keep DeepWiki optional** — Treat DeepWiki as a later unlock for documentation leverage, not as a blocker for the current local capability lane.
+
+### Global Guardrails
+
+- Do not treat direct remote URL wiring as equivalent to a shared wrapper lane. A shared lane is only “unlocked” when the `upstream.<namespace>.*` surface is actually registered and queryable.
+- Do not promote local-only lanes to always-on ownership until shared owner, observability, and rollback are explicit.
+- Keep auth, versioning, and provider semantics in the provider-native layer instead of burying them in prompt glue or ad hoc notes.
+- Keep lite-mode adapters intentionally narrow until route ownership and observability justify widening them.
+- Preserve the multi-plane split: Supabase hot-state, Obsidian semantic ownership, GitHub artifact/review plane.
+
+### Longer-Horizon Actions
 
 1. **[M-22] Enable local `muelUnified` MCP entry** — Add unified server to `.vscode/mcp.json` as a local stdio option (not just SSH GCP). This dramatically improves local dev loop for IDE agents.
 

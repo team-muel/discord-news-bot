@@ -61,18 +61,21 @@ llm.<your-domain> {
 
 ## 5) 앱 연결 방식
 
-원격 Ollama를 기본 provider로 쓰려면 다음 env를 사용한다.
+원격 Ollama를 canonical lane의 remote/local engine 경계 안에서 쓰려면 다음 env를 사용한다.
 
-- `AI_PROVIDER=ollama`
+- `AI_PROVIDER=openjarvis`
+- `OPENJARVIS_ENABLED=true`
+- `OPENJARVIS_SERVE_URL=https://jarvis.<your-domain>`
+- `OPENJARVIS_MODEL=mistral:latest`
 - `OLLAMA_BASE_URL=https://llm.<your-domain>`
 - `OLLAMA_MODEL=mistral:latest`
-- `LLM_PROVIDER_BASE_ORDER=ollama,openclaw,anthropic,openai,gemini,huggingface`
+- `LLM_PROVIDER_BASE_ORDER=`
 - `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`
-- `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER=openclaw,anthropic,openai,gemini,huggingface`
+- `LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER=`
 
 중요:
 
-- 이 구성은 local-first hybrid의 의도를 바꾸므로, 로컬 PC 전원이 켜져 있을 때만 로컬 Ollama를 우선 사용하려면 기존 `local-first-hybrid` 프로필을 유지한다.
+- 이 구성은 OpenJarvis control surface는 유지한 채 remote Ollama를 engine으로 대체한다. 로컬 PC 전원이 켜져 있을 때만 host-local Ollama를 우선 사용하려면 기존 `local-first-hybrid` 프로필을 유지한다.
 - 운영 기본값을 remote Ollama로 바꾸는 경우에는 별도 production profile을 만들고 `openjarvis:autonomy:run:dry`를 다시 통과시켜야 한다.
 
 ## 6) 검증 절차

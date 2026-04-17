@@ -1,6 +1,6 @@
 # Multica Control Plane Playbook
 
-Status: Canonical repo source (2026-04-17)
+Status: Canonical repo source (2026-04-18)
 
 ## Purpose
 
@@ -12,6 +12,9 @@ This document exists to answer four questions clearly:
 2. What Multica must not own.
 3. Which local agent should be assigned to which kind of work.
 4. What the first repeatable issue topology should look like.
+
+This playbook is for the local-agent-machine only.
+It must not be used as the first proof surface for service-machine truth or team-shared onboarding.
 
 ## Control-Plane Boundary
 
@@ -50,6 +53,21 @@ Broader plane alignment:
 - This playbook is the local coordination slice of the broader multi-plane operating model.
 - Keep coordination in Multica, workflow state in Supabase plus n8n, durable meaning in shared Obsidian, and shipped artifacts in GitHub.
 - Use [docs/adr/ADR-008-multi-plane-operating-model.md](docs/adr/ADR-008-multi-plane-operating-model.md) when the broader plane split matters beyond local issue choreography.
+
+## Local, Service, Shared Usage Map
+
+| Plane ID | Multica relation | Canonical proof surface | Use this plane for | Do not infer from it |
+| --- | --- | --- | --- | --- |
+| `local-agent-machine` | Multica is the visible control plane | this playbook, `npm run local:control-plane:doctor`, local runtime health | bounded local execution, local validation, workstation routing, child-lane ownership | deployed runtime health, shared publication, or team-wide prerequisites |
+| `service-machine` | evidence target only | `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `config/runtime/operating-baseline.json`, operator-visible runtime endpoints | proving callability, worker ownership, deployed route truth | success or failure of a local Multica lane |
+| `team-shared-plane` | promotion destination only | `docs/TEAM_SHARED_OBSIDIAN_START_HERE.md`, shared Obsidian through shared MCP | onboarding, durable meaning, local-stack-free recovery, shared operator memory | private issue notes, personal manifests, or workstation-only glue |
+
+## Operator Verification Branch
+
+1. If the operator question is "what is deployed and callable", leave Multica and verify the service machine first.
+2. If the operator question is "how does a teammate recover this without a local stack", use the team-shared plane first.
+3. If the operator question is "which local agent should run this bounded lane", use this playbook and stay on the local-agent-machine.
+4. Never use Multica issue state, local shell success, or local wrapper health as proof that the service machine or the team-shared plane is healthy.
 
 ## Agent Role Cards
 
@@ -102,6 +120,7 @@ For Multica child issues in this repository, the issue body or triggering commen
 - do not convert the issue into a local todo or planning artifact unless the issue explicitly asks for planning output
 - do not loop on session-inspection tools for bounded validation checks; report the first reproducible session or gateway blocker directly
 - if a local lane only stays on-task after wrapper-level tool filtering or session normalization, preserve that control in the local runtime wrapper instead of trying to solve it with prompt wording alone
+- label evidence by plane when a child issue closes: local-agent-machine, service-machine, or team-shared-plane
 
 ## Default Issue Topology
 
@@ -168,9 +187,9 @@ Use this structure for the parent Multica issue description.
 - OpenClaw Local: optional alternate path
 
 ## Evidence required
-- changed files or commit/branch reference
-- test or verification result
-- operator note or follow-up decision
+- plane=local-agent-machine: changed files, local test result, or workstation-only runtime evidence
+- plane=service-machine: operator endpoint check, deploy/runtime health, or callable worker evidence
+- plane=team-shared-plane: shared Obsidian or shared MCP publication, canonical doc update, or shared recovery note
 
 ## Promotion rule
 - if the result changes runtime meaning, update repo docs and promote durable meaning to shared Obsidian
@@ -181,6 +200,8 @@ Use this structure for the parent Multica issue description.
 - Keep one parent issue equal to one bounded objective.
 - Prefer child issues over one giant description when multiple agents are involved.
 - Do not treat Multica issue state as semantic truth; it is coordination state.
+- Do not treat local-plane evidence as service-machine proof.
+- Do not treat service-machine proof as shared-plane publication; shared onboarding still requires the backfilled shared surface.
 - Keep final meaning in repo docs plus shared Obsidian.
 - When only one agent is needed, do not force three-lane choreography.
 - When a lane becomes ambiguous or policy-sensitive, route back to a human-facing reasoning surface before continuing.
@@ -196,11 +217,37 @@ For the next real repository task, use this exact flow:
 5. Attach the canonical repo doc or changed-file evidence to the relevant issue.
 6. Promote any durable lesson into shared Obsidian instead of leaving it only in issue text.
 
+## Four-Surface Leverage Recovery
+
+When this repository is under-leveraging Multica, Hermes, VS Code IDE Copilot, or OpenJarvis, the recovery sequence is:
+
+1. Multica owns the parent objective and child-lane visibility. Keep one bounded objective per parent issue.
+2. Hermes owns the local doctor, repair, and queue-aware execution lane. Start from `npm run local:control-plane:doctor`, then `npm run local:control-plane:up` if the lane is degraded.
+3. OpenJarvis owns queue selection, runtime hot-state, and the next bounded objective. Use `npm run local:control-plane:future` to decide whether to stabilize, auto-queue, or launch.
+4. VS Code IDE Copilot owns only the bounded GPT handoff. Launch it through `npm run openjarvis:autopilot:queue:chat` when the future plan says `launch-next-bounded-turn`, or `npm run openjarvis:autopilot:queue:swarm` when it says `launch-next-bounded-wave`, and close it with `npm run openjarvis:hermes:runtime:reentry-ack ...` immediately after the handoff settles.
+5. If inspection is needed before mutation, use the matching `:dry` entrypoint rather than assuming the live command is safe-by-default.
+
+`npm run local:control-plane:future` now emits a structured session synthesis in addition to the human-readable cadence plan.
+Use that synthesis to mirror the next Multica child-lane shape instead of inventing fresh choreography per issue:
+
+- `sessionKind=bounded-turn` -> one parent objective plus one bounded GPT handoff child
+- `sessionKind=bounded-wave` -> one parent objective plus scout, executor, and optional distiller child lanes
+- `executionLane.primaryAssetId=local-workstation-executor` -> keep the GUI or browser work explicit instead of pretending the repo-only lane can cover it
+- `executionLane.primaryAssetId=remote-heavy-execution` -> keep the heavy remote slice explicit instead of hiding it behind a local Copilot chat
+
+This sequence exists to prevent the four recurring failure modes that make the stack look underused even when the code paths exist:
+
+- Multica becomes notes-only coordination instead of a bounded objective board.
+- Hermes stays at diagnostics and never reaches the local execution lane.
+- VS Code Copilot is treated as a generic manual chat instead of a bounded reentry surface.
+- OpenJarvis keeps status and packets alive but never promotes the next objective into an actual live turn.
+
 ## Done Definition
 
 This operating model is established when all of the following are true:
 
 1. The next repo task can be opened as a bounded Multica parent issue.
 2. `Claude Local`, `Hermes Local`, and `OpenClaw Local` have explicit role cards in the workspace.
-3. The canonical repo doc is registered for shared knowledge backfill.
-4. Durable lessons from Multica execution are promoted out of issue text into shared Obsidian when they matter beyond the current task.
+3. The operator can tell whether a question belongs to the local-agent-machine, service-machine, or team-shared-plane before opening a child lane.
+4. The canonical repo doc is registered for shared knowledge backfill.
+5. Durable lessons from Multica execution are promoted out of issue text into shared Obsidian when they matter beyond the current task.

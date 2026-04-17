@@ -68,7 +68,7 @@
       "envKey": "LITELLM_BASE_URL",
       "url": "https://muel-litellm-proxy.onrender.com",
       "healthPath": "/health/liveliness",
-      "alwaysOn": true
+      "alwaysOn": false
     },
     "localOllama": {
       "envKey": "OLLAMA_BASE_URL",
@@ -84,7 +84,9 @@
       "reviewWorker",
       "operateWorker",
       "openjarvisServe",
-      "unifiedMcp",
+      "unifiedMcp"
+    ],
+    "optInRemoteProviderLanes": [
       "litellmProxy"
     ],
     "localAccelerationOnly": [
@@ -103,8 +105,38 @@
     "alwaysOnChecks": [
       "GET /api/bot/agent/runtime/unattended-health",
       "GET /api/bot/agent/runtime/role-workers",
-      "LiteLLM /health/liveliness",
       "Shared MCP /mcp health (indexing + obsidian)"
+    ],
+    "optionalLaneChecks": [
+      "LiteLLM /health/liveliness when direct LiteLLM or NVIDIA NIM routing is selected"
+    ]
+  },
+  "capabilityAudit": {
+    "acknowledgedFindings": [
+      {
+        "id": "openclaw-gateway-disconnected",
+        "status": "optional-lane",
+        "summary": "OpenClaw ingress stays optional until the gateway chat surface is restored.",
+        "rationale": "CLI or lite-mode availability does not grant default ingress ownership."
+      },
+      {
+        "id": "hermes-local-skill-pack-empty",
+        "status": "optional-lane",
+        "summary": "Hermes repo-local skill packs stay optional until a repeated repo-specific workflow truly needs one.",
+        "rationale": "Prefer shared wrappers or deterministic scripts before adding personal/local skill surfaces."
+      },
+      {
+        "id": "deepwiki-adapter-locked",
+        "status": "optional-lane",
+        "summary": "DeepWiki remains an optional documentation lane on this workstation.",
+        "rationale": "Repo-doc Q&A leverage is useful, but it is not an always-on blocker for the current control plane."
+      },
+      {
+        "id": "probe-coverage-gap",
+        "status": "accepted-gap",
+        "summary": "Probe coverage remains an accepted observability gap until the low-level probe and adapter registry converge.",
+        "rationale": "Use capability:audit as the canonical unlock surface instead of treating tools:probe as the full inventory."
+      }
     ]
   },
   "externalOssRoles": {

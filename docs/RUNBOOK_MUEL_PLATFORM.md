@@ -97,9 +97,12 @@ Open these first when verifying behavior:
 
 Runtime/control-plane verification baseline:
 
-- Treat `config/runtime/operating-baseline.json` as the canonical source for current machine profile, always-on required services, canonical worker endpoints, and local-only acceleration lanes.
+- Treat `config/runtime/operating-baseline.json` as the canonical source for current machine profile, always-on required services, canonical worker endpoints, local-only acceleration lanes, opt-in remote provider lanes, and acknowledged capability-audit stances.
 - Use public `GET /health` and `/dashboard` for startup summary state only. Detailed startup error text and loop ownership diagnostics are shown only to signed-in admins; use `GET /api/bot/agent/runtime/scheduler-policy` and `GET /api/bot/agent/runtime/loops` for the full operator view.
 - Treat `GET /api/bot/agent/runtime/scheduler-policy` as the canonical operator snapshot for loop ownership and startup phase.
+- Treat `LITELLM_BASE_URL` as an opt-in remote provider lane. Probe LiteLLM only when a direct LiteLLM/NIM route is part of the selected provider chain; it is not a controller-side always-on gate.
+- Treat OpenClaw gateway health as optional ingress health only. CLI or lite-mode availability does not make OpenClaw the default ingress owner.
+- For Discord cutover validation, an external `GET /health` payload may backfill bot/automation readiness when the validator runs away from the live process, but scheduler ownership is canonical only when that payload exposes `runtimeSchedulerPolicy.summary` with the exact `{ total, appOwned, dbOwned, enabled, running }` shape; otherwise fall back to the signed-in `scheduler-policy` endpoint or the in-process snapshot.
 - Use `GET /api/bot/agent/runtime/loops` and `GET /api/bot/agent/runtime/unattended-health` before deciding restart, rollback, or workload freeze. `runtime/loops` is also the quickest place to confirm reward-signal and eval-auto-promote loop state plus the current repo-owned Obsidian and eval maintenance control surfaces. Inspect the `llmRuntime` block to see the selected provider, action policy providers, workflow binding, effective provider profile, resolved chain, readiness-pruned chain, and per-provider health.
 - Use `GET /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5` when validating A-003 gate -> approval -> model fallback state for a specific guild.
 - Use `GET /api/bot/agent/obsidian/runtime` for shared-vault health, remote-mcp diagnostics, cache boundary, and inbox chat loop state.
@@ -219,9 +222,11 @@ Sync rule:
 
 1. Provider를 프록시 단일 경로로 고정:
 
-- `AI_PROVIDER=openclaw`
-- `OPENCLAW_BASE_URL=https://<litellm-proxy-endpoint>`
-- `OPENCLAW_API_KEY=<secret>`
+- `AI_PROVIDER=openjarvis`
+- `OPENJARVIS_ENABLED=true`
+- `OPENJARVIS_MODEL=muel-balanced`
+- `LITELLM_BASE_URL=https://<litellm-proxy-endpoint>`
+- `LITELLM_MODEL=muel-balanced`
 
 1. Obsidian remote-mcp 기반 경로 활성화:
 
@@ -239,6 +244,7 @@ Sync rule:
 - `OBSIDIAN_ADAPTER_ORDER_WRITE_NOTE=remote-mcp,script-cli`
 - fresh VM에서 `scripts/deploy-gcp-workers.sh` 는 `xvfb-run` 과 `OBSIDIAN_APP_BIN` 기본값 `/opt/obsidian-app/obsidian` 이 있으면 `obsidian-headless`, `unified-mcp-http`, `obsidian-lore-sync.timer` 를 함께 설치해 canonical `/mcp` ingress와 compatibility `/obsidian` alias를 모두 제공하는 always-on shared MCP 경로를 재현한다.
 - 팀/IDE 에이전트는 shared operator docs, 요구사항, 계획 note를 확인할 때 로컬 vault 대신 `gcpCompute` 또는 canonical `/mcp` ingress를 기본 경로로 사용한다.
+- wrapped shared tools까지 실제로 열려 있어야 하면 `npm run mcp:shared:upstream:dry`로 preview 한 뒤 `npm run mcp:shared:upstream`를 실행한다. helper가 `MCP_SHARED_MCP_URL`의 terminal `/mcp` segment를 simple wrapper base로 자동 변환하므로 `MCP_UPSTREAM_SERVERS`에 ingress URL을 수동으로 복붙하지 않는다.
 
 1. OpenJarvis 원격 실행 강제:
 
@@ -309,10 +315,11 @@ Sync rule:
 - host OpenClaw와 NemoClaw onboard를 같은 머신에서 함께 쓸 때는 포트 소유권을 분리한다. pure OpenClaw local stack은 기본 포트 `18789`를 계속 쓰고, NemoClaw 계열 프로필은 host OpenClaw를 dev-profile 포트 `19001`로 옮긴다. NemoClaw onboard는 upstream 기본값상 dashboard `18789`를 강하게 가정한다.
 - 로컬 OpenJarvis API key는 별도 발급 절차가 아니라 operator가 정하는 정적 bearer token이다. 로컬에서는 `.env`의 `OPENJARVIS_SERVE_API_KEY`를 채우고 `npm run openjarvis:serve:local`로 시작한다. helper가 런타임에서 `OPENJARVIS_API_KEY`로 자동 매핑한다.
 - `GET /api/bot/agent/runtime/unattended-health`와 `GET /api/bot/agent/runtime/operator-snapshot`는 이제 `localAutonomy` 블록으로 `local-nemoclaw-max-delegation` 표준 profile의 doctor 결과를 함께 보여준다. 로컬 24시간 자율 lane이 막히면 여기서 바로 `failures`와 `nextSteps`를 읽고, local n8n/LiteLLM bring-up 또는 canonical GCP surface drift 여부를 우선 확인한다.
-- repo runtime이 살아 있는 동안에는 `localAutonomySupervisorLoop`가 service-init loop로 함께 돌며, 같은 표준 profile을 주기적으로 doctor/up 하고 Hermes supervisor가 비어 있으면 자동으로 `start-supervisor-loop` remediation을 큐잉한다. local max-delegation lane에서는 이때 `autoLaunchQueuedChat=true`도 함께 요구해서 queued next objective가 있으면 다음 GPT 세션까지 이어간다.
-- 이미 떠 있는 Hermes supervisor가 구형 manual-chat 모드라면, 현재 workflow가 `executing`이 아닌 안전 구간에서 local autonomy loop가 그 supervisor를 내리고 queue-aware auto-chat 모드로 다시 올려 24시간 연속성을 수렴시킨다.
-- queue-aware supervisor가 `queued_chat_launched` 이후 `awaiting_reentry_acknowledgment=true` 상태로 멈춰 있다면, local autonomy loop는 이를 supervisor-down 고장으로 취급하지 않는다. 이 구간에서는 `openjarvis:hermes:runtime:reentry-ack`가 먼저 실행되어야 하며, status/readiness/local-autonomy 표면은 같은 wait boundary를 유지해서 중복 GPT relaunch를 막는다. 대기 시간이 15분을 넘기면 `awaiting_reentry_acknowledgment_stale=true` 와 `reentry=stale-ack` 경고가 surfaced 되고, local autonomy loop 는 같은 stale boundary 당 한 번만 workflow `capability_demand` 를 기록한 뒤 continuity packet sync 를 다시 돌려 Obsidian-visible handoff/progress packet 까지 갱신한다.
-- repo runtime이 없거나 아직 올리지 않은 세션에서는 `npm run local:autonomy:supervisor`가 같은 self-heal logic을 detached 독립 프로세스로 유지한다. 최신 상태는 `tmp/autonomy/local-autonomy-supervisor.json`, 프로세스 메타데이터는 `tmp/autonomy/local-autonomy-supervisor.manifest.json`, stdout/stderr 로그는 `tmp/autonomy/local-autonomy-supervisor.log`에 기록된다. status payload의 `watchProcess`와 `stats.lastSupervisorAutoLaunchQueuedChat`로 standalone lane이 queue-aware chat relaunch를 목표 상태로 유지하는지 바로 확인할 수 있다. continuity packet sync도 이제 이 manifest/status/log를 fallback observability source로 읽으므로 active launch manifest가 비어 있어도 Obsidian handoff/progress packet의 `continuity_watch_alive`와 evidence refs로 detached watcher 생존 여부를 확인할 수 있다. manifest와 status는 tracked code fingerprint도 함께 기록하므로 `npm run local:autonomy:supervisor:status`에서 `code.driftDetected`와 `code.restartRecommended`를 보면 detached daemon이 현재 repo 코드와 어긋났는지 바로 알 수 있다. `npm run local:autonomy:supervisor`는 drift가 감지된 기존 daemon을 자동으로 교체하고, 필요하면 `npm run local:autonomy:supervisor:restart`로 강제 재기동할 수 있다.
+- repo runtime이 살아 있는 동안에는 `localAutonomySupervisorLoop`가 service-init loop로 함께 돌며, 같은 표준 profile을 주기적으로 doctor/up 하고 Hermes supervisor가 비어 있으면 자동으로 `start-supervisor-loop` remediation을 큐잉한다. local max-delegation lane에서는 이때 explicit queue launch mode도 함께 요구해서 queued next objective가 있으면 다음 GPT 세션까지 이어간다. 기본 bounded single-turn 경로는 `autoLaunchQueuedChat=true`, bounded worker wave 경로는 `autoLaunchQueuedSwarm=true`다.
+- 이미 떠 있는 Hermes supervisor가 구형 manual-chat 모드라면, 현재 workflow가 `executing`이 아닌 안전 구간에서 local autonomy loop가 그 supervisor를 내리고 queue-aware relaunch 모드로 다시 올려 24시간 연속성을 수렴시킨다.
+- queue-aware supervisor가 `queued_chat_launched` 또는 `queued_swarm_launched` 이후 `awaiting_reentry_acknowledgment=true` 상태로 멈춰 있다면, local autonomy loop는 이를 supervisor-down 고장으로 취급하지 않는다. 이 구간에서는 `openjarvis:hermes:runtime:reentry-ack`가 먼저 실행되어야 하며, status/readiness/local-autonomy 표면은 같은 wait boundary를 유지해서 중복 GPT relaunch를 막는다. 대기 시간이 15분을 넘기면 `awaiting_reentry_acknowledgment_stale=true` 와 `reentry=stale-ack` 경고가 surfaced 되고, local autonomy loop 는 같은 stale boundary 당 한 번만 workflow `capability_demand` 를 기록한 뒤 continuity packet sync 를 다시 돌려 Obsidian-visible handoff/progress packet 까지 갱신한다.
+- repo runtime이 없거나 아직 올리지 않은 세션에서는 `npm run local:autonomy:supervisor`가 같은 self-heal logic을 detached 독립 프로세스로 유지한다. 최신 상태는 `tmp/autonomy/local-autonomy-supervisor.json`, 프로세스 메타데이터는 `tmp/autonomy/local-autonomy-supervisor.manifest.json`, stdout/stderr 로그는 `tmp/autonomy/local-autonomy-supervisor.log`에 기록된다. status payload의 `watchProcess`, `stats.lastSupervisorQueueLaunchMode`, `stats.lastSupervisorAutoLaunchQueuedChat`, `stats.lastSupervisorAutoLaunchQueuedSwarm`로 standalone lane이 queue-aware relaunch를 어떤 mode로 유지하는지 바로 확인할 수 있다. continuity packet sync도 이제 이 manifest/status/log를 fallback observability source로 읽으므로 active launch manifest가 비어 있어도 Obsidian handoff/progress packet의 `continuity_watch_alive`와 evidence refs로 detached watcher 생존 여부를 확인할 수 있다. manifest와 status는 tracked code fingerprint도 함께 기록하므로 `npm run local:autonomy:supervisor:status`에서 `code.driftDetected`와 `code.restartRecommended`를 보면 detached daemon이 현재 repo 코드와 어긋났는지 바로 알 수 있다. `npm run local:autonomy:supervisor`는 drift가 감지된 기존 daemon을 자동으로 교체하고, 필요하면 `npm run local:autonomy:supervisor:restart`로 강제 재기동할 수 있다.
+- `npm run local:autonomy:supervisor:once`는 같은 status artifact를 갱신해 즉시 상태를 새로 볼 수 있게 하지만, continuity packet sync는 detached manifest PID를 우선해서 읽는다. 따라서 one-shot 점검 직후에도 실제 detached watcher가 살아 있으면 packet의 `continuity_watch_alive`는 계속 그 detached watcher 기준으로 유지된다.
 - 현재 local-nemoclaw-stack의 OpenJarvis lane은 LiteLLM(`http://127.0.0.1:4000`) 뒤의 검증된 Qwen 모델을 쓴다. `NVIDIA_API_KEY`나 `NVIDIA_NIM_API_KEY`는 NemoClaw/OpenJarvis의 로컬 Ollama/LiteLLM lane을 올리는 데 필수는 아니고, NVIDIA cloud/NIM inference를 직접 쓰려는 경우에만 필요하다.
 - Gemma 4 A/B 프로필은 direct Ollama lane만 `gemma4:e4b`로 바꾸고 OpenJarvis, optimize judge, NemoClaw inference는 기존 qwen lane에 유지한다. 목적은 Hermes-side local reasoning 실험이지 unattended worker 전체 교체가 아니다.
 - `npm run env:check:local-hybrid` 통과는 로컬 추론 readiness만 의미한다. 항상-온 운영 readiness는 `GET /api/bot/agent/runtime/unattended-health`와 원격 worker/LiteLLM/remote-mcp health로 별도 판단한다.
@@ -356,6 +363,11 @@ Tracked Docker Desktop helper files:
 - 상태판(status): `npm run local:stack:max:status`
 - 표준 프로필 적용 + managed local services bring-up: `npm run local:stack:max:up`
 - 사전 미리보기: `npm run local:stack:max:up:dry`
+- 통합 control-plane doctor: `npm run local:control-plane:doctor`
+- 통합 control-plane 상태판(status): `npm run local:control-plane:status`
+- 통합 control-plane bring-up: `npm run local:control-plane:up`
+- 통합 control-plane bring-up 사전 미리보기: `npm run local:control-plane:up:dry`
+- 통합 control-plane future cadence plan: `npm run local:control-plane:future`
 - standalone self-heal loop 1회 점검: `npm run local:autonomy:supervisor:once`
 - standalone self-heal loop detached 시작: `npm run local:autonomy:supervisor`
 - standalone self-heal loop 상태 확인: `npm run local:autonomy:supervisor:status`
@@ -365,9 +377,46 @@ Tracked Docker Desktop helper files:
 
 이 제어면은 `local-nemoclaw-max-delegation` 프로필을 표준 기준으로 보고, repo가 직접 관리할 수 있는 deterministic local surfaces만 자동으로 다룬다. `local:stack:first:*` 제어면은 `local-first-hybrid`를 기준으로 같은 doctor/status/up 흐름을 제공하고, repo-local OpenJarvis serve를 direct Ollama `qwen2.5:7b` lane에 고정한다. `muel-*` 같은 LiteLLM alias를 직접 쓰고 싶으면 `OPENJARVIS_ENGINE` 또는 `OPENJARVIS_MODEL`을 명시적으로 덮어쓴다.
 
+`local:control-plane:*` 제어면은 위 deterministic stack doctor 위에 Multica, Hermes, VS Code Copilot `code chat` relay, OpenJarvis goal status, detached local autonomy supervisor를 한 번에 묶어 보여준다. 핵심 목적은 넷을 같은 activation plan으로 다루는 것이다. 여기서 Multica는 coordination plane으로만 검증하고 강제 기동하지 않으며, VS Code Copilot은 bridge와 packet 상태만 확인한다. 실제 auto-start 대상은 repo가 직접 관리하는 deterministic services와 detached local autonomy supervisor까지다.
+
 - 자동 관리 대상: local LiteLLM sidecar, local n8n, 그리고 현재 profile에서 실제로 local URL로 남아 있는 deterministic service만
 - 상태 요약 포함: Obsidian access posture, OpenJarvis memory projection freshness, latest workflow hot-state summary
 - 수동 유지 대상: OpenClaw, NemoClaw, OpenShell 같은 WSL/dashboard/operator-managed lanes
+- 통합 control-plane 요약 포함: Multica CLI/playbook 상태, Hermes quick check, VS Code bridge `chat` allowlist, OpenJarvis runtime readiness, detached self-heal loop 상태, 그리고 entry/exit criteria가 있는 phased activation plan
+
+미래 공정 표준 cadence:
+
+1. `npm run local:control-plane:doctor`로 새 bounded turn 전에 전체 제어면을 점검한다.
+2. doctor가 막혀 있으면 `npm run local:control-plane:up`으로 deterministic surface와 detached self-heal loop를 먼저 복구한다.
+3. queue가 비었거나 stale이면 `npm run openjarvis:hermes:runtime:queue-objective:auto`로 다음 bounded objective를 safe queue에 올린다.
+4. queued objective가 준비되면 future planner가 추천한 queue launch mode를 그대로 따른다. single-turn handoff는 `npm run openjarvis:autopilot:queue:chat`, bounded worker wave는 `npm run openjarvis:autopilot:queue:swarm`으로 launch 한다.
+5. GPT turn이 끝나면 즉시 `npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"`를 실행해 hot-state closeout을 남긴다.
+6. active workflow를 지켜보는 중이거나 closeout 직후에는 `npm run openjarvis:packets:sync`를 함께 실행해 Obsidian supervisor/progress packet을 최신 watcher 상태와 handoff boundary에 맞춘다.
+7. 결과가 runtime meaning이나 operator behavior를 바꾸면 같은 change window에서 repo 문서와 shared Obsidian promotion까지 닫는다.
+
+`npm run local:control-plane:future`는 위 cadence를 현재 runtime state에 맞춰 phase와 권장 명령 형태로 다시 계산해 준다. 이 planning surface는 exit code를 readiness 실패로 쓰지 않고, future cycle 설계를 보여주는 용도로만 쓴다.
+
+- 출력에는 이제 `sessionSynthesis`가 함께 포함된다. 여기에는 session kind, observed/planned queue mode, launch objective, coordinator command contract, Copilot handoff mode, primary execution lane, 그리고 bounded wave일 때 child turn 구성이 들어 있다.
+- execution lane은 fail-closed다. 명시적 GUI/browser objective가 없으면 `hermes-local-operator`에 남고, objective가 browser, screenshot, desktop evidence를 직접 가리킬 때만 `local-workstation-executor`를 올린다. deploy, remote, benchmark, worker, cloud-heavy objective가 명시될 때만 `remote-heavy-execution`을 올린다.
+- 이 structured output을 기준으로 Multica child lane이나 future automation wrapper를 맞추고, Copilot chat 자체를 mutable state owner로 착각하지 않는다.
+
+- current workflow가 아직 `executing`이면 future planner는 새 Copilot relaunch를 권하지 않고 `monitor-active-workflow`로 머문다.
+- 이때 live Hermes supervisor가 `auto_launch_queued_chat=false`면 다음 safe boundary에서 `npm run local:autonomy:supervisor:restart`를 권해 다음 cycle을 queue-chat mode로 되돌린다.
+- 같은 상태에서는 future planner가 `npm run openjarvis:packets:sync`도 함께 제안해 Obsidian-visible control surface를 hot-state와 계속 맞춘다.
+
+live vs dry 규칙:
+
+- `openjarvis:autopilot:*`, `openjarvis:goal:*` 계열에서 `:dry` suffix가 없으면 package script가 `--dryRun=false`를 명시한 live entrypoint다.
+- 같은 이름에 `:dry` suffix가 붙으면 inspection-only entrypoint이며 `--dryRun=true`를 명시한다.
+- goal-cycle script 자체는 기본값이 safe inspection 쪽이므로, live leverage가 필요한 명령은 package entrypoint에서 `--dryRun=false`를 반드시 박아 넣어야 한다.
+
+Discord cutover lab rehearsal:
+
+- `npm run gates:discord:cutover:lab:dry`는 selected-path parity와 forced rollback fallback을 lab evidence로 rehearse 하되 live evidence counter와 섞지 않는다.
+- `npm run gates:discord:cutover:lab`는 같은 rehearsal을 artifact로 남긴다. 실서비스 cutover 직전 최종 판단은 여전히 `npm run gates:discord:cutover` 또는 `:dry`에서 live evidence를 기준으로 본다.
+- `npm run gates:discord:cutover`는 non-dry 기본 경로에서 selected-path parity와 forced rollback fallback을 live evidence counter로 직접 수집한 뒤 artifact를 쓴다. `npm run gates:discord:cutover:dry`는 explicit exercise flag가 없으면 기존 live counter만 점검한다.
+- production 환경에서는 lab rehearsal evidence를 같이 기록해도 final decision에는 쓰지 않는다. production cutover의 `go`는 live evidence와 runtime-green snapshot으로만 닫는다.
+- lab/live window를 다시 열기 위해 file-backed cutover snapshot을 reset할 때는, reset 직후의 in-memory snapshot을 그대로 persist해야 한다. reset 이후에 lazy getter로 on-disk snapshot을 다시 읽은 다음 write하면 이전 totals가 다음 validation window로 되살아난다.
 
 현재 `local-nemoclaw-max-delegation` 표준 profile에서는 canonical GCP worker/OpenJarvis surface를 관찰하고, local control surface auto-start는 LiteLLM/n8n 쪽에만 남긴다.
 
@@ -966,12 +1015,15 @@ Local n8n bootstrap:
 2. Review `tmp/n8n-local/.env` and change `N8N_BASIC_AUTH_PASSWORD`
 3. Start the container: `npm run n8n:local:start`
 4. Review `tmp/n8n-local/starter-workflows.manifest.json` and the generated starter bundle under `tmp/n8n-local/workflows/`
-5. Generate or repair the repo-managed local public API key when you want public API CRUD/update support: `npm run n8n:local:api-key:ensure`
-6. Seed the full starter bundle: `npm run n8n:local:seed`
-7. If `N8N_API_KEY` is absent but the local container is running, the seed command first tries local public API auto-provision and then falls back to container CLI import automatically.
-8. Review the seeded workflows you want to keep. The starter bundle now imports active by default so localhost webhook execution works immediately.
-9. Re-apply the repo env profile if needed: `npm run env:profile:local`, `npm run env:profile:local-first-hybrid`, `npm run env:profile:local-openclaw-stack`, `npm run env:profile:local-nemoclaw-stack`, or `npm run env:profile:local-nemoclaw-max-delegation`
-10. Verify readiness: `npm run n8n:local:doctor`
+5. Preview the deterministic install plan: `npm run n8n:local:seed:plan`
+6. Create an approval-gated install request: `npm run n8n:local:seed:request -- --tasks=<comma-separated-task-list>`
+7. Approve and apply the request: `npm run n8n:local:seed:approve-and-apply -- --requestId=<approval-request-id> --actorId=<operator-id>`
+8. Generate or repair the repo-managed local public API key when you want public API CRUD/update support: `npm run n8n:local:api-key:ensure`
+9. For breakglass local-only maintenance, direct seed still exists: `npm run n8n:local:seed` or `npm run n8n:local:seed:update`
+10. If `N8N_API_KEY` is absent but the local container is running, the seed command first tries local public API auto-provision and then falls back to container CLI import automatically.
+11. Keep the resulting operation log under `tmp/n8n-local/operations/` and roll back with `npm run n8n:local:rollback -- --operationId=<operation-id>` if the apply must be reverted.
+12. Re-apply the repo env profile if needed: `npm run env:profile:local`, `npm run env:profile:local-first-hybrid`, `npm run env:profile:local-openclaw-stack`, `npm run env:profile:local-nemoclaw-stack`, or `npm run env:profile:local-nemoclaw-max-delegation`
+13. Verify readiness: `npm run n8n:local:doctor`
 
 Operator notes:
 
@@ -979,11 +1031,13 @@ Operator notes:
 - Webhook delegation can work before `N8N_API_KEY` is configured.
 - `N8N_API_KEY` is not the installation itself. It only unlocks repo-driven public API CRUD/update behavior.
 - For local n8n 2.15.x in this repo, `npm run n8n:local:api-key:ensure` can generate or repair a working repo-managed public API key without a manual UI step.
+- Deterministic starter installs now close through the approval action `n8n.workflow.install`, so the local n8n lane can stop at an installable workflow rather than a draft seed payload.
 - Local, local-first-hybrid, local-openclaw-stack, local-nemoclaw-stack, and local-nemoclaw-max-delegation env profiles now stamp concrete `N8N_WEBHOOK_*` defaults and force direct-vault-first Obsidian routing (`local-fs`/`native-cli` first, `remote-mcp` fallback). Keep delegation off until the matching workflows are seeded or imported; the starter bundle now marks them active by default.
 - `npm run n8n:local:seed` now tries local public API auto-provision first, then uses the dedicated activate/deactivate routes so the starter bundle really comes up active on localhost, and still performs initial local starter import without `N8N_API_KEY` by using the running container CLI when public API CRUD is unavailable.
+- `npm run n8n:local:seed:request`, `n8n:local:seed:apply-approved`, and `n8n:local:seed:approve-and-apply` reuse the existing action approval store, write repo-managed operation logs, and expose rollback through `npm run n8n:local:rollback`.
 - `n8n.workflow.list` and the `n8n.status` skill surface can fall back to the running local container CLI when the public API returns `401`, so local workflow discovery is still possible before `N8N_API_KEY` is configured.
 - `n8n.workflow.execute` now retries through the workflow's webhook path when local n8n 2.15 rejects `POST /api/v1/executions`, and the seeded starter workflows now import active by default so that fallback works locally without a manual activation toggle.
-- `n8n.workflow.status` and updateExisting/public-API workflow CRUD still require `N8N_API_KEY`, but the repo can provision that key locally with `npm run n8n:local:api-key:ensure`.
+- `n8n.workflow.status`, `updateExisting`, and automatic rollback all rely on the public API lane, but the repo can provision that key locally with `npm run n8n:local:api-key:ensure`.
 - The starter bundle now covers `news-rss-fetch`, `news-summarize`, `news-monitor-candidates`, `youtube-feed-fetch`, `youtube-community-scrape`, `alert-dispatch`, and `article-context-fetch`.
 - The `alert-dispatch` starter intentionally fails unless you provide a real sink, so inline fallback remains intact until you wire one.
 - `local-nemoclaw-max-delegation` is the explicit opt-in profile for “delegate as much as possible without breaking the 24-hour lane”: it enables n8n delegation, turns on delegation-first for configured news/youtube/article-context tasks so inline fallbacks stay off, explicitly disables the legacy local news and YouTube fallback lanes, pins implement/review/operate/OpenJarvis control surfaces to the canonical GCP lane, and leaves `N8N_WEBHOOK_ALERT_DISPATCH` blank so runtime alerts stay on the inline webhook path until a real n8n sink exists.
@@ -1319,7 +1373,7 @@ Runtime controls:
 8. `HF_TOKEN=<secret>` 또는 `HF_API_KEY=<secret>` 또는 `HUGGINGFACE_API_KEY=<secret>`
 9. `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true|false`
 10. `LLM_PROVIDER_MAX_ATTEMPTS=<1..6>`
-11. `LLM_PROVIDER_FALLBACK_CHAIN=openclaw,openai,...`
+11. `LLM_PROVIDER_FALLBACK_CHAIN=litellm,ollama` (optional override)
 12. `LLM_PROVIDER_POLICY_ACTIONS=<pattern=provider1,provider2;...>`
 
 HF token alias rule (code-aligned):
@@ -1331,10 +1385,11 @@ HF token alias rule (code-aligned):
 Provider fallback rule (code-aligned):
 
 1. 요청이 `provider`를 명시하면 fallback 없이 해당 provider만 사용한다.
-2. 미지정 시 provider chain 구성 순서는 `selected provider -> action policy -> LLM_PROVIDER_FALLBACK_CHAIN -> base resolver provider -> automatic fallback order(openclaw, openai, anthropic, gemini, huggingface, ollama)`이다.
+2. 미지정 시 provider chain 구성 순서는 `selected provider -> action policy -> LLM_PROVIDER_FALLBACK_CHAIN -> base resolver provider -> automatic fallback order(openjarvis, litellm, ollama)`이다.
 3. chain은 중복 제거 후 "configured provider"만 남기고 `LLM_PROVIDER_MAX_ATTEMPTS`로 절단한다.
-4. HF experiment arm에서 `LLM_EXPERIMENT_FAIL_OPEN=false`면 Hugging Face 단일 경로로 고정된다.
-5. HF experiment arm에서 `LLM_EXPERIMENT_FAIL_OPEN=true`면 Hugging Face 우선 후 chain fallback을 허용한다.
+4. direct cloud providers, Hugging Face, OpenClaw는 base chain이 아니라 opt-in lane이다. 기본 lane에 넣으려면 `AI_PROVIDER`, `LLM_PROVIDER_FALLBACK_CHAIN`, 또는 `LLM_PROVIDER_POLICY_ACTIONS`로 명시해야 한다.
+5. HF experiment arm에서 `LLM_EXPERIMENT_FAIL_OPEN=false`면 Hugging Face 단일 경로로 고정된다.
+6. HF experiment arm에서 `LLM_EXPERIMENT_FAIL_OPEN=true`면 Hugging Face 우선 후 chain fallback을 허용한다.
 
 Operational checks:
 

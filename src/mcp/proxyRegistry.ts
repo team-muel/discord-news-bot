@@ -75,6 +75,61 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
   return normalized.length > 0 ? normalized : undefined;
 };
 
+const normalizeComparableUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const raw = value.trim();
+  if (!raw) return undefined;
+
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/g, '');
+  } catch {
+    return raw.replace(/\/+$/g, '');
+  }
+};
+
+const stripTerminalSharedIngressPath = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+
+  try {
+    const parsed = new URL(value);
+    const nextPath = parsed.pathname.replace(/\/(mcp|obsidian)\/?$/i, '') || '/';
+    parsed.pathname = nextPath;
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/g, '');
+  } catch {
+    return value.replace(/\/(mcp|obsidian)\/?$/i, '').replace(/\/+$/g, '');
+  }
+};
+
+const resolveImplicitSharedMcpToken = (url: string, explicitToken?: string): string | undefined => {
+  const explicit = normalizeOptionalString(explicitToken);
+  if (explicit) {
+    return explicit;
+  }
+
+  const comparableTarget = normalizeComparableUrl(url);
+  if (!comparableTarget) {
+    return undefined;
+  }
+
+  const comparableSharedUrls = [process.env.MCP_SHARED_MCP_URL, process.env.OBSIDIAN_REMOTE_MCP_URL]
+    .flatMap((candidate) => {
+      const normalized = normalizeComparableUrl(candidate);
+      const stripped = stripTerminalSharedIngressPath(normalized);
+      return [normalized, stripped].filter((item): item is string => Boolean(item));
+    });
+
+  if (!comparableSharedUrls.includes(comparableTarget)) {
+    return undefined;
+  }
+
+  return normalizeOptionalString(process.env.MCP_SHARED_MCP_TOKEN)
+    ?? normalizeOptionalString(process.env.OBSIDIAN_REMOTE_MCP_TOKEN)
+    ?? normalizeOptionalString(process.env.MCP_WORKER_AUTH_TOKEN);
+};
+
 const normalizeEnumValue = <T extends string>(value: unknown, allowed: ReadonlySet<T>): T | undefined => {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim() as T;
@@ -148,6 +203,7 @@ export const registerUpstream = (config: UpstreamMcpServerConfig): void => {
   const normalised: UpstreamMcpServerConfig = {
     ...config,
     url: config.url.replace(/\/+$/, ''),
+    token: resolveImplicitSharedMcpToken(config.url, config.token),
     enabled: config.enabled ?? true,
     label: normalizeOptionalString(config.label),
     description: normalizeOptionalString(config.description),

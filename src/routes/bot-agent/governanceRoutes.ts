@@ -16,7 +16,15 @@ import {
   summarizeOpencodeQueueReadiness,
   type OpencodeRiskTier,
 } from '../../services/opencode/opencodeGitHubQueueService';
-import { getSuperAgentCapabilities, recommendSuperAgent, startSuperAgentSessionFromTask } from '../../services/superAgentService';
+import {
+  getSuperAgentCapabilities,
+  getSuperAgentServiceBundle,
+  listSuperAgentServiceBundles,
+  recommendSuperAgent,
+  recommendSuperAgentService,
+  startSuperAgentServiceSession,
+  startSuperAgentSessionFromTask,
+} from '../../services/superAgentService';
 import { isOneOf, sanitizeRecord, toBoundedInt, toFiniteNumber, toStringParam } from '../../utils/validation';
 
 import { BotAgentRouteDeps } from './types';
@@ -179,6 +187,82 @@ export function registerBotAgentGovernanceRoutes(deps: BotAgentRouteDeps): void 
 
   router.get('/agent/super/capabilities', requireAdmin, async (_req, res, next) => {
     return res.json({ ok: true, capabilities: getSuperAgentCapabilities() });
+  });
+
+  router.get('/agent/super/services', requireAdmin, async (_req, res) => {
+    return res.json({ ok: true, services: listSuperAgentServiceBundles() });
+  });
+
+  router.get('/agent/super/services/:serviceId', requireAdmin, async (req, res) => {
+    const service = getSuperAgentServiceBundle(req.params?.serviceId);
+    if (!service) {
+      return res.status(404).json({ ok: false, error: 'SERVICE_NOT_FOUND', message: 'Unknown super-agent service bundle' });
+    }
+
+    return res.json({ ok: true, service });
+  });
+
+  router.post('/agent/super/services/:serviceId/recommend', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res) => {
+    const guildId = toStringParam(req.body?.guild_id) || toStringParam(req.body?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guild_id is required' });
+    }
+
+    try {
+      const { service, recommendation } = recommendSuperAgentService(req.params?.serviceId, {
+        guild_id: guildId,
+        objective: toStringParam(req.body?.objective) || undefined,
+        priority: toStringParam(req.body?.priority) || undefined,
+        constraints: req.body?.constraints,
+        acceptance_criteria: req.body?.acceptance_criteria ?? req.body?.acceptanceCriteria,
+        inputs: sanitizeRecord(req.body?.inputs) || req.body?.inputs,
+        budget: sanitizeRecord(req.body?.budget) || req.body?.budget,
+        current_stage: toStringParam(req.body?.current_stage) || toStringParam(req.body?.currentStage) || undefined,
+        requested_lead_agent: toStringParam(req.body?.requested_lead_agent) || toStringParam(req.body?.requestedLeadAgent) || undefined,
+        route_mode: toStringParam(req.body?.route_mode) || toStringParam(req.body?.routeMode) || undefined,
+        skill_id: toStringParam(req.body?.skill_id) || toStringParam(req.body?.skillId) || undefined,
+      });
+      return res.json({ ok: true, service, recommendation });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      const status = message.startsWith('UNKNOWN_SERVICE_BUNDLE:') ? 404 : 400;
+      const errorCode = message.startsWith('UNKNOWN_SERVICE_BUNDLE:') ? 'SERVICE_NOT_FOUND' : 'SUPER_AGENT_RECOMMEND_FAILED';
+      logger.warn('[GOVERNANCE] recommend super-agent service failed: %s', message);
+      return res.status(status).json({ ok: false, error: errorCode, message });
+    }
+  });
+
+  router.post('/agent/super/services/:serviceId/sessions', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {
+    const guildId = toStringParam(req.body?.guild_id) || toStringParam(req.body?.guildId);
+    if (!guildId) {
+      return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'guild_id is required' });
+    }
+
+    const requestedBy = toStringParam(req.user?.id) || 'api';
+    try {
+      const result = await startSuperAgentServiceSession(req.params?.serviceId, {
+        guild_id: guildId,
+        objective: toStringParam(req.body?.objective) || undefined,
+        requestedBy,
+        isAdmin: true,
+        priority: toStringParam(req.body?.priority) || undefined,
+        constraints: req.body?.constraints,
+        acceptance_criteria: req.body?.acceptance_criteria ?? req.body?.acceptanceCriteria,
+        inputs: sanitizeRecord(req.body?.inputs) || req.body?.inputs,
+        budget: sanitizeRecord(req.body?.budget) || req.body?.budget,
+        current_stage: toStringParam(req.body?.current_stage) || toStringParam(req.body?.currentStage) || undefined,
+        requested_lead_agent: toStringParam(req.body?.requested_lead_agent) || toStringParam(req.body?.requestedLeadAgent) || undefined,
+        route_mode: toStringParam(req.body?.route_mode) || toStringParam(req.body?.routeMode) || undefined,
+        skill_id: toStringParam(req.body?.skill_id) || toStringParam(req.body?.skillId) || undefined,
+      });
+      return res.status(202).json({ ok: true, ...result, approvalPending: Boolean(result.pendingApproval) });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      if (message.startsWith('UNKNOWN_SERVICE_BUNDLE:')) {
+        return res.status(404).json({ ok: false, error: 'SERVICE_NOT_FOUND', message });
+      }
+      next(error);
+    }
   });
 
   router.post('/agent/super/recommend', requireAdmin, adminActionRateLimiter, adminIdempotency, async (req, res, next) => {

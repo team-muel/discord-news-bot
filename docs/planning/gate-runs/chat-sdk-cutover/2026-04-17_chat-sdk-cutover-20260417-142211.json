@@ -1,0 +1,291 @@
+{
+  "generated_at": "2026-04-17T14:22:11.303Z",
+  "run_id": "chat-sdk-cutover-20260417-142211",
+  "environment": "production",
+  "adapter_id": "openclaw",
+  "adapter_revision": "da348ab",
+  "shadow_mode": false,
+  "rollout_percentage": 100,
+  "eligible_surfaces": [
+    "docs.ask",
+    "muel.prefixed"
+  ],
+  "policy_by_surface": {
+    "docs-command": {
+      "preferredAdapterId": "openclaw",
+      "hardDisable": false,
+      "shadowMode": false,
+      "rolloutPercentage": 100,
+      "mode": "default-on",
+      "lastUpdatedAt": "2026-04-17T14:22:30.715Z"
+    },
+    "muel-message": {
+      "preferredAdapterId": "openclaw",
+      "hardDisable": false,
+      "shadowMode": false,
+      "rolloutPercentage": 100,
+      "mode": "default-on",
+      "lastUpdatedAt": "2026-04-17T14:22:30.716Z"
+    }
+  },
+  "parity": {
+    "live_docs_ask": {
+      "verdict": "pass",
+      "reason": "observed=2, selected=2",
+      "observedCount": 2,
+      "selectedCount": 2
+    },
+    "live_muel_prefixed": {
+      "verdict": "pass",
+      "reason": "observed=1, selected=1",
+      "observedCount": 1,
+      "selectedCount": 1
+    },
+    "docs_ask": {
+      "verdict": "pass",
+      "reason": "observed=2, selected=2",
+      "observedCount": 2,
+      "selectedCount": 2
+    },
+    "muel_prefixed": {
+      "verdict": "pass",
+      "reason": "observed=1, selected=1",
+      "observedCount": 1,
+      "selectedCount": 1
+    },
+    "fallback": {
+      "verdict": "pass",
+      "reason": "runtime fallback observed count=1",
+      "observedFallbacks": 1
+    },
+    "continuity_private_thread": {
+      "verdict": "pass",
+      "reason": "covered by discord ingress adapter tests"
+    },
+    "sanitization": {
+      "verdict": "pass",
+      "reason": "covered by discord surface tests and current message clipping"
+    }
+  },
+  "live_rehearsal": {
+    "exercised": true,
+    "surfaces": {
+      "docs-command": {
+        "verdict": "pass",
+        "reason": "live_selected_path_adapter_accept",
+        "observedCount": 1,
+        "selectedCount": 1
+      },
+      "muel-message": {
+        "verdict": "pass",
+        "reason": "live_selected_path_adapter_accept",
+        "observedCount": 1,
+        "selectedCount": 1
+      }
+    },
+    "rollback": {
+      "verdict": "pass",
+      "reason": "live rollback rehearsal produced forced legacy fallback",
+      "observedFallbacks": 1
+    }
+  },
+  "lab_rehearsal": null,
+  "lab_rehearsal_mode": "not-run",
+  "operator_runtime": {
+    "verdict": "pass",
+    "reason": "runtime health and scheduler policy snapshots available",
+    "source": "external-health",
+    "url": "https://muel-service.onrender.com/health",
+    "health": {
+      "status": "ok",
+      "botStatusGrade": "healthy",
+      "anyEnabled": true,
+      "healthy": true,
+      "allEnabledHealthy": true
+    },
+    "bot_ready": true,
+    "automation_healthy": true,
+    "scheduler_policy_summary": {
+      "total": 20,
+      "appOwned": 18,
+      "dbOwned": 2,
+      "enabled": 14,
+      "running": 8
+    },
+    "memory_queue": {
+      "queued": 0,
+      "running": 0,
+      "completed": 100,
+      "failed": 0,
+      "canceled": 0,
+      "retryScheduled": 0,
+      "deadlettered": 0,
+      "queueLagP50Sec": 0,
+      "queueLagP95Sec": 0,
+      "oldestQueuedSec": 0,
+      "total": 100
+    },
+    "memory_queue_error": null,
+    "memory_runner": {
+      "enabled": true,
+      "inFlight": false,
+      "recoveryInFlight": false,
+      "pollIntervalMs": 8000,
+      "concurrency": 4,
+      "maxRetries": 3,
+      "backoffBaseMs": 15000,
+      "backoffMaxMs": 1800000,
+      "deadletterAutoRecoveryEnabled": true,
+      "deadletterRecoveryIntervalMs": 120000,
+      "deadletterRecoveryBatchSize": 3,
+      "deadletterMaxRecoveryAttempts": 3,
+      "startedAt": null,
+      "lastTickAt": null,
+      "lastSuccessAt": null,
+      "lastErrorAt": null,
+      "lastErrorMessage": null,
+      "lastRecoveryAt": null,
+      "lastRecoveryErrorAt": null,
+      "lastRecoveryErrorMessage": null,
+      "processed": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "recoveredDeadletters": 0,
+      "recoveryFailures": 0
+    },
+    "runtime_alerts": {
+      "name": "[ALERT]",
+      "started": false,
+      "running": false,
+      "intervalMs": 30000,
+      "runCount": 0,
+      "lastRunAt": null,
+      "lastSummary": null,
+      "lastErrorAt": null,
+      "enabled": true,
+      "cooldownMs": 300000,
+      "webhookConfigured": false
+    },
+    "structured_errors": 0
+  },
+  "rollback": {
+    "exercised": true,
+    "verdict": "pass",
+    "reason": "forced legacy fallback observed count=1",
+    "artifactPath": null
+  },
+  "evidence": {
+    "snapshot_path": "tmp/discord-ingress-cutover/latest.json",
+    "recent_events": [
+      {
+        "recordedAt": "2026-04-17T14:22:30.723Z",
+        "telemetry": {
+          "recordedAt": "2026-04-17T14:22:30.723Z",
+          "correlationId": "live-rollback",
+          "surface": "docs-command",
+          "guildId": "live-guild",
+          "replyMode": "private",
+          "selectedAdapterId": "openclaw",
+          "adapterId": null,
+          "routeDecision": "legacy_fallback",
+          "fallbackReason": "hard_disabled",
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 93,
+          "selectedByRollout": true,
+          "policyMode": "rollback",
+          "evidenceSource": "live"
+        }
+      },
+      {
+        "recordedAt": "2026-04-17T14:22:30.722Z",
+        "telemetry": {
+          "recordedAt": "2026-04-17T14:22:30.722Z",
+          "correlationId": "live-prefixed-selected",
+          "surface": "muel-message",
+          "guildId": "live-guild",
+          "replyMode": "channel",
+          "selectedAdapterId": "openclaw",
+          "adapterId": "openclaw",
+          "routeDecision": "adapter_accept",
+          "fallbackReason": null,
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 12,
+          "selectedByRollout": true,
+          "policyMode": "default-on",
+          "evidenceSource": "live"
+        }
+      },
+      {
+        "recordedAt": "2026-04-17T14:22:30.719Z",
+        "telemetry": {
+          "recordedAt": "2026-04-17T14:22:30.719Z",
+          "correlationId": "live-docs-selected",
+          "surface": "docs-command",
+          "guildId": "live-guild",
+          "replyMode": "private",
+          "selectedAdapterId": "openclaw",
+          "adapterId": "openclaw",
+          "routeDecision": "adapter_accept",
+          "fallbackReason": null,
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 93,
+          "selectedByRollout": true,
+          "policyMode": "default-on",
+          "evidenceSource": "live"
+        }
+      }
+    ],
+    "command_checks": [
+      {
+        "label": "discord-tests",
+        "command": "npm run test:discord",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "\n> muel-backend@0.0.0 test:discord\n> vitest run --project discord\n\n\n\u001b[1m\u001b[46m RUN \u001b[49m\u001b[22m \u001b[36mv4.1.0 \u001b[39m\u001b[90mC:/Muel_S/discord-news-bot\u001b[39m\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/loginAttempt.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/bucketFlushUtils.test.ts \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/docs.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 170\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordReactionRewardService.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtimePolicy.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 198\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/discordIngressAdapter.test.ts \u001b[2m(\u001b[22m\u001b[2m10 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 177\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/userCrmService.test.ts \u001b[2m(\u001b[22m\u001b[2m12 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 12\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordChannelTelemetryService.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordLoginSessionStore.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 8\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/startupTasks.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 5\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/persona.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 624\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m renders personalization runtime details and admin comparison on /프로필 \u001b[33m 621\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/subscribe.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 30\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/auth.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 667\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m hasValidLoginSession은 캐시 미스 시 DB에서 세션을 로드한다 \u001b[33m 640\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordTopologySyncService.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/botRuntimeState.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/session.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/vibe.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 3623\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m prefers the injected OpenClaw ingress for prefixed vibe messages \u001b[33m 3620\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/muelEntrySurface.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m18 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m94 passed\u001b[39m\u001b[22m\u001b[90m (94)\u001b[39m\n\u001b[2m   Start at \u001b[22m 23:22:11\n\u001b[2m   Duration \u001b[22m 3.95s\u001b[2m (transform 7.14s, setup 0ms, import 11.32s, tests 5.57s, environment 2ms)\u001b[22m\n\n",
+        "stderr": "\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables an invalid coding override instead of widening back to the default pattern\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid coding intent regex rejected (syntax); override disabled\n\n\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables a ReDoS-suspect automation override instead of silently restoring the broad default\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid automation intent regex rejected (redos-suspect); override disabled\n\n",
+        "stdoutTail": "> muel-backend@0.0.0 test:discord\n> vitest run --project discord\n\n\n\u001b[1m\u001b[46m RUN \u001b[49m\u001b[22m \u001b[36mv4.1.0 \u001b[39m\u001b[90mC:/Muel_S/discord-news-bot\u001b[39m\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/loginAttempt.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/bucketFlushUtils.test.ts \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/docs.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 170\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordReactionRewardService.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtimePolicy.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 198\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/discordIngressAdapter.test.ts \u001b[2m(\u001b[22m\u001b[2m10 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 177\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/userCrmService.test.ts \u001b[2m(\u001b[22m\u001b[2m12 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 12\u001b[2mms",
+        "stderrTail": "\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables an invalid coding override instead of widening back to the default pattern\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid coding intent regex rejected (syntax); override disabled\n\n\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables a ReDoS-suspect automation override instead of silently restoring the broad default\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid automation intent regex rejected (redos-suspect); override disabled",
+        "durationMs": 4656
+      },
+      {
+        "label": "typecheck",
+        "command": "npx tsc --noEmit",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "stdoutTail": "",
+        "stderrTail": "",
+        "durationMs": 13042
+      },
+      {
+        "label": "gate-validation",
+        "command": "npm run gates:validate:strict",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "\n> muel-backend@0.0.0 gates:validate:strict\n> node scripts/validate-go-no-go-runs.mjs --requireChecklist=true --checklistSinceDays=1 --requireRuntimeArtifactPolicy=true && npm run gates:validate:docs-policy && npm run rehearsal:stage-rollback:validate:strict && npm run gates:runbook-checklist\n\n[GO-NO-GO][VALIDATE] validated 121 JSON run logs (no-go=16) checklist=on runtimeArtifactPolicy=on\n\n> muel-backend@0.0.0 gates:validate:docs-policy\n> node scripts/validate-provider-bootstrap-docs.mjs\n\n[DOCS-POLICY][OK] HF alias/fallback and startup DAG documentation consistency validated\n\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-16T19:37:59.215Z total_runs=0 fail=0 p95_elapsed_ms=0\n\n> muel-backend@0.0.0 gates:runbook-checklist\n> node scripts/validate-runbook-readiness-checklist.mjs\n\n[RUNBOOK-CHECKLIST] written: docs/planning/gate-runs/runbook-checklists/2026-04-17_runbook-checklist.md\n[RUNBOOK-CHECKLIST] verdict=PASS passed=5/5\n",
+        "stderr": "",
+        "stdoutTail": "> muel-backend@0.0.0 gates:validate:strict\n> node scripts/validate-go-no-go-runs.mjs --requireChecklist=true --checklistSinceDays=1 --requireRuntimeArtifactPolicy=true && npm run gates:validate:docs-policy && npm run rehearsal:stage-rollback:validate:strict && npm run gates:runbook-checklist\n\n[GO-NO-GO][VALIDATE] validated 121 JSON run logs (no-go=16) checklist=on runtimeArtifactPolicy=on\n\n> muel-backend@0.0.0 gates:validate:docs-policy\n> node scripts/validate-provider-bootstrap-docs.mjs\n\n[DOCS-POLICY][OK] HF alias/fallback and startup DAG documentation consistency validated\n\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-16T19:37:59.215Z total_runs=0 fail=0 p95_elapsed_ms=0\n\n> muel-backend@0.0.0 gates:runbook-checklist\n> node scripts/validate-runbook-readiness-checklist.mjs\n\n[RUNBOOK-CHECKLIST] written: docs/planning/gate-runs/runbook-checklists/2026-04-17_runbook-checklist.md\n[RUNBOOK-CHECKLIST] verdict=PASS",
+        "stderrTail": "",
+        "durationMs": 1405
+      },
+      {
+        "label": "rollback-readiness-validation",
+        "command": "npm run rehearsal:stage-rollback:validate:strict",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-16T19:37:59.215Z total_runs=0 fail=0 p95_elapsed_ms=0\n",
+        "stderr": "",
+        "stdoutTail": "> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-16T19:37:59.215Z total_runs=0 fail=0 p95_elapsed_ms=0",
+        "stderrTail": "",
+        "durationMs": 308
+      }
+    ],
+    "rollback_rehearsal_payload": null
+  },
+  "overall": "go",
+  "required_actions": []
+}

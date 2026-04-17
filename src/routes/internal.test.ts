@@ -7,31 +7,60 @@ const {
   mockExecuteEvalAutoPromoteLoop,
   mockExecuteRetrievalEvalLoop,
   mockExecuteRewardSignalLoop,
+  mockExecuteDiscordIngress,
+  mockFindDiscordIngressRolloutKey,
+  mockGetDiscordIngressCutoverSnapshot,
   mockGetSupabaseClient,
   mockIsSupabaseConfigured,
+  mockPrimeDiscordIngressCutoverPolicy,
   mockEvaluateIntents,
+  mockResolveDiscordIngressEffectivePolicy,
   mockRunConsolidationCycle,
   mockRequeueDeadletterJob,
   mockExecuteObsidianLoreSync,
   mockExecuteObsidianGraphAudit,
+  mockSetDiscordIngressRuntimePolicyOverride,
 } = vi.hoisted(() => ({
   mockEvaluateGuildSloAndPersistAlerts: vi.fn(),
   mockRunAgentSloAlertLoopOnce: vi.fn(),
   mockExecuteEvalAutoPromoteLoop: vi.fn(),
   mockExecuteRetrievalEvalLoop: vi.fn(),
   mockExecuteRewardSignalLoop: vi.fn(),
+  mockExecuteDiscordIngress: vi.fn(),
+  mockFindDiscordIngressRolloutKey: vi.fn(),
+  mockGetDiscordIngressCutoverSnapshot: vi.fn(),
   mockGetSupabaseClient: vi.fn(),
   mockIsSupabaseConfigured: vi.fn(() => true),
+  mockPrimeDiscordIngressCutoverPolicy: vi.fn(),
   mockEvaluateIntents: vi.fn(),
+  mockResolveDiscordIngressEffectivePolicy: vi.fn(),
   mockRunConsolidationCycle: vi.fn(),
   mockRequeueDeadletterJob: vi.fn(),
   mockExecuteObsidianLoreSync: vi.fn(),
   mockExecuteObsidianGraphAudit: vi.fn(),
+  mockSetDiscordIngressRuntimePolicyOverride: vi.fn(),
 }));
 
 vi.mock('../config', () => ({
+  DISCORD_DOCS_INGRESS_ADAPTER: 'openclaw',
+  DISCORD_DOCS_INGRESS_HARD_DISABLE: false,
+  DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT: 100,
+  DISCORD_DOCS_INGRESS_SHADOW_MODE: false,
+  DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER: 'openclaw',
+  DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE: false,
+  DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT: 100,
+  DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE: false,
   NODE_ENV: 'production',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+}));
+
+vi.mock('../discord/runtime/discordIngressAdapter', () => ({
+  executeDiscordIngress: mockExecuteDiscordIngress,
+  findDiscordIngressRolloutKey: mockFindDiscordIngressRolloutKey,
+  getDiscordIngressCutoverSnapshot: mockGetDiscordIngressCutoverSnapshot,
+  primeDiscordIngressCutoverPolicy: mockPrimeDiscordIngressCutoverPolicy,
+  resolveDiscordIngressEffectivePolicy: mockResolveDiscordIngressEffectivePolicy,
+  setDiscordIngressRuntimePolicyOverride: mockSetDiscordIngressRuntimePolicyOverride,
 }));
 
 vi.mock('../services/agent/agentSloService', () => ({
@@ -145,6 +174,142 @@ describe('internal routes', () => {
     mockExecuteRewardSignalLoop.mockResolvedValue({ attemptedGuilds: 1, completedGuilds: 1, failedGuilds: 0 });
     mockExecuteEvalAutoPromoteLoop.mockResolvedValue({ attemptedGuilds: 1, completedGuilds: 1, failedGuilds: 0, totalCollected: 0, totalJudged: 0, totalPromoted: 0, totalRejected: 0 });
     mockEvaluateIntents.mockResolvedValue([]);
+    mockFindDiscordIngressRolloutKey.mockReturnValue('selected-key');
+    mockResolveDiscordIngressEffectivePolicy.mockReturnValue({
+      preferredAdapterId: 'chat-sdk',
+      hardDisable: false,
+      shadowMode: false,
+      rolloutPercentage: 25,
+      mode: 'canary',
+      lastUpdatedAt: '2026-04-17T00:00:00.000Z',
+    });
+    mockGetDiscordIngressCutoverSnapshot.mockReturnValue({
+      policyBySurface: {
+        'docs-command': {
+          preferredAdapterId: 'chat-sdk',
+          hardDisable: false,
+          shadowMode: false,
+          rolloutPercentage: 25,
+          mode: 'canary',
+          lastUpdatedAt: '2026-04-17T00:00:00.000Z',
+        },
+        'muel-message': {
+          preferredAdapterId: 'chat-sdk',
+          hardDisable: false,
+          shadowMode: false,
+          rolloutPercentage: 25,
+          mode: 'canary',
+          lastUpdatedAt: '2026-04-17T00:00:00.000Z',
+        },
+      },
+      totals: {
+        total: 3,
+      },
+      totalsBySource: {
+        live: { total: 3 },
+        lab: { total: 0 },
+      },
+      rollback: {
+        active: false,
+        forcedFallbackCount: 1,
+        forcedFallbackCountBySource: {
+          live: 1,
+          lab: 0,
+        },
+        lastForcedFallbackAt: '2026-04-17T00:00:01.000Z',
+        lastForcedFallbackSurface: 'docs-command',
+        lastForcedFallbackSource: 'live',
+      },
+      surfaces: {
+        'docs-command': {
+          total: 2,
+          selectedByRolloutCount: 2,
+          adapterAcceptCount: 1,
+          shadowOnlyCount: 0,
+          legacyFallbackCount: 1,
+          holdoutCount: 0,
+          lastDecisionAt: '2026-04-17T00:00:01.000Z',
+          lastTelemetry: null,
+          bySource: {
+            live: {
+              total: 2,
+              selectedByRolloutCount: 2,
+              adapterAcceptCount: 1,
+              shadowOnlyCount: 0,
+              legacyFallbackCount: 1,
+              holdoutCount: 0,
+            },
+            lab: {
+              total: 0,
+              selectedByRolloutCount: 0,
+              adapterAcceptCount: 0,
+              shadowOnlyCount: 0,
+              legacyFallbackCount: 0,
+              holdoutCount: 0,
+            },
+          },
+        },
+        'muel-message': {
+          total: 1,
+          selectedByRolloutCount: 1,
+          adapterAcceptCount: 1,
+          shadowOnlyCount: 0,
+          legacyFallbackCount: 0,
+          holdoutCount: 0,
+          lastDecisionAt: '2026-04-17T00:00:01.000Z',
+          lastTelemetry: null,
+          bySource: {
+            live: {
+              total: 1,
+              selectedByRolloutCount: 1,
+              adapterAcceptCount: 1,
+              shadowOnlyCount: 0,
+              legacyFallbackCount: 0,
+              holdoutCount: 0,
+            },
+            lab: {
+              total: 0,
+              selectedByRolloutCount: 0,
+              adapterAcceptCount: 0,
+              shadowOnlyCount: 0,
+              legacyFallbackCount: 0,
+              holdoutCount: 0,
+            },
+          },
+        },
+      },
+      recentEvents: [],
+      eligibleSurfaces: ['docs-command', 'muel-message'],
+      generatedAt: '2026-04-17T00:00:01.000Z',
+    });
+    mockExecuteDiscordIngress
+      .mockResolvedValueOnce({
+        telemetry: {
+          routeDecision: 'adapter_accept',
+          fallbackReason: null,
+          selectedByRollout: true,
+          selectedAdapterId: 'chat-sdk',
+          adapterId: 'chat-sdk',
+        },
+      })
+      .mockResolvedValueOnce({
+        telemetry: {
+          routeDecision: 'adapter_accept',
+          fallbackReason: null,
+          selectedByRollout: true,
+          selectedAdapterId: 'chat-sdk',
+          adapterId: 'chat-sdk',
+        },
+      })
+      .mockResolvedValueOnce({
+        telemetry: {
+          routeDecision: 'legacy_fallback',
+          fallbackReason: 'hard_disabled',
+          selectedByRollout: true,
+          selectedAdapterId: 'chat-sdk',
+          adapterId: null,
+        },
+      });
     mockRequeueDeadletterJob.mockResolvedValue({ ok: true });
     mockGetSupabaseClient.mockReturnValue({
       from: vi.fn(() => ({
@@ -172,6 +337,9 @@ describe('internal routes', () => {
 
     expect(routeKeys.has('POST /memory/consolidate')).toBe(true);
     expect(routeKeys.has('POST /memory/deadletter-recover')).toBe(true);
+    expect(routeKeys.has('GET /discord/ingress/cutover/snapshot')).toBe(true);
+    expect(routeKeys.has('POST /discord/ingress/cutover/policy')).toBe(true);
+    expect(routeKeys.has('POST /discord/ingress/cutover/exercise')).toBe(true);
     expect(routeKeys.has('POST /slo/check')).toBe(true);
     expect(routeKeys.has('POST /obsidian/sync')).toBe(true);
     expect(routeKeys.has('POST /obsidian/audit')).toBe(true);
@@ -236,5 +404,90 @@ describe('internal routes', () => {
     expect(res.statusCode).toBe(202);
     expect(mockExecuteObsidianGraphAudit).toHaveBeenCalledTimes(1);
     expect(res.body).toMatchObject({ ok: true, result: { lastStatus: 'success' } });
+  });
+
+  it('applies discord ingress cutover policy through the internal route', async () => {
+    const router = createInternalRouter();
+    const res = await invokeRoute(router, 'POST', '/discord/ingress/cutover/policy', {
+      headers: { authorization: 'Bearer service-role' },
+      body: {
+        policies: {
+          'docs-command': {
+            preferredAdapterId: 'chat-sdk',
+            rolloutPercentage: 25,
+            hardDisable: false,
+            shadowMode: false,
+          },
+          'muel-message': {
+            preferredAdapterId: 'chat-sdk',
+            rolloutPercentage: 25,
+            hardDisable: false,
+            shadowMode: false,
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mockSetDiscordIngressRuntimePolicyOverride).toHaveBeenNthCalledWith(1, 'docs-command', {
+      preferredAdapterId: 'chat-sdk',
+      rolloutPercentage: 25,
+      hardDisable: false,
+      shadowMode: false,
+    });
+    expect(mockSetDiscordIngressRuntimePolicyOverride).toHaveBeenNthCalledWith(2, 'muel-message', {
+      preferredAdapterId: 'chat-sdk',
+      rolloutPercentage: 25,
+      hardDisable: false,
+      shadowMode: false,
+    });
+    expect(mockPrimeDiscordIngressCutoverPolicy).toHaveBeenCalled();
+    expect(res.body).toMatchObject({ ok: true, appliedSurfaces: ['docs-command', 'muel-message'] });
+  });
+
+  it('exercises discord ingress cutover on the live runtime through the internal route', async () => {
+    const router = createInternalRouter();
+    const res = await invokeRoute(router, 'POST', '/discord/ingress/cutover/exercise', {
+      headers: { authorization: 'Bearer service-role' },
+      body: {
+        evidenceSource: 'live',
+        includeRollback: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mockExecuteDiscordIngress).toHaveBeenCalledTimes(3);
+    expect(mockExecuteDiscordIngress).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        surface: 'docs-command',
+        correlationId: 'internal-live-docs-command-rollback',
+      }),
+      expect.objectContaining({
+        hardDisable: true,
+        preferCallOverrides: true,
+        evidenceSource: 'live',
+      }),
+    );
+    expect(res.body).toMatchObject({
+      ok: true,
+      summary: {
+        exercised: true,
+        surfaces: {
+          'docs-command': {
+            verdict: 'pass',
+            selectedAdapterId: 'chat-sdk',
+          },
+          'muel-message': {
+            verdict: 'pass',
+            selectedAdapterId: 'chat-sdk',
+          },
+        },
+        rollback: {
+          verdict: 'pass',
+          observedFallbacks: 1,
+          selectedAdapterId: 'chat-sdk',
+        },
+      },
+    });
   });
 });

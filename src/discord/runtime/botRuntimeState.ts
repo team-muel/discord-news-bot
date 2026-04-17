@@ -2,6 +2,8 @@ import type { Client } from 'discord.js';
 import logger from '../../logger';
 import {
   BOT_MANUAL_RECONNECT_COOLDOWN_MS,
+  DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC,
+  DISCORD_COMMAND_GUILD_ID,
   DISCORD_LOGIN_RATE_LIMIT_BUFFER_MS,
   DYNAMIC_WORKER_RESTORE_ON_BOOT,
 } from '../../config';
@@ -15,11 +17,7 @@ import {
 } from '../../services/workerGeneration/dynamicWorkerRegistry';
 import {
   commandDefinitions,
-  CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC,
 } from '../commandDefinitions';
-import {
-  DISCORD_COMMAND_GUILD_ID,
-} from '../../config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -385,7 +383,7 @@ export const registerSlashCommands = async (client: Client): Promise<void> => {
     await client.application.commands.set(commandDefinitions);
     logger.info('[BOT] Slash commands synced globally (%d commands)', commandDefinitions.length);
 
-    if (CLEAR_GUILD_SCOPED_COMMANDS_ON_GLOBAL_SYNC) {
+    if (DISCORD_CLEAR_GUILD_COMMANDS_ON_GLOBAL_SYNC) {
       let cleared = 0;
       for (const guild of client.guilds.cache.values()) {
         if (targetGuildIdForFastSync && guild.id === targetGuildIdForFastSync) continue;

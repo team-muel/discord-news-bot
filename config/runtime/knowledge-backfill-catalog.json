@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
-  "updatedAt": "2026-04-17",
-  "description": "Repository-source backfill catalog for canonical Obsidian system docs, operating-model docs, and retrieval-eval targets.",
+  "updatedAt": "2026-04-18",
+  "description": "Repository-source backfill catalog for canonical Obsidian system docs, local-service-shared topology contracts, operating-model docs, and retrieval-eval targets.",
   "policy": {
     "humanFirst": true,
     "rules": [
@@ -9,6 +9,7 @@
       "Start with operator-primary canonical docs before generated knowledge-control artifacts.",
       "Treat generated ops/knowledge-control pages as navigation aids and evidence support, not as the first semantic source.",
       "When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries.",
+      "Distinguish team-shared onboarding, service-machine runtime truth, and local-agent-machine overlays before treating a local tool or local note as required.",
       "Treat repo memory and architecture changelog artifacts as promotion sources and compatibility mirrors; durable meaning should converge into shared wiki objects."
     ],
     "avoidAsPrimary": [
@@ -29,13 +30,17 @@
       "canonical": true,
       "startHere": true,
       "agentReference": true,
-      "tags": ["control", "onboarding", "obsidian", "team-shared", "collaboration"],
+      "tags": ["control", "onboarding", "obsidian", "team-shared", "collaboration", "shared-mcp", "shared-plane", "topology"],
       "intent": "architecture",
       "queries": [
         "team shared obsidian start here",
         "team does not have openjarvis hermes",
         "obsidian first collaboration entrypoint",
         "shared onboarding no local agents required",
+        "shared mcp onboarding",
+        "team shared plane contract",
+        "shared plane recovery without local stack",
+        "local service shared topology",
         "how do we share packets with the team",
         "supabase vs obsidian packet ownership",
         "acp packet handoff team sharing"
@@ -90,12 +95,39 @@
       "canonical": true,
       "startHere": true,
       "agentReference": true,
-      "tags": ["control", "canonical", "runtime-surface"],
+      "tags": ["control", "canonical", "runtime-surface", "topology", "local-service-shared", "verification-order"],
       "intent": "architecture",
       "queries": [
         "canonical runtime surface map",
         "runtime name and surface matrix",
-        "canonical map for runtime names"
+        "canonical map for runtime names",
+        "local agent machine service machine shared plane",
+        "operator verification order local service shared",
+        "which plane owns this capability",
+        "service machine vs local machine"
+      ]
+    },
+    {
+      "id": "control-personal-operating-system-services",
+      "title": "Personal Operating System Services",
+      "sourcePath": "docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md",
+      "targetPath": "ops/control-tower/PERSONAL_OPERATING_SYSTEM_SERVICES.md",
+      "plane": "control",
+      "concern": "control-tower",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["control", "service-catalog", "personal-operating-system", "super-agent", "runtime-surface"],
+      "intent": "operations",
+      "queries": [
+        "personal operating system services",
+        "personal workflow copilot",
+        "personal backlog router",
+        "knowledge distiller service",
+        "local hands runner",
+        "weekly quality or cost reporter",
+        "super agent service bundles"
       ]
     },
     {
@@ -147,14 +179,17 @@
       "canonical": true,
       "startHere": false,
       "agentReference": true,
-      "tags": ["control", "multica", "agent-orchestration", "local-runtime"],
+      "tags": ["control", "multica", "agent-orchestration", "local-runtime", "local-plane", "plane-boundary", "workstation"],
       "intent": "operations",
       "queries": [
         "multica control plane playbook",
         "multica workspace roles",
         "hermes claude openclaw role cards",
         "multica issue topology",
-        "local agent control plane"
+        "local agent control plane",
+        "local plane vs service plane",
+        "local agent machine operator contract",
+        "workstation plane not service truth"
       ]
     },
     {
@@ -268,14 +303,17 @@
       "concern": "service-memory",
       "audience": "shared",
       "canonical": true,
-      "startHere": false,
+      "startHere": true,
       "agentReference": true,
-      "tags": ["runtime", "mcp", "service-profile"],
+      "tags": ["runtime", "mcp", "service-profile", "shared-mcp", "onboarding", "team-shared"],
       "intent": "operations",
       "queries": [
         "shared unified mcp profile",
         "gcp compute mcp workspace setup",
-        "unified mcp service profile"
+        "unified mcp service profile",
+        "shared mcp onboarding",
+        "team shared mcp setup",
+        "shared plane mcp access"
       ]
     },
     {
@@ -491,6 +529,67 @@
         "social ops roadmap",
         "unified roadmap 2026 q2",
         "platform strategy roadmap"
+      ]
+    },
+    {
+      "id": "plan-chat-sdk-discord-cutover-validation",
+      "title": "Chat SDK Discord Cutover Validation",
+      "sourcePath": "docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md",
+      "targetPath": "plans/execution/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "chat-sdk", "discord", "cutover", "validation"],
+      "intent": "operations",
+      "queries": [
+        "chat sdk discord cutover validation",
+        "m24 cutover validation",
+        "discord ingress canary rollback checklist",
+        "chat sdk adapter parity validation"
+      ]
+    },
+    {
+      "id": "plan-legacy-cleanup-lane",
+      "title": "Legacy Cleanup Lane",
+      "sourcePath": "docs/planning/LEGACY_CLEANUP_LANE.md",
+      "targetPath": "plans/execution/LEGACY_CLEANUP_LANE.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "cleanup", "legacy", "inventory-lock", "execution"],
+      "intent": "architecture",
+      "queries": [
+        "legacy cleanup lane",
+        "remove now rollback only keep for now",
+        "replacement complete cleanup gate",
+        "legacy removal inventory lock"
+      ]
+    },
+    {
+      "id": "plan-capability-gap-analysis",
+      "title": "Capability Gap Analysis",
+      "sourcePath": "docs/planning/CAPABILITY_GAP_ANALYSIS.md",
+      "targetPath": "plans/execution/CAPABILITY_GAP_ANALYSIS.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "capability", "unlock", "local-runtime", "control-plane"],
+      "intent": "architecture",
+      "queries": [
+        "capability gap analysis",
+        "local capability unlock order",
+        "shared mcp wrapper disconnected",
+        "local capability audit",
+        "which surfaces are local only vs always on"
       ]
     },
     {
@@ -813,6 +912,27 @@
         "single ingress gpt hermes operating model",
         "gcp native leverage target for hermes continuity",
         "bounded gpt ingress persistent hermes sidecar"
+      ]
+    },
+    {
+      "id": "discord-adapter-core-command-mapping-v1",
+      "title": "Discord Adapter Core Command Mapping v1",
+      "sourcePath": "docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md",
+      "targetPath": "plans/runtime/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md",
+      "sourceMode": "full-source",
+      "plane": "learning",
+      "concern": "channel-ingress-contract",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "discord", "chat-sdk", "ingress", "adapter", "contract"],
+      "intent": "architecture",
+      "queries": [
+        "discord adapter core command mapping",
+        "chat sdk discord ingress boundary",
+        "channel ingress abstraction discord contract",
+        "discord openclaw chat sdk migration boundary"
       ]
     },
     {

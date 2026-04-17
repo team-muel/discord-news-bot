@@ -146,6 +146,7 @@ export const upsertObsidianSystemDocument = async (params: {
   tags?: string[];
   properties?: Record<string, ObsidianFrontmatterValue | null>;
   allowHighLinkDensity?: boolean;
+  skipKnowledgeCompilation?: boolean;
 }): Promise<ObsidianAuthoringWriteResult> => {
   const vaultPath = String(params.vaultPath || '').trim();
   if (!vaultPath) {
@@ -168,6 +169,7 @@ export const upsertObsidianSystemDocument = async (params: {
     properties: params.properties || {},
     trustedSource: true,
     allowHighLinkDensity: Boolean(params.allowHighLinkDensity),
+    skipKnowledgeCompilation: Boolean(params.skipKnowledgeCompilation),
   });
 
   if (!result?.path) {
@@ -235,6 +237,7 @@ const VAULT_PATH_REGISTRY = [
   { pattern: 'ops/knowledge-control/INDEX.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge index' },
   { pattern: 'ops/knowledge-control/LOG.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge event log' },
   { pattern: 'ops/knowledge-control/LINT.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge lint summary' },
+  { pattern: 'ops/knowledge-control/SUPERVISOR.md', writer: 'knowledgeCompilerService', description: 'Auto-generated knowledge supervisor follow-up view' },
   { pattern: 'ops/knowledge-control/topics/{topic}.md', writer: 'knowledgeCompilerService', description: 'Topic rollup pages' },
   { pattern: 'ops/knowledge-control/entities/{entityKey}.md', writer: 'knowledgeCompilerService', description: 'Entity rollup pages' },
   { pattern: 'ops/control-tower/BLUEPRINT.md', writer: 'control-tower', description: '4-plane operating blueprint' },

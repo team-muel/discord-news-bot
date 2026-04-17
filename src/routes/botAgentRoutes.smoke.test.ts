@@ -71,6 +71,10 @@ describe('bot agent route module smoke', () => {
     expect(routeKeys.has('POST /agent/obsidian/knowledge-promote')).toBe(true);
     expect(routeKeys.has('GET /agent/obsidian/semantic-lint-audit')).toBe(true);
     expect(routeKeys.has('POST /agent/obsidian/wiki-change-capture')).toBe(true);
+    expect(routeKeys.has('GET /agent/super/services')).toBe(true);
+    expect(routeKeys.has('GET /agent/super/services/:serviceId')).toBe(true);
+    expect(routeKeys.has('POST /agent/super/services/:serviceId/recommend')).toBe(true);
+    expect(routeKeys.has('POST /agent/super/services/:serviceId/sessions')).toBe(true);
     expect(routeKeys.has('GET /agent/actions/catalog')).toBe(true);
     expect(routeKeys.has('GET /agent/actions/policies')).toBe(true);
     expect(routeKeys.has('POST /agent/actions/execute')).toBe(true);

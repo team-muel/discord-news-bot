@@ -161,7 +161,19 @@ vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
         }],
       },
     },
-    artifactPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LINT.md'],
+    artifactPaths: ['ops/knowledge-control/INDEX.md', 'ops/knowledge-control/LINT.md', 'ops/knowledge-control/SUPERVISOR.md'],
+    artifactSupport: {
+      enabled: true,
+      queryParam: 'artifact',
+      acceptedAliases: ['index', 'log', 'lint', 'supervisor', 'blueprint', 'topic:<slug>', 'entity:<slug>'],
+    },
+    supervisor: {
+      alias: 'supervisor',
+      path: 'ops/knowledge-control/SUPERVISOR.md',
+      available: true,
+      includedInLastRun: true,
+      lastCompiledAt: '2026-04-09T00:00:01.000Z',
+    },
     controlPaths: ['ops/control-tower/BLUEPRINT.md'],
     blueprint: {
       model: '4-plane-control-tower',
@@ -332,6 +344,7 @@ vi.mock('../services/obsidian/knowledgeCompilerService', () => ({
   }),
   resolveObsidianKnowledgeArtifactPath: vi.fn((artifact: string) => {
     if (artifact === 'lint') return 'ops/knowledge-control/LINT.md';
+    if (artifact === 'supervisor') return 'ops/knowledge-control/SUPERVISOR.md';
     if (artifact === 'blueprint') return 'ops/control-tower/BLUEPRINT.md';
     return null;
   }),
@@ -707,6 +720,8 @@ describe('obsidianToolAdapter', () => {
       expect(data.compiler.runs).toBe(3);
       expect(data.compiler.lastLintSummary.issueCount).toBe(1);
       expect(data.artifactPaths).toContain('ops/knowledge-control/LINT.md');
+      expect(data.artifactSupport.acceptedAliases).toContain('supervisor');
+      expect(data.supervisor.path).toBe('ops/knowledge-control/SUPERVISOR.md');
       expect(data.controlPaths).toContain('ops/control-tower/BLUEPRINT.md');
       expect(data.blueprint.model).toBe('4-plane-control-tower');
       expect(data.bundleSupport.queryParam).toBe('bundleFor');
@@ -731,6 +746,17 @@ describe('obsidianToolAdapter', () => {
       expect(result.isError).toBeFalsy();
       const data = JSON.parse(result.content[0]?.text || '{}');
       expect(data.artifact.path).toBe('ops/control-tower/BLUEPRINT.md');
+      expect(data.artifact.content).toContain('Test Note');
+    });
+
+    it('obsidian.knowledge.control resolves supervisor artifacts', async () => {
+      const result = await callObsidianMcpTool({
+        name: 'obsidian.knowledge.control',
+        arguments: { artifact: 'supervisor' },
+      });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0]?.text || '{}');
+      expect(data.artifact.path).toBe('ops/knowledge-control/SUPERVISOR.md');
       expect(data.artifact.content).toContain('Test Note');
     });
 

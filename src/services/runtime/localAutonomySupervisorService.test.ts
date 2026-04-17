@@ -45,6 +45,10 @@ const {
     supervisor: {
       supervisor_pid: null as number | null,
       auto_launch_queued_chat: false,
+      auto_launch_queued_swarm: false,
+      auto_launch_queued_swarm_include_distiller: false,
+      auto_launch_queued_swarm_executor_worktree_path: null as string | null,
+      auto_launch_queued_swarm_executor_artifact_budget: [] as string[],
       awaiting_reentry_acknowledgment: false,
       awaiting_reentry_acknowledgment_stale: false,
       awaiting_reentry_acknowledgment_started_at: null as string | null,
@@ -142,12 +146,17 @@ describe('localAutonomySupervisorService', () => {
       dryRun: false,
       visibleTerminal: false,
       autoLaunchQueuedChat: true,
+      autoLaunchQueuedSwarm: false,
+      autoLaunchQueuedSwarmIncludeDistiller: false,
+      autoLaunchQueuedSwarmExecutorWorktreePath: null,
+      autoLaunchQueuedSwarmExecutorArtifactBudget: [],
     });
     expect(summary).toContain('queue=ready');
-    expect(summary).toContain('chat=auto');
+    expect(summary).toContain('mode=chat');
     expect(summary).toContain('supervisor:queued:auto-chat');
     expect(stats.lastSupervisorAction).toBe('supervisor:queued:auto-chat');
     expect(stats.lastSupervisorAutoLaunchQueuedChat).toBe(true);
+    expect(stats.lastSupervisorQueueLaunchMode).toBe('chat');
     expect(stats.lastSupervisorPid).toBe(1234);
   });
 
@@ -163,6 +172,10 @@ describe('localAutonomySupervisorService', () => {
       supervisor: {
         supervisor_pid: null,
         auto_launch_queued_chat: true,
+        auto_launch_queued_swarm: false,
+        auto_launch_queued_swarm_include_distiller: false,
+        auto_launch_queued_swarm_executor_worktree_path: null,
+        auto_launch_queued_swarm_executor_artifact_budget: [],
         awaiting_reentry_acknowledgment: true,
         awaiting_reentry_acknowledgment_stale: false,
         awaiting_reentry_acknowledgment_started_at: '2026-04-15T09:00:00.000Z',
@@ -195,6 +208,7 @@ describe('localAutonomySupervisorService', () => {
     expect(stats.lastAwaitingReentrySyncKey).toBe('wf-session-awaiting-ack:2026-04-15T09:00:00.000Z');
     expect(stats.lastSupervisorAction).toBe('supervisor:awaiting-reentry-ack');
     expect(stats.lastSupervisorAutoLaunchQueuedChat).toBe(true);
+    expect(stats.lastSupervisorQueueLaunchMode).toBe('chat');
   });
 
   it('surfaces stale queued reentry acknowledgment waits without requeueing the supervisor', async () => {
@@ -209,6 +223,10 @@ describe('localAutonomySupervisorService', () => {
       supervisor: {
         supervisor_pid: null,
         auto_launch_queued_chat: true,
+        auto_launch_queued_swarm: false,
+        auto_launch_queued_swarm_include_distiller: false,
+        auto_launch_queued_swarm_executor_worktree_path: null,
+        auto_launch_queued_swarm_executor_artifact_budget: [],
         awaiting_reentry_acknowledgment: true,
         awaiting_reentry_acknowledgment_stale: true,
         awaiting_reentry_acknowledgment_started_at: '2026-04-15T08:45:00.000Z',
@@ -261,6 +279,10 @@ describe('localAutonomySupervisorService', () => {
       supervisor: {
         supervisor_pid: process.pid,
         auto_launch_queued_chat: false,
+        auto_launch_queued_swarm: false,
+        auto_launch_queued_swarm_include_distiller: false,
+        auto_launch_queued_swarm_executor_worktree_path: null,
+        auto_launch_queued_swarm_executor_artifact_budget: [],
         awaiting_reentry_acknowledgment: false,
         awaiting_reentry_acknowledgment_stale: false,
         awaiting_reentry_acknowledgment_started_at: null,
@@ -285,11 +307,16 @@ describe('localAutonomySupervisorService', () => {
       dryRun: false,
       visibleTerminal: false,
       autoLaunchQueuedChat: true,
+      autoLaunchQueuedSwarm: false,
+      autoLaunchQueuedSwarmIncludeDistiller: false,
+      autoLaunchQueuedSwarmExecutorWorktreePath: null,
+      autoLaunchQueuedSwarmExecutorArtifactBudget: [],
     });
     expect(summary).toContain('supervisor:manual-chat-stopped');
     expect(summary).toContain('supervisor:upgraded:auto-chat');
     expect(stats.lastSupervisorAction).toBe('supervisor:upgraded:auto-chat');
     expect(stats.lastSupervisorAutoLaunchQueuedChat).toBe(true);
+    expect(stats.lastSupervisorQueueLaunchMode).toBe('chat');
     expect(stats.lastSupervisorPid).toBe(1234);
   });
 
@@ -305,6 +332,10 @@ describe('localAutonomySupervisorService', () => {
       supervisor: {
         supervisor_pid: process.pid,
         auto_launch_queued_chat: false,
+        auto_launch_queued_swarm: false,
+        auto_launch_queued_swarm_include_distiller: false,
+        auto_launch_queued_swarm_executor_worktree_path: null,
+        auto_launch_queued_swarm_executor_artifact_budget: [],
         awaiting_reentry_acknowledgment: false,
         awaiting_reentry_acknowledgment_stale: false,
         awaiting_reentry_acknowledgment_started_at: null,
@@ -324,9 +355,62 @@ describe('localAutonomySupervisorService', () => {
 
     expect(mockSpawnSync).not.toHaveBeenCalled();
     expect(mockRunOpenJarvisHermesRuntimeRemediation).not.toHaveBeenCalled();
-    expect(summary).toContain('chat=manual');
+    expect(summary).toContain('mode=manual');
     expect(stats.lastSupervisorAction).toBe('supervisor:alive:manual-chat');
     expect(stats.lastSupervisorAutoLaunchQueuedChat).toBe(false);
+    expect(stats.lastSupervisorQueueLaunchMode).toBe('manual');
     expect(stats.lastSupervisorPid).toBe(process.pid);
+  });
+
+  it('preserves queue-swarm mode when the last supervisor state already targeted swarm relaunch', async () => {
+    mockGetOpenJarvisAutopilotStatus.mockResolvedValueOnce({
+      workflow: {
+        status: 'released',
+        session_id: null,
+        session_path: null,
+        objective: null,
+        lastCapabilityDemands: [],
+      },
+      supervisor: {
+        supervisor_pid: null,
+        auto_launch_queued_chat: false,
+        auto_launch_queued_swarm: true,
+        auto_launch_queued_swarm_include_distiller: true,
+        auto_launch_queued_swarm_executor_worktree_path: 'C:/Muel_S/wt/swarm-executor',
+        auto_launch_queued_swarm_executor_artifact_budget: ['tests', 'docs'],
+        awaiting_reentry_acknowledgment: false,
+        awaiting_reentry_acknowledgment_stale: false,
+        awaiting_reentry_acknowledgment_started_at: null,
+      },
+      hermes_runtime: {
+        readiness: 'ready',
+        supervisor_alive: false,
+        awaiting_reentry_acknowledgment_stale: false,
+        queued_objectives_available: true,
+        remediation_actions: [
+          { action_id: 'start-supervisor-loop' },
+        ],
+      },
+    });
+
+    const module = await import('./localAutonomySupervisorService');
+    const summary = await module.runLocalAutonomySupervisorCycle();
+    const stats = module.getLocalAutonomySupervisorLoopStats();
+
+    expect(mockRunOpenJarvisHermesRuntimeRemediation).toHaveBeenCalledWith({
+      runtimeLane: 'operator-personal',
+      actionId: 'start-supervisor-loop',
+      dryRun: false,
+      visibleTerminal: false,
+      autoLaunchQueuedChat: false,
+      autoLaunchQueuedSwarm: true,
+      autoLaunchQueuedSwarmIncludeDistiller: true,
+      autoLaunchQueuedSwarmExecutorWorktreePath: 'C:/Muel_S/wt/swarm-executor',
+      autoLaunchQueuedSwarmExecutorArtifactBudget: ['tests', 'docs'],
+    });
+    expect(summary).toContain('mode=swarm');
+    expect(summary).toContain('supervisor:queued:swarm');
+    expect(stats.lastSupervisorAutoLaunchQueuedSwarm).toBe(true);
+    expect(stats.lastSupervisorQueueLaunchMode).toBe('swarm');
   });
 });

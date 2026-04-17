@@ -33,7 +33,15 @@ vi.mock('./skills/actionGovernanceStore', () => ({
   createActionApprovalRequest: createActionApprovalRequestMock,
 }));
 
-import { getSuperAgentCapabilities, normalizeSuperAgentTask, recommendSuperAgent, startSuperAgentSessionFromTask } from './superAgentService';
+import {
+  getSuperAgentCapabilities,
+  getSuperAgentServiceBundle,
+  normalizeSuperAgentTask,
+  recommendSuperAgent,
+  recommendSuperAgentService,
+  startSuperAgentServiceSession,
+  startSuperAgentSessionFromTask,
+} from './superAgentService';
 
 describe('superAgentService', () => {
   beforeEach(() => {
@@ -237,5 +245,62 @@ describe('superAgentService', () => {
     expect(capabilities.modes).toContain('local-collab');
     expect(capabilities.leadAgents).toContain('Implement');
     expect(capabilities.availableSkills).toHaveLength(2);
+    expect(capabilities.serviceBundles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'personal-workflow-copilot' }),
+      expect.objectContaining({ id: 'local-hands-runner' }),
+    ]));
+  });
+
+  it('personal service bundle catalog는 operator doc와 route entrypoint를 고정한다', () => {
+    const service = getSuperAgentServiceBundle('personal-workflow-copilot');
+
+    expect(service).toMatchObject({
+      id: 'personal-workflow-copilot',
+      operatorDocPath: 'docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md',
+      entrypoints: {
+        catalog: '/agent/super/services',
+        describe: '/agent/super/services/personal-workflow-copilot',
+        recommend: '/agent/super/services/personal-workflow-copilot/recommend',
+        session: '/agent/super/services/personal-workflow-copilot/sessions',
+      },
+    });
+    expect(service?.runtimeSurfaces).toContain('GET /api/bot/agent/runtime/operator-snapshot');
+  });
+
+  it('service wrapper recommendation은 default bundle context를 기존 추천기로 주입한다', () => {
+    const wrapped = recommendSuperAgentService('knowledge-distiller', {
+      guild_id: 'guild-knowledge',
+    });
+
+    expect(wrapped.service.id).toBe('knowledge-distiller');
+    expect(wrapped.recommendation.task.guild_id).toBe('guild-knowledge');
+    expect(wrapped.recommendation.task.objective).toContain('Distill source material');
+    expect(wrapped.recommendation.task.inputs).toMatchObject({
+      service_bundle: expect.objectContaining({
+        id: 'knowledge-distiller',
+        operator_doc_path: 'docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md',
+      }),
+    });
+  });
+
+  it('service wrapper session start는 기존 session API에 bounded bundle context를 전달한다', async () => {
+    startAgentSessionMock.mockReturnValue({ id: 'session-service', guildId: 'guild-1' });
+    serializeAgentSessionForApiMock.mockReturnValue({ id: 'session-service', status: 'queued' });
+
+    const result = await startSuperAgentServiceSession('local-hands-runner', {
+      guild_id: 'guild-1',
+      objective: 'Run the local fix',
+      requestedBy: 'user-2',
+      isAdmin: true,
+    });
+
+    expect(result.service.id).toBe('local-hands-runner');
+    expect(startAgentSessionMock).toHaveBeenCalledTimes(1);
+    expect(startAgentSessionMock.mock.calls[0][0]).toMatchObject({
+      guildId: 'guild-1',
+      requestedBy: 'user-2',
+      isAdmin: true,
+    });
+    expect(String(startAgentSessionMock.mock.calls[0][0].goal)).toContain('local-hands-runner');
   });
 });

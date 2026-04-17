@@ -213,6 +213,29 @@ If ambiguity, risk, or policy scope increases, Hermes raises a `recall_request` 
 
 When a result becomes durable and reusable, the system promotes it into Obsidian as a decision, runbook update, architecture delta, or development slice.
 
+## Bootstrap Session Synthesizer
+
+The smallest safe implementation slice for this target state is now a structured session synthesizer on top of the existing queue-aware control plane.
+
+`npm run local:control-plane:future` should not become a second runtime owner.
+Its job is to read the current control-plane state and emit one structured session synthesis that says:
+
+- which bounded session kind is next: stabilize, monitor, queue-seed, bounded-turn, bounded-wave, or closeout
+- which queue mode is merely observed and which mode is actually planned for the next launch
+- which objective is the next launch target
+- which surface owns coordination, which surface owns the bounded GPT handoff, and which execution lane should carry the actual work
+- which child turns should exist when a bounded wave is justified
+
+Current lane selection is intentionally fail-closed:
+
+- default to `hermes-local-operator`
+- raise `local-workstation-executor` only when the objective explicitly signals GUI, browser, screenshot, or desktop work
+- raise `remote-heavy-execution` only when the objective explicitly signals deploy, remote, benchmark, worker, or cloud-heavy scope
+
+This keeps the session-orchestration loop additive.
+Copilot still does not own mutable state, and OpenJarvis still owns queue selection plus the reentry boundary.
+The synthesizer only makes the next bounded handoff legible enough that Hermes, Multica, and future automation can reopen the right session without ad hoc lane selection.
+
 ## Obsidian In The Target State
 
 Obsidian remains mandatory, but its role becomes cleaner.

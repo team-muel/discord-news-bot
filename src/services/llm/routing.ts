@@ -85,19 +85,21 @@ export const parseProviderList = (raw: string): LlmProvider[] => {
 
 // ──── Provider Ordering ──────────────────────────────────────────────────────
 
-// OpenJarvis is the preferred control surface when enabled; lower-level providers remain fallback engines.
-const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = ['openjarvis', 'litellm', 'ollama', 'openclaw', 'anthropic', 'openai', 'gemini', 'kimi', 'huggingface'];
-const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = ['openjarvis', 'litellm', 'ollama', 'openclaw', 'anthropic', 'openai', 'gemini', 'kimi', 'huggingface'];
-const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['openjarvis', 'ollama', 'litellm', 'huggingface', 'openclaw', 'kimi', 'gemini', 'anthropic', 'openai'];
-const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['openjarvis', 'anthropic', 'openai', 'litellm', 'gemini', 'kimi', 'ollama', 'huggingface', 'openclaw'];
+// OpenJarvis is the control surface, LiteLLM is the remote alias broker, and Ollama is the local engine.
+const CANONICAL_DEFAULT_PROVIDER_ORDER: readonly LlmProvider[] = ['openjarvis', 'litellm', 'ollama'];
+const OPT_IN_PROVIDER_ORDER: readonly LlmProvider[] = ['anthropic', 'openai', 'gemini', 'kimi', 'huggingface', 'openclaw'];
+const DEFAULT_BASE_PROVIDER_ORDER: LlmProvider[] = [...CANONICAL_DEFAULT_PROVIDER_ORDER];
+const DEFAULT_AUTOMATIC_FALLBACK_ORDER: LlmProvider[] = [...CANONICAL_DEFAULT_PROVIDER_ORDER];
+const COST_OPTIMIZED_ORDER: readonly LlmProvider[] = ['openjarvis', 'ollama', 'litellm', ...OPT_IN_PROVIDER_ORDER];
+const QUALITY_OPTIMIZED_ORDER: readonly LlmProvider[] = ['openjarvis', 'litellm', 'ollama', ...OPT_IN_PROVIDER_ORDER];
 const CAPABILITY_PROVIDER_ORDER: Record<LlmRoutingCapability, readonly LlmProvider[]> = {
-  general: DEFAULT_BASE_PROVIDER_ORDER,
-  'fast-chat': ['openjarvis', 'ollama', 'litellm', 'openclaw', 'huggingface', 'gemini', 'anthropic', 'openai', 'kimi'],
-  'deep-reasoning': ['openjarvis', 'anthropic', 'openai', 'litellm', 'gemini', 'ollama', 'huggingface', 'kimi', 'openclaw'],
-  code: ['openjarvis', 'ollama', 'litellm', 'anthropic', 'openai', 'gemini', 'huggingface', 'kimi', 'openclaw'],
-  memory: ['openjarvis', 'ollama', 'litellm', 'huggingface', 'gemini', 'anthropic', 'openai', 'kimi', 'openclaw'],
-  review: ['openjarvis', 'anthropic', 'openai', 'litellm', 'gemini', 'ollama', 'huggingface', 'kimi', 'openclaw'],
-  operations: ['openjarvis', 'ollama', 'litellm', 'anthropic', 'openai', 'gemini', 'huggingface', 'kimi', 'openclaw'],
+  general: [...CANONICAL_DEFAULT_PROVIDER_ORDER, ...OPT_IN_PROVIDER_ORDER],
+  'fast-chat': ['openjarvis', 'ollama', 'litellm', ...OPT_IN_PROVIDER_ORDER],
+  'deep-reasoning': ['openjarvis', 'litellm', 'ollama', ...OPT_IN_PROVIDER_ORDER],
+  code: ['openjarvis', 'ollama', 'litellm', ...OPT_IN_PROVIDER_ORDER],
+  memory: ['openjarvis', 'ollama', 'litellm', ...OPT_IN_PROVIDER_ORDER],
+  review: ['openjarvis', 'litellm', 'ollama', ...OPT_IN_PROVIDER_ORDER],
+  operations: ['openjarvis', 'litellm', 'ollama', ...OPT_IN_PROVIDER_ORDER],
 };
 const CAPABILITY_RULES: readonly CapabilityRule[] = [
   { pattern: 'chat.*', capability: 'fast-chat' },
@@ -360,6 +362,12 @@ export const resolveProviderWithoutExperiment = (): LlmProvider | null => {
   if ((preferred === 'kimi' || preferred === 'moonshot') && isKimiConfigured()) return 'kimi';
 
   for (const provider of getConfiguredBaseProviderOrder()) {
+    if (isProviderConfigured(provider)) return provider;
+  }
+
+  // Backward-compatible escape hatch: if the canonical control/broker/local chain
+  // is unavailable, still allow explicitly configured direct providers to resolve.
+  for (const provider of OPT_IN_PROVIDER_ORDER) {
     if (isProviderConfigured(provider)) return provider;
   }
   return null;

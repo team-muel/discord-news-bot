@@ -91,6 +91,7 @@ export default defineConfig({
             'src/services/tools/**/*.test.ts',
             'src/services/infra/**/*.test.ts',
             'src/services/automation/**/*.test.ts',
+            'src/services/openjarvis/**/*.test.ts',
             'src/services/opencode/**/*.test.ts',
             'src/services/workflow/**/*.test.ts',
             'src/services/workerGeneration/**/*.test.ts',

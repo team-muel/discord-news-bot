@@ -200,6 +200,13 @@ export type HealthResponse = {
     vaultReady: boolean;
     fileCount: number;
   };
+  schedulerPolicySummary?: {
+    total: number;
+    appOwned: number;
+    dbOwned: number;
+    enabled: number;
+    running: number;
+  };
   migrations?: {
     ok: boolean;
     trackingTableExists: boolean;

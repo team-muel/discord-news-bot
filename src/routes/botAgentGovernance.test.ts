@@ -19,6 +19,24 @@ const {
   mockActionExecute: vi.fn(),
 }));
 
+const {
+  mockGetSuperAgentCapabilities,
+  mockGetSuperAgentServiceBundle,
+  mockListSuperAgentServiceBundles,
+  mockRecommendSuperAgent,
+  mockRecommendSuperAgentService,
+  mockStartSuperAgentServiceSession,
+  mockStartSuperAgentSessionFromTask,
+} = vi.hoisted(() => ({
+  mockGetSuperAgentCapabilities: vi.fn(),
+  mockGetSuperAgentServiceBundle: vi.fn(),
+  mockListSuperAgentServiceBundles: vi.fn(),
+  mockRecommendSuperAgent: vi.fn(),
+  mockRecommendSuperAgentService: vi.fn(),
+  mockStartSuperAgentServiceSession: vi.fn(),
+  mockStartSuperAgentSessionFromTask: vi.fn(),
+}));
+
 vi.mock('../middleware/auth', () => ({
   requireAdmin: (_req: unknown, _res: unknown, next: (error?: unknown) => void) => next(),
   requireAuth: (_req: unknown, _res: unknown, next: (error?: unknown) => void) => next(),
@@ -74,11 +92,20 @@ vi.mock('../services/opencode/opencodeGitHubQueueService', () => ({
 }));
 
 vi.mock('../services/superAgentService', () => ({
-  getSuperAgentCapabilities: vi.fn().mockReturnValue([]),
-  recommendSuperAgent: vi.fn(),
-  startSuperAgentSessionFromTask: vi.fn(),
+  getSuperAgentCapabilities: mockGetSuperAgentCapabilities,
+  getSuperAgentServiceBundle: mockGetSuperAgentServiceBundle,
+  listSuperAgentServiceBundles: mockListSuperAgentServiceBundles,
+  recommendSuperAgent: mockRecommendSuperAgent,
+  recommendSuperAgentService: mockRecommendSuperAgentService,
+  startSuperAgentServiceSession: mockStartSuperAgentServiceSession,
+  startSuperAgentSessionFromTask: mockStartSuperAgentSessionFromTask,
 }));
 
+import {
+  SUPER_AGENT_SERVICE_BUNDLE_IDS,
+  getSuperAgentServiceBundle as getCatalogSuperAgentServiceBundle,
+  listSuperAgentServiceBundles as listCatalogSuperAgentServiceBundles,
+} from '../services/superAgentServiceCatalog';
 import { registerBotAgentGovernanceRoutes } from './bot-agent/governanceRoutes';
 
 type RouteLayer = {
@@ -149,6 +176,43 @@ const invokeRoute = async (router: Router, method: string, path: string, reqOver
 describe('bot agent governance routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetSuperAgentCapabilities.mockReturnValue({
+      modes: ['local-collab'],
+      serviceBundles: listCatalogSuperAgentServiceBundles(),
+    });
+    mockListSuperAgentServiceBundles.mockImplementation(() => listCatalogSuperAgentServiceBundles());
+    mockGetSuperAgentServiceBundle.mockImplementation((serviceId: string) => getCatalogSuperAgentServiceBundle(serviceId));
+    mockRecommendSuperAgent.mockReturnValue({ route: { mode: 'local-collab' } });
+    mockRecommendSuperAgentService.mockImplementation((serviceId: string, input: Record<string, unknown>) => {
+      const service = getCatalogSuperAgentServiceBundle(serviceId);
+      return {
+        service,
+        recommendation: {
+          route: {
+            mode: service?.defaultMode || 'local-collab',
+            lead_agent: { name: service?.defaultLeadAgent || 'Architect' },
+          },
+          task: {
+            guild_id: input.guild_id,
+            objective: input.objective || service?.defaultObjective || 'default objective',
+          },
+        },
+      };
+    });
+    mockStartSuperAgentSessionFromTask.mockResolvedValue({
+      recommendation: { route: { mode: 'local-collab' } },
+      session_goal: 'goal',
+      session: { id: 'session-super' },
+    });
+    mockStartSuperAgentServiceSession.mockImplementation(async (serviceId: string, input: Record<string, unknown>) => {
+      const service = getCatalogSuperAgentServiceBundle(serviceId);
+      return {
+        service,
+        recommendation: { route: { mode: service?.defaultMode || 'local-collab' } },
+        session_goal: `${serviceId} goal`,
+        session: { id: `session-${serviceId}`, requestedBy: input.requestedBy },
+      };
+    });
     mockListAgentRoleWorkerSpecs.mockReturnValue([]);
     mockNormalizeActionInput.mockImplementation(({ input }: { input: Record<string, unknown> }) => input);
     mockNormalizeActionResult.mockImplementation(({ result }: { result: Record<string, unknown> }) => result);
@@ -260,5 +324,147 @@ describe('bot agent governance routes', () => {
       error: 'INVALID_PAYLOAD',
     });
     expect(mockActionExecute).not.toHaveBeenCalled();
+  });
+
+  it('returns the personal service bundle catalog under the super-agent surface', async () => {
+    const router = Router();
+    registerBotAgentGovernanceRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'GET', '/agent/super/services');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      services: expect.arrayContaining(
+        SUPER_AGENT_SERVICE_BUNDLE_IDS.map((serviceId) => expect.objectContaining({ id: serviceId })),
+      ),
+    });
+    expect((res.body as { services: unknown[] }).services).toHaveLength(SUPER_AGENT_SERVICE_BUNDLE_IDS.length);
+    expect(mockListSuperAgentServiceBundles).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs one smoke operator call per personal OS service bundle', async () => {
+    const router = Router();
+    registerBotAgentGovernanceRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    for (const serviceId of SUPER_AGENT_SERVICE_BUNDLE_IDS) {
+      const describeRes = await invokeRoute(router, 'GET', '/agent/super/services/:serviceId', {
+        params: { serviceId },
+      });
+      expect(describeRes.statusCode).toBe(200);
+      expect(describeRes.body).toMatchObject({
+        ok: true,
+        service: expect.objectContaining({
+          id: serviceId,
+          operatorDocPath: 'docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md',
+        }),
+      });
+
+      const recommendRes = await invokeRoute(router, 'POST', '/agent/super/services/:serviceId/recommend', {
+        params: { serviceId },
+        body: {
+          guild_id: `guild-${serviceId}`,
+        },
+      });
+      expect(recommendRes.statusCode).toBe(200);
+      expect(recommendRes.body).toMatchObject({
+        ok: true,
+        service: expect.objectContaining({ id: serviceId }),
+        recommendation: expect.objectContaining({
+          task: expect.objectContaining({ guild_id: `guild-${serviceId}` }),
+        }),
+      });
+
+      const sessionRes = await invokeRoute(router, 'POST', '/agent/super/services/:serviceId/sessions', {
+        params: { serviceId },
+        body: {
+          guild_id: `guild-${serviceId}`,
+        },
+        user: { id: `operator-${serviceId}` },
+      });
+      expect(sessionRes.statusCode).toBe(202);
+      expect(sessionRes.body).toMatchObject({
+        ok: true,
+        service: expect.objectContaining({ id: serviceId }),
+        approvalPending: false,
+        session: expect.objectContaining({
+          id: `session-${serviceId}`,
+          requestedBy: `operator-${serviceId}`,
+        }),
+      });
+    }
+
+    expect(mockGetSuperAgentServiceBundle.mock.calls.map(([serviceId]) => serviceId)).toEqual([...SUPER_AGENT_SERVICE_BUNDLE_IDS]);
+    expect(mockRecommendSuperAgentService.mock.calls.map(([serviceId]) => serviceId)).toEqual([...SUPER_AGENT_SERVICE_BUNDLE_IDS]);
+    expect(mockStartSuperAgentServiceSession.mock.calls.map(([serviceId]) => serviceId)).toEqual([...SUPER_AGENT_SERVICE_BUNDLE_IDS]);
+  });
+
+  it('recommends a personal service bundle session with the bundle-scoped wrapper', async () => {
+    const router = Router();
+    registerBotAgentGovernanceRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/super/services/:serviceId/recommend', {
+      params: { serviceId: 'personal-workflow-copilot' },
+      body: {
+        guild_id: 'guild-1',
+        objective: 'Plan the next bounded work block',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockRecommendSuperAgentService).toHaveBeenCalledWith('personal-workflow-copilot', expect.objectContaining({
+      guild_id: 'guild-1',
+      objective: 'Plan the next bounded work block',
+    }));
+    expect(res.body).toMatchObject({
+      ok: true,
+      service: expect.objectContaining({ id: 'personal-workflow-copilot' }),
+      recommendation: expect.objectContaining({ route: expect.objectContaining({ mode: 'local-collab' }) }),
+    });
+  });
+
+  it('starts a personal service bundle session with the authenticated requester context', async () => {
+    const router = Router();
+    registerBotAgentGovernanceRoutes({
+      router,
+      adminActionRateLimiter: noop,
+      adminIdempotency: noop,
+      opencodeIdempotency: noop,
+    });
+
+    const res = await invokeRoute(router, 'POST', '/agent/super/services/:serviceId/sessions', {
+      params: { serviceId: 'personal-workflow-copilot' },
+      body: {
+        guild_id: 'guild-1',
+      },
+      user: { id: 'operator-7' },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mockStartSuperAgentServiceSession).toHaveBeenCalledWith('personal-workflow-copilot', expect.objectContaining({
+      guild_id: 'guild-1',
+      requestedBy: 'operator-7',
+      isAdmin: true,
+    }));
+    expect(res.body).toMatchObject({
+      ok: true,
+      service: expect.objectContaining({ id: 'personal-workflow-copilot' }),
+      approvalPending: false,
+    });
   });
 });

@@ -108,4 +108,31 @@ describe('actionGovernanceStore persistence fallback', () => {
     });
     expect(listed.map((row) => row.id)).toContain(created.id);
   });
+
+  it('can fetch an in-memory fallback request when the DB lookup misses it', async () => {
+    const insertFailure = createAwaitableChain({ data: null, error: { message: 'insert failed' } });
+    const lookupMiss = createAwaitableChain({ data: null, error: null });
+    mockFrom
+      .mockReturnValueOnce(insertFailure)
+      .mockReturnValueOnce(lookupMiss);
+    mockGetSupabaseClient.mockReturnValue({ from: mockFrom });
+
+    const store = await import('./actionGovernanceStore');
+    const created = await store.createActionApprovalRequest({
+      guildId: 'guild-fallback-get',
+      requestedBy: 'user-3',
+      goal: 'Fetch a fallback request',
+      actionName: 'n8n.workflow.install',
+      actionArgs: { workflow: 'starter' },
+    });
+
+    const fetched = await store.getActionApprovalRequest(created.id);
+
+    expect(fetched).toMatchObject({
+      id: created.id,
+      guildId: 'guild-fallback-get',
+      actionName: 'n8n.workflow.install',
+      status: 'pending',
+    });
+  });
 });

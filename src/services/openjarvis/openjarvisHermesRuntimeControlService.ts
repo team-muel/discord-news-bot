@@ -61,6 +61,10 @@ export type HermesRuntimeRemediationParams = OpenJarvisAutopilotStatusParams & {
   visibleTerminal?: boolean;
   autoLaunchQueuedChat?: boolean;
   autoLaunchQueuedChatContextProfile?: string | null;
+  autoLaunchQueuedSwarm?: boolean;
+  autoLaunchQueuedSwarmIncludeDistiller?: boolean;
+  autoLaunchQueuedSwarmExecutorWorktreePath?: string | null;
+  autoLaunchQueuedSwarmExecutorArtifactBudget?: string[] | null;
 };
 
 export type HermesRuntimeQueueObjectiveParams = OpenJarvisAutopilotStatusParams & {
@@ -116,6 +120,7 @@ export type HermesRuntimeLaunchChatParams = OpenJarvisAutopilotStatusParams & {
   chatMode?: string | null;
   contextProfile?: string | null;
   addFilePaths?: string[] | null;
+  allowedRoots?: string[] | null;
   maximize?: boolean;
   newWindow?: boolean;
   reuseWindow?: boolean;
@@ -152,6 +157,7 @@ export type HermesSessionStartPrepParams = OpenJarvisAutopilotStatusParams & {
   dryRun?: boolean;
   visibleTerminal?: boolean;
   autoLaunchQueuedChat?: boolean;
+  autoLaunchQueuedSwarm?: boolean;
 };
 
 export type HermesSessionStartPrepResult = {
@@ -175,6 +181,91 @@ export type HermesSessionStartPrepResult = {
   error: string | null;
 };
 
+export type HermesRuntimeSwarmShardSpec = {
+  shardId?: string | null;
+  objective?: string | null;
+  contextProfile?: string | null;
+  addFilePaths?: string[] | null;
+  artifactBudget?: string[] | null;
+  recallCondition?: string | null;
+  completionDefinition?: string | null;
+  acceptanceOwner?: string | null;
+  dependsOn?: string[] | null;
+  worktreePath?: string | null;
+};
+
+export type HermesRuntimeLaunchSwarmParams = OpenJarvisAutopilotStatusParams & {
+  waveObjective?: string | null;
+  shards?: HermesRuntimeSwarmShardSpec[] | null;
+  boardPath?: string | null;
+  includeDistiller?: boolean;
+  maximize?: boolean;
+  newWindow?: boolean;
+  reuseWindow?: boolean;
+  dryRun?: boolean;
+};
+
+export type HermesRuntimeLaunchSwarmShardResult = {
+  shardId: string;
+  objective: string;
+  contextProfile: HermesRuntimeContextProfile;
+  boardPath: string | null;
+  shardPath: string | null;
+  worktreePath: string | null;
+  completion: 'queued' | 'skipped';
+  command: string | null;
+  pid: number | null;
+  errorCode: HermesRuntimeLaunchChatResult['errorCode'];
+  error: string | null;
+  launchResult: HermesRuntimeLaunchChatResult;
+};
+
+export type HermesRuntimeLaunchSwarmResult = {
+  ok: boolean;
+  completion: 'queued' | 'skipped';
+  waveId: string | null;
+  waveObjective: string | null;
+  boardPath: string | null;
+  shardPaths: string[];
+  launches: HermesRuntimeLaunchSwarmShardResult[];
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  errorCode: 'VALIDATION' | 'VAULT_PATH_REQUIRED' | 'WRITE_FAILED' | null;
+  error: string | null;
+};
+
+export type HermesRuntimeSwarmCloseoutStatus = 'completed' | 'blocked' | 'failed';
+
+export type HermesRuntimeSwarmCloseoutParams = {
+  vaultPath?: string | null;
+  boardPath?: string | null;
+  shardPath?: string | null;
+  waveId?: string | null;
+  shardId?: string | null;
+  workerRole?: string | null;
+  completionStatus: HermesRuntimeSwarmCloseoutStatus;
+  summary?: string | null;
+  nextAction?: string | null;
+  blockedAction?: string | null;
+  dryRun?: boolean;
+};
+
+export type HermesRuntimeSwarmCloseoutResult = {
+  ok: boolean;
+  completion: 'updated' | 'skipped';
+  waveId: string | null;
+  shardId: string | null;
+  workerRole: string | null;
+  boardPath: string | null;
+  shardPath: string | null;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  errorCode: 'VALIDATION' | 'VAULT_PATH_REQUIRED' | 'WRITE_FAILED' | null;
+  error: string | null;
+};
+
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(moduleDir, '../../../');
 const EXECUTION_BOARD_PATH = path.resolve(REPO_ROOT, 'docs/planning/EXECUTION_BOARD.md');
@@ -182,6 +273,8 @@ const DEFAULT_HERMES_RUNTIME_CHAT_TITLE = 'Hermes Runtime Handoff';
 const DEFAULT_HERMES_RUNTIME_REQUESTER_ID = 'hermes-runtime';
 const DEFAULT_HERMES_CHAT_MODE = 'agent';
 const DEFAULT_HANDOFF_PACKET_RELATIVE_PATH = 'plans/execution/HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md';
+const DEFAULT_HERMES_SWARM_BOARD_RELATIVE_PATH = 'plans/execution/HERMES_PARALLEL_GPT_SWARM_BOARD.md';
+const DEFAULT_HERMES_SWARM_SHARDS_DIR = 'plans/execution/hermes-swarm';
 const DEFAULT_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'default';
 const AUTO_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'auto';
 const DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'delegated-operator';
@@ -190,7 +283,13 @@ const EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'ex
 const DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'distiller';
 const GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE: HermesRuntimeContextProfile = 'guardian';
 const MAX_HERMES_RUNTIME_LAUNCH_FILES = 12;
+const MAX_HERMES_SWARM_SHARDS = 3;
 const SAFE_QUEUE_SECTION_HEADING = 'Safe Autonomous Queue For Hermes';
+const HERMES_SWARM_STATUS_SECTION_HEADING = 'Status';
+const HERMES_SWARM_LATEST_CLOSEOUT_SECTION_HEADING = 'Latest Closeout';
+const HERMES_SWARM_ACK_HISTORY_SECTION_HEADING = 'Ack History';
+const HERMES_SWARM_REGISTRY_SECTION_HEADING = 'Shard Registry';
+const HERMES_SWARM_CLOSEOUTS_SECTION_HEADING = 'Shard Closeouts';
 const MAX_SAFE_QUEUE_ITEMS = 12;
 const HERMES_RUNTIME_CONTEXT_PROFILE_SET = new Set<HermesRuntimeContextProfile>([
   DEFAULT_HERMES_RUNTIME_CONTEXT_PROFILE,
@@ -310,6 +409,8 @@ const HERMES_GUARDIAN_OBJECTIVE_PATTERNS = [
 
 const compact = (value: unknown): string => String(value || '').trim();
 
+const toNullableString = (value: unknown): string | null => compact(value) || null;
+
 const normalizeObjective = (value: unknown): string => compact(value).replace(/\s+/g, ' ');
 
 const objectiveKey = (value: unknown): string => normalizeObjective(value).toLowerCase();
@@ -347,6 +448,322 @@ const uniqueStrings = (values: Array<string | null | undefined>): string[] => {
     result.push(normalized);
   }
   return result;
+};
+
+type HermesRuntimeNormalizedSwarmShard = {
+  shardId: string;
+  objective: string;
+  contextProfile: HermesRuntimeContextProfile;
+  addFilePaths: string[];
+  artifactBudget: string[];
+  recallCondition: string | null;
+  completionDefinition: string | null;
+  acceptanceOwner: string | null;
+  dependsOn: string[];
+  worktreePath: string | null;
+};
+
+const slugifyHermesToken = (value: unknown, fallback: string): string => {
+  const normalized = normalizeObjective(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return normalized || fallback;
+};
+
+const resolveHermesOptionalRootPath = (value: unknown): string | null => {
+  const normalized = compact(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const absolutePath = path.isAbsolute(normalized) ? path.resolve(normalized) : path.resolve(REPO_ROOT, normalized);
+  return fs.existsSync(absolutePath) ? absolutePath : null;
+};
+
+const buildHermesSwarmWaveId = (waveObjective: string): string => {
+  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  return `${timestamp}-${slugifyHermesToken(waveObjective, 'swarm-wave')}`;
+};
+
+const buildHermesDefaultSwarmShards = (waveObjective: string, includeDistiller: boolean): HermesRuntimeSwarmShardSpec[] => {
+  const shards: HermesRuntimeSwarmShardSpec[] = [
+    {
+      shardId: 'route-scout',
+      objective: `Map route, blockers, and evidence for ${waveObjective}`,
+      contextProfile: 'scout',
+      completionDefinition: 'Route, blocker, and evidence summary is ready for the executor without reopening broad archaeology.',
+      recallCondition: 'Recall the coordinator if route ambiguity remains or a shared contract is missing.',
+      acceptanceOwner: 'coordinator-gpt',
+    },
+    {
+      shardId: 'bounded-executor',
+      objective: waveObjective,
+      contextProfile: 'executor',
+      completionDefinition: 'Bounded implementation or validation slice is complete with typecheck and targeted verification.',
+      recallCondition: 'Recall the coordinator on cross-shard architecture changes, merge conflicts, or policy boundaries.',
+      acceptanceOwner: 'coordinator-gpt',
+      dependsOn: ['route-scout'],
+    },
+  ];
+
+  if (includeDistiller) {
+    shards.push({
+      shardId: 'closeout-distiller',
+      objective: `Distill accepted outcomes for ${waveObjective}`,
+      contextProfile: 'distiller',
+      completionDefinition: 'Decision distillate, changelog/wiki delta, and bounded next action are ready after acceptance.',
+      recallCondition: 'Start only after the executor reaches an accepted checkpoint.',
+      acceptanceOwner: 'coordinator-gpt',
+      dependsOn: ['bounded-executor'],
+    });
+  }
+
+  return shards;
+};
+
+const normalizeHermesSwarmShards = (params: {
+  shards?: HermesRuntimeSwarmShardSpec[] | null;
+  waveObjective: string;
+  includeDistiller: boolean;
+}): HermesRuntimeNormalizedSwarmShard[] => {
+  const rawShards = Array.isArray(params.shards) && params.shards.length > 0
+    ? params.shards
+    : buildHermesDefaultSwarmShards(params.waveObjective, params.includeDistiller);
+
+  return rawShards
+    .map((shard, index) => {
+      const objective = normalizeObjective(shard.objective);
+      if (!objective) {
+        return null;
+      }
+
+      const contextProfile = normalizeHermesRuntimeContextProfile(shard.contextProfile);
+      const shardId = slugifyHermesToken(shard.shardId || objective, `shard-${index + 1}`);
+
+      return {
+        shardId,
+        objective,
+        contextProfile,
+        addFilePaths: uniqueStrings(toList(shard.addFilePaths)),
+        artifactBudget: uniqueStrings(toList(shard.artifactBudget)),
+        recallCondition: toNullableString(shard.recallCondition),
+        completionDefinition: toNullableString(shard.completionDefinition),
+        acceptanceOwner: toNullableString(shard.acceptanceOwner),
+        dependsOn: uniqueStrings(toList(shard.dependsOn)).filter((dependency) => slugifyHermesToken(dependency, dependency) !== shardId),
+        worktreePath: resolveHermesOptionalRootPath(shard.worktreePath),
+      } satisfies HermesRuntimeNormalizedSwarmShard;
+    })
+    .filter((shard): shard is HermesRuntimeNormalizedSwarmShard => Boolean(shard))
+    .slice(0, MAX_HERMES_SWARM_SHARDS);
+};
+
+const buildHermesSwarmRegistryLine = (params: {
+  shard: HermesRuntimeNormalizedSwarmShard;
+  shardPath: string | null;
+  state: 'planned' | 'queued' | 'completed' | 'blocked' | 'failed';
+  pid?: number | null;
+}): string => {
+  const parts = [
+    `shard_id=${params.shard.shardId}`,
+    `role=${params.shard.contextProfile}`,
+    `state=${params.state}`,
+    `objective=${params.shard.objective}`,
+    params.shardPath ? `path=${params.shardPath}` : null,
+    params.pid ? `pid=${params.pid}` : null,
+  ].filter(Boolean);
+  return parts.join(' | ');
+};
+
+const buildHermesSwarmCloseoutLine = (params: {
+  acknowledgedAt: string;
+  waveId: string | null;
+  shardId: string;
+  workerRole: string;
+  completionStatus: HermesRuntimeSwarmCloseoutStatus;
+  summary: string | null;
+  nextAction: string | null;
+  blockedAction: string | null;
+}): string => {
+  return [
+    `ack_at=${params.acknowledgedAt}`,
+    params.waveId ? `wave_id=${params.waveId}` : null,
+    `shard_id=${params.shardId}`,
+    `role=${params.workerRole}`,
+    `state=${params.completionStatus}`,
+    params.summary ? `summary=${params.summary}` : null,
+    params.nextAction ? `next_action=${params.nextAction}` : null,
+    params.blockedAction ? `blocked_action=${params.blockedAction}` : null,
+  ].filter(Boolean).join(' | ');
+};
+
+const upsertBulletSectionItem = (params: {
+  content: string;
+  heading: string;
+  match: (item: string) => boolean;
+  nextItem: string;
+  maxItems?: number;
+}): string => {
+  const existing = extractBulletSection(params.content, params.heading).filter((item) => !params.match(item));
+  return replaceBulletSection(params.content, params.heading, [params.nextItem, ...existing].slice(0, params.maxItems || 12));
+};
+
+const buildHermesSwarmAckFlagBase = (params: {
+  contextProfile: HermesRuntimeContextProfile;
+  boardRelativePath: string | null;
+  shardRelativePath: string | null;
+  waveId: string;
+  shardId: string;
+}): string => {
+  return [
+    `--profile=${params.contextProfile}`,
+    params.boardRelativePath ? `--swarmBoardPath=${params.boardRelativePath}` : null,
+    params.shardRelativePath ? `--shardPath=${params.shardRelativePath}` : null,
+    `--waveId=${params.waveId}`,
+    `--shardId=${params.shardId}`,
+    `--workerRole=${params.contextProfile}`,
+  ].filter(Boolean).join(' ');
+};
+
+const buildHermesSwarmShardPacketContent = (params: {
+  waveId: string;
+  boardRelativePath: string | null;
+  shardRelativePath: string;
+  shard: HermesRuntimeNormalizedSwarmShard;
+  state: 'planned' | 'queued' | 'completed' | 'blocked' | 'failed';
+  prompt: string;
+  launchCommand?: string | null;
+  pid?: number | null;
+  latestCloseoutLine?: string | null;
+}): string => {
+  const ackBase = buildHermesSwarmAckFlagBase({
+    contextProfile: params.shard.contextProfile,
+    boardRelativePath: params.boardRelativePath,
+    shardRelativePath: params.shardRelativePath,
+    waveId: params.waveId,
+    shardId: params.shard.shardId,
+  });
+
+  const lines = [
+    '---',
+    `title: "Hermes Swarm Shard ${params.shard.shardId}"`,
+    `wave_id: "${params.waveId}"`,
+    `shard_id: "${params.shard.shardId}"`,
+    `worker_role: "${params.shard.contextProfile}"`,
+    `objective: "${params.shard.objective.replace(/"/g, '\\"')}"`,
+    'source: "openjarvis-hermes-runtime-control"',
+    'tags: [hermes, swarm, shard]',
+    'guild_id: "system"',
+    '---',
+    '',
+    '# Hermes Swarm Shard Packet',
+    '',
+    `## ${HERMES_SWARM_STATUS_SECTION_HEADING}`,
+    `- state: ${params.state}`,
+    `- wave_id: ${params.waveId}`,
+    `- shard_id: ${params.shard.shardId}`,
+    `- worker_role: ${params.shard.contextProfile}`,
+    `- objective: ${params.shard.objective}`,
+    `- acceptance_owner: ${params.shard.acceptanceOwner || 'coordinator-gpt'}`,
+    `- worktree_path: ${params.shard.worktreePath || '(none)'}`,
+    params.pid ? `- pid: ${params.pid}` : '- pid: (none)',
+    params.launchCommand ? `- launch_command: ${params.launchCommand}` : '- launch_command: (none)',
+    '',
+    '## Artifact Budget',
+    ...(params.shard.artifactBudget.length > 0 ? params.shard.artifactBudget.map((item) => `- ${item}`) : ['- (none)']),
+    '',
+    '## Recall Condition',
+    `- ${params.shard.recallCondition || 'Recall the coordinator on policy, architecture, or cross-shard conflicts.'}`,
+    '',
+    '## Definition Of Done',
+    `- ${params.shard.completionDefinition || 'Close this shard only when the bounded role contract is complete and evidence is attached.'}`,
+    '',
+    '## Dependencies',
+    ...(params.shard.dependsOn.length > 0 ? params.shard.dependsOn.map((item) => `- ${item}`) : ['- (none)']),
+    '',
+    `## ${HERMES_SWARM_LATEST_CLOSEOUT_SECTION_HEADING}`,
+    `- ${params.latestCloseoutLine || '(none)'}`,
+    '',
+    `## ${HERMES_SWARM_ACK_HISTORY_SECTION_HEADING}`,
+    '- (none)',
+    '',
+    '## Closeout Ack Contract',
+    `- completed: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed ${ackBase} --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"`,
+    `- blocked: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=blocked ${ackBase} --summary="<blocker summary>" --blockedAction="<blocked action>" --nextAction="<required recall step>"`,
+    `- failed: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=failed ${ackBase} --summary="<failure summary>" --blockedAction="<failed action>" --nextAction="<recovery step>"`,
+    '',
+    '## Prompt Snapshot',
+    ...params.prompt.split('\n').map((line) => line ? `- ${line}` : '- '),
+    '',
+    '## Evidence And References',
+    ...(params.boardRelativePath ? [`- board: ${params.boardRelativePath}`] : []),
+    `- shard_packet: ${params.shardRelativePath}`,
+  ];
+
+  return `${lines.join('\n').replace(/\n{3,}/g, '\n\n')}\n`;
+};
+
+const buildHermesSwarmBoardContent = (params: {
+  waveId: string;
+  waveObjective: string;
+  boardRelativePath: string;
+  shards: Array<{
+    shard: HermesRuntimeNormalizedSwarmShard;
+    shardPath: string | null;
+    state: 'planned' | 'queued' | 'completed' | 'blocked' | 'failed';
+    pid?: number | null;
+  }>;
+  closeouts?: string[];
+}): string => {
+  const lines = [
+    '---',
+    'title: "Hermes Parallel GPT Swarm Board"',
+    `wave_id: "${params.waveId}"`,
+    `objective: "${params.waveObjective.replace(/"/g, '\\"')}"`,
+    'source: "openjarvis-hermes-runtime-control"',
+    'tags: [hermes, swarm, execution]',
+    'guild_id: "system"',
+    'status: "active"',
+    '---',
+    '',
+    '# Hermes Parallel GPT Swarm Board',
+    '',
+    '## Wave Summary',
+    `- wave_id: ${params.waveId}`,
+    `- objective: ${params.waveObjective}`,
+    `- coordinator_owner: current GPT session`,
+    `- board_path: ${params.boardRelativePath}`,
+    `- shard_count: ${params.shards.length}`,
+    '',
+    '## Launch Guardrails',
+    '- one coordinator owns the wave objective and acceptance boundary',
+    '- each worker owns one bounded shard and one artifact budget only',
+    '- code-writing workers should stay inside an isolated worktree when one is assigned',
+    '- OpenClaw stays out-of-band convenience only and does not own swarm routing or semantics',
+    '',
+    `## ${HERMES_SWARM_REGISTRY_SECTION_HEADING}`,
+    ...params.shards.map((entry) => `- ${buildHermesSwarmRegistryLine({
+      shard: entry.shard,
+      shardPath: entry.shardPath,
+      state: entry.state,
+      pid: entry.pid,
+    })}`),
+    '',
+    `## ${HERMES_SWARM_CLOSEOUTS_SECTION_HEADING}`,
+    ...((params.closeouts && params.closeouts.length > 0) ? params.closeouts.map((item) => `- ${item}`) : ['- (none)']),
+    '',
+    '## Closeout Ack Contract',
+    '- every worker must acknowledge completion through openjarvis:hermes:runtime:reentry-ack with wave_id, shard_id, worker_role, and board/shard paths',
+    '- the coordinator accepts or rejects shard results before semantic promotion',
+    '',
+    '## Evidence And References',
+    '- docs/planning/HERMES_GPT_DUAL_AGENT_RUNTIME_CONTRACT.md',
+    '- docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md',
+    '- docs/planning/CAPABILITY_GAP_ANALYSIS.md',
+  ];
+
+  return `${lines.join('\n').replace(/\n{3,}/g, '\n\n')}\n`;
 };
 
 const synthesizeRuntimeQueuedObjectives = (params: {
@@ -416,41 +833,59 @@ const inferHermesRuntimeContextProfile = (params: {
     return params.requestedProfile;
   }
 
-  const signalText = [
+  const objectiveSignalText = [
     params.objective,
     compact(params.bundle.decision.summary),
     compact(params.bundle.decision.next_action),
-    compact(params.bundle.decision.promote_as),
-    compact(params.bundle.recall.blocked_action),
-    compact(params.bundle.recall.next_action),
-    ...params.bundle.capability_demands.map((entry) => compact(entry.summary)),
-    ...params.bundle.capability_demands.map((entry) => compact(entry.missing_capability)),
-    ...params.bundle.hermes_runtime.blockers,
-    ...params.bundle.hermes_runtime.next_actions,
     compact(params.status.workflow.lastDecisionDistillate?.summary),
     compact(params.status.workflow.lastDecisionDistillate?.nextAction),
   ].join(' ');
 
-  if (
-    params.bundle.hermes_runtime.awaiting_reentry_acknowledgment_stale === true
-    || matchesHermesContextProfilePattern(signalText, HERMES_GUARDIAN_OBJECTIVE_PATTERNS)
-  ) {
+  const distillerSignalText = [
+    params.objective,
+    compact(params.bundle.decision.next_action),
+    compact(params.bundle.decision.promote_as),
+    compact(params.status.workflow.lastDecisionDistillate?.summary),
+    compact(params.status.workflow.lastDecisionDistillate?.nextAction),
+  ].join(' ');
+
+  const guardianSignalText = [
+    params.objective,
+    compact(params.bundle.decision.next_action),
+    compact(params.bundle.recall.blocked_action),
+    compact(params.bundle.recall.next_action),
+    compact(params.status.workflow.lastDecisionDistillate?.summary),
+    compact(params.status.workflow.lastDecisionDistillate?.nextAction),
+  ].join(' ');
+
+  const runtimeSignalText = [
+    ...params.bundle.capability_demands.map((entry) => compact(entry.summary)),
+    ...params.bundle.capability_demands.map((entry) => compact(entry.missing_capability)),
+    ...toList(params.bundle.hermes_runtime?.blockers),
+    ...toList(params.bundle.hermes_runtime?.next_actions),
+  ].join(' ');
+
+  if (params.bundle.hermes_runtime.awaiting_reentry_acknowledgment_stale === true) {
     return GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE;
   }
 
   if (
     compact(params.bundle.workflow.status).toLowerCase() === 'released'
-    && matchesHermesContextProfilePattern(signalText, HERMES_DISTILLER_OBJECTIVE_PATTERNS)
+    && matchesHermesContextProfilePattern(distillerSignalText, HERMES_DISTILLER_OBJECTIVE_PATTERNS)
   ) {
     return DISTILLER_HERMES_RUNTIME_CONTEXT_PROFILE;
   }
 
-  if (matchesHermesContextProfilePattern(signalText, HERMES_SCOUT_OBJECTIVE_PATTERNS)) {
+  if (matchesHermesContextProfilePattern(objectiveSignalText, HERMES_SCOUT_OBJECTIVE_PATTERNS)) {
     return SCOUT_HERMES_RUNTIME_CONTEXT_PROFILE;
   }
 
-  if (matchesHermesContextProfilePattern(signalText, HERMES_EXECUTOR_OBJECTIVE_PATTERNS)) {
+  if (matchesHermesContextProfilePattern(objectiveSignalText, HERMES_EXECUTOR_OBJECTIVE_PATTERNS)) {
     return EXECUTOR_HERMES_RUNTIME_CONTEXT_PROFILE;
+  }
+
+  if (matchesHermesContextProfilePattern(`${guardianSignalText} ${runtimeSignalText}`.trim(), HERMES_GUARDIAN_OBJECTIVE_PATTERNS)) {
+    return GUARDIAN_HERMES_RUNTIME_CONTEXT_PROFILE;
   }
 
   return DELEGATED_HERMES_RUNTIME_CONTEXT_PROFILE;
@@ -1201,6 +1636,89 @@ const collectRuntimeLaunchFiles = (params: {
   ]).slice(0, MAX_HERMES_RUNTIME_LAUNCH_FILES);
 };
 
+const buildHermesSwarmLaunchPrompt = (params: {
+  objective: string;
+  bundle: OpenJarvisSessionOpenBundle;
+  status: OpenJarvisAutopilotStatus;
+  contextProfile: HermesRuntimeContextProfile;
+  waveId: string;
+  boardRelativePath: string | null;
+  shardRelativePath: string;
+  shard: HermesRuntimeNormalizedSwarmShard;
+}): string => {
+  const basePrompt = buildHermesRuntimeLaunchPrompt({
+    objective: params.objective,
+    bundle: params.bundle,
+    status: params.status,
+    contextProfile: params.contextProfile,
+  });
+  const profilePrompt = buildHermesContextProfilePrompt({
+    basePrompt,
+    objective: params.objective,
+    bundle: params.bundle,
+    contextProfile: params.contextProfile,
+  });
+  const ackBase = buildHermesSwarmAckFlagBase({
+    contextProfile: params.contextProfile,
+    boardRelativePath: params.boardRelativePath,
+    shardRelativePath: params.shardRelativePath,
+    waveId: params.waveId,
+    shardId: params.shard.shardId,
+  });
+  const lines = [
+    profilePrompt,
+    '',
+    'Parallel Swarm Contract',
+    `- wave_id: ${params.waveId}`,
+    `- shard_id: ${params.shard.shardId}`,
+    `- worker_role: ${params.contextProfile}`,
+    `- board_path: ${params.boardRelativePath || '(none)'}`,
+    `- shard_packet: ${params.shardRelativePath}`,
+    `- acceptance_owner: ${params.shard.acceptanceOwner || 'coordinator-gpt'}`,
+    `- worktree_path: ${params.shard.worktreePath || '(none)'}`,
+    '- do not widen scope outside this shard without recalling the coordinator',
+    '- do not edit outside the artifact budget when code changes are involved',
+  ];
+
+  appendSection(lines, 'Artifact Budget', params.shard.artifactBudget);
+  appendSection(lines, 'Shard Dependencies', params.shard.dependsOn);
+  appendSection(lines, 'Recall Condition', [params.shard.recallCondition || 'Recall the coordinator on cross-shard conflicts, policy edges, or architecture changes.']);
+  appendSection(lines, 'Definition Of Done', [params.shard.completionDefinition || 'Leave one bounded verified result that the coordinator can accept without replaying the whole turn.']);
+  appendSection(lines, 'Swarm Closeout Ack', [
+    `completed: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed ${ackBase} --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"`,
+    `blocked: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=blocked ${ackBase} --summary="<blocker summary>" --blockedAction="<blocked action>" --nextAction="<required recall step>"`,
+    `failed: npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=failed ${ackBase} --summary="<failure summary>" --blockedAction="<failed action>" --nextAction="<recovery step>"`,
+  ]);
+
+  return lines.join('\n').trim();
+};
+
+const collectHermesSwarmLaunchFiles = (params: {
+  status: OpenJarvisAutopilotStatus;
+  bundle: OpenJarvisSessionOpenBundle;
+  shard: HermesRuntimeNormalizedSwarmShard;
+  boardAbsolutePath: string | null;
+  shardAbsolutePath: string | null;
+}): string[] => {
+  const shardLaunchFiles: Array<string | null> = [
+    ...params.shard.addFilePaths,
+    ...params.shard.artifactBudget,
+    params.boardAbsolutePath,
+    params.shardAbsolutePath,
+  ];
+
+  return uniqueStrings([
+    ...collectRuntimeLaunchFiles({
+      status: params.status,
+      bundle: params.bundle,
+      objective: params.shard.objective,
+      contextProfile: params.shard.contextProfile,
+      addFilePaths: shardLaunchFiles.filter((entry): entry is string => Boolean(entry)),
+    }),
+    ...shardLaunchFiles,
+  ]).slice(0, MAX_HERMES_RUNTIME_LAUNCH_FILES);
+};
+
 export const createOpenJarvisHermesRuntimeChatNote = async (
   params: HermesRuntimeChatNoteParams = {},
 ): Promise<HermesRuntimeChatNoteResult> => {
@@ -1571,6 +2089,7 @@ export const prepareOpenJarvisHermesSessionStart = async (
         dryRun: params.dryRun === true,
         visibleTerminal: params.visibleTerminal !== false,
         autoLaunchQueuedChat: params.autoLaunchQueuedChat === true,
+        autoLaunchQueuedSwarm: params.autoLaunchQueuedSwarm === true,
         autoLaunchQueuedChatContextProfile: params.contextProfile || null,
       })
       : null;
@@ -1689,6 +2208,7 @@ export const launchOpenJarvisHermesChatSession = async (
     prompt,
     chatMode: compact(params.chatMode) || DEFAULT_HERMES_CHAT_MODE,
     addFilePaths,
+    allowedRoots: params.allowedRoots || null,
     maximize: params.maximize !== false,
     newWindow: params.newWindow === true,
     reuseWindow: params.newWindow === true ? false : params.reuseWindow !== false,
@@ -1719,6 +2239,454 @@ export const launchOpenJarvisHermesChatSession = async (
   });
 };
 
+export const launchOpenJarvisHermesSwarmWave = async (
+  params: HermesRuntimeLaunchSwarmParams = {},
+): Promise<HermesRuntimeLaunchSwarmResult> => {
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
+  const dryRun = params.dryRun === true;
+
+  const finalize = (partial: Omit<HermesRuntimeLaunchSwarmResult, 'startedAt' | 'finishedAt' | 'durationMs'>): HermesRuntimeLaunchSwarmResult => ({
+    ...partial,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedMs,
+  });
+
+  const vaultPath = resolveVaultPath(params.vaultPath || null);
+  if (!vaultPath) {
+    return finalize({
+      ok: false,
+      completion: 'skipped',
+      waveId: null,
+      waveObjective: null,
+      boardPath: null,
+      shardPaths: [],
+      launches: [],
+      errorCode: 'VAULT_PATH_REQUIRED',
+      error: 'vault path is required for Hermes swarm planning and launch',
+    });
+  }
+
+  const status = await getOpenJarvisAutopilotStatus(params);
+  const bundle = await getOpenJarvisSessionOpenBundle({
+    ...params,
+    status,
+  });
+  const waveObjective = normalizeObjective(params.waveObjective)
+    || normalizeObjective(status.autonomous_goal_candidates?.[0]?.objective)
+    || normalizeObjective(status.workflow.objective);
+  if (!waveObjective) {
+    return finalize({
+      ok: false,
+      completion: 'skipped',
+      waveId: null,
+      waveObjective: null,
+      boardPath: null,
+      shardPaths: [],
+      launches: [],
+      errorCode: 'VALIDATION',
+      error: 'wave objective is required for Hermes swarm launch',
+    });
+  }
+
+  const shards = normalizeHermesSwarmShards({
+    shards: params.shards,
+    waveObjective,
+    includeDistiller: params.includeDistiller === true,
+  });
+  if (shards.length === 0) {
+    return finalize({
+      ok: false,
+      completion: 'skipped',
+      waveId: null,
+      waveObjective,
+      boardPath: null,
+      shardPaths: [],
+      launches: [],
+      errorCode: 'VALIDATION',
+      error: 'at least one valid swarm shard is required',
+    });
+  }
+
+  const waveId = buildHermesSwarmWaveId(waveObjective);
+  const boardRelativePath = resolveVaultRelativePath(vaultPath, params.boardPath || DEFAULT_HERMES_SWARM_BOARD_RELATIVE_PATH);
+  const boardAbsolutePath = boardRelativePath ? resolveVaultAbsolutePath(vaultPath, boardRelativePath) : null;
+  if (!boardRelativePath || !boardAbsolutePath) {
+    return finalize({
+      ok: false,
+      completion: 'skipped',
+      waveId,
+      waveObjective,
+      boardPath: null,
+      shardPaths: [],
+      launches: [],
+      errorCode: 'VALIDATION',
+      error: 'swarm board path could not be resolved inside the vault root',
+    });
+  }
+
+  const shardPlans = shards.map((shard, index) => {
+    const shardRelativePath = `${DEFAULT_HERMES_SWARM_SHARDS_DIR}/${waveId}/${String(index + 1).padStart(2, '0')}-${shard.shardId}.md`;
+    const shardAbsolutePath = resolveVaultAbsolutePath(vaultPath, shardRelativePath);
+    const prompt = buildHermesSwarmLaunchPrompt({
+      objective: shard.objective,
+      bundle,
+      status,
+      contextProfile: shard.contextProfile,
+      waveId,
+      boardRelativePath,
+      shardRelativePath,
+      shard,
+    });
+    return {
+      shard,
+      shardRelativePath,
+      shardAbsolutePath,
+      prompt,
+    };
+  });
+
+  if (!dryRun) {
+    const initialBoardContent = buildHermesSwarmBoardContent({
+      waveId,
+      waveObjective,
+      boardRelativePath,
+      shards: shardPlans.map((entry) => ({
+        shard: entry.shard,
+        shardPath: entry.shardRelativePath,
+        state: 'planned',
+      })),
+    });
+    const writtenBoardPath = await writeVaultDocument({
+      vaultPath,
+      relativePath: boardRelativePath,
+      content: initialBoardContent,
+    });
+    if (!writtenBoardPath) {
+      return finalize({
+        ok: false,
+        completion: 'skipped',
+        waveId,
+        waveObjective,
+        boardPath: boardRelativePath,
+        shardPaths: shardPlans.map((entry) => entry.shardRelativePath),
+        launches: [],
+        errorCode: 'WRITE_FAILED',
+        error: 'failed to write the Hermes swarm board note',
+      });
+    }
+
+    for (const shardPlan of shardPlans) {
+      const content = buildHermesSwarmShardPacketContent({
+        waveId,
+        boardRelativePath,
+        shardRelativePath: shardPlan.shardRelativePath,
+        shard: shardPlan.shard,
+        state: 'planned',
+        prompt: shardPlan.prompt,
+      });
+      const writtenShardPath = await writeVaultDocument({
+        vaultPath,
+        relativePath: shardPlan.shardRelativePath,
+        content,
+      });
+      if (!writtenShardPath) {
+        return finalize({
+          ok: false,
+          completion: 'skipped',
+          waveId,
+          waveObjective,
+          boardPath: boardRelativePath,
+          shardPaths: shardPlans.map((entry) => entry.shardRelativePath),
+          launches: [],
+          errorCode: 'WRITE_FAILED',
+          error: `failed to write the Hermes swarm shard packet for ${shardPlan.shard.shardId}`,
+        });
+      }
+    }
+  }
+
+  const launches: HermesRuntimeLaunchSwarmShardResult[] = [];
+  let overallOk = true;
+
+  for (const shardPlan of shardPlans) {
+    const addFilePaths = collectHermesSwarmLaunchFiles({
+      status,
+      bundle,
+      shard: shardPlan.shard,
+      boardAbsolutePath,
+      shardAbsolutePath: shardPlan.shardAbsolutePath,
+    });
+    const launchResult = await launchOpenJarvisHermesChatSession({
+      ...params,
+      objective: shardPlan.shard.objective,
+      prompt: shardPlan.prompt,
+      contextProfile: shardPlan.shard.contextProfile,
+      addFilePaths,
+      allowedRoots: shardPlan.shard.worktreePath ? [shardPlan.shard.worktreePath] : null,
+      maximize: params.maximize !== false,
+      newWindow: params.newWindow !== false,
+      reuseWindow: params.newWindow === true ? false : params.reuseWindow === true,
+      dryRun,
+      vaultPath,
+    });
+    const shardResult: HermesRuntimeLaunchSwarmShardResult = {
+      shardId: shardPlan.shard.shardId,
+      objective: shardPlan.shard.objective,
+      contextProfile: shardPlan.shard.contextProfile,
+      boardPath: boardRelativePath,
+      shardPath: shardPlan.shardRelativePath,
+      worktreePath: shardPlan.shard.worktreePath,
+      completion: launchResult.completion,
+      command: launchResult.command,
+      pid: launchResult.pid,
+      errorCode: launchResult.errorCode,
+      error: launchResult.error,
+      launchResult,
+    };
+    launches.push(shardResult);
+    overallOk = overallOk && launchResult.ok;
+
+    if (!dryRun) {
+      const nextShardContent = buildHermesSwarmShardPacketContent({
+        waveId,
+        boardRelativePath,
+        shardRelativePath: shardPlan.shardRelativePath,
+        shard: shardPlan.shard,
+        state: launchResult.ok ? 'queued' : 'failed',
+        prompt: shardPlan.prompt,
+        launchCommand: launchResult.command,
+        pid: launchResult.pid,
+      });
+      const writtenShardPath = await writeVaultDocument({
+        vaultPath,
+        relativePath: shardPlan.shardRelativePath,
+        content: nextShardContent,
+      });
+      if (!writtenShardPath) {
+        overallOk = false;
+      }
+    }
+  }
+
+  if (!dryRun) {
+    const finalBoardContent = buildHermesSwarmBoardContent({
+      waveId,
+      waveObjective,
+      boardRelativePath,
+      shards: launches.map((launchResult) => ({
+        shard: shardPlans.find((entry) => entry.shard.shardId === launchResult.shardId)?.shard || shardPlans[0].shard,
+        shardPath: launchResult.shardPath,
+        state: launchResult.error ? 'failed' : (launchResult.completion === 'queued' ? 'queued' : 'planned'),
+        pid: launchResult.pid,
+      })),
+    });
+    const writtenBoardPath = await writeVaultDocument({
+      vaultPath,
+      relativePath: boardRelativePath,
+      content: finalBoardContent,
+    });
+    if (!writtenBoardPath) {
+      overallOk = false;
+    }
+  }
+
+  return finalize({
+    ok: overallOk,
+    completion: dryRun ? 'skipped' : 'queued',
+    waveId,
+    waveObjective,
+    boardPath: boardRelativePath,
+    shardPaths: shardPlans.map((entry) => entry.shardRelativePath),
+    launches,
+    errorCode: overallOk ? null : 'WRITE_FAILED',
+    error: overallOk ? null : 'one or more swarm artifacts or launches failed',
+  });
+};
+
+export const recordOpenJarvisHermesSwarmCloseout = async (
+  params: HermesRuntimeSwarmCloseoutParams,
+): Promise<HermesRuntimeSwarmCloseoutResult> => {
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
+  const dryRun = params.dryRun === true;
+  const shardId = slugifyHermesToken(params.shardId, 'shard');
+  const workerRole = normalizeHermesRuntimeContextProfile(params.workerRole);
+  const vaultPath = resolveVaultPath(params.vaultPath || null);
+
+  const finalize = (partial: Omit<HermesRuntimeSwarmCloseoutResult, 'startedAt' | 'finishedAt' | 'durationMs'>): HermesRuntimeSwarmCloseoutResult => ({
+    ...partial,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedMs,
+  });
+
+  if (!vaultPath) {
+    return finalize({
+      ok: false,
+      completion: 'skipped',
+      waveId: toNullableString(params.waveId),
+      shardId: toNullableString(params.shardId),
+      workerRole,
+      boardPath: toNullableString(params.boardPath),
+      shardPath: toNullableString(params.shardPath),
+      errorCode: 'VAULT_PATH_REQUIRED',
+      error: 'vault path is required to record Hermes swarm closeout state',
+    });
+  }
+
+  const boardRelativePath = params.boardPath ? resolveVaultRelativePath(vaultPath, params.boardPath) : null;
+  const shardRelativePath = params.shardPath ? resolveVaultRelativePath(vaultPath, params.shardPath) : null;
+  if (!boardRelativePath && !shardRelativePath) {
+    return finalize({
+      ok: false,
+      completion: 'skipped',
+      waveId: toNullableString(params.waveId),
+      shardId: toNullableString(params.shardId),
+      workerRole,
+      boardPath: null,
+      shardPath: null,
+      errorCode: 'VALIDATION',
+      error: 'at least one board or shard path is required for swarm closeout recording',
+    });
+  }
+
+  const acknowledgedAt = new Date().toISOString();
+  const closeoutLine = buildHermesSwarmCloseoutLine({
+    acknowledgedAt,
+    waveId: toNullableString(params.waveId),
+    shardId,
+    workerRole,
+    completionStatus: params.completionStatus,
+    summary: toNullableString(params.summary),
+    nextAction: toNullableString(params.nextAction),
+    blockedAction: toNullableString(params.blockedAction),
+  });
+
+  if (dryRun) {
+    return finalize({
+      ok: true,
+      completion: 'skipped',
+      waveId: toNullableString(params.waveId),
+      shardId,
+      workerRole,
+      boardPath: boardRelativePath,
+      shardPath: shardRelativePath,
+      errorCode: null,
+      error: null,
+    });
+  }
+
+  if (boardRelativePath) {
+    const boardContent = await readVaultDocument(vaultPath, boardRelativePath);
+    if (boardContent === null) {
+      return finalize({
+        ok: false,
+        completion: 'skipped',
+        waveId: toNullableString(params.waveId),
+        shardId,
+        workerRole,
+        boardPath: boardRelativePath,
+        shardPath: shardRelativePath,
+        errorCode: 'WRITE_FAILED',
+        error: 'failed to read the Hermes swarm board note',
+      });
+    }
+    const nextBoardContent = upsertBulletSectionItem({
+      content: boardContent,
+      heading: HERMES_SWARM_CLOSEOUTS_SECTION_HEADING,
+      match: (item) => item.includes(`shard_id=${shardId}`),
+      nextItem: closeoutLine,
+      maxItems: 16,
+    });
+    const writtenBoardPath = await writeVaultDocument({
+      vaultPath,
+      relativePath: boardRelativePath,
+      content: nextBoardContent,
+    });
+    if (!writtenBoardPath) {
+      return finalize({
+        ok: false,
+        completion: 'skipped',
+        waveId: toNullableString(params.waveId),
+        shardId,
+        workerRole,
+        boardPath: boardRelativePath,
+        shardPath: shardRelativePath,
+        errorCode: 'WRITE_FAILED',
+        error: 'failed to update the Hermes swarm board note',
+      });
+    }
+  }
+
+  if (shardRelativePath) {
+    const shardContent = await readVaultDocument(vaultPath, shardRelativePath);
+    if (shardContent === null) {
+      return finalize({
+        ok: false,
+        completion: 'skipped',
+        waveId: toNullableString(params.waveId),
+        shardId,
+        workerRole,
+        boardPath: boardRelativePath,
+        shardPath: shardRelativePath,
+        errorCode: 'WRITE_FAILED',
+        error: 'failed to read the Hermes swarm shard packet',
+      });
+    }
+    const nextStatusLines = [
+      `state: ${params.completionStatus}`,
+      `wave_id: ${toNullableString(params.waveId) || '(none)'}`,
+      `shard_id: ${shardId}`,
+      `worker_role: ${workerRole}`,
+      `summary: ${toNullableString(params.summary) || '(none)'}`,
+      `next_action: ${toNullableString(params.nextAction) || '(none)'}`,
+      `blocked_action: ${toNullableString(params.blockedAction) || '(none)'}`,
+      `acknowledged_at: ${acknowledgedAt}`,
+    ];
+    let nextShardContent = replaceBulletSection(shardContent, HERMES_SWARM_STATUS_SECTION_HEADING, nextStatusLines);
+    nextShardContent = replaceBulletSection(nextShardContent, HERMES_SWARM_LATEST_CLOSEOUT_SECTION_HEADING, [closeoutLine]);
+    nextShardContent = upsertBulletSectionItem({
+      content: nextShardContent,
+      heading: HERMES_SWARM_ACK_HISTORY_SECTION_HEADING,
+      match: (item) => item === closeoutLine,
+      nextItem: closeoutLine,
+      maxItems: 12,
+    });
+    const writtenShardPath = await writeVaultDocument({
+      vaultPath,
+      relativePath: shardRelativePath,
+      content: nextShardContent,
+    });
+    if (!writtenShardPath) {
+      return finalize({
+        ok: false,
+        completion: 'skipped',
+        waveId: toNullableString(params.waveId),
+        shardId,
+        workerRole,
+        boardPath: boardRelativePath,
+        shardPath: shardRelativePath,
+        errorCode: 'WRITE_FAILED',
+        error: 'failed to update the Hermes swarm shard packet',
+      });
+    }
+  }
+
+  return finalize({
+    ok: true,
+    completion: 'updated',
+    waveId: toNullableString(params.waveId),
+    shardId,
+    workerRole,
+    boardPath: boardRelativePath,
+    shardPath: shardRelativePath,
+    errorCode: null,
+    error: null,
+  });
+};
+
 const buildGoalCycleCommand = (params: {
   runtimeLane?: string | null;
   sessionPath?: string | null;
@@ -1728,6 +2696,10 @@ const buildGoalCycleCommand = (params: {
   visibleTerminal?: boolean;
   autoLaunchQueuedChat?: boolean;
   autoLaunchQueuedChatContextProfile?: string | null;
+  autoLaunchQueuedSwarm?: boolean;
+  autoLaunchQueuedSwarmIncludeDistiller?: boolean;
+  autoLaunchQueuedSwarmExecutorWorktreePath?: string | null;
+  autoLaunchQueuedSwarmExecutorArtifactBudget?: string[] | null;
   dryRun?: boolean;
 }): string[] => {
   const args = [
@@ -1759,11 +2731,28 @@ const buildGoalCycleCommand = (params: {
   if (params.gcpCapacityRecoveryRequested === true) {
     args.push('--gcpCapacityRecovery=true');
   }
+  if (params.autoLaunchQueuedSwarm === true) {
+    args.push('--autoLaunchQueuedSwarm=true');
+  }
   if (params.autoLaunchQueuedChat === true) {
     args.push('--autoLaunchQueuedChat=true');
   }
   const autoLaunchQueuedChatContextProfile = compact(params.autoLaunchQueuedChatContextProfile);
-  if (autoLaunchQueuedChatContextProfile) {
+  if (params.autoLaunchQueuedSwarm === true) {
+    if (params.autoLaunchQueuedSwarmIncludeDistiller === true) {
+      args.push('--autoLaunchQueuedSwarmIncludeDistiller=true');
+    }
+    const executorWorktreePath = compact(params.autoLaunchQueuedSwarmExecutorWorktreePath);
+    if (executorWorktreePath) {
+      args.push(`--autoLaunchQueuedSwarmExecutorWorktreePath=${executorWorktreePath}`);
+    }
+    const executorArtifactBudget = toList(params.autoLaunchQueuedSwarmExecutorArtifactBudget)
+      .map((entry) => compact(entry))
+      .filter(Boolean);
+    if (executorArtifactBudget.length > 0) {
+      args.push(`--autoLaunchQueuedSwarmExecutorArtifactBudget=${executorArtifactBudget.join(',')}`);
+    }
+  } else if (autoLaunchQueuedChatContextProfile) {
     args.push(`--autoLaunchQueuedChatContextProfile=${autoLaunchQueuedChatContextProfile}`);
   }
 
@@ -1820,6 +2809,10 @@ export const runOpenJarvisHermesRuntimeRemediation = async (
       visibleTerminal: params.visibleTerminal !== false,
       autoLaunchQueuedChat: params.autoLaunchQueuedChat === true,
       autoLaunchQueuedChatContextProfile: params.autoLaunchQueuedChatContextProfile || null,
+      autoLaunchQueuedSwarm: params.autoLaunchQueuedSwarm === true,
+      autoLaunchQueuedSwarmIncludeDistiller: params.autoLaunchQueuedSwarmIncludeDistiller === true,
+      autoLaunchQueuedSwarmExecutorWorktreePath: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+      autoLaunchQueuedSwarmExecutorArtifactBudget: params.autoLaunchQueuedSwarmExecutorArtifactBudget || null,
       dryRun,
     });
     const command = ['node', ...commandArgs].join(' ');

@@ -66,6 +66,7 @@ describe('apiFirstAgentFallbackService', () => {
     expect(catalog.model).toBe('API-First & Agent-Fallback');
     expect(catalog.runtimeSignals.configuredN8nTaskCount).toBe(4);
     expect(catalog.runtimeSignals.upstreamNamespaces).toEqual(['gcpcompute']);
+    expect(catalog.runtimeSignals.sharedWrapperNamespaces).toEqual(['gcpcompute']);
     expect(catalog.surfaces.find((surface) => surface.surfaceId === 'github-artifact-plane')?.layer).toBe('artifact-review');
     expect(catalog.surfaces.find((surface) => surface.surfaceId === 'n8n-router')?.operationalState).toBe('ready');
     expect(catalog.surfaces.find((surface) => surface.surfaceId === 'gcpcompute-shared-mcp')?.operationalState).toBe('ready');
@@ -77,6 +78,46 @@ describe('apiFirstAgentFallbackService', () => {
     expect(catalog.orchestrationGuidance.currentPriority).toBe('compact-bootstrap-first');
     expect(catalog.orchestrationGuidance.advisorStrategy.recommendedByDefault).toBe(false);
     expect(catalog.orchestrationGuidance.tokenContextEconomics.latestAuditHighlights[0]).toContain('context-footprint audit');
+  });
+
+  it('keeps the shared wrapper surface missing when only operator-only upstreams are enabled', async () => {
+    mockListUpstreamDiagnostics.mockReturnValue([
+      {
+        id: 'local-shell',
+        namespace: 'local-shell',
+        enabled: true,
+        audience: 'operator',
+      },
+    ]);
+
+    const { buildAutomationCapabilityCatalog, buildAutomationOptimizerPlan, previewApiFirstAgentFallbackRoute } = await import('./apiFirstAgentFallbackService');
+    const [catalog, preview, plan] = await Promise.all([
+      buildAutomationCapabilityCatalog(),
+      previewApiFirstAgentFallbackRoute({
+        objective: 'triage a new customer support email',
+        trigger: 'webhook',
+        structuredDataAvailable: true,
+        clearApiAnswer: false,
+        requiresReasoning: true,
+        executionPreference: 'hybrid',
+      }),
+      buildAutomationOptimizerPlan({
+        objective: 'design a public Discord autopilot that drafts alerts and escalates only on policy boundaries',
+        trigger: 'webhook',
+        structuredDataAvailable: true,
+        clearApiAnswer: false,
+        requiresReasoning: true,
+        candidateApis: ['alert-dispatch'],
+        runtimeLane: 'public-guild',
+        sharedBenefitPhase: 'constraint-only',
+      }),
+    ]);
+
+    expect(catalog.runtimeSignals.upstreamNamespaces).toEqual(['local-shell']);
+    expect(catalog.runtimeSignals.sharedWrapperNamespaces).toEqual([]);
+    expect(catalog.surfaces.find((surface) => surface.surfaceId === 'gcpcompute-shared-mcp')?.operationalState).toBe('missing');
+    expect(preview.fallbackPath.surfaces).not.toContain('gcpcompute-shared-mcp');
+    expect(plan.assetDelegationMatrix.find((entry) => entry.assetId === 'gcpcompute-shared-mcp')?.currentState).toBe('missing');
   });
 
   it('prefers API-first with agent fallback when a deterministic path exists but reasoning may still be needed', async () => {
@@ -172,6 +213,20 @@ describe('apiFirstAgentFallbackService', () => {
     expect(draft.starterCandidates[0]?.task).toBe('youtube-community-scrape');
     expect(draft.starterCandidates[0]?.seedPayload).toEqual(expect.objectContaining({
       name: 'muel local youtube community scrape starter',
+    }));
+    expect(draft.installPath).toEqual(expect.objectContaining({
+      status: 'approval-gated-installable',
+      approvalGate: expect.objectContaining({
+        required: true,
+        actionName: 'n8n.workflow.install',
+      }),
+      commands: expect.objectContaining({
+        preview: expect.stringContaining('n8n:local:seed:plan'),
+        requestApproval: expect.stringContaining('n8n:local:seed:request'),
+        approveAndApply: expect.stringContaining('n8n:local:seed:approve-and-apply'),
+        rollback: expect.stringContaining('n8n:local:rollback'),
+      }),
+      operationLogRoot: 'tmp/n8n-local/operations',
     }));
     expect(draft.stages.find((stage) => stage.stageId === 'artifact-settlement')).toEqual(expect.objectContaining({
       owner: 'github-artifact-plane',

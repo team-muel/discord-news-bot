@@ -49,7 +49,7 @@ requireText(envTemplate, '- HF_TOKEN=<secret> (if huggingface; primary key)', en
 requireText(envTemplate, '- HF_API_KEY=<secret> (huggingface alias)', envTemplatePath);
 requireText(envTemplate, '- HUGGINGFACE_API_KEY=<secret> (huggingface alias)', envTemplatePath);
 requireText(envTemplate, 'Provider fallback controls:', envTemplatePath);
-requireText(envTemplate, '- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=false (optional)', envTemplatePath);
+requireText(envTemplate, '- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true (optional)', envTemplatePath);
 
 // Bootstrap profile DAG anchors
 requireText(runbook, '### 3.7 Bootstrap Profiles and Startup DAG', runbookPath);

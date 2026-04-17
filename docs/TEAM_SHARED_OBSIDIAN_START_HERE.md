@@ -14,6 +14,14 @@
 - Internal role labels such as implement, architect, review, and operate are repository-local collaboration labels. They are not proof that similarly named external tools are installed.
 - If one operator runs a richer local stack, treat it as a continuity or acceleration lane. Promote only the durable rules, decisions, and workflow contracts into shared Obsidian and canonical repo docs.
 
+## Plane Contract For Shared Onboarding
+
+| Plane ID | What a teammate should use it for first | Canonical source | Escalate only when |
+| --- | --- | --- | --- |
+| `team-shared-plane` | onboarding, semantic recovery, durable team-visible meaning, local-stack-free topology recovery | this doc, shared Obsidian through shared MCP, and backfilled `ops/control-tower/*` artifacts | the question becomes deployed runtime health or workstation-only mutation |
+| `service-machine` | deployed runtime truth, callable surfaces, worker ownership, operator verification | `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, and operator-visible runtime endpoints | the task explicitly requires local workstation execution |
+| `local-agent-machine` | bounded local mutation, Multica issue lanes, workstation-specific validation | `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md` and local control-plane doctor or repair flows | never for baseline onboarding; only for explicit workstation work |
+
 ## Recommended Team Methodology
 
 - Recommend the repository's gradual acceleration method as the default collaboration path instead of inventing a parallel team workflow.
@@ -30,6 +38,14 @@
 - ACP, VS Code chat launch, bridge logs, and other local control transports are transports only. They do not own state.
 - Shared-team rule: write mutable workstream state to Supabase first when a structured runtime field exists, then project the compact delta or packet mirror into shared Obsidian.
 
+## Shared Obsidian And Shared MCP Onboarding Contract
+
+- Shared Obsidian is the semantic owner for onboarding context, decisions, playbooks, retros, and cross-session meaning.
+- Shared MCP is the retrieval and verification transport for the team-shared plane; treat `/mcp` as the canonical shared ingress when available.
+- Repo docs are the visible source and compatibility mirror that feed shared backfill; they are not a replacement for the shared semantic owner.
+- A teammate without Hermes, OpenJarvis, ACP, or local models must still be able to recover the current topology from shared Obsidian, shared MCP, repo source docs, and operator-visible runtime endpoints.
+- If that recovery path is missing, treat it as a documentation or backfill gap to fix in the same change window rather than silently switching to a local-only explanation.
+
 ## How To Share This With The Team
 
 1. Share the method first through this startHere doc and shared Obsidian, not through a private local runtime setup.
@@ -38,14 +54,15 @@
 4. Treat local Hermes or OpenJarvis runs as acceleration lanes that feed the shared surfaces, not as hidden team prerequisites.
 5. When a teammate does not have Hermes, OpenJarvis, or ACP, they should still be able to recover the active state from shared Obsidian plus operator-visible runtime summaries.
 
-## Start Here Order
+## Shared-Only Start Here Order
 
 1. Read this document first when onboarding or when tool ownership is unclear.
-2. Read `docs/ARCHITECTURE_INDEX.md` for current repository boundaries.
-3. Read `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before assuming a tool name means direct integration.
-4. Read `docs/RUNBOOK_MUEL_PLATFORM.md` for operator procedure.
-5. Read `docs/planning/TEAM_SHAREABLE_USER_MEMORY.md` for collaboration preferences that should survive across sessions.
-6. Read `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` for lead, consult, handoff, and escalation behavior.
+2. Read `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` before assuming a tool name, lane, or machine is the owner surface.
+3. Read `docs/RUNBOOK_MUEL_PLATFORM.md` for service-machine verification and operator procedure.
+4. Read `docs/planning/mcp/IDE_MCP_WORKSPACE_SETUP.md` for shared MCP onboarding and team-shared access posture.
+5. Read `docs/ARCHITECTURE_INDEX.md` for current repository boundaries.
+6. Read `docs/planning/TEAM_SHAREABLE_USER_MEMORY.md` for collaboration preferences that should survive across sessions.
+7. Read `docs/planning/LOCAL_COLLAB_AGENT_WORKFLOW.md` only when the task now requires local mutation or local lead-consult behavior.
 
 ## Obsidian-First Collaboration Rules
 
@@ -58,6 +75,7 @@
 
 - Do not assume every teammate has OpenJarvis installed.
 - Do not assume every teammate has Hermes Agent or the same local model stack.
+- Do not assume `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md` is required for shared onboarding; it is the local-agent-machine playbook, not the shared-plane entrypoint.
 - Do not treat local prompt habits, local wrapper scripts, or personal runtime glue as team truth until they are registered in shared docs or shared Obsidian.
 - Do not treat names alone as runtime truth. Verify against `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md` and operator-visible runtime surfaces.
 
@@ -66,4 +84,5 @@
 - Update always-on agent instructions when the rule affects agent behavior.
 - Update a canonical repo doc when the rule affects humans or operators.
 - Update `config/runtime/knowledge-backfill-catalog.json` when the rule should appear on the shared knowledge surface.
+- Confirm that a teammate without a local stack can still recover plane ownership, service verification order, and shared entrypoints from the shared plane alone.
 - Promote the shared Obsidian mirror before closing the same change window.

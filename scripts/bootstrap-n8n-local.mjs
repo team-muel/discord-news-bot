@@ -14,6 +14,7 @@ const DEFAULT_OUTPUT_DIR = path.join(ROOT, 'tmp', 'n8n-local');
 const DEFAULT_BASE_URL = 'http://127.0.0.1:5678';
 const DEFAULT_TIMEZONE = 'Asia/Seoul';
 const DEFAULT_WORKFLOW_MANIFEST_FILE = 'starter-workflows.manifest.json';
+const DEFAULT_OPERATION_DIR_NAME = 'operations';
 const N8N_API_TIMEOUT_MS = 10_000;
 const DEFAULT_N8N_CONTAINER_NAME = 'muel-local-n8n';
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:latest';
@@ -43,6 +44,8 @@ const WEBHOOK_HINTS = {
 };
 
 const fileName = fileURLToPath(import.meta.url);
+
+export const N8N_STARTER_INSTALL_ACTION_NAME = 'n8n.workflow.install';
 
 const buildDeterministicWebhookId = (value) => {
   const hex = createHash('sha1').update(String(value || '')).digest('hex');
@@ -1029,20 +1032,25 @@ Recommended flow:
 1. Review .env and change N8N_BASIC_AUTH_PASSWORD before first long-running use.
 2. Start n8n with: npm run n8n:local:start
 3. Open ${baseUrl} and sign in with the basic-auth credentials from .env.
-4. Seed the full starter bundle with: npm run n8n:local:seed
-5. If you want repo-driven workflow CRUD or update-from-repo over the public API, generate the local repo key with: npm run n8n:local:api-key:ensure
-6. If N8N_API_KEY is absent but the local container is running, the seed command first tries local public API auto-provision and then falls back to container CLI import automatically.
-7. Review the seeded workflows you actually want to run. The starter bundle imports active by default so localhost webhook execution works immediately.
-8. Re-apply your repo env profile if needed: npm run env:profile:local or npm run env:profile:local-first-hybrid
-9. Verify with: npm run n8n:local:doctor
+4. Preview the deterministic install plan with: npm run n8n:local:seed:plan
+5. Create an approval-gated install request with: npm run n8n:local:seed:request
+6. Approve and apply the request with: npm run n8n:local:seed:approve-and-apply -- --requestId=<approval-request-id> --actorId=<operator-id>
+7. If you need breakglass local-only maintenance, you can still seed directly with: npm run n8n:local:seed
+8. If you want repo-driven workflow CRUD or update-from-repo over the public API, generate the local repo key with: npm run n8n:local:api-key:ensure
+9. If N8N_API_KEY is absent but the local container is running, the seed command first tries local public API auto-provision and then falls back to container CLI import automatically.
+10. Keep the operation log under ${outputDir}/operations and roll back with: npm run n8n:local:rollback -- --operationId=<operation-id>
+11. Re-apply your repo env profile if needed: npm run env:profile:local or npm run env:profile:local-first-hybrid
+12. Verify with: npm run n8n:local:doctor
 
 Important notes:
 - In this repo, "local self-hosted n8n" means the OSS Docker image is downloaded into Docker Desktop, the container runs on this machine, and state is persisted under ${outputDir}/data.
 - Webhook delegation can work without N8N_API_KEY.
 - N8N_API_KEY is not the installation itself. It only unlocks repo-driven public API CRUD and updateExisting behavior.
 - For local n8n 2.15.x in this repo, npm run n8n:local:api-key:ensure can generate a working repo-managed public API key without a manual UI step.
+- Deterministic starter installs now close through the approval action ${N8N_STARTER_INSTALL_ACTION_NAME}, so the request/apply path can stop at an installable workflow instead of a draft seed payload.
 - npm run n8n:local:seed can auto-provision a local public API key first, and still falls back to docker CLI import when public API CRUD is unavailable.
 - The generated starter workflows now import active by default so repo-side webhook execution works on localhost without a manual activation toggle.
+- UpdateExisting and automatic rollback both rely on the public API lane; docker CLI fallback only supports create or skip-existing behavior.
 - workflow.list / workflow.execute / workflow.status / workflow create+update over the public API still need N8N_API_KEY.
 - Generated files live under ${outputDir}, which is git-ignored in this repo.
 ${followUps ? `${followUps}\n` : ''}
@@ -1142,6 +1150,211 @@ const parseRequestedTasks = (rawTasks) => String(rawTasks || '')
   .map((value) => value.trim())
   .filter(Boolean);
 
+const selectN8nStarterWorkflowDefinitions = ({ tasks = [] } = {}) => {
+  const definitions = buildN8nStarterWorkflowDefinitions();
+  const knownTasks = new Set(definitions.map((definition) => definition.task));
+  const unknownTasks = tasks.filter((task) => !knownTasks.has(task));
+
+  if (unknownTasks.length > 0) {
+    throw new Error(`Unknown n8n starter task(s): ${unknownTasks.join(', ')}`);
+  }
+
+  return {
+    definitions,
+    selected: tasks.length > 0
+      ? definitions.filter((definition) => tasks.includes(definition.task))
+      : definitions,
+  };
+};
+
+const sanitizeFileToken = (value, fallback = 'workflow') => {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || fallback;
+};
+
+const resolveStarterWorkflowOperationId = (value) => {
+  const normalized = sanitizeFileToken(value, '');
+  if (normalized) {
+    return normalized;
+  }
+
+  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  return `starter-${timestamp}-${randomBytes(4).toString('hex')}`;
+};
+
+const toRepoRelativePath = (filePath) => {
+  const relative = path.relative(ROOT, filePath);
+  return (relative || filePath).replace(/\\/g, '/');
+};
+
+const resolveAbsoluteFilePath = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  return path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : path.resolve(ROOT, normalized);
+};
+
+/**
+ * @param {{ outputDir?: string, operationId?: string }} [params]
+ */
+export const buildN8nStarterOperationPaths = ({
+  outputDir = DEFAULT_OUTPUT_DIR,
+  operationId,
+} = {}) => {
+  const normalizedOperationId = resolveStarterWorkflowOperationId(operationId);
+  const operationsDir = path.join(outputDir, DEFAULT_OPERATION_DIR_NAME);
+  const operationDir = path.join(operationsDir, normalizedOperationId);
+  const backupDir = path.join(operationDir, 'backups');
+  const operationLogPath = path.join(operationsDir, `${normalizedOperationId}.json`);
+
+  return {
+    operationId: normalizedOperationId,
+    operationsDir,
+    operationDir,
+    backupDir,
+    operationLogPath,
+  };
+};
+
+const ensureN8nPublicApiReady = async ({
+  baseUrl = DEFAULT_BASE_URL,
+} = {}) => {
+  const initialProbe = await probeN8nWorkflowApi({ baseUrl });
+  let finalProbe = initialProbe;
+  let apiKeyEnsure = null;
+
+  if (!initialProbe.ok && inspectDockerContainerRunning(DEFAULT_N8N_CONTAINER_NAME) === true) {
+    try {
+      apiKeyEnsure = await ensureLocalN8nPublicApiKey({ baseUrl });
+      finalProbe = await probeN8nWorkflowApi({ baseUrl });
+    } catch (error) {
+      apiKeyEnsure = {
+        ensured: false,
+        changed: false,
+        source: 'auto-provision-failed',
+        reason: error instanceof Error ? error.message : String(error),
+        workflowApiStatus: initialProbe.status,
+      };
+      finalProbe = await probeN8nWorkflowApi({ baseUrl });
+    }
+  }
+
+  return {
+    apiKey: String(process.env.N8N_API_KEY || '').trim(),
+    initialProbe,
+    finalProbe,
+    apiKeyEnsure,
+  };
+};
+
+const fetchN8nWorkflowById = async ({
+  baseUrl = DEFAULT_BASE_URL,
+  workflowId,
+} = {}) => {
+  const normalizedWorkflowId = String(workflowId || '').trim();
+  if (!normalizedWorkflowId) {
+    throw new Error('workflowId is required');
+  }
+
+  return fetchN8nPublicApi({
+    baseUrl,
+    pathName: `/workflows/${encodeURIComponent(normalizedWorkflowId)}`,
+    method: 'GET',
+  });
+};
+
+const deleteN8nWorkflowById = async ({
+  baseUrl = DEFAULT_BASE_URL,
+  workflowId,
+} = {}) => {
+  const normalizedWorkflowId = String(workflowId || '').trim();
+  if (!normalizedWorkflowId) {
+    throw new Error('workflowId is required');
+  }
+
+  return fetchN8nPublicApi({
+    baseUrl,
+    pathName: `/workflows/${encodeURIComponent(normalizedWorkflowId)}`,
+    method: 'DELETE',
+  });
+};
+
+const buildN8nStarterRollbackPolicy = ({
+  results = [],
+  plannedMethod = 'docker-cli',
+  autoProvisionAvailable = false,
+} = {}) => {
+  const createdCount = results.filter((item) => item.status === 'created' || item.status === 'create').length;
+  const updatedCount = results.filter((item) => item.status === 'updated' || item.status === 'update').length;
+  const mutatedCount = createdCount + updatedCount;
+  const automatic = mutatedCount > 0 && (plannedMethod === 'public-api' || plannedMethod === 'public-api-with-auto-provision' || autoProvisionAvailable);
+
+  return {
+    automatic,
+    createdCount,
+    updatedCount,
+    summary: mutatedCount === 0
+      ? 'No workflow changes are planned or recorded, so rollback is not required.'
+      : automatic
+        ? 'Automatic rollback is available from the repo-managed operation log.'
+        : 'Rollback exists as an operator policy, but automatic replay needs a running local container plus public API access.',
+    steps: [
+      automatic
+        ? 'Run npm run n8n:local:rollback -- --operationId=<operation-id> to replay the recorded rollback steps.'
+        : 'Review the operation log and restore or remove workflows manually from the n8n UI if automatic rollback is unavailable.',
+      updatedCount > 0
+        ? 'Updated workflows restore the captured backup snapshot and original active state.'
+        : null,
+      createdCount > 0
+        ? 'Created workflows are removed by workflow id during rollback.'
+        : null,
+    ].filter(Boolean),
+  };
+};
+
+const writeN8nStarterOperationRecord = async ({
+  outputDir = DEFAULT_OUTPUT_DIR,
+  operationId,
+  payload,
+} = {}) => {
+  const paths = buildN8nStarterOperationPaths({ outputDir, operationId });
+  await fs.mkdir(path.dirname(paths.operationLogPath), { recursive: true });
+  await fs.writeFile(paths.operationLogPath, `${JSON.stringify(payload, null, 2).trim()}\n`, 'utf8');
+  return {
+    ...paths,
+    operationLogPathRelative: toRepoRelativePath(paths.operationLogPath),
+  };
+};
+
+const readN8nStarterOperationRecord = async ({
+  outputDir = DEFAULT_OUTPUT_DIR,
+  operationId,
+  operationLogPath,
+} = {}) => {
+  const resolvedLogPath = operationLogPath
+    ? resolveAbsoluteFilePath(operationLogPath)
+    : buildN8nStarterOperationPaths({ outputDir, operationId }).operationLogPath;
+
+  if (!resolvedLogPath) {
+    throw new Error('An operationId or operationLogPath is required for rollback');
+  }
+
+  const raw = await fs.readFile(resolvedLogPath, 'utf8');
+  return {
+    operationLogPath: resolvedLogPath,
+    record: JSON.parse(raw),
+  };
+};
+
 export const parseN8nCliWorkflowListOutput = (stdout) => String(stdout || '')
   .split(/\r?\n/)
   .map((line) => line.trim())
@@ -1189,18 +1402,9 @@ const seedN8nStarterWorkflowsViaDockerCli = async ({
   tasks = [],
   updateExisting = false,
   containerName = DEFAULT_N8N_CONTAINER_NAME,
+  apiKeyEnsure = null,
 } = {}) => {
-  const definitions = buildN8nStarterWorkflowDefinitions();
-  const knownTasks = new Set(definitions.map((definition) => definition.task));
-  const unknownTasks = tasks.filter((task) => !knownTasks.has(task));
-
-  if (unknownTasks.length > 0) {
-    throw new Error(`Unknown n8n starter task(s): ${unknownTasks.join(', ')}`);
-  }
-
-  const selected = tasks.length > 0
-    ? definitions.filter((definition) => tasks.includes(definition.task))
-    : definitions;
+  const { selected } = selectN8nStarterWorkflowDefinitions({ tasks });
   const existingWorkflows = listN8nCliWorkflows({ containerName });
   const existingByName = new Map(existingWorkflows.map((workflow) => [workflow.name, workflow]));
   const results = [];
@@ -1260,6 +1464,7 @@ const seedN8nStarterWorkflowsViaDockerCli = async ({
     requestedTasks: selected.map((definition) => definition.task),
     updateExisting,
     seedMethod: 'docker-cli',
+    apiKeyEnsure,
     results,
   };
 };
@@ -1269,128 +1474,203 @@ export const seedN8nStarterWorkflows = async ({
   baseUrl = DEFAULT_BASE_URL,
   tasks = [],
   updateExisting = false,
+  dryRun = false,
+  operationId,
+  approvalRequestId = null,
+  requestedBy = null,
 } = {}) => {
+  const preview = await previewN8nStarterWorkflows({
+    outputDir,
+    baseUrl,
+    tasks,
+    updateExisting,
+    operationId,
+  });
+
+  if (dryRun) {
+    return preview;
+  }
+
+  if (!preview.canApply) {
+    throw new Error(`Local n8n apply is blocked: ${preview.blockedReasons.join(' | ')}`);
+  }
+
+  const { selected } = selectN8nStarterWorkflowDefinitions({ tasks: preview.requestedTasks });
+  const operationPaths = buildN8nStarterOperationPaths({
+    outputDir,
+    operationId: preview.operationId,
+  });
+  const backups = [];
+  let results = [];
   let apiKeyEnsure = null;
-  const initialProbe = await probeN8nWorkflowApi({ baseUrl });
-  if (!initialProbe.ok && inspectDockerContainerRunning(DEFAULT_N8N_CONTAINER_NAME) === true) {
-    try {
-      apiKeyEnsure = await ensureLocalN8nPublicApiKey({ baseUrl });
-    } catch (error) {
-      apiKeyEnsure = {
-        ensured: false,
-        changed: false,
-        source: 'auto-provision-failed',
-        reason: error instanceof Error ? error.message : String(error),
-        workflowApiStatus: initialProbe.status,
-      };
-    }
-  }
+  let seedMethod = preview.plannedMethod === 'docker-cli' ? 'docker-cli' : 'public-api';
+  let executionError = null;
 
-  const apiKey = String(process.env.N8N_API_KEY || '').trim();
-  if (!apiKey) {
-    return seedN8nStarterWorkflowsViaDockerCli({
-      outputDir,
-      baseUrl,
-      tasks,
-      updateExisting,
-      apiKeyEnsure,
-    });
-  }
+  try {
+    const apiAccess = await ensureN8nPublicApiReady({ baseUrl });
+    apiKeyEnsure = apiAccess.apiKeyEnsure;
 
-  const definitions = buildN8nStarterWorkflowDefinitions();
-  const knownTasks = new Set(definitions.map((definition) => definition.task));
-  const unknownTasks = tasks.filter((task) => !knownTasks.has(task));
-
-  if (unknownTasks.length > 0) {
-    throw new Error(`Unknown n8n starter task(s): ${unknownTasks.join(', ')}`);
-  }
-
-  const selected = tasks.length > 0
-    ? definitions.filter((definition) => tasks.includes(definition.task))
-    : definitions;
-
-  const listed = await fetchN8nPublicApi({ baseUrl, pathName: '/workflows?limit=250', method: 'GET' });
-  const existingWorkflows = extractWorkflowList(listed);
-  const existingByName = new Map(existingWorkflows.map((workflow) => [String(workflow.name || ''), workflow]));
-  const results = [];
-
-  for (const definition of selected) {
-    const existing = existingByName.get(definition.workflow.name);
-    const desiredActive = definition.workflow.active === true;
-
-    if (existing && !updateExisting) {
-      results.push({
-        task: definition.task,
-        fileName: definition.fileName,
-        workflowName: definition.workflow.name,
-        workflowId: String(existing.id || ''),
-        status: 'skipped-existing',
-      });
-      continue;
-    }
-
-    if (existing) {
-      const updated = await fetchN8nPublicApi({
+    if (!apiAccess.apiKey || !apiAccess.finalProbe.ok) {
+      const fallback = await seedN8nStarterWorkflowsViaDockerCli({
+        outputDir,
         baseUrl,
-        pathName: `/workflows/${encodeURIComponent(String(existing.id || ''))}`,
-        method: 'PUT',
-        body: toN8nWorkflowSeedPayload(definition.workflow),
+        tasks: preview.requestedTasks,
+        updateExisting,
+        apiKeyEnsure,
       });
-      const updatedId = String(updated?.id || existing.id || '');
-      const nextActive = typeof updated?.active === 'boolean' ? updated.active : Boolean(existing.active);
+      seedMethod = fallback.seedMethod;
+      apiKeyEnsure = fallback.apiKeyEnsure || apiKeyEnsure;
+      results = fallback.results;
+    } else {
+      const listed = await fetchN8nPublicApi({ baseUrl, pathName: '/workflows?limit=250', method: 'GET' });
+      const existingWorkflows = extractWorkflowList(listed);
+      const existingByName = new Map(existingWorkflows.map((workflow) => [String(workflow.name || ''), workflow]));
 
-      if (nextActive !== desiredActive) {
-        await syncN8nWorkflowActiveState({
+      for (const definition of selected) {
+        const existing = existingByName.get(definition.workflow.name);
+        const desiredActive = definition.workflow.active === true;
+
+        if (existing && !updateExisting) {
+          results.push({
+            task: definition.task,
+            fileName: definition.fileName,
+            workflowName: definition.workflow.name,
+            workflowId: String(existing.id || ''),
+            status: 'skipped-existing',
+          });
+          continue;
+        }
+
+        if (existing) {
+          const existingId = String(existing.id || '');
+          const backupWorkflow = await fetchN8nWorkflowById({
+            baseUrl,
+            workflowId: existingId,
+          });
+          const backupFileName = `${sanitizeFileToken(definition.task, 'task')}-${sanitizeFileToken(existingId, 'workflow')}.json`;
+          const backupFilePath = path.join(operationPaths.backupDir, backupFileName);
+          await fs.mkdir(operationPaths.backupDir, { recursive: true });
+          await fs.writeFile(backupFilePath, `${JSON.stringify(backupWorkflow, null, 2).trim()}\n`, 'utf8');
+          backups.push({
+            task: definition.task,
+            workflowId: existingId,
+            workflowName: definition.workflow.name,
+            backupPath: toRepoRelativePath(backupFilePath),
+            activeBefore: typeof backupWorkflow?.active === 'boolean'
+              ? backupWorkflow.active
+              : Boolean(existing.active),
+          });
+
+          const updated = await fetchN8nPublicApi({
+            baseUrl,
+            pathName: `/workflows/${encodeURIComponent(existingId)}`,
+            method: 'PUT',
+            body: toN8nWorkflowSeedPayload(definition.workflow),
+          });
+          const updatedId = String(updated?.id || existing.id || '');
+          const nextActive = typeof updated?.active === 'boolean' ? updated.active : Boolean(existing.active);
+
+          if (nextActive !== desiredActive) {
+            await syncN8nWorkflowActiveState({
+              baseUrl,
+              workflowId: updatedId,
+              desiredActive,
+            });
+          }
+
+          results.push({
+            task: definition.task,
+            fileName: definition.fileName,
+            workflowName: definition.workflow.name,
+            workflowId: updatedId,
+            status: 'updated',
+          });
+          continue;
+        }
+
+        const created = await fetchN8nPublicApi({
           baseUrl,
-          workflowId: updatedId,
-          desiredActive,
+          pathName: '/workflows',
+          method: 'POST',
+          body: toN8nWorkflowSeedPayload(definition.workflow),
         });
+        const createdId = String(created?.id || '');
+
+        if (desiredActive && createdId) {
+          await syncN8nWorkflowActiveState({
+            baseUrl,
+            workflowId: createdId,
+            desiredActive: true,
+          });
+        }
+
+        results.push({
+          task: definition.task,
+          fileName: definition.fileName,
+          workflowName: definition.workflow.name,
+          workflowId: createdId,
+          status: 'created',
+        });
+
+        existingByName.set(definition.workflow.name, created);
       }
-
-      results.push({
-        task: definition.task,
-        fileName: definition.fileName,
-        workflowName: definition.workflow.name,
-        workflowId: updatedId,
-        status: 'updated',
-      });
-      continue;
     }
+  } catch (error) {
+    executionError = error instanceof Error ? error.message : String(error);
+  }
 
-    const created = await fetchN8nPublicApi({
-      baseUrl,
-      pathName: '/workflows',
-      method: 'POST',
-      body: toN8nWorkflowSeedPayload(definition.workflow),
-    });
-    const createdId = String(created?.id || '');
+  const rollbackPolicy = buildN8nStarterRollbackPolicy({
+    results,
+    plannedMethod: preview.plannedMethod,
+    autoProvisionAvailable: preview.doctor?.status?.apiKeyAutoProvisionAvailable === true,
+  });
+  const operationRecord = {
+    schema: 'n8n-starter-operation/v1',
+    operationId: operationPaths.operationId,
+    createdAt: new Date().toISOString(),
+    approvalRequestId: approvalRequestId || null,
+    requestedBy: requestedBy || null,
+    baseUrl,
+    outputDirRelative: path.relative(ROOT, outputDir) || '.',
+    requestedTasks: preview.requestedTasks,
+    updateExisting,
+    seedMethod,
+    doctor: {
+      ok: preview.doctor.ok,
+      summary: preview.doctor.summary,
+      failures: preview.doctor.failures,
+      warnings: preview.doctor.warnings,
+    },
+    apiKeyEnsure,
+    results,
+    backups,
+    rollbackPolicy,
+    error: executionError,
+  };
+  const writtenOperation = await writeN8nStarterOperationRecord({
+    outputDir,
+    operationId: operationPaths.operationId,
+    payload: operationRecord,
+  });
 
-    if (desiredActive && createdId) {
-      await syncN8nWorkflowActiveState({
-        baseUrl,
-        workflowId: createdId,
-        desiredActive: true,
-      });
-    }
-
-    results.push({
-      task: definition.task,
-      fileName: definition.fileName,
-      workflowName: definition.workflow.name,
-      workflowId: createdId,
-      status: 'created',
-    });
-
-    existingByName.set(definition.workflow.name, created);
+  if (executionError) {
+    throw new Error(`${executionError} (operationLog=${writtenOperation.operationLogPathRelative})`);
   }
 
   return {
     baseUrl,
-    requestedTasks: selected.map((definition) => definition.task),
+    requestedTasks: preview.requestedTasks,
     updateExisting,
-    seedMethod: 'public-api',
+    seedMethod,
     apiKeyEnsure,
     results,
+    operationId: operationPaths.operationId,
+    operationLogPath: writtenOperation.operationLogPath,
+    operationLogPathRelative: writtenOperation.operationLogPathRelative,
+    rollbackPolicy,
+    approvalRequestId,
+    requestedBy,
+    backups,
   };
 };
 
@@ -1484,6 +1764,284 @@ export const resolveN8nLocalStatus = async ({
   };
 };
 
+export const buildN8nLocalDoctorReport = (status) => {
+  const failures = [];
+  const warnings = [];
+  const nextSteps = [];
+
+  if (!status.composeExists || !status.envExists) {
+    failures.push('Repo-managed local n8n bootstrap files are missing.');
+    nextSteps.push('npm run n8n:local:bootstrap');
+  }
+
+  if (!status.dockerAvailable || !status.dockerComposeAvailable) {
+    failures.push('Docker Desktop and docker compose must be available for the local n8n lane.');
+  }
+
+  if (status.containerRunning !== true) {
+    failures.push('The local n8n container is not running.');
+    nextSteps.push('npm run n8n:local:start');
+  }
+
+  if (!status.reachable) {
+    failures.push(`Local n8n is not reachable at ${status.baseUrl}.`);
+  }
+
+  if (status.workflowTemplateCount === 0) {
+    warnings.push('No starter workflow templates are present under tmp/n8n-local/workflows.');
+  }
+
+  if (status.importedWorkflowCount === 0 && status.containerRunning === true) {
+    warnings.push('No workflows are currently imported into the local n8n instance.');
+  }
+
+  if (status.workflowApiAuthRequired && !status.apiKeyConfigured) {
+    warnings.push('Repo-managed workflow CRUD is locked until N8N_API_KEY is configured or auto-provisioned.');
+    if (status.apiKeyAutoProvisionAvailable) {
+      nextSteps.push('npm run n8n:local:api-key:ensure');
+    }
+  }
+
+  if (status.apiKeyConfigured && !status.workflowApiReady && status.workflowApiStatus != null) {
+    warnings.push(`N8N_API_KEY is configured but workflow API still reports HTTP ${status.workflowApiStatus}.`);
+  }
+
+  return {
+    ok: failures.length === 0,
+    summary: failures.length === 0
+      ? 'Local n8n bootstrap and runtime checks passed.'
+      : `Local n8n doctor found ${failures.length} blocking issue(s).`,
+    failures,
+    warnings,
+    nextSteps: [...new Set(nextSteps)],
+    status,
+  };
+};
+
+export const resolveN8nLocalDoctorReport = async (params = {}) => {
+  const status = await resolveN8nLocalStatus(params);
+  return buildN8nLocalDoctorReport(status);
+};
+
+export const previewN8nStarterWorkflows = async ({
+  outputDir = DEFAULT_OUTPUT_DIR,
+  baseUrl = DEFAULT_BASE_URL,
+  tasks = [],
+  updateExisting = false,
+  operationId,
+} = {}) => {
+  const { selected } = selectN8nStarterWorkflowDefinitions({ tasks });
+  const status = await resolveN8nLocalStatus({ outputDir, baseUrl });
+  const doctor = buildN8nLocalDoctorReport(status);
+  const existingByName = new Map();
+  let existingDiscoverySource = 'none';
+
+  if (status.workflowApiReady) {
+    try {
+      const listed = await fetchN8nPublicApi({ baseUrl, pathName: '/workflows?limit=250', method: 'GET' });
+      for (const workflow of extractWorkflowList(listed)) {
+        existingByName.set(String(workflow.name || ''), workflow);
+      }
+      existingDiscoverySource = 'public-api';
+    } catch {
+      existingDiscoverySource = 'none';
+    }
+  }
+
+  if (existingByName.size === 0 && status.containerRunning === true) {
+    try {
+      for (const workflow of listN8nCliWorkflows({ containerName: DEFAULT_N8N_CONTAINER_NAME })) {
+        existingByName.set(workflow.name, workflow);
+      }
+      existingDiscoverySource = 'docker-cli';
+    } catch {
+      if (existingDiscoverySource === 'none') {
+        existingDiscoverySource = 'none';
+      }
+    }
+  }
+
+  const plannedMethod = status.workflowApiReady
+    ? 'public-api'
+    : status.apiKeyAutoProvisionAvailable
+      ? 'public-api-with-auto-provision'
+      : 'docker-cli';
+  const blockedReasons = [...doctor.failures];
+
+  if (updateExisting && plannedMethod === 'docker-cli') {
+    blockedReasons.push('updateExisting requires public API CRUD; the docker CLI fallback only supports create or skip-existing behavior.');
+  }
+
+  const results = selected.map((definition) => {
+    const existing = existingByName.get(definition.workflow.name);
+    if (existing && !updateExisting) {
+      return {
+        task: definition.task,
+        fileName: definition.fileName,
+        workflowName: definition.workflow.name,
+        workflowId: String(existing.id || ''),
+        status: 'skipped-existing',
+        transport: plannedMethod,
+        webhookPath: definition.webhookPath,
+        manualFollowUp: definition.manualFollowUp,
+        reason: 'Workflow already exists and updateExisting is false.',
+      };
+    }
+
+    if (existing && updateExisting) {
+      return {
+        task: definition.task,
+        fileName: definition.fileName,
+        workflowName: definition.workflow.name,
+        workflowId: String(existing.id || ''),
+        status: plannedMethod === 'docker-cli' ? 'blocked' : 'update',
+        transport: plannedMethod === 'docker-cli' ? 'unavailable' : plannedMethod,
+        webhookPath: definition.webhookPath,
+        manualFollowUp: definition.manualFollowUp,
+        reason: plannedMethod === 'docker-cli'
+          ? 'Existing workflow updates are blocked until the public API lane is available.'
+          : 'Workflow already exists and updateExisting is true.',
+      };
+    }
+
+    return {
+      task: definition.task,
+      fileName: definition.fileName,
+      workflowName: definition.workflow.name,
+      workflowId: '',
+      status: 'create',
+      transport: plannedMethod,
+      webhookPath: definition.webhookPath,
+      manualFollowUp: definition.manualFollowUp,
+      reason: plannedMethod === 'public-api-with-auto-provision'
+        ? 'Workflow is missing and the repo will auto-provision the local public API key before applying it when possible.'
+        : 'Workflow is missing and will be created from the starter bundle.',
+    };
+  });
+
+  const paths = buildN8nStarterOperationPaths({
+    outputDir,
+    operationId,
+  });
+
+  return {
+    baseUrl,
+    outputDir,
+    outputDirRelative: path.relative(ROOT, outputDir) || '.',
+    requestedTasks: selected.map((definition) => definition.task),
+    updateExisting,
+    dryRun: true,
+    canApply: blockedReasons.length === 0 && results.every((item) => item.status !== 'blocked'),
+    blockedReasons: [...new Set(blockedReasons)],
+    doctor,
+    plannedMethod,
+    existingDiscoverySource,
+    operationId: paths.operationId,
+    operationLogPath: paths.operationLogPath,
+    operationLogPathRelative: toRepoRelativePath(paths.operationLogPath),
+    results,
+    rollbackPolicy: buildN8nStarterRollbackPolicy({
+      results,
+      plannedMethod,
+      autoProvisionAvailable: status.apiKeyAutoProvisionAvailable === true,
+    }),
+  };
+};
+
+export const rollbackN8nStarterWorkflowOperation = async ({
+  outputDir = DEFAULT_OUTPUT_DIR,
+  baseUrl = DEFAULT_BASE_URL,
+  operationId,
+  operationLogPath,
+} = {}) => {
+  const { record, operationLogPath: resolvedOperationLogPath } = await readN8nStarterOperationRecord({
+    outputDir,
+    operationId,
+    operationLogPath,
+  });
+  const effectiveBaseUrl = String(record?.baseUrl || baseUrl || DEFAULT_BASE_URL).trim() || DEFAULT_BASE_URL;
+  const apiAccess = await ensureN8nPublicApiReady({ baseUrl: effectiveBaseUrl });
+
+  if (!apiAccess.apiKey || !apiAccess.finalProbe.ok) {
+    throw new Error('Automatic rollback requires local n8n public API access or auto-provision support.');
+  }
+
+  const rollbackResults = [];
+  const backupEntries = Array.isArray(record?.backups) ? record.backups : [];
+  const backupByTask = new Map(backupEntries.map((entry) => [String(entry?.task || ''), entry]));
+  const recordedResults = Array.isArray(record?.results) ? [...record.results].reverse() : [];
+
+  for (const item of recordedResults) {
+    const task = String(item?.task || '').trim();
+    const workflowId = String(item?.workflowId || '').trim();
+    const status = String(item?.status || '').trim();
+
+    if (status === 'updated') {
+      const backup = backupByTask.get(task);
+      if (!backup?.backupPath) {
+        rollbackResults.push({ task, workflowId, status: 'missing-backup' });
+        continue;
+      }
+
+      const backupWorkflow = JSON.parse(await fs.readFile(resolveAbsoluteFilePath(backup.backupPath), 'utf8'));
+      await fetchN8nPublicApi({
+        baseUrl: effectiveBaseUrl,
+        pathName: `/workflows/${encodeURIComponent(workflowId)}`,
+        method: 'PUT',
+        body: toN8nWorkflowSeedPayload(backupWorkflow),
+      });
+
+      if (typeof backup.activeBefore === 'boolean') {
+        await syncN8nWorkflowActiveState({
+          baseUrl: effectiveBaseUrl,
+          workflowId,
+          desiredActive: backup.activeBefore,
+        });
+      }
+
+      rollbackResults.push({ task, workflowId, status: 'restored' });
+      continue;
+    }
+
+    if (status === 'created') {
+      if (!workflowId) {
+        rollbackResults.push({ task, workflowId, status: 'missing-workflow-id' });
+        continue;
+      }
+
+      try {
+        await deleteN8nWorkflowById({
+          baseUrl: effectiveBaseUrl,
+          workflowId,
+        });
+        rollbackResults.push({ task, workflowId, status: 'deleted' });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('HTTP 404')) {
+          rollbackResults.push({ task, workflowId, status: 'already-missing' });
+          continue;
+        }
+        throw error;
+      }
+      continue;
+    }
+
+    rollbackResults.push({ task, workflowId, status: 'skipped' });
+  }
+
+  return {
+    operationId: String(record?.operationId || operationId || '').trim(),
+    baseUrl: effectiveBaseUrl,
+    operationLogPath: resolvedOperationLogPath,
+    operationLogPathRelative: toRepoRelativePath(resolvedOperationLogPath),
+    apiKeyEnsure: apiAccess.apiKeyEnsure,
+    results: rollbackResults,
+    summary: rollbackResults.length === 0
+      ? 'No recorded workflow mutations required rollback.'
+      : 'Recorded starter workflow mutations were replayed in reverse order.',
+  };
+};
+
 export const bootstrapN8nLocal = async ({
   outputDir = DEFAULT_OUTPUT_DIR,
   baseUrl = DEFAULT_BASE_URL,
@@ -1566,6 +2124,7 @@ const printBootstrapResult = (result) => {
 };
 
 const printStatus = (status) => {
+  const doctor = buildN8nLocalDoctorReport(status);
   console.log(`[n8n-local] bootstrapDir=${status.outputDirRelative}`);
   console.log(`[n8n-local] composeExists=${status.composeExists}`);
   console.log(`[n8n-local] envExists=${status.envExists}`);
@@ -1592,6 +2151,17 @@ const printStatus = (status) => {
   console.log(`[n8n-local] workflowApiAuthRequired=${status.workflowApiAuthRequired}`);
   console.log(`[n8n-local] repoApiKeyConfigured=${status.apiKeyConfigured}`);
   console.log(`[n8n-local] repoApiKeyAutoProvisionAvailable=${status.apiKeyAutoProvisionAvailable}`);
+  console.log(`[n8n-local] doctorOk=${doctor.ok}`);
+  console.log(`[n8n-local] doctorSummary=${doctor.summary}`);
+  for (const failure of doctor.failures) {
+    console.log(`[n8n-local] doctorFailure=${failure}`);
+  }
+  for (const warning of doctor.warnings) {
+    console.log(`[n8n-local] doctorWarning=${warning}`);
+  }
+  for (const nextStep of doctor.nextSteps) {
+    console.log(`[n8n-local] doctorNext=${nextStep}`);
+  }
   if (status.installConfirmed) {
     console.log('[n8n-local] note: local OSS install is already real on this machine; API keys only change which control surface the repo can use.');
   }
@@ -1638,9 +2208,41 @@ const printEnsureApiKeyResult = (result) => {
 
 const printSeedResult = (result) => {
   console.log(`[n8n-local] seedBaseUrl=${result.baseUrl}`);
+  if (result.dryRun) {
+    console.log('[n8n-local] seedDryRun=true');
+    console.log(`[n8n-local] seedCanApply=${result.canApply}`);
+    console.log(`[n8n-local] seedPlannedMethod=${result.plannedMethod}`);
+    console.log(`[n8n-local] seedExistingDiscovery=${result.existingDiscoverySource}`);
+    console.log(`[n8n-local] seedOperationId=${result.operationId}`);
+    console.log(`[n8n-local] seedOperationLog=${result.operationLogPathRelative}`);
+    console.log(`[n8n-local] seedDoctorSummary=${result.doctor?.summary || 'n/a'}`);
+    for (const failure of result.doctor?.failures || []) {
+      console.log(`[n8n-local] seedDoctorFailure=${failure}`);
+    }
+    for (const warning of result.doctor?.warnings || []) {
+      console.log(`[n8n-local] seedDoctorWarning=${warning}`);
+    }
+    for (const blockedReason of result.blockedReasons || []) {
+      console.log(`[n8n-local] seedBlockedReason=${blockedReason}`);
+    }
+    if (result.rollbackPolicy?.summary) {
+      console.log(`[n8n-local] seedRollbackPolicy=${result.rollbackPolicy.summary}`);
+    }
+    for (const item of result.results) {
+      console.log(`[n8n-local] plan ${item.status} task=${item.task} transport=${item.transport} workflowId=${item.workflowId || 'n/a'} file=${item.fileName}`);
+    }
+    return;
+  }
+
   console.log(`[n8n-local] seedMethod=${result.seedMethod || 'unknown'}`);
   console.log(`[n8n-local] seedRequestedTasks=${result.requestedTasks.join(',') || 'all'}`);
   console.log(`[n8n-local] seedUpdateExisting=${result.updateExisting}`);
+  if (result.operationId) {
+    console.log(`[n8n-local] seedOperationId=${result.operationId}`);
+  }
+  if (result.operationLogPathRelative) {
+    console.log(`[n8n-local] seedOperationLog=${result.operationLogPathRelative}`);
+  }
   if (result.apiKeyEnsure?.source) {
     console.log(`[n8n-local] seedApiKeyEnsure=${result.apiKeyEnsure.source}`);
   }
@@ -1649,6 +2251,22 @@ const printSeedResult = (result) => {
   }
   for (const item of result.results) {
     console.log(`[n8n-local] seed ${item.status} task=${item.task} workflowId=${item.workflowId || 'n/a'} file=${item.fileName}`);
+  }
+  if (result.rollbackPolicy?.summary) {
+    console.log(`[n8n-local] seedRollbackPolicy=${result.rollbackPolicy.summary}`);
+  }
+};
+
+const printRollbackResult = (result) => {
+  console.log(`[n8n-local] rollbackOperationId=${result.operationId}`);
+  console.log(`[n8n-local] rollbackBaseUrl=${result.baseUrl}`);
+  console.log(`[n8n-local] rollbackOperationLog=${result.operationLogPathRelative}`);
+  if (result.apiKeyEnsure?.source) {
+    console.log(`[n8n-local] rollbackApiKeyEnsure=${result.apiKeyEnsure.source}`);
+  }
+  console.log(`[n8n-local] rollbackSummary=${result.summary}`);
+  for (const item of result.results) {
+    console.log(`[n8n-local] rollback ${item.status} task=${item.task} workflowId=${item.workflowId || 'n/a'}`);
   }
 };
 
@@ -1660,6 +2278,9 @@ const main = async () => {
   const ensureApiKey = parseBool(parseArg('ensureApiKey', 'false'), false);
   const updateExisting = parseBool(parseArg('updateExisting', 'false'), false);
   const requestedTasks = parseRequestedTasks(parseArg('tasks', ''));
+  const operationId = String(parseArg('operationId', '')).trim();
+  const rollbackOperationId = String(parseArg('rollbackOperationId', '')).trim();
+  const operationLog = String(parseArg('operationLog', '')).trim();
   const outputDir = path.resolve(ROOT, parseArg('dir', path.relative(ROOT, DEFAULT_OUTPUT_DIR) || 'tmp/n8n-local'));
   const normalized = normalizeBaseUrl({
     rawBaseUrl: parseArg('baseUrl', String(process.env.N8N_BASE_URL || DEFAULT_BASE_URL)),
@@ -1668,6 +2289,16 @@ const main = async () => {
 
   if (statusMode) {
     printStatus(await resolveN8nLocalStatus({ outputDir, baseUrl: normalized.baseUrl }));
+    return;
+  }
+
+  if (rollbackOperationId || operationLog) {
+    printRollbackResult(await rollbackN8nStarterWorkflowOperation({
+      outputDir,
+      baseUrl: normalized.baseUrl,
+      operationId: rollbackOperationId,
+      operationLogPath: operationLog,
+    }));
     return;
   }
 
@@ -1690,16 +2321,13 @@ const main = async () => {
     return;
   }
 
-  if (dryRun) {
-    console.log('[n8n-local] seed skipped in dry-run mode.');
-    return;
-  }
-
   printSeedResult(await seedN8nStarterWorkflows({
     outputDir,
     baseUrl: normalized.baseUrl,
     tasks: requestedTasks,
     updateExisting,
+    dryRun,
+    operationId,
   }));
 };
 

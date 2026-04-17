@@ -30,6 +30,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 // ──── proxyRegistry tests ─────────────────────────────────────────────────────
@@ -490,6 +491,24 @@ describe('proxyAdapter', () => {
       const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
       const headers = init.headers as Record<string, string>;
       expect(headers['Authorization']).toBe('Bearer secret-token');
+    });
+
+    it('reuses shared MCP auth token when the upstream matches the canonical shared ingress base', async () => {
+      vi.stubEnv('MCP_SHARED_MCP_URL', 'https://shared.example.com/mcp');
+      vi.stubEnv('MCP_SHARED_MCP_TOKEN', 'shared-token');
+      registerUpstream({ id: 'shared', url: 'https://shared.example.com', namespace: 'gcpcompute' });
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+      await callProxiedTool('upstream.gcpcompute.tool', {});
+
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe('Bearer shared-token');
     });
 
     it('does not include Authorization header when no token', async () => {

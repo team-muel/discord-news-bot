@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildN8nLocalDoctorReport,
   buildN8nLocalComposeYaml,
   buildN8nLocalEnvFile,
   buildN8nLocalReadme,
+  buildN8nStarterOperationPaths,
   buildN8nNewsMonitorCandidatesSmokeWorkflow,
   buildN8nStarterWorkflowDefinitions,
   buildN8nStarterWorkflowManifest,
@@ -47,12 +49,58 @@ describe('bootstrap-n8n-local helpers', () => {
     expect(readme).toContain('npm run n8n:local:start');
     expect(readme).toContain('npm run n8n:local:api-key:ensure');
     expect(readme).toContain('npm run n8n:local:seed');
+    expect(readme).toContain('npm run n8n:local:seed:plan');
+    expect(readme).toContain('npm run n8n:local:seed:request');
+    expect(readme).toContain('npm run n8n:local:rollback');
     expect(readme).toContain('local self-hosted n8n');
     expect(readme).toContain('auto-provision a local public API key');
+    expect(readme).toContain('approval-gated install');
     expect(readme).toContain('N8N_API_KEY');
     expect(readme).toContain('starter-workflows.manifest.json');
     expect(readme).toContain('alert-dispatch-starter.workflow.json');
-    expect(readme).toContain('imports active by default');
+    expect(readme).toContain('import active by default');
+  });
+
+  it('builds a doctor report with blocking issues and next steps', () => {
+    const report = buildN8nLocalDoctorReport({
+      baseUrl: 'http://127.0.0.1:5678',
+      composeExists: false,
+      envExists: false,
+      dockerAvailable: true,
+      dockerComposeAvailable: true,
+      containerRunning: false,
+      reachable: false,
+      workflowTemplateCount: 0,
+      importedWorkflowCount: 0,
+      workflowApiAuthRequired: true,
+      apiKeyConfigured: false,
+      apiKeyAutoProvisionAvailable: true,
+      workflowApiReady: false,
+      workflowApiStatus: 401,
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.failures).toEqual(expect.arrayContaining([
+      expect.stringContaining('bootstrap files are missing'),
+      expect.stringContaining('container is not running'),
+      expect.stringContaining('not reachable'),
+    ]));
+    expect(report.nextSteps).toEqual(expect.arrayContaining([
+      'npm run n8n:local:bootstrap',
+      'npm run n8n:local:start',
+      'npm run n8n:local:api-key:ensure',
+    ]));
+  });
+
+  it('builds deterministic operation paths for starter installs', () => {
+    const paths = buildN8nStarterOperationPaths({
+      outputDir: 'tmp/n8n-local',
+      operationId: 'seed-news',
+    });
+
+    expect(paths.operationId).toBe('seed-news');
+    expect(paths.operationLogPath.replace(/\\/g, '/')).toContain('tmp/n8n-local/operations/seed-news.json');
+    expect(paths.backupDir.replace(/\\/g, '/')).toContain('tmp/n8n-local/operations/seed-news/backups');
   });
 
   it('upserts repo env values without rewriting commented hints', () => {

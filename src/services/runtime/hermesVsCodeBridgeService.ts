@@ -48,6 +48,7 @@ export type HermesVsCodeBridgeRunParams = {
   prompt?: string | null;
   chatMode?: string | null;
   addFilePaths?: string[] | null;
+  allowedRoots?: string[] | null;
   maximize?: boolean;
   newWindow?: boolean;
   reuseWindow?: boolean;
@@ -185,12 +186,31 @@ const resolvePacket = (params?: { vaultPath?: string | null; packetPath?: string
   };
 };
 
-const collectAllowedRoots = (packet: ResolvedPacket | null): string[] => {
+const resolveAllowedRootPath = (rawPath: unknown): string | null => {
+  const normalized = cleanText(rawPath, 500);
+  if (!normalized) {
+    return null;
+  }
+
+  const absolutePath = path.isAbsolute(normalized) ? path.resolve(normalized) : path.resolve(REPO_ROOT, normalized);
+  return fs.existsSync(absolutePath) ? absolutePath : null;
+};
+
+const collectAllowedRoots = (packet: ResolvedPacket | null, rawRoots?: string[] | null): string[] => {
   const roots = [REPO_ROOT];
   if (packet?.vaultPath) {
     roots.push(packet.vaultPath);
   }
-  return roots;
+
+  for (const rawRoot of Array.isArray(rawRoots) ? rawRoots : []) {
+    const resolvedRoot = resolveAllowedRootPath(rawRoot);
+    if (!resolvedRoot) {
+      continue;
+    }
+    roots.push(resolvedRoot);
+  }
+
+  return [...new Set(roots.map((rootPath) => path.resolve(rootPath)))];
 };
 
 const resolveAllowedExistingPath = (rawPath: unknown, allowedRoots: string[]): string | null => {
@@ -392,7 +412,7 @@ const resolveAction = (params: HermesVsCodeBridgeRunParams, packet: ResolvedPack
     return null;
   }
 
-  const allowedRoots = collectAllowedRoots(packet);
+  const allowedRoots = collectAllowedRoots(packet, params.allowedRoots);
   switch (params.action) {
     case 'open-agents':
       return {

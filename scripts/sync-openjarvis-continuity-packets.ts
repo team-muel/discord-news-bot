@@ -130,6 +130,7 @@ type ContinuityLoopState = {
   awaiting_reentry_acknowledgment?: boolean;
   awaiting_reentry_acknowledgment_started_at?: string | null;
   auto_launch_queued_chat?: boolean;
+  auto_launch_queued_swarm?: boolean;
   stopped_at?: string | null;
   stop_reason?: string | null;
   last_reason?: string | null;
@@ -281,14 +282,19 @@ export const resolveLocalAutonomyWatchState = (params: {
   const watchProcess = params.status?.watchProcess && typeof params.status.watchProcess === 'object'
     ? params.status.watchProcess
     : null;
-  const pid = parseOptionalInteger(watchProcess?.pid) ?? parseOptionalInteger(params.manifest?.pid);
+  const statusPid = parseOptionalInteger(watchProcess?.pid);
+  const manifestPid = parseOptionalInteger(params.manifest?.pid);
+  const detached = watchProcess?.detached === true || params.manifest?.detached === true;
+  const pid = params.manifest?.detached === true && watchProcess?.detached !== true
+    ? manifestPid
+    : (statusPid ?? manifestPid);
 
   return {
     alive: pid ? isProcessAlive(pid) : null,
     pid,
     startedAt: toTrimmed(params.manifest?.startedAt) || null,
     checkedAt: toTrimmed(params.status?.checkedAt) || null,
-    detached: watchProcess?.detached === true || params.manifest?.detached === true,
+    detached,
     summary: toTrimmed(params.status?.summary) || null,
     manifestPath: toTrimmed(watchProcess?.manifestPath) || toRelative(LOCAL_AUTONOMY_SUPERVISOR_MANIFEST_PATH),
     statusPath: toTrimmed(watchProcess?.statusPath) || toTrimmed(params.manifest?.statusPath) || toRelative(LOCAL_AUTONOMY_SUPERVISOR_STATUS_PATH),
@@ -452,6 +458,15 @@ const toBulletLines = (items: string[], fallback = '- none'): string[] => {
     return [fallback];
   }
   return items.map((item) => `- ${item}`);
+};
+
+const buildBulletSection = (heading: string, items: string[], fallback = '- none'): string[] => {
+  return [
+    heading,
+    '',
+    ...toBulletLines(items, fallback),
+    '',
+  ];
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -639,6 +654,10 @@ const resolveLoopReentryState = (loopState: ContinuityLoopState | null) => {
     ageMs,
     stale,
     autoLaunchQueuedChat: loopState?.auto_launch_queued_chat === true,
+    autoLaunchQueuedSwarm: loopState?.auto_launch_queued_swarm === true,
+    queueLaunchMode: loopState?.auto_launch_queued_swarm === true
+      ? 'swarm'
+      : (loopState?.auto_launch_queued_chat === true ? 'chat' : 'manual'),
     objective: toTrimmed(lastLaunch?.objective) || null,
     source: toTrimmed(lastLaunch?.source) || null,
   };
@@ -922,20 +941,13 @@ const buildHandoffContent = (params: {
   }
 
   const lines = [
-    '# Hermes Autopilot Continuity Handoff Packet',
-    '',
-    '## Session Objective',
-    ...toBulletLines([params.runtimeState.objective]),
-    '',
-    '## User Intent Model',
-    ...toBulletLines([
+    ...buildBulletSection('## Session Objective', [params.runtimeState.objective]),
+    ...buildBulletSection('## User Intent Model', [
       'requested outcome: keep bounded IDE/autopilot continuity alive between GPT sessions using the local Hermes runtime',
       'non-goal: force the user to relay the same request into Hermes or depend on one still-open monitor window',
       'current priority: keep the local continuity runner observable, recoverable, and packet-driven',
     ]),
-    '',
-    '## Verified State',
-    ...toBulletLines([
+    ...buildBulletSection('## Verified State', [
       `session_id: ${toTrimmed(params.session.session_id)}`,
       `status: ${toTrimmed(params.session.status)}`,
       `route_mode: ${toTrimmed(params.session.metadata?.route_mode)}`,
@@ -954,12 +966,8 @@ const buildHandoffContent = (params: {
       `obsidian_health: ${params.runtimeState.health.healthy ? 'healthy' : params.runtimeState.health.issues.join('; ') || 'degraded'}`,
       `sync_reason: ${params.syncReason}`,
     ]),
-    '',
-    '## Completed Since Last Session',
-    ...toBulletLines(params.runtimeState.completedSteps.map(formatStep)),
-    '',
-    '## Decision Distillate For Hermes',
-    ...toBulletLines([
+    ...buildBulletSection('## Completed Since Last Session', params.runtimeState.completedSteps.map(formatStep)),
+    ...buildBulletSection('## Decision Distillate For Hermes', [
       'situation: Windows interactive Autopilot needs a user-visible shell without tying execution lifetime to that shell',
       'decision: run the real continuity worker as a detached runner and keep PowerShell as a monitor surface only',
       'why: GPT continuity must survive monitor closure and remain recoverable from workflow state plus packet state',
@@ -970,58 +978,37 @@ const buildHandoffContent = (params: {
       'reuse_when: any interactive goal-cycle that should stay visible to the operator while Hermes continues locally',
       'recall_when: runner is missing while status still says executing, strict gates fail, or packet sync cannot write to Obsidian',
     ]),
-    '',
-    '## Capacity State',
-    ...toBulletLines(buildAutopilotCapacitySectionLines(params.runtimeState.capacity)),
-    '',
-    '## Automation Route Guidance',
-    ...toBulletLines(buildAutomationRouteSectionLines(params.runtimeState.automationRoute)),
-    '',
-    '## Automation Lifecycle Guidance',
-    ...toBulletLines(buildAutomationLifecycleSectionLines(params.runtimeState.autoRestartOnRelease)),
-    '',
-    '## MCP Wrapping Guidance',
-    ...toBulletLines(buildWrappingGuidanceSectionLines(params.runtimeState.automationRoute)),
-    '',
-    '## Open Loops',
-    ...toBulletLines([
+    ...buildBulletSection('## Capacity State', buildAutopilotCapacitySectionLines(params.runtimeState.capacity)),
+    ...buildBulletSection('## Automation Route Guidance', buildAutomationRouteSectionLines(params.runtimeState.automationRoute)),
+    ...buildBulletSection('## Automation Lifecycle Guidance', buildAutomationLifecycleSectionLines(params.runtimeState.autoRestartOnRelease)),
+    ...buildBulletSection('## MCP Wrapping Guidance', buildWrappingGuidanceSectionLines(params.runtimeState.automationRoute)),
+    ...buildBulletSection('## Open Loops', [
       ...(params.runtimeState.reentryState.awaiting
         ? [`queued GPT handoff waiting for reentry acknowledgment${params.runtimeState.reentryState.objective ? ` for ${params.runtimeState.reentryState.objective}` : ''}${params.runtimeState.reentryState.startedAt ? ` since ${params.runtimeState.reentryState.startedAt}` : ''}`]
         : []),
       ...params.runtimeState.runningSteps.map(formatStep),
       ...params.runtimeState.failedSteps.map((step) => `failed step requires attention: ${formatStep(step)}`),
     ]),
-    '',
-    '## Pending Decisions For GPT',
-    ...toBulletLines(params.runtimeState.ownerMode.escalation === 'pending-gpt'
+    ...buildBulletSection('## Pending Decisions For GPT', params.runtimeState.ownerMode.escalation === 'pending-gpt'
       ? params.runtimeState.failedSteps.map((step) => `decide recovery path for ${formatStep(step)}`)
       : (params.runtimeState.reentryState.stale
         ? ['close out the stale queued GPT handoff or leave a bounded recall decision before restarting autonomy']
         : [])),
-    '',
-    '## Safe Autonomous Queue For Hermes',
-    ...toBulletLines(params.runtimeState.safeQueue),
-    '',
-    '## Evidence And References',
-    ...toBulletLines(evidenceRefs),
-    '',
-    '## Recall Triggers',
-    ...toBulletLines([
+    ...buildBulletSection('## Safe Autonomous Queue For Hermes', params.runtimeState.safeQueue),
+    ...buildBulletSection('## Evidence And References', evidenceRefs),
+    ...buildBulletSection('## Recall Triggers', [
       'runner missing while session status remains executing',
       'strict gate returns fail or no-go and the next action is not mechanically obvious',
       'vault write path becomes degraded or packet sync returns no path',
       'the objective changes or a broader architecture/policy decision is required',
     ]),
-    '',
-    '## Context Budget State',
-    ...toBulletLines([
+    ...buildBulletSection('## Context Budget State', [
       'included: latest workflow session, latest summary, launch manifest/log pointers, and active step delta',
       'omitted: full weekly report bodies, full logs, and unchanged historical session traces unless needed for a new decision',
     ]),
-    '',
   ];
 
-  return `${lines.join('\n')}`;
+  return `${lines.join('\n').trimEnd()}`;
 };
 
 const buildProgressContent = (params: {
@@ -1068,13 +1055,8 @@ const buildProgressContent = (params: {
   }
 
   const lines = [
-    '# Hermes Autopilot Continuity Progress Packet',
-    '',
-    '## Objective',
-    ...toBulletLines([params.runtimeState.objective]),
-    '',
-    '## Owner And Mode',
-    ...toBulletLines([
+    ...buildBulletSection('## Objective', [params.runtimeState.objective]),
+    ...buildBulletSection('## Owner And Mode', [
       `owner: ${params.runtimeState.ownerMode.owner}`,
       `mode: ${params.runtimeState.ownerMode.mode}`,
       `route_mode: ${toTrimmed(params.session.metadata?.route_mode)}`,
@@ -1084,50 +1066,27 @@ const buildProgressContent = (params: {
       `continuity_watch_summary: ${params.localAutonomyWatch.summary || 'unknown'}`,
       `queued_reentry_objective: ${params.runtimeState.reentryState.objective || 'none'}`,
     ]),
-    '',
-    '## Delta Since Last GPT Session',
-    ...toBulletLines(delta),
-    '',
-    '## Completed',
-    ...toBulletLines(params.runtimeState.completedSteps.map(formatStep)),
-    '',
-    '## In Flight',
-    ...toBulletLines(params.runtimeState.runningSteps.map(formatStep)),
-    '',
-    '## Blockers',
-    ...toBulletLines(blockers),
-    '',
-    '## Next Action',
-    ...toBulletLines([
+    ...buildBulletSection('## Delta Since Last GPT Session', delta),
+    ...buildBulletSection('## Completed', params.runtimeState.completedSteps.map(formatStep)),
+    ...buildBulletSection('## In Flight', params.runtimeState.runningSteps.map(formatStep)),
+    ...buildBulletSection('## Blockers', blockers),
+    ...buildBulletSection('## Next Action', [
       params.runtimeState.reentryState.stale
         ? 'inspect the pending queued VS Code chat turn and run openjarvis:hermes:runtime:reentry-ack before allowing the next autonomous cycle'
         : params.runtimeState.nextAction,
     ]),
-    '',
-    '## Automation Route Guidance',
-    ...toBulletLines(buildAutomationRouteSectionLines(params.runtimeState.automationRoute)),
-    '',
-    '## Automation Lifecycle Guidance',
-    ...toBulletLines(buildAutomationLifecycleSectionLines(params.runtimeState.autoRestartOnRelease)),
-    '',
-    '## Escalation Status',
-    ...toBulletLines([params.runtimeState.ownerMode.escalation]),
-    '',
-    '## Capacity State',
-    ...toBulletLines(buildAutopilotCapacitySectionLines(params.runtimeState.capacity)),
-    '',
-    '## Context Budget State',
-    ...toBulletLines([
+    ...buildBulletSection('## Automation Route Guidance', buildAutomationRouteSectionLines(params.runtimeState.automationRoute)),
+    ...buildBulletSection('## Automation Lifecycle Guidance', buildAutomationLifecycleSectionLines(params.runtimeState.autoRestartOnRelease)),
+    ...buildBulletSection('## Escalation Status', [params.runtimeState.ownerMode.escalation]),
+    ...buildBulletSection('## Capacity State', buildAutopilotCapacitySectionLines(params.runtimeState.capacity)),
+    ...buildBulletSection('## Context Budget State', [
       'progress packet carries only current delta, active steps, blockers, and evidence pointers',
       'full logs and weekly report bodies remain on demand in tmp/autonomy and repo docs',
     ]),
-    '',
-    '## Evidence And References',
-    ...toBulletLines(evidenceRefs),
-    '',
+    ...buildBulletSection('## Evidence And References', evidenceRefs),
   ];
 
-  return `${lines.join('\n')}`;
+  return `${lines.join('\n').trimEnd()}`;
 };
 
 const buildMirroredNoteContent = (params: {

@@ -25,6 +25,7 @@ const GENERATED_ROOT = 'ops/knowledge-control';
 const INDEX_PATH = `${GENERATED_ROOT}/INDEX.md`;
 const LOG_PATH = `${GENERATED_ROOT}/LOG.md`;
 const LINT_PATH = `${GENERATED_ROOT}/LINT.md`;
+const SUPERVISOR_PATH = `${GENERATED_ROOT}/SUPERVISOR.md`;
 const TOPIC_DIR = `${GENERATED_ROOT}/topics`;
 const ENTITY_DIR = `${GENERATED_ROOT}/entities`;
 const CONTROL_TOWER_DIR = 'ops/control-tower';
@@ -43,6 +44,25 @@ const SEMANTIC_LINT_CURRENT_PATH = `${SEMANTIC_LINT_NEGATIVE_KNOWLEDGE_ROOT}/CUR
 const KNOWLEDGE_BACKFILL_CATALOG_PATH = path.resolve(__dirname, '../../../config/runtime/knowledge-backfill-catalog.json');
 
 const TRACKED_ROOTS = ['chat/answers', 'consolidated', 'retros', 'memory'];
+const DURABLE_SHARED_ROOTS = [
+  'plans/decisions',
+  'plans/development',
+  'plans/execution',
+  'plans/requirements',
+  'ops/control-tower',
+  'ops/quality',
+  'ops/services',
+  'ops/playbooks',
+  'ops/contracts',
+  'ops/incidents',
+  'ops/vulnerabilities',
+  'ops/improvement',
+  'ops/contexts',
+  'ops/postmortems',
+  'ops/mitigations',
+];
+const GUILD_TRACKED_ROOT_SUFFIXES = ['chat/answers', 'memory', 'retros', 'sprint-journal', 'customer', 'events'];
+const GUILD_CORE_FILE_NAMES = ['Guild_Lore.md', 'Server_History.md', 'Decision_Log.md'];
 const SYSTEM_TAGS = new Set([
   'answer',
   'auto-generated',
@@ -417,6 +437,22 @@ export type ObsidianWikiChangeCaptureResult = {
   matchedCatalogEntries: string[];
 };
 
+type ObsidianKnowledgeSupervisorAction = {
+  kind: 'refresh-grounding' | 'repair-lifecycle' | 'resolve-canonical-collision' | 'backfill-shared-coverage' | 'repair-graph-quality' | 'resolve-runtime-mismatch';
+  severity: 'low' | 'medium' | 'high';
+  summary: string;
+  targetPaths: string[];
+  suggestedNextStep: string;
+};
+
+type ObsidianKnowledgeSupervisorReport = {
+  healthy: boolean;
+  summary: string;
+  actionCount: number;
+  focusPaths: string[];
+  actions: ObsidianKnowledgeSupervisorAction[];
+};
+
 const state: ObsidianKnowledgeCompilationStats = {
   enabled: true,
   runs: 0,
@@ -526,6 +562,31 @@ const cloneCatalogEntry = (value: ObsidianKnowledgeCatalogEntry): ObsidianKnowle
 });
 
 const normalizePath = (value: string): string => String(value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+
+const matchesPathPrefix = (candidate: string, root: string): boolean => {
+  const normalizedCandidate = normalizePath(candidate).toLowerCase();
+  const normalizedRoot = normalizePath(root).toLowerCase();
+  if (!normalizedCandidate || !normalizedRoot) {
+    return false;
+  }
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`);
+};
+
+const getPathParent = (value: string, levels = 1): string => {
+  const segments = normalizePath(value).split('/').filter(Boolean);
+  if (segments.length <= levels) {
+    return '';
+  }
+  return segments.slice(0, segments.length - levels).join('/');
+};
+
+const addCandidateRoot = (roots: Set<string>, value: string | null | undefined): void => {
+  const normalized = normalizePath(String(value || '')).replace(/\.md$/i, '');
+  if (!normalized) {
+    return;
+  }
+  roots.add(normalized);
+};
 
 const normalizeCatalogPath = (value: unknown): string => normalizePath(String(value || ''));
 
@@ -1627,6 +1688,7 @@ const persistSemanticLintAuditResult = async (params: {
       }),
       tags: ['semantic-lint', 'negative-knowledge', issue.kind, issue.severity],
       allowHighLinkDensity: true,
+      skipKnowledgeCompilation: true,
       properties: {
         title: `${issue.kind}: ${issue.message}`.slice(0, 160),
         source_kind: 'semantic-lint-issue',
@@ -1659,6 +1721,7 @@ const persistSemanticLintAuditResult = async (params: {
     }),
     tags: ['semantic-lint', 'negative-knowledge', 'current'],
     allowHighLinkDensity: true,
+    skipKnowledgeCompilation: true,
     properties: {
       title: 'Semantic Lint Current State',
       source_kind: 'semantic-lint-current',
@@ -3082,6 +3145,19 @@ const toWikilink = (filePath: string, alias?: string): string => {
   return alias ? `[[${target}|${alias}]]` : `[[${target}]]`;
 };
 
+const isLikelyKnowledgePath = (value: string): boolean => {
+  const normalized = normalizePath(stripKnownSourcePrefix(value));
+  return normalized.includes('/') || normalized.toLowerCase().endsWith('.md');
+};
+
+const renderKnowledgeReference = (value: string): string => {
+  const normalized = normalizePath(stripKnownSourcePrefix(value));
+  if (!normalized) {
+    return 'n/a';
+  }
+  return isLikelyKnowledgePath(normalized) ? toWikilink(normalized) : normalized;
+};
+
 const formatTimestamp = (value: string): string => {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
@@ -3209,31 +3285,34 @@ const buildGuildCorePaths = (guildId: string | null): string[] => {
 
 const isGeneratedArtifactPath = (filePath: string): boolean => {
   const normalized = normalizePath(filePath).toLowerCase();
-  return normalized === INDEX_PATH.toLowerCase()
-    || normalized === LOG_PATH.toLowerCase()
-    || normalized.startsWith(`${TOPIC_DIR.toLowerCase()}/`)
-    || normalized.startsWith(`${ENTITY_DIR.toLowerCase()}/`);
+  return normalized.startsWith(`${GENERATED_ROOT.toLowerCase()}/`);
 };
 
 const isRawPath = (filePath: string): boolean => {
   const normalized = normalizePath(filePath).toLowerCase();
   return normalized.startsWith('chat/inbox/')
-    || normalized.startsWith('events/')
-    || normalized.includes('/events/')
-    || normalized.startsWith('ops/');
+    || normalized.startsWith('events/raw/')
+    || normalized.includes('/events/raw/');
 };
 
 const isTrackedPath = (filePath: string, guildId: string): boolean => {
   const normalized = normalizePath(filePath).toLowerCase();
-  if (TRACKED_ROOTS.some((root) => normalized.startsWith(`${root.toLowerCase()}/`) || normalized === `${root.toLowerCase()}.md`)) {
+  if (TRACKED_ROOTS.some((root) => matchesPathPrefix(normalized, root))) {
+    return true;
+  }
+  if (DURABLE_SHARED_ROOTS.some((root) => matchesPathPrefix(normalized, root))) {
     return true;
   }
   if (!guildId) {
     return false;
   }
-  return normalized.startsWith(`guilds/${guildId.toLowerCase()}/memory/`)
-    || normalized.startsWith(`guilds/${guildId.toLowerCase()}/retros/`)
-    || normalized.startsWith(`guilds/${guildId.toLowerCase()}/sprint-journal/`);
+
+  const guildPrefix = `guilds/${guildId.toLowerCase()}`;
+  if (GUILD_TRACKED_ROOT_SUFFIXES.some((suffix) => matchesPathPrefix(normalized, `${guildPrefix}/${suffix}`))) {
+    return true;
+  }
+
+  return GUILD_CORE_FILE_NAMES.some((fileName) => normalized === `${guildPrefix}/${fileName.toLowerCase()}`);
 };
 
 const deriveTopics = (frontmatter: Record<string, unknown>): string[] => {
@@ -3352,13 +3431,94 @@ const buildDecision = (params: {
   };
 };
 
-const collectCandidateRoots = (guildId: string): string[] => {
+const collectCandidateRoots = (params: {
+  guildId: string;
+  filePath: string;
+}): string[] => {
   const roots = new Set<string>(TRACKED_ROOTS);
-  if (guildId) {
-    roots.add(`guilds/${guildId}/chat/answers`);
-    roots.add(`guilds/${guildId}/memory`);
-    roots.add(`guilds/${guildId}/retros`);
-    roots.add(`guilds/${guildId}/sprint-journal`);
+  const normalizedFilePath = normalizePath(params.filePath);
+  const descriptor = describeKnowledgePath(normalizedFilePath);
+  const parentRoot = getPathParent(normalizedFilePath);
+  const grandparentRoot = getPathParent(normalizedFilePath, 2);
+
+  addCandidateRoot(roots, parentRoot);
+  if (!['ops', 'plans', 'guilds'].includes(grandparentRoot.toLowerCase())) {
+    addCandidateRoot(roots, grandparentRoot);
+  }
+
+  if (params.guildId) {
+    addCandidateRoot(roots, `guilds/${params.guildId}`);
+    for (const suffix of GUILD_TRACKED_ROOT_SUFFIXES) {
+      addCandidateRoot(roots, `guilds/${params.guildId}/${suffix}`);
+    }
+  }
+
+  switch (descriptor.concern) {
+    case 'control-tower':
+      addCandidateRoot(roots, 'ops/control-tower');
+      addCandidateRoot(roots, 'ops/quality');
+      addCandidateRoot(roots, 'plans/decisions');
+      addCandidateRoot(roots, 'plans/requirements');
+      break;
+    case 'quality-control':
+      addCandidateRoot(roots, 'ops/quality');
+      addCandidateRoot(roots, 'ops/control-tower');
+      addCandidateRoot(roots, 'ops/improvement');
+      addCandidateRoot(roots, 'plans/development');
+      break;
+    case 'service-memory': {
+      addCandidateRoot(roots, 'ops/services');
+      const serviceSlug = extractServiceSlugFromPath(normalizedFilePath);
+      if (serviceSlug) {
+        addCandidateRoot(roots, `ops/services/${serviceSlug}`);
+      }
+      addCandidateRoot(roots, 'ops/control-tower');
+      addCandidateRoot(roots, 'ops/quality');
+      addCandidateRoot(roots, 'ops/playbooks');
+      addCandidateRoot(roots, 'ops/incidents');
+      addCandidateRoot(roots, 'ops/improvement');
+      break;
+    }
+    case 'vulnerability-and-incident-analysis':
+      addCandidateRoot(roots, 'ops/incidents');
+      addCandidateRoot(roots, 'ops/vulnerabilities');
+      addCandidateRoot(roots, 'ops/playbooks');
+      addCandidateRoot(roots, 'ops/mitigations');
+      addCandidateRoot(roots, 'ops/services');
+      addCandidateRoot(roots, 'ops/improvement');
+      break;
+    case 'recursive-improvement':
+      addCandidateRoot(roots, 'ops/improvement');
+      addCandidateRoot(roots, 'retros');
+      addCandidateRoot(roots, 'plans/development');
+      addCandidateRoot(roots, 'plans/execution');
+      break;
+    case 'customer-operating-memory':
+      if (params.guildId) {
+        addCandidateRoot(roots, `guilds/${params.guildId}`);
+        addCandidateRoot(roots, `guilds/${params.guildId}/customer`);
+      }
+      addCandidateRoot(roots, 'ops/playbooks');
+      addCandidateRoot(roots, 'ops/incidents');
+      break;
+    case 'guild-memory':
+      if (params.guildId) {
+        addCandidateRoot(roots, `guilds/${params.guildId}`);
+        addCandidateRoot(roots, `guilds/${params.guildId}/events`);
+        addCandidateRoot(roots, `guilds/${params.guildId}/memory`);
+        addCandidateRoot(roots, `guilds/${params.guildId}/retros`);
+        addCandidateRoot(roots, `guilds/${params.guildId}/sprint-journal`);
+      }
+      break;
+    default:
+      break;
+  }
+
+  if (matchesPathPrefix(normalizedFilePath, 'plans')) {
+    const topLevelPlanRoot = normalizedFilePath.split('/').slice(0, 2).join('/');
+    addCandidateRoot(roots, topLevelPlanRoot);
+    addCandidateRoot(roots, 'ops/control-tower');
+    addCandidateRoot(roots, 'ops/improvement');
   }
   return [...roots];
 };
@@ -3370,7 +3530,10 @@ const collectSnapshot = async (params: {
   content: string;
 }): Promise<KnowledgeSnapshotNote[]> => {
   const fileInfos = new Map<string, ObsidianFileInfo>();
-  const roots = collectCandidateRoots(params.guildId);
+  const roots = collectCandidateRoots({
+    guildId: params.guildId,
+    filePath: params.filePath,
+  });
 
   await Promise.all(roots.map(async (root) => {
     const files = await listObsidianFilesWithAdapter(params.vaultPath, root, 'md');
@@ -3454,6 +3617,7 @@ const buildIndexArtifact = (notes: KnowledgeSnapshotNote[], generatedAt: string)
   builder.section('Compiler Artifacts').bullets([
     `Log: ${toWikilink(LOG_PATH, 'Knowledge Log')}`,
     `Lint: ${toWikilink(LINT_PATH, 'Knowledge Lint')}`,
+    `Supervisor: ${toWikilink(SUPERVISOR_PATH, 'Knowledge Supervisor')}`,
     `Topic pages: ${TOPIC_DIR}/<topic>.md`,
     `Entity pages: ${ENTITY_DIR}/<entity>.md`,
   ]);
@@ -3674,6 +3838,212 @@ const buildEntityArtifact = (entityKey: string, notes: KnowledgeSnapshotNote[], 
   return builder.buildWithFrontmatter();
 };
 
+const getHighestSeverity = (values: Array<'low' | 'medium' | 'high'>): 'low' | 'medium' | 'high' => {
+  if (values.includes('high')) {
+    return 'high';
+  }
+  if (values.includes('medium')) {
+    return 'medium';
+  }
+  return 'low';
+};
+
+const dedupeSupervisorActions = (actions: ObsidianKnowledgeSupervisorAction[]): ObsidianKnowledgeSupervisorAction[] => {
+  const seen = new Set<string>();
+  const result: ObsidianKnowledgeSupervisorAction[] = [];
+  for (const action of actions) {
+    const key = `${action.kind}:${action.summary}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push({
+      ...action,
+      targetPaths: dedupeStrings(action.targetPaths),
+    });
+  }
+  return result;
+};
+
+const buildSupervisorActionsFromLintSummary = (summary: ObsidianKnowledgeLintSummary): ObsidianKnowledgeSupervisorAction[] => {
+  const actions: ObsidianKnowledgeSupervisorAction[] = [];
+  const issuesByKind = (kind: ObsidianKnowledgeLintIssue['kind']) => summary.issues.filter((issue) => issue.kind === kind);
+
+  if (summary.missingSourceRefs > 0) {
+    actions.push({
+      kind: 'refresh-grounding',
+      severity: 'medium',
+      summary: `${summary.missingSourceRefs} knowledge notes still lack source_refs grounding.`,
+      targetPaths: issuesByKind('missing_source_refs').flatMap((issue) => issue.filePaths),
+      suggestedNextStep: 'Refresh source_refs before treating the note as durable semantic memory.',
+    });
+  }
+
+  if (summary.invalidLifecycleNotes > 0) {
+    actions.push({
+      kind: 'repair-lifecycle',
+      severity: 'medium',
+      summary: `${summary.invalidLifecycleNotes} knowledge notes have inconsistent lifecycle metadata.`,
+      targetPaths: issuesByKind('invalid_lifecycle').flatMap((issue) => issue.filePaths),
+      suggestedNextStep: 'Normalize status, valid_at, invalid_at, and supersession metadata so lifecycle stays machine-readable.',
+    });
+  }
+
+  if (summary.canonicalCollisions > 0) {
+    actions.push({
+      kind: 'resolve-canonical-collision',
+      severity: 'high',
+      summary: `${summary.canonicalCollisions} canonical entities still have multiple active notes.`,
+      targetPaths: issuesByKind('canonical_collision').flatMap((issue) => issue.filePaths),
+      suggestedNextStep: 'Close the collision with supersedes, invalid_at, or an explicit canonical winner.',
+    });
+  }
+
+  if (summary.staleActiveNotes > 0) {
+    actions.push({
+      kind: 'repair-lifecycle',
+      severity: 'medium',
+      summary: `${summary.staleActiveNotes} active knowledge notes look stale enough to refresh or supersede.`,
+      targetPaths: issuesByKind('stale_active_note').flatMap((issue) => issue.filePaths),
+      suggestedNextStep: 'Refresh, invalidate, or supersede stale active notes so the graph stops advertising outdated truth.',
+    });
+  }
+
+  return actions;
+};
+
+const buildSupervisorActionsFromSemanticIssues = (issues: ObsidianSemanticLintAuditIssue[]): ObsidianKnowledgeSupervisorAction[] => {
+  const actions: ObsidianKnowledgeSupervisorAction[] = [];
+
+  const groupedIssues = {
+    coverage: issues.filter((issue) => issue.kind === 'coverage-gap'),
+    graph: issues.filter((issue) => issue.kind === 'graph-quality'),
+    runtime: issues.filter((issue) => issue.kind === 'runtime-doc-mismatch'),
+  };
+
+  if (groupedIssues.coverage.length > 0) {
+    actions.push({
+      kind: 'backfill-shared-coverage',
+      severity: getHighestSeverity(groupedIssues.coverage.map((issue) => issue.severity)),
+      summary: `${groupedIssues.coverage.length} shared coverage gaps are still open in the semantic owner surface.`,
+      targetPaths: groupedIssues.coverage.flatMap((issue) => issue.evidenceRefs),
+      suggestedNextStep: 'Backfill missing shared wiki targets before repo mirrors become the only visible truth.',
+    });
+  }
+
+  if (groupedIssues.graph.length > 0) {
+    actions.push({
+      kind: 'repair-graph-quality',
+      severity: getHighestSeverity(groupedIssues.graph.map((issue) => issue.severity)),
+      summary: `${groupedIssues.graph.length} graph-quality issues are still blocking clean traversal.`,
+      targetPaths: groupedIssues.graph.flatMap((issue) => issue.evidenceRefs),
+      suggestedNextStep: 'Repair unresolved links, orphans, or missing required properties before widening downstream automation.',
+    });
+  }
+
+  if (groupedIssues.runtime.length > 0) {
+    actions.push({
+      kind: 'resolve-runtime-mismatch',
+      severity: getHighestSeverity(groupedIssues.runtime.map((issue) => issue.severity)),
+      summary: `${groupedIssues.runtime.length} runtime-vs-doc mismatches are still visible in the active write/read path.`,
+      targetPaths: groupedIssues.runtime.flatMap((issue) => issue.evidenceRefs),
+      suggestedNextStep: 'Align runtime routing, adapter selection, and vault parity with the documented semantic-owner path.',
+    });
+  }
+
+  return actions;
+};
+
+const buildKnowledgeSupervisorReport = async (params: {
+  triggeredPath: string;
+  entityKey: string | null;
+  topics: string[];
+  lintSummary: ObsidianKnowledgeLintSummary;
+}): Promise<ObsidianKnowledgeSupervisorReport> => {
+  const semanticAudit = await runObsidianSemanticLintAudit({
+    maxIssues: 8,
+    includeGraphAudit: true,
+    persistFindings: false,
+  });
+  const actions = dedupeSupervisorActions([
+    ...buildSupervisorActionsFromLintSummary(params.lintSummary),
+    ...buildSupervisorActionsFromSemanticIssues(semanticAudit.issues.filter((issue) => issue.kind !== 'compiler-lint')),
+  ]);
+  const focusPaths = dedupeStrings([
+    params.triggeredPath,
+    params.entityKey ? buildEntityArtifactPath(params.entityKey) : null,
+    ...params.topics.map((topic) => buildTopicArtifactPath(topic)),
+    ...actions.flatMap((action) => action.targetPaths.filter((value) => isLikelyKnowledgePath(value))),
+  ]).slice(0, 12);
+  const highestSeverity = actions.length > 0
+    ? getHighestSeverity(actions.map((action) => action.severity))
+    : 'low';
+
+  return {
+    healthy: actions.length === 0,
+    summary: actions.length === 0
+      ? `Supervisor sees no blocking follow-up actions after compiling ${toWikilink(params.triggeredPath)}.`
+      : `Supervisor flagged ${actions.length} follow-up action${actions.length === 1 ? '' : 's'} after compiling ${toWikilink(params.triggeredPath)}. Highest severity: ${highestSeverity}.`,
+    actionCount: actions.length,
+    focusPaths,
+    actions,
+  };
+};
+
+const buildSupervisorArtifact = (params: {
+  generatedAt: string;
+  triggeredPath: string;
+  entityKey: string | null;
+  topics: string[];
+  report: ObsidianKnowledgeSupervisorReport;
+}) => {
+  const descriptor = describeKnowledgePath(params.triggeredPath);
+  const builder = doc()
+    .title('Knowledge Control Supervisor')
+    .tag('knowledge-control', 'auto-generated', 'supervisor')
+    .property('schema', 'knowledge-supervisor/v1')
+    .property('source', 'knowledge-compiler')
+    .property('generated_at', params.generatedAt)
+    .property('action_count', params.report.actionCount)
+    .property('healthy', params.report.healthy)
+    .property('trigger_path', params.triggeredPath)
+    .property('plane', descriptor.plane)
+    .property('concern', descriptor.concern);
+
+  if (params.entityKey) {
+    builder.property('entity_key', params.entityKey);
+  }
+
+  builder.section('Summary')
+    .line(params.report.summary)
+    .line(`Generated at: ${params.generatedAt}`)
+    .line(`Trigger: ${toWikilink(params.triggeredPath)}`)
+    .line(`Plane: ${descriptor.plane} | Concern: ${descriptor.concern}`)
+    .line(`Topics: ${params.topics.length > 0 ? params.topics.join(', ') : 'none'}`);
+
+  if (params.report.focusPaths.length > 0) {
+    builder.section('Focus Paths').bullets(params.report.focusPaths.map((value) => renderKnowledgeReference(value)));
+  }
+
+  if (params.report.actions.length === 0) {
+    builder.section('Priority Actions').line('No immediate supervisor actions. Keep monitoring index, log, and semantic lint drift.');
+  } else {
+    builder.section('Priority Actions').table(
+      ['Severity', 'Kind', 'Targets', 'Next'],
+      params.report.actions.map((action) => [
+        action.severity,
+        action.kind,
+        action.targetPaths.length > 0 ? action.targetPaths.slice(0, 3).map((value) => renderKnowledgeReference(value)).join(', ') : 'n/a',
+        action.suggestedNextStep,
+      ]),
+    );
+  }
+
+  builder.section('Verification Checklist').bullets([...CONTROL_TOWER_BLUEPRINT.reflectionChecklist]);
+
+  return builder.buildWithFrontmatter();
+};
+
 const writeArtifact = async (params: {
   guildId: string;
   vaultPath: string;
@@ -3689,6 +4059,7 @@ const writeArtifact = async (params: {
     content: params.markdown,
     tags: params.tags,
     properties: params.properties,
+    allowHighLinkDensity: true,
     skipKnowledgeCompilation: true,
   });
 
@@ -3707,6 +4078,7 @@ export const listObsidianKnowledgeArtifactPaths = (stats = getObsidianKnowledgeC
     INDEX_PATH,
     LOG_PATH,
     LINT_PATH,
+    SUPERVISOR_PATH,
     ...stats.lastArtifacts,
     ...stats.lastTopics.map((topic) => buildTopicArtifactPath(topic)),
     stats.lastEntityKey ? buildEntityArtifactPath(stats.lastEntityKey) : null,
@@ -3728,6 +4100,9 @@ export const resolveObsidianKnowledgeArtifactPath = (value: string): string | nu
   }
   if (normalized === 'lint' || normalized === LINT_PATH.toLowerCase()) {
     return LINT_PATH;
+  }
+  if (normalized === 'supervisor' || normalized === SUPERVISOR_PATH.toLowerCase()) {
+    return SUPERVISOR_PATH;
   }
   if (normalized === 'blueprint' || normalized === BLUEPRINT_PATH.toLowerCase()) {
     return BLUEPRINT_PATH;
@@ -3876,9 +4251,33 @@ export const getObsidianKnowledgeControlSurface = () => {
   const artifactPaths = listObsidianKnowledgeArtifactPaths(compiler);
   const controlPaths = [...CONTROL_TOWER_PATHS];
   const backfillCatalog = loadKnowledgeBackfillCatalog();
+  const supervisorAvailable = artifactPaths.includes(SUPERVISOR_PATH);
   return {
     compiler,
     artifactPaths,
+    artifactSupport: {
+      enabled: true,
+      queryParam: 'artifact',
+      acceptedAliases: [
+        'index',
+        'log',
+        'lint',
+        'supervisor',
+        'blueprint',
+        'canonical-map',
+        'cadence',
+        'gate-entrypoints',
+        'topic:<slug>',
+        'entity:<slug>',
+      ],
+    },
+    supervisor: {
+      alias: 'supervisor',
+      path: SUPERVISOR_PATH,
+      available: supervisorAvailable,
+      includedInLastRun: supervisorAvailable && compiler.lastArtifacts.includes(SUPERVISOR_PATH),
+      lastCompiledAt: compiler.lastCompiledAt,
+    },
     controlPaths,
     blueprint: cloneBlueprint(CONTROL_TOWER_BLUEPRINT),
     backfillCatalog: {
@@ -4021,6 +4420,35 @@ export const runKnowledgeCompilationForNote = async (params: {
       if (entityPath) {
         artifacts.push(entityPath);
       }
+    }
+
+    try {
+      const supervisorReport = await buildKnowledgeSupervisorReport({
+        triggeredPath: normalizePath(params.filePath),
+        entityKey: decision.entityKey,
+        topics,
+        lintSummary,
+      });
+      const supervisorDoc = buildSupervisorArtifact({
+        generatedAt,
+        triggeredPath: normalizePath(params.filePath),
+        entityKey: decision.entityKey,
+        topics,
+        report: supervisorReport,
+      });
+      const supervisorPath = await writeArtifact({
+        guildId: params.guildId,
+        vaultPath: params.vaultPath,
+        filePath: SUPERVISOR_PATH,
+        markdown: supervisorDoc.markdown,
+        tags: supervisorDoc.tags,
+        properties: supervisorDoc.properties,
+      });
+      if (supervisorPath) {
+        artifacts.push(supervisorPath);
+      }
+    } catch (error) {
+      logger.warn('[OBSIDIAN-KNOWLEDGE] supervisor artifact failed file=%s error=%s', params.filePath, getErrorMessage(error));
     }
 
     recordState({

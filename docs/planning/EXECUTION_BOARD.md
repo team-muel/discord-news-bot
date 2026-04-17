@@ -51,8 +51,9 @@
    - p95 레이턴시를 go/no-go gate 판정 입력에 포함
    - 세션 품질 집계: 기존 quality_score 기반 SQL view (코드 최소화)
 3. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-21 완료 후 승격
+   - 이미 들어온 것: local n8n starter closeout은 `preview -> request approval -> approve/apply -> rollback` baseline path까지 닫혔다
    - `muelUnified` 로컬 stdio 진입점을 `.vscode/mcp.json`에 추가 (현재 GCP SSH만)
-   - NemoClaw / n8n 어댑터 통합 테스트 또는 헬스 페이지 문서화
+   - 남은 범위: NemoClaw / n8n 어댑터 통합 테스트, 헬스 페이지 문서화, 활용률 증거 surface 정리
    - 어댑터 활용률 대시보드 (성공률, p95 레이턴시 per tool) 추가
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 4
 4. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
@@ -60,12 +61,18 @@
    - MCP Tool Spec v2 기준으로 관련 문서 정렬 완료 (2026-04-05 일부 완료)
    - Obsidian 중심 운영체계 기준 문서 3종 고정: `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`, `OBSIDIAN_OBJECT_MODEL.md`, `OBSIDIAN_TRANSITION_PLAN.md`
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 5
-5. [M-24] 채널 ingress 추상화 (OpenClaw 우선, Chat SDK 준비) — M-21 종료 후 재개
-   - 현재 구현 기준 ingress는 Discord → 기존 router → OpenClaw 우선 경로를 유지하되, 목표 산출물은 OpenClaw 고정이 아니라 채널 ingress 계약 분리다
-   - `/해줘`, `뮤엘 ...` 경로는 계속 `OPENCLAW_ENABLED=true` + gateway health 통과 시 OpenClaw를 우선 사용하고, 실패 시 기존 action runner 폴백을 유지한다
-   - 다음 단계는 Discord/OpenClaw 진입을 공통 ingress envelope로 감싸 future Chat SDK adapter가 같은 routing/policy contract를 재사용하게 만드는 것이다
+5. [M-24] 채널 ingress 추상화 + Chat SDK grace-close — M-21 종료 후 재개
+   - 이미 들어온 것: eligible surface `/해줘`, `/뮤엘`, `뮤엘 ...`는 live cutover gate가 green이고 current canary slice에서 `chat-sdk` selected owner와 forced legacy fallback rollback evidence가 확보되었다
+   - 아직 실 owner 전환 전인 것: eligible surface 전체 default-on/100 전환, rollback grace-close 종료, legacy demotion/removal은 별도 후속 lane이다
+   - 아직 실 owner 전환 전인 것: `/만들어줘`, session progress/update lifecycle, admin/persona/task/CRM/market/runtime-control surface는 phase 2 이후 범위다
+   - 다음 단계는 이미 닫힌 ingress envelope와 live policy contract 위에서 default-on 확장, grace-close, legacy demotion 순서를 안전하게 진행하는 것이다
    - Hermes는 continuity/operator lane으로 유지하고, Supabase/Obsidian/OpenJarvis ownership은 바꾸지 않는다
-   - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 2
+   - 참조: `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`
+6. [M-21] [M-24] Legacy cleanup inventory lock — replacement-complete 이후에만 삭제 개방
+   - scope: Discord legacy path, provider alias sprawl, naming compatibility residue, control-plane compatibility glue, deterministic inline residue
+   - current gate: remove-now=none, rollback-only=docs.ask post-ingress fallback exact unit only, keep-for-now=all remaining scoped units
+   - predecessor lanes: Chat SDK cutover grace-close (live canary entered, full grace-close pending), provider cleanup closure (entered), naming/control-plane canonicalization closure (pending), deterministic task extraction closure (pending)
+   - 참조: `docs/planning/LEGACY_CLEANUP_LANE.md`
 
 ## Closed on 2026-04-06
 

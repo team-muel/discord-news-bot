@@ -9,6 +9,14 @@ describe('operatingBaseline', () => {
     expect(getOperatingBaselinePath().replace(/\\/g, '/')).toContain('config/runtime/operating-baseline.json');
     expect(baseline).toMatchObject({
       environment: 'production-current',
+      capabilityAudit: {
+        acknowledgedFindings: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'openclaw-gateway-disconnected',
+            status: 'optional-lane',
+          }),
+        ]),
+      },
       gcpWorker: {
         machineType: 'e2-medium',
         memoryGb: 4,
@@ -25,6 +33,8 @@ describe('operatingBaseline', () => {
       publicBaseUrl: 'https://34.56.232.61.sslip.io',
     });
     expect(summary.alwaysOnRequired).toContain('unifiedMcp');
+    expect(summary.alwaysOnRequired).not.toContain('litellmProxy');
+    expect(summary.optInRemoteProviderLanes).toContain('litellmProxy');
     expect(summary.localAccelerationOnly).toContain('localOllama');
   });
 });

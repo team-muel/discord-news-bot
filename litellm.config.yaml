@@ -24,6 +24,7 @@ model_list:
       model: ollama/hf.co/bartowski/nvidia_Llama-3.1-Nemotron-Nano-8B-v1-GGUF:Q4_K_M
       api_base: os.environ/OLLAMA_BASE_URL
 
+  # Opt-in experimental and specialist aliases stay below the default front door.
   - model_name: muel-nemotron
     litellm_params:
       model: nvidia_nim/nvidia/nemotron-3-super-120b-a12b
@@ -59,15 +60,23 @@ litellm_settings:
   fallbacks:
     - {
         "muel-balanced":
-          ["muel-local", "muel-hf", "muel-fast", "muel-precise", "muel-nemotron"],
+          ["muel-precise", "muel-fast", "muel-local"],
       }
     - {
         "muel-fast":
-          ["muel-local", "muel-balanced", "muel-hf"],
+          ["muel-balanced", "muel-local"],
       }
     - {
         "muel-precise":
-          ["muel-balanced", "muel-fast", "muel-nemotron"],
+          ["muel-balanced", "muel-fast", "muel-local"],
+      }
+    - {
+        "muel-local":
+          ["muel-balanced"],
+      }
+    - {
+        "muel-hf":
+          ["muel-balanced", "muel-local"],
       }
     - {
         "muel-gemma4":

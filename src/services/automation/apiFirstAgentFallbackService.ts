@@ -4,6 +4,7 @@ import { getDelegationStatus } from './n8nDelegationService';
 import { buildAutomationActivationPack } from '../../../scripts/lib/automationActivationPack.mjs';
 import {
   buildN8nStarterWorkflowDefinitions,
+  N8N_STARTER_INSTALL_ACTION_NAME,
   toN8nWorkflowSeedPayload,
 } from '../../../scripts/bootstrap-n8n-local.mjs';
 
@@ -44,6 +45,7 @@ export type AutomationCapabilityCatalog = {
     configuredN8nTaskCount: number;
     availableAdapters: string[];
     upstreamNamespaces: string[];
+    sharedWrapperNamespaces: string[];
   };
 };
 
@@ -155,6 +157,23 @@ export type AutomationWorkflowDraftStage = {
   successCriteria: string;
 };
 
+export type AutomationWorkflowDraftInstallPath = {
+  status: 'approval-gated-installable' | 'draft-only';
+  summary: string;
+  approvalGate: {
+    required: boolean;
+    actionName: string | null;
+  };
+  commands: {
+    preview: string | null;
+    requestApproval: string | null;
+    approveAndApply: string | null;
+    applyApproved: string | null;
+    rollback: string | null;
+  };
+  operationLogRoot: string | null;
+};
+
 export type AutomationWorkflowDraft = {
   runtimeLane: AutomationRuntimeLane;
   changeMode: 'create-new' | 'update-existing';
@@ -166,6 +185,7 @@ export type AutomationWorkflowDraft = {
     tasks: string[];
   };
   starterCandidates: AutomationWorkflowDraftCandidate[];
+  installPath: AutomationWorkflowDraftInstallPath;
   stages: AutomationWorkflowDraftStage[];
   modificationPolicy: string[];
 };
@@ -343,6 +363,16 @@ const STARTER_WORKFLOW_HINTS: Record<string, {
 };
 
 const compact = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+type UpstreamDiagnosticEntry = ReturnType<typeof listUpstreamDiagnostics>[number];
+
+const isSharedWrapperUpstream = (entry: UpstreamDiagnosticEntry): boolean => {
+  const audience = compact(entry.audience).toLowerCase();
+  return audience !== 'operator';
+};
+
+const selectSharedWrapperUpstreams = (
+  upstreams: ReturnType<typeof listUpstreamDiagnostics>,
+): ReturnType<typeof listUpstreamDiagnostics> => upstreams.filter((entry) => isSharedWrapperUpstream(entry));
 
 const sanitizeStringList = (value: unknown): string[] => Array.isArray(value)
   ? value.map((entry) => compact(entry)).filter(Boolean)
@@ -539,12 +569,14 @@ const buildRuntimeSnapshot = async (refreshUpstreams = false) => {
   const delegation = getDelegationStatus();
   const upstreams = listUpstreamDiagnostics();
   const enabledUpstreams = upstreams.filter((entry) => entry.enabled);
+  const sharedWrapperUpstreams = selectSharedWrapperUpstreams(enabledUpstreams);
   const configuredN8nTaskCount = Object.values(delegation.tasks).filter((task) => task.configured).length;
 
   return {
     adapters,
     delegation,
     enabledUpstreams,
+    sharedWrapperUpstreams,
     configuredN8nTaskCount,
   };
 };
@@ -553,7 +585,8 @@ export const buildAutomationCapabilityCatalog = async (options: {
   refreshUpstreams?: boolean;
 } = {}): Promise<AutomationCapabilityCatalog> => {
   const snapshot = await buildRuntimeSnapshot(options.refreshUpstreams === true);
-  const { adapters, delegation, enabledUpstreams, configuredN8nTaskCount } = snapshot;
+  const { adapters, enabledUpstreams, sharedWrapperUpstreams, configuredN8nTaskCount } = snapshot;
+  const sharedWrapperNamespaces = sharedWrapperUpstreams.map((entry) => entry.namespace);
 
   const n8nAdapter = findAdapter(adapters, 'n8n');
   const obsidianAdapter = findAdapter(adapters, 'obsidian');
@@ -609,11 +642,11 @@ export const buildAutomationCapabilityCatalog = async (options: {
       surfaceId: 'gcpcompute-shared-mcp',
       layer: 'mcp-wrapping',
       operationalState: resolveOperationalState({
-        ready: enabledUpstreams.length > 0,
+        ready: sharedWrapperNamespaces.length > 0,
       }),
       responsibility: 'Shared MCP wrapper for operator knowledge, shared code intelligence, and remote-capable tool lanes.',
-      bindings: enabledUpstreams.length > 0
-        ? enabledUpstreams.map((entry) => `upstream.${entry.namespace}.*`)
+      bindings: sharedWrapperNamespaces.length > 0
+        ? sharedWrapperNamespaces.map((namespace) => `upstream.${namespace}.*`)
         : ['upstream.<namespace>.<tool>'],
       preferredWhen: ['shared knowledge retrieval', 'team-shared tooling', 'remote-capable reasoning/tool use'],
       avoidWhen: ['local-only dirty workspace edits', 'machine-local interactive shells'],
@@ -686,6 +719,7 @@ export const buildAutomationCapabilityCatalog = async (options: {
       configuredN8nTaskCount,
       availableAdapters: adapters.filter((adapter) => adapter.available).map((adapter) => adapter.id),
       upstreamNamespaces: enabledUpstreams.map((entry) => entry.namespace),
+      sharedWrapperNamespaces,
     },
   };
 };
@@ -722,16 +756,16 @@ const buildPrimaryApiActions = (params: {
 const buildFallbackActions = (params: {
   executionPreference: 'local' | 'remote' | 'hybrid';
   candidateMcpTools: string[];
-  upstreamNamespaces: string[];
+  sharedWrapperNamespaces: string[];
   localReasoningReady: boolean;
   workstationReady: boolean;
 }): { surfaces: string[]; actions: string[] } => {
   const surfaces: string[] = [];
   const actions: string[] = [];
 
-  if (params.upstreamNamespaces.length > 0) {
+  if (params.sharedWrapperNamespaces.length > 0) {
     surfaces.push('gcpcompute-shared-mcp');
-    actions.push(`Call shared MCP tools first for team-shared knowledge or remote-capable tools: ${params.upstreamNamespaces.join(', ')}.`);
+    actions.push(`Call shared MCP tools first for team-shared knowledge or remote-capable tools: ${params.sharedWrapperNamespaces.join(', ')}.`);
   }
 
   if (params.executionPreference !== 'remote') {
@@ -779,6 +813,7 @@ export const previewApiFirstAgentFallbackRoute = async (
 
   const snapshot = await buildRuntimeSnapshot(false);
   const upstreamNamespaces = snapshot.enabledUpstreams.map((entry) => entry.namespace);
+  const sharedWrapperNamespaces = snapshot.sharedWrapperUpstreams.map((entry) => entry.namespace);
   const localReasoningReady = ['openjarvis', 'ollama'].some((adapterId) => {
     const adapter = findAdapter(snapshot.adapters, adapterId);
     return Boolean(adapter?.available);
@@ -829,7 +864,7 @@ export const previewApiFirstAgentFallbackRoute = async (
       ? {
         pathType: 'mcp-path' as const,
         surfaces: [
-          'gcpcompute-shared-mcp',
+          ...(sharedWrapperNamespaces.length > 0 ? ['gcpcompute-shared-mcp'] : []),
           'hermes-local-operator',
           ...(executionPreference !== 'remote' && workstationReady ? ['local-workstation-executor'] : []),
         ],
@@ -853,7 +888,7 @@ export const previewApiFirstAgentFallbackRoute = async (
   const fallbackPath = buildFallbackActions({
     executionPreference,
     candidateMcpTools,
-    upstreamNamespaces,
+    sharedWrapperNamespaces,
     localReasoningReady,
     workstationReady,
   });
@@ -1017,6 +1052,58 @@ const matchStarterWorkflowTasks = (params: {
     .sort((left, right) => right.score - left.score || left.task.localeCompare(right.task))
     .map((entry) => entry.task)
     .slice(0, 3);
+};
+
+const buildN8nStarterInstallPath = (params: {
+  starterCandidates: AutomationWorkflowDraftCandidate[];
+  changeMode: 'create-new' | 'update-existing';
+}): AutomationWorkflowDraftInstallPath => {
+  if (params.starterCandidates.length === 0) {
+    return {
+      status: 'draft-only',
+      summary: 'No deterministic starter workflow matched yet, so the workflow remains at draft level until the task closes into a reusable install target.',
+      approvalGate: {
+        required: false,
+        actionName: null,
+      },
+      commands: {
+        preview: null,
+        requestApproval: null,
+        approveAndApply: null,
+        applyApproved: null,
+        rollback: null,
+      },
+      operationLogRoot: null,
+    };
+  }
+
+  const taskList = params.starterCandidates.map((candidate) => candidate.task).join(',');
+  const commandArgs = taskList ? [`--tasks=${taskList}`] : [];
+  if (params.changeMode === 'update-existing') {
+    commandArgs.push('--updateExisting=true');
+  }
+  const buildCommand = (scriptName: string, args: string[] = []) => {
+    return args.length > 0
+      ? `npm run ${scriptName} -- ${args.join(' ')}`
+      : `npm run ${scriptName}`;
+  };
+
+  return {
+    status: 'approval-gated-installable',
+    summary: `The matched starter workflow set can close as an approval-gated local n8n install or update for tasks: ${taskList}.`,
+    approvalGate: {
+      required: true,
+      actionName: N8N_STARTER_INSTALL_ACTION_NAME,
+    },
+    commands: {
+      preview: buildCommand('n8n:local:seed:plan', commandArgs),
+      requestApproval: buildCommand('n8n:local:seed:request', commandArgs),
+      approveAndApply: 'npm run n8n:local:seed:approve-and-apply -- --requestId=<approval-request-id> --actorId=<operator-id>',
+      applyApproved: 'npm run n8n:local:seed:apply-approved -- --requestId=<approval-request-id>',
+      rollback: 'npm run n8n:local:rollback -- --operationId=<operation-id>',
+    },
+    operationLogRoot: 'tmp/n8n-local/operations',
+  };
 };
 
 const buildWorkflowDraftRouterShape = (params: {
@@ -1221,6 +1308,10 @@ const buildWorkflowDraftInternal = (params: {
       } satisfies AutomationWorkflowDraftCandidate;
     })
     .filter((candidate) => candidate != null) as AutomationWorkflowDraftCandidate[];
+  const installPath = buildN8nStarterInstallPath({
+    starterCandidates,
+    changeMode,
+  });
 
   return {
     runtimeLane,
@@ -1247,6 +1338,7 @@ const buildWorkflowDraftInternal = (params: {
       tasks: existingWorkflowTasks,
     },
     starterCandidates,
+    installPath,
     stages: buildWorkflowDraftStages({
       trigger,
       runtimeLane,
@@ -1268,6 +1360,9 @@ const buildWorkflowDraftInternal = (params: {
       starterCandidates.length > 0
         ? `Prefer the reusable starter tasks as the first draft basis: ${starterCandidates.map((candidate) => candidate.task).join(', ')}.`
         : null,
+      installPath.status === 'approval-gated-installable'
+        ? `Close deterministic starter tasks through the approval-gated install lane (${installPath.approvalGate.actionName}) instead of stopping at seed payload output.`
+        : null,
     ]),
   };
 };
@@ -1285,7 +1380,7 @@ const buildAssetDelegationMatrix = (params: {
   const ollamaAdapter = findAdapter(params.snapshot.adapters, 'ollama');
   const renderAdapter = findAdapter(params.snapshot.adapters, 'render');
   const workstationAdapter = findAdapter(params.snapshot.adapters, 'workstation');
-  const sharedNamespaces = params.snapshot.enabledUpstreams.map((entry) => entry.namespace);
+  const sharedNamespaces = params.snapshot.sharedWrapperUpstreams.map((entry) => entry.namespace);
   const primarySurfaces = new Set(params.routePreview.primaryPath.surfaces);
   const fallbackSurfaces = new Set(params.routePreview.fallbackPath.surfaces);
 
@@ -1637,14 +1732,14 @@ const buildObservabilityPlan = (params: {
 
 const buildSharedEnablementPlan = (params: {
   sharedBenefitPhase: AutomationSharedBenefitPhase;
-  enabledUpstreamNamespaces: string[];
+  sharedWrapperNamespaces: string[];
 }): AutomationOptimizerPlan['sharedEnablementPlan'] => {
   if (params.sharedBenefitPhase === 'required-now') {
     return {
       currentMilestone: dedupeStringList([
         'Promote stable wrapped capabilities into shared MCP now so teammates can consume the same ingress without a local Hermes dependency.',
-        params.enabledUpstreamNamespaces.length > 0
-          ? `Attach the first shared export to the existing upstream namespaces: ${params.enabledUpstreamNamespaces.join(', ')}.`
+        params.sharedWrapperNamespaces.length > 0
+          ? `Attach the first shared export to the existing shared-wrapper namespaces: ${params.sharedWrapperNamespaces.join(', ')}.`
           : 'Provision a shared MCP namespace for the first stable wrapper export.',
       ]),
       futureMilestones: [
@@ -1760,7 +1855,7 @@ export const buildAutomationOptimizerPlan = async (
     }),
     sharedEnablementPlan: buildSharedEnablementPlan({
       sharedBenefitPhase,
-      enabledUpstreamNamespaces: snapshot.enabledUpstreams.map((entry) => entry.namespace),
+      sharedWrapperNamespaces: snapshot.sharedWrapperUpstreams.map((entry) => entry.namespace),
     }),
   };
 };

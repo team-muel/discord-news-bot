@@ -12,6 +12,7 @@ import {
   buildSessionOpenBundle,
   buildStatusPayload,
   canLaunchContinuousLoopResume,
+  launchVisibleWindowsPowerShell,
   normalizeLoopLimit,
   parseJsonCommandOutput,
   pickAutonomousGoalCandidate,
@@ -19,6 +20,7 @@ import {
   readExecutionBoardQueuedObjectives,
   resolveRequestedWorkflowSessionId,
   resolveGoalCycleRouteMode,
+  runContinuousLoop,
 } from './run-openjarvis-goal-cycle.mjs';
 import {
   formatWorkflowSessionReference,
@@ -265,7 +267,7 @@ describe('openjarvis remote workstream smoke', () => {
       awaiting_reentry_acknowledgment_stale: false,
     });
     expect(status.hermes_runtime.next_actions).toEqual(expect.arrayContaining([
-      'Acknowledge the queued GPT turn with the reentry-ack command before allowing the queue-aware supervisor to relaunch.',
+      'Acknowledge the queued GPT handoff with the reentry-ack command before allowing the queue-aware supervisor to relaunch.',
     ]));
     expect(status.hermes_runtime.blockers).not.toContain('No live supervisor is holding the local continuity loop open right now.');
     expect(status.hermes_runtime.remediation_actions.map((entry: { action_id: string }) => entry.action_id)).not.toContain('start-supervisor-loop');
@@ -340,14 +342,14 @@ describe('openjarvis remote workstream smoke', () => {
       'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment, so the autonomy loop is paused on a stale boundary.',
     );
     expect(status.hermes_runtime.next_actions).toContain(
-      'Inspect the pending queued VS Code chat turn and run the reentry-ack command; the wait boundary has gone stale and Hermes will stay paused until it is closed out.',
+      'Inspect the pending queued VS Code GPT handoff and run the reentry-ack command; the wait boundary has gone stale and Hermes will stay paused until it is closed out.',
     );
 
     const bundle = buildSessionOpenBundle({ status });
     expect(bundle.capability_demands[0]).toMatchObject({
       summary: 'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment and is blocking the next autonomous cycle.',
       missing_capability: 'stale_reentry_acknowledgment',
-      failed_or_insufficient_route: 'queued_chat_launched -> reentry_acknowledged',
+      failed_or_insufficient_route: 'queued_gpt_handoff_launched -> reentry_acknowledged',
       proposed_owner: 'hermes',
     });
     expect(bundle.supervisor).toMatchObject({
@@ -395,6 +397,41 @@ describe('openjarvis remote workstream smoke', () => {
       codeDriftDetected: false,
       restartRecommended: false,
       driftReason: null,
+    });
+  });
+
+  it('prefers the detached watcher manifest over a one-shot status pid', () => {
+    const watchState = resolveLocalAutonomyWatchState({
+      manifest: {
+        pid: process.pid,
+        startedAt: '2026-04-17T10:37:02.601Z',
+        logPath: 'tmp/autonomy/local-autonomy-supervisor.log',
+        statusPath: 'tmp/autonomy/local-autonomy-supervisor.json',
+        detached: true,
+      },
+      status: {
+        checkedAt: '2026-04-17T10:48:46.789Z',
+        summary: 'doctor=true failures=0 hermes=ready queue=ready chat=auto supervisor:alive:auto-chat',
+        watchProcess: {
+          pid: process.pid + 999999,
+          detached: false,
+          manifestPath: 'tmp/autonomy/local-autonomy-supervisor.manifest.json',
+          statusPath: 'tmp/autonomy/local-autonomy-supervisor.json',
+          logPath: 'tmp/autonomy/local-autonomy-supervisor.log',
+        },
+        code: {
+          driftDetected: false,
+          restartRecommended: false,
+          reason: null,
+        },
+      },
+    });
+
+    expect(watchState).toMatchObject({
+      alive: true,
+      pid: process.pid,
+      detached: true,
+      summary: 'doctor=true failures=0 hermes=ready queue=ready chat=auto supervisor:alive:auto-chat',
     });
   });
 
@@ -1422,6 +1459,136 @@ automation_auto_restart_on_release: true
     });
 
     expect(args).toContain('--autoLaunchQueuedChat=true');
+  });
+
+  it('passes the queued-swarm relaunch settings through child goal-cycle launch args', () => {
+    const args = buildGoalCycleLaunchArgs({
+      objective: 'stabilize the next GPT relaunch objective',
+      dryRun: false,
+      autoDeploy: false,
+      strict: true,
+      routeMode: 'delivery',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      runtimeLane: 'operator-personal',
+      autoRestartOnRelease: true,
+      resumeFromPackets: true,
+      forceResume: false,
+      continuousLoop: true,
+      vaultPath: 'C:/vault',
+      idleSeconds: 45,
+      maxCycles: Number.POSITIVE_INFINITY,
+      maxIdleChecks: Number.POSITIVE_INFINITY,
+      capacityTarget: 90,
+      continueUntilCapacity: false,
+      gcpCapacityRecoveryRequested: false,
+      autoSelectQueuedObjective: true,
+      autoLaunchQueuedSwarm: true,
+      autoLaunchQueuedSwarmIncludeDistiller: true,
+      autoLaunchQueuedSwarmExecutorWorktreePath: 'C:/Muel_S/wt/swarm-executor',
+      autoLaunchQueuedSwarmExecutorArtifactBudget: ['tests', 'docs'],
+      autoOpenResumePacket: true,
+    });
+
+    expect(args).toContain('--autoLaunchQueuedSwarm=true');
+    expect(args).toContain('--autoLaunchQueuedSwarmIncludeDistiller=true');
+    expect(args).toContain('--autoLaunchQueuedSwarmExecutorWorktreePath=C:/Muel_S/wt/swarm-executor');
+    expect(args).toContain('--autoLaunchQueuedSwarmExecutorArtifactBudget=tests,docs');
+  });
+
+  it('returns a preview instead of launching a visible terminal during dry runs', () => {
+    const launch = launchVisibleWindowsPowerShell({
+      objective: 'stabilize shared wrapper readiness',
+      dryRun: true,
+      autoDeploy: false,
+      strict: true,
+      routeMode: 'operations',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      runtimeLane: 'operator-personal',
+      resumeFromPackets: true,
+      forceResume: false,
+      continuousLoop: true,
+      idleSeconds: 45,
+      maxCycles: Number.POSITIVE_INFINITY,
+      maxIdleChecks: Number.POSITIVE_INFINITY,
+      autoRestartOnRelease: true,
+      capacityTarget: 90,
+      continueUntilCapacity: false,
+      autoSelectQueuedObjective: true,
+      autoLaunchQueuedChat: false,
+      autoLaunchQueuedChatContextProfile: null,
+      autoLaunchQueuedSwarm: true,
+      autoLaunchQueuedSwarmIncludeDistiller: true,
+      autoLaunchQueuedSwarmExecutorWorktreePath: 'C:/Muel_S/wt/swarm-executor',
+      autoLaunchQueuedSwarmExecutorArtifactBudget: ['tests', 'docs'],
+      gcpCapacityRecoveryRequested: false,
+      vaultPath: null,
+      resumeState: null,
+      autoOpenResumePacket: false,
+    });
+
+    expect(launch).toMatchObject({
+      ok: true,
+      exit_code: 0,
+      completion: 'skipped',
+      launched_visible_terminal: false,
+      terminal_pid: null,
+      runner_pid: null,
+      manifest_path: null,
+      log_path: null,
+      auto_launch_queued_swarm: true,
+      auto_launch_queued_swarm_include_distiller: true,
+      auto_launch_queued_swarm_executor_artifact_budget: ['tests', 'docs'],
+      resume_from_packets: true,
+      vscode_bridge: null,
+    });
+  });
+
+  it('does not write continuity loop state during continuous-loop dry runs', async () => {
+    const loopStatePath = path.resolve('tmp', 'autonomy', 'launches', 'latest-interactive-goal-loop.json');
+    const originalLoopState = await fs.readFile(loopStatePath, 'utf8').catch(() => null);
+
+    const loop = await runContinuousLoop({
+      objective: 'preview bounded continuity restart only',
+      dryRun: true,
+      autoDeploy: false,
+      strict: true,
+      routeMode: 'operations',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      runtimeLane: 'operator-personal',
+      sessionPath: null,
+      vaultPath: null,
+      resumeFromPackets: false,
+      forceResume: false,
+      idleSeconds: 0,
+      maxCycles: 0,
+      maxIdleChecks: 0,
+      continueUntilCapacity: false,
+      autoSelectQueuedObjective: false,
+      autoLaunchQueuedChat: false,
+      autoLaunchQueuedChatContextProfile: null,
+      autoLaunchQueuedSwarm: false,
+      autoLaunchQueuedSwarmIncludeDistiller: false,
+      autoLaunchQueuedSwarmExecutorWorktreePath: null,
+      autoLaunchQueuedSwarmExecutorArtifactBudget: [],
+      capacityTarget: null,
+      gcpCapacityRecoveryRequested: false,
+      vscodeBridge: null,
+      autoRestartOnRelease: false,
+    });
+
+    expect(loop).toMatchObject({
+      ok: true,
+      continuous_loop: true,
+      stop_reason: 'max_cycles_reached',
+      launches_completed: 0,
+      idle_checks: 0,
+      loop_state_path: null,
+    });
+    const nextLoopState = await fs.readFile(loopStatePath, 'utf8').catch(() => null);
+    expect(nextLoopState).toBe(originalLoopState);
   });
 
   it('injects a GCP health step into unattended operations runs before memory sync', () => {

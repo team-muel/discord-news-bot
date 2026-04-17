@@ -204,4 +204,32 @@ describe('hermesVsCodeBridgeService', () => {
     }));
     expect(result.packetLog.logged).toBe(true);
   });
+
+  it('allows chat context files from an explicit worktree root', async () => {
+    const { vaultRoot, packetPath, codeCliPath } = createVaultPacket({ includeGuiBinary: true });
+    const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-vscode-bridge-worktree-'));
+    tempDirs.push(worktreeRoot);
+    const worktreeFile = path.join(worktreeRoot, 'src', 'worker.ts');
+    fs.mkdirSync(path.dirname(worktreeFile), { recursive: true });
+    fs.writeFileSync(worktreeFile, 'export const worker = true;\n', 'utf8');
+
+    const result = await runHermesVsCodeBridge({
+      action: 'chat',
+      prompt: 'Continue the executor shard inside the isolated worktree.',
+      chatMode: 'agent',
+      addFilePaths: [worktreeFile],
+      allowedRoots: [worktreeRoot],
+      maximize: true,
+      reuseWindow: true,
+      packetPath,
+      codeCliPath,
+      vaultPath: vaultRoot,
+      reason: 'launch executor shard in isolated worktree',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.completion).toBe('queued');
+    expect(result.command).toContain(worktreeFile);
+    expect(result.packetLog.logged).toBe(true);
+  });
 });

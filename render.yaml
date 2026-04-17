@@ -29,9 +29,7 @@ services:
       - key: AUTOMATION_NEWS_ENABLED
         value: "true"
       - key: AI_PROVIDER
-        value: litellm
-      - key: OPENCLAW_MODEL
-        value: muel-balanced
+        value: openjarvis
       - key: OPENJARVIS_REQUIRE_OPENCODE_WORKER
         value: "true"
       - key: ACTION_MCP_STRICT_ROUTING
@@ -48,6 +46,8 @@ services:
         value: https://34.56.232.61.sslip.io/operate
       - key: OPENJARVIS_SERVE_URL
         value: https://34.56.232.61.sslip.io/openjarvis
+      - key: OPENJARVIS_MODEL
+        value: muel-balanced
       - key: MCP_WORKER_AUTH_TOKEN
         sync: false
       - key: AGENT_AUTO_ONBOARDING_ENABLED
@@ -70,8 +70,16 @@ services:
         value: "true"
       - key: SPRINT_LEARNING_JOURNAL_AUTO_APPLY_ENABLED
         value: "true"
+      - key: LLM_PROVIDER_BASE_ORDER
+        value: ""
+      - key: LLM_PROVIDER_AUTOMATIC_FALLBACK_ORDER
+        value: ""
       - key: LLM_PROVIDER_FALLBACK_CHAIN
-        value: openclaw,litellm,anthropic,openai,gemini
+        value: ""
+      - key: LLM_PROVIDER_POLICY_ACTIONS
+        value: ""
+      - key: LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED
+        value: "true"
       - key: LITELLM_ENABLED
         value: "true"
       - key: LITELLM_BASE_URL
@@ -97,7 +105,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENCLAW_BASE_URL
-        value: https://muel-litellm-proxy.onrender.com
+        value: ""
       - key: OPENCLAW_API_KEY
         sync: false
       - key: JWT_SECRET

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { commandDefinitions, SIMPLE_COMMAND_ALLOWLIST } from './commandDefinitions';
+import { commandDefinitions } from './commandDefinitions';
 import { DISCORD_MESSAGES } from './messages';
 import { hasVibeMessagePrefix, stripVibeMessagePrefix } from './commands/vibe';
+import { SIMPLE_COMMAND_ALLOWLIST } from './runtimePolicy';
 
 describe('Discord Muel entry surface', () => {
   it('keeps /뮤엘, preserves /해줘 compatibility, restores agent slash commands, and exposes /메모 surface', () => {

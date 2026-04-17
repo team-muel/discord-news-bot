@@ -1,20 +1,28 @@
-import type { Channel, Client, Message } from 'discord.js';
+import type { Client, Message } from 'discord.js';
 import logger from '../../logger';
 import {
   DISCORD_CHAT_COMMAND_NAMES,
   DISCORD_CONTEXT_MENU_COMMAND_NAMES,
 } from '../../../config/runtime/discordCommandCatalog.js';
 import {
+  CODE_THREAD_ENABLED,
+  DISCORD_DOCS_INGRESS_ADAPTER,
+  DISCORD_DOCS_INGRESS_HARD_DISABLE,
+  DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT,
+  DISCORD_DOCS_INGRESS_SHADOW_MODE,
+  DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER,
+  DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE,
+  DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT,
+  DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE,
+  DISCORD_SIMPLE_COMMANDS_ENABLED,
   OPENCLAW_ENABLED,
   OPENCLAW_GATEWAY_URL,
+  WORKER_APPROVAL_CHANNEL_ID,
 } from '../../config';
 import {
-  SIMPLE_COMMANDS_ENABLED,
-  CODE_THREAD_ENABLED,
   CODING_INTENT_PATTERN,
   AUTOMATION_INTENT_PATTERN,
-  WORKER_APPROVAL_CHANNEL_ID,
-} from '../commandDefinitions';
+} from '../runtimePolicy';
 import {
   buildSimpleEmbed,
   getErrorMessage,
@@ -91,18 +99,10 @@ import { handleCsChannelMessage, recordRuntimeError } from '../../services/sprin
 import { setDynamicWorkerAdminNotifier } from '../../services/workerGeneration/dynamicWorkerRegistry';
 import { enforceImplementApprovalRequiredPilot, startAutoWorkerProposalBackgroundLoop } from '../../services/workerGeneration/backgroundProposalSweep';
 import {
-  checkOpenClawGatewayChatSupport,
   checkOpenClawGatewayHealth,
-  sendGatewayChat,
 } from '../../services/openclaw/gatewayHealth';
-import { enqueueOpenJarvisHermesRuntimeObjectives } from '../../services/openjarvis/openjarvisHermesRuntimeControlService';
 import { autoProposeWorker } from '../../services/workerGeneration/autoWorkerProposal';
-import {
-  buildSourceRef,
-  channelDisplayPrefix,
-  parentLabel,
-  resolveChannelMeta,
-} from '../../utils/discordChannelMeta';
+import { executeDiscordIngress, primeDiscordIngressCutoverPolicy, type DiscordIngressExecutionHandler } from './discordIngressAdapter';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,140 +111,6 @@ export type CommandRouterDeps = {
   runManualReconnect: (reason: string) => Promise<ManualReconnectRequestResult>;
   forceRegisterSlashCommands: () => Promise<void>;
   onSessionInvalidated: () => void;
-};
-
-type DiscordOpenClawIngressSurface = 'docs-command' | 'muel-message';
-
-type DiscordOpenClawIngressParams = {
-  request: string;
-  guildId: string | null;
-  userId: string;
-  channel: Channel | null | undefined;
-  messageId?: string | null;
-  entryLabel: string;
-  surface: DiscordOpenClawIngressSurface;
-};
-
-type DiscordOpenClawIngressResult = {
-  answer: string;
-};
-
-const normalizeDiscordRequest = (value: unknown, maxLength = 220): string => {
-  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
-};
-
-const shouldQueueDiscordHermesObjective = (request: string): boolean => {
-  return CODING_INTENT_PATTERN.test(request) || AUTOMATION_INTENT_PATTERN.test(request);
-};
-
-const buildDiscordIngressContext = (params: {
-  guildId: string | null;
-  channel: Channel | null | undefined;
-  messageId?: string | null;
-}): {
-  channelSummary: string | null;
-  sourceRef: string | null;
-  skipContinuity: boolean;
-} => {
-  if (!params.guildId || !params.channel) {
-    return {
-      channelSummary: null,
-      sourceRef: null,
-      skipContinuity: false,
-    };
-  }
-
-  const channelMeta = resolveChannelMeta(params.channel);
-  const prefix = channelDisplayPrefix(channelMeta);
-  const parent = parentLabel(channelMeta);
-  return {
-    channelSummary: [
-      `${prefix}${channelMeta.channelName || channelMeta.channelId}`,
-      parent,
-    ].filter(Boolean).join(' | ') || null,
-    sourceRef: params.messageId
-      ? buildSourceRef(params.guildId, channelMeta, params.messageId)
-      : null,
-    skipContinuity: channelMeta.isPrivateThread,
-  };
-};
-
-const buildDiscordHermesObjective = (params: {
-  entryLabel: string;
-  request: string;
-  channelSummary: string | null;
-}): string => {
-  const prefix = params.channelSummary
-    ? `${params.entryLabel} @ ${params.channelSummary}`
-    : params.entryLabel;
-  return normalizeDiscordRequest(`Discord ingress follow-up (${prefix}): ${params.request}`, 220);
-};
-
-const tryRouteDiscordIngressViaOpenClaw = async (
-  params: DiscordOpenClawIngressParams,
-): Promise<DiscordOpenClawIngressResult | null> => {
-  if (!OPENCLAW_ENABLED) {
-    return null;
-  }
-
-  const gatewayChatSupported = await checkOpenClawGatewayChatSupport();
-  if (!gatewayChatSupported) {
-    return null;
-  }
-
-  const context = buildDiscordIngressContext({
-    guildId: params.guildId,
-    channel: params.channel,
-    messageId: params.messageId,
-  });
-  const normalizedRequest = normalizeDiscordRequest(params.request, 1_500);
-  if (!normalizedRequest) {
-    return null;
-  }
-
-  const answer = await sendGatewayChat({
-    system: [
-      '당신은 Discord 커뮤니티의 Muel입니다.',
-      '항상 한국어로 짧고 실무적으로 답변하세요.',
-      '내부 제어면(Hermes, OpenJarvis, continuity, queue, packet)은 사용자에게 언급하지 마세요.',
-      '코딩이나 자동화 요청이어도 지금 당장 도움이 되는 다음 행동 중심으로 답하세요.',
-    ].join('\n'),
-    user: [
-      context.channelSummary ? `Discord context: ${context.channelSummary}` : null,
-      context.sourceRef ? `discord_source: ${context.sourceRef}` : null,
-      `User request: ${normalizedRequest}`,
-    ].filter(Boolean).join('\n'),
-    guildId: params.guildId || undefined,
-    actionName: `discord.${params.surface}`,
-    temperature: 0.2,
-    maxTokens: params.surface === 'docs-command' ? 800 : 600,
-  });
-
-  if (!answer) {
-    return null;
-  }
-
-  if (!context.skipContinuity && shouldQueueDiscordHermesObjective(normalizedRequest)) {
-    const objective = buildDiscordHermesObjective({
-      entryLabel: params.entryLabel,
-      request: normalizedRequest,
-      channelSummary: context.channelSummary,
-    });
-    void enqueueOpenJarvisHermesRuntimeObjectives({
-      objective,
-      runtimeLane: 'operator-personal',
-    }).then((result) => {
-      if (!result.ok) {
-        logger.debug('[BOT] Discord OpenClaw continuity queue skipped: %s', result.error || result.errorCode || 'unknown');
-      }
-    }).catch((error) => {
-      logger.debug('[BOT] Discord OpenClaw continuity queue failed: %s', getErrorMessage(error));
-    });
-  }
-
-  return {
-    answer: normalizeDiscordRequest(answer, 1_800),
-  };
 };
 
 // ─── Command Router ───────────────────────────────────────────────────────────
@@ -267,7 +133,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     loginSessionTtlMs: LOGIN_SESSION_TTL_MS,
     loginSessionRefreshWindowMs: LOGIN_SESSION_REFRESH_WINDOW_MS,
     loginSessionCleanupIntervalMs: LOGIN_SESSION_CLEANUP_INTERVAL_MS,
-    simpleCommandsEnabled: SIMPLE_COMMANDS_ENABLED,
+    simpleCommandsEnabled: DISCORD_SIMPLE_COMMANDS_ENABLED,
     getUsageSummaryLine: () => getUsageSummaryLine(client),
     getGuildUsageSummaryLine,
     forceRegisterSlashCommands: deps.forceRegisterSlashCommands,
@@ -275,6 +141,37 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     getManualReconnectCooldownRemainingSec,
     hasActiveToken: () => Boolean(deps.getActiveToken()),
     requestManualReconnect: deps.runManualReconnect,
+  });
+
+  const executeDocsCommandIngress: DiscordIngressExecutionHandler = (params) => {
+    return executeDiscordIngress(params, {
+      preferredAdapterId: DISCORD_DOCS_INGRESS_ADAPTER,
+      hardDisable: DISCORD_DOCS_INGRESS_HARD_DISABLE,
+      shadowMode: DISCORD_DOCS_INGRESS_SHADOW_MODE,
+      rolloutPercentage: DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT,
+    });
+  };
+
+  const executePrefixedMessageIngress: DiscordIngressExecutionHandler = (params) => {
+    return executeDiscordIngress(params, {
+      preferredAdapterId: DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER,
+      hardDisable: DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE,
+      shadowMode: DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE,
+      rolloutPercentage: DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT,
+    });
+  };
+
+  primeDiscordIngressCutoverPolicy('docs-command', {
+    preferredAdapterId: DISCORD_DOCS_INGRESS_ADAPTER,
+    hardDisable: DISCORD_DOCS_INGRESS_HARD_DISABLE,
+    shadowMode: DISCORD_DOCS_INGRESS_SHADOW_MODE,
+    rolloutPercentage: DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT,
+  });
+  primeDiscordIngressCutoverPolicy('muel-message', {
+    preferredAdapterId: DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER,
+    hardDisable: DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE,
+    shadowMode: DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE,
+    rolloutPercentage: DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT,
   });
 
   const vibeHandlers = createVibeHandlers({
@@ -287,7 +184,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     automationIntentPattern: AUTOMATION_INTENT_PATTERN,
     getErrorMessage,
     autoProposeWorker,
-    routeOpenClawDiscordIngress: tryRouteDiscordIngressViaOpenClaw,
+    executePrefixedMessageIngress,
   });
 
   const agentHandlers = createAgentHandlers({
@@ -308,7 +205,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     generateText,
     isAnyLlmConfigured,
     getErrorMessage,
-    routeOpenClawDiscordIngress: tryRouteDiscordIngressViaOpenClaw,
+    executeDocsCommandIngress,
   });
 
   const personaHandlers = createPersonaHandlers({
@@ -328,7 +225,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     getReplyVisibility,
     hasAdminPermission,
     markUserLoggedIn,
-    simpleCommandsEnabled: SIMPLE_COMMANDS_ENABLED,
+    simpleCommandsEnabled: DISCORD_SIMPLE_COMMANDS_ENABLED,
     loginSessionTtlMs: LOGIN_SESSION_TTL_MS,
     loginSessionRefreshWindowMs: LOGIN_SESSION_REFRESH_WINDOW_MS,
   });
@@ -557,7 +454,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
   // ── Message handler ───────────────────────────────────────────────────────
 
   client.on('messageCreate', async (message) => {
-    if (!SIMPLE_COMMANDS_ENABLED) {
+    if (!DISCORD_SIMPLE_COMMANDS_ENABLED) {
       return;
     }
     if (message.author.bot) {

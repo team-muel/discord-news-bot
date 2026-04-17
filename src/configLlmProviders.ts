@@ -71,7 +71,7 @@ export const HUGGINGFACE_MODEL = parseStringEnv(process.env.HUGGINGFACE_MODEL ??
 export const OPENCLAW_API_KEY = parseStringEnv(process.env.OPENCLAW_API_KEY ?? process.env.OPENCLAW_KEY, '');
 export const OPENCLAW_BASE_URL = parseUrlEnv(process.env.OPENCLAW_BASE_URL ?? process.env.OPENCLAW_API_BASE_URL ?? process.env.OPENCLAW_URL, '');
 export const OPENCLAW_MODEL = parseStringEnv(process.env.OPENCLAW_MODEL, 'openclaw');
-export const OPENCLAW_FALLBACK_MODELS_RAW = parseStringEnv(process.env.OPENCLAW_FALLBACK_MODELS, 'muel-fast,muel-precise');
+export const OPENCLAW_FALLBACK_MODELS_RAW = parseStringEnv(process.env.OPENCLAW_FALLBACK_MODELS, 'muel-balanced,muel-local');
 export const OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS = parseMinIntEnv(process.env.OPENCLAW_MODEL_COOLDOWN_DEFAULT_MS, 45_000, 1_000);
 export const OPENCLAW_GATEWAY_URL = parseUrlEnv(process.env.OPENCLAW_GATEWAY_URL, '');
 export const OPENCLAW_GATEWAY_TOKEN = parseStringEnv(process.env.OPENCLAW_GATEWAY_TOKEN, '');
@@ -123,6 +123,7 @@ export const LITELLM_MASTER_KEY = parseStringEnv(process.env.LITELLM_MASTER_KEY,
 // to distinguish "explicitly provided" from "defaulted by parseUrlEnv".
 const litellmUrlExplicit = Boolean(process.env.LITELLM_BASE_URL) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(LITELLM_BASE_URL);
 export const LITELLM_ENABLED = parseBooleanEnv(process.env.LITELLM_ENABLED, litellmUrlExplicit);
+// Canonical remote front-door alias. Additional tuned and experimental aliases stay opt-in in litellm.config.yaml.
 export const LITELLM_MODEL = parseStringEnv(process.env.LITELLM_MODEL, 'muel-balanced');
 
 // ── Kimi ──

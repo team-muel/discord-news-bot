@@ -21,6 +21,176 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-18 - Legacy Cleanup Lane Reclassified The First Discord Exact Unit To Rollback-Only
+
+- Why: the original inventory lock correctly kept mass delete closed, but it still overstated uncertainty by leaving every Discord exact unit in `Keep-For-Now` even after live cutover artifacts had already closed predecessor evidence for the `docs.ask` fallback branch.
+- Scope: refreshed the canonical legacy cleanup lane, the Discord adapter mapping inventory, the cutover validation contract, and the execution board so only the evidence-closed exact unit moves to `Rollback-Only`.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/LEGACY_CLEANUP_LANE.md`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/EXECUTION_BOARD.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation only. Whole-file removal and mass delete remain closed; the prefixed `muel-message` fallback branch still stays in `Keep-For-Now` until its own live rollback evidence exists.
+- Validation: markdown review against `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-142211.json`, `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-144035.json`, and `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-161707.json`
+
+## 2026-04-18 - Baseline Docs Synced To Live Discord Canary, Local n8n Closure, And Canonical Provider Lane
+
+- Why: the canonical baseline docs were lagging behind three lanes that had already entered runtime reality. Operators still had to reconstruct from gate-run artifacts and runbook deltas what was live now versus what was still waiting on a full owner transition.
+- Scope: synced `docs/planning/EXECUTION_BOARD.md`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, and this changelog so they distinguish entered state from pending owner-transition work across the Discord cutover, local n8n starter closure, and canonical provider lane.
+- Impacted Routes: Discord slash `/해줘`, `/뮤엘`; prefixed `뮤엘 ...`; no new HTTP routes
+- Impacted Services: `docs/planning/EXECUTION_BOARD.md`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: baseline docs now treat green live cutover evidence for the eligible Discord surfaces as already entered reality, but they keep full default-on, rollback grace-close, legacy demotion/removal, and phase 2 Discord surfaces explicitly outside the completed owner-transition boundary. Local n8n starter closeout and the canonical provider lane are now baseline reality rather than queued intent.
+- Validation: doc review against `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-161707.md`, `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-142211.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+
+## 2026-04-17 - Discord Ingress Cutover Now Supports Live Runtime Policy Switching
+
+- Why: the Discord cutover gate could prove ingress parity only inside the validator process. It still lacked a control plane that could switch the preferred adapter on a running process and then read back live selected-owner evidence from that same runtime.
+- Scope: added file-backed Discord ingress runtime policy overrides, service-role protected internal cutover policy/exercise/snapshot routes, explicit `--applyLivePolicy=true` support in the cutover validator, and runbook updates for the live control-plane path.
+- Impacted Routes: `GET /api/internal/discord/ingress/cutover/snapshot`, `POST /api/internal/discord/ingress/cutover/policy`, `POST /api/internal/discord/ingress/cutover/exercise`
+- Impacted Services: `src/discord/runtime/discordIngressAdapter.ts`, `src/routes/internal.ts`, `scripts/lib/chatSdkDiscordCutoverValidator.ts`, `scripts/run-chat-sdk-discord-cutover-validation.ts`, `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: live runtime switching is explicit opt-in only. Standard cutover runs stay local unless `--applyLivePolicy=true` is passed with a reachable runtime base URL and service-role token. Rollback rehearsal still uses a temporary call-level override and does not persist a hard-disable into the canonical per-surface policy.
+- Validation: `npx vitest run src/routes/internal.test.ts src/discord/runtime/discordIngressAdapter.test.ts scripts/run-chat-sdk-discord-cutover-validation.test.ts`; `npx tsc --noEmit`; `npm run gates:discord:cutover -- --applyLivePolicy=true --runtimeBaseUrl=http://127.0.0.1:3001 --preferredAdapterId=chat-sdk --rolloutPercentage=25 --docsShadowMode=false --muelShadowMode=false --docsHardDisable=false --muelHardDisable=false`
+
+## 2026-04-17 - Local n8n Starter Lane Now Closes Through Approval-Gated Apply And Rollback
+
+- Why: the local n8n automation lane could already draft reusable starter workflows and seed them locally, but deterministic tasks still stopped at draft or seed payload output. There was no approval-backed closure that turned a matched starter plan into an installable workflow with replayable rollback artifacts.
+- Scope: added doctor normalization, dry-run install preview, operation-log capture, and rollback replay to the local n8n bootstrap script; added a thin approval/apply wrapper that reuses the existing action governance store; extended workflow drafts so matched starter tasks expose approval-gated install commands instead of draft-only metadata; updated the operator runbook and package command surface.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/bootstrap-n8n-local.mjs`, `scripts/run-n8n-local-approval.ts`, `src/services/skills/actionGovernanceStore.ts`, `src/services/automation/apiFirstAgentFallbackService.ts`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+- Impacted Tables/RPC: `agent_action_approval_requests` reuse only, no schema changes
+- Risk/Regression Notes: direct local seed still exists as breakglass maintenance, but the deterministic closeout path is now `preview -> request approval -> approve/apply -> rollback`. Automatic rollback and updateExisting remain tied to the public API lane, while docker CLI fallback still supports create or skip-existing only.
+- Validation: targeted Vitest for bootstrap/governance/automation draft surfaces; `npx tsc --noEmit`
+
+## 2026-04-17 - LLM Provider Default Lane Collapsed To OpenJarvis LiteLLM Ollama
+
+- Why: the provider stack had drifted into a branched chain where OpenClaw, direct cloud providers, and Hugging Face could leak back into the default path through env profiles, Render defaults, and LiteLLM fallback aliases. That made the control-plane story harder to reason about and blurred the line between the default lane and experiment lanes.
+- Scope: collapsed the canonical provider lane to `openjarvis -> litellm -> ollama`, pruned duplicated provider-order overrides from the main env profiles, removed the Render and worker-example pattern that used `OPENCLAW_BASE_URL` as a LiteLLM proxy surrogate, and tightened LiteLLM default fallbacks so the default front door no longer auto-mixes Hugging Face or NVIDIA opt-in aliases.
+- Impacted Routes: none
+- Impacted Services: `src/services/llm/routing.ts`, `src/configLlmProviders.ts`, `litellm.config.yaml`, `src/services/llmClient.test.ts`, `render.yaml`, `config/env/*.profile.env`, `config/env/*worker*.env.example`, `docs/ARCHITECTURE_INDEX.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/RENDER_AGENT_ENV_TEMPLATE.md`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the default lane now assumes OpenJarvis is the control surface whenever it is enabled, LiteLLM is the remote broker, and Ollama is the direct local fallback. Direct cloud providers, Hugging Face, and OpenClaw direct-completion surfaces still work, but only as explicit opt-in lanes or as the compatibility escape hatch when the canonical lane is unavailable.
+- Validation: targeted Vitest for `src/services/llmClient.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Personal Operating System Service Bundles Added On The Existing Super-Agent Surface
+
+- Why: the repository already had the primitives for routing, bounded execution, knowledge distillation, and weekly reporting, but operators still had to know the raw internal surfaces. That kept the repo feeling like an agent lab instead of a callable personal operating system.
+- Scope: added a named personal service bundle catalog to the existing `superAgentService`, exposed bundle catalog/detail/recommend/session routes under the existing `/agent/super/*` namespace, and documented the bundle layer in the runtime matrix plus a dedicated operator doc.
+- Impacted Routes: `GET /api/bot/agent/super/services`, `GET /api/bot/agent/super/services/:serviceId`, `POST /api/bot/agent/super/services/:serviceId/recommend`, `POST /api/bot/agent/super/services/:serviceId/sessions`
+- Impacted Services: `src/services/superAgentService.ts`, `src/routes/bot-agent/governanceRoutes.ts`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: packaging layer only. The new surface reuses the existing super-agent, action, runtime, and report primitives and does not introduce a new orchestration engine.
+- Validation: `npx vitest run src/services/superAgentService.test.ts src/routes/botAgentGovernance.test.ts src/routes/botAgentRoutes.smoke.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Legacy Cleanup Lane Now Locks Inventory Before Post-Replacement Deletion
+
+- Why: the repo still has multiple legacy or compatibility surfaces across Discord ingress, provider aliases, naming aliases, control-plane bootstrap glue, and deterministic inline fallbacks. Deleting them ad hoc would risk collapsing live rollback or compatibility boundaries before their replacement lanes are actually closed.
+- Scope: added a canonical cleanup-lane plan that classifies the remaining buckets as Remove-Now, Rollback-Only, or Keep-For-Now; linked the lane from the execution board; and registered the plan for shared-knowledge backfill.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/LEGACY_CLEANUP_LANE.md`, `docs/planning/EXECUTION_BOARD.md`, `config/runtime/knowledge-backfill-catalog.json`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation and shared-knowledge alignment only. The lane explicitly keeps deletion closed until predecessor lanes prove replacement-complete for the exact unit being removed.
+- Validation: markdown review; JSON catalog syntax review
+
+## 2026-04-17 - Eligible Discord Chat Surfaces Now Run Through A Normalized Ingress Seam
+
+- Why: the Chat SDK migration boundary was documented, but the live repo still routed the eligible chat surfaces directly through surface-local logic. That left no single runtime seam for adapter selection, evidence capture, canary/rollback policy, or future Chat SDK insertion.
+- Scope: introduced a normalized Discord ingress layer with per-surface policy and evidence tracking, rewired the slash docs and prefixed `뮤엘 ...` surfaces through that seam, and added per-surface config controls for preferred adapter, hard-disable, shadow mode, and rollout percentage.
+- Impacted Routes: Discord slash `/해줘`, `/뮤엘`; prefixed `뮤엘 ...`
+- Impacted Services: `src/discord/runtime/discordIngressAdapter.ts`, `src/discord/runtime/commandRouter.ts`, `src/discord/commands/docs.ts`, `src/discord/commands/vibe.ts`, `src/config.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: non-target Discord surfaces remain unchanged. Private threads still skip continuity enqueue, and the eligible surfaces preserve deterministic fallback to the current handlers when the preferred adapter is declined, held out, hard-disabled, or fails.
+- Validation: `npx vitest run src/discord/runtime/discordIngressAdapter.test.ts src/discord/commands/docs.test.ts src/discord/commands/vibe.test.ts`; `npm run test:discord`; `npx tsc --noEmit`
+
+## 2026-04-17 - Knowledge Compiler Added Supervisor Artifact And Broader Durable-Root Scanning
+
+- Why: knowledge control could emit index, log, and lint artifacts, but it still lacked a machine-readable follow-up surface saying what to fix next. Snapshot selection also under-scanned durable shared roots, which made control artifacts less useful outside the narrow chat-answer/memory slice.
+- Scope: expanded tracked and candidate knowledge roots, added a `SUPERVISOR.md` artifact with prioritized follow-up actions, exposed that artifact through the knowledge-control surface, and kept semantic-lint persistence from recursively triggering another compile.
+- Impacted Routes: MCP knowledge-control artifact selection for `artifact=supervisor`
+- Impacted Services: `src/services/obsidian/knowledgeCompilerService.ts`, `src/services/obsidian/authoring.ts`, `src/mcp/obsidianToolAdapter.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive knowledge-control surface only. Generated knowledge artifacts now allow high link density and semantic-lint writes skip recursive recompilation so the supervisor/lint flow does not churn itself.
+- Validation: `npx vitest run src/services/obsidian/knowledgeCompilerService.test.ts src/mcp/obsidianToolAdapter.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Capability Audit Exit Stances Codified For LiteLLM And OpenClaw
+
+- Why: Session A needed a hard line between true blockers and intentionally optional lanes. LiteLLM was still modeled as a controller-side always-on requirement even though runtime docs treated it as an opt-in remote provider lane, and capability audit findings for OpenClaw, Hermes local skills, DeepWiki, and probe coverage were still emitted as unresolved findings instead of documented stances.
+- Scope: demoted `litellmProxy` out of the always-on operating baseline, added baseline-carried capability-audit acknowledgements, taught `capability:audit` to separate active findings from documented optional/accepted states, and aligned the runtime matrix, runbook, and capability-gap docs around the same stance.
+- Impacted Routes: N/A
+- Impacted Services: `config/runtime/operating-baseline.json`, `src/services/runtime/operatingBaseline.ts`, `scripts/audit-capability-availability.ts`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/planning/CAPABILITY_GAP_ANALYSIS.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: LiteLLM direct proxy health remains visible as an opt-in remote provider lane, but it no longer gates controller-side always-on readiness. OpenClaw gateway health remains optional ingress-only until the chat surface is restored.
+- Validation: `npx vitest run src/services/runtime/operatingBaseline.test.ts`; `npm run -s capability:audit:markdown`; `npx tsc --noEmit`
+
+## 2026-04-17 - Discord Cutover Live Gate Now Collects Its Own Live Evidence
+
+- Why: the cutover validator could already separate lab vs live counters, but Session B was still stuck because the canonical surface policy was being overwritten by rollback rehearsal events, public `/health` had no canonical scheduler summary for external runtime evidence, and the non-dry live gate still depended on pre-existing live traffic instead of being able to open its own bounded operator window.
+- Scope: exposed `schedulerPolicySummary` from public health, stopped Discord ingress evidence recording from mutating the canonical per-surface policy snapshot, taught the cutover validator to operator-drive live selected-path plus forced-fallback evidence by default on non-dry runs, and updated the cutover validation/runbook docs to make the live-vs-lab decision contract explicit.
+- Impacted Routes: `/health`
+- Impacted Services: `src/routes/health.ts`, `src/contracts/bot.ts`, `src/discord/runtime/discordIngressAdapter.ts`, `src/discord/runtime/discordIngressAdapter.test.ts`, `scripts/run-chat-sdk-discord-cutover-validation.ts`, `scripts/run-chat-sdk-discord-cutover-validation.test.ts`, `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/gate-runs/chat-sdk-cutover/README.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: public health now carries only the canonical scheduler summary counts, not the full scheduler-policy item list. Rollback rehearsal telemetry still records `policyMode=rollback` per event, but the persisted canonical surface policy now stays tied to explicit prime/update calls so one rehearsal cannot silently flip the reported live control state.
+- Validation: `npx vitest run src/routes/health.test.ts src/discord/runtime/discordIngressAdapter.test.ts scripts/run-chat-sdk-discord-cutover-validation.test.ts`; `npx tsc --noEmit`; `npm run gates:discord:cutover`
+
+## 2026-04-17 - Future Control-Plane Planner Now Emits Structured Session Synthesis
+
+- Why: the queue-aware future planner could already say whether the next safe step was stabilize, seed, launch, or close out, but it still left one high-leverage decision implicit: which bounded session shape should open next and which execution lane should carry it. That kept Copilot relaunch viable, but it still forced ad hoc child-lane choreography for GUI, remote-compute, and bounded-wave work.
+- Scope: extended `scripts/local-ai-stack-control.mjs` so `buildFutureControlPlanePlan()` now emits a structured `sessionSynthesis` block with session kind, observed and planned queue mode, launch objective, coordinator contract, bounded Copilot handoff mode, primary execution lane, and bounded child-turn choreography; added focused regression coverage in `scripts/local-ai-stack-control.test.ts`; updated the dual-agent orchestration plan, Multica control-plane playbook, and unified runbook so the new structured output becomes the canonical bridge between OpenJarvis queue state and visible child-lane execution.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/local-ai-stack-control.mjs`, `scripts/local-ai-stack-control.test.ts`, `docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`, `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive planning output only. The future planner still does not create a new runtime owner and still fails closed to `hermes-local-operator` unless the objective explicitly signals GUI/browser or remote-heavy scope.
+- Validation: `npx vitest run scripts/local-ai-stack-control.test.ts`
+
+## 2026-04-17 - Shared Wrapper Bootstrap And Discord Cutover Lab Evidence Added
+
+- Why: the previous hardening wave made shared-MCP readiness fail closed and froze the Discord ingress migration boundary, but the remaining operator gap was still practical rather than conceptual. `MCP_SHARED_MCP_URL` alone did not give teammates a reusable `upstream.gcpcompute.*` lane, and the cutover validator still had no low-risk rehearsal mode that could prove parity and rollback paths without polluting live evidence.
+- Scope: added `scripts/ensure-shared-mcp-upstream.mjs` plus package aliases so `.env` can upsert the canonical `gcpcompute` wrapper lane from the shared `/mcp` ingress automatically; taught `proxyRegistry` to reuse shared MCP auth tokens for that wrapper lane without duplicating secrets into `MCP_UPSTREAM_SERVERS`; extended `discordIngressAdapter` and the cutover validator so lab rehearsal evidence is tracked separately from live evidence; updated `local-ai-stack-control.mjs`, runbook guidance, and profile/env examples so Obsidian packet sync and the new bootstrap/rehearsal commands surface directly in operator flows.
+- Impacted Routes: N/A
+- Impacted Services: `src/mcp/proxyRegistry.ts`, `src/mcp/proxyAdapter.test.ts`, `scripts/ensure-shared-mcp-upstream.mjs`, `scripts/audit-capability-availability.ts`, `src/discord/runtime/discordIngressAdapter.ts`, `src/discord/runtime/discordIngressAdapter.test.ts`, `scripts/run-chat-sdk-discord-cutover-validation.ts`, `scripts/local-ai-stack-control.mjs`, `scripts/local-ai-stack-control.test.ts`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `config/env/local-first-hybrid.profile.env`, `config/env/local-nemoclaw-max-delegation.profile.env`, `.env.example`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive control-plane hardening only. Shared wrapper bootstrap now derives the correct simple-proxy base from the canonical shared ingress instead of asking operators to hand-write JSON, and cutover lab rehearsal no longer contaminates live no-go evidence because the snapshot tracks live vs lab counters separately.
+- Validation: `npx vitest run src/mcp/proxyAdapter.test.ts src/discord/runtime/discordIngressAdapter.test.ts scripts/local-ai-stack-control.test.ts`; `node scripts/ensure-shared-mcp-upstream.mjs --dryRun=true`; `npm run gates:discord:cutover:lab:dry`
+
+## 2026-04-17 - Queue-Aware Supervisor Swarm Mode Added
+
+- Why: the bounded swarm substrate already existed, but the live supervisor/control-plane layer still only knew how to relaunch a single queued chat turn. That meant the new swarm worker model stopped at the low-level launch helper instead of becoming a restart-safe operator workflow.
+- Scope: extended `run-openjarvis-goal-cycle.mjs` with explicit queue swarm mode, worktree/distiller restart flags, queued swarm status payloads, and swarm-aware pause boundaries; extended `ack-openjarvis-reentry.ts` so queue swarm mode survives reentry restart; extended `local-ai-stack-control.mjs` so future planning recommends `queue:chat` vs `queue:swarm` from live supervisor mode; extended `localAutonomySupervisorService` and runtime remediation command building so detached self-heal restarts preserve queue swarm mode instead of silently downgrading to chat; added `openjarvis:autopilot:queue:swarm` scripts and updated runbook/operating-plan docs.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/run-openjarvis-goal-cycle.mjs`, `scripts/run-openjarvis-hermes-runtime-control.ts`, `scripts/ack-openjarvis-reentry.ts`, `scripts/local-ai-stack-control.mjs`, `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/runtime/localAutonomySupervisorService.ts`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/OPERATIONS_24_7.md`, `docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md`, `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive only. Queue-chat remains the default single-turn relaunch path, and the CLI now fails closed if both queue-chat and queue-swarm modes are enabled at the same time. Swarm restart state preserves explicit executor worktree and artifact budget settings instead of silently downgrading back to chat mode.
+- Validation: `npx vitest run scripts/ack-openjarvis-reentry.test.ts scripts/local-ai-stack-control.test.ts scripts/openjarvis-remote-workstream-smoke.test.ts src/services/runtime/localAutonomySupervisorService.test.ts`; `npx tsc --noEmit`; `npm run -s openjarvis:autopilot:queue:swarm:dry`
+
+## 2026-04-17 - Hermes Bounded Swarm Launch And Closeout Wiring Added
+
+- Why: the runtime already had queue-aware GPT relaunch, role-bounded Hermes context profiles, and reentry acknowledgment, but it still lacked the actual execution substrate for opening multiple bounded GPT workers from one coordinator turn. The new local operating plan required a swarm board, shard packets, worktree-safe launch roots, and closeout metadata that survives across worker turns.
+- Scope: extended `openjarvisHermesRuntimeControlService` with swarm board/shard artifact generation, bounded multi-launch orchestration, and swarm closeout recording; extended `hermesVsCodeBridgeService` so allowed roots can include isolated worktree paths for worker sessions; extended `ack-openjarvis-reentry.ts` to carry wave/shard metadata and update swarm closeout artifacts; added `openjarvis:hermes:runtime:swarm-launch` scripts; updated the runtime contract doc with the bounded parallel worker rule.
+- Impacted Routes: N/A
+- Impacted Services: `src/services/openjarvis/openjarvisHermesRuntimeControlService.ts`, `src/services/runtime/hermesVsCodeBridgeService.ts`, `scripts/run-openjarvis-hermes-runtime-control.ts`, `scripts/ack-openjarvis-reentry.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: bounded additive feature only. Single-ingress compatibility mode remains intact; swarm launch is opt-in and capped at three workers. Worktree-isolated roots are allowlisted explicitly rather than widening the VS Code bridge globally.
+- Validation: `npx vitest run src/services/runtime/hermesVsCodeBridgeService.test.ts src/services/openjarvis/openjarvisHermesRuntimeControlService.test.ts scripts/ack-openjarvis-reentry.test.ts`; `npx tsc --noEmit`; `npm run -s openjarvis:hermes:runtime:swarm-launch:dry -- --waveObjective="stabilize shared wrapper readiness"`
+
+## 2026-04-17 - Capability Audit Added And Shared MCP Wrapper Readiness Now Fails Closed
+
+- Why: the repo already had operating-baseline docs, low-level tool probes, adapter status, and automation catalogs, but there was still no single capability-engineering surface that said which lanes were truly unlocked, which were merely guardrailed, and which looked wired only because a raw remote URL existed. The biggest live false-green was shared MCP: the canonical URL could be set while no `upstream.<namespace>.*` wrapper lane was actually active.
+- Scope: hardened `buildGcpNativeAutopilotContext()` so shared-MCP readiness now distinguishes raw remote URL wiring from actual `MCP_UPSTREAM_SERVERS` wrapper activation, added a unified `scripts/audit-capability-availability.ts` audit surface plus package aliases, expanded `docs/planning/CAPABILITY_GAP_ANALYSIS.md` with the 2026-04-17 live unlock snapshot/order/guardrails, and registered that doc in `config/runtime/knowledge-backfill-catalog.json` for shared wiki promotion.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/lib/openjarvisAutopilotCapacity.mjs`, `scripts/lib/openjarvisAutopilotCapacity.test.ts`, `scripts/audit-capability-availability.ts`, `package.json`, `docs/planning/CAPABILITY_GAP_ANALYSIS.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive operator/control-plane hardening only. Always-on raw URLs still count as service wiring, but shared wrapper readiness now fails closed until `MCP_UPSTREAM_SERVERS` exposes at least one enabled namespace. The new capability audit is diagnostic only and does not mutate runtime state.
+- Validation: `npx vitest run scripts/lib/openjarvisAutopilotCapacity.test.ts`; `npx tsc --noEmit`; `npm run capability:audit`; `npm run capability:audit:markdown`
+
+## 2026-04-17 - Discord Chat SDK Migration Boundary Frozen For Incremental Channel Ingress Refactor
+
+- Why: M-24 already declared that Discord should become a channel-ingress abstraction rather than the permanent runtime owner, but the repo still lacked one concrete boundary document saying exactly what moves into the adapter seam, what stays Discord-native, and which legacy files become removal candidates only after live cutover proof.
+- Scope: expanded `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md` from a command mapping reference into the concrete boundary-definition document for the incremental Discord -> Chat SDK migration path; froze the first migrated surfaces to `docs.ask` plus prefixed `뮤엘 ...`; documented the transport envelope/sink contract, non-goals, phased migration sessions, and legacy removal candidates; and registered the document in `config/runtime/knowledge-backfill-catalog.json` for shared-knowledge ingestion.
+- Impacted Routes: N/A
+- Impacted Services: `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation and knowledge-catalog alignment only. No runtime behavior changed in this slice, and the boundary explicitly forbids a big-bang replacement of bot lifecycle, slash registration, passive memory, guild lifecycle, or other Discord-native operational surfaces.
+- Validation: markdown review; JSON catalog syntax review
+
 ## 2026-04-17 - Capability Demand Events Now Preserve Structured Evidence Ref Details
 
 - Why: `capability_demand.evidence_refs` still collapsed supporting evidence down to locator strings even after `artifact_ref` hot-state had gained `artifact_plane` and `github_settlement_kind`. That left blocked-route and missing-capability history unable to preserve whether a cited repo artifact was a repo file, commit, pull request, CI run, or other GitHub settlement form.
@@ -60,6 +230,47 @@ Copy this block for each change:
 - Impacted Tables/RPC: none
 - Risk/Regression Notes: additive planner-output change only. Existing callers still receive the same draft shape, but stage owners now make the GitHub settlement boundary explicit so hot-state closeout, repo-visible artifacts, and durable promotion are no longer implied to share one owner.
 - Validation: `npx vitest run src/services/automation/apiFirstAgentFallbackService.test.ts`; `npx tsc --noEmit`
+
+## 2026-04-17 - Unified Local Control-Plane Doctor Added For Multica Hermes Copilot And OpenJarvis
+
+- Why: the repository already had separate local stack doctor surfaces, Hermes bridge diagnostics, OpenJarvis goal status, and a Multica playbook, but there was still no single repo-owned entrypoint that told the operator whether the visible coordination plane, local continuity lane, bounded VS Code chat relay, and detached self-heal loop were all actually usable together.
+- Scope: extended `scripts/local-ai-stack-control.mjs` with an opt-in control-plane overlay that probes Multica CLI/playbook availability, Hermes quick chat health, Hermes VS Code bridge readiness for bounded `code chat` relaunch, OpenJarvis goal status, and detached local autonomy supervisor state; added phased activation-plan output with entry and exit criteria; taught the `up` path to start the detached local autonomy supervisor when this overlay is enabled; exposed canonical `local:control-plane:*` package scripts; and documented the new entrypoint in the platform runbook.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/local-ai-stack-control.mjs`, `scripts/local-ai-stack-control.test.ts`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the new overlay is opt-in and does not change the existing `local:stack:*` flows unless `--controlPlane=true` or the new `local:control-plane:*` aliases are used. Multica remains validation-only here and is not auto-started; VS Code Copilot remains a bounded transport surface and is not turned into a state owner. The only new auto-start behavior is the detached local autonomy supervisor behind the explicit control-plane `up` path.
+- Validation: `npx vitest run scripts/local-ai-stack-control.test.ts`; `npx tsc --noEmit`; `npm run local:control-plane:doctor`; `npm run local:control-plane:up:dry`
+
+## 2026-04-17 - Future Control-Plane Cadence Surfaced As A Repo-Owned Plan Command
+
+- Why: the new unified control-plane doctor could tell whether the local coordination and continuity surfaces were healthy, but operators still had to remember the follow-up sequence from memory: when to reseed the queue, when to relaunch the next bounded VS Code chat, and when to close a GPT turn back into hot-state. That made the current slice usable once, but not yet repeatable as an ongoing process.
+- Scope: extended `scripts/local-ai-stack-control.mjs` with a `future` action that reads the current control-plane report and turns it into a future-cycle cadence plan; exposed a canonical `local:control-plane:future` script; added a package script for `openjarvis:hermes:runtime:queue-objective:auto`; documented the six-step follow-up cadence in the main runbook; and added unit coverage for the new planning surface.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/local-ai-stack-control.mjs`, `scripts/local-ai-stack-control.test.ts`, `package.json`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this is a planning and operator-cadence surface only. It does not auto-launch a new Copilot chat or auto-ack a GPT turn by itself. Instead it makes the safe sequence explicit so future local cycles reuse the same bounded commands and ownership model.
+- Validation: `npx vitest run scripts/local-ai-stack-control.test.ts`; `npx tsc --noEmit`; `npm run local:control-plane:future`
+
+## 2026-04-17 - Live OpenJarvis Autopilot Entrypoints Now Opt Out Of Dry-Run Explicitly
+
+- Why: the repo already had queue-aware OpenJarvis and Hermes reentry paths, but the package entrypoints still inherited `run-openjarvis-goal-cycle.mjs`'s safe default of `dryRun=true`. That meant operator-facing commands such as `openjarvis:autopilot:queue:chat` looked live, opened visible monitoring surfaces, and still failed to execute the actual bounded mutation path. This was one of the concrete reasons the local stack still felt under-leveraged even after the runtime wiring existed.
+- Scope: updated the live `openjarvis:goal:*` and `openjarvis:autopilot:*` package scripts to pass `--dryRun=false` explicitly, added matching `:dry` inspection aliases, documented the live-vs-dry contract in the GPT-Hermes operating plan and platform runbook, and extended the Multica control-plane playbook with a four-surface leverage-recovery sequence that ties Multica, Hermes, OpenJarvis, and VS Code Copilot into one repeatable flow.
+- Impacted Routes: none
+- Impacted Services: `package.json`, `docs/planning/GPT_HERMES_SINGLE_INGRESS_OPERATING_PLAN.md`, `docs/planning/MULTICA_CONTROL_PLANE_PLAYBOOK.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this intentionally changes operator-facing package behavior from inspection-default to live-default for the non-`:dry` OpenJarvis goal/autopilot entrypoints. The new `:dry` aliases preserve the prior safe inspection path, so rollback is to use those aliases or revert the package script lines.
+- Validation: `npm run openjarvis:autopilot:queue:chat`; `npm run openjarvis:goal:status`; `npx tsc --noEmit`
+- Follow-up hardening in the same change window: updated the future control-plane planner so it now treats an actively executing workflow as a monitor boundary instead of incorrectly recommending another immediate GPT relaunch, and it now flags `auto_launch_queued_chat=false` on the live Hermes supervisor as queue-chat mode drift that should be repaired at the next safe boundary.
+
+## 2026-04-17 - Continuity Packet Watch-State Now Prefers The Detached Local Autonomy Watcher
+
+- Why: the repo already exposed both a detached local autonomy watcher and a one-shot `local:autonomy:supervisor:once` check, but both shared the same status artifact. That made continuity packet sync prefer the most recent one-shot PID, so a harmless foreground check could briefly make `continuity_watch_alive=false` even while the real detached watcher was still healthy.
+- Scope: hardened `resolveLocalAutonomyWatchState` so continuity packet sync now prefers the detached manifest PID when a non-detached one-shot status payload is newer, added a regression test covering that precedence rule, and updated the runbook so operators know that `:once` refreshes summary state without hiding the real detached watcher.
+- Impacted Routes: none
+- Impacted Services: `scripts/sync-openjarvis-continuity-packets.ts`, `scripts/openjarvis-remote-workstream-smoke.test.ts`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: additive observability hardening only. Detached watcher liveness now stays stable in continuity packets after a foreground check, while summary text still comes from the most recent status payload.
+- Validation: `npx vitest run scripts/openjarvis-remote-workstream-smoke.test.ts`; `npx tsc --noEmit`; `npm run openjarvis:packets:sync -- --reason=post-watch-state-fix`
 
 ## 2026-04-17 - Multi-Plane Runtime Guidance Surfaced In Automation Catalog And Hermes Launch Context
 

@@ -347,7 +347,7 @@ const resolveAwaitingReentryAcknowledgmentState = (supervisor = {}) => {
   };
 };
 
-const QUEUED_REENTRY_ACK_RESUME_ACTION = 'Acknowledge the queued GPT turn with the reentry-ack command before allowing the queue-aware supervisor to relaunch.';
+const QUEUED_REENTRY_ACK_RESUME_ACTION = 'Acknowledge the queued GPT handoff with the reentry-ack command before allowing the queue-aware supervisor to relaunch.';
 
 const applyQueuedReentryResumeOverride = ({ resumeState, latestLoop, awaitingReentryAcknowledgment }) => {
   if (!awaitingReentryAcknowledgment || !isRecord(resumeState)) {
@@ -521,8 +521,8 @@ const buildSessionOpenCapabilityDemands = ({
       summary: 'Queued GPT handoff has been waiting more than 15 minutes for reentry acknowledgment and is blocking the next autonomous cycle.',
       objective,
       missing_capability: 'stale_reentry_acknowledgment',
-      missing_source: reentryAcknowledgmentStartedAt ? `waiting-since:${reentryAcknowledgmentStartedAt}` : 'queued_chat_launched',
-      failed_or_insufficient_route: 'queued_chat_launched -> reentry_acknowledged',
+      missing_source: reentryAcknowledgmentStartedAt ? `waiting-since:${reentryAcknowledgmentStartedAt}` : 'queued_gpt_handoff_launched',
+      failed_or_insufficient_route: 'queued_gpt_handoff_launched -> reentry_acknowledged',
       cheapest_enablement_path: uniqueCompactStrings([
         nextActions[0],
         toNullableString(remediationActions[0]?.command_preview),
@@ -729,7 +729,7 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
 
   const nextActions = uniqueCompactStrings([
     awaitingReentryAcknowledgmentStale
-      ? 'Inspect the pending queued VS Code chat turn and run the reentry-ack command; the wait boundary has gone stale and Hermes will stay paused until it is closed out.'
+      ? 'Inspect the pending queued VS Code GPT handoff and run the reentry-ack command; the wait boundary has gone stale and Hermes will stay paused until it is closed out.'
       : null,
     canContinueWithoutGptSession
       ? null
@@ -741,7 +741,7 @@ const buildHermesRuntimeReadiness = ({ workflow, supervisor, resumeState, routin
       ? null
       : 'Enable auto-select queued objective on the supervisor loop for approved next-task promotion.',
     awaitingReentryAcknowledgment
-      ? 'Acknowledge the queued GPT turn with the reentry-ack command before allowing the queue-aware supervisor to relaunch.'
+      ? 'Acknowledge the queued GPT handoff with the reentry-ack command before allowing the queue-aware supervisor to relaunch.'
       : null,
     (supervisorAlive || awaitingReentryAcknowledgment)
       ? null
@@ -1238,6 +1238,22 @@ const splitCommaSeparatedValues = (value) => String(value || '')
   .map((entry) => compact(entry))
   .filter((entry) => entry && entry.toLowerCase() !== 'none');
 
+const resolveQueuedLaunchMode = (params = {}) => {
+  const autoLaunchQueuedChat = params.autoLaunchQueuedChat === true || params.auto_launch_queued_chat === true;
+  const autoLaunchQueuedSwarm = params.autoLaunchQueuedSwarm === true || params.auto_launch_queued_swarm === true;
+
+  if (autoLaunchQueuedChat && autoLaunchQueuedSwarm) {
+    return 'conflict';
+  }
+  if (autoLaunchQueuedSwarm) {
+    return 'swarm';
+  }
+  if (autoLaunchQueuedChat) {
+    return 'chat';
+  }
+  return 'manual';
+};
+
 const extractAutomationRoute = (progressMarkdown, handoffMarkdown) => {
   const guidance = {
     ...extractKeyValueBullets(handoffMarkdown, 'Automation Route Guidance'),
@@ -1594,6 +1610,9 @@ const runVsCodeBridgeAction = (params) => {
     if (params.reason) {
       args.push(`--reason=${params.reason}`);
     }
+    if (params.dryRun === true) {
+      args.push('--dryRun=true');
+    }
 
     const stdout = execFileSync(process.execPath, args, {
       cwd: ROOT,
@@ -1622,8 +1641,14 @@ const runHermesRuntimeControlAction = (params) => {
     if (params.objective) {
       args.push(`--objective=${params.objective}`);
     }
+    if (params.waveObjective) {
+      args.push(`--waveObjective=${params.waveObjective}`);
+    }
     if (Array.isArray(params.objectives) && params.objectives.length > 0) {
       args.push(`--objectives=${params.objectives.join(',')}`);
+    }
+    if (Array.isArray(params.shardsJson) && params.shardsJson.length > 0) {
+      args.push(`--shardsJson=${JSON.stringify(params.shardsJson)}`);
     }
     if (params.prompt) {
       args.push(`--prompt=${params.prompt}`);
@@ -1636,6 +1661,24 @@ const runHermesRuntimeControlAction = (params) => {
     }
     if (Array.isArray(params.addFilePaths) && params.addFilePaths.length > 0) {
       args.push(`--addFilePaths=${params.addFilePaths.join(',')}`);
+    }
+    if (Array.isArray(params.scoutAddFilePaths) && params.scoutAddFilePaths.length > 0) {
+      args.push(`--scoutAddFilePaths=${params.scoutAddFilePaths.join(',')}`);
+    }
+    if (params.scoutObjective) {
+      args.push(`--scoutObjective=${params.scoutObjective}`);
+    }
+    if (params.executorObjective) {
+      args.push(`--executorObjective=${params.executorObjective}`);
+    }
+    if (params.executorWorktreePath) {
+      args.push(`--executorWorktreePath=${params.executorWorktreePath}`);
+    }
+    if (Array.isArray(params.executorAddFilePaths) && params.executorAddFilePaths.length > 0) {
+      args.push(`--executorAddFilePaths=${params.executorAddFilePaths.join(',')}`);
+    }
+    if (Array.isArray(params.executorArtifactBudget) && params.executorArtifactBudget.length > 0) {
+      args.push(`--executorArtifactBudget=${params.executorArtifactBudget.join(',')}`);
     }
     if (params.sessionPath) {
       args.push(`--sessionPath=${params.sessionPath}`);
@@ -1654,6 +1697,12 @@ const runHermesRuntimeControlAction = (params) => {
     }
     if (params.runtimeLane) {
       args.push(`--runtimeLane=${params.runtimeLane}`);
+    }
+    if (params.includeDistiller === true) {
+      args.push('--includeDistiller=true');
+    }
+    if (params.boardPath) {
+      args.push(`--boardPath=${params.boardPath}`);
     }
     if (params.maximize === true) {
       args.push('--maximize=true');
@@ -1720,6 +1769,7 @@ const maybeLaunchQueuedObjectiveChat = (params) => {
     capacityTarget: params.capacityTarget,
     gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
     runtimeLane: params.runtimeLane,
+    dryRun: params.dryRun,
   });
 
   const chatResult = runHermesRuntimeControlAction({
@@ -1747,6 +1797,52 @@ const maybeLaunchQueuedObjectiveChat = (params) => {
   };
 };
 
+const maybeLaunchQueuedObjectiveSwarm = (params) => {
+  if (!params.enabled || !params.launchPlan?.autonomous_candidate) {
+    return null;
+  }
+
+  const queueResult = runHermesRuntimeControlAction({
+    action: 'queue-objective',
+    objective: params.launchPlan.objective,
+    sessionPath: params.sessionPath,
+    sessionId: params.sessionId,
+    vaultPath: params.vaultPath,
+    capacityTarget: params.capacityTarget,
+    gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
+    runtimeLane: params.runtimeLane,
+    dryRun: params.dryRun,
+  });
+
+  const scoutAddFilePaths = params.launchPlan.autonomous_candidate?.source_path
+    ? [params.launchPlan.autonomous_candidate.source_path]
+    : [];
+  const swarmResult = runHermesRuntimeControlAction({
+    action: 'swarm-launch',
+    waveObjective: params.launchPlan.objective,
+    sessionPath: params.sessionPath,
+    sessionId: params.sessionId,
+    vaultPath: params.vaultPath,
+    capacityTarget: params.capacityTarget,
+    gcpCapacityRecoveryRequested: params.gcpCapacityRecoveryRequested,
+    runtimeLane: params.runtimeLane,
+    includeDistiller: params.includeDistiller === true,
+    scoutAddFilePaths,
+    executorWorktreePath: params.executorWorktreePath || null,
+    executorArtifactBudget: Array.isArray(params.executorArtifactBudget) ? params.executorArtifactBudget : [],
+    maximize: true,
+    newWindow: true,
+    reuseWindow: false,
+    dryRun: params.dryRun,
+  });
+
+  return {
+    ok: Boolean(swarmResult?.ok),
+    queue_result: queueResult,
+    swarm_result: swarmResult,
+  };
+};
+
 const maybeAutoOpenResumePacket = (params) => {
   if (!params.enabled || !params.resumeState?.progress_packet_path || !params.resumeState?.vault_root) {
     return null;
@@ -1758,6 +1854,7 @@ const maybeAutoOpenResumePacket = (params) => {
     packetPath: params.resumeState.handoff_packet_path || params.resumeState.progress_packet_path,
     vaultPath: params.resumeState.vault_root,
     reason: 'open active continuity progress packet for visible Hermes autopilot',
+    dryRun: params.dryRun,
   });
 };
 
@@ -2128,6 +2225,10 @@ export const buildStatusPayload = async (params = {}) => {
       supervisor_alive: supervisorAlive,
       auto_select_queued_objective: Boolean(latestLoop.auto_select_queued_objective),
       auto_launch_queued_chat: Boolean(latestLoop.auto_launch_queued_chat),
+      auto_launch_queued_swarm: Boolean(latestLoop.auto_launch_queued_swarm),
+      auto_launch_queued_swarm_include_distiller: Boolean(latestLoop.auto_launch_queued_swarm_include_distiller),
+      auto_launch_queued_swarm_executor_worktree_path: toNullableString(latestLoop.auto_launch_queued_swarm_executor_worktree_path),
+      auto_launch_queued_swarm_executor_artifact_budget: splitCommaSeparatedValues(latestLoop.auto_launch_queued_swarm_executor_artifact_budget),
       awaiting_reentry_acknowledgment: awaitingReentryAcknowledgment,
       awaiting_reentry_acknowledgment_started_at: reentryAcknowledgmentState.startedAt,
       awaiting_reentry_acknowledgment_age_ms: reentryAcknowledgmentState.ageMs,
@@ -2135,6 +2236,8 @@ export const buildStatusPayload = async (params = {}) => {
       queued_reentry_objective: toNullableString(latestLoop.last_launch?.objective),
       queued_reentry_source: toNullableString(latestLoop.last_launch?.source),
       reentry_acknowledgment: latestLoop.reentry_acknowledgment || null,
+      queued_chat_launch: latestLoop.queued_chat_launch || null,
+      queued_swarm_launch: latestLoop.queued_swarm_launch || null,
       started_at: latestLoop.started_at || null,
       stopped_at: latestLoop.stopped_at || null,
       stop_reason: latestLoop.stop_reason || null,
@@ -2489,6 +2592,11 @@ export const buildSessionOpenBundle = ({ status, personalizationSnapshot = null 
       stop_reason: toNullableString(supervisor.stop_reason),
       last_launch_source: isRecord(supervisor.last_launch) ? toNullableString(supervisor.last_launch.source) : null,
       last_launch_at: isRecord(supervisor.last_launch) ? toNullableString(supervisor.last_launch.launched_at) : null,
+      auto_launch_queued_chat: Boolean(supervisor.auto_launch_queued_chat),
+      auto_launch_queued_swarm: Boolean(supervisor.auto_launch_queued_swarm),
+      auto_launch_queued_swarm_include_distiller: Boolean(supervisor.auto_launch_queued_swarm_include_distiller),
+      auto_launch_queued_swarm_executor_worktree_path: toNullableString(supervisor.auto_launch_queued_swarm_executor_worktree_path),
+      auto_launch_queued_swarm_executor_artifact_budget: splitCommaSeparatedValues(supervisor.auto_launch_queued_swarm_executor_artifact_budget),
       awaiting_reentry_acknowledgment: Boolean(supervisor.awaiting_reentry_acknowledgment),
       awaiting_reentry_acknowledgment_started_at: toNullableString(supervisor.awaiting_reentry_acknowledgment_started_at),
       awaiting_reentry_acknowledgment_age_ms: Number.isFinite(Number(supervisor.awaiting_reentry_acknowledgment_age_ms))
@@ -2557,6 +2665,12 @@ export const buildGoalCycleLaunchArgs = (params) => ([
   ...(params.autoSelectQueuedObjective ? ['--autoSelectQueuedObjective=true'] : []),
   ...(params.autoLaunchQueuedChat ? ['--autoLaunchQueuedChat=true'] : []),
   ...(params.autoLaunchQueuedChatContextProfile ? [`--autoLaunchQueuedChatContextProfile=${params.autoLaunchQueuedChatContextProfile}`] : []),
+  ...(params.autoLaunchQueuedSwarm ? ['--autoLaunchQueuedSwarm=true'] : []),
+  ...(params.autoLaunchQueuedSwarmIncludeDistiller ? ['--autoLaunchQueuedSwarmIncludeDistiller=true'] : []),
+  ...(params.autoLaunchQueuedSwarmExecutorWorktreePath ? [`--autoLaunchQueuedSwarmExecutorWorktreePath=${params.autoLaunchQueuedSwarmExecutorWorktreePath}`] : []),
+  ...(Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget) && params.autoLaunchQueuedSwarmExecutorArtifactBudget.length > 0
+    ? [`--autoLaunchQueuedSwarmExecutorArtifactBudget=${params.autoLaunchQueuedSwarmExecutorArtifactBudget.join(',')}`]
+    : []),
   ...(params.autoOpenResumePacket ? ['--autoOpenResumePacket=true'] : []),
   '--visibleTerminal=false',
 ]);
@@ -2572,18 +2686,47 @@ const buildUnderlyingRunArgs = (params) => ([
   `--autoRestartOnRelease=${params.autoRestartOnRelease}`,
 ]);
 
-const launchVisibleWindowsPowerShell = (params) => {
-  ensureDirectory(LAUNCHES_DIR);
+export const launchVisibleWindowsPowerShell = (params) => {
   const title = `Hermes Autopilot: ${String(params.objective || 'interactive goal').slice(0, 72)}`;
   const launchId = `interactive-goal-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
   const manifestPath = path.join(LAUNCHES_DIR, `${launchId}.json`);
   const logPath = path.join(LAUNCHES_DIR, `${launchId}.log`);
   const nodeArgs = buildGoalCycleLaunchArgs(params);
-  fs.writeFileSync(logPath, '', 'utf8');
   const vscodeBridge = maybeAutoOpenResumePacket({
     enabled: params.autoOpenResumePacket,
     resumeState: params.resumeState,
+    dryRun: params.dryRun,
   });
+
+  if (params.dryRun === true) {
+    return {
+      ok: true,
+      exit_code: 0,
+      completion: 'skipped',
+      launched_visible_terminal: false,
+      terminal_kind: 'powershell',
+      terminal_pid: null,
+      runner_pid: null,
+      manifest_path: null,
+      log_path: null,
+      launch_title: title,
+      continuous_loop: Boolean(params.continuousLoop),
+      auto_restart_on_release: Boolean(params.autoRestartOnRelease),
+      auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
+      auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
+      auto_launch_queued_swarm: Boolean(params.autoLaunchQueuedSwarm),
+      auto_launch_queued_swarm_include_distiller: Boolean(params.autoLaunchQueuedSwarmIncludeDistiller),
+      auto_launch_queued_swarm_executor_worktree_path: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+      auto_launch_queued_swarm_executor_artifact_budget: Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget)
+        ? params.autoLaunchQueuedSwarmExecutorArtifactBudget
+        : [],
+      resume_from_packets: Boolean(params.resumeFromPackets),
+      vscode_bridge: vscodeBridge,
+    };
+  }
+
+  ensureDirectory(LAUNCHES_DIR);
+  fs.writeFileSync(logPath, '', 'utf8');
 
   const detachedRunnerCommand = [
     `Set-Location -LiteralPath ${quotePowerShellLiteral(ROOT)}`,
@@ -2650,6 +2793,12 @@ const launchVisibleWindowsPowerShell = (params) => {
       auto_select_queued_objective: Boolean(params.autoSelectQueuedObjective),
       auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
       auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
+      auto_launch_queued_swarm: Boolean(params.autoLaunchQueuedSwarm),
+      auto_launch_queued_swarm_include_distiller: Boolean(params.autoLaunchQueuedSwarmIncludeDistiller),
+      auto_launch_queued_swarm_executor_worktree_path: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+      auto_launch_queued_swarm_executor_artifact_budget: Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget)
+        ? params.autoLaunchQueuedSwarmExecutorArtifactBudget
+        : [],
       resume_from_packets: Boolean(params.resumeFromPackets),
       force_resume: Boolean(params.forceResume),
       runner_pid: Number.isFinite(runnerPid) ? runnerPid : null,
@@ -2675,6 +2824,12 @@ const launchVisibleWindowsPowerShell = (params) => {
       auto_restart_on_release: Boolean(params.autoRestartOnRelease),
       auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
       auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
+      auto_launch_queued_swarm: Boolean(params.autoLaunchQueuedSwarm),
+      auto_launch_queued_swarm_include_distiller: Boolean(params.autoLaunchQueuedSwarmIncludeDistiller),
+      auto_launch_queued_swarm_executor_worktree_path: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+      auto_launch_queued_swarm_executor_artifact_budget: Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget)
+        ? params.autoLaunchQueuedSwarmExecutorArtifactBudget
+        : [],
       resume_from_packets: Boolean(params.resumeFromPackets),
       vscode_bridge: vscodeBridge,
     };
@@ -2695,6 +2850,12 @@ const launchVisibleWindowsPowerShell = (params) => {
       auto_restart_on_release: Boolean(params.autoRestartOnRelease),
       auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
       auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
+      auto_launch_queued_swarm: Boolean(params.autoLaunchQueuedSwarm),
+      auto_launch_queued_swarm_include_distiller: Boolean(params.autoLaunchQueuedSwarmIncludeDistiller),
+      auto_launch_queued_swarm_executor_worktree_path: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+      auto_launch_queued_swarm_executor_artifact_budget: Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget)
+        ? params.autoLaunchQueuedSwarmExecutorArtifactBudget
+        : [],
       resume_from_packets: Boolean(params.resumeFromPackets),
       vscode_bridge: vscodeBridge,
     };
@@ -2703,8 +2864,10 @@ const launchVisibleWindowsPowerShell = (params) => {
 
 const isWorkflowActive = (statusPayload) => ACTIVE_WORKFLOW_STATES.has(String(statusPayload?.workflow?.status || '').toLowerCase());
 
-const runContinuousLoop = async (params) => {
-  ensureDirectory(LAUNCHES_DIR);
+export const runContinuousLoop = async (params) => {
+  if (params.dryRun !== true) {
+    ensureDirectory(LAUNCHES_DIR);
+  }
   const loopState = {
     status: 'running',
     started_at: new Date().toISOString(),
@@ -2728,6 +2891,12 @@ const runContinuousLoop = async (params) => {
     auto_select_queued_objective: Boolean(params.autoSelectQueuedObjective),
     auto_launch_queued_chat: Boolean(params.autoLaunchQueuedChat),
     auto_launch_queued_chat_context_profile: params.autoLaunchQueuedChatContextProfile || null,
+    auto_launch_queued_swarm: Boolean(params.autoLaunchQueuedSwarm),
+    auto_launch_queued_swarm_include_distiller: Boolean(params.autoLaunchQueuedSwarmIncludeDistiller),
+    auto_launch_queued_swarm_executor_worktree_path: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+    auto_launch_queued_swarm_executor_artifact_budget: Array.isArray(params.autoLaunchQueuedSwarmExecutorArtifactBudget)
+      ? params.autoLaunchQueuedSwarmExecutorArtifactBudget
+      : [],
     launches_completed: 0,
     idle_checks: 0,
     last_reason: null,
@@ -2736,11 +2905,17 @@ const runContinuousLoop = async (params) => {
     autonomous_goal_candidates: [],
     autonomous_launch_history: [],
     queued_chat_launch: null,
+    queued_swarm_launch: null,
     awaiting_reentry_acknowledgment: false,
     reentry_acknowledgment: null,
     vscode_bridge: params.vscodeBridge || null,
   };
-  writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+  const persistLoopState = () => {
+    if (params.dryRun !== true) {
+      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+    }
+  };
+  persistLoopState();
 
   let launchesCompleted = 0;
   let idleChecks = 0;
@@ -2775,7 +2950,7 @@ const runContinuousLoop = async (params) => {
 
     if (isWorkflowActive(status)) {
       loopState.last_reason = 'workflow-active';
-      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+      persistLoopState();
       idleChecks = 0;
       await sleepMs(params.idleSeconds * 1000);
       continue;
@@ -2851,8 +3026,10 @@ const runContinuousLoop = async (params) => {
     }
 
     if (launchPlan) {
+      const queuedLaunchMode = resolveQueuedLaunchMode(params);
       let queuedChatLaunch = null;
-      if (params.autoLaunchQueuedChat && launchPlan.autonomous_candidate) {
+      let queuedSwarmLaunch = null;
+      if (queuedLaunchMode === 'chat' && launchPlan.autonomous_candidate) {
         queuedChatLaunch = maybeLaunchQueuedObjectiveChat({
           enabled: true,
           launchPlan,
@@ -2866,11 +3043,32 @@ const runContinuousLoop = async (params) => {
           dryRun: params.dryRun,
         });
         loopState.queued_chat_launch = queuedChatLaunch;
+        loopState.queued_swarm_launch = null;
+      } else if (queuedLaunchMode === 'swarm' && launchPlan.autonomous_candidate) {
+        queuedSwarmLaunch = maybeLaunchQueuedObjectiveSwarm({
+          enabled: true,
+          launchPlan,
+          includeDistiller: params.autoLaunchQueuedSwarmIncludeDistiller,
+          executorWorktreePath: params.autoLaunchQueuedSwarmExecutorWorktreePath || null,
+          executorArtifactBudget: params.autoLaunchQueuedSwarmExecutorArtifactBudget || [],
+          sessionPath: params.sessionPath || null,
+          sessionId: status.workflow?.session_id || null,
+          vaultPath: params.vaultPath || null,
+          capacityTarget: params.capacityTarget,
+          gcpCapacityRecoveryRequested,
+          runtimeLane: params.runtimeLane,
+          dryRun: params.dryRun,
+        });
+        loopState.queued_swarm_launch = queuedSwarmLaunch;
+        loopState.queued_chat_launch = null;
       } else {
         loopState.queued_chat_launch = null;
+        loopState.queued_swarm_launch = null;
       }
 
-      if (queuedChatLaunch?.ok) {
+      const queuedLaunchResult = queuedLaunchMode === 'swarm' ? queuedSwarmLaunch : queuedChatLaunch;
+
+      if (queuedLaunchResult?.ok) {
         launchesCompleted += 1;
         if (launchPlan.autonomous_candidate?.fingerprint) {
           launchedAutonomousFingerprints.add(launchPlan.autonomous_candidate.fingerprint);
@@ -2878,14 +3076,16 @@ const runContinuousLoop = async (params) => {
         }
         loopState.launches_completed = launchesCompleted;
         loopState.idle_checks = idleChecks;
-        loopState.last_reason = 'queued-chat-launched';
+        loopState.last_reason = queuedLaunchMode === 'swarm' ? 'queued-swarm-launched' : 'queued-chat-launched';
         loopState.last_launch = {
           launched_at: new Date().toISOString(),
           objective: launchPlan.objective,
-          source: `${launchPlan.source}:vscode-chat`,
+          source: `${launchPlan.source}:${queuedLaunchMode === 'swarm' ? 'vscode-swarm' : 'vscode-chat'}`,
           fingerprint: launchPlan.fingerprint,
           milestone: launchPlan.autonomous_candidate?.milestone || null,
-          context_profile: queuedChatLaunch?.chat_result?.contextProfile || params.autoLaunchQueuedChatContextProfile || null,
+          context_profile: queuedLaunchMode === 'chat'
+            ? (queuedChatLaunch?.chat_result?.contextProfile || params.autoLaunchQueuedChatContextProfile || null)
+            : 'swarm',
           session_id: status.workflow?.session_id || null,
           session_path: status.workflow?.session_path || null,
           runtime_lane: status.workflow?.runtime_lane || params.runtimeLane || null,
@@ -2896,13 +3096,14 @@ const runContinuousLoop = async (params) => {
           ok: true,
           exit_code: 0,
           error: null,
-          chat_launch: queuedChatLaunch.chat_result || null,
-          queue_sync_ok: queuedChatLaunch.queue_result?.ok === true,
+          chat_launch: queuedChatLaunch?.chat_result || null,
+          swarm_launch: queuedSwarmLaunch?.swarm_result || null,
+          queue_sync_ok: queuedLaunchResult.queue_result?.ok === true,
         };
         loopState.awaiting_reentry_acknowledgment = true;
         loopState.reentry_acknowledgment = null;
-        writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
-        stopReason = 'queued_chat_launched';
+        persistLoopState();
+        stopReason = queuedLaunchMode === 'swarm' ? 'queued_swarm_launched' : 'queued_chat_launched';
         break;
       }
 
@@ -2940,8 +3141,9 @@ const runContinuousLoop = async (params) => {
         exit_code: run.exit_code,
         error: run.error || null,
         queued_chat_launch: queuedChatLaunch || null,
+        queued_swarm_launch: queuedSwarmLaunch || null,
       };
-      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+      persistLoopState();
       if (!run.ok) {
         stopReason = 'launch_failed';
         break;
@@ -2972,35 +3174,35 @@ const runContinuousLoop = async (params) => {
     if (autoQueueResult?.ok && Array.isArray(autoQueueResult?.synthesizedObjectives) && autoQueueResult.synthesizedObjectives.length > 0) {
       loopState.last_reason = 'auto-queued-next-objective';
       loopState.auto_queue_result = autoQueueResult;
-      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+      persistLoopState();
       continue;
     }
 
     if (status.capacity?.loop_action === 'escalate') {
       stopReason = status.capacity.primary_reason || 'capacity_blocked';
       loopState.last_reason = stopReason;
-      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+      persistLoopState();
       break;
     }
 
     if (status.capacity?.loop_action === 'wait') {
       stopReason = status.capacity.primary_reason || 'waiting_for_next_gpt_objective';
       loopState.last_reason = stopReason;
-      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+      persistLoopState();
       break;
     }
 
     if (params.continueUntilCapacity && status.capacity?.reached) {
       stopReason = status.capacity.primary_reason || 'capacity_target_reached';
       loopState.last_reason = stopReason;
-      writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+      persistLoopState();
       break;
     }
 
     idleChecks += 1;
     loopState.idle_checks = idleChecks;
     loopState.last_reason = resumeState.reason || 'idle';
-    writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+    persistLoopState();
     await sleepMs(params.idleSeconds * 1000);
   }
 
@@ -3015,7 +3217,7 @@ const runContinuousLoop = async (params) => {
   loopState.stop_reason = stopReason;
   loopState.idle_checks = idleChecks;
   loopState.launches_completed = launchesCompleted;
-  writeJsonFile(LATEST_CONTINUITY_LOOP_PATH, loopState);
+  persistLoopState();
 
   return {
     ok: true,
@@ -3023,7 +3225,7 @@ const runContinuousLoop = async (params) => {
     stop_reason: stopReason,
     launches_completed: launchesCompleted,
     idle_checks: idleChecks,
-    loop_state_path: toRelative(LATEST_CONTINUITY_LOOP_PATH),
+    loop_state_path: params.dryRun === true ? null : toRelative(LATEST_CONTINUITY_LOOP_PATH),
   };
 };
 
@@ -3105,6 +3307,12 @@ const main = async () => {
   const autoSelectQueuedObjective = parseBool(parseArg('autoSelectQueuedObjective', process.env.OPENJARVIS_AUTO_SELECT_QUEUED_OBJECTIVE || 'false'), false);
   const autoLaunchQueuedChat = parseBool(parseArg('autoLaunchQueuedChat', process.env.OPENJARVIS_AUTO_LAUNCH_QUEUED_CHAT || 'false'), false);
   const autoLaunchQueuedChatContextProfile = String(parseArg('autoLaunchQueuedChatContextProfile', autoLaunchQueuedChat ? 'auto' : '')).trim() || null;
+  const autoLaunchQueuedSwarm = parseBool(parseArg('autoLaunchQueuedSwarm', process.env.OPENJARVIS_AUTO_LAUNCH_QUEUED_SWARM || 'false'), false);
+  const autoLaunchQueuedSwarmIncludeDistiller = parseBool(parseArg('autoLaunchQueuedSwarmIncludeDistiller', process.env.OPENJARVIS_AUTO_LAUNCH_QUEUED_SWARM_INCLUDE_DISTILLER || 'false'), false);
+  const autoLaunchQueuedSwarmExecutorWorktreePath = String(parseArg('autoLaunchQueuedSwarmExecutorWorktreePath', process.env.OPENJARVIS_AUTO_LAUNCH_QUEUED_SWARM_EXECUTOR_WORKTREE_PATH || '')).trim() || null;
+  const autoLaunchQueuedSwarmExecutorArtifactBudget = splitCommaSeparatedValues(
+    parseArg('autoLaunchQueuedSwarmExecutorArtifactBudget', process.env.OPENJARVIS_AUTO_LAUNCH_QUEUED_SWARM_EXECUTOR_ARTIFACT_BUDGET || ''),
+  );
   const idleSeconds = Math.max(10, Number.parseInt(String(parseArg('idleSeconds', '45')).trim(), 10) || 45);
   const maxCycles = normalizeLoopLimit(parseArg('maxCycles', continuousLoop ? '3' : '1'), continuousLoop ? 3 : 1);
   const maxIdleChecks = normalizeLoopLimit(parseArg('maxIdleChecks', continuousLoop ? '120' : '1'), continuousLoop ? 120 : 1);
@@ -3124,6 +3332,15 @@ const main = async () => {
   });
   const autoOpenResumePacketDefault = process.platform === 'win32' && visibleTerminal && (resumeFromPackets || continuousLoop);
   const autoOpenResumePacket = parseBool(parseArg('autoOpenResumePacket', autoOpenResumePacketDefault ? 'true' : 'false'), autoOpenResumePacketDefault);
+
+  if (autoLaunchQueuedChat && autoLaunchQueuedSwarm) {
+    console.error(JSON.stringify({
+      ok: false,
+      error: 'autoLaunchQueuedChat and autoLaunchQueuedSwarm cannot both be true',
+    }, null, 2));
+    process.exitCode = 1;
+    return;
+  }
 
   let objective = requestedObjective;
   if (!objective && resumeFromPackets && !continuousLoop) {
@@ -3189,6 +3406,10 @@ const main = async () => {
       autoSelectQueuedObjective,
       autoLaunchQueuedChat,
       autoLaunchQueuedChatContextProfile,
+      autoLaunchQueuedSwarm,
+      autoLaunchQueuedSwarmIncludeDistiller,
+      autoLaunchQueuedSwarmExecutorWorktreePath,
+      autoLaunchQueuedSwarmExecutorArtifactBudget,
       gcpCapacityRecoveryRequested,
       vaultPath: vaultPath || null,
       resumeState,
@@ -3213,6 +3434,10 @@ const main = async () => {
       auto_select_queued_objective: autoSelectQueuedObjective,
       auto_launch_queued_chat: autoLaunchQueuedChat,
       auto_launch_queued_chat_context_profile: autoLaunchQueuedChatContextProfile,
+      auto_launch_queued_swarm: autoLaunchQueuedSwarm,
+      auto_launch_queued_swarm_include_distiller: autoLaunchQueuedSwarmIncludeDistiller,
+      auto_launch_queued_swarm_executor_worktree_path: autoLaunchQueuedSwarmExecutorWorktreePath,
+      auto_launch_queued_swarm_executor_artifact_budget: autoLaunchQueuedSwarmExecutorArtifactBudget,
       resume_state: resumeState,
       monitor_command: 'npm run openjarvis:goal:status',
     }, null, 2));
@@ -3223,6 +3448,7 @@ const main = async () => {
   const vscodeBridge = maybeAutoOpenResumePacket({
     enabled: autoOpenResumePacket,
     resumeState,
+    dryRun,
   });
 
   if (continuousLoop) {
@@ -3246,6 +3472,10 @@ const main = async () => {
       autoSelectQueuedObjective,
       autoLaunchQueuedChat,
       autoLaunchQueuedChatContextProfile,
+      autoLaunchQueuedSwarm,
+      autoLaunchQueuedSwarmIncludeDistiller,
+      autoLaunchQueuedSwarmExecutorWorktreePath,
+      autoLaunchQueuedSwarmExecutorArtifactBudget,
       capacityTarget,
       gcpCapacityRecoveryRequested,
       runtimeLane,
@@ -3271,6 +3501,10 @@ const main = async () => {
       auto_select_queued_objective: autoSelectQueuedObjective,
       auto_launch_queued_chat: autoLaunchQueuedChat,
       auto_launch_queued_chat_context_profile: autoLaunchQueuedChatContextProfile,
+      auto_launch_queued_swarm: autoLaunchQueuedSwarm,
+      auto_launch_queued_swarm_include_distiller: autoLaunchQueuedSwarmIncludeDistiller,
+      auto_launch_queued_swarm_executor_worktree_path: autoLaunchQueuedSwarmExecutorWorktreePath,
+      auto_launch_queued_swarm_executor_artifact_budget: autoLaunchQueuedSwarmExecutorArtifactBudget,
       resume_state: resumeState,
       vscode_bridge: vscodeBridge,
       status,
@@ -3300,6 +3534,10 @@ const main = async () => {
     auto_select_queued_objective: autoSelectQueuedObjective,
     auto_launch_queued_chat: autoLaunchQueuedChat,
     auto_launch_queued_chat_context_profile: autoLaunchQueuedChatContextProfile,
+    auto_launch_queued_swarm: autoLaunchQueuedSwarm,
+    auto_launch_queued_swarm_include_distiller: autoLaunchQueuedSwarmIncludeDistiller,
+    auto_launch_queued_swarm_executor_worktree_path: autoLaunchQueuedSwarmExecutorWorktreePath,
+    auto_launch_queued_swarm_executor_artifact_budget: autoLaunchQueuedSwarmExecutorArtifactBudget,
     resume_state: resumeState,
     vscode_bridge: vscodeBridge,
     status,

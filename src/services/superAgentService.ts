@@ -6,7 +6,21 @@ import {
 import { runPolicyGateNode, type PolicyGateResult } from './langgraph/nodes/coreNodes';
 import { createActionApprovalRequest, type ActionApprovalRequest } from './skills/actionGovernanceStore';
 import { isSkillId, listSkills } from './skills/registry';
+import {
+  getSuperAgentServiceBundle as getCatalogSuperAgentServiceBundle,
+  listSuperAgentServiceBundles as listCatalogSuperAgentServiceBundles,
+  resolveSuperAgentServiceBundle,
+  type SuperAgentServiceBundle,
+} from './superAgentServiceCatalog';
 import { SUPER_AGENT_PAYLOAD_CLIP_CHARS, SUPER_AGENT_REVIEW_APPROVAL_ACTION } from '../config';
+
+export {
+  SUPER_AGENT_SERVICE_BUNDLE_IDS,
+  type SuperAgentServiceBundle,
+  type SuperAgentServiceBundleId,
+  type SuperAgentServiceBundlePriority,
+  type SuperAgentServiceEntrypoints,
+} from './superAgentServiceCatalog';
 
 export const SUPER_AGENT_MODES = ['local-collab', 'delivery', 'operations'] as const;
 export const SUPER_AGENT_LEAD_AGENTS = ['Implement', 'Architect', 'Review', 'Operate'] as const;
@@ -148,6 +162,21 @@ export type SuperAgentStartResult = {
   pendingApproval?: ActionApprovalRequest;
 };
 
+export type SuperAgentServiceRequestInput = Omit<SuperAgentTaskInput, 'objective'> & {
+  objective?: string;
+  serviceId?: string | null;
+  service_id?: string | null;
+};
+
+export type SuperAgentServiceRecommendation = {
+  service: SuperAgentServiceBundle;
+  recommendation: SuperAgentRecommendation;
+};
+
+export type SuperAgentServiceSessionStartResult = SuperAgentStartResult & {
+  service: SuperAgentServiceBundle;
+};
+
 const nowTaskId = () => `super-${Date.now()}`;
 const MAX_SUPERVISOR_PAYLOAD_CHARS = SUPER_AGENT_PAYLOAD_CLIP_CHARS;
 
@@ -176,6 +205,23 @@ const toStringList = (value: unknown): string[] => {
   }
   const single = toTrimmedString(value);
   return single ? [single] : [];
+};
+
+const dedupeStringList = (...values: Array<unknown>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    for (const item of toStringList(value)) {
+      if (seen.has(item)) {
+        continue;
+      }
+      seen.add(item);
+      result.push(item);
+    }
+  }
+
+  return result;
 };
 
 const toChangedFiles = (value: unknown): string[] | undefined => {
@@ -480,11 +526,107 @@ const buildStructuredGoal = (params: {
   return lines.join('\n\n').trim();
 };
 
+const resolveServiceBundleObjective = (bundle: SuperAgentServiceBundle, objective: unknown): string => {
+  const requestedObjective = toTrimmedString(objective);
+  return requestedObjective ? `${bundle.title}: ${requestedObjective}` : bundle.defaultObjective;
+};
+
+const buildSuperAgentServiceTaskInput = (
+  bundle: SuperAgentServiceBundle,
+  raw: SuperAgentServiceRequestInput,
+): SuperAgentTaskInput => {
+  return {
+    task_id: pickFirst(raw.task_id, raw.taskId),
+    guild_id: pickFirst(raw.guild_id, raw.guildId),
+    objective: resolveServiceBundleObjective(bundle, raw.objective),
+    constraints: dedupeStringList(bundle.defaultConstraints, raw.constraints),
+    risk_level: pickFirst(raw.risk_level, raw.riskLevel),
+    acceptance_criteria: dedupeStringList(bundle.defaultAcceptanceCriteria, pickFirst(raw.acceptance_criteria, raw.acceptanceCriteria)),
+    inputs: {
+      service_bundle: {
+        id: bundle.id,
+        title: bundle.title,
+        summary: bundle.summary,
+        desired_outcome: bundle.desiredOutcome,
+        operator_doc_path: bundle.operatorDocPath,
+        runtime_surfaces: bundle.runtimeSurfaces,
+        action_surface: bundle.existingActions,
+        command_surface: bundle.commandSurface,
+        entrypoints: bundle.entrypoints,
+      },
+      requested_inputs: raw.inputs ?? {},
+    },
+    budget: raw.budget ?? {
+      service_bundle_id: bundle.id,
+      default_priority: bundle.defaultPriority,
+      priority_tier: bundle.priority,
+    },
+    route_mode: toTrimmedString(pickFirst(raw.route_mode, raw.routeMode)) || bundle.defaultMode,
+    current_stage: pickFirst(raw.current_stage, raw.currentStage),
+    requested_lead_agent: toTrimmedString(pickFirst(raw.requested_lead_agent, raw.requestedLeadAgent)) || bundle.defaultLeadAgent,
+    skill_id: toTrimmedString(pickFirst(raw.skill_id, raw.skillId)) || bundle.suggestedSkillId || undefined,
+    priority: toTrimmedString(raw.priority) || bundle.defaultPriority,
+    lead_agent: raw.lead_agent,
+    consult_agent: raw.consult_agent,
+    current_state: raw.current_state,
+    changed_files: raw.changed_files,
+    consult_results: raw.consult_results,
+  };
+};
+
+export const listSuperAgentServiceBundles = (): SuperAgentServiceBundle[] => {
+  return listCatalogSuperAgentServiceBundles();
+};
+
+export const getSuperAgentServiceBundle = (serviceId: unknown): SuperAgentServiceBundle | null => {
+  return getCatalogSuperAgentServiceBundle(serviceId);
+};
+
+export const recommendSuperAgentService = (
+  serviceId: unknown,
+  raw: SuperAgentServiceRequestInput,
+): SuperAgentServiceRecommendation => {
+  const bundle = resolveSuperAgentServiceBundle(serviceId);
+  if (!bundle) {
+    throw new Error(`UNKNOWN_SERVICE_BUNDLE:${toTrimmedString(serviceId) || 'missing'}`);
+  }
+
+  return {
+    service: bundle,
+    recommendation: recommendSuperAgent(buildSuperAgentServiceTaskInput(bundle, raw)),
+  };
+};
+
+export const startSuperAgentServiceSession = async (
+  serviceId: unknown,
+  params: SuperAgentServiceRequestInput & {
+    requestedBy: string;
+    isAdmin?: boolean;
+  },
+): Promise<SuperAgentServiceSessionStartResult> => {
+  const bundle = resolveSuperAgentServiceBundle(serviceId);
+  if (!bundle) {
+    throw new Error(`UNKNOWN_SERVICE_BUNDLE:${toTrimmedString(serviceId) || 'missing'}`);
+  }
+
+  const result = await startSuperAgentSessionFromTask({
+    ...buildSuperAgentServiceTaskInput(bundle, params),
+    requestedBy: params.requestedBy,
+    isAdmin: params.isAdmin === true,
+  });
+
+  return {
+    ...result,
+    service: bundle,
+  };
+};
+
 export const getSuperAgentCapabilities = () => {
   return {
     modes: [...SUPER_AGENT_MODES],
     leadAgents: [...SUPER_AGENT_LEAD_AGENTS],
     consultTimings: [...SUPER_AGENT_CONSULT_TIMINGS],
+    serviceBundles: listSuperAgentServiceBundles(),
     availableSkills: listSkills().map((skill) => ({
       id: skill.id,
       title: skill.title,

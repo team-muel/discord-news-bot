@@ -170,6 +170,23 @@ describe('resolveLlmProvider', () => {
     expect(resolveLlmProvider()).toBe('openjarvis');
   });
 
+  it('기본 chain은 openjarvis -> litellm -> ollama로 고정되고 opt-in providers는 자동으로 섞이지 않는다', () => {
+    vi.stubEnv('OPENJARVIS_ENABLED', 'true');
+    vi.stubEnv('LITELLM_ENABLED', 'true');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
+    vi.stubEnv('OPENCLAW_BASE_URL', 'http://gateway.example');
+    vi.stubEnv('HF_TOKEN', 'hf_test_key');
+    vi.stubEnv('OPENAI_API_KEY', 'sk-primary');
+
+    const chain = resolveProviderChain(
+      { system: 'sys', user: 'hello' },
+      'openjarvis',
+      { provider: 'openjarvis', experiment: null },
+    );
+
+    expect(chain).toEqual(['openjarvis', 'litellm', 'ollama']);
+  });
+
   it('AI_PROVIDER 없이 OPENAI_API_KEY만 있으면 openai 폴백', () => {
     vi.stubEnv('OPENAI_API_KEY', 'sk-primary');
     expect(resolveLlmProvider()).toBe('openai');
@@ -291,7 +308,7 @@ describe('generateText', () => {
     ).rejects.toThrow('OPENAI_API_KEY_NOT_CONFIGURED');
   });
 
-  it('code capability는 local ollama 이후 raw gateway보다 direct code-grade providers를 먼저 둔다', () => {
+  it('code capability는 canonical chain 밖 direct cloud provider를 자동 체인에 올리지 않는다', () => {
     vi.stubEnv('AI_PROVIDER', 'openclaw');
     vi.stubEnv('OPENCLAW_BASE_URL', 'http://gateway.example');
     vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
@@ -304,7 +321,7 @@ describe('generateText', () => {
       { provider: 'openclaw', experiment: null },
     );
 
-    expect(chain.slice(0, 3)).toEqual(['ollama', 'openai', 'openclaw']);
+    expect(chain).toEqual(['ollama', 'openclaw']);
   });
 
   it('operations capability는 openjarvis orchestration lane을 먼저 둔다', () => {

@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 /* eslint-disable no-console */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
@@ -186,6 +187,78 @@ const runCommandProbe = (command, args) => {
     windowsHide: true,
   });
   return result.status === 0;
+};
+
+const resolveCommandPath = (commandName) => {
+  const result = process.platform === 'win32'
+    ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'where', commandName], {
+      encoding: 'utf8',
+      windowsHide: true,
+    })
+    : spawnSync('which', [commandName], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+
+  const lines = String(result.stdout || '')
+    .split(/\r?\n/)
+    .map((line) => compact(line))
+    .filter(Boolean);
+
+  return {
+    available: result.status === 0 && lines.length > 0,
+    path: lines[0] || null,
+  };
+};
+
+const runCommandCapture = (command, args, { cwd = ROOT, env = process.env, timeoutMs = 20_000 } = {}) => {
+  const result = spawnSync(command, args, {
+    cwd,
+    env,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: timeoutMs,
+  });
+
+  return {
+    ok: result.status === 0,
+    status: typeof result.status === 'number' ? result.status : -1,
+    stdout: String(result.stdout || '').trim(),
+    stderr: String(result.stderr || '').trim(),
+    error: result.error instanceof Error ? result.error.message : (result.error ? String(result.error) : null),
+  };
+};
+
+const runCliCommand = (commandName, args, options = {}) => {
+  if (process.platform === 'win32') {
+    return runCommandCapture(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandName, ...args], options);
+  }
+  return runCommandCapture(commandName, args, options);
+};
+
+const runRepoScriptSync = ({ scriptRelativePath, args = [], useDotenv = false, useTsx = false, timeoutMs = 20_000 }) => {
+  const nodeArgs = [];
+  if (useDotenv) {
+    nodeArgs.push('--import', 'dotenv/config');
+  }
+  if (useTsx) {
+    nodeArgs.push('--import', 'tsx');
+  }
+  nodeArgs.push(path.join(ROOT, scriptRelativePath), ...args);
+  return runCommandCapture(process.execPath, nodeArgs, { timeoutMs });
+};
+
+const parseCommandJsonOutput = (capture, fallback = null) => {
+  return parseEmbeddedJsonPayload([capture.stdout, capture.stderr].filter(Boolean).join('\n'), fallback);
+};
+
+const buildCommandPreview = (capture, maxLength = 240) => {
+  return [capture.stdout, capture.stderr, capture.error]
+    .filter(Boolean)
+    .join(' | ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength) || null;
 };
 
 const isJarvisCliAvailable = () => {
@@ -594,9 +667,779 @@ const buildManualLanes = () => ({
   note: 'OpenClaw, NemoClaw, and OpenShell remain operator-managed or WSL-managed lanes; this control surface auto-starts only deterministic local services.',
 });
 
+const toControlPlaneStatus = ({ ready = false, available = false }) => {
+  if (ready) {
+    return 'ready';
+  }
+  if (available) {
+    return 'partial';
+  }
+  return 'blocked';
+};
+
+const probeMulticaControlPlane = () => {
+  const cli = resolveCommandPath('multica');
+  const playbookPath = path.join('docs', 'planning', 'MULTICA_CONTROL_PLANE_PLAYBOOK.md').replace(/\\/g, '/');
+  const playbookExists = fs.existsSync(path.join(ROOT, playbookPath));
+  const help = cli.available
+    ? runCliCommand('multica', ['--help'], { timeoutMs: 10_000 })
+    : null;
+  const ready = cli.available && playbookExists;
+  const blockers = [];
+  const nextSteps = [];
+
+  if (!playbookExists) {
+    blockers.push('The Multica playbook is missing from the repository.');
+  }
+  if (!cli.available) {
+    blockers.push('multica CLI is not available on PATH.');
+    nextSteps.push('repair the local multica PATH or shim before relying on issue routing');
+  }
+
+  return {
+    surface: 'multica',
+    integrationLevel: 'coordination-plane-only',
+    cliAvailable: cli.available,
+    cliPath: cli.path,
+    helpOk: help?.ok ?? false,
+    outputPreview: help ? buildCommandPreview(help) : null,
+    playbookExists,
+    playbookPath,
+    status: toControlPlaneStatus({ ready, available: cli.available || playbookExists }),
+    blockers,
+    nextSteps: ensureUniqueSteps(nextSteps),
+  };
+};
+
+const probeHermesControlPlane = () => {
+  const cli = resolveCommandPath('hermes');
+  const hermesRoot = path.join(os.homedir(), '.hermes');
+  const configPath = path.join(hermesRoot, 'config.yaml');
+  const envPath = path.join(hermesRoot, '.env');
+  const quickCheck = cli.available
+    ? runCliCommand('hermes', ['chat', '-q', 'Reply with only OK', '-Q'], { timeoutMs: 25_000 })
+    : null;
+  const quickCheckOk = Boolean(
+    quickCheck
+    && quickCheck.ok
+    && quickCheck.stdout.split(/\r?\n/).some((line) => compact(line) === 'OK'),
+  );
+  const blockers = [];
+  const nextSteps = [];
+
+  if (!cli.available) {
+    blockers.push('hermes CLI is not available on PATH.');
+    nextSteps.push('repair the hermes PATH or shim before depending on the local continuity lane');
+  }
+  if (cli.available && !quickCheckOk) {
+    blockers.push('Hermes quick chat check did not return a clean OK response.');
+    nextSteps.push('run hermes doctor to inspect provider auth and model endpoint issues');
+    nextSteps.push('repair the Hermes auth or model endpoint until hermes chat -q Reply with only OK -Q succeeds');
+  }
+
+  return {
+    surface: 'hermes',
+    integrationLevel: 'bounded-local-continuity',
+    cliAvailable: cli.available,
+    cliPath: cli.path,
+    configExists: fs.existsSync(configPath),
+    envExists: fs.existsSync(envPath),
+    quickCheck: {
+      attempted: Boolean(quickCheck),
+      ok: quickCheckOk,
+      status: quickCheck?.status ?? null,
+      preview: quickCheck ? buildCommandPreview(quickCheck) : null,
+    },
+    status: toControlPlaneStatus({ ready: quickCheckOk, available: cli.available }),
+    blockers,
+    nextSteps: ensureUniqueSteps(nextSteps),
+  };
+};
+
+const probeVsCodeCopilotControlPlane = () => {
+  const cli = resolveCommandPath('code');
+  const bridgeCapture = runRepoScriptSync({
+    scriptRelativePath: path.join('scripts', 'run-hermes-vscode-bridge.ts'),
+    args: ['--status=true'],
+    useTsx: true,
+    timeoutMs: 20_000,
+  });
+  const bridge = parseCommandJsonOutput(bridgeCapture, null);
+  const allowedActions = Array.isArray(bridge?.allowedActions) ? bridge.allowedActions.map((entry) => compact(entry)) : [];
+  const chatAllowed = allowedActions.includes('chat');
+  const bridgeConfigured = bridge?.configured === true;
+  const packetExists = bridge?.packetExists === true;
+  const ready = bridgeConfigured && chatAllowed && packetExists;
+  const blockers = [];
+  const nextSteps = [];
+
+  if (!cli.available && bridge?.codeCliExists !== true) {
+    blockers.push('VS Code CLI is not available on PATH.');
+    nextSteps.push('repair the VS Code CLI install before relying on code chat relaunch');
+  }
+  if (!bridgeConfigured) {
+    blockers.push('Hermes VS Code bridge is not configured.');
+    nextSteps.push('run npm run hermes:vscode:bridge:status and repair the bridge before treating Copilot chat as a relay surface');
+  }
+  if (bridgeConfigured && !chatAllowed) {
+    blockers.push('The Hermes VS Code bridge is configured but does not expose the chat action.');
+    nextSteps.push('restore the bounded code chat allowlist before using VS Code chat relaunch');
+  }
+  if (bridgeConfigured && !packetExists) {
+    blockers.push('The Hermes VS Code bridge packet path is missing.');
+    nextSteps.push('restore the active Obsidian packet before launching the next bounded Copilot chat');
+  }
+
+  return {
+    surface: 'vscode-copilot',
+    integrationLevel: 'bounded-code-chat-relay',
+    codeCliAvailable: cli.available || bridge?.codeCliExists === true,
+    codeCliPath: compact(bridge?.codeCliPath || cli.path) || null,
+    bridgeConfigured,
+    packetExists,
+    chatAllowed,
+    allowedActions,
+    outputPreview: bridgeCapture.ok ? null : buildCommandPreview(bridgeCapture),
+    status: toControlPlaneStatus({ ready, available: bridgeConfigured || cli.available }),
+    blockers,
+    nextSteps: ensureUniqueSteps(nextSteps),
+  };
+};
+
+const loadOpenJarvisGoalStatus = () => {
+  const capture = runRepoScriptSync({
+    scriptRelativePath: path.join('scripts', 'run-openjarvis-goal-cycle.mjs'),
+    args: ['--status=true'],
+    timeoutMs: 40_000,
+  });
+  const payload = parseCommandJsonOutput(capture, null);
+  return { capture, payload };
+};
+
+const probeOpenJarvisControlPlane = () => {
+  const { capture, payload } = loadOpenJarvisGoalStatus();
+  const surfaceAvailable = Boolean(capture.ok && payload?.ok);
+  const hermesRuntime = payload?.hermes_runtime && typeof payload.hermes_runtime === 'object'
+    ? payload.hermes_runtime
+    : {};
+  const supervisor = payload?.supervisor && typeof payload.supervisor === 'object'
+    ? payload.supervisor
+    : {};
+  const workflow = payload?.workflow && typeof payload.workflow === 'object'
+    ? payload.workflow
+    : {};
+  const workflowStatus = compact(workflow.status || '').toLowerCase();
+  const queueEnabled = hermesRuntime.queue_enabled === true;
+  const supervisorAlive = hermesRuntime.supervisor_alive === true;
+  const autoLaunchQueuedChat = supervisor.auto_launch_queued_chat === true;
+  const autoLaunchQueuedSwarm = supervisor.auto_launch_queued_swarm === true;
+  const queueLaunchMode = autoLaunchQueuedSwarm ? 'swarm' : (autoLaunchQueuedChat ? 'chat' : 'manual');
+  const queueChatModeDrift = queueEnabled && supervisorAlive && queueLaunchMode === 'manual';
+  const ready = surfaceAvailable
+    && compact(hermesRuntime.readiness || '').toLowerCase() === 'ready'
+    && !queueChatModeDrift;
+  const blockers = [];
+  const nextSteps = [];
+
+  if (!surfaceAvailable) {
+    blockers.push('OpenJarvis goal status did not return a healthy control-plane payload.');
+    nextSteps.push('run npm run openjarvis:goal:status and repair the OpenJarvis control surface before widening the automation lane');
+  }
+
+  for (const blocker of Array.isArray(hermesRuntime.blockers) ? hermesRuntime.blockers.slice(0, 4) : []) {
+    const text = compact(blocker);
+    if (text) {
+      blockers.push(text);
+    }
+  }
+
+  for (const action of Array.isArray(hermesRuntime.next_actions) ? hermesRuntime.next_actions.slice(0, 4) : []) {
+    const text = compact(action);
+    if (text) {
+      nextSteps.push(text);
+    }
+  }
+
+  if (queueChatModeDrift) {
+    blockers.push('The live Hermes supervisor is running without a queue-aware GPT relaunch mode, so the next bounded Copilot handoff would stop short of queue-aware relaunch.');
+    nextSteps.push(workflowStatus === 'executing'
+      ? 'let the active workflow reach a safe boundary, then restart the detached local autonomy supervisor so Hermes comes back in queue-aware relaunch mode'
+      : 'run npm run local:autonomy:supervisor:restart so the next Hermes supervisor comes back with an explicit queue launch mode');
+  }
+
+  return {
+    surface: 'openjarvis',
+    integrationLevel: 'runtime-control-and-hot-state',
+    surfaceAvailable,
+    workflowStatus: workflowStatus || null,
+    objective: compact(workflow.objective || '') || null,
+    routeMode: compact(workflow.route_mode || '') || null,
+    hermesReadiness: compact(hermesRuntime.readiness || '') || null,
+    supervisorAlive,
+    queueEnabled,
+    autoLaunchQueuedChat,
+    autoLaunchQueuedSwarm,
+    queueLaunchMode,
+    queueChatModeDrift,
+    queuedObjectivesAvailable: hermesRuntime.queued_objectives_available === true,
+    awaitingReentryAcknowledgment: hermesRuntime.awaiting_reentry_acknowledgment === true,
+    ideHandoffObserved: hermesRuntime.ide_handoff_observed === true,
+    autonomousGoalCandidates: Array.isArray(payload?.autonomous_goal_candidates)
+      ? payload.autonomous_goal_candidates
+        .map((entry) => compact(entry?.objective))
+        .filter(Boolean)
+      : [],
+    outputPreview: surfaceAvailable ? null : buildCommandPreview(capture),
+    status: toControlPlaneStatus({ ready, available: surfaceAvailable }),
+    blockers: ensureUniqueSteps(blockers),
+    nextSteps: ensureUniqueSteps(nextSteps),
+  };
+};
+
+const probeLocalAutonomySupervisor = () => {
+  const capture = runRepoScriptSync({
+    scriptRelativePath: path.join('scripts', 'run-local-autonomy-supervisor.ts'),
+    args: ['--status=true'],
+    useDotenv: true,
+    useTsx: true,
+    timeoutMs: 30_000,
+  });
+  const payload = parseCommandJsonOutput(capture, null);
+  const available = Boolean(capture.ok && payload?.ok);
+  const running = payload?.running === true;
+  const driftDetected = payload?.code?.driftDetected === true;
+  const restartRecommended = payload?.code?.restartRecommended === true;
+  const blockers = [];
+  const nextSteps = [];
+
+  if (!available) {
+    blockers.push('Local autonomy supervisor status is unavailable.');
+    nextSteps.push('run npm run local:autonomy:supervisor:status and repair the detached self-heal loop before trusting the local control plane');
+  } else if (!running) {
+    blockers.push('Detached local autonomy supervisor is not running.');
+    nextSteps.push('run npm run local:autonomy:supervisor:restart to restore the detached self-heal loop');
+  }
+
+  if (driftDetected || restartRecommended) {
+    blockers.push('Detached local autonomy supervisor reports code drift or restart recommendation.');
+    nextSteps.push('restart the detached local autonomy supervisor so it matches the current repo code');
+  }
+
+  return {
+    surface: 'local-autonomy',
+    integrationLevel: 'detached-self-heal-loop',
+    available,
+    running,
+    driftDetected,
+    restartRecommended,
+    lastSummary: compact(payload?.lastStatus?.summary || '') || null,
+    outputPreview: available ? null : buildCommandPreview(capture),
+    status: toControlPlaneStatus({ ready: available && running && !restartRecommended, available }),
+    blockers: ensureUniqueSteps(blockers),
+    nextSteps: ensureUniqueSteps(nextSteps),
+  };
+};
+
+export const buildControlPlaneExecutionPlan = ({ multica, hermes, vscodeCopilot, openjarvis, localAutonomy }) => {
+  const surfaces = [multica, hermes, vscodeCopilot, openjarvis, localAutonomy].filter(Boolean);
+  const readySurfaces = surfaces.filter((surface) => surface.status === 'ready').map((surface) => surface.surface);
+  const partialSurfaces = surfaces.filter((surface) => surface.status === 'partial').map((surface) => surface.surface);
+  const blockedSurfaces = surfaces.filter((surface) => surface.status === 'blocked').map((surface) => surface.surface);
+  const currentPosture = blockedSurfaces.length > 0
+    ? 'blocked'
+    : partialSurfaces.length > 0
+      ? 'needs-activation'
+      : 'ready';
+
+  return {
+    objective: 'Activate one visible local control plane across Multica, Hermes, VS Code Copilot relay, and OpenJarvis runtime surfaces.',
+    currentPosture,
+    readySurfaces,
+    partialSurfaces,
+    blockedSurfaces,
+    recommendedCommands: ensureUniqueSteps([
+      'npm run local:control-plane:doctor',
+      currentPosture !== 'ready' ? 'npm run local:control-plane:up' : null,
+      hermes.status !== 'ready' ? 'hermes chat -q "Reply with only OK" -Q' : null,
+      vscodeCopilot.status !== 'ready' ? 'npm run hermes:vscode:bridge:status' : null,
+      openjarvis.status !== 'ready' ? 'npm run openjarvis:goal:status' : null,
+      localAutonomy.status !== 'ready' ? 'npm run local:autonomy:supervisor:restart' : null,
+    ]),
+    phases: [
+      {
+        phaseId: 'coordination',
+        title: 'Multica coordination visibility',
+        status: multica.status,
+        owner: 'multica',
+        entryCriteria: [
+          'Multica playbook is present in the repository.',
+          'multica CLI is reachable on the local workstation.',
+        ],
+        steps: ensureUniqueSteps([
+          'keep Multica as the visible coordination plane only',
+          ...multica.nextSteps,
+        ]),
+        exitCriteria: [
+          'Multica CLI responds locally.',
+          'Operator uses Multica for issue routing and lane assignment, not as hot-state or semantic owner.',
+        ],
+      },
+      {
+        phaseId: 'continuity',
+        title: 'Hermes bounded local continuity',
+        status: hermes.status,
+        owner: 'hermes',
+        entryCriteria: [
+          'Hermes CLI is on PATH.',
+          'Hermes config and env files exist locally.',
+        ],
+        steps: ensureUniqueSteps([
+          'keep Hermes on bounded local execution and continuity work',
+          ...hermes.nextSteps,
+        ]),
+        exitCriteria: [
+          'Hermes quick chat check returns a clean OK.',
+          'Hermes is safe to use as the local continuity lane behind GPT.',
+        ],
+      },
+      {
+        phaseId: 'ide-relay',
+        title: 'VS Code Copilot relay',
+        status: vscodeCopilot.status,
+        owner: 'vscode-copilot',
+        entryCriteria: [
+          'VS Code CLI is installed.',
+          'Hermes VS Code bridge is configured.',
+        ],
+        steps: ensureUniqueSteps([
+          'treat code chat as a bounded relay surface, not a state owner',
+          ...vscodeCopilot.nextSteps,
+        ]),
+        exitCriteria: [
+          'Bridge exposes the chat action.',
+          'Active packet exists so the next bounded chat can be relaunched.',
+        ],
+      },
+      {
+        phaseId: 'runtime-loop',
+        title: 'OpenJarvis runtime and detached self-heal loop',
+        status: (openjarvis.status === 'ready' && localAutonomy.status === 'ready') ? 'ready' : (openjarvis.status === 'blocked' ? 'blocked' : 'partial'),
+        owner: 'openjarvis',
+        entryCriteria: [
+          'OpenJarvis goal status returns a valid control-plane payload.',
+          'Detached local autonomy supervisor is available to keep Hermes attached.',
+        ],
+        steps: ensureUniqueSteps([
+          'use OpenJarvis status as the runtime truth surface for the local control plane',
+          ...openjarvis.nextSteps,
+          ...localAutonomy.nextSteps,
+        ]),
+        exitCriteria: [
+          'OpenJarvis status is readable and Hermes runtime is no worse than partial.',
+          'Detached local autonomy supervisor is running and restart-safe.',
+        ],
+      },
+    ],
+  };
+};
+
+const SESSION_SYNTHESIS_WORKSTATION_PATTERNS = [
+  /\b(gui|browser|window|desktop|screenshot|screen shot|click|ui|dashboard|obsidian app|capture)\b/i,
+  /(브라우저|화면|창|데스크톱|스크린샷|클릭|대시보드|앱|캡처|UI|GUI)/,
+];
+
+const SESSION_SYNTHESIS_REMOTE_PATTERNS = [
+  /\b(gcp|render|deploy|remote|worker|server|benchmark|load test|container|docker|vm|cloud|migration)\b/i,
+  /(원격|배포|워커|서버|벤치|부하|컨테이너|도커|클라우드|마이그레이션|GCP|Render)/,
+];
+
+const SESSION_SYNTHESIS_DISTILLER_PATTERNS = [
+  /\b(changelog|docs?|runbook|playbook|decision|retro|wiki|obsidian|distill|handoff|closeout)\b/i,
+  /(문서|런북|플레이북|결정|회고|위키|옵시디언|정리|요약|핸드오프|클로즈아웃)/,
+];
+
+const matchesSessionSynthesisPattern = (value, patterns) => patterns.some((pattern) => pattern.test(String(value || '')));
+
+const resolveFutureSessionExecutionLane = ({ objectiveText, currentPhase, plannedQueueLaunchMode }) => {
+  const wantsWorkstation = matchesSessionSynthesisPattern(objectiveText, SESSION_SYNTHESIS_WORKSTATION_PATTERNS);
+  const wantsRemote = matchesSessionSynthesisPattern(objectiveText, SESSION_SYNTHESIS_REMOTE_PATTERNS);
+
+  if (currentPhase === 'close-open-gpt-turn') {
+    return {
+      primaryAssetId: 'hermes-local-operator',
+      supportAssetIds: [],
+      rationale: 'Reentry closeout stays on the local Hermes operator lane so the hot-state boundary closes before any new launch.',
+      wantsWorkstation,
+      wantsRemote,
+    };
+  }
+
+  if (wantsWorkstation) {
+    return {
+      primaryAssetId: 'local-workstation-executor',
+      supportAssetIds: ['hermes-local-operator'],
+      rationale: 'The objective mentions browser, UI, or desktop evidence, so the workstation executor lane should stay explicit.',
+      wantsWorkstation,
+      wantsRemote,
+    };
+  }
+
+  if (wantsRemote) {
+    return {
+      primaryAssetId: 'remote-heavy-execution',
+      supportAssetIds: ['hermes-local-operator'],
+      rationale: 'The objective mentions deploy, remote, or heavy worker scope, so the remote execution lane should stay explicit.',
+      wantsWorkstation,
+      wantsRemote,
+    };
+  }
+
+  return {
+    primaryAssetId: 'hermes-local-operator',
+    supportAssetIds: [],
+    rationale: plannedQueueLaunchMode === 'swarm'
+      ? 'No GUI or remote signal is explicit, so scouting and bounded execution stay on the local Hermes operator lane.'
+      : 'No GUI or remote signal is explicit, so the bounded turn stays on the local Hermes operator lane.',
+    wantsWorkstation,
+    wantsRemote,
+  };
+};
+
+const buildFutureSessionChildTurns = ({ sessionKind, launchObjective, executionLane, includeDistiller }) => {
+  if (!launchObjective) {
+    return [];
+  }
+
+  const executorArtifactBudget = executionLane.primaryAssetId === 'local-workstation-executor'
+    ? ['ui evidence', 'bounded repo change', 'targeted verification']
+    : executionLane.primaryAssetId === 'remote-heavy-execution'
+      ? ['remote worker artifact', 'bounded repo change', 'targeted verification']
+      : ['bounded repo change', 'targeted verification'];
+
+  if (sessionKind === 'bounded-wave') {
+    return [
+      {
+        workerId: 'route-scout',
+        ownerSurface: 'vscode-copilot',
+        contextProfile: 'scout',
+        assetId: 'hermes-local-operator',
+        objective: `Map route, blockers, and evidence for ${launchObjective}`,
+        artifactBudget: ['route summary', 'shared contract references', 'rollback boundary'],
+        recallCondition: 'Recall the coordinator if the route crosses a policy boundary or the contract surface is still ambiguous.',
+      },
+      {
+        workerId: 'bounded-executor',
+        ownerSurface: 'vscode-copilot',
+        contextProfile: executionLane.primaryAssetId === 'remote-heavy-execution'
+          ? 'executor-remote'
+          : executionLane.primaryAssetId === 'local-workstation-executor'
+            ? 'executor-workstation'
+            : 'executor',
+        assetId: executionLane.primaryAssetId,
+        objective: launchObjective,
+        artifactBudget: executorArtifactBudget,
+        recallCondition: 'Recall the coordinator if the shard widens past the bounded objective, worktree, or policy envelope.',
+      },
+      ...(includeDistiller
+        ? [{
+            workerId: 'closeout-distiller',
+            ownerSurface: 'vscode-copilot',
+            contextProfile: 'distiller',
+            assetId: 'hermes-local-operator',
+            objective: `Distill accepted outcomes for ${launchObjective}`,
+            artifactBudget: ['decision distillate', 'doc or wiki delta', 'next bounded action'],
+            recallCondition: 'Start only after the executor reaches an accepted checkpoint; recall if acceptance is still disputed.',
+          }]
+        : []),
+    ];
+  }
+
+  if (sessionKind === 'bounded-turn') {
+    return [{
+      workerId: 'bounded-turn',
+      ownerSurface: 'vscode-copilot',
+      contextProfile: executionLane.primaryAssetId === 'remote-heavy-execution'
+        ? 'executor-remote'
+        : executionLane.primaryAssetId === 'local-workstation-executor'
+          ? 'executor-workstation'
+          : 'delegated-operator',
+      assetId: executionLane.primaryAssetId,
+      objective: launchObjective,
+      artifactBudget: executorArtifactBudget,
+      recallCondition: 'Recall the coordinator if the turn stops being one bounded handoff with one explicit closeout boundary.',
+    }];
+  }
+
+  return [];
+};
+
+const buildFutureSessionSynthesis = ({ currentPhase, currentObjective, queuedCandidates, openjarvis, queuedLaunchCommand }) => {
+  const observedQueueLaunchMode = compact(openjarvis.queueLaunchMode || '') || 'manual';
+  const plannedQueueLaunchMode = currentPhase === 'launch-next-bounded-wave'
+    ? 'swarm'
+    : currentPhase === 'launch-next-bounded-turn'
+      ? 'chat'
+      : observedQueueLaunchMode;
+  const launchObjective = currentObjective || queuedCandidates[0] || null;
+  const objectiveText = [currentObjective, ...queuedCandidates].filter(Boolean).join(' ');
+  const sessionKind = currentPhase === 'launch-next-bounded-wave'
+    ? 'bounded-wave'
+    : currentPhase === 'launch-next-bounded-turn'
+      ? 'bounded-turn'
+      : currentPhase === 'close-open-gpt-turn'
+        ? 'closeout'
+        : currentPhase === 'seed-next-bounded-objective'
+          ? 'queue-seed'
+          : currentPhase === 'stabilize-control-plane'
+            ? 'stabilize'
+            : 'monitor';
+  const activationState = currentPhase === 'launch-next-bounded-wave' || currentPhase === 'launch-next-bounded-turn'
+    ? 'launch-now'
+    : currentPhase === 'seed-next-bounded-objective'
+      ? 'queue-first'
+      : currentPhase === 'close-open-gpt-turn'
+        ? 'closeout-boundary'
+        : currentPhase === 'stabilize-control-plane'
+          ? 'stabilize'
+          : 'hold';
+  const includeDistiller = sessionKind === 'bounded-wave'
+    || currentPhase === 'close-open-gpt-turn'
+    || matchesSessionSynthesisPattern(objectiveText, SESSION_SYNTHESIS_DISTILLER_PATTERNS);
+  const executionLane = resolveFutureSessionExecutionLane({
+    objectiveText,
+    currentPhase,
+    plannedQueueLaunchMode,
+  });
+  const childTurns = buildFutureSessionChildTurns({
+    sessionKind,
+    launchObjective,
+    executionLane,
+    includeDistiller,
+  });
+
+  return {
+    sessionKind,
+    activationState,
+    observedQueueLaunchMode,
+    plannedQueueLaunchMode,
+    launchObjective,
+    coordinator: {
+      ownerSurface: 'openjarvis',
+      mutableStateOwner: 'supabase-hot-state',
+      preflightCommand: 'npm run local:control-plane:status',
+      queueCommand: 'npm run openjarvis:hermes:runtime:queue-objective:auto',
+      launchCommand: sessionKind === 'bounded-wave' || sessionKind === 'bounded-turn' ? queuedLaunchCommand : null,
+      closeoutCommand: 'npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"',
+      rationale: 'OpenJarvis keeps queue selection, restart-safe mutable state, and the explicit reentry boundary.',
+    },
+    visibilitySurface: {
+      ownerSurface: 'multica',
+      recommendedLaneShape: sessionKind === 'bounded-wave'
+        ? 'keep one parent objective plus one child lane per bounded worker shard'
+        : sessionKind === 'bounded-turn'
+          ? 'keep one parent objective plus one bounded GPT handoff child lane'
+          : 'keep the current parent objective visible until the next safe boundary is ready',
+    },
+    reasoningSurface: {
+      ownerSurface: 'vscode-copilot',
+      surfaceMode: sessionKind === 'bounded-wave'
+        ? 'swarm'
+        : sessionKind === 'bounded-turn'
+          ? 'chat'
+          : sessionKind === 'closeout'
+            ? 'reentry-boundary'
+            : 'hold',
+      activationState,
+      launchCommand: sessionKind === 'bounded-wave' || sessionKind === 'bounded-turn' ? queuedLaunchCommand : null,
+      reentryRequired: sessionKind === 'bounded-wave' || sessionKind === 'bounded-turn' || currentPhase === 'close-open-gpt-turn',
+    },
+    executionLane: {
+      primaryAssetId: executionLane.primaryAssetId,
+      supportAssetIds: executionLane.supportAssetIds,
+      rationale: executionLane.rationale,
+    },
+    childTurns,
+  };
+};
+
+export const buildFutureControlPlanePlan = ({ controlPlaneReport }) => {
+  const report = controlPlaneReport || {};
+  const multica = report.multica || {};
+  const hermes = report.hermes || {};
+  const vscodeCopilot = report.vscodeCopilot || {};
+  const openjarvis = report.openjarvis || {};
+  const localAutonomy = report.localAutonomy || {};
+
+  const currentObjective = compact(openjarvis.objective || '') || null;
+  const queuedCandidates = Array.isArray(openjarvis.autonomousGoalCandidates)
+    ? openjarvis.autonomousGoalCandidates.filter(Boolean)
+    : [];
+  const queuedLaunchCommand = openjarvis.queueLaunchMode === 'swarm'
+    ? 'npm run openjarvis:autopilot:queue:swarm'
+    : 'npm run openjarvis:autopilot:queue:chat';
+
+  let currentPhase = 'stabilize-control-plane';
+  const reasoning = [];
+  const commands = ['npm run local:control-plane:status'];
+
+  const workflowActive = openjarvis.workflowStatus === 'executing';
+
+  if (openjarvis.awaitingReentryAcknowledgment) {
+    currentPhase = 'close-open-gpt-turn';
+    reasoning.push('A queued GPT handoff is already in progress, so the next safe step is the reentry acknowledgment boundary.');
+    commands.push('npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"');
+    commands.push('npm run openjarvis:packets:sync');
+  } else if (workflowActive) {
+    currentPhase = 'monitor-active-workflow';
+    reasoning.push('The current workflow is still executing, so the next safe action is to observe the live lane instead of forcing another bounded Copilot relaunch.');
+    commands.push('npm run openjarvis:goal:status');
+    commands.push('npm run openjarvis:packets:sync');
+    if (openjarvis.queueChatModeDrift) {
+      reasoning.push('The current Hermes supervisor is not armed for queue-aware relaunch, so the next safe boundary should restart it into an explicit queue launch mode before the following cycle.');
+      commands.push('npm run local:autonomy:supervisor:restart');
+    }
+  } else if (!report.ok) {
+    currentPhase = 'stabilize-control-plane';
+    reasoning.push('One or more control-plane surfaces are still degraded, so future automation should not widen scope yet.');
+    commands.push('npm run local:control-plane:up');
+  } else if (openjarvis.status === 'ready' && openjarvis.queuedObjectivesAvailable) {
+    currentPhase = openjarvis.queueLaunchMode === 'swarm' ? 'launch-next-bounded-wave' : 'launch-next-bounded-turn';
+    reasoning.push(openjarvis.queueLaunchMode === 'swarm'
+      ? 'The local runtime is healthy and a bounded queued objective is already available for the next GPT swarm wave.'
+      : 'The local runtime is healthy and a bounded queued objective is already available for the next GPT relaunch.');
+    commands.push(queuedLaunchCommand);
+  } else if (queuedCandidates.length > 0) {
+    currentPhase = 'seed-next-bounded-objective';
+    reasoning.push('A future bounded objective is visible but not yet promoted into the safe queue.');
+    commands.push('npm run openjarvis:hermes:runtime:queue-objective:auto');
+  } else {
+    currentPhase = 'monitor-active-workflow';
+    reasoning.push('The runtime is healthy, but there is no new bounded turn to launch yet. Stay on status, queue health, and durable promotion.');
+    commands.push('npm run openjarvis:goal:status');
+  }
+
+  const checkpoints = [
+    {
+      checkpointId: 'gate',
+      when: 'before every new bounded turn',
+      command: 'npm run local:control-plane:doctor',
+      doneWhen: 'Multica, Hermes, VS Code Copilot relay, OpenJarvis runtime, and the detached self-heal loop are not unexpectedly degraded.',
+    },
+    {
+      checkpointId: 'queue',
+      when: 'when the active queue is empty or stale',
+      command: 'npm run openjarvis:hermes:runtime:queue-objective:auto',
+      doneWhen: 'A single bounded next objective is visible in the safe queue or the runtime reports that no bounded candidate exists yet.',
+    },
+    {
+      checkpointId: 'launch',
+      when: 'when the queue is ready and a new GPT handoff is actually needed',
+      command: queuedLaunchCommand,
+      doneWhen: openjarvis.queueLaunchMode === 'swarm'
+        ? 'The next bounded VS Code Copilot swarm wave is launched without widening scope beyond the queued objective.'
+        : 'The next bounded VS Code Copilot chat turn is launched without widening scope beyond the queued objective.',
+    },
+    {
+      checkpointId: 'closeout',
+      when: 'immediately after the GPT handoff settles',
+      command: 'npm run openjarvis:hermes:runtime:reentry-ack -- --completionStatus=completed --summary="<one line outcome>" --nextAction="<next bounded step or wait boundary>"',
+      doneWhen: 'The queue-aware supervisor can observe the GPT closeout through hot-state instead of waiting on implicit chat history.',
+    },
+    {
+      checkpointId: 'packets',
+      when: 'while monitoring an active workflow or right after closeout',
+      command: 'npm run openjarvis:packets:sync',
+      doneWhen: 'The Obsidian-visible continuity packets reflect the latest active workflow state, handoff boundary, and detached watcher evidence.',
+    },
+    {
+      checkpointId: 'durable-promotion',
+      when: 'when the result changes runtime meaning or operator behavior',
+      command: 'update repo-visible docs and promote durable meaning to shared Obsidian in the same change window',
+      doneWhen: 'Multica remains coordination-only, Supabase remains hot-state, and durable meaning no longer lives only in issue text or chat residue.',
+    },
+  ];
+
+  const sessionSynthesis = buildFutureSessionSynthesis({
+    currentPhase,
+    currentObjective,
+    queuedCandidates,
+    openjarvis,
+    queuedLaunchCommand,
+  });
+
+  return {
+    objective: 'Keep the local control plane running as a repeatable bounded-turn cycle instead of a one-off recovery action.',
+    currentPhase,
+    currentObjective,
+    queuedCandidates,
+    readiness: {
+      multica: multica.status || 'unknown',
+      hermes: hermes.status || 'unknown',
+      vscodeCopilot: vscodeCopilot.status || 'unknown',
+      openjarvis: openjarvis.status || 'unknown',
+      localAutonomy: localAutonomy.status || 'unknown',
+    },
+    sessionSynthesis,
+    reasoning,
+    commands: ensureUniqueSteps(commands),
+    checkpoints,
+    guardrails: [
+      'Do not treat Multica issue state, VS Code chat transport, or packet files as the canonical mutable state owner.',
+      'Launch only one bounded queued GPT handoff at a time; do not widen scope just because the control plane is healthy.',
+      'Every relaunched GPT handoff must close through reentry-ack so Hermes and OpenJarvis see an explicit hot-state boundary.',
+      'Promote durable operator lessons into shared Obsidian or repo docs in the same change window instead of leaving them only in runtime residue.',
+    ],
+    doneWhen: [
+      'The next bounded objective can be queued, launched, acknowledged, and handed back without manual state reconstruction.',
+      'The detached local autonomy supervisor stays restart-safe across future repo edits.',
+      'Future operator work starts from the control-plane doctor and compact runtime status rather than broad archaeology.',
+    ],
+  };
+};
+
+const buildControlPlaneReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
+  const multica = probeMulticaControlPlane();
+  const hermes = probeHermesControlPlane();
+  const vscodeCopilot = probeVsCodeCopilotControlPlane();
+  const openjarvis = probeOpenJarvisControlPlane();
+  const localAutonomy = probeLocalAutonomySupervisor();
+  const activationPlan = buildControlPlaneExecutionPlan({
+    multica,
+    hermes,
+    vscodeCopilot,
+    openjarvis,
+    localAutonomy,
+  });
+
+  return {
+    ok: activationPlan.currentPosture === 'ready',
+    checkedAt: new Date().toISOString(),
+    profile,
+    multica,
+    hermes,
+    vscodeCopilot,
+    openjarvis,
+    localAutonomy,
+    activationPlan,
+  };
+};
+
+const buildFutureControlPlaneReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
+  const controlPlane = await buildControlPlaneReport({ profile });
+  const futureProcess = buildFutureControlPlanePlan({ controlPlaneReport: controlPlane });
+
+  return {
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    profile,
+    controlPlane,
+    futureProcess,
+  };
+};
+
 const ensureUniqueSteps = (steps) => [...new Set(steps.filter(Boolean))];
 
-export const buildDoctorReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
+export const buildDoctorReport = async ({ profile = DEFAULT_PROFILE, controlPlane = false } = {}) => {
   const runtimeLane = compact(process.env.OPENJARVIS_RUNTIME_LANE || DEFAULT_RUNTIME_LANE) || DEFAULT_RUNTIME_LANE;
   const plan = buildManagedServicePlan(process.env);
   const obsidian = loadEffectiveObsidianAccessPosture();
@@ -674,8 +1517,15 @@ export const buildDoctorReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
     warnings.push('Interactive external lanes are enabled, but this control surface does not auto-start WSL or dashboard-managed runtimes.');
   }
 
+  const controlPlaneReport = controlPlane
+    ? await buildControlPlaneReport({ profile })
+    : null;
+  const stackOk = failures.length === 0;
+
   return {
-    ok: failures.length === 0,
+    ok: controlPlane ? Boolean(controlPlaneReport?.ok) : stackOk,
+    stackOk,
+    controlPlaneOk: controlPlane ? Boolean(controlPlaneReport?.ok) : null,
     action: 'doctor',
     checkedAt: new Date().toISOString(),
     profile: {
@@ -697,6 +1547,7 @@ export const buildDoctorReport = async ({ profile = DEFAULT_PROFILE } = {}) => {
     workflowState,
     memoryProjection,
     manualLanes,
+    controlPlane: controlPlaneReport,
   };
 };
 
@@ -842,7 +1693,7 @@ const ensureCommandStart = async ({ id, scriptName, probe, dryRun = false }) => 
   };
 };
 
-export const runUp = async ({ profile = DEFAULT_PROFILE, applyProfileFirst = true, dryRun = false }) => {
+export const runUp = async ({ profile = DEFAULT_PROFILE, applyProfileFirst = true, dryRun = false, controlPlane = false }) => {
   const operations = [];
 
   if (applyProfileFirst) {
@@ -921,7 +1772,25 @@ export const runUp = async ({ profile = DEFAULT_PROFILE, applyProfileFirst = tru
     });
   }
 
-  const doctor = await buildDoctorReport({ profile });
+  if (controlPlane) {
+    operations.push({
+      step: 'start-local-autonomy-supervisor',
+      ...(await ensureCommandStart({
+        id: 'local-autonomy-supervisor',
+        scriptName: 'local:autonomy:supervisor',
+        probe: async () => {
+          const status = probeLocalAutonomySupervisor();
+          return {
+            reachable: status.available && status.running,
+            status: status.available ? (status.running ? 200 : 503) : 0,
+          };
+        },
+        dryRun,
+      })),
+    });
+  }
+
+  const doctor = await buildDoctorReport({ profile, controlPlane });
   return {
     ok: dryRun ? operations.every((operation) => operation.ok !== false) : doctor.ok,
     action: 'up',
@@ -942,9 +1811,10 @@ async function main() {
   const profile = compact(parseArg('profile', DEFAULT_PROFILE)) || DEFAULT_PROFILE;
   const applyProfileFirst = parseBool(parseArg('applyProfile', action === 'up' ? 'true' : 'false'), action === 'up');
   const dryRun = parseBool(parseArg('dryRun', 'false'), false);
+  const controlPlane = parseBool(parseArg('controlPlane', 'false'), false);
 
   if (action === 'up') {
-    const result = await runUp({ profile, applyProfileFirst, dryRun });
+    const result = await runUp({ profile, applyProfileFirst, dryRun, controlPlane });
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = result.ok ? 0 : 1;
     return;
@@ -965,7 +1835,7 @@ async function main() {
       }
     }
 
-    const report = await buildDoctorReport({ profile });
+    const report = await buildDoctorReport({ profile, controlPlane });
     console.log(JSON.stringify({
       ...report,
       action,
@@ -974,9 +1844,33 @@ async function main() {
     return;
   }
 
+  if (action === 'future') {
+    if (applyProfileFirst) {
+      const profileResult = applyProfile({ profile, dryRun });
+      if (!profileResult.ok) {
+        console.log(JSON.stringify({
+          ok: false,
+          action,
+          error: 'PROFILE_APPLY_FAILED',
+          profile: profileResult,
+        }, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    const report = await buildFutureControlPlaneReport({ profile });
+    console.log(JSON.stringify({
+      ...report,
+      action,
+    }, null, 2));
+    process.exitCode = 0;
+    return;
+  }
+
   console.error(JSON.stringify({
     ok: false,
-    error: 'Unsupported --action. Use doctor, status, or up.',
+    error: 'Unsupported --action. Use doctor, status, future, or up.',
   }, null, 2));
   process.exitCode = 1;
 }
