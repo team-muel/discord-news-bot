@@ -1,11 +1,11 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-04-16T19:37:56.182Z
-- total_runs: 51
+- generated_at: 2026-04-17T03:45:27.112Z
+- total_runs: 124
 - go: 11
 - no_go: 16
-- pending: 24
+- pending: 97
 - legacy_pending_no_go_excluded: 0
 - legacy_pending_cutoff: n/a
 
@@ -13,7 +13,7 @@
 
 | Stage | Count |
 | --- | ---: |
-| A | 47 |
+| A | 120 |
 | B | 1 |
 | unknown | 3 |
 
@@ -36,38 +36,38 @@
 
 ## Runtime Loop Evidence Completion
 
-- runs_with_evidence: 22
+- runs_with_evidence: 95
 - complete_runs: 4
-- incomplete_runs: 18
+- incomplete_runs: 91
 - missing_runs: 29
-- known_runs: 22
-- completion_rate: 0.1818
+- known_runs: 95
+- completion_rate: 0.0421
 
 ## A-003 Operator Surface Completion
 
 - canonical_endpoint: /api/bot/agent/runtime/worker-approval-gates?guildId=<id>&recentLimit=5
-- runs_with_surface: 28
+- runs_with_surface: 101
 - complete_runs: 4
-- incomplete_runs: 24
+- incomplete_runs: 97
 - missing_runs: 23
-- known_runs: 28
+- known_runs: 101
 - runtime_evidence_backfilled_runs: 6
-- completion_rate: 0.1429
+- completion_rate: 0.0396
 
 ## Sandbox Delegation Completion
 
 - verified_runs: 4
-- incomplete_runs: 18
+- incomplete_runs: 91
 - missing_runs: 29
-- known_runs: 22
-- completion_rate: 0.1818
+- known_runs: 95
+- completion_rate: 0.0421
 
 ## Quality Signal Summary
 
-- citation_rate_avg: 0 (samples=28)
-- retrieval_hit_at_k_avg: 0.0324 (samples=28)
-- hallucination_review_fail_rate_avg: 0 (samples=28)
-- session_success_rate_avg: 0 (samples=28)
+- citation_rate_avg: 0 (samples=101)
+- retrieval_hit_at_k_avg: 0.009 (samples=101)
+- hallucination_review_fail_rate_avg: 0 (samples=101)
+- session_success_rate_avg: 0 (samples=101)
 
 ## Strategy Quality Normalization (M-07)
 
@@ -95,18 +95,18 @@
 
 | Run ID | Stage | Scope | Overall | Rollback Required | Rollback Type | Runtime Loop Evidence | A-003 Surface | Sandbox Delegation | File |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
-| gate-20260411-172234 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-172234.md |
-| gate-20260411-173628 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-173628.md |
-| gate-20260411-173944 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-173944.md |
-| gate-20260411-174852 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-174852.md |
-| gate-20260411-181032 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-181032.md |
-| gate-20260411-181241 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-181241.md |
-| gate-20260411-183824 | A | weekly:auto | no-go | true | stage | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-11_gate-20260411-183824.md |
-| gate-20260412-030700 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-12_gate-20260412-030700.md |
-| gate-20260412-031340 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-12_gate-20260412-031340.md |
-| gate-20260412-031345 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-12_gate-20260412-031345.md |
-| gate-20260412-032855 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-12_gate-20260412-032855.md |
+| gate-20260415-161539 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-161539.md |
+| gate-20260415-161806 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-161806.md |
+| gate-20260415-162031 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-162031.md |
+| gate-20260415-162247 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-162247.md |
+| gate-20260415-162709 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-162709.md |
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
-| gate-20260319-170500 | A | control-plane:w3-04-w3-05 | go | false | none | missing | missing | missing | docs/planning/gate-runs/2026-03-19_gate-20260319-170500.md |
+| WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
+| gate-20260415-152011 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152011.md |
+| gate-20260415-152216 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152216.md |
+| gate-20260415-152526 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152526.md |
+| gate-20260415-152850 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152850.md |
+| gate-20260415-153156 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-153156.md |
+| gate-20260415-153504 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-153504.md |
+| gate-20260415-153716 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-153716.md |
