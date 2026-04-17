@@ -21,6 +21,86 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-18 - Owner Personalized Agent Orchestration Strategy Added
+
+- Why: the repository had already documented the public-facing Muel super-agent tier and the operator/runtime continuity substrate, but it still lacked one canonical document that states the primary owner user should receive a much stronger personalized orchestration experience across Hermes, OpenJarvis, OpenClaw, compute, GUI, and delegated execution lanes.
+- Scope: added a new owner-only strategy document, linked the higher-order Muel vision and public super-agent packaging docs to that owner tier, linked the operator service-bundle doc to the same boundary, and registered the document in the planning index and shared-knowledge backfill catalog.
+- Impacted Routes: none
+- Impacted Services: `docs/planning/OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md`, `docs/planning/MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md`, `docs/planning/MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md`, `docs/front-uiux-handoff/MUEL_SUPER_AGENT_PRODUCT_EXPERIENCE.md`, `docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation only. This makes the owner-only orchestration tier explicit without claiming that the public Muel product should expose the full control-plane topology to end users.
+- Validation: markdown review against `docs/planning/GPT_HERMES_DUAL_AGENT_LOCAL_ORCHESTRATION_PLAN.md`, `docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md`, `scripts/local-ai-stack-control.mjs`, and planning index/catalog conventions
+
+## 2026-04-18 - Muel Super Agent Packaging Strategy And UX Handoff Added
+
+- Why: the repo already had a real super-agent facade and operator-facing service bundle packaging, but it still lacked the product-layer documentation that explains why Muel itself should be packaged as a super agent and what product-experience artifact should exist for that packaging.
+- Scope: added a canonical planning document for Muel super-agent product packaging, added a companion front/UIUX handoff artifact, linked the higher-order Muel strategy and existing operator service-bundle doc to the new packaging layer, and registered the planning document in the shared-knowledge backfill catalog.
+- Impacted Routes: none
+- Impacted Services: `docs/planning/MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md`, `docs/front-uiux-handoff/MUEL_SUPER_AGENT_PRODUCT_EXPERIENCE.md`, `docs/planning/MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md`, `docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md`, `docs/front-uiux-handoff/README.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation only. This does not expose the current admin-only super-agent routes publicly, and it explicitly keeps public packaging separate from raw internal bundle IDs and operator jargon.
+- Validation: markdown review against `docs/PERSONAL_OPERATING_SYSTEM_SERVICES.md`, `docs/RUNTIME_NAME_AND_SURFACE_MATRIX.md`, `src/services/superAgentService.ts`, and front/UIUX handoff conventions
+
+## 2026-04-18 - Muel Vision, Roadmap, And Design Intent Codified As A Public Strategy Anchor
+
+- Why: the repository had execution roadmaps and subsystem plans, but it still lacked a single public knowledge document that captured the user's actual long-term vision, roadmap horizons, and design intent. That made the project easy to misread as a Discord bot, a QA assistant, or a loose AI demo instead of an early substrate for a broader Muel-centered IP and service system.
+- Scope: added a canonical strategy document that explains the user's higher-order vision, long-term company-facing direction, layered roadmap, and ownership boundaries; linked the existing short-term Muel service spine and the current execution roadmap back to that strategy anchor; registered the new document in the planning index and shared-knowledge backfill catalog.
+- Impacted Routes: none
+- Impacted Services: `docs/planning/MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md`, `docs/planning/MUEL_IDOL_SERVICE_SPINE.md`, `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation only. This clarifies strategic ownership and sequence without changing runtime behavior or active execution-board priority.
+- Validation: markdown review against `docs/planning/MUEL_IDOL_SERVICE_SPINE.md`, `docs/planning/UNIFIED_ROADMAP_SOCIAL_OPS_2026Q2.md`, and planning index/catalog conventions
+
+## 2026-04-18 - Muel Strategy Refined To Put Public-Ready Dense Communication Ahead Of Further Surface Expansion
+
+- Why: the initial Muel service-spine baseline established Muel as the shared idol IP and public service face, but it still risked letting outward implementation run ahead of the one gate that matters first: whether Muel can already be shown openly as a serious agent for unspecified users.
+- Scope: refined the canonical Muel strategy document so further idol, campaign, and service-surface expansion is explicitly gated behind a Phase 0 dense-communication readiness threshold, with acceptance criteria tied to community, support, and trust conversation quality.
+- Impacted Routes: none
+- Impacted Services: `docs/planning/MUEL_IDOL_SERVICE_SPINE.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation only. This tightens sequence and acceptance criteria for future work without changing the current execution board or runtime behavior.
+- Validation: markdown review against `docs/planning/BETA_GO_NO_GO_CHECKLIST.md`, `docs/planning/EXECUTION_BOARD.md`, and the existing Muel service-spine strategy
+
+## 2026-04-18 - Muel Idol Service Spine Added As A Short-Term IP And Service Strategy Baseline
+
+- Why: the repo had already accumulated real persona, CRM, auth, automation, and quality surfaces around `Muel`, but the strategic layer still described Muel mostly as a bot or assistant name. That left the near-term product direction under-specified even though the user-facing intention had shifted toward making Muel the common idol IP and service face.
+- Scope: added a strategy/reference planning document that reframes the current repository as the access, control, CRM, and automation substrate for a Muel-centered idol service spine; registered the document in the planning index and shared-knowledge backfill catalog.
+- Impacted Routes: none
+- Impacted Services: `docs/planning/MUEL_IDOL_SERVICE_SPINE.md`, `docs/planning/README.md`, `config/runtime/knowledge-backfill-catalog.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: documentation and shared-knowledge alignment only. This slice does not change runtime ownership, execution-board priority, or claim that the repository already owns OBS, VTuber runtime, or full merchandise operations.
+- Validation: markdown review against current persona, CRM, auth, automation, and runtime-quality surfaces in the repo; JSON catalog syntax review
+
+## 2026-04-18 - Continuity Packets And Goal Status Ignore Stale Dry-Run Session Headlines
+
+- Why: an old `executing + dry_run` OpenJarvis workflow session with no active steps could keep its non-placeholder objective authoritative, leaving the safe queue and active execution-board objective correct underneath while the operator-facing handoff/progress/status headline still pointed at obsolete work.
+- Scope: added a shared stale-session detector in workflow-state helpers, taught continuity packet sync to prefer the explicit safe-queue head or active execution-board objective when that stale condition is present, and aligned goal-status/session-open bundle objective resolution with the same rule.
+- Impacted Routes: N/A
+- Impacted Services: `scripts/openjarvis-workflow-state.mjs`, `scripts/sync-openjarvis-continuity-packets.ts`, `scripts/run-openjarvis-goal-cycle.mjs`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: released sessions still honor the execution-board focus override as before; only long-stale dry-run executing sessions without active running steps lose headline authority, which prevents split-brain continuity packets without hiding live workstream state.
+- Validation: `npx vitest run scripts/openjarvis-remote-workstream-smoke.test.ts src/routes/internal.test.ts scripts/run-chat-sdk-discord-cutover-validation.test.ts`; `npm exec tsc -- --noEmit`; `npm run -s openjarvis:packets:sync`; `npm run -s openjarvis:goal:status`
+
+## 2026-04-18 - Discord Cutover Rehearsal Now Captures Rollback Evidence For Both Eligible Surfaces
+
+- Why: the cleanup lane was still blocked for the prefixed `muel-message` fallback branch because the cutover rehearsal only generated forced-fallback rollback evidence for `docs-command`, forcing operators to infer exact-unit readiness from neighboring surfaces.
+- Scope: extended both the local validator helper and the service-role internal cutover exercise route so selected-path parity still runs for both eligible surfaces and rollback rehearsal now also forces the prefixed `muel-message` branch through the hard-disable fallback path.
+- Impacted Routes: internal `POST /api/internal/discord/ingress/cutover/exercise`
+- Impacted Services: `scripts/lib/chatSdkDiscordCutoverValidator.ts`, `scripts/run-chat-sdk-discord-cutover-validation.ts`, `src/routes/internal.ts`, `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/gate-runs/chat-sdk-cutover/README.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: aggregate rollback evidence now includes per-surface forced-fallback details for both `docs-command` and `muel-message`; this does not by itself satisfy the stricter production live artifact requirement for legacy removal, but it closes the local/operator rehearsal evidence gap.
+- Validation: `npx vitest run src/routes/internal.test.ts scripts/run-chat-sdk-discord-cutover-validation.test.ts`; `npm exec tsc -- --noEmit`; `npm run -s gates:discord:cutover:dry -- --exerciseLiveEvidence=true`
+
+## 2026-04-18 - Eligible Discord Surfaces Now Run Through Real Chat SDK Runtime Paths
+
+- Why: the repo had already normalized the eligible Discord ingress seam and even used the `chat-sdk` label in cutover evidence, but the live code path still answered those surfaces through repo-local handlers without any real upstream Chat SDK runtime in the request path.
+- Scope: added a real Chat SDK runtime backed by the official `chat` and `@chat-adapter/discord` packages, wired slash `/해줘` and `/뮤엘` plus prefixed `뮤엘 ...` through that runtime when Discord app credentials are present, defaulted the eligible ingress owner policy to `chat-sdk`, and cleared the execution-board single-objective override so the explicit safe queue can drive the requested migration -> cleanup -> roadmap order.
+- Impacted Routes: Discord slash `/해줘`, `/뮤엘`; prefixed `뮤엘 ...`
+- Impacted Services: `src/discord/runtime/chatSdkRuntime.ts`, `src/discord/runtime/commandRouter.ts`, `src/discord/commands/vibe.ts`, `src/config.ts`, `server.ts`, `docs/planning/EXECUTION_BOARD.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the real Chat SDK runtime is guarded by `DISCORD_CHAT_SDK_ENABLED`, `DISCORD_PUBLIC_KEY`, and `DISCORD_APPLICATION_ID`. If those are missing, the repo falls back to the preexisting legacy handlers instead of failing bot startup. Redis state is preferred when `REDIS_URL` is configured; otherwise the runtime uses in-memory state.
+- Validation: `npx tsc --noEmit`; targeted Vitest for `src/discord/commands/docs.test.ts` and `src/discord/commands/vibe.test.ts`
+
 ## 2026-04-18 - Legacy Cleanup Lane Reclassified The First Discord Exact Unit To Rollback-Only
 
 - Why: the original inventory lock correctly kept mass delete closed, but it still overstated uncertainty by leaving every Discord exact unit in `Keep-For-Now` even after live cutover artifacts had already closed predecessor evidence for the `docs.ask` fallback branch.

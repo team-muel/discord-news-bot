@@ -21,7 +21,13 @@ export const DISCORD_MESSAGE_CONTENT_INTENT_ENABLED = parseBooleanEnv(
   process.env.DISCORD_MESSAGE_CONTENT_INTENT_ENABLED,
   true,
 );
-export const DISCORD_DOCS_INGRESS_ADAPTER = parseStringEnv(process.env.DISCORD_DOCS_INGRESS_ADAPTER, 'openclaw');
+export const DISCORD_CHAT_SDK_ENABLED = parseBooleanEnv(process.env.DISCORD_CHAT_SDK_ENABLED, true);
+export const DISCORD_APPLICATION_ID = parseStringEnv(
+  process.env.DISCORD_APPLICATION_ID ?? process.env.DISCORD_OAUTH_CLIENT_ID ?? process.env.DISCORD_CLIENT_ID,
+  '',
+);
+export const DISCORD_PUBLIC_KEY = parseStringEnv(process.env.DISCORD_PUBLIC_KEY, '');
+export const DISCORD_DOCS_INGRESS_ADAPTER = parseStringEnv(process.env.DISCORD_DOCS_INGRESS_ADAPTER, 'chat-sdk');
 export const DISCORD_DOCS_INGRESS_HARD_DISABLE = parseBooleanEnv(process.env.DISCORD_DOCS_INGRESS_HARD_DISABLE, false);
 export const DISCORD_DOCS_INGRESS_SHADOW_MODE = parseBooleanEnv(process.env.DISCORD_DOCS_INGRESS_SHADOW_MODE, false);
 export const DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT = parseBoundedNumberEnv(
@@ -30,7 +36,7 @@ export const DISCORD_DOCS_INGRESS_ROLLOUT_PERCENT = parseBoundedNumberEnv(
   0,
   100,
 );
-export const DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER = parseStringEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER, 'openclaw');
+export const DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER = parseStringEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_ADAPTER, 'chat-sdk');
 export const DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE = parseBooleanEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_HARD_DISABLE, false);
 export const DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE = parseBooleanEnv(process.env.DISCORD_MUEL_MESSAGE_INGRESS_SHADOW_MODE, false);
 export const DISCORD_MUEL_MESSAGE_INGRESS_ROLLOUT_PERCENT = parseBoundedNumberEnv(

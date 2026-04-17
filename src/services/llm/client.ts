@@ -124,6 +124,19 @@ const computeNormalizedQualityScore = (response: LlmTextWithMetaResponse, latenc
   return Number((latencyScore * 0.25 + logprobScore * 0.50 + completenessScore * 0.25).toFixed(4));
 };
 
+const createProviderDeadlineSignal = (deadlineMs: number): {
+  signal: AbortSignal;
+  dispose: () => void;
+} => {
+  const controller = new AbortController();
+  const remainingMs = Math.max(0, deadlineMs - Date.now());
+  const timeout = setTimeout(() => controller.abort(), remainingMs);
+  return {
+    signal: controller.signal,
+    dispose: () => clearTimeout(timeout),
+  };
+};
+
 // ──── Call Logging ───────────────────────────────────────────────────────────
 
 const persistLlmCallLog = async (params: {
@@ -273,26 +286,34 @@ export const generateTextWithMeta = async (
   };
 
   const callProvider = async (targetProvider: LlmProvider): Promise<LlmTextWithMetaResponse> => {
+    const model = resolveModel(targetProvider);
+    const { signal, dispose } = createProviderDeadlineSignal(providerChainDeadlineMs);
+    const requestParams: LlmTextRequest = {
+      ...params,
+      ...(model ? { model } : {}),
+      signal,
+    };
+
     try {
       let response: LlmTextWithMetaResponse;
       if (targetProvider === 'openai') {
-        response = { ...(await requestOpenAiWithMeta(params, Boolean(params.includeLogprobs))), model: resolveModel(targetProvider) };
+        response = { ...(await requestOpenAiWithMeta(requestParams, Boolean(params.includeLogprobs))), model };
       } else if (targetProvider === 'anthropic') {
-        response = { text: await requestAnthropic(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestAnthropic(requestParams), provider: targetProvider, model };
       } else if (targetProvider === 'huggingface') {
-        response = { text: await requestHuggingFace(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestHuggingFace(requestParams), provider: targetProvider, model };
       } else if (targetProvider === 'openclaw') {
-        response = { text: await requestOpenClaw(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestOpenClaw(requestParams), provider: targetProvider, model };
       } else if (targetProvider === 'ollama') {
-        response = { text: await requestOllama(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestOllama(requestParams), provider: targetProvider, model };
       } else if (targetProvider === 'openjarvis') {
-        response = { text: await requestOpenJarvis(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestOpenJarvis(requestParams), provider: targetProvider, model };
       } else if (targetProvider === 'litellm') {
-        response = { text: await requestLiteLLM(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestLiteLLM(requestParams), provider: targetProvider, model };
       } else if (targetProvider === 'kimi') {
-        response = { text: await requestKimi(params), provider: targetProvider, model: resolveModel(targetProvider) };
+        response = { text: await requestKimi(requestParams), provider: targetProvider, model };
       } else {
-        response = { text: await requestGemini(params), provider: 'gemini', model: resolveModel('gemini') };
+        response = { text: await requestGemini(requestParams), provider: 'gemini', model: resolveModel('gemini') };
       }
 
       recordProviderCallSuccess(targetProvider);
@@ -300,6 +321,8 @@ export const generateTextWithMeta = async (
     } catch (error) {
       recordProviderCallFailure(targetProvider, error);
       throw error;
+    } finally {
+      dispose();
     }
   };
 
@@ -314,32 +337,43 @@ export const generateTextWithMeta = async (
 
     if (canHedge) {
       const [primary, secondary] = providerChain;
+      let hedgeError: unknown = null;
       const hedgeResult = await new Promise<{ response: LlmTextWithMetaResponse; provider: LlmProvider } | null>((resolve) => {
         let settled = false;
         let failures = 0;
-        let hedgeError: unknown = null;
+        let secondaryStarted = false;
+        let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+        let hedgeTimer: ReturnType<typeof setTimeout> | null = null;
+        const finalize = (value: { response: LlmTextWithMetaResponse; provider: LlmProvider } | null) => {
+          if (settled) return;
+          settled = true;
+          if (hedgeTimer) clearTimeout(hedgeTimer);
+          if (deadlineTimer) clearTimeout(deadlineTimer);
+          resolve(value);
+        };
         const settle = (res: LlmTextWithMetaResponse, p: LlmProvider) => {
-          if (!settled) { settled = true; resolve({ response: res, provider: p }); }
+          finalize({ response: res, provider: p });
         };
         const fail = (err: unknown) => {
           failures += 1;
           hedgeError = err;
-          if (failures >= 2 || (failures >= 1 && !hedgeTimer)) {
-            if (!settled) { settled = true; resolve(null); }
+          if (failures >= 2 || (!secondaryStarted && !hedgeTimer)) {
+            finalize(null);
           }
         };
 
         callProvider(primary).then((r) => settle(r, primary)).catch(fail);
 
-        let hedgeTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        hedgeTimer = setTimeout(() => {
           hedgeTimer = null;
           if (!settled && Date.now() <= providerChainDeadlineMs) {
+            secondaryStarted = true;
             callProvider(secondary).then((r) => settle(r, secondary)).catch(fail);
           }
         }, LLM_HEDGE_DELAY_MS);
 
-        setTimeout(() => {
-          if (!settled) { settled = true; resolve(null); }
+        deadlineTimer = setTimeout(() => {
+          finalize(null);
         }, Math.max(0, providerChainDeadlineMs - Date.now()));
       });
 
@@ -347,6 +381,9 @@ export const generateTextWithMeta = async (
         response = hedgeResult.response;
         finalProvider = hedgeResult.provider;
       } else {
+        if (hedgeError) {
+          lastError = hedgeError;
+        }
         // Hedge failed — continue with remaining providers sequentially
         const remainingProviders = providerChain.slice(2);
         for (const targetProvider of remainingProviders) {

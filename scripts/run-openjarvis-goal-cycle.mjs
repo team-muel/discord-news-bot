@@ -15,7 +15,7 @@ import {
   normalizeCapacityTarget,
 } from './lib/openjarvisAutopilotCapacity.mjs';
 import { buildAutomationActivationPack } from './lib/automationActivationPack.mjs';
-import { deriveResumeStateFromWorkflowSession, readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
+import { deriveResumeStateFromWorkflowSession, isStaleDryRunExecutingSession, readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
 
 const ROOT = process.cwd();
 const SUMMARY_PATH = path.join(ROOT, 'tmp', 'autonomy', 'openjarvis-unattended-last-run.json');
@@ -1020,7 +1020,8 @@ const resolveEffectiveWorkflowObjective = ({
   workflowObjective = null,
   resumeState = null,
   autonomousGoalCandidates = [],
-} = {}) => toEffectiveAutonomousObjective(workflowObjective)
+  staleWorkflowObjective = false,
+} = {}) => (staleWorkflowObjective ? null : toEffectiveAutonomousObjective(workflowObjective))
   || toEffectiveAutonomousObjective(resumeState?.objective)
   || toEffectiveAutonomousObjective(autonomousGoalCandidates[0]?.objective)
   || null;
@@ -1466,11 +1467,14 @@ const buildResumeState = async (params = {}) => {
       runtimeLane: params.runtimeLane || DEFAULT_RUNTIME_LANE,
       waitBoundaryAction: WAIT_FOR_NEXT_GPT_ACTION,
     });
+    const staleWorkstreamObjective = isStaleDryRunExecutingSession(workstreamState.session);
     const mergedSafeQueue = Array.from(new Set([
       ...toStringArray(derived.safe_queue),
       ...safeQueue,
     ])).filter(Boolean);
-    const effectiveDerivedObjective = packetState.queued_reentry_objective || derived.objective;
+    const effectiveDerivedObjective = staleWorkstreamObjective
+      ? (packetState.queued_reentry_objective || toEffectiveAutonomousObjective(safeQueue[0]) || null)
+      : (packetState.queued_reentry_objective || derived.objective);
     const effectiveDerivedNextAction = packetState.reason === 'packet_awaiting_reentry_ack'
       ? packetState.next_action
       : derived.next_action;
@@ -2141,10 +2145,12 @@ export const buildStatusPayload = async (params = {}) => {
     resumeState,
     currentObjective: currentAutonomousObjective,
   });
+  const staleWorkflowObjective = isStaleDryRunExecutingSession(session);
   const effectiveWorkflowObjective = resolveEffectiveWorkflowObjective({
     workflowObjective: session?.metadata?.objective || null,
     resumeState,
     autonomousGoalCandidates,
+    staleWorkflowObjective,
   });
   const effectiveResumeObjective = toEffectiveAutonomousObjective(resumeState?.objective)
     || effectiveWorkflowObjective;

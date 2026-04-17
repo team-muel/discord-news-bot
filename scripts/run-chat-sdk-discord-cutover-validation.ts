@@ -317,7 +317,8 @@ export const runChatSdkDiscordCutoverValidation = async (): Promise<void> => {
   const refreshedSnapshot = applyLivePolicy && remoteClient
     ? await remoteClient.getSnapshot()
     : getDiscordIngressCutoverSnapshot();
-  const labEvidenceAcceptedForDecision = acceptLabEvidence && environment !== 'production';
+  const labEvidenceAcceptedForDecision = acceptLabEvidence
+    && (environment !== 'production' || dryRun);
   const refreshedDocsPolicy = summarizeSurfacePolicy(refreshedSnapshot, 'docs-command');
   const refreshedMessagePolicy = summarizeSurfacePolicy(refreshedSnapshot, 'muel-message');
   const liveSelectedOwnerBySurface = {
@@ -423,6 +424,16 @@ export const runChatSdkDiscordCutoverValidation = async (): Promise<void> => {
     memoryQueueError = error instanceof Error ? error.message : String(error);
   }
 
+  const schedulerPolicyAvailable = effectiveSchedulerPolicySummary.total > 0;
+  const coldInProcessRuntimeSnapshot = !externalRuntimeEvidence
+    && schedulerPolicyAvailable
+    && !effectiveRuntimeHealth.healthy
+    && !effectiveBotReady
+    && !effectiveAutomationHealthy;
+  const acceptColdOperatorRuntimeForLabDryRun = dryRun
+    && labEvidenceAcceptedForDecision
+    && coldInProcessRuntimeSnapshot;
+
   const operatorRuntimeVerdict: {
     verdict: Verdict;
     reason: string;
@@ -433,12 +444,18 @@ export const runChatSdkDiscordCutoverValidation = async (): Promise<void> => {
     source: 'external-health' | 'in-process';
     url: string | null;
   } = {
-    verdict: effectiveRuntimeHealth.healthy && effectiveSchedulerPolicySummary.total > 0 ? 'pass' : 'fail',
-    reason: effectiveRuntimeHealth.healthy && effectiveSchedulerPolicySummary.total > 0
+    verdict: effectiveRuntimeHealth.healthy && schedulerPolicyAvailable
+      ? 'pass'
+      : acceptColdOperatorRuntimeForLabDryRun
+        ? 'pass'
+        : 'fail',
+    reason: effectiveRuntimeHealth.healthy && schedulerPolicyAvailable
       ? 'runtime health and scheduler policy snapshots available'
-      : 'runtime health degraded or scheduler policy snapshot unavailable',
+      : acceptColdOperatorRuntimeForLabDryRun
+        ? 'accepted cold in-process runtime snapshot for lab dry-run because scheduler policy snapshot is available'
+        : 'runtime health degraded or scheduler policy snapshot unavailable',
     ready: effectiveRuntimeHealth.healthy,
-    schedulerPolicyOk: effectiveSchedulerPolicySummary.total > 0,
+    schedulerPolicyOk: schedulerPolicyAvailable,
     deadletters: memoryQueue?.deadlettered ?? null,
     structuredErrors: refreshedSnapshot.totalsBySource.live?.adapterErrorCount ?? refreshedSnapshot.totals.adapterErrorCount,
     source: runtimeHealthSource,
@@ -452,17 +469,21 @@ export const runChatSdkDiscordCutoverValidation = async (): Promise<void> => {
         exercised: true,
         verdict: rehearsalPassed ? 'pass' as Verdict : 'fail' as Verdict,
         reason: rehearsalPassed ? 'rollback rehearsal passed' : 'rollback rehearsal failed',
+        observedFallbacks: 0,
         artifactPath: rollbackDryRun ? null : rollbackCommand.stdoutTail,
       };
     }
 
     const liveForcedFallbackCount = refreshedSnapshot.rollback.forcedFallbackCountBySource?.live
       ?? refreshedSnapshot.rollback.forcedFallbackCount;
+    const liveExerciseFallbackCount = liveExercise?.rollback.observedFallbacks ?? 0;
+    const observedFallbacks = Math.max(liveForcedFallbackCount, liveExerciseFallbackCount);
     if (liveForcedFallbackCount > 0) {
       return {
         exercised: true,
         verdict: 'pass' as Verdict,
-        reason: `forced legacy fallback observed count=${liveForcedFallbackCount}`,
+        reason: `forced legacy fallback observed count=${observedFallbacks}`,
+        observedFallbacks,
         artifactPath: null,
       };
     }
@@ -472,6 +493,7 @@ export const runChatSdkDiscordCutoverValidation = async (): Promise<void> => {
         exercised: true,
         verdict: 'pass' as Verdict,
         reason: `${labExercise.rollback.reason}; live=rollback not exercised and no forced fallback evidence observed`,
+        observedFallbacks: labExercise.rollback.observedFallbacks,
         artifactPath: null,
       };
     }
@@ -480,6 +502,7 @@ export const runChatSdkDiscordCutoverValidation = async (): Promise<void> => {
       exercised: false,
       verdict: 'pending' as Verdict,
       reason: 'rollback not exercised and no forced fallback evidence observed',
+      observedFallbacks: 0,
       artifactPath: null,
     };
   })();

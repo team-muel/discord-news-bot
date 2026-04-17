@@ -60,6 +60,7 @@ export type LlmTextRequest = {
   requestedBy?: string;
   experimentKey?: string;
   actionName?: string;
+  signal?: AbortSignal;
 };
 
 export type LlmTextWithMetaResponse = {
@@ -458,6 +459,7 @@ export const requestOpenAiWithMeta = async (
 
   const response = await fetchWithTimeout(OPENAI_URL, {
     method: 'POST',
+    signal: params.signal,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -499,6 +501,7 @@ export const requestGemini = async (params: LlmTextRequest): Promise<string> => 
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',
+    signal: params.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: params.system }] },
@@ -526,6 +529,7 @@ export const requestAnthropic = async (params: LlmTextRequest): Promise<string> 
 
   const response = await fetchWithTimeout(ANTHROPIC_URL, {
     method: 'POST',
+    signal: params.signal,
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': ANTHROPIC_API_KEY,
@@ -557,6 +561,7 @@ export const requestHuggingFace = async (params: LlmTextRequest): Promise<string
   const model = params.model || HUGGINGFACE_MODEL;
   const response = await fetchWithTimeout(HUGGINGFACE_CHAT_COMPLETIONS_URL, {
     method: 'POST',
+    signal: params.signal,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${HF_TOKEN}`,
@@ -672,13 +677,23 @@ export const requestOpenClaw = async (params: LlmTextRequest): Promise<string> =
     });
 
     let requestUrl = `${OPENCLAW_BASE_URL}${openclawResolvedPathSuffix || '/v1/chat/completions'}`;
-    let response = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: payload });
+    let response = await fetchWithTimeout(requestUrl, {
+      method: 'POST',
+      headers,
+      body: payload,
+      signal: params.signal,
+    });
 
     if (response.status === 404 && !openclawResolvedPathSuffix) {
       const firstBody = await response.text();
       const fallbackSuffix = '/chat/completions';
       const fallbackUrl = `${OPENCLAW_BASE_URL}${fallbackSuffix}`;
-      const fallbackResponse = await fetchWithTimeout(fallbackUrl, { method: 'POST', headers, body: payload });
+      const fallbackResponse = await fetchWithTimeout(fallbackUrl, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal: params.signal,
+      });
 
       if (fallbackResponse.ok) {
         openclawResolvedPathSuffix = fallbackSuffix;
@@ -736,6 +751,7 @@ export const requestOllama = async (params: LlmTextRequest): Promise<string> => 
 
   const response = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
+    signal: params.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model, stream: false,
@@ -767,6 +783,7 @@ const requestOpenAiCompatible = async (
 
   const response = await fetchWithTimeout(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
+    signal: params.signal,
     headers,
     body: JSON.stringify({
       model,

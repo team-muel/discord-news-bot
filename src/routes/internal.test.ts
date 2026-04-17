@@ -203,21 +203,21 @@ describe('internal routes', () => {
         },
       },
       totals: {
-        total: 3,
+        total: 4,
       },
       totalsBySource: {
-        live: { total: 3 },
+        live: { total: 4 },
         lab: { total: 0 },
       },
       rollback: {
         active: false,
-        forcedFallbackCount: 1,
+        forcedFallbackCount: 2,
         forcedFallbackCountBySource: {
-          live: 1,
+          live: 2,
           lab: 0,
         },
         lastForcedFallbackAt: '2026-04-17T00:00:01.000Z',
-        lastForcedFallbackSurface: 'docs-command',
+        lastForcedFallbackSurface: 'muel-message',
         lastForcedFallbackSource: 'live',
       },
       surfaces: {
@@ -250,21 +250,21 @@ describe('internal routes', () => {
           },
         },
         'muel-message': {
-          total: 1,
-          selectedByRolloutCount: 1,
+          total: 2,
+          selectedByRolloutCount: 2,
           adapterAcceptCount: 1,
           shadowOnlyCount: 0,
-          legacyFallbackCount: 0,
+          legacyFallbackCount: 1,
           holdoutCount: 0,
           lastDecisionAt: '2026-04-17T00:00:01.000Z',
           lastTelemetry: null,
           bySource: {
             live: {
-              total: 1,
-              selectedByRolloutCount: 1,
+              total: 2,
+              selectedByRolloutCount: 2,
               adapterAcceptCount: 1,
               shadowOnlyCount: 0,
-              legacyFallbackCount: 0,
+              legacyFallbackCount: 1,
               holdoutCount: 0,
             },
             lab: {
@@ -299,6 +299,15 @@ describe('internal routes', () => {
           selectedByRollout: true,
           selectedAdapterId: 'chat-sdk',
           adapterId: 'chat-sdk',
+        },
+      })
+      .mockResolvedValueOnce({
+        telemetry: {
+          routeDecision: 'legacy_fallback',
+          fallbackReason: 'hard_disabled',
+          selectedByRollout: true,
+          selectedAdapterId: 'chat-sdk',
+          adapterId: null,
         },
       })
       .mockResolvedValueOnce({
@@ -456,11 +465,11 @@ describe('internal routes', () => {
     });
 
     expect(res.statusCode).toBe(202);
-    expect(mockExecuteDiscordIngress).toHaveBeenCalledTimes(3);
+    expect(mockExecuteDiscordIngress).toHaveBeenCalledTimes(4);
     expect(mockExecuteDiscordIngress).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        surface: 'docs-command',
-        correlationId: 'internal-live-docs-command-rollback',
+        surface: 'muel-message',
+        correlationId: 'internal-live-muel-message-rollback',
       }),
       expect.objectContaining({
         hardDisable: true,
@@ -484,8 +493,18 @@ describe('internal routes', () => {
         },
         rollback: {
           verdict: 'pass',
-          observedFallbacks: 1,
+          observedFallbacks: 2,
           selectedAdapterId: 'chat-sdk',
+          surfaces: {
+            'docs-command': {
+              verdict: 'pass',
+              observedFallbacks: 1,
+            },
+            'muel-message': {
+              verdict: 'pass',
+              observedFallbacks: 1,
+            },
+          },
         },
       },
     });

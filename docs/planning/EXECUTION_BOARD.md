@@ -21,54 +21,53 @@
 
 ## Autonomous Focus (Single Objective Override)
 
-1. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
-   - 자율 루프는 이 섹션이 비워질 때까지 이 목표만 계속 재할당한다.
-   - 얽힌 command/router/service 경계 리팩토링
-   - 반복 장애, 경고, 회귀 경로 디버깅
-   - oversized service 분해 + 순환 의존성 해소
-   - dead code / duplicate utility / stale fallback pruning
-   - 성능 병목과 과도한 복잡도 동시 축소
+- 현재 override 없음. 명시적 safe queue와 Active/Queued 순서를 따른다.
 
 ## Active Now (WIP <= 3)
 
-1. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
-   - 단일 focus override 활성 상태
-   - 얽힌 서비스 경계 리팩토링
-   - 재발 버그와 운영 경고 디버깅
-   - 잔여 root-level 서비스 파일 → 하위 디렉토리 이동
-   - 순환 의존성 탐지 + 해소
-   - stale fallback / 중복 유틸리티 정리
+1. [M-24] 채널 ingress 추상화 + Chat SDK actual migration
+   - eligible surface `/해줘`, `/뮤엘`, `뮤엘 ...`를 real Chat SDK transport 위로 올린다
+   - 기존 discord.js session은 유지하고 Chat SDK public API로 slash/prefixed path를 인-프로세스 브리지한다
+   - runtime owner 전환 이후 default-on/100, grace-close, rollback 근거를 계속 닫는다
+2. [M-21] [M-24] Legacy cleanup inventory lock
+   - replacement-complete 근거가 닫힌 exact unit부터 rollback-only → remove-now로 이동한다
+   - transport actualization 이후 Discord ingress residue와 naming residue를 우선 정리한다
+3. [M-19] User CRM 심화 + Social Graph 고도화
+   - 상단 두 목표 종료 후 execution board와 Obsidian 계획 기준으로 즉시 이어간다
 
 ## Queued Now (Approved, Not In Active WIP)
 
-1. [M-19] User CRM 심화 + Social Graph 고도화
-   - 코호트 세그먼트 자동 태깅 (power_user/casual/dormant)
-   - communityGraphService 클러스터 탐지 (connected component → community_clusters)
-   - 에스컬레이션 패턴 탐지 (escalation_signals)
-   - CRM snapshot에 social graph 요약 포함
-2. [M-20] LLM 레이턴시 SLO 자동 Fallback
+1. [M-20] LLM 레이턴시 SLO 자동 Fallback
    - p95 > LATENCY_P95_THRESHOLD_MS 시 자동 provider 다운그레이드
    - p95 레이턴시를 go/no-go gate 판정 입력에 포함
    - 세션 품질 집계: 기존 quality_score 기반 SQL view (코드 최소화)
-3. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-21 완료 후 승격
+2. [M-22] 외부 OSS 어댑터 활용률 80%+ — M-24/M-21 종료 후 승격
    - 이미 들어온 것: local n8n starter closeout은 `preview -> request approval -> approve/apply -> rollback` baseline path까지 닫혔다
    - `muelUnified` 로컬 stdio 진입점을 `.vscode/mcp.json`에 추가 (현재 GCP SSH만)
    - 남은 범위: NemoClaw / n8n 어댑터 통합 테스트, 헬스 페이지 문서화, 활용률 증거 surface 정리
    - 어댑터 활용률 대시보드 (성공률, p95 레이턴시 per tool) 추가
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 4
-4. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
+3. [M-23] 운영 문서 통합 경량화 — 코드 무관, Active 슬롯 확보 시 승격
    - `docs/archive/` 가치 있는 내용을 living doc으로 통합
    - MCP Tool Spec v2 기준으로 관련 문서 정렬 완료 (2026-04-05 일부 완료)
    - Obsidian 중심 운영체계 기준 문서 3종 고정: `OBSIDIAN_OPERATING_SYSTEM_BLUEPRINT.md`, `OBSIDIAN_OBJECT_MODEL.md`, `OBSIDIAN_TRANSITION_PLAN.md`
    - 참조: `docs/planning/CAPABILITY_GAP_ANALYSIS.md` § 5
-5. [M-24] 채널 ingress 추상화 + Chat SDK grace-close — M-21 종료 후 재개
+4. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
+   - Chat SDK migration과 legacy cleanup 이후 다시 승격한다
+   - 얽힌 service boundary 리팩토링, 순환 의존성 해소, stale fallback pruning을 이어간다
+5. [M-19] User CRM 심화 + Social Graph 고도화
+   - 코호트 세그먼트 자동 태깅 (power_user/casual/dormant)
+   - communityGraphService 클러스터 탐지 (connected component → community_clusters)
+   - 에스컬레이션 패턴 탐지 (escalation_signals)
+   - CRM snapshot에 social graph 요약 포함
+6. [M-24] 채널 ingress 추상화 + Chat SDK grace-close
    - 이미 들어온 것: eligible surface `/해줘`, `/뮤엘`, `뮤엘 ...`는 live cutover gate가 green이고 current canary slice에서 `chat-sdk` selected owner와 forced legacy fallback rollback evidence가 확보되었다
-   - 아직 실 owner 전환 전인 것: eligible surface 전체 default-on/100 전환, rollback grace-close 종료, legacy demotion/removal은 별도 후속 lane이다
+   - actual transport migration 이후 남은 것은 eligible surface 전체 default-on/100 전환, rollback grace-close 종료, legacy demotion/removal이다
    - 아직 실 owner 전환 전인 것: `/만들어줘`, session progress/update lifecycle, admin/persona/task/CRM/market/runtime-control surface는 phase 2 이후 범위다
    - 다음 단계는 이미 닫힌 ingress envelope와 live policy contract 위에서 default-on 확장, grace-close, legacy demotion 순서를 안전하게 진행하는 것이다
    - Hermes는 continuity/operator lane으로 유지하고, Supabase/Obsidian/OpenJarvis ownership은 바꾸지 않는다
    - 참조: `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`
-6. [M-21] [M-24] Legacy cleanup inventory lock — replacement-complete 이후에만 삭제 개방
+7. [M-21] [M-24] Legacy cleanup inventory lock — replacement-complete 이후에만 삭제 개방
    - scope: Discord legacy path, provider alias sprawl, naming compatibility residue, control-plane compatibility glue, deterministic inline residue
    - current gate: remove-now=none, rollback-only=docs.ask post-ingress fallback exact unit only, keep-for-now=all remaining scoped units
    - predecessor lanes: Chat SDK cutover grace-close (live canary entered, full grace-close pending), provider cleanup closure (entered), naming/control-plane canonicalization closure (pending), deterministic task extraction closure (pending)

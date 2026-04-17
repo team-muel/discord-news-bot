@@ -41,14 +41,16 @@ Remaining follow-ups for full owner transition:
 - eligible surface 전체 default-on/100 전환은 아직 완료되지 않았다.
 - rollback grace-close 종료와 legacy demotion/removal은 별도 후속 session이다.
 - `/만들어줘`와 full session-progress reply/update lifecycle은 여전히 phase 2 범위다.
-- prefixed `muel-message` fallback branch still needs its own live rollback observation before it can move to rollback-only.
+- prefixed `muel-message` fallback branch still needs its own production live rollback observation artifact before it can move to rollback-only.
+- the latest production rerun (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) refreshed live selected-owner parity for both eligible surfaces on the current `chat-sdk` canary, but the deployed internal cutover exercise route still emitted only a single forced-fallback rollback observation. Local code now supports per-surface rollback rehearsal for both eligible surfaces, so the remaining blocker is deploying that newer control-plane path and re-running the bounded live validation window.
 
 - `src/discord/runtime/discordIngressAdapter.ts` now emits structured route-decision telemetry, per-surface rollout/holdout gating, and persisted cutover evidence snapshots under `tmp/discord-ingress-cutover/latest.json`.
 - `scripts/run-chat-sdk-discord-cutover-validation.ts` now emits the md/json gate-run artifact pair under `docs/planning/gate-runs/chat-sdk-cutover/`.
-- `npm run gates:discord:cutover` can now drive a real running process through the service-role protected internal cutover routes when `--applyLivePolicy=true` is passed with a reachable runtime base URL; this writes live selected-owner evidence instead of relying only on local rehearsal.
+- `npm run gates:discord:cutover` can now drive a real running process through the service-role protected internal cutover routes when `--applyLivePolicy=true` is passed with a reachable runtime base URL; this writes live selected-owner evidence plus forced-fallback rollback rehearsal for both eligible surfaces instead of relying only on local rehearsal.
 - `npm run gates:discord:cutover` still remains local-only by default; `npm run gates:discord:cutover:dry` remains inspection-only unless explicit exercise flags are passed.
 - lab rehearsal evidence may still be recorded in production, but it stays `observed-only` there and cannot satisfy the final live parity or rollback decision.
-- latest live-go artifact: `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-161707.md`
+- `npm run gates:discord:cutover:lab:dry` may still accept lab evidence during a dry-run rehearsal even when dotenv resolves `NODE_ENV=production`, because the command writes no final artifact and is scoped to local rehearsal closeout only.
+- latest live-go artifact: `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-212611.md`
 - latest pre-chat-sdk live-go artifact for the extracted seam itself: `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-142211.md`
 
 ## Entry Criteria

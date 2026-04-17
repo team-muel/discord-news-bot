@@ -7,6 +7,8 @@
 
 이 문서는 정책/우선순위의 Canonical Roadmap이다.
 
+상위 전략/비전/설계 의도 정본은 `MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md`에서 다룬다.
+
 **상태: Phase 3 ACTIVE (2026-04-04)** — Phase A-E 전 항목 완료. Phase F(Gap-to-Vision Closure) 신규 사이클 개시.
 
 문서 역할:

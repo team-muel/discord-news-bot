@@ -221,11 +221,15 @@
     "wiki:pr": "tsx scripts/obsidian-wiki-pr.ts"
   },
   "dependencies": {
+    "@chat-adapter/discord": "^4.24.0",
+    "@chat-adapter/state-memory": "^4.24.0",
+    "@chat-adapter/state-redis": "^4.24.0",
     "@langchain/core": "^1.1.38",
     "@langchain/langgraph": "^1.2.6",
     "@sentry/node": "^7.59.0",
     "@supabase/supabase-js": "^2.98.0",
     "ai": "^6.0.157",
+    "chat": "^4.24.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "discord.js": "^14.25.1",

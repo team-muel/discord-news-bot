@@ -87,6 +87,12 @@ type DiscordIngressExerciseSummary = {
     reason: string;
     observedFallbacks: number;
     selectedAdapterId: string | null;
+    surfaces: Record<DiscordIngressSurface, {
+      verdict: DiscordIngressExerciseVerdict;
+      reason: string;
+      observedFallbacks: number;
+      selectedAdapterId: string | null;
+    }>;
   };
 };
 
@@ -344,28 +350,66 @@ const runDiscordIngressExercise = async (params: {
         reason: 'rollback exercise skipped',
         observedFallbacks: 0,
         selectedAdapterId: null,
+        surfaces: {
+          'docs-command': {
+            verdict: 'pending',
+            reason: 'rollback exercise skipped',
+            observedFallbacks: 0,
+            selectedAdapterId: null,
+          },
+          'muel-message': {
+            verdict: 'pending',
+            reason: 'rollback exercise skipped',
+            observedFallbacks: 0,
+            selectedAdapterId: null,
+          },
+        },
       },
     };
   }
 
-  const rollbackDefaultPolicy = getDefaultDiscordIngressExecutionPolicy('docs-command');
-  const rollbackEffectivePolicy = resolveDiscordIngressEffectivePolicy('docs-command', rollbackDefaultPolicy);
-  const rollbackKey = findDiscordIngressRolloutKey(
-    rollbackEffectivePolicy.rolloutPercentage,
-    true,
-    `internal:${params.evidenceSource}:docs-command:rollback`,
-  );
-  const rollbackExecution = await executeDiscordIngress(
-    buildDiscordIngressExerciseRequest('docs-command', params.evidenceSource, 'rollback'),
-    {
-      ...rollbackDefaultPolicy,
-      hardDisable: true,
-      shadowMode: false,
-      rolloutKey: rollbackKey || undefined,
-      evidenceSource: params.evidenceSource,
-      preferCallOverrides: true,
-    },
-  );
+  const runRollbackSurface = async (
+    surface: DiscordIngressSurface,
+  ): Promise<DiscordIngressExerciseSummary['rollback']['surfaces'][DiscordIngressSurface]> => {
+    const rollbackDefaultPolicy = getDefaultDiscordIngressExecutionPolicy(surface);
+    const rollbackEffectivePolicy = resolveDiscordIngressEffectivePolicy(surface, rollbackDefaultPolicy);
+    const rollbackKey = findDiscordIngressRolloutKey(
+      rollbackEffectivePolicy.rolloutPercentage,
+      true,
+      `internal:${params.evidenceSource}:${surface}:rollback`,
+    );
+    const rollbackExecution = await executeDiscordIngress(
+      buildDiscordIngressExerciseRequest(surface, params.evidenceSource, 'rollback'),
+      {
+        ...rollbackDefaultPolicy,
+        hardDisable: true,
+        shadowMode: false,
+        rolloutKey: rollbackKey || undefined,
+        evidenceSource: params.evidenceSource,
+        preferCallOverrides: true,
+      },
+    );
+
+    return {
+      verdict: rollbackExecution.telemetry.fallbackReason === 'hard_disabled' ? 'pass' : 'fail',
+      reason: rollbackExecution.telemetry.fallbackReason === 'hard_disabled'
+        ? `${params.evidenceSource} rollback rehearsal produced forced legacy fallback`
+        : `${params.evidenceSource} rollback rehearsal failed (${rollbackExecution.telemetry.fallbackReason || 'unknown'})`,
+      observedFallbacks: rollbackExecution.telemetry.fallbackReason === 'hard_disabled' ? 1 : 0,
+      selectedAdapterId: rollbackExecution.telemetry.selectedAdapterId,
+    };
+  };
+
+  const rollbackSurfaces = {
+    'docs-command': await runRollbackSurface('docs-command'),
+    'muel-message': await runRollbackSurface('muel-message'),
+  } satisfies DiscordIngressExerciseSummary['rollback']['surfaces'];
+  const rollbackObservedFallbacks = rollbackSurfaces['docs-command'].observedFallbacks + rollbackSurfaces['muel-message'].observedFallbacks;
+  const rollbackSelectedAdapterId = rollbackSurfaces['docs-command'].selectedAdapterId === rollbackSurfaces['muel-message'].selectedAdapterId
+    ? rollbackSurfaces['docs-command'].selectedAdapterId
+    : null;
+  const rollbackPassed = rollbackSurfaces['docs-command'].verdict === 'pass'
+    && rollbackSurfaces['muel-message'].verdict === 'pass';
 
   return {
     exercised: true,
@@ -374,12 +418,13 @@ const runDiscordIngressExercise = async (params: {
       'muel-message': messageSurface,
     },
     rollback: {
-      verdict: rollbackExecution.telemetry.fallbackReason === 'hard_disabled' ? 'pass' : 'fail',
-      reason: rollbackExecution.telemetry.fallbackReason === 'hard_disabled'
-        ? `${params.evidenceSource} rollback rehearsal produced forced legacy fallback`
-        : `${params.evidenceSource} rollback rehearsal failed (${rollbackExecution.telemetry.fallbackReason || 'unknown'})`,
-      observedFallbacks: rollbackExecution.telemetry.fallbackReason === 'hard_disabled' ? 1 : 0,
-      selectedAdapterId: rollbackExecution.telemetry.selectedAdapterId,
+      verdict: rollbackPassed ? 'pass' : 'fail',
+      reason: rollbackPassed
+        ? `${params.evidenceSource} rollback rehearsal produced forced legacy fallback on docs-command and muel-message`
+        : `${params.evidenceSource} rollback rehearsal failed for one or more eligible surfaces`,
+      observedFallbacks: rollbackObservedFallbacks,
+      selectedAdapterId: rollbackSelectedAdapterId,
+      surfaces: rollbackSurfaces,
     },
   };
 };

@@ -7,6 +7,7 @@ This folder contains copy-ready integration assets for `team-muel/muel-front-uiu
 - `env.frontend.example`: frontend env template
 - `api.types.ts`: shared response/request typings
 - `api.client.ts`: fetch client with cookie-based auth defaults
+- `MUEL_SUPER_AGENT_PRODUCT_EXPERIENCE.md`: product-experience handoff for packaging Muel as a super agent
 
 ## Quick Import Into Front Repo
 

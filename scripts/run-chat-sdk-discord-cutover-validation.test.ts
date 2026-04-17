@@ -529,6 +529,233 @@ describe('run-chat-sdk-discord-cutover-validation', () => {
     expect(report.operator_runtime.url).toContain('/health');
   });
 
+  it('accepts a cold in-process runtime snapshot for accepted lab dry-runs when scheduler policy is available', async () => {
+    const originalArgv = process.argv;
+    const originalNodeEnv = process.env.NODE_ENV;
+    const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let summaryCall: string | undefined;
+
+    mocks.summarizeRuntimeHealth.mockReturnValue({
+      healthy: false,
+      status: 'degraded',
+      botStatusGrade: 'offline',
+      anyEnabled: true,
+      allEnabledHealthy: false,
+    });
+    mocks.getBotRuntimeSnapshot.mockReturnValue({ ready: false });
+    mocks.getAutomationRuntimeSnapshot.mockReturnValue({ healthy: false });
+    mocks.getRuntimeSchedulerPolicySnapshot.mockResolvedValue({
+      summary: {
+        total: 2,
+        appOwned: 1,
+        dbOwned: 1,
+        enabled: 2,
+        running: 1,
+      },
+    });
+    mocks.executeDiscordIngress.mockImplementation(async (_request, policy) => {
+      if (policy.hardDisable) {
+        return {
+          telemetry: {
+            routeDecision: 'legacy_fallback',
+            fallbackReason: 'hard_disabled',
+            selectedByRollout: true,
+          },
+        };
+      }
+
+      return {
+        telemetry: {
+          routeDecision: 'adapter_accept',
+          fallbackReason: null,
+          selectedByRollout: true,
+        },
+      };
+    });
+    mocks.getDiscordIngressCutoverSnapshot
+      .mockReturnValueOnce({
+        policyBySurface: {
+          'docs-command': {
+            preferredAdapterId: 'openclaw',
+            hardDisable: false,
+            shadowMode: false,
+            rolloutPercentage: 100,
+            mode: 'default-on',
+            lastUpdatedAt: '2026-04-17T12:00:00.000Z',
+          },
+          'muel-message': {
+            preferredAdapterId: 'openclaw',
+            hardDisable: false,
+            shadowMode: false,
+            rolloutPercentage: 100,
+            mode: 'default-on',
+            lastUpdatedAt: '2026-04-17T12:00:00.000Z',
+          },
+        },
+        totals: {
+          adapterErrorCount: 0,
+          legacyFallbackCount: 0,
+        },
+        totalsBySource: {
+          live: {
+            adapterErrorCount: 0,
+            legacyFallbackCount: 0,
+          },
+        },
+        rollback: {
+          forcedFallbackCount: 0,
+          forcedFallbackCountBySource: {
+            live: 0,
+          },
+        },
+        surfaces: {
+          'docs-command': {
+            total: 0,
+            selectedByRolloutCount: 0,
+            adapterAcceptCount: 0,
+            shadowOnlyCount: 0,
+            bySource: {
+              live: {
+                total: 0,
+                selectedByRolloutCount: 0,
+                adapterAcceptCount: 0,
+                shadowOnlyCount: 0,
+              },
+            },
+          },
+          'muel-message': {
+            total: 0,
+            selectedByRolloutCount: 0,
+            adapterAcceptCount: 0,
+            shadowOnlyCount: 0,
+            bySource: {
+              live: {
+                total: 0,
+                selectedByRolloutCount: 0,
+                adapterAcceptCount: 0,
+                shadowOnlyCount: 0,
+              },
+            },
+          },
+        },
+        recentEvents: [],
+      })
+      .mockReturnValueOnce({
+        policyBySurface: {
+          'docs-command': {
+            preferredAdapterId: 'openclaw',
+            hardDisable: false,
+            shadowMode: false,
+            rolloutPercentage: 100,
+            mode: 'default-on',
+            lastUpdatedAt: '2026-04-17T12:00:00.000Z',
+          },
+          'muel-message': {
+            preferredAdapterId: 'openclaw',
+            hardDisable: false,
+            shadowMode: false,
+            rolloutPercentage: 100,
+            mode: 'default-on',
+            lastUpdatedAt: '2026-04-17T12:00:00.000Z',
+          },
+        },
+        totals: {
+          adapterErrorCount: 0,
+          legacyFallbackCount: 0,
+        },
+        totalsBySource: {
+          live: {
+            adapterErrorCount: 0,
+            legacyFallbackCount: 0,
+          },
+        },
+        rollback: {
+          forcedFallbackCount: 0,
+          forcedFallbackCountBySource: {
+            live: 0,
+          },
+        },
+        surfaces: {
+          'docs-command': {
+            total: 0,
+            selectedByRolloutCount: 0,
+            adapterAcceptCount: 0,
+            shadowOnlyCount: 0,
+            bySource: {
+              live: {
+                total: 0,
+                selectedByRolloutCount: 0,
+                adapterAcceptCount: 0,
+                shadowOnlyCount: 0,
+              },
+            },
+          },
+          'muel-message': {
+            total: 0,
+            selectedByRolloutCount: 0,
+            adapterAcceptCount: 0,
+            shadowOnlyCount: 0,
+            bySource: {
+              live: {
+                total: 0,
+                selectedByRolloutCount: 0,
+                adapterAcceptCount: 0,
+                shadowOnlyCount: 0,
+              },
+            },
+          },
+        },
+        recentEvents: [],
+      });
+    mocks.spawnSync.mockImplementation((command: string, args?: string[]) => {
+      if (command === 'git' && args?.[0] === 'rev-parse') {
+        return { status: 0, stdout: 'da348ab\n', stderr: '' };
+      }
+
+      if (command === 'cmd.exe' && args?.[3]?.includes('run-stage-rollback-rehearsal')) {
+        return {
+          status: 0,
+          stdout: '{\n  "overall": "pass",\n  "payload": {\n    "accepted": true\n  }\n}\n',
+          stderr: '',
+        };
+      }
+
+      return { status: 0, stdout: '', stderr: '' };
+    });
+
+    try {
+      process.env.NODE_ENV = 'production';
+      process.argv = [
+        originalArgv[0] || 'node',
+        'vitest',
+        '--dryRun=true',
+        '--exerciseLabEvidence=true',
+        '--acceptLabEvidence=true',
+        '--exerciseRollback=true',
+        '--rollbackDryRun=true',
+      ];
+      const module = await import('./run-chat-sdk-discord-cutover-validation');
+      await expect(module.runChatSdkDiscordCutoverValidation()).resolves.toBeUndefined();
+      summaryCall = consoleLogSpy.mock.calls
+        .map((call) => call[0])
+        .filter((value): value is string => typeof value === 'string')
+        .at(-1);
+    } finally {
+      process.argv = originalArgv;
+      process.env.NODE_ENV = originalNodeEnv;
+      consoleLogSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    }
+
+    expect(summaryCall).toBeDefined();
+    expect(JSON.parse(summaryCall || '{}')).toMatchObject({
+      overall: 'go',
+      requiredActions: 0,
+    });
+    expect(mocks.writeFileSync).not.toHaveBeenCalled();
+  });
+
   it('collects operator-driven live evidence by default for non-dry validation runs', async () => {
     const originalArgv = process.argv;
     const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -741,20 +968,34 @@ describe('run-chat-sdk-discord-cutover-validation', () => {
       consoleErrorSpy.mockRestore();
     }
 
-    expect(mocks.executeDiscordIngress).toHaveBeenCalledTimes(3);
+    expect(mocks.executeDiscordIngress).toHaveBeenCalledTimes(4);
 
     const jsonWrite = mocks.writeFileSync.mock.calls.find(([target]) => String(target).endsWith('.json'));
     expect(jsonWrite).toBeDefined();
     const report = JSON.parse(String(jsonWrite?.[1] || '{}')) as {
       overall: string;
-      live_rehearsal: { exercised: boolean } | null;
-      rollback: { verdict: string };
+      live_rehearsal: {
+        exercised: boolean;
+        rollback: {
+          observedFallbacks: number;
+          surfaces: Record<string, { observedFallbacks: number }>;
+        };
+      } | null;
+      rollback: { verdict: string; observedFallbacks: number };
       required_actions: string[];
     };
 
     expect(report.overall).toBe('go');
     expect(report.live_rehearsal).toMatchObject({ exercised: true });
+    expect(report.live_rehearsal?.rollback).toMatchObject({
+      observedFallbacks: 2,
+      surfaces: {
+        'docs-command': { observedFallbacks: 1 },
+        'muel-message': { observedFallbacks: 1 },
+      },
+    });
     expect(report.rollback.verdict).toBe('pass');
+    expect(report.rollback.observedFallbacks).toBe(2);
     expect(report.required_actions).toEqual([]);
   });
 });

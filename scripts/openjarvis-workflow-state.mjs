@@ -12,6 +12,7 @@ const WORKFLOW_STEPS_TABLE = 'workflow_steps';
 const WORKFLOW_EVENTS_TABLE = 'workflow_events';
 const DEFAULT_WAIT_FOR_NEXT_OBJECTIVE = 'wait for the next gpt objective or human approval boundary';
 const DEFAULT_RUNTIME_LANE = 'operator-personal';
+const STALE_DRY_RUN_EXECUTING_SESSION_MS = 6 * 60 * 60 * 1000;
 
 const ALLOWED_TRANSITIONS = {
   proposed: ['classified', 'recovering', 'failed'],
@@ -34,6 +35,19 @@ const makeSessionId = () => {
 
 const sanitize = (value, fallback = '') => String(value || fallback).trim();
 const sanitizeRuntimeLane = (value) => sanitize(value, DEFAULT_RUNTIME_LANE) || DEFAULT_RUNTIME_LANE;
+const parseBooleanish = (value) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  const normalized = sanitize(value).toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return null;
+};
 
 const canUseSupabaseWorkflowPlane = () => Boolean(SUPABASE_URL && SUPABASE_KEY);
 
@@ -47,6 +61,34 @@ const buildAutoRestartNextAction = () => 'restart the next bounded automation cy
 
 const stepFailed = (step) => ['fail', 'failed'].includes(sanitize(step?.status).toLowerCase());
 const stepRunning = (step) => sanitize(step?.status).toLowerCase() === 'running';
+
+export const isStaleDryRunExecutingSession = (session, nowMs = Date.now()) => {
+  const status = sanitize(session?.status).toLowerCase();
+  if (status !== 'executing') {
+    return false;
+  }
+
+  const dryRun = parseBooleanish(session?.metadata?.dry_run ?? session?.metadata?.dryRun);
+  if (dryRun !== true) {
+    return false;
+  }
+
+  if (sanitize(session?.completed_at)) {
+    return false;
+  }
+
+  const steps = Array.isArray(session?.steps) ? session.steps : [];
+  if (steps.some(stepRunning)) {
+    return false;
+  }
+
+  const startedAtMs = Date.parse(sanitize(session?.started_at));
+  if (!Number.isFinite(startedAtMs)) {
+    return false;
+  }
+
+  return Math.max(0, nowMs - startedAtMs) >= STALE_DRY_RUN_EXECUTING_SESSION_MS;
+};
 
 const listLatestLocalSessionPath = () => {
   try {

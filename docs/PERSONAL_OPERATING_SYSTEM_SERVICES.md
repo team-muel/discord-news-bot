@@ -6,6 +6,9 @@ This document packages existing primitives into named personal services.
 
 It is a packaging layer over the current control plane. It does not add a new execution engine.
 
+For public-facing Muel super-agent packaging, see `docs/planning/MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md` and `docs/front-uiux-handoff/MUEL_SUPER_AGENT_PRODUCT_EXPERIENCE.md`.
+For the stronger owner-only personalized orchestration tier, see `docs/planning/OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md`.
+
 The canonical API surface is under `/api/bot/agent/super/services/*`.
 
 ## Route Entrypoints

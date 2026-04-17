@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseArg, parseBool } from './lib/cliArgs.mjs';
-import { readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
-import { readExecutionBoardFocusedObjectives } from './run-openjarvis-goal-cycle.mjs';
+import { isStaleDryRunExecutingSession, readLatestWorkflowState } from './openjarvis-workflow-state.mjs';
+import { readExecutionBoardActiveObjectives, readExecutionBoardFocusedObjectives } from './run-openjarvis-goal-cycle.mjs';
 import {
   DEFAULT_CAPACITY_TARGET,
   WAIT_FOR_NEXT_GPT_ACTION,
@@ -562,20 +562,37 @@ const extractFirstBullet = (markdown: string | null, heading: string): string | 
 
 export const resolveContinuityObjective = (params: {
   focusObjective?: unknown;
+  activeObjective?: unknown;
+  queueObjective?: unknown;
   sessionStatus?: unknown;
   sessionObjective?: unknown;
   packetObjective?: unknown;
+  staleSessionObjective?: unknown;
 }): string | null => {
   const sessionStatus = toTrimmed(params.sessionStatus).toLowerCase();
   const focusObjective = normalizeContinuityObjective(params.focusObjective);
+  const activeObjective = normalizeContinuityObjective(params.activeObjective);
+  const queueObjective = normalizeContinuityObjective(params.queueObjective);
+  const staleSessionObjective = params.staleSessionObjective === true;
   if (focusObjective && sessionStatus === 'released') {
     return focusObjective;
   }
 
+  if (staleSessionObjective) {
+    return queueObjective
+      || activeObjective
+      || focusObjective
+      || normalizeContinuityObjective(params.packetObjective)
+      || normalizeContinuityObjective(params.sessionObjective)
+      || null;
+  }
+
   return normalizeContinuityObjective(params.sessionObjective)
-  || normalizeContinuityObjective(params.packetObjective)
-  || focusObjective
-  || null;
+    || normalizeContinuityObjective(params.packetObjective)
+    || focusObjective
+    || activeObjective
+    || queueObjective
+    || null;
 };
 
 export const resolveContinuitySafeQueue = (params: {
@@ -943,9 +960,9 @@ const buildHandoffContent = (params: {
   const lines = [
     ...buildBulletSection('## Session Objective', [params.runtimeState.objective]),
     ...buildBulletSection('## User Intent Model', [
-      'requested outcome: keep bounded IDE/autopilot continuity alive between GPT sessions using the local Hermes runtime',
-      'non-goal: force the user to relay the same request into Hermes or depend on one still-open monitor window',
-      'current priority: keep the local continuity runner observable, recoverable, and packet-driven',
+      'requested outcome: keep future workflow stages running as autonomous end-to-end work through the local Hermes runtime unless a real blocker requires recall',
+      'non-goal: force the user to restate each downstream stage manually into Hermes or depend on one still-open monitor window',
+      'current priority: preserve observable, recoverable, packet-driven autonomy so queued follow-up work continues without stepwise prompting',
     ]),
     ...buildBulletSection('## Verified State', [
       `session_id: ${toTrimmed(params.session.session_id)}`,
@@ -1169,10 +1186,20 @@ export const syncOpenJarvisContinuityPackets = async (params: ContinuityPacketSy
   }
   const existingHandoffContent = readExistingPacketContent(vaultPath, handoffFile);
   const existingProgressContent = readExistingPacketContent(vaultPath, progressFile);
+  const existingQueue = extractBulletSection(existingHandoffContent, SAFE_QUEUE_SECTION_HEADING);
+  const safeQueue = resolveContinuitySafeQueue({
+    existingQueue,
+    generatedQueue: generatedSafeQueue,
+  });
   const focusedObjective = readExecutionBoardFocusedObjectives()[0]?.objective || null;
+  const activeObjective = readExecutionBoardActiveObjectives()[0]?.objective || null;
+  const staleSessionObjective = isStaleDryRunExecutingSession(session);
   const existingPacketObjective = resolveContinuityObjective({
     focusObjective: focusedObjective,
+    activeObjective,
+    queueObjective: existingQueue[0] || null,
     sessionStatus: session.status,
+    staleSessionObjective,
     packetObjective: extractFrontmatterValue(existingProgressContent, 'objective')
       || extractFrontmatterValue(existingHandoffContent, 'objective')
       || extractFirstBullet(existingProgressContent, PROGRESS_OBJECTIVE_SECTION_HEADING)
@@ -1180,13 +1207,12 @@ export const syncOpenJarvisContinuityPackets = async (params: ContinuityPacketSy
   });
   const resolvedObjective = resolveContinuityObjective({
     focusObjective: focusedObjective,
+    activeObjective,
+    queueObjective: existingQueue[0] || null,
     sessionStatus: session.status,
     sessionObjective: session.metadata?.objective,
+    staleSessionObjective,
     packetObjective: existingPacketObjective,
-  });
-  const safeQueue = resolveContinuitySafeQueue({
-    existingQueue: extractBulletSection(existingHandoffContent, SAFE_QUEUE_SECTION_HEADING),
-    generatedQueue: generatedSafeQueue,
   });
   const runtimeState = buildContinuityRuntimeState({
     session,

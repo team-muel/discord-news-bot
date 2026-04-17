@@ -103,6 +103,7 @@ import {
 } from '../../services/openclaw/gatewayHealth';
 import { autoProposeWorker } from '../../services/workerGeneration/autoWorkerProposal';
 import { executeDiscordIngress, primeDiscordIngressCutoverPolicy, type DiscordIngressExecutionHandler } from './discordIngressAdapter';
+import { initDiscordChatSdkRuntime, tryHandleDiscordChatSdkSlashCommand } from './chatSdkRuntime';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -349,10 +350,16 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
           return;
         }
         case DISCORD_CHAT_COMMAND_NAMES.ASK_COMPAT: {
+          if (await tryHandleDiscordChatSdkSlashCommand(interaction)) {
+            return;
+          }
           await docsHandlers.handleAskCommand(interaction);
           return;
         }
         case DISCORD_CHAT_COMMAND_NAMES.MUEL: {
+          if (await tryHandleDiscordChatSdkSlashCommand(interaction)) {
+            return;
+          }
           await docsHandlers.handleAskCommand(interaction);
           return;
         }
@@ -509,6 +516,7 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     botRuntimeState.manualReconnectCooldownRemainingSec = getManualReconnectCooldownRemainingSec();
 
     runStartupTaskSafely('registerSlashCommands', () => registerSlashCommands(client));
+    runStartupTaskSafely('initDiscordChatSdkRuntime', () => initDiscordChatSdkRuntime());
     runStartupTaskSafely('restoreApprovedDynamicWorkers', () => restoreApprovedDynamicWorkers());
     runStartupTaskSafely('enforceImplementApprovalRequiredPilot', () => enforceImplementApprovalRequiredPilot([...client.guilds.cache.keys()]));
     // OpenClaw Gateway preflight — warn early if configured but unreachable

@@ -394,7 +394,7 @@ describe('discordIngressAdapter', () => {
     expect(snapshot.recentEvents[0]?.telemetry.evidenceSource).toBe('lab');
   });
 
-  it('routes the chat-sdk adapter through the AI SDK bridge and preserves provider routing metadata', async () => {
+  it('routes the chat-sdk adapter through the direct LLM bridge and preserves provider routing metadata', async () => {
     const {
       buildDiscordIngressEnvelope,
       chatSdkDiscordIngressAdapter,

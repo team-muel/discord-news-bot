@@ -51,6 +51,8 @@ vi.mock('../config', async () => {
     LLM_WORKFLOW_PROFILE_DEFAULTS_RAW: envGetter('LLM_WORKFLOW_PROFILE_DEFAULTS'),
     LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED: envBool('LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED', 'true'),
     LLM_PROVIDER_MAX_ATTEMPTS: { get: () => Number(process.env.LLM_PROVIDER_MAX_ATTEMPTS || '3'), enumerable: true, configurable: true },
+    LLM_PROVIDER_TOTAL_TIMEOUT_MS: { get: () => Number(process.env.LLM_PROVIDER_TOTAL_TIMEOUT_MS || '25000'), enumerable: true, configurable: true },
+    LLM_HEDGE_DELAY_MS: { get: () => Number(process.env.LLM_HEDGE_DELAY_MS || '3000'), enumerable: true, configurable: true },
     OPENCLAW_GATEWAY_ENABLED: envBool('OPENCLAW_GATEWAY_ENABLED', 'true'),
     OPENCLAW_GATEWAY_URL: envGetter('OPENCLAW_GATEWAY_URL'),
     OPENCLAW_GATEWAY_TOKEN: envGetter('OPENCLAW_GATEWAY_TOKEN'),
@@ -87,6 +89,8 @@ const clearLlmEnv = () => {
   vi.stubEnv('LLM_WORKFLOW_MODEL_BINDINGS', '');
   vi.stubEnv('LLM_WORKFLOW_PROFILE_DEFAULTS', '');
   vi.stubEnv('LLM_PROVIDER_MAX_ATTEMPTS', '3');
+  vi.stubEnv('LLM_PROVIDER_TOTAL_TIMEOUT_MS', '25000');
+  vi.stubEnv('LLM_HEDGE_DELAY_MS', '3000');
   vi.stubEnv('OPENJARVIS_SERVE_URL', 'http://127.0.0.1:8000');
   vi.stubEnv('LITELLM_BASE_URL', 'http://127.0.0.1:4000');
   vi.stubEnv('OPENJARVIS_ENABLED', '');
@@ -237,6 +241,7 @@ describe('generateText', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -415,6 +420,105 @@ describe('generateText', () => {
 
     const ready = await preflightProviderChain(['litellm', 'ollama']);
     expect(ready).toEqual(['ollama']);
+  });
+
+  it('workflow model binding을 실제 provider 요청 body에 반영한다', async () => {
+    vi.stubEnv('OPENJARVIS_ENABLED', 'true');
+    vi.stubEnv('AI_PROVIDER', 'openjarvis');
+    vi.stubEnv('LLM_WORKFLOW_MODEL_BINDINGS', 'discord.docs-command=openjarvis:bound-model');
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'bound ok' } }] }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await generateText({
+      system: 'sys',
+      user: 'hello',
+      actionName: 'discord.docs-command',
+    });
+
+    expect(result).toBe('bound ok');
+    const requestCall = mockFetch.mock.calls.find((call) => String(call[0]).endsWith('/v1/chat/completions'));
+    expect(requestCall).toBeTruthy();
+    const requestInit = requestCall?.[1] as RequestInit;
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({ model: 'bound-model' });
+  });
+
+  it('provider chain total timeout이 in-flight provider 요청을 중단한다', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('OPENJARVIS_ENABLED', 'true');
+    vi.stubEnv('AI_PROVIDER', 'openjarvis');
+    vi.stubEnv('LLM_PROVIDER_TOTAL_TIMEOUT_MS', '25');
+
+    const mockFetch = vi.fn((input: unknown, init?: RequestInit) => {
+      if (!String(input).endsWith('/v1/chat/completions')) {
+        throw new Error(`unexpected fetch: ${String(input)}`);
+      }
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        const rejectAbort = () => {
+          const error = new Error('The operation was aborted.');
+          Object.assign(error, { name: 'AbortError' });
+          reject(error);
+        };
+        if (signal?.aborted) {
+          rejectAbort();
+          return;
+        }
+        signal?.addEventListener('abort', rejectAbort, { once: true });
+      });
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const pending = generateText({ system: 'sys', user: 'timeout me' });
+
+    await vi.advanceTimersByTimeAsync(30);
+
+    await expect(pending).rejects.toThrow('API_TIMEOUT');
+  });
+
+  it('hedged fallback은 primary가 늦게 실패해도 secondary 성공을 기다린다', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('OPENJARVIS_ENABLED', 'true');
+    vi.stubEnv('AI_PROVIDER', 'openjarvis');
+    vi.stubEnv('OLLAMA_MODEL', 'qwen2.5:7b');
+    vi.stubEnv('LLM_PROVIDER_TOTAL_TIMEOUT_MS', '100');
+    vi.stubEnv('LLM_HEDGE_DELAY_MS', '10');
+
+    const mockFetch = vi.fn((input: unknown) => {
+      const url = String(input);
+      if (url.endsWith('/health')) {
+        return Promise.resolve({ ok: true, status: 200, text: async () => 'ok' });
+      }
+      if (url.endsWith('/api/tags')) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ models: [] }) });
+      }
+      if (url.endsWith('/v1/chat/completions')) {
+        return new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('fetch failed')), 20);
+        });
+      }
+      if (url.endsWith('/api/chat')) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({
+              ok: true,
+              json: async () => ({ message: { content: 'ollama hedge ok' } }),
+            });
+          }, 30);
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const pending = generateText({ system: 'sys', user: 'hedge please' });
+
+    await vi.advanceTimersByTimeAsync(40);
+
+    await expect(pending).resolves.toBe('ollama hedge ok');
   });
 
   it('실패한 litellm provider는 다음 호출에서 cooldown 동안 건너뛴다', async () => {

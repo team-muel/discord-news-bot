@@ -13,9 +13,11 @@ Generator command:
 
 Live gate behavior:
 
-- `npm run gates:discord:cutover` now operator-drives selected-path parity and one forced-fallback rollback observation into the live evidence counters before emitting the artifact pair.
+- `npm run gates:discord:cutover` now operator-drives selected-path parity and forced-fallback rollback observation for both eligible surfaces into the live evidence counters before emitting the artifact pair.
+- the rollback rehearsal is now surfaced per eligible surface in the report payload so exact-unit cleanup evidence can be inspected without inferring it from neighboring surfaces.
 - `npm run gates:discord:cutover:dry` inspects the current live counters without synthesizing new live evidence unless explicit exercise flags are passed.
 - lab rehearsal evidence remains isolated from live counters and is never accepted as the final production decision input.
+- `npm run gates:discord:cutover:lab:dry` may still accept lab evidence on a dry-run even when dotenv resolves `NODE_ENV=production`; this stays rehearsal-only, writes no final artifact, and does not relax the non-dry production rule.
 
 ## Artifact Pair
 

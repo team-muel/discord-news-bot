@@ -613,6 +613,93 @@
       ]
     },
     {
+      "id": "plan-muel-vision-roadmap-and-design-intent",
+      "title": "Muel Vision, Roadmap, And Design Intent",
+      "sourcePath": "docs/planning/MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md",
+      "targetPath": "plans/strategy/MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md",
+      "plane": "learning",
+      "concern": "strategy-intent",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": true,
+      "agentReference": true,
+      "tags": ["plan", "muel", "vision", "roadmap", "design-intent", "ip", "strategy"],
+      "intent": "architecture",
+      "queries": [
+        "muel vision roadmap and design intent",
+        "muel long term vision",
+        "muel factory that builds factories",
+        "muel ip foundry strategy",
+        "why this repo exists for muel",
+        "muel company direction and roadmap"
+      ]
+    },
+    {
+      "id": "plan-muel-super-agent-product-packaging",
+      "title": "Muel Super Agent Product Packaging",
+      "sourcePath": "docs/planning/MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md",
+      "targetPath": "plans/strategy/MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md",
+      "plane": "learning",
+      "concern": "product-packaging",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "muel", "super-agent", "product", "ux", "packaging"],
+      "intent": "architecture",
+      "queries": [
+        "muel super agent product packaging",
+        "muel super agent strategy",
+        "how muel should be packaged as super agent",
+        "muel product experience super agent",
+        "super agent packaging over service bundles"
+      ]
+    },
+    {
+      "id": "plan-owner-personalized-agent-orchestration",
+      "title": "Owner Personalized Agent Orchestration",
+      "sourcePath": "docs/planning/OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md",
+      "targetPath": "plans/strategy/OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md",
+      "plane": "learning",
+      "concern": "owner-orchestration",
+      "audience": "operator-primary",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "owner", "personalization", "orchestration", "hermes", "openjarvis", "openclaw", "compute-agent", "gui-agent"],
+      "intent": "architecture",
+      "queries": [
+        "owner personalized agent orchestration",
+        "primary owner orchestration cockpit",
+        "claude coworkers like owner experience",
+        "owner compute agent gui agent",
+        "how should the owner's private agent experience differ from public muel",
+        "personalized orchestration with hermes openjarvis openclaw"
+      ]
+    },
+    {
+      "id": "plan-muel-idol-service-spine",
+      "title": "Muel Idol Service Spine",
+      "sourcePath": "docs/planning/MUEL_IDOL_SERVICE_SPINE.md",
+      "targetPath": "plans/strategy/MUEL_IDOL_SERVICE_SPINE.md",
+      "plane": "learning",
+      "concern": "ip-operating-model",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "muel", "idol", "ip", "brand", "crm", "community", "service-spine"],
+      "intent": "architecture",
+      "queries": [
+        "muel idol service spine",
+        "muel as idol ip",
+        "muel mascot support crm brand",
+        "virtual idol service spine",
+        "muel public facing persona strategy",
+        "discord mascot to idol operating model"
+      ]
+    },
+    {
       "id": "incident-comms-playbook",
       "title": "Oncall Comms Playbook",
       "sourcePath": "docs/ONCALL_COMMS_PLAYBOOK.md",

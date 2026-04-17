@@ -8,6 +8,7 @@ import { seedFeedbackReactions } from '../session';
 import logger from '../../logger';
 import { acquireDistributedLease } from '../../services/infra/distributedLockService';
 import type { DiscordIngressExecutionHandler } from '../runtime/discordIngressAdapter';
+import { tryHandleDiscordChatSdkPrefixedMessage } from '../runtime/chatSdkRuntime';
 import {
   VIBE_MESSAGE_DEDUP_TTL_MS,
   VIBE_AUTO_WORKER_PROPOSAL_ENABLED,
@@ -534,6 +535,10 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     }
 
     if (isPrefixed) {
+      if (await tryHandleDiscordChatSdkPrefixedMessage(message)) {
+        return;
+      }
+
       const ingressHandled = await handlePrefixedMessageIngressRequest({
         request,
         guildId: message.guildId,

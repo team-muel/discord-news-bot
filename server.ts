@@ -24,6 +24,7 @@ import { stopGotCutoverAutopilotLoop, stopAgentDailyLearningLoop } from './src/s
 import { stopBotAutoRecovery } from './src/services/runtime/botAutoRecoveryService';
 import { stopSprintScheduledTriggers } from './src/services/sprint/sprintTriggers';
 import { shutdownCrm } from './src/services/discord-support/userCrmService';
+import { stopDiscordChatSdkRuntime } from './src/discord/runtime/chatSdkRuntime';
 
 // Initialize monitoring (Sentry) if configured
 initMonitoring();
@@ -138,9 +139,12 @@ const shutdownServer = (signal: NodeJS.Signals) => {
   }
 
   // Flush async resources (CRM activity buffer) before closing
-  shutdownCrm().catch((err) => {
-    logger.warn('[PROCESS] shutdownCrm failed: %s', err instanceof Error ? err.message : String(err));
-  }).finally(() => {
+  Promise.allSettled([
+    shutdownCrm().catch((err) => {
+      logger.warn('[PROCESS] shutdownCrm failed: %s', err instanceof Error ? err.message : String(err));
+    }),
+    stopDiscordChatSdkRuntime(),
+  ]).finally(() => {
     closeHttpServer();
   });
 };

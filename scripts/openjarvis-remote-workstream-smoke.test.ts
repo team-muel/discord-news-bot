@@ -626,6 +626,25 @@ describe('openjarvis remote workstream smoke', () => {
     })).toBe('전체 코드 최적화 + 서비스 모듈 유지보수성 개선');
   });
 
+  it('prefers explicit queue or active objectives over stale dry-run executing session objectives', () => {
+    expect(resolveContinuityObjective({
+      sessionStatus: 'executing',
+      sessionObjective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+      packetObjective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+      queueObjective: 'Actualize Chat SDK Discord transport for slash 해줘 and 뮤엘 plus prefixed 뮤엘 surfaces',
+      activeObjective: '[M-24] 채널 ingress 추상화 + Chat SDK actual migration',
+      staleSessionObjective: true,
+    })).toBe('Actualize Chat SDK Discord transport for slash 해줘 and 뮤엘 plus prefixed 뮤엘 surfaces');
+
+    expect(resolveContinuityObjective({
+      sessionStatus: 'executing',
+      sessionObjective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+      packetObjective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+      activeObjective: '[M-24] 채널 ingress 추상화 + Chat SDK actual migration',
+      staleSessionObjective: true,
+    })).toBe('[M-24] 채널 ingress 추상화 + Chat SDK actual migration');
+  });
+
   it('does not keep stale packet-based GCP recovery active unless explicitly requested again', async () => {
     const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-openjarvis-packets-'));
     const executionDir = path.join(vaultPath, 'plans', 'execution');
@@ -879,6 +898,93 @@ gcp_capacity_recovery_requested: true
     expect(bundle.activation_pack.target_objective).toBe(status.autonomous_goal_candidates[0]?.objective);
   });
 
+  it('fills workflow objective from the explicit packet safe queue when the workstream objective is a stale dry-run execution', async () => {
+    const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-openjarvis-stale-dry-run-'));
+    const executionDir = path.join(vaultPath, 'plans', 'execution');
+    await fs.mkdir(executionDir, { recursive: true });
+
+    await fs.writeFile(path.join(executionDir, 'HERMES_AUTOPILOT_CONTINUITY_HANDOFF_PACKET.md'), `---
+objective: "코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상"
+---
+
+## Session Objective
+- 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
+
+## Safe Autonomous Queue For Hermes
+- Actualize Chat SDK Discord transport for slash 해줘 and 뮤엘 plus prefixed 뮤엘 surfaces
+`, 'utf8');
+
+    await fs.writeFile(path.join(executionDir, 'HERMES_AUTOPILOT_CONTINUITY_PROGRESS_PACKET.md'), `---
+objective: "코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상"
+automation_auto_restart_on_release: true
+---
+
+## Objective
+- 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
+
+## Next Action
+- restart the next bounded automation cycle from the active objective
+
+## Escalation Status
+- none
+
+## Owner And Mode
+- owner: hermes
+- mode: observing
+`, 'utf8');
+
+    const session = {
+      session_id: 'remote-session-stale-dry-run-objective',
+      workflow_name: 'openjarvis.unattended',
+      scope: 'interactive:goal',
+      stage: 'interactive',
+      status: 'executing',
+      started_at: '2026-04-15T00:00:00.000Z',
+      completed_at: null,
+      metadata: {
+        objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
+        route_mode: 'delivery',
+        runtime_lane: 'operator-personal',
+        auto_restart_on_release: true,
+        dry_run: true,
+      },
+      events: [],
+      steps: [],
+    };
+
+    try {
+      const status = await buildStatusPayload({
+        summary: {},
+        launch: {},
+        loopState: {
+          status: 'running',
+          auto_select_queued_objective: true,
+          auto_launch_queued_chat: true,
+        },
+        vaultPath,
+        capacityTarget: 90,
+        gcpCapacityRecoveryRequested: false,
+        runtimeLane: 'operator-personal',
+        workstreamState: {
+          ok: true,
+          source: 'supabase',
+          sessionPath: null,
+          session,
+        },
+      });
+
+      expect(status.resume_state).toMatchObject({
+        objective: 'Actualize Chat SDK Discord transport for slash 해줘 and 뮤엘 plus prefixed 뮤엘 surfaces',
+      });
+      expect(status.workflow.objective).toBe('Actualize Chat SDK Discord transport for slash 해줘 and 뮤엘 plus prefixed 뮤엘 surfaces');
+
+      const bundle = buildSessionOpenBundle({ status });
+      expect(bundle.objective).toBe('Actualize Chat SDK Discord transport for slash 해줘 and 뮤엘 plus prefixed 뮤엘 surfaces');
+    } finally {
+      await fs.rm(vaultPath, { recursive: true, force: true });
+    }
+  });
+
   it('merges packet safe queue objectives into live workstream resume state', async () => {
     const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'muel-openjarvis-safe-queue-'));
     const executionDir = path.join(vaultPath, 'plans', 'execution');
@@ -956,8 +1062,11 @@ automation_auto_restart_on_release: true
       ]));
       expect(status.autonomous_goal_candidates).toEqual(expect.arrayContaining([
         expect.objectContaining({
-          objective: '코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상',
-          source: 'execution-board-focus',
+          objective: 'document API-first and agent-fallback tool-layer optimization slice',
+          source: 'safe-queue',
+        }),
+        expect.objectContaining({
+          source: 'execution-board-queued',
         }),
       ]));
     } finally {

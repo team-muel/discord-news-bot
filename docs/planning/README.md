@@ -89,6 +89,10 @@
 - `AGENT_ORCHESTRATION_PRIOR_ART.md`: 향후 agent orchestration prior art와 외부 reference intake의 정본
 - `LOCAL_TOOL_ADAPTER_ARCHITECTURE.md`: 향후 로컬 외부 도구 통합 설계의 정본
 - `EXTERNAL_TOOL_INTEGRATION_PLAN.md`: NVIDIA OpenShell/NemoClaw/OpenClaw/Nemotron 실제 외부 도구 통합 계획
+- `MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md`: 사용자의 상위 비전, 로드맵 horizon, 설계 의도를 묶는 전략 정본
+- `MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md`: Muel을 super agent 제품으로 어떻게 포장할지에 대한 전략 정본
+- `OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md`: primary owner user에게 제공해야 하는 personalized orchestration cockpit의 전략 정본
+- `MUEL_IDOL_SERVICE_SPINE.md`: Muel을 단기 아이돌 IP이자 서비스 공통 얼굴로 다루는 전략 기준선
 - `.github/agents/*`, `.github/prompts/*`, `.github/instructions/*`: IDE 커스터마이징 입력면
 
 읽기 순서 규칙:
@@ -114,6 +118,10 @@
 - AGENT_ORCHESTRATION_PRIOR_ART.md
 - LOCAL_TOOL_ADAPTER_ARCHITECTURE.md
 - EXTERNAL_TOOL_INTEGRATION_PLAN.md
+- MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md
+- MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md
+- OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md
+- MUEL_IDOL_SERVICE_SPINE.md
 - OPENCODE_PUBLISH_WORKER_MIN_SPEC.md
 - MULTI_AGENT_OPERATING_STANDARD_V1.md
 - OPENJARVIS_TEST_DEPLOY_GATE_CHECKLIST.md
@@ -223,6 +231,10 @@ Archived documents: [docs/archive/README.md](../archive/README.md)
 - `LOCAL_FIRST_HYBRID_AUTONOMY.md`
 - `REMOTE_ONLY_AUTONOMY_IMPLEMENTATION.md`
 - `CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`
+- `MUEL_VISION_ROADMAP_AND_DESIGN_INTENT.md`
+- `MUEL_SUPER_AGENT_PRODUCT_PACKAGING.md`
+- `OWNER_PERSONALIZED_AGENT_ORCHESTRATION.md`
+- `MUEL_IDOL_SERVICE_SPINE.md`
 - `MEMORY_API_CONTRACT.md`
 - `MEMORY_QUEUE_POLICY_V1.md`
 - `AGENT_ARCH_EVAL_FRAMEWORK.md`

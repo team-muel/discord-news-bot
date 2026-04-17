@@ -1,20 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { generateText as generateChatSdkText } from 'ai';
-import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
-  LanguageModelV3GenerateResult,
-  LanguageModelV3Prompt,
-  LanguageModelV3StreamPart,
-  LanguageModelV3StreamResult,
-  LanguageModelV3Usage,
-} from '@ai-sdk/provider';
 import type { Channel } from 'discord.js';
 import { OPENCLAW_ENABLED } from '../../config';
 import logger from '../../logger';
-import { generateTextWithMeta, isAnyLlmConfigured, type LlmTextWithMetaResponse } from '../../services/llmClient';
+import { generateTextWithMeta, isAnyLlmConfigured } from '../../services/llmClient';
 import { atomicWriteFileSync } from '../../utils/atomicWrite';
 import { getErrorMessage } from '../../utils/errorMessage';
 import {
@@ -565,249 +555,6 @@ const getDiscordIngressMaxOutputTokens = (surface: DiscordIngressSurface): numbe
   return surface === 'docs-command' ? 800 : 600;
 };
 
-const stringifyChatSdkValue = (value: unknown): string => {
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return '[unserializable]';
-  }
-};
-
-const extractChatSdkPromptPartText = (part: unknown): string => {
-  if (!part || typeof part !== 'object' || typeof (part as { type?: unknown }).type !== 'string') {
-    return '';
-  }
-
-  const normalizedPart = part as { type: string; [key: string]: unknown };
-
-  switch (normalizedPart.type) {
-    case 'text':
-    case 'reasoning':
-      return String(normalizedPart.text || '').trim();
-    case 'file':
-      return [`[file`, String(normalizedPart.filename || '').trim(), String(normalizedPart.mediaType || '').trim(), ']']
-        .filter(Boolean)
-        .join(' ')
-        .replace(/\s+\]/g, ']')
-        .trim();
-    case 'tool-call':
-      return `tool-call ${String(normalizedPart.toolName || '').trim()}: ${stringifyChatSdkValue(normalizedPart.input)}`;
-    case 'tool-result': {
-      const output = normalizedPart.output as { type?: string; value?: unknown; reason?: string } | undefined;
-      if (!output) {
-        return '';
-      }
-      if (output.type === 'text') {
-        return `tool-result ${String(normalizedPart.toolName || '').trim()}: ${String(output.value || '').trim()}`;
-      }
-      if (output.type === 'json') {
-        return `tool-result ${String(normalizedPart.toolName || '').trim()}: ${stringifyChatSdkValue(output.value)}`;
-      }
-      return `tool-result ${String(normalizedPart.toolName || '').trim()}: ${String(output.reason || 'execution denied').trim()}`;
-    }
-    case 'tool-approval-response':
-      return `tool-approval ${normalizedPart.approved === true ? 'approved' : 'denied'}${normalizedPart.reason ? `: ${String(normalizedPart.reason).trim()}` : ''}`;
-    default:
-      return '';
-  }
-};
-
-const flattenChatSdkPrompt = (prompt: LanguageModelV3Prompt): {
-  systemPrompt: string;
-  userPrompt: string;
-} => {
-  const systemLines: string[] = [];
-  const conversationLines: string[] = [];
-
-  for (const message of prompt) {
-    if (message.role === 'system') {
-      const content = String(message.content || '').trim();
-      if (content) {
-        systemLines.push(content);
-      }
-      continue;
-    }
-
-    const content = message.content
-      .map((part) => extractChatSdkPromptPartText(part))
-      .filter(Boolean)
-      .join('\n')
-      .trim();
-
-    if (!content) {
-      continue;
-    }
-
-    conversationLines.push(message.role === 'user' ? content : `${message.role}: ${content}`);
-  }
-
-  return {
-    systemPrompt: systemLines.join('\n\n').trim(),
-    userPrompt: conversationLines.join('\n\n').trim(),
-  };
-};
-
-const estimateChatSdkTokenCount = (value: string): number => {
-  const normalized = String(value || '').trim();
-  if (!normalized) {
-    return 0;
-  }
-
-  return Math.max(1, Math.ceil(normalized.length / 4));
-};
-
-const buildChatSdkUsage = (inputText: string, outputText: string): LanguageModelV3Usage => {
-  const inputTokens = estimateChatSdkTokenCount(inputText);
-  const outputTokens = estimateChatSdkTokenCount(outputText);
-
-  return {
-    inputTokens: {
-      total: inputTokens,
-      noCache: inputTokens,
-      cacheRead: 0,
-      cacheWrite: 0,
-    },
-    outputTokens: {
-      total: outputTokens,
-      text: outputTokens,
-      reasoning: 0,
-    },
-  };
-};
-
-const buildChatSdkGenerateResult = (params: {
-  envelope: DiscordIngressEnvelope;
-  requestBody: Record<string, unknown>;
-  llmResponse: LlmTextWithMetaResponse;
-}): LanguageModelV3GenerateResult => {
-  const responseText = String(params.llmResponse.text || '').trim();
-  const resolvedModelId = String(params.llmResponse.model || '').trim() || 'discord-ingress-bridge';
-  const responseId = randomUUID();
-  const timestamp = new Date();
-
-  return {
-    content: responseText ? [{ type: 'text', text: responseText }] : [],
-    finishReason: {
-      unified: 'stop',
-      raw: 'stop',
-    },
-    usage: buildChatSdkUsage(
-      [String(params.requestBody.system || ''), String(params.requestBody.user || '')].filter(Boolean).join('\n\n'),
-      responseText,
-    ),
-    request: {
-      body: params.requestBody,
-    },
-    response: {
-      id: responseId,
-      timestamp,
-      modelId: resolvedModelId,
-      body: {
-        provider: params.llmResponse.provider,
-        model: params.llmResponse.model,
-        latencyMs: params.llmResponse.latencyMs,
-        estimatedCostUsd: params.llmResponse.estimatedCostUsd,
-        normalizedQualityScore: params.llmResponse.normalizedQualityScore,
-      },
-    },
-    warnings: [],
-  };
-};
-
-const buildChatSdkStream = (params: {
-  generated: LanguageModelV3GenerateResult;
-}): ReadableStream<LanguageModelV3StreamPart> => {
-  const generatedText = params.generated.content
-    .filter((item): item is Extract<LanguageModelV3GenerateResult['content'][number], { type: 'text' }> => item.type === 'text')
-    .map((item) => item.text)
-    .join('');
-
-  return new ReadableStream<LanguageModelV3StreamPart>({
-    start(controller) {
-      controller.enqueue({
-        type: 'stream-start',
-        warnings: params.generated.warnings,
-      });
-
-      if (params.generated.response) {
-        controller.enqueue({
-          type: 'response-metadata',
-          id: params.generated.response.id,
-          timestamp: params.generated.response.timestamp,
-          modelId: params.generated.response.modelId,
-        });
-      }
-
-      if (generatedText) {
-        const textId = 'text-0';
-        controller.enqueue({ type: 'text-start', id: textId });
-        controller.enqueue({ type: 'text-delta', id: textId, delta: generatedText });
-        controller.enqueue({ type: 'text-end', id: textId });
-      }
-
-      controller.enqueue({
-        type: 'finish',
-        usage: params.generated.usage,
-        finishReason: params.generated.finishReason,
-      });
-      controller.close();
-    },
-  });
-};
-
-const createDiscordChatSdkLanguageModel = (envelope: DiscordIngressEnvelope): LanguageModelV3 => {
-  const doGenerate: LanguageModelV3['doGenerate'] = async (options: LanguageModelV3CallOptions) => {
-    const flattenedPrompt = flattenChatSdkPrompt(options.prompt);
-    const requestBody = {
-      system: flattenedPrompt.systemPrompt,
-      user: flattenedPrompt.userPrompt,
-      maxTokens: options.maxOutputTokens,
-      temperature: options.temperature,
-      topP: options.topP,
-      actionName: `discord.${envelope.surface}`,
-      guildId: envelope.guildId,
-      requestedBy: envelope.userId,
-    } satisfies Record<string, unknown>;
-    const llmResponse = await generateTextWithMeta({
-      system: flattenedPrompt.systemPrompt,
-      user: flattenedPrompt.userPrompt,
-      maxTokens: options.maxOutputTokens,
-      temperature: options.temperature,
-      topP: options.topP,
-      actionName: `discord.${envelope.surface}`,
-      guildId: envelope.guildId || undefined,
-      requestedBy: envelope.userId,
-    });
-
-    return buildChatSdkGenerateResult({
-      envelope,
-      requestBody,
-      llmResponse,
-    });
-  };
-
-  const doStream: LanguageModelV3['doStream'] = async (options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> => {
-    const generated = await doGenerate(options);
-    return {
-      request: generated.request,
-      stream: buildChatSdkStream({ generated }),
-    };
-  };
-
-  return {
-    specificationVersion: 'v3',
-    provider: 'discord-chat-sdk',
-    modelId: 'discord-ingress-bridge',
-    supportedUrls: {},
-    doGenerate,
-    doStream,
-  };
-};
-
 export const chatSdkDiscordIngressAdapter: DiscordIngressAdapter = {
   id: 'chat-sdk',
   route: async (envelope) => {
@@ -815,12 +562,14 @@ export const chatSdkDiscordIngressAdapter: DiscordIngressAdapter = {
       return null;
     }
 
-    const response = await generateChatSdkText({
-      model: createDiscordChatSdkLanguageModel(envelope),
+    const response = await generateTextWithMeta({
       system: buildDiscordIngressSystemPrompt(),
-      prompt: buildDiscordIngressUserPrompt(envelope),
-      maxOutputTokens: getDiscordIngressMaxOutputTokens(envelope.surface),
+      user: buildDiscordIngressUserPrompt(envelope),
+      maxTokens: getDiscordIngressMaxOutputTokens(envelope.surface),
       temperature: 0.2,
+      actionName: `discord.${envelope.surface}`,
+      guildId: envelope.guildId || undefined,
+      requestedBy: envelope.userId,
     });
     const answer = normalizeDiscordRequest(response.text, 1_800);
     if (!answer) {
