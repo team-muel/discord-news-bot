@@ -8,9 +8,11 @@ describe('unifiedToolAdapter', () => {
     const names = tools.map((t) => t.name);
 
     // General tools
-    expect(names).toContain('stock.quote');
     expect(names).toContain('action.catalog');
     expect(names).toContain('diag.upstreams');
+    expect(names).not.toContain('stock.quote');
+    expect(names).not.toContain('stock.chart');
+    expect(names).not.toContain('investment.analysis');
 
     // Indexing tools
     expect(names).toContain('code.index.symbol_search');

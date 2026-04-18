@@ -18,7 +18,6 @@ import {
   retroSummarizeAction,
   sopUpdateAction,
 } from './agentCollab';
-import { investmentAnalysisAction } from './analysis';
 import { codeGenerateAction } from './code';
 import { communitySearchAction } from './community';
 import { dbSupabaseReadAction } from './db';
@@ -29,7 +28,6 @@ import { obsidianGuildDocUpsertAction } from './obsidian';
 import { opencodeExecuteAction } from './opencode';
 import { privacyForgetGuildAction, privacyForgetUserAction } from './privacy';
 import { ragRetrieveAction } from './rag';
-import { stockChartAction, stockQuoteAction } from './stock';
 import { n8nStatusAction, n8nWorkflowListAction, n8nWorkflowExecuteAction, n8nWorkflowTriggerAction, n8nDelegateNewsRssAction, n8nDelegateNewsSummarizeAction, n8nDelegateNewsMonitorAction, n8nDelegateYoutubeFeedAction, n8nDelegateYoutubeScrapAction, n8nDelegateAlertAction, n8nDelegateArticleContextAction } from './n8n';
 import { toolsRunCliAction } from './tools';
 import { EXECUTOR_ACTION_LEGACY_NAME, type ActionDefinition, type ActionCategory } from './types';
@@ -118,8 +116,8 @@ const registerBuiltins = (): void => {
   // Code / content / data
   registerActions(
     codeGenerateAction, youtubeSearchWebhookAction, youtubeSearchFirstAction,
-    stockChartAction, stockQuoteAction, ragRetrieveAction,
-    privacyForgetUserAction, privacyForgetGuildAction, investmentAnalysisAction,
+    ragRetrieveAction,
+    privacyForgetUserAction, privacyForgetGuildAction,
     newsGoogleSearchAction, newsVerifyAction, opencodeExecuteAction,
   );
   registerAlias(EXECUTOR_ACTION_LEGACY_NAME, 'Legacy alias for canonical implement.execute executor action.', opencodeExecuteAction);

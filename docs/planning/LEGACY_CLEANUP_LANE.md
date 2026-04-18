@@ -3,7 +3,7 @@
 Status note:
 
 - Inventory-lock lane only. This document does not authorize deletion by itself.
-- Current lane state: Remove-Now = none, Rollback-Only = one Discord exact unit, Keep-For-Now = all remaining scoped units. Mass delete remains closed.
+- Current lane state: Remove-Now = none, Rollback-Only = two Discord exact units, Keep-For-Now = all remaining scoped units. Mass delete remains closed.
 - This lane is downstream of the Chat SDK live cutover lane, provider cleanup lane, naming canonicalization lane, control-plane canonicalization lane, and deterministic task extraction lane.
 
 ## Objective
@@ -30,7 +30,7 @@ Lock the remaining legacy cleanup inventory and the exact remove conditions for 
 
 | Scope | Predecessor lane that must close first | Current decision | Why deletion stays closed |
 | --- | --- | --- | --- |
-| Discord legacy path | M-24 cutover default-on plus grace-close | Exact-unit Rollback-Only + Keep-For-Now remainder | Live cutover evidence is now closed only for the `docs.ask` post-ingress fallback exact unit. Whole files and all remaining Discord units stay locked until their own exact rollback evidence closes. |
+| Discord legacy path | M-24 cutover default-on plus grace-close | Exact-unit Rollback-Only + Keep-For-Now remainder | Live cutover evidence is now closed for the `docs.ask` post-ingress fallback exact unit and the prefixed `muel-message` post-ingress fallback exact unit. Whole files and all remaining Discord units stay locked until their own exact rollback evidence closes. |
 | Provider alias sprawl | Provider cleanup and canonical env/profile lane | Keep-For-Now | Runtime routing, provider config, and env validation still accept alias names and alias env keys as live compatibility behavior. |
 | Naming compatibility residue | Canonical role/action/output lane | Keep-For-Now | Legacy role names, action aliases, worker kinds, and env fallbacks are still accepted at input boundaries and operator surfaces. |
 | Control-plane compatibility glue | Canonical shared-MCP/bootstrap lane | Keep-For-Now | Legacy shared-MCP alias ingress, legacy env keys, and baseline compatibility fields are still published or read by active bootstrap and diagnostics surfaces. |
@@ -39,7 +39,7 @@ Lock the remaining legacy cleanup inventory and the exact remove conditions for 
 Global snapshot for this lane today:
 
 - Remove-Now: none
-- Rollback-Only: `src/discord/commands/docs.ts` post-ingress legacy fallback branch inside `handleDocsAskRequest()` for `docs.ask`
+- Rollback-Only: `src/discord/commands/docs.ts` post-ingress legacy fallback branch inside `handleDocsAskRequest()` for `docs.ask`; `src/discord/commands/vibe.ts` prefixed `muel-message` post-ingress fallback continuation after the Chat SDK/ingress attempt declines
 - Keep-For-Now: all remaining scoped units
 
 ## Scope A - Discord Legacy Path
@@ -56,16 +56,17 @@ Inventory anchors:
 Current classification:
 
 - Remove-Now: none
-- Rollback-Only: the post-ingress legacy fallback branch inside `src/discord/commands/docs.ts` `handleDocsAskRequest()` for `/뮤엘` and `/해줘`; the replacement request path is now the live ingress seam and the old branch remains only as explicit rollback/grace behavior.
-- Keep-For-Now: all remaining rows already locked in `DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, including the rest of `docs.ts`, all of `vibe.ts`, all of `session.ts`, and the remaining non-eligible portions of `commandRouter.ts`. The prefixed `뮤엘 ...` fallback now has refreshed production selected-path parity (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) plus fresh local-process rollback rehearsal evidence for both eligible surfaces (`2026-04-18_chat-sdk-cutover-20260418-095009.*`), but it stays here until the deployed live control plane records its own production rollback artifact.
+- Rollback-Only: the post-ingress legacy fallback branch inside `src/discord/commands/docs.ts` `handleDocsAskRequest()` for `/뮤엘` and `/해줘`; and the prefixed `muel-message` post-ingress fallback continuation inside `src/discord/commands/vibe.ts` `handleVibeMessage()` after the Chat SDK/ingress attempt declines. The replacement request path is now the live ingress seam and the old branches remain only as explicit rollback/grace behavior.
+- Keep-For-Now: all remaining rows already locked in `DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, including the rest of `docs.ts`, the remaining active units in `vibe.ts`, all of `session.ts`, and the remaining non-eligible portions of `commandRouter.ts`.
 
-Exact predecessor evidence closed for the rollback-only unit:
+Exact predecessor evidence closed for the rollback-only units:
 
 - `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-142211.json` closed the first production window with `docs-command` in `default-on`, live selected-path parity, runtime fallback observation, and rollback pass.
 - `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-144035.json` repeated the same production verdict, confirming that the `docs.ask` fallback is explicit grace behavior rather than missing-owner drift.
 - `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-161707.json` later changed the preferred adapter owner again while keeping `docs.ask` on the same ingress boundary, which confirms that the replacement boundary is the ingress seam rather than one adapter brand.
-- `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-212611.json` refreshed the current `chat-sdk` canary parity for both eligible surfaces, but it did not open the prefixed-message rollback-only gate because the currently deployed internal exercise route still reported only one forced-fallback rollback observation.
-- `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-095009.json` confirmed that the current local-process control plane now records forced-fallback rollback observations for both eligible surfaces at rollout 100, but it still does not open the prefixed-message rollback-only gate because the deployed internal exercise route has not yet emitted the same production artifact.
+- `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-212611.json` refreshed the current `chat-sdk` canary parity for both eligible surfaces and kept the prefixed exact unit one artifact away from rollback-only.
+- `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-095009.json` confirmed that the current local-process control plane records forced-fallback rollback observations for both eligible surfaces at rollout 100, which narrowed the remaining gap to the deployed internal control plane only.
+- `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-124225.json` closed the deployed internal control-plane window at rollout 100 with live selected-path parity plus forced-fallback rollback observations for both eligible surfaces, which opens the prefixed `muel-message` fallback exact unit for rollback-only classification.
 
 Delete gate opens only when all of the following are true:
 

@@ -58,7 +58,17 @@ export function verifyCsrfToken(token: string, userId: string): boolean {
   const sig = token.slice(dotIdx + 1);
   if (!nonce || !sig) return false;
   const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${nonce}:${userId}`).digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
+  if (!/^[0-9a-f]+$/i.test(sig) || sig.length !== expected.length) {
+    return false;
+  }
+
+  const received = Buffer.from(sig, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  if (received.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(received, expectedBuffer);
 }
 
 export function getCsrfCookieOptions() {

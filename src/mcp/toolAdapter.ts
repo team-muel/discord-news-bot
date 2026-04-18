@@ -65,42 +65,6 @@ const parseAutomationPlanningArgs = (args: Record<string, unknown>) => ({
 
 const MCP_TOOLS: McpToolSpec[] = [
   {
-    name: 'stock.quote',
-    description: '티커 심볼의 시세를 조회합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        symbol: { type: 'string', description: '예: AAPL, TSLA' },
-      },
-      required: ['symbol'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'stock.chart',
-    description: '티커 심볼의 차트 URL을 반환합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        symbol: { type: 'string', description: '예: AAPL, TSLA' },
-      },
-      required: ['symbol'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'investment.analysis',
-    description: '질의 텍스트 기반 투자 분석을 생성합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: '분석 요청 텍스트' },
-      },
-      required: ['query'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'action.catalog',
     description: '현재 등록된 액션 이름 목록을 반환합니다.',
     inputSchema: {
@@ -401,62 +365,6 @@ export const listMcpTools = (): McpToolSpec[] => MCP_TOOLS.map((tool) => ({ ...t
 
 export const callMcpTool = async (request: McpToolCallRequest): Promise<McpToolCallResult> => {
   const args = toObject(request.arguments);
-
-  if (request.name === 'stock.quote') {
-    const symbol = compact(args.symbol).toUpperCase();
-    if (!symbol) {
-      return toTextResult('symbol is required', true);
-    }
-
-    const result = await runGoalPipeline({
-      goal: `stock.quote ${symbol}`,
-      guildId: MCP_GUILD_ID,
-      requestedBy: MCP_REQUESTER,
-      runtimeLane: MCP_RUNTIME_LANE,
-    });
-
-    if (!result.hasSuccess) {
-      return toTextResult(`quote not available for ${symbol}`, true);
-    }
-
-    return toTextResult(result.output);
-  }
-
-  if (request.name === 'stock.chart') {
-    const symbol = compact(args.symbol).toUpperCase();
-    if (!symbol) {
-      return toTextResult('symbol is required', true);
-    }
-
-    const result = await runGoalPipeline({
-      goal: `stock.chart ${symbol}`,
-      guildId: MCP_GUILD_ID,
-      requestedBy: MCP_REQUESTER,
-      runtimeLane: MCP_RUNTIME_LANE,
-    });
-
-    if (!result.hasSuccess) {
-      return toTextResult(`chart not available for ${symbol}`, true);
-    }
-
-    return toTextResult(result.output);
-  }
-
-  if (request.name === 'investment.analysis') {
-    const query = compact(args.query);
-    if (!query) {
-      return toTextResult('query is required', true);
-    }
-
-    const result = await runGoalPipeline({
-      goal: `investment.analysis ${query}`,
-      guildId: MCP_GUILD_ID,
-      requestedBy: MCP_REQUESTER,
-      runtimeLane: MCP_RUNTIME_LANE,
-    });
-
-    return toTextResult(result.output || 'empty analysis', !result.hasSuccess);
-  }
 
   if (request.name === 'action.catalog') {
     const names = listActions().map((action) => action.name);

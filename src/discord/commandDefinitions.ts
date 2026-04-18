@@ -25,7 +25,7 @@ const createAskSlashCommand = (name: string, description: string) => new SlashCo
   .setDescription(description)
   .setDMPermission(false)
   .addStringOption((o) =>
-    o.setName('질문').setDescription('예: 트레이딩 전략이 어떻게 구성되어 있나요?').setRequired(true),
+    o.setName('질문').setDescription('예: 이 서버 자동화 흐름이 어떻게 구성되어 있나요?').setRequired(true),
   )
   .addStringOption((o) =>
     o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
@@ -66,39 +66,6 @@ const ALL_COMMANDS = [
   new SlashCommandBuilder()
     .setName(DISCORD_CHAT_COMMAND_NAMES.HELP)
     .setDescription('사용 가능한 명령어를 한눈에 안내합니다'),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.STOCK_PRICE)
-    .setDescription('주식 현재 가격을 조회합니다')
-    .addStringOption((o) =>
-      o.setName('symbol').setDescription('예: AAPL, TSLA, MSFT').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('응답방식').setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.STOCK_CHART)
-    .setDescription('주식 30일 차트를 조회합니다')
-    .addStringOption((o) =>
-      o.setName('symbol').setDescription('예: AAPL, TSLA, MSFT').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('응답방식').setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.ANALYZE)
-    .setDescription('AI 투자 관점 분석')
-    .addStringOption((o) =>
-      o.setName('query').setDescription('기업/종목/테마 입력').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('응답방식').setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
   new SlashCommandBuilder()
     .setName(DISCORD_CHAT_COMMAND_NAMES.SUBSCRIBE)
     .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다 (현재 채널에 등록)')

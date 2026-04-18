@@ -8,7 +8,16 @@ import {
 import logger from '../logger';
 import { buildAgentMemoryHints } from './agent/agentMemoryService';
 import { resolveAgentPersonalizationSnapshot } from './agent/agentPersonalizationService';
-import { getAgentPolicySnapshot, validateAgentSessionRequest } from './agent/agentPolicyService';
+import {
+  canResolveAgentPolicyForGuild,
+  getAgentPolicyLoadingMessage,
+  getAgentPolicySnapshot,
+  validateAgentSessionRequest,
+} from './agent/agentPolicyService';
+import {
+  canResolveWorkflowStepTemplates,
+  getWorkflowProfileLoadingMessage,
+} from './agent/agentWorkflowService';
 import { persistAgentSession } from './agent/agentSessionStore';
 import { bindSessionAssistantTurn, bindSessionUserTurn } from './conversationTurnService';
 import { getGateProviderProfileOverride, isAnyLlmConfigured } from './llmClient';
@@ -996,7 +1005,12 @@ const scheduleQueueDrain = () => {
     maxAttempts: AGENT_SESSION_MAX_ATTEMPTS,
     maxDeadletters: AGENT_DEADLETTER_MAX,
     nowIso,
-    getMaxConcurrent: () => Math.max(1, getAgentPolicySnapshot().maxConcurrentSessions),
+    getMaxConcurrent: (session) => {
+      if (!canResolveAgentPolicyForGuild(session.guildId)) {
+        return null;
+      }
+      return Math.max(1, getAgentPolicySnapshot(session.guildId).maxConcurrentSessions);
+    },
     getSession: (sessionId) => sessions.get(sessionId),
     executeSession,
     markCancelled: (session) => {
@@ -1043,9 +1057,17 @@ export const startAgentSession = (params: {
     throw new Error(`대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요. (max=${AGENT_MAX_QUEUE_SIZE})`);
   }
 
+  if (!canResolveAgentPolicyForGuild(params.guildId)) {
+    throw new Error(getAgentPolicyLoadingMessage());
+  }
+
+  if (!canResolveWorkflowStepTemplates({ guildId: params.guildId, priority })) {
+    throw new Error(getWorkflowProfileLoadingMessage());
+  }
+
   const policy = validateAgentSessionRequest({
     guildId: params.guildId,
-    runningSessions: queueRuntime.getRunningCount(),
+    runningSessions: queueRuntime.getRunningCount(params.guildId),
     goal: params.goal,
     requestedSkillId,
     isAdmin: params.isAdmin === true,

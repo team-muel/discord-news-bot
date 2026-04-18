@@ -8,6 +8,58 @@ import { stripFrontmatterBlock } from './obsidianMetadataUtils';
 import { parseObsidianFrontmatter } from './obsidianCacheService';
 import { doc } from './obsidianDocBuilder';
 import {
+  addCandidateRoot,
+  BLUEPRINT_PATH,
+  buildEntityArtifactPath,
+  buildKnowledgePathIndex,
+  buildTopicArtifactPath,
+  CADENCE_PATH,
+  CANONICAL_MAP_PATH,
+  CONTROL_TOWER_DIR,
+  CONTROL_TOWER_PATHS,
+  describeKnowledgePath,
+  ENTITY_DIR,
+  extractGuildIdFromPath,
+  extractServiceSlugFromPath,
+  GATE_ENTRYPOINTS_PATH,
+  GENERATED_ROOT,
+  getPathParent,
+  GUILD_TRACKED_ROOT_SUFFIXES,
+  INDEX_PATH,
+  isGeneratedArtifactPath,
+  isRawPath,
+  isTrackedPath,
+  KNOWLEDGE_REFLECTION_RULE_PATH,
+  LINT_PATH,
+  LOG_PATH,
+  matchesPathPrefix,
+  normalizeCatalogPath,
+  normalizePath,
+  QUALITY_METRICS_BASELINE_PATH,
+  QUALITY_RUBRIC_PATH,
+  resolveKnowledgeArtifactPath,
+  slugify,
+  stripKnownSourcePrefix,
+  SUPERVISOR_PATH,
+  TOPIC_DIR,
+  TRACKED_ROOTS,
+  VISIBLE_REFLECTION_CORRECTION_PATH,
+  VISIBLE_REFLECTION_GATE_PATH,
+} from './obsidianPathUtils';
+import {
+  buildKnowledgeAccessProfile,
+  buildKnowledgeCatalogCoverageAsync,
+  catalogEntryMatchesChangedPath,
+  cloneCatalogEntry,
+  cloneCatalogPolicy,
+  dedupeCatalogEntries,
+  isCompatibilityStubCatalogEntry,
+  loadKnowledgeBackfillCatalog,
+  resolveCatalogVaultPath,
+  selectKnowledgeBundleEntries,
+  targetVisibleInSharedVault,
+} from './obsidianCatalogService';
+import {
   getObsidianAdapterRuntimeStatus,
   listObsidianFilesWithAdapter,
   readObsidianFileWithAdapter,
@@ -21,48 +73,9 @@ import { getObsidianVaultRuntimeInfo } from '../../utils/obsidianEnv';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../../');
 
-const GENERATED_ROOT = 'ops/knowledge-control';
-const INDEX_PATH = `${GENERATED_ROOT}/INDEX.md`;
-const LOG_PATH = `${GENERATED_ROOT}/LOG.md`;
-const LINT_PATH = `${GENERATED_ROOT}/LINT.md`;
-const SUPERVISOR_PATH = `${GENERATED_ROOT}/SUPERVISOR.md`;
-const TOPIC_DIR = `${GENERATED_ROOT}/topics`;
-const ENTITY_DIR = `${GENERATED_ROOT}/entities`;
-const CONTROL_TOWER_DIR = 'ops/control-tower';
-const BLUEPRINT_PATH = `${CONTROL_TOWER_DIR}/BLUEPRINT.md`;
-const CANONICAL_MAP_PATH = `${CONTROL_TOWER_DIR}/CANONICAL_MAP.md`;
-const CADENCE_PATH = `${CONTROL_TOWER_DIR}/CADENCE.md`;
-const GATE_ENTRYPOINTS_PATH = `${CONTROL_TOWER_DIR}/GATE_ENTRYPOINTS.md`;
-const CONTROL_TOWER_PATHS = [BLUEPRINT_PATH, CANONICAL_MAP_PATH, CADENCE_PATH, GATE_ENTRYPOINTS_PATH] as const;
-const QUALITY_RUBRIC_PATH = 'ops/quality/RUBRIC.md';
-const QUALITY_METRICS_BASELINE_PATH = 'ops/quality/METRICS_BASELINE.md';
-const VISIBLE_REFLECTION_GATE_PATH = 'ops/quality/gates/2026-04-10_visible-reflection-gate.md';
-const VISIBLE_REFLECTION_CORRECTION_PATH = 'ops/improvement/corrections/2026-04-10_visible-reflection-definition.md';
-const KNOWLEDGE_REFLECTION_RULE_PATH = 'ops/improvement/rules/knowledge-reflection-pipeline.md';
 const SEMANTIC_LINT_NEGATIVE_KNOWLEDGE_ROOT = 'ops/improvement/negative-knowledge/semantic-lint';
 const SEMANTIC_LINT_CURRENT_PATH = `${SEMANTIC_LINT_NEGATIVE_KNOWLEDGE_ROOT}/CURRENT.md`;
-const KNOWLEDGE_BACKFILL_CATALOG_PATH = path.resolve(__dirname, '../../../config/runtime/knowledge-backfill-catalog.json');
 
-const TRACKED_ROOTS = ['chat/answers', 'consolidated', 'retros', 'memory'];
-const DURABLE_SHARED_ROOTS = [
-  'plans/decisions',
-  'plans/development',
-  'plans/execution',
-  'plans/requirements',
-  'ops/control-tower',
-  'ops/quality',
-  'ops/services',
-  'ops/playbooks',
-  'ops/contracts',
-  'ops/incidents',
-  'ops/vulnerabilities',
-  'ops/improvement',
-  'ops/contexts',
-  'ops/postmortems',
-  'ops/mitigations',
-];
-const GUILD_TRACKED_ROOT_SUFFIXES = ['chat/answers', 'memory', 'retros', 'sprint-journal', 'customer', 'events'];
-const GUILD_CORE_FILE_NAMES = ['Guild_Lore.md', 'Server_History.md', 'Decision_Log.md'];
 const SYSTEM_TAGS = new Set([
   'answer',
   'auto-generated',
@@ -511,19 +524,6 @@ const CONTROL_TOWER_BLUEPRINT: ObsidianKnowledgeControlBlueprint = {
   ],
 };
 
-const DEFAULT_KNOWLEDGE_CATALOG_POLICY: ObsidianKnowledgeCatalogPolicy = {
-  humanFirst: true,
-  rules: [
-    'Start with operator-primary canonical docs before generated knowledge-control artifacts.',
-    'Treat generated ops/knowledge-control pages as navigation aids and evidence support, not as the first semantic source.',
-    'When runtime, planning, or incident meaning conflicts, prefer control-tower docs and the operating baseline before convenience summaries.',
-  ],
-  avoidAsPrimary: [INDEX_PATH, LOG_PATH, LINT_PATH],
-};
-
-let cachedKnowledgeCatalogMtimeMs = -1;
-let cachedKnowledgeCatalog: ObsidianKnowledgeCatalogDocument | null = null;
-
 const cloneLintSummary = (value: ObsidianKnowledgeLintSummary | null): ObsidianKnowledgeLintSummary | null => {
   if (!value) {
     return null;
@@ -549,59 +549,6 @@ const cloneBlueprint = (value: ObsidianKnowledgeControlBlueprint): ObsidianKnowl
   })),
 });
 
-const cloneCatalogPolicy = (value: ObsidianKnowledgeCatalogPolicy): ObsidianKnowledgeCatalogPolicy => ({
-  humanFirst: Boolean(value.humanFirst),
-  rules: [...value.rules],
-  avoidAsPrimary: [...value.avoidAsPrimary],
-});
-
-const cloneCatalogEntry = (value: ObsidianKnowledgeCatalogEntry): ObsidianKnowledgeCatalogEntry => ({
-  ...value,
-  tags: [...value.tags],
-  queries: [...value.queries],
-});
-
-const normalizePath = (value: string): string => String(value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
-
-const matchesPathPrefix = (candidate: string, root: string): boolean => {
-  const normalizedCandidate = normalizePath(candidate).toLowerCase();
-  const normalizedRoot = normalizePath(root).toLowerCase();
-  if (!normalizedCandidate || !normalizedRoot) {
-    return false;
-  }
-  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`);
-};
-
-const getPathParent = (value: string, levels = 1): string => {
-  const segments = normalizePath(value).split('/').filter(Boolean);
-  if (segments.length <= levels) {
-    return '';
-  }
-  return segments.slice(0, segments.length - levels).join('/');
-};
-
-const addCandidateRoot = (roots: Set<string>, value: string | null | undefined): void => {
-  const normalized = normalizePath(String(value || '')).replace(/\.md$/i, '');
-  if (!normalized) {
-    return;
-  }
-  roots.add(normalized);
-};
-
-const normalizeCatalogPath = (value: unknown): string => normalizePath(String(value || ''));
-
-const normalizeCatalogAudience = (value: unknown): ObsidianKnowledgeCatalogAudience => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'operator-primary' || normalized === 'agent-support') {
-    return normalized;
-  }
-  return 'shared';
-};
-
-const isCompatibilityStubCatalogEntry = (entry: ObsidianKnowledgeCatalogEntry): boolean => {
-  return entry.sourceMode === 'compatibility-stub';
-};
-
 const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -616,262 +563,12 @@ const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
   return result;
 };
 
-const normalizeKnowledgeCatalogEntry = (value: unknown): ObsidianKnowledgeCatalogEntry | null => {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const entry = value as Record<string, unknown>;
-  const id = String(entry.id || '').trim();
-  const title = String(entry.title || '').trim();
-  const sourcePath = normalizeCatalogPath(entry.sourcePath);
-  const targetPath = normalizeCatalogPath(entry.targetPath);
-  if (!id || !title || !sourcePath || !targetPath) {
-    return null;
-  }
-
-  return {
-    id,
-    title,
-    sourcePath,
-    targetPath,
-    sourceMode: entry.sourceMode === 'compatibility-stub' ? 'compatibility-stub' : 'full-source',
-    sectionHeading: String(entry.sectionHeading || '').trim() || undefined,
-    tags: dedupeStrings(Array.isArray(entry.tags) ? entry.tags.map((item) => String(item || '').trim()) : []),
-    plane: String(entry.plane || '').trim() || 'record',
-    concern: String(entry.concern || '').trim() || 'general-record',
-    intent: String(entry.intent || '').trim() || 'memory',
-    audience: normalizeCatalogAudience(entry.audience),
-    canonical: Boolean(entry.canonical),
-    startHere: Boolean(entry.startHere),
-    agentReference: entry.agentReference !== false,
-    queries: dedupeStrings(Array.isArray(entry.queries) ? entry.queries.map((item) => String(item || '').trim()) : []),
-  };
-};
-
-const normalizeKnowledgeCatalogPolicy = (value: unknown): ObsidianKnowledgeCatalogPolicy => {
-  if (!value || typeof value !== 'object') {
-    return cloneCatalogPolicy(DEFAULT_KNOWLEDGE_CATALOG_POLICY);
-  }
-
-  const policy = value as Record<string, unknown>;
-  return {
-    humanFirst: policy.humanFirst !== false,
-    rules: dedupeStrings(Array.isArray(policy.rules) ? policy.rules.map((item) => String(item || '').trim()) : DEFAULT_KNOWLEDGE_CATALOG_POLICY.rules),
-    avoidAsPrimary: dedupeStrings(Array.isArray(policy.avoidAsPrimary) ? policy.avoidAsPrimary.map((item) => normalizeCatalogPath(item)) : DEFAULT_KNOWLEDGE_CATALOG_POLICY.avoidAsPrimary),
-  };
-};
-
-const loadKnowledgeBackfillCatalog = (): ObsidianKnowledgeCatalogDocument => {
-  try {
-    const stat = fs.statSync(KNOWLEDGE_BACKFILL_CATALOG_PATH);
-    if (cachedKnowledgeCatalog && stat.mtimeMs === cachedKnowledgeCatalogMtimeMs) {
-      return cachedKnowledgeCatalog;
-    }
-
-    const raw = fs.readFileSync(KNOWLEDGE_BACKFILL_CATALOG_PATH, 'utf8');
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const entries = Array.isArray(parsed.entries)
-      ? parsed.entries
-        .map((item) => normalizeKnowledgeCatalogEntry(item))
-        .filter((item): item is ObsidianKnowledgeCatalogEntry => Boolean(item))
-      : [];
-
-    cachedKnowledgeCatalog = {
-      schemaVersion: Number(parsed.schemaVersion || 1) || 1,
-      updatedAt: String(parsed.updatedAt || '').trim() || '',
-      description: String(parsed.description || '').trim() || '',
-      policy: normalizeKnowledgeCatalogPolicy(parsed.policy),
-      entries,
-    };
-    cachedKnowledgeCatalogMtimeMs = stat.mtimeMs;
-    return cachedKnowledgeCatalog;
-  } catch {
-    return {
-      schemaVersion: 1,
-      updatedAt: '',
-      description: '',
-      policy: cloneCatalogPolicy(DEFAULT_KNOWLEDGE_CATALOG_POLICY),
-      entries: [],
-    };
-  }
-};
-
-const resolveCatalogVaultPath = (vaultRoot: string, targetPath: string): string => {
-  const normalized = normalizeCatalogPath(targetPath).replace(/\.md$/i, '');
-  const segments = normalized.split('/').map((segment) => String(segment || '').trim()).filter(Boolean);
-  return path.join(path.resolve(vaultRoot), ...segments) + '.md';
-};
-
-const resolveCatalogVaultRelativePath = (targetPath: string): string => {
-  const normalized = normalizeCatalogPath(targetPath).replace(/^\/+/, '');
-  return normalized.toLowerCase().endsWith('.md') ? normalized : `${normalized}.md`;
-};
-
-const targetVisibleInSharedVault = async (vaultRoot: string, targetPath: string): Promise<boolean> => {
-  if (!vaultRoot) {
-    return false;
-  }
-
-  if (fs.existsSync(resolveCatalogVaultPath(vaultRoot, targetPath))) {
-    return true;
-  }
-
-  const content = await readObsidianFileWithAdapter({
-    vaultPath: vaultRoot,
-    filePath: resolveCatalogVaultRelativePath(targetPath),
-  });
-  return content !== null;
-};
-
-const buildKnowledgeCatalogCoverage = (
-  entries: ObsidianKnowledgeCatalogEntry[],
-): ObsidianKnowledgeCatalogCoverage => {
-  const vaultRuntime = getObsidianVaultRuntimeInfo();
-  const vaultAvailable = Boolean(vaultRuntime.configured && vaultRuntime.exists && vaultRuntime.root);
-  const missingTargetPaths: string[] = [];
-  const operatorPrimaryMissingPaths: string[] = [];
-  const startHereMissingPaths: string[] = [];
-  let presentEntries = 0;
-  let operatorPrimaryEntries = 0;
-  let operatorPrimaryPresent = 0;
-  let startHereEntries = 0;
-  let startHerePresent = 0;
-
-  for (const entry of entries) {
-    const exists = vaultAvailable && fs.existsSync(resolveCatalogVaultPath(vaultRuntime.root, entry.targetPath));
-    if (exists) {
-      presentEntries += 1;
-    } else {
-      missingTargetPaths.push(entry.targetPath);
-    }
-
-    if (entry.audience === 'operator-primary') {
-      operatorPrimaryEntries += 1;
-      if (exists) {
-        operatorPrimaryPresent += 1;
-      } else {
-        operatorPrimaryMissingPaths.push(entry.targetPath);
-      }
-    }
-
-    if (entry.startHere) {
-      startHereEntries += 1;
-      if (exists) {
-        startHerePresent += 1;
-      } else {
-        startHereMissingPaths.push(entry.targetPath);
-      }
-    }
-  }
-
-  return {
-    vaultConfigured: vaultAvailable,
-    vaultRoot: vaultRuntime.root,
-    totalEntries: entries.length,
-    presentEntries,
-    missingEntries: entries.length - presentEntries,
-    operatorPrimaryEntries,
-    operatorPrimaryPresent,
-    operatorPrimaryMissing: operatorPrimaryEntries - operatorPrimaryPresent,
-    startHereEntries,
-    startHerePresent,
-    startHereMissing: startHereEntries - startHerePresent,
-    missingTargetPaths,
-    operatorPrimaryMissingPaths,
-    startHereMissingPaths,
-  };
-};
-
-const buildKnowledgeCatalogCoverageAsync = async (
-  entries: ObsidianKnowledgeCatalogEntry[],
-): Promise<ObsidianKnowledgeCatalogCoverage> => {
-  const vaultRuntime = getObsidianVaultRuntimeInfo();
-  const vaultAvailable = Boolean(vaultRuntime.configured && vaultRuntime.exists && vaultRuntime.root);
-  const missingTargetPaths: string[] = [];
-  const operatorPrimaryMissingPaths: string[] = [];
-  const startHereMissingPaths: string[] = [];
-  let presentEntries = 0;
-  let operatorPrimaryEntries = 0;
-  let operatorPrimaryPresent = 0;
-  let startHereEntries = 0;
-  let startHerePresent = 0;
-
-  for (const entry of entries) {
-    const exists = vaultAvailable && await targetVisibleInSharedVault(vaultRuntime.root, entry.targetPath);
-    if (exists) {
-      presentEntries += 1;
-    } else {
-      missingTargetPaths.push(entry.targetPath);
-    }
-
-    if (entry.audience === 'operator-primary') {
-      operatorPrimaryEntries += 1;
-      if (exists) {
-        operatorPrimaryPresent += 1;
-      } else {
-        operatorPrimaryMissingPaths.push(entry.targetPath);
-      }
-    }
-
-    if (entry.startHere) {
-      startHereEntries += 1;
-      if (exists) {
-        startHerePresent += 1;
-      } else {
-        startHereMissingPaths.push(entry.targetPath);
-      }
-    }
-  }
-
-  return {
-    vaultConfigured: vaultAvailable,
-    vaultRoot: vaultRuntime.root,
-    totalEntries: entries.length,
-    presentEntries,
-    missingEntries: entries.length - presentEntries,
-    operatorPrimaryEntries,
-    operatorPrimaryPresent,
-    operatorPrimaryMissing: operatorPrimaryEntries - operatorPrimaryPresent,
-    startHereEntries,
-    startHerePresent,
-    startHereMissing: startHereEntries - startHerePresent,
-    missingTargetPaths,
-    operatorPrimaryMissingPaths,
-    startHereMissingPaths,
-  };
-};
-
-const buildKnowledgeAccessProfile = (
-  catalog: ObsidianKnowledgeCatalogDocument,
-): ObsidianKnowledgeAccessProfile => {
-  const entries = catalog.entries.map(cloneCatalogEntry);
-  return {
-    humanFirst: catalog.policy.humanFirst,
-    rules: [...catalog.policy.rules],
-    avoidAsPrimary: [...catalog.policy.avoidAsPrimary],
-    startHerePaths: dedupeStrings(entries.filter((entry) => entry.startHere).map((entry) => entry.targetPath)),
-    operatorPrimaryPaths: dedupeStrings(entries.filter((entry) => entry.audience === 'operator-primary').map((entry) => entry.targetPath)),
-    agentReferencePaths: dedupeStrings(entries.filter((entry) => entry.agentReference).map((entry) => entry.targetPath)),
-    canonicalPaths: dedupeStrings(entries.filter((entry) => entry.canonical).map((entry) => entry.targetPath)),
-    coverage: buildKnowledgeCatalogCoverage(entries),
-  };
-};
-
 const clampInt = (value: unknown, fallback: number, min: number, max: number): number => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
     return fallback;
   }
   return Math.max(min, Math.min(max, Math.trunc(numeric)));
-};
-
-const tokenizeGoal = (value: string): string[] => {
-  return [...new Set(String(value || '')
-    .toLowerCase()
-    .split(/[^a-z0-9_-]+/i)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 3))];
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -958,8 +655,6 @@ const toSlug = (value: string): string => {
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'change';
 };
-
-const stripKnownSourcePrefix = (value: string): string => String(value || '').trim().replace(/^(repo|vault|obsidian):/i, '');
 
 const tryParseUrl = (value: string): URL | null => {
   try {
@@ -1065,87 +760,6 @@ const buildDefaultWikiTargets = (changeKind: ObsidianWikiChangeKind, summary: st
   }
 };
 
-const buildCatalogMatchScore = (
-  entry: ObsidianKnowledgeCatalogEntry,
-  tokens: string[],
-  domains: string[],
-): number => {
-  const haystack = [
-    entry.id,
-    entry.title,
-    entry.sourcePath,
-    entry.targetPath,
-    entry.concern,
-    entry.intent,
-    entry.plane,
-    ...entry.tags,
-    ...entry.queries,
-  ].join(' ').toLowerCase();
-
-  let score = 0;
-  for (const token of tokens) {
-    if (haystack.includes(token)) {
-      score += token.length >= 6 ? 3 : 1.5;
-    }
-  }
-  if (domains.includes(entry.intent)) {
-    score += 4;
-  }
-  if (entry.startHere) {
-    score += 1.5;
-  }
-  if (entry.canonical) {
-    score += 1;
-  }
-  if (entry.agentReference) {
-    score += 0.5;
-  }
-  return score;
-};
-
-const selectKnowledgeBundleEntries = (params: {
-  catalog: ObsidianKnowledgeCatalogDocument;
-  goal: string;
-  domains: string[];
-  maxArtifacts: number;
-}): ObsidianKnowledgeCatalogEntry[] => {
-  const tokens = tokenizeGoal(params.goal);
-  const ranked = params.catalog.entries
-    .map((entry) => ({
-      entry,
-      score: buildCatalogMatchScore(entry, tokens, params.domains),
-    }))
-    .sort((left, right) => right.score - left.score || Number(right.entry.startHere) - Number(left.entry.startHere));
-
-  const selected = ranked
-    .filter((item) => item.score > 0)
-    .slice(0, params.maxArtifacts)
-    .map((item) => item.entry);
-
-  if (selected.length >= Math.min(params.maxArtifacts, 3)) {
-    return selected;
-  }
-
-  return dedupeCatalogEntries([
-    ...selected,
-    ...params.catalog.entries.filter((entry) => entry.startHere),
-    ...params.catalog.entries.filter((entry) => entry.canonical && entry.audience === 'operator-primary'),
-  ]).slice(0, params.maxArtifacts);
-};
-
-const dedupeCatalogEntries = (entries: ObsidianKnowledgeCatalogEntry[]): ObsidianKnowledgeCatalogEntry[] => {
-  const seen = new Set<string>();
-  const result: ObsidianKnowledgeCatalogEntry[] = [];
-  for (const entry of entries) {
-    if (!entry?.id || seen.has(entry.id)) {
-      continue;
-    }
-    seen.add(entry.id);
-    result.push(entry);
-  }
-  return result;
-};
-
 const mapCatalogIntentToFactType = (intent: string): ObsidianKnowledgeBundleFactType => {
   switch (String(intent || '').trim().toLowerCase()) {
     case 'operations':
@@ -1229,11 +843,6 @@ const buildKnowledgeBundleConfidence = (
   const mediumPenalty = gaps.filter((gap) => gap.severity === 'medium').length * 0.05;
   const lowPenalty = gaps.filter((gap) => gap.severity === 'low').length * 0.02;
   return Number(Math.max(0.05, Math.min(0.99, artifactAverage - highPenalty - mediumPenalty - lowPenalty)).toFixed(2));
-};
-
-const catalogEntryMatchesChangedPath = (entry: ObsidianKnowledgeCatalogEntry, changedPaths: string[]): boolean => {
-  const sourcePath = normalizeCatalogPath(entry.sourcePath);
-  return changedPaths.some((changedPath) => normalizeCatalogPath(changedPath) === sourcePath);
 };
 
 export const compileObsidianKnowledgeBundle = async (params: {
@@ -3089,16 +2698,6 @@ const toStringArray = (value: unknown): string[] => {
   return single.split(',').map((entry) => entry.trim()).filter(Boolean);
 };
 
-const slugify = (value: string, fallback = 'note'): string => {
-  const normalized = String(value || '')
-    .toLowerCase()
-    .replace(/\.md$/i, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  return normalized || fallback;
-};
-
 const parseDateMs = (...values: Array<unknown>): number => {
   for (const value of values) {
     const timestamp = Date.parse(String(value || ''));
@@ -3166,98 +2765,6 @@ const formatTimestamp = (value: string): string => {
   return new Date(timestamp).toISOString().slice(0, 16).replace('T', ' ');
 };
 
-const buildTopicArtifactPath = (topic: string): string => `${TOPIC_DIR}/${slugify(topic)}.md`;
-
-const buildEntityArtifactPath = (entityKey: string): string => `${ENTITY_DIR}/${slugify(entityKey)}.md`;
-
-const describeKnowledgePath = (filePath: string): Omit<ObsidianKnowledgePathDescriptor, 'path' | 'generated'> => {
-  const normalized = normalizePath(filePath).toLowerCase();
-
-  if (normalized.startsWith(`${CONTROL_TOWER_DIR.toLowerCase()}/`) || normalized.startsWith('ops/quality/')) {
-    return {
-      plane: 'control',
-      concern: normalized.startsWith('ops/quality/') ? 'quality-control' : 'control-tower',
-    };
-  }
-
-  if (normalized.startsWith('ops/services/')) {
-    return {
-      plane: 'runtime',
-      concern: 'service-memory',
-    };
-  }
-
-  if (normalized.startsWith('ops/improvement/') || normalized.startsWith('retros/')) {
-    return {
-      plane: 'learning',
-      concern: 'recursive-improvement',
-    };
-  }
-
-  if (normalized.startsWith('ops/incidents/') || normalized.startsWith('ops/vulnerabilities/')) {
-    return {
-      plane: 'record',
-      concern: 'vulnerability-and-incident-analysis',
-    };
-  }
-
-  if (/^guilds\/[^/]+\/sprint-journal\//.test(normalized)) {
-    return {
-      plane: 'learning',
-      concern: 'recursive-improvement',
-    };
-  }
-
-  if (normalized.startsWith('guilds/')) {
-    return {
-      plane: 'record',
-      concern: normalized.includes('/customer/') ? 'customer-operating-memory' : 'guild-memory',
-    };
-  }
-
-  if (normalized.startsWith(`${GENERATED_ROOT.toLowerCase()}/`)) {
-    return {
-      plane: 'record',
-      concern: 'knowledge-control',
-    };
-  }
-
-  return {
-    plane: 'record',
-    concern: 'general-record',
-  };
-};
-
-const buildKnowledgePathIndex = (paths: Array<{ path: string; generated: boolean }>): ObsidianKnowledgePathDescriptor[] => {
-  const seen = new Set<string>();
-  const result: ObsidianKnowledgePathDescriptor[] = [];
-
-  for (const entry of paths) {
-    const normalized = normalizePath(entry.path);
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    result.push({
-      path: normalized,
-      generated: entry.generated,
-      ...describeKnowledgePath(normalized),
-    });
-  }
-
-  return result;
-};
-
-const extractGuildIdFromPath = (value: string): string | null => {
-  const match = normalizePath(value).match(/^guilds\/([^/]+)\//i);
-  return match?.[1] || null;
-};
-
-const extractServiceSlugFromPath = (value: string): string | null => {
-  const match = normalizePath(value).match(/^ops\/services\/([^/]+)\//i);
-  return match?.[1] || null;
-};
-
 const buildCustomerLedgerPaths = (guildId: string | null): string[] => {
   if (!guildId) {
     return [];
@@ -3281,38 +2788,6 @@ const buildGuildCorePaths = (guildId: string | null): string[] => {
     `guilds/${guildId}/Server_History.md`,
     `guilds/${guildId}/Decision_Log.md`,
   ];
-};
-
-const isGeneratedArtifactPath = (filePath: string): boolean => {
-  const normalized = normalizePath(filePath).toLowerCase();
-  return normalized.startsWith(`${GENERATED_ROOT.toLowerCase()}/`);
-};
-
-const isRawPath = (filePath: string): boolean => {
-  const normalized = normalizePath(filePath).toLowerCase();
-  return normalized.startsWith('chat/inbox/')
-    || normalized.startsWith('events/raw/')
-    || normalized.includes('/events/raw/');
-};
-
-const isTrackedPath = (filePath: string, guildId: string): boolean => {
-  const normalized = normalizePath(filePath).toLowerCase();
-  if (TRACKED_ROOTS.some((root) => matchesPathPrefix(normalized, root))) {
-    return true;
-  }
-  if (DURABLE_SHARED_ROOTS.some((root) => matchesPathPrefix(normalized, root))) {
-    return true;
-  }
-  if (!guildId) {
-    return false;
-  }
-
-  const guildPrefix = `guilds/${guildId.toLowerCase()}`;
-  if (GUILD_TRACKED_ROOT_SUFFIXES.some((suffix) => matchesPathPrefix(normalized, `${guildPrefix}/${suffix}`))) {
-    return true;
-  }
-
-  return GUILD_CORE_FILE_NAMES.some((fileName) => normalized === `${guildPrefix}/${fileName.toLowerCase()}`);
 };
 
 const deriveTopics = (frontmatter: Record<string, unknown>): string[] => {
@@ -4086,56 +3561,7 @@ export const listObsidianKnowledgeArtifactPaths = (stats = getObsidianKnowledgeC
 };
 
 export const resolveObsidianKnowledgeArtifactPath = (value: string): string | null => {
-  const raw = normalizePath(value);
-  const normalized = raw.toLowerCase();
-  if (!normalized || normalized.includes('..')) {
-    return null;
-  }
-
-  if (normalized === 'index' || normalized === INDEX_PATH.toLowerCase()) {
-    return INDEX_PATH;
-  }
-  if (normalized === 'log' || normalized === LOG_PATH.toLowerCase()) {
-    return LOG_PATH;
-  }
-  if (normalized === 'lint' || normalized === LINT_PATH.toLowerCase()) {
-    return LINT_PATH;
-  }
-  if (normalized === 'supervisor' || normalized === SUPERVISOR_PATH.toLowerCase()) {
-    return SUPERVISOR_PATH;
-  }
-  if (normalized === 'blueprint' || normalized === BLUEPRINT_PATH.toLowerCase()) {
-    return BLUEPRINT_PATH;
-  }
-  if (normalized === 'canonical-map' || normalized === CANONICAL_MAP_PATH.toLowerCase()) {
-    return CANONICAL_MAP_PATH;
-  }
-  if (normalized === 'cadence' || normalized === CADENCE_PATH.toLowerCase()) {
-    return CADENCE_PATH;
-  }
-  if (normalized === 'gate-entrypoints' || normalized === GATE_ENTRYPOINTS_PATH.toLowerCase()) {
-    return GATE_ENTRYPOINTS_PATH;
-  }
-
-  const topicMatch = raw.match(/^topic:(.+)$/i);
-  if (topicMatch?.[1]) {
-    return buildTopicArtifactPath(topicMatch[1]);
-  }
-
-  const entityMatch = raw.match(/^entity:(.+)$/i);
-  if (entityMatch?.[1]) {
-    return buildEntityArtifactPath(entityMatch[1]);
-  }
-
-  if (normalized.startsWith(`${TOPIC_DIR.toLowerCase()}/`)) {
-    return buildTopicArtifactPath(raw.slice(TOPIC_DIR.length + 1).replace(/\.md$/i, ''));
-  }
-
-  if (normalized.startsWith(`${ENTITY_DIR.toLowerCase()}/`)) {
-    return buildEntityArtifactPath(raw.slice(ENTITY_DIR.length + 1).replace(/\.md$/i, ''));
-  }
-
-  return null;
+  return resolveKnowledgeArtifactPath(value);
 };
 
 export const buildObsidianKnowledgeReflectionBundle = (value: string): ObsidianKnowledgeReflectionBundle | null => {

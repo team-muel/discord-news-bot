@@ -37,7 +37,6 @@ export * as security from './security';
 export * as skills from './skills';
 export * as sprint from './sprint/eventSourcing';
 export * as tools from './tools';
-export * as trading from './trading';
 export * as workerGeneration from './workerGeneration';
 export * as workflow from './workflow';
 

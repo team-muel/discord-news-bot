@@ -45,7 +45,7 @@ const fail = (id: number | string | null, code: number, message: string): JsonRp
 });
 
 // MCP protocol requires tool names to match [a-z0-9_-] — dots not allowed.
-// Internal names use dots (e.g., stock.quote, code.index.symbol_search).
+// Internal names use dots (e.g., action.catalog, code.index.symbol_search).
 // Transform: replace dots with hyphens (reversible — no internal names contain hyphens).
 const toMcpName = (name: string): string => name.replace(/\./g, '-');
 const toInternalName = (mcpName: string): string => mcpName.replace(/-/g, '.');

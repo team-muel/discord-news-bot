@@ -113,39 +113,6 @@
       ]
     },
     {
-      "id": "chart-intent",
-      "pattern": "차트|chart",
-      "plans": [
-        {
-          "actionName": "stock.chart",
-          "reason": "chart-intent",
-          "queryArg": "none"
-        }
-      ]
-    },
-    {
-      "id": "quote-intent",
-      "pattern": "주가|가격|quote",
-      "plans": [
-        {
-          "actionName": "stock.quote",
-          "reason": "quote-intent",
-          "queryArg": "none"
-        }
-      ]
-    },
-    {
-      "id": "analysis-intent",
-      "pattern": "분석|analysis",
-      "plans": [
-        {
-          "actionName": "investment.analysis",
-          "reason": "analysis-intent",
-          "queryArg": "goal"
-        }
-      ]
-    },
-    {
       "id": "coding-intent",
       "pattern": "코드|코딩|구현|함수|클래스|버그|리팩터|script|typescript|javascript|python|sql|api\\s*만들|코드\\s*짜",
       "plans": [

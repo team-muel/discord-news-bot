@@ -22,7 +22,7 @@ type QueueDrainOptions<TSession extends QueueSessionLike> = {
   maxAttempts: number;
   maxDeadletters: number;
   nowIso: () => string;
-  getMaxConcurrent: () => number;
+  getMaxConcurrent: (session: TSession) => number | null;
   getSession: (sessionId: string) => TSession | undefined;
   executeSession: (sessionId: string) => Promise<string>;
   markCancelled: (session: TSession) => void;
@@ -33,6 +33,10 @@ export class MultiAgentRuntimeQueue<TSession extends QueueSessionLike> {
   private pendingSessionQueue: string[] = [];
 
   private runningSessionIds = new Set<string>();
+
+  private runningSessionGuilds = new Map<string, string>();
+
+  private runningSessionGuildCounts = new Map<string, number>();
 
   private sessionAttempts = new Map<string, number>();
 
@@ -57,8 +61,35 @@ export class MultiAgentRuntimeQueue<TSession extends QueueSessionLike> {
     return this.pendingSessionQueue.length;
   }
 
-  getRunningCount(): number {
+  getRunningCount(guildId?: string): number {
+    const key = String(guildId || '').trim();
+    if (key) {
+      return this.runningSessionGuildCounts.get(key) || 0;
+    }
     return this.runningSessionIds.size;
+  }
+
+  private markSessionRunning(session: TSession): void {
+    this.runningSessionIds.add(session.id);
+    this.runningSessionGuilds.set(session.id, session.guildId);
+    this.runningSessionGuildCounts.set(session.guildId, (this.runningSessionGuildCounts.get(session.guildId) || 0) + 1);
+  }
+
+  private clearRunningSession(sessionId: string): void {
+    this.runningSessionIds.delete(sessionId);
+    const guildId = this.runningSessionGuilds.get(sessionId);
+    if (!guildId) {
+      return;
+    }
+
+    this.runningSessionGuilds.delete(sessionId);
+    const nextCount = (this.runningSessionGuildCounts.get(guildId) || 0) - 1;
+    if (nextCount > 0) {
+      this.runningSessionGuildCounts.set(guildId, nextCount);
+      return;
+    }
+
+    this.runningSessionGuildCounts.delete(guildId);
   }
 
   listDeadletters(params?: { guildId?: string; limit?: number }): AgentDeadletter[] {
@@ -81,21 +112,45 @@ export class MultiAgentRuntimeQueue<TSession extends QueueSessionLike> {
 
     this.queueDrainTimer = setTimeout(() => {
       this.queueDrainTimer = null;
-      const maxConcurrent = Math.max(1, options.getMaxConcurrent());
 
-      while (this.runningSessionIds.size < maxConcurrent && this.pendingSessionQueue.length > 0) {
-        const sessionId = this.pendingSessionQueue.shift() as string;
-        const session = options.getSession(sessionId);
-        if (!session) {
-          continue;
+      while (this.pendingSessionQueue.length > 0) {
+        let nextSession: TSession | null = null;
+        for (let index = 0; index < this.pendingSessionQueue.length; index += 1) {
+          const sessionId = this.pendingSessionQueue[index] as string;
+          const session = options.getSession(sessionId);
+          if (!session) {
+            this.pendingSessionQueue.splice(index, 1);
+            index -= 1;
+            continue;
+          }
+
+          if (session.cancelRequested || session.status === 'cancelled') {
+            this.pendingSessionQueue.splice(index, 1);
+            options.markCancelled(session);
+            index -= 1;
+            continue;
+          }
+
+          const maxConcurrent = options.getMaxConcurrent(session);
+          if (maxConcurrent === null) {
+            continue;
+          }
+
+          if (this.getRunningCount(session.guildId) >= Math.max(1, maxConcurrent)) {
+            continue;
+          }
+
+          this.pendingSessionQueue.splice(index, 1);
+          nextSession = session;
+          break;
         }
 
-        if (session.cancelRequested || session.status === 'cancelled') {
-          options.markCancelled(session);
-          continue;
+        if (!nextSession) {
+          break;
         }
 
-        this.runningSessionIds.add(sessionId);
+        const sessionId = nextSession.id;
+        this.markSessionRunning(nextSession);
         const attempts = (this.sessionAttempts.get(sessionId) || 0) + 1;
         this.sessionAttempts.set(sessionId, attempts);
 
@@ -126,9 +181,13 @@ export class MultiAgentRuntimeQueue<TSession extends QueueSessionLike> {
             }
           })
           .finally(() => {
-            this.runningSessionIds.delete(sessionId);
+            this.clearRunningSession(sessionId);
             this.scheduleDrain(options);
           });
+      }
+
+      if (this.pendingSessionQueue.length > 0) {
+        this.scheduleDrain(options);
       }
     }, options.pollMs);
   }
@@ -140,6 +199,8 @@ export class MultiAgentRuntimeQueue<TSession extends QueueSessionLike> {
     }
     this.pendingSessionQueue.length = 0;
     this.runningSessionIds.clear();
+    this.runningSessionGuilds.clear();
+    this.runningSessionGuildCounts.clear();
     this.sessionAttempts.clear();
     this.deadletters.length = 0;
   }

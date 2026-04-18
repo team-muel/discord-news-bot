@@ -55,8 +55,8 @@ window.open(authorizeUrl, "discord-login", "width=480,height=720");
 ## Endpoint Groups Used By Frontend
 
 - Public: `/health`, `/api/status`, `/api/quant/panel`, `/api/fred/playground`, `/api/research/preset/:presetKey`
-- Auth required: `/api/auth/me`, `/api/auth/logout`, `/api/bot/status`, `/api/research/preset/:presetKey/history`, `/api/trades`
-- Admin required: `/api/bot/reconnect`, `/api/bot/automation/:jobName/run`, `/api/research/preset/:presetKey`, `/api/trades (POST)`, `/api/trading/*`
+- Auth required: `/api/auth/me`, `/api/auth/logout`, `/api/bot/status`, `/api/research/preset/:presetKey/history`
+- Admin required: `/api/bot/reconnect`, `/api/bot/automation/:jobName/run`, `/api/research/preset/:presetKey`
 
 ## Admin Permission Readiness
 
@@ -77,14 +77,14 @@ Frontend behavior recommendations:
 - Hide admin menus by default; show only after an admin-only endpoint succeeds.
 - Handle `403 FORBIDDEN` as "logged-in but not admin".
 - Handle `503 CONFIG` as "backend admin allowlist misconfigured" and show ops guidance.
-- Keep a read-only fallback view for panels that use `/api/trading/*` or bot admin actions.
+- Keep a read-only fallback view for panels that trigger bot admin actions.
 
 Quick verification flow:
 
 1. Login via OAuth popup.
 2. Call `GET /api/auth/me` and confirm session is set.
-3. Call `GET /api/trading/strategy`:
-4. Expect `200` for admin users, `403` for non-admin users, `503` when allowlist source is missing.
+3. Call `GET /api/bot/status` and confirm authenticated state is visible.
+4. For admin-only flows, expect protected endpoints to return `200` for admin users, `403` for non-admin users, and `503` when the allowlist source is missing.
 
 ## Deployment Alignment Checklist
 

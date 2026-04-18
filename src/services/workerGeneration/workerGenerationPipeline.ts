@@ -49,7 +49,7 @@ const buildPrompt = (goal: string, actionName: string): { system: string; user: 
     '',
     `이 요청을 처리할 수 있는 Node.js ESM 워커를 작성해줘.`,
     `액션 이름: ${actionName}`,
-    '외부 API 호출이 필요하면 fetch()를 사용하고, API 키는 args 파라미터 또는 process.env에서 가져오도록 설계해.',
+    '외부 API 호출이 필요하면 fetch()를 사용하고, 필요한 API 키는 args 파라미터로만 받도록 설계해. process.env는 사용하지 마.',
     '반드시 ```javascript 코드블록 형태로만 출력해.',
   ].join('\n'),
 });

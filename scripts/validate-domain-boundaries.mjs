@@ -142,7 +142,7 @@ if (violations.length === 0) {
 // ── Rule: No direct process.env outside config files ──
 // Tribal knowledge: "never read process.env directly outside config.ts"
 const SRC_DIR = join(__dirname, '..', 'src');
-const ENV_ALLOWLIST = new Set(['config.ts', 'configLlmProviders.ts']);
+const ENV_ALLOWLIST = new Set(['config.ts', 'configCore.ts', 'configDiscord.ts', 'configSprint.ts', 'configLlmProviders.ts']);
 // mcpSkillRouter.ts has a documented exception for dynamic key lookup
 const ENV_EXEMPT_FILES = new Set(['services/skills/mcpSkillRouter.ts']);
 const ENV_PATTERN = /\bprocess\.env\b/;
@@ -185,7 +185,7 @@ if (envViolations.length === 0) {
   for (const v of envViolations) {
     console.log(`  ${v.file}:${v.line}  ${v.text}`);
   }
-  console.log('\n  Fix: move env reads to src/config.ts and import the constant.');
+  console.log('\n  Fix: move env reads to src/config/*.ts and import the constant.');
 }
 
 const exitCode = violations.length > 0 ? 1 : 0;

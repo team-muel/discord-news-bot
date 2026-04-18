@@ -27,19 +27,41 @@ export const LOGIN_SESSION_CLEANUP_INTERVAL_MS = DISCORD_LOGIN_SESSION_CLEANUP_I
 export type LoginSessionCleanupOwner = 'app' | 'db';
 export const LOGIN_SESSION_CLEANUP_OWNER: LoginSessionCleanupOwner = DISCORD_LOGIN_SESSION_CLEANUP_OWNER;
 export const AUTO_LOGIN_ON_FIRST_COMMAND = DISCORD_AUTO_LOGIN_ON_FIRST_COMMAND;
+export const PERSISTED_SESSION_REVALIDATE_MS = Math.max(
+  60_000,
+  Math.min(LOGIN_SESSION_REFRESH_WINDOW_MS, 10 * 60_000),
+);
 
 // ─── In-process cache ────────────────────────────────────────────────────────
-export const loggedInUsersByGuild = new Map<string, Map<string, number>>();
+export type LoginSessionMode = 'persisted' | 'memory-only';
 
-export const cacheLoginSession = (guildId: string, userId: string, expiresAt: number): void => {
+export type LoginSessionCacheEntry = {
+  expiresAt: number;
+  mode: LoginSessionMode;
+  lastValidatedAt: number;
+};
+
+export const loggedInUsersByGuild = new Map<string, Map<string, LoginSessionCacheEntry>>();
+
+const buildLoginSessionCacheEntry = (
+  expiresAt: number,
+  mode: LoginSessionMode,
+  lastValidatedAt = Date.now(),
+): LoginSessionCacheEntry => ({
+  expiresAt,
+  mode,
+  lastValidatedAt,
+});
+
+export const cacheLoginSession = (guildId: string, userId: string, entry: LoginSessionCacheEntry): void => {
   let guildUsers = loggedInUsersByGuild.get(guildId);
   if (!guildUsers) {
     if (loggedInUsersByGuild.size >= AUTH_MAX_GUILDS_IN_CACHE) return;
-    guildUsers = new Map<string, number>();
+    guildUsers = new Map<string, LoginSessionCacheEntry>();
     loggedInUsersByGuild.set(guildId, guildUsers);
   }
   if (!guildUsers.has(userId) && guildUsers.size >= AUTH_MAX_USERS_PER_GUILD) return;
-  guildUsers.set(userId, expiresAt);
+  guildUsers.set(userId, entry);
 };
 
 export const uncacheLoginSession = (guildId: string, userId: string): void => {
@@ -49,20 +71,75 @@ export const uncacheLoginSession = (guildId: string, userId: string): void => {
   if (guildUsers.size === 0) loggedInUsersByGuild.delete(guildId);
 };
 
+export const purgeExpiredCachedLoginSessions = (nowMs = Date.now()): number => {
+  let removed = 0;
+
+  for (const [guildId, guildUsers] of loggedInUsersByGuild.entries()) {
+    for (const [userId, entry] of guildUsers.entries()) {
+      if (nowMs <= entry.expiresAt) {
+        continue;
+      }
+      guildUsers.delete(userId);
+      removed += 1;
+    }
+    if (guildUsers.size === 0) {
+      loggedInUsersByGuild.delete(guildId);
+    }
+  }
+
+  return removed;
+};
+
+const shouldRevalidatePersistedSession = (entry: LoginSessionCacheEntry): boolean => {
+  if (entry.mode !== 'persisted') {
+    return false;
+  }
+  if (LOGIN_SESSION_CLEANUP_OWNER !== 'db') {
+    return false;
+  }
+  return (Date.now() - entry.lastValidatedAt) >= PERSISTED_SESSION_REVALIDATE_MS;
+};
+
+const loadPersistedLoginSession = async (
+  guildId: string,
+  userId: string,
+): Promise<
+  | { status: 'valid'; expiresAt: number }
+  | { status: 'missing' }
+  | { status: 'error' }
+> => {
+  try {
+    const persistedExpiry = await getDiscordLoginSessionExpiryMs({ guildId, userId });
+    if (!persistedExpiry) {
+      return { status: 'missing' };
+    }
+    return { status: 'valid', expiresAt: persistedExpiry };
+  } catch (error) {
+    logger.warn(
+      '[AUTH] Failed to load login session guild=%s user=%s: %s',
+      guildId,
+      userId,
+      getErrorMessage(error),
+    );
+    return { status: 'error' };
+  }
+};
+
 export const markUserLoggedIn = async (
   guildId: string,
   userId: string,
 ): Promise<'persisted' | 'memory-only'> => {
   if (!guildId || !userId) return 'memory-only';
   const expiresAt = Date.now() + LOGIN_SESSION_TTL_MS;
-  cacheLoginSession(guildId, userId, expiresAt);
   try {
     const persisted = await upsertDiscordLoginSession({
       guildId,
       userId,
       expiresAt: new Date(expiresAt).toISOString(),
     });
-    return persisted ? 'persisted' : 'memory-only';
+    const mode: LoginSessionMode = persisted ? 'persisted' : 'memory-only';
+    cacheLoginSession(guildId, userId, buildLoginSessionCacheEntry(expiresAt, mode));
+    return mode;
   } catch (error) {
     logger.warn(
       '[AUTH] Failed to persist login session guild=%s user=%s: %s',
@@ -70,6 +147,7 @@ export const markUserLoggedIn = async (
       userId,
       getErrorMessage(error),
     );
+    cacheLoginSession(guildId, userId, buildLoginSessionCacheEntry(expiresAt, 'memory-only'));
     return 'memory-only';
   }
 };
@@ -77,18 +155,21 @@ export const markUserLoggedIn = async (
 const maybeRefreshLoginSession = async (
   guildId: string,
   userId: string,
-  expiresAt: number,
+  entry: LoginSessionCacheEntry,
 ): Promise<void> => {
-  const remainingMs = expiresAt - Date.now();
+  const remainingMs = entry.expiresAt - Date.now();
   if (remainingMs > LOGIN_SESSION_REFRESH_WINDOW_MS) return;
   const newExpiry = Date.now() + LOGIN_SESSION_TTL_MS;
-  cacheLoginSession(guildId, userId, newExpiry);
+  cacheLoginSession(guildId, userId, buildLoginSessionCacheEntry(newExpiry, entry.mode, entry.lastValidatedAt));
   try {
-    await upsertDiscordLoginSession({
+    const persisted = await upsertDiscordLoginSession({
       guildId,
       userId,
       expiresAt: new Date(newExpiry).toISOString(),
     });
+    const nextMode: LoginSessionMode = persisted ? 'persisted' : entry.mode;
+    const nextValidatedAt = persisted ? Date.now() : entry.lastValidatedAt;
+    cacheLoginSession(guildId, userId, buildLoginSessionCacheEntry(newExpiry, nextMode, nextValidatedAt));
   } catch (error) {
     logger.warn(
       '[AUTH] Failed to refresh login session guild=%s user=%s: %s',
@@ -104,33 +185,42 @@ export const hasValidLoginSession = async (
   userId: string,
 ): Promise<boolean> => {
   const guildUsers = loggedInUsersByGuild.get(guildId);
-  const loadFromDb = async (): Promise<boolean> => {
-    try {
-      const persistedExpiry = await getDiscordLoginSessionExpiryMs({ guildId, userId });
-      if (!persistedExpiry) return false;
-      cacheLoginSession(guildId, userId, persistedExpiry);
-      await maybeRefreshLoginSession(guildId, userId, persistedExpiry);
-      return true;
-    } catch (error) {
-      logger.warn(
-        '[AUTH] Failed to load login session guild=%s user=%s: %s',
-        guildId,
-        userId,
-        getErrorMessage(error),
-      );
+  const hydrateFromDb = async (): Promise<boolean> => {
+    const persisted = await loadPersistedLoginSession(guildId, userId);
+    if (persisted.status !== 'valid') {
       return false;
     }
+
+    const entry = buildLoginSessionCacheEntry(persisted.expiresAt, 'persisted');
+    cacheLoginSession(guildId, userId, entry);
+    await maybeRefreshLoginSession(guildId, userId, entry);
+    return true;
   };
 
-  if (!guildUsers) return loadFromDb();
+  if (!guildUsers) return hydrateFromDb();
 
-  const expiresAt = guildUsers.get(userId);
-  if (!expiresAt) return loadFromDb();
-  if (Date.now() > expiresAt) {
+  const entry = guildUsers.get(userId);
+  if (!entry) return hydrateFromDb();
+  if (Date.now() > entry.expiresAt) {
     uncacheLoginSession(guildId, userId);
     return false;
   }
-  await maybeRefreshLoginSession(guildId, userId, expiresAt);
+
+  if (shouldRevalidatePersistedSession(entry)) {
+    const persisted = await loadPersistedLoginSession(guildId, userId);
+    if (persisted.status === 'missing') {
+      uncacheLoginSession(guildId, userId);
+      return false;
+    }
+    if (persisted.status === 'valid') {
+      const refreshedEntry = buildLoginSessionCacheEntry(persisted.expiresAt, 'persisted');
+      cacheLoginSession(guildId, userId, refreshedEntry);
+      await maybeRefreshLoginSession(guildId, userId, refreshedEntry);
+      return true;
+    }
+  }
+
+  await maybeRefreshLoginSession(guildId, userId, entry);
   return true;
 };
 
@@ -205,9 +295,14 @@ import { BackgroundLoop } from '../utils/backgroundLoop';
 
 const cleanupLoop = new BackgroundLoop(
   async () => {
+    const expiredCacheEntries = purgeExpiredCachedLoginSessions();
     const deleted = await purgeExpiredDiscordLoginSessions();
-    if (deleted > 0) {
-      logger.info('[AUTH] Login session cleanup removed %d expired row(s)', deleted);
+    if (deleted > 0 || expiredCacheEntries > 0) {
+      logger.info(
+        '[AUTH] Login session cleanup removed %d expired row(s), %d cached session(s)',
+        deleted,
+        expiredCacheEntries,
+      );
     }
   },
   { name: '[AUTH]', intervalMs: LOGIN_SESSION_CLEANUP_INTERVAL_MS, runOnStart: true },

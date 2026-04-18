@@ -12,7 +12,6 @@ import {
 import { isUserLearningEnabled, setUserLearningEnabled } from '../../services/userLearningPrefsService';
 import { isAnyLlmConfigured } from '../../services/llmClient';
 import { isSupabaseConfigured } from '../../services/supabaseClient';
-import { isStockFeatureEnabled } from '../../services/trading/stockService';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,7 +116,6 @@ export const createCrmHandlers = (deps: CrmCommandDeps) => {
     const admin = await deps.hasAdminPermission(interaction);
     checks.push(`관리자 권한: ${admin ? 'OK' : 'LIMITED'}`);
     checks.push(`LLM: ${isAnyLlmConfigured() ? 'OK' : 'MISSING'}`);
-    checks.push(`주가 키: ${isStockFeatureEnabled() ? 'OK' : 'MISSING'}`);
     checks.push(`DB: ${isSupabaseConfigured() ? 'OK' : 'LIMITED'}`);
 
     let loginMode: 'persisted' | 'memory-only' | null = null;

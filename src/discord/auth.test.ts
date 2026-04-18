@@ -67,7 +67,37 @@ describe('discord/auth', () => {
     const ok = await module.hasValidLoginSession('guild-1', 'user-1');
     expect(ok).toBe(true);
     expect(mocks.getDiscordLoginSessionExpiryMs).toHaveBeenCalledWith({ guildId: 'guild-1', userId: 'user-1' });
-    expect(module.loggedInUsersByGuild.get('guild-1')?.has('user-1')).toBe(true);
+    expect(module.loggedInUsersByGuild.get('guild-1')?.get('user-1')).toMatchObject({
+      mode: 'persisted',
+    });
+  });
+
+  it('DB-owned persisted cache는 재검증 시 DB 세션이 사라졌으면 접근을 막는다', async () => {
+    const { module, mocks } = await loadDiscordAuth({ cleanupOwner: 'db' });
+    mocks.getDiscordLoginSessionExpiryMs
+      .mockResolvedValueOnce(Date.now() + module.LOGIN_SESSION_TTL_MS)
+      .mockResolvedValueOnce(null);
+
+    await expect(module.hasValidLoginSession('guild-1', 'user-1')).resolves.toBe(true);
+
+    await vi.advanceTimersByTimeAsync(module.PERSISTED_SESSION_REVALIDATE_MS + 1);
+
+    await expect(module.hasValidLoginSession('guild-1', 'user-1')).resolves.toBe(false);
+    expect(module.loggedInUsersByGuild.get('guild-1')?.has('user-1')).toBeFalsy();
+  });
+
+  it('memory-only cache는 persisted 재검증 없이 만료 전까지 유지된다', async () => {
+    const { module, mocks } = await loadDiscordAuth({ cleanupOwner: 'db' });
+    module.cacheLoginSession('guild-1', 'user-1', {
+      expiresAt: Date.now() + module.LOGIN_SESSION_TTL_MS,
+      mode: 'memory-only',
+      lastValidatedAt: Date.now(),
+    });
+
+    await vi.advanceTimersByTimeAsync(module.PERSISTED_SESSION_REVALIDATE_MS + 1);
+
+    await expect(module.hasValidLoginSession('guild-1', 'user-1')).resolves.toBe(true);
+    expect(mocks.getDiscordLoginSessionExpiryMs).not.toHaveBeenCalled();
   });
 
   it('ensureFeatureAccess는 auto-login 비활성 + 세션 없음이면 login_required를 반환한다', async () => {
@@ -124,10 +154,16 @@ describe('discord/auth', () => {
   it('startLoginSessionCleanupLoop는 owner=app일 때 즉시 1회 + 주기 cleanup을 실행한다', async () => {
     const { module, mocks } = await loadDiscordAuth({ cleanupOwner: 'app' });
     mocks.purgeExpiredDiscordLoginSessions.mockResolvedValue(1);
+    module.cacheLoginSession('guild-1', 'user-1', {
+      expiresAt: Date.now() - 1,
+      mode: 'memory-only',
+      lastValidatedAt: Date.now() - 1,
+    });
 
     module.startLoginSessionCleanupLoop();
     await vi.advanceTimersByTimeAsync(0); // flush runOnStart tick
     expect(mocks.purgeExpiredDiscordLoginSessions).toHaveBeenCalledTimes(1);
+    expect(module.loggedInUsersByGuild.get('guild-1')?.has('user-1')).toBeFalsy();
     expect(module.getLoginSessionCleanupLoopStats()).toMatchObject({
       owner: 'app',
       started: true,

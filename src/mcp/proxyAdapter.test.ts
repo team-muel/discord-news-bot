@@ -402,7 +402,7 @@ describe('proxyAdapter', () => {
 
   describe('callProxiedTool', () => {
     it('returns error for non-upstream tool name', async () => {
-      const result = await callProxiedTool('stock.quote', {});
+      const result = await callProxiedTool('action.catalog', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Not a proxied tool name');
     });

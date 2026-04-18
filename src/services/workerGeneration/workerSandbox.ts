@@ -12,6 +12,7 @@ const SANDBOX_ROOT = path.join(os.tmpdir(), 'muel-worker-sandbox');
  * Static ESM imports like `import { exec } from 'child_process'` bypass `require()` checks.
  */
 const DANGEROUS_MODULES = [
+  'fs', 'fs/promises',
   'child_process', 'cluster', 'dgram', 'dns', 'http', 'http2', 'https',
   'net', 'tls', 'vm', 'worker_threads', 'perf_hooks', 'async_hooks',
   'module', 'repl', 'inspector',

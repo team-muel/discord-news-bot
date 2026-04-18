@@ -30,7 +30,7 @@
    - 기존 discord.js session은 유지하고 Chat SDK public API로 slash/prefixed path를 인-프로세스 브리지한다
    - 별도 `/만들어줘` 공개 slash surface는 제거하고, build/automation intent는 `/뮤엘` canonical entry에서 기존 vibe/session flow로 흡수한다
    - eligible `/뮤엘` full-session reply contract와 slash dispatch helper 정리는 코드에서 이미 닫혔다
-   - runtime owner 전환 이후 default-on/100, grace-close, rollback 근거를 계속 닫는다
+   - current `chat-sdk` owner window의 default-on/100과 deployed-internal rollback 근거는 `2026-04-18_chat-sdk-cutover-20260418-124225.*`로 닫혔고, 남은 것은 grace-close와 exact-unit cleanup이다
    - full-resolution execution contract는 `docs/planning/DISCORD_CHAT_SURFACE_FULL_CLOSURE_PLAN.md`를 따른다
 2. [M-21] [M-24] Legacy cleanup inventory lock
    - replacement-complete 근거가 닫힌 exact unit부터 rollback-only → remove-now로 이동한다
@@ -59,6 +59,18 @@
 4. [M-21] 코드베이스 복잡도 축소 + 결함 제거 + 유지보수성 향상
    - Chat SDK migration과 legacy cleanup 이후 다시 승격한다
    - 얽힌 service boundary 리팩토링, 순환 의존성 해소, stale fallback pruning을 이어간다
+   - wave 1은 close되었다: A `runtime-builders/paramValidation.ts` + `runtime-subareas/workerHealthRoutes.ts`, B `obsidianPathUtils.ts`, C `src/config/configCore.ts` + `src/config/index.ts` + `src/config.ts` shim
+   - wave 2도 close되었다: A `runtime-subareas/openjarvisRoutes.ts`, B `obsidianCatalogService.ts`, C `src/config/configDiscord.ts` + `src/config/index.ts` re-export 확장
+   - wave 2 validation: route smoke + obsidian catalog + config focused tests green (`14 passed`), `tsc --noEmit` green, current lint gate green, full Vitest suite green (`2053 passed`)
+   - wave 3도 close되었다: A `runtime-subareas/snapshotRoutes.ts` + `runtime-builders/snapshotReports.ts`, B `src/config/configSprint.ts` + `src/config/index.ts` re-export 확장
+   - wave 3 validation: route smoke + config focused tests green (`11 passed`), `tsc --noEmit` green, full Vitest suite green (`2034 passed`)
+   - M-21 structural baseline과 serial hardening closeout이 모두 완료됐다: runtime route subarea는 `workerHealth`, `infrastructure`, `openjarvis`, `snapshot`으로 분리되었고, knowledge compiler boundary는 `path utils`, `catalog`, `promotion`, `semantic lint`, `supervisor/control-surface`로 나뉘었다
+   - Wave 4 closeout: `obsidianPromotionService.ts` + `runtime-subareas/infrastructureRoutes.ts`
+   - Wave 5 closeout: `obsidianSemanticLintService.ts` + `obsidianKnowledgeSupervisorService.ts`
+   - validation: focused regression green (`87 passed`), `tsc --noEmit` green, full Vitest suite green (`2037 passed`)
+   - 남은 M-21 follow-up은 structural extraction이 아니라 stale fallback pruning, circular dependency 해소, domain ownership cleanup 같은 후속 hardening 범주다
+   - worker guardrail: one objective, bounded shard, separate worktree when available, shard-local validation 후 full suite 재검증
+   - detailed decomposition contract는 `docs/planning/GOD_OBJECT_DECOMPOSITION_PLAN.md`를 따른다
 5. [M-19] User CRM 심화 + Social Graph 고도화
    - 코호트 세그먼트 자동 태깅 (power_user/casual/dormant)
    - communityGraphService 클러스터 탐지 (connected component → community_clusters)
@@ -67,14 +79,15 @@
 6. [M-24] 채널 ingress 추상화 + Chat SDK grace-close
    - 이미 들어온 것: eligible surface `/해줘`, `/뮤엘`, `뮤엘 ...`는 live cutover gate가 green이고 current canary slice에서 `chat-sdk` selected owner와 forced legacy fallback rollback evidence가 확보되었다
    - `2026-04-18_chat-sdk-cutover-20260418-095009.*` local-process artifact는 현재 코드 기준 rollout 100과 양 surface rollback rehearsal을 다시 확인했다
-   - actual transport migration 이후 남은 것은 deployed internal control plane 기준 default-on/100 검증, rollback grace-close 종료, legacy demotion/removal이다
+   - `2026-04-18_chat-sdk-cutover-20260418-124225.*` deployed-internal artifact는 rollout 100, live selected-path parity, 그리고 양 surface forced legacy fallback rollback evidence를 현재 `chat-sdk` owner window에서 닫았다
+   - actual transport migration 이후 남은 것은 rollback grace-close 종료와 legacy demotion/removal이다
    - 아직 실 owner 전환 전인 것: admin/persona/task/CRM/market/runtime-control surface는 phase 2 이후 범위다
-   - 다음 단계는 이미 닫힌 ingress envelope와 live policy contract 위에서 default-on 확장, grace-close, legacy demotion 순서를 안전하게 진행하는 것이다
+   - 다음 단계는 이미 닫힌 ingress envelope와 live policy contract 위에서 grace-close, exact-unit demotion, legacy removal 순서를 안전하게 진행하는 것이다
    - Hermes는 continuity/operator lane으로 유지하고, Supabase/Obsidian/OpenJarvis ownership은 바꾸지 않는다
    - 참조: `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`
 7. [M-21] [M-24] Legacy cleanup inventory lock — replacement-complete 이후에만 삭제 개방
    - scope: Discord legacy path, provider alias sprawl, naming compatibility residue, control-plane compatibility glue, deterministic inline residue
-   - current gate: remove-now=none, rollback-only=docs.ask post-ingress fallback exact unit only, keep-for-now=all remaining scoped units
+   - current gate: remove-now=none, rollback-only=docs.ask post-ingress fallback + prefixed muel-message post-ingress fallback exact units, keep-for-now=all remaining scoped units
    - predecessor lanes: Chat SDK cutover grace-close (live canary entered, full grace-close pending), provider cleanup closure (entered), naming/control-plane canonicalization closure (pending), deterministic task extraction closure (pending)
    - 참조: `docs/planning/LEGACY_CLEANUP_LANE.md`
 
@@ -238,7 +251,7 @@
 3. ~~[M-08] Go/No-Go 연속 통과 + 베타 확장 승인~~ → ✅ compute-consecutive-pass-status.mjs (연속 GO 카운트 + expansion_eligible 판정)
 4. ~~[M-08] 월간 blocked 0 상태 유지 검증~~ → ✅ verify-monthly-blocked-status.mjs (Supabase action log + gate-run safety breach 통합 검증)
 5. ~~[M-06] 신모델/신도구(Opencode 포함) 도입 템플릿 운영 고정~~ → ✅ generate-onboarding-checklist.mjs (model/tool 분기 + prerequisite check + rollback plan)
-6. ~~[M-08] trading runtime read/write 경계 분리 및 canary cutover 운영화~~ → ✅ validate-trading-rw-boundary.mjs (static boundary + runtime isolation + canary cutover 3단계 검증)
+6. ~~[M-08] trading runtime read/write 경계 분리 및 canary cutover 운영화~~ → retired with the trading module cleanup (historical milestone preserved)
 7. ~~[M-08] stage rollback runbook 자동 점검 체크리스트 운영화~~ → ✅ validate-runbook-readiness-checklist.mjs (5-checkpoint 자동 점검 + gates:validate:strict 연동)
 
 ## 운영 원칙

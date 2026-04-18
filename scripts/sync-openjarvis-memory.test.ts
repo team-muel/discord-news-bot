@@ -1,6 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import { buildProjectionSummary, pickLatestReportRows, resolveObsidianAdapterSummary } from './sync-openjarvis-memory';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import {
+  buildProjectionSummary,
+  ensureProjectionOutputDir,
+  pickLatestReportRows,
+  resolveObsidianAdapterSummary,
+  writeProjectionSummary,
+} from './sync-openjarvis-memory';
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0, tempDirs.length)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe('sync-openjarvis-memory helpers', () => {
   it('keeps only the latest row per report kind in default priority order', () => {
@@ -60,5 +78,31 @@ describe('sync-openjarvis-memory helpers', () => {
     })).toBe('adapter-summary-unavailable (write=remote-mcp, read=local-fs, search=remote-mcp)');
 
     expect(resolveObsidianAdapterSummary(null)).toBe('adapter-summary-unavailable (write=unknown, read=unknown, search=unknown)');
+  });
+
+  it('preserves the last summary while clearing projection docs and rewrites summary atomically', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openjarvis-memory-feed-'));
+    tempDirs.push(tempDir);
+    const summaryPath = path.join(tempDir, 'summary.json');
+
+    fs.writeFileSync(summaryPath, '{"generatedAt":"old"}\n', 'utf8');
+    fs.mkdirSync(path.join(tempDir, 'obsidian'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'obsidian', 'stale.md'), '# stale\n', 'utf8');
+
+    ensureProjectionOutputDir(tempDir);
+
+    expect(fs.existsSync(summaryPath)).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'obsidian'))).toBe(false);
+
+    writeProjectionSummary(summaryPath, {
+      generatedAt: '2026-04-18T00:00:00.000Z',
+      dryRun: false,
+    });
+
+    expect(JSON.parse(fs.readFileSync(summaryPath, 'utf8'))).toMatchObject({
+      generatedAt: '2026-04-18T00:00:00.000Z',
+      dryRun: false,
+    });
+    expect(fs.existsSync(`${summaryPath}.tmp`)).toBe(false);
   });
 });

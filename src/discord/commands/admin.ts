@@ -2,7 +2,6 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ChatInputCommandInte
 import { buildAdminCard, buildSimpleEmbed, EMBED_ERROR, EMBED_INFO, EMBED_SUCCESS, EMBED_WARN } from '../ui';
 import { isAnyLlmConfigured } from '../../services/llmClient';
 import { isSupabaseConfigured } from '../../services/supabaseClient';
-import { isStockFeatureEnabled } from '../../services/trading/stockService';
 import { isUserAdmin } from '../../services/adminAllowlistService';
 import {
   forgetGuildRagData,
@@ -119,8 +118,6 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       '`/프로필` : 유저 관계/기억 기반 프로필 조회',
       '`/메모` : 유저 메모 추가 또는 조회',
       '`/학습 조회|활성화|비활성화` : 내 자동 학습 저장 on/off (개인 설정)',
-      '`/주가` : 현재가 조회',
-      '`/차트` : 30일 차트 조회',
       '`/상태` : 봇/자동화 런타임 상태 확인',
       '`/설정` : 대시보드 이동',
       '`/잊어줘` : 내 데이터 또는 서버 데이터 삭제(확인 UX 제공)',
@@ -314,7 +311,6 @@ export const createAdminHandlers = (deps: AdminDeps) => {
     checks.push(`LLM 설정: ${isAnyLlmConfigured() ? 'OK' : 'MISSING'}`);
     if (!isAnyLlmConfigured()) warnings.push('자연어 자동화 기능은 LLM 키 설정이 필요합니다.');
 
-    checks.push(`주가 기능 키: ${isStockFeatureEnabled() ? 'OK' : 'MISSING'}`);
     checks.push(`Supabase 연결: ${isSupabaseConfigured() ? 'OK' : 'LIMITED'}`);
     checks.push(`명령 최소화 모드: ${deps.simpleCommandsEnabled ? 'ON' : 'OFF'}`);
 

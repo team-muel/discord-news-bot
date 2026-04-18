@@ -150,7 +150,7 @@ Provider fallback controls:
 - ACTION_CACHE_ENABLED=true (optional)
 - ACTION_CACHE_TTL_MS=600000 (optional, 10 minutes)
 - ACTION_CACHE_MAX_ENTRIES=1000 (optional)
-- ACTION_CACHEABLE_ACTIONS=rag.retrieve,news.google.search,community.search,web.fetch,web.search,youtube.search.first,stock.quote,stock.chart,db.supabase.read (optional)
+- ACTION_CACHEABLE_ACTIONS=rag.retrieve,news.google.search,community.search,web.fetch,web.search,youtube.search.first,db.supabase.read (optional)
 - ACTION_RUNNER_TREND_WINDOW_RUNS=10 (optional, trend delta comparison window)
 - ACTION_CIRCUIT_BREAKER_ENABLED=true (optional)
 - ACTION_CIRCUIT_FAILURE_THRESHOLD=3 (optional)

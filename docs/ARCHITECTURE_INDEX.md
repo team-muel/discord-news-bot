@@ -341,7 +341,6 @@ flowchart TD
   B --> C[startAutomationJobs]
   B --> D[startMemoryJobRunner]
   B --> E[startOpencodePublishWorker]
-  B --> F[startTradingEngine]
   B --> G[startRuntimeAlerts]
 ```
 
@@ -394,8 +393,6 @@ Profile note:
 - `/api/bot`: runtime status, automation controls, agent operations.
 - Agent super-facade endpoints under `/api/bot/agent/super/*`: structured recommendation and session start over the existing session runtime.
 - `/api/benchmark`: benchmark event ingest and summary.
-- `/api/trades`: trade query and write APIs.
-- `/api/trading`: strategy/runtime/position control APIs.
 - `/health`, `/ready`, `/api/status`: operational health surface.
 
 ## Core Service Domains
@@ -403,7 +400,6 @@ Profile note:
 - **Auth and identity**: session parse, cookie/token validation, admin allowlist.
 - **Automation runtime**: scheduled jobs and worker health.
 - **Agent runtime**: multi-agent orchestration, policy, memory/session persistence.
-- **Trading runtime**: strategy, engine loop, distributed lock protections.
 - **Sprint pipeline**: plan → implement → review → qa → security-audit → ops-validate → ship → retro (8단계, 결정론적 fast-path 지원).
 - **Memory 4-tier**: raw → summary → concept → schema (진화 링크 + 통합 배치 + 사용자 임베딩).
 - **Autonomous evolution** (Phase F/G/H):

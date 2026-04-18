@@ -81,9 +81,6 @@ Muel is now designed as a server-operations agent with a generic skill layer.
   4. Action Logging: `src/services/skills/actionExecutionLogService.ts`
   5. Action Modules:
   - `youtube.search.first`
-  - `stock.quote`
-  - `stock.chart`
-  - `investment.analysis`
 - Planner can return a chain (max 3 actions) and executor runs them sequentially.
 - Retry and circuit-breaker are built-in for action reliability.
 - Optional headless-browser path is available for YouTube via Playwright.

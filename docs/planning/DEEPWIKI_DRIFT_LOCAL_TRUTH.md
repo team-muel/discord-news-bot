@@ -1,22 +1,22 @@
 # DeepWiki Drift Local Truth
 
-DeepWiki coverage is still useful for broad architecture recall, but its repository index is known to lag current code after 2026-04-11. This file records recurring mismatches so maintainability reviews can start from local truth instead of rediscovering the same drift.
+DeepWiki was reindexed for this repository on 2026-04-18 and should be used again for broad architecture recall, topology recovery, and historical intent. This file records the local verification points that still matter when runtime-exact behavior is important.
 
 ## Usage Rule
 
-- Use DeepWiki first for topology and historical intent.
-- Verify runtime behavior, routes, worker mappings, and generated inventories from local code before treating DeepWiki output as authoritative.
-- Prefer the local canonical source listed below when DeepWiki and the workspace disagree.
+- Use DeepWiki first for topology, historical intent, and first-pass code archaeology.
+- Verify runtime behavior, routes, worker mappings, and generated inventories from local code before treating DeepWiki output as authoritative for live behavior.
+- Prefer the local canonical source listed below when DeepWiki, cached summaries, and the workspace disagree.
 
-## Known Drift
+## Local Verification Points
 
-| Surface | DeepWiki stale assumption | Local truth | Canonical local source |
+| Surface | Why verify locally | Local truth | Canonical local source |
 | --- | --- | --- | --- |
-| Runtime admin routes | Runtime route set predates requester-personalization and OpenJarvis memory-sync admin surfaces. | Current runtime exposes personalization and memory-sync admin endpoints. | `src/routes/bot-agent/runtimeRoutes.ts`, regenerated `docs/ROUTES_INVENTORY.md` |
-| Personalization workflow | Workflow summary can be read as requested-priority only. | Runtime may switch balanced requests to an effective personalized priority; workflow snapshots should reflect the effective priority. | `src/services/agent/agentPersonalizationService.ts`, `src/services/multiAgentService.ts` |
-| OpenJarvis memory sync trigger | A `202` trigger can be interpreted as synchronous completion. | Runtime trigger is queue-oriented; freshness is checked from `tmp/openjarvis-memory-feed/summary.json`. | `src/services/openjarvis/openjarvisMemorySyncStatusService.ts` |
+| Runtime admin routes | Route summaries can flatten recently added admin surfaces. | Current runtime exposes personalization and memory-sync admin endpoints. | `src/routes/bot-agent/runtimeRoutes.ts`, regenerated `docs/ROUTES_INVENTORY.md` |
+| Personalization workflow | Workflow summaries can read as requested-priority only. | Runtime may switch balanced requests to an effective personalized priority; workflow snapshots should reflect the effective priority. | `src/services/agent/agentPersonalizationService.ts`, `src/services/multiAgentService.ts` |
+| OpenJarvis memory sync trigger | A `202` trigger can still be misread as synchronous completion. | Runtime trigger is queue-oriented; freshness is checked from `tmp/openjarvis-memory-feed/summary.json`. | `src/services/openjarvis/openjarvisMemorySyncStatusService.ts` |
 | Retrieval variant vocabulary | Variant names appear in multiple drift-prone places. | Retrieval variants are centralized for runtime and weekly scripts. | `config/runtime/retrievalVariants.js` |
-| Sprint phase adapters | `implement` may still appear mapped to OpenClaw in older docs/indexes. | `implement` and `ship` currently have no phase-level external adapter mapping. | `src/services/sprint/sprintWorkerRouter.ts`, `src/services/sprint/sprintOrchestrator.test.ts`, `docs/contracts/SPRINT_DATA_FLOW.md` |
+| Sprint phase adapters | Cached explanations can still flatten current phase-adapter routing. | `implement` and `ship` currently have no phase-level external adapter mapping. | `src/services/sprint/sprintWorkerRouter.ts`, `src/services/sprint/sprintOrchestrator.test.ts`, `docs/contracts/SPRINT_DATA_FLOW.md` |
 
 ## Review Checklist
 

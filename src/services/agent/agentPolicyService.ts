@@ -27,6 +27,8 @@ let cacheLoadedAt = 0;
 let cacheLoading: Promise<void> | null = null;
 let lastPolicyCacheErrorLogAt = 0;
 
+const POLICY_LOADING_MESSAGE = '에이전트 실행 정책을 불러오는 중입니다. 잠시 후 다시 시도해주세요.';
+
 export type AgentPolicySnapshot = {
   maxConcurrentSessions: number;
   maxGoalLength: number;
@@ -103,6 +105,19 @@ export const primeAgentPolicyCache = (): void => {
     });
 };
 
+export const canResolveAgentPolicyForGuild = (guildId?: string): boolean => {
+  primeAgentPolicyCache();
+
+  const key = String(guildId || '').trim();
+  if (key && policyCache.has(key)) {
+    return true;
+  }
+
+  return !isSupabaseConfigured() || isCacheFresh();
+};
+
+export const getAgentPolicyLoadingMessage = (): string => POLICY_LOADING_MESSAGE;
+
 export const getAgentPolicySnapshot = (guildId?: string): AgentPolicySnapshot => {
   primeAgentPolicyCache();
 
@@ -122,6 +137,10 @@ export const validateAgentSessionRequest = (params: {
   requestedSkillId: SkillId | null;
   isAdmin: boolean;
 }): AgentPolicyValidationResult => {
+  if (!canResolveAgentPolicyForGuild(params.guildId)) {
+    return { ok: false, message: POLICY_LOADING_MESSAGE };
+  }
+
   const snapshot = getAgentPolicySnapshot(params.guildId);
   const adminOnlySkills = listSkills()
     .filter((skill) => skill.adminOnly)

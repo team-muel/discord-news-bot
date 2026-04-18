@@ -30,11 +30,8 @@ const defaultGovernanceFastPathActions = [
   'news.verify',
   'rag.retrieve',
   'community.search',
-  'stock.quote',
-  'stock.chart',
   'youtube.search.first',
   'db.supabase.read',
-  'investment.analysis',
 ];
 
 const configuredGovernanceFastPathActions = parseCsvList(process.env.ACTION_GOVERNANCE_FAST_PATH_ACTIONS || '');
@@ -66,8 +63,6 @@ const defaultCacheableActions = [
   'web.fetch',
   'web.search',
   'youtube.search.first',
-  'stock.quote',
-  'stock.chart',
   'db.supabase.read',
 ];
 

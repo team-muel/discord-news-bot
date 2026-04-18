@@ -151,7 +151,7 @@ type PhaseAdapterMapping = {
 
 ### DeepWiki Drift Note
 
-DeepWiki indexed this repository before the current sprint-worker routing cleanup. Older DeepWiki snapshots may still describe `implement` as an OpenClaw-backed external adapter phase. Local code and tests are now authoritative:
+DeepWiki was reindexed for this repository on 2026-04-18 and should be used again for first-pass phase enrichment. Local code and tests remain authoritative for current phase-adapter routing, especially if a cached explanation still describes `implement` as an OpenClaw-backed external adapter phase:
 
 - `implement` has no phase-level external adapter mapping in `sprintWorkerRouter.ts`
 - `ship` also remains unmapped at the phase-adapter layer

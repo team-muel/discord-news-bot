@@ -42,9 +42,6 @@ import {
 import { DISCORD_MESSAGES } from '../messages';
 import { handleGroupedSubscribeCommand } from '../commands/subscribe';
 import {
-  handleStockPriceCommand,
-  handleStockChartCommand,
-  handleAnalyzeCommand,
   handleChannelIdCommand,
   handleForumIdCommand,
 } from '../commands/market';
@@ -340,18 +337,6 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
       switch (interaction.commandName) {
         case DISCORD_CHAT_COMMAND_NAMES.HELP: {
           await adminHandlers.handleHelpCommand(interaction);
-          return;
-        }
-        case DISCORD_CHAT_COMMAND_NAMES.STOCK_PRICE: {
-          await handleStockPriceCommand(interaction);
-          return;
-        }
-        case DISCORD_CHAT_COMMAND_NAMES.STOCK_CHART: {
-          await handleStockChartCommand(interaction);
-          return;
-        }
-        case DISCORD_CHAT_COMMAND_NAMES.ANALYZE: {
-          await handleAnalyzeCommand(interaction);
           return;
         }
         case DISCORD_CHAT_COMMAND_NAMES.SUBSCRIBE: {

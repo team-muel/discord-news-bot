@@ -68,6 +68,8 @@ let cacheLoadedAt = 0;
 let cacheLoading: Promise<void> | null = null;
 let lastWorkflowCacheErrorLogAt = 0;
 
+const WORKFLOW_LOADING_MESSAGE = '에이전트 워크플로 프로필을 불러오는 중입니다. 잠시 후 다시 시도해주세요.';
+
 const normalizePriority = (value: string): WorkflowPriority => {
   const lowered = String(value || '').trim().toLowerCase();
   if (lowered === 'fast') return 'fast';
@@ -170,6 +172,22 @@ export const primeWorkflowProfileCache = (): void => {
       cacheLoading = null;
     });
 };
+
+export const canResolveWorkflowStepTemplates = (params: {
+  guildId: string;
+  priority: WorkflowPriority;
+}): boolean => {
+  primeWorkflowProfileCache();
+
+  const keyGuild = `${params.guildId}:${params.priority}`;
+  if (workflowCache.has(keyGuild)) {
+    return true;
+  }
+
+  return !isSupabaseConfigured() || isCacheFresh();
+};
+
+export const getWorkflowProfileLoadingMessage = (): string => WORKFLOW_LOADING_MESSAGE;
 
 export const getWorkflowStepTemplates = (params: {
   guildId: string;

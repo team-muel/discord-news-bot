@@ -8,9 +8,6 @@ import type {
   ResearchPresetHistoryResponse,
   ResearchPresetKey,
   ResearchPresetResponse,
-  TradeCreateInput,
-  TradeCreateResponse,
-  TradesListResponse,
 } from './api.types';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -134,72 +131,6 @@ export function createMuelApiClient(baseUrl: string) {
         { signal },
         new URLSearchParams({ limit: String(limit) }),
       );
-    },
-
-    listTrades(filter: { symbol?: string; status?: string; limit?: number } = {}, signal?: AbortSignal) {
-      const params = new URLSearchParams();
-      if (filter.symbol) {
-        params.set('symbol', filter.symbol);
-      }
-      if (filter.status) {
-        params.set('status', filter.status);
-      }
-      if (typeof filter.limit === 'number') {
-        params.set('limit', String(filter.limit));
-      }
-      return request<TradesListResponse>('/api/trades', { signal }, params);
-    },
-
-    createTrade(input: TradeCreateInput, signal?: AbortSignal) {
-      return request<TradeCreateResponse>('/api/trades', { method: 'POST', body: input, signal });
-    },
-
-    getTradingStrategy(signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/strategy', { signal });
-    },
-
-    updateTradingStrategy(strategyPatch: Record<string, unknown>, signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/strategy', {
-        method: 'PUT',
-        body: { strategy: strategyPatch },
-        signal,
-      });
-    },
-
-    resetTradingStrategy(signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/strategy/reset', { method: 'POST', signal });
-    },
-
-    getTradingRuntime(signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/runtime', { signal });
-    },
-
-    runTradingOnce(signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/runtime/run-once', { method: 'POST', signal });
-    },
-
-    pauseTrading(reason = 'front-uiux', signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/runtime/pause', {
-        method: 'POST',
-        body: { reason },
-        signal,
-      });
-    },
-
-    resumeTrading(signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/runtime/resume', { method: 'POST', signal });
-    },
-
-    getTradingPosition(symbol: string, signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/position', { signal }, new URLSearchParams({ symbol }));
-    },
-
-    closeTradingPosition(symbol: string, signal?: AbortSignal) {
-      return request<Record<string, unknown>>('/api/trading/position/close', {
-        method: 'POST',
-        body: { symbol },
-        signal,
-      });
     },
   };
 }

@@ -21,6 +21,56 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-18 - Discord Chat SDK Cutover Closed The Deployed Internal Default-On Evidence Window
+
+- Why: M-24 had already closed the local ingress seam and local-process rollback rehearsal, but the remaining blocker for the current `chat-sdk` owner path was still a real deployed-internal artifact proving rollout 100 selected-path parity plus forced-fallback rollback for both eligible Discord surfaces.
+- Scope: ran the live cutover validator against the deployed internal control plane, emitted a fresh md/json go artifact, and refreshed the cutover-validation, closure-plan, legacy-cleanup, mapping, and execution-board docs to move the prefixed `muel-message` fallback exact unit into rollback-only inventory.
+- Impacted Routes: exercised `/api/internal/discord/ingress/cutover/snapshot`, `/api/internal/discord/ingress/cutover/policy`, and `/api/internal/discord/ingress/cutover/exercise`; no route contract changed
+- Impacted Services: `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/DISCORD_CHAT_SURFACE_FULL_CLOSURE_PLAN.md`, `docs/planning/LEGACY_CLEANUP_LANE.md`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, `docs/planning/EXECUTION_BOARD.md`, `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-124225.md`, `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-124225.json`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: no runtime code path changed in this window. The docs now recognize the prefixed `muel-message` fallback as rollback-only residue, but delete gates remain closed until the grace window ends and the remaining Discord transport shell units are reclassified explicitly.
+- Validation: `npm run gates:discord:cutover -- --applyLivePolicy=true --exerciseLiveEvidence=true`
+
+## 2026-04-18 - Runtime Infra And Obsidian Knowledge Compiler Boundaries Completed Their Structural Extraction
+
+- Why: `runtimeRoutes.ts` and `knowledgeCompilerService.ts` still carried the last concentrated admin/control-plane and promotion/lint/supervisor seams even after the earlier waves hit the baseline. That left one large route registrar and one large Obsidian coordinator file owning too many unrelated responsibilities.
+- Scope: extracted runtime infrastructure endpoints into a dedicated route subarea, extracted Obsidian promotion, semantic lint, and supervisor/control-surface logic into dedicated services, and kept the public exports in `knowledgeCompilerService.ts` as thin wrappers so route and service callers did not need to change.
+- Impacted Routes: `/agent/runtime/supabase/*`, `/agent/runtime/lightweighting-plan`, `/agent/runtime/scheduler-policy`, `/agent/runtime/efficiency*`, `/agent/runtime/channel-routing`, `/agent/runtime/sandbox-policy-sync`, `/agent/runtime/self-improvement/*`
+- Impacted Services: `src/routes/bot-agent/runtimeRoutes.ts`, `src/routes/bot-agent/runtime-subareas/infrastructureRoutes.ts`, `src/services/obsidian/knowledgeCompilerService.ts`, `src/services/obsidian/obsidianPromotionService.ts`, `src/services/obsidian/obsidianSemanticLintService.ts`, `src/services/obsidian/obsidianKnowledgeSupervisorService.ts`, `src/routes/botAgentRoutes.smoke.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this is a boundary extraction only. Route paths, response contracts, and the `knowledgeCompilerService.ts` public API remain stable while the internal orchestration surface becomes smaller and easier to harden.
+- Validation: `vitest run src/services/obsidian/knowledgeCompilerService.test.ts src/routes/botAgentRoutes.smoke.test.ts src/routes/botAgentObsidianRuntime.test.ts src/mcp/obsidianToolAdapter.test.ts`; `npx tsc --noEmit`; `vitest run`
+
+## 2026-04-18 - Passive Discord Telemetry Now Skips Private Thread Activity
+
+- Why: passive Discord capture was forwarding every message into channel telemetry buckets, which meant private-thread activity could be aggregated into operator-facing channel activity snapshots even though other social surfaces already treated private threads as a privacy boundary.
+- Scope: taught the Discord channel telemetry service to drop private-thread signals at ingest time and updated passive memory capture to pass the private-thread flag explicitly.
+- Impacted Routes: no HTTP route contract changes; affects background Discord telemetry snapshots only
+- Impacted Services: `src/discord/runtime/passiveMemoryCapture.ts`, `src/services/discord-support/discordChannelTelemetryService.ts`, `src/services/discord-support/discordChannelTelemetryService.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: private-thread messages no longer contribute to aggregated top-channel/top-thread/top-user telemetry notes; public channels and public threads keep the previous behavior.
+- Validation: `vitest run src/services/discord-support/discordChannelTelemetryService.test.ts`; `npm exec tsc -- --noEmit`; `vitest run`
+
+## 2026-04-18 - Discord Login Session Cache Now Revalidates DB-Owned Persisted Sessions
+
+- Why: Discord feature access kept an in-process login-session cache alongside the persisted Supabase session row, but cached persisted sessions were trusted until TTL expiry even when DB-owned cleanup or external row removal had already invalidated the stored session.
+- Scope: made the Discord auth cache source-aware (`persisted` vs `memory-only`), added periodic DB revalidation for persisted sessions when the database owns cleanup, and made the app-owned cleanup loop purge expired cached entries as well as expired rows.
+- Impacted Routes: Discord feature-gated command/session access; no HTTP route contract changes
+- Impacted Services: `src/discord/auth.ts`, `src/discord/auth.test.ts`
+- Impacted Tables/RPC: `discord_login_sessions` read/upsert/delete paths via `src/services/discord-support/discordLoginSessionStore.ts`
+- Risk/Regression Notes: persisted sessions now fail closed sooner when their DB row disappears, while intentional `memory-only` fallback sessions still remain usable until local TTL expiry if persistence is temporarily unavailable.
+- Validation: `vitest run src/discord/auth.test.ts`; `npm exec tsc -- --noEmit`; `vitest run`
+
+## 2026-04-18 - Retired The Remaining Trading Module Surface
+
+- Why: the repository no longer had a live trading runtime, but Discord slash commands, finance actions, and operator docs still advertised `/주가`, `/차트`, `/분석`, `/api/trading`, and `/api/trades` as active surfaces. That mismatch kept dead code in production paths and left operator-facing docs pointing at routes that do not exist.
+- Scope: removed the remaining Discord trading commands and finance actions, deleted the backing trading services/tests, removed stale finance fast-path/cache config, and corrected the major operator/handoff docs that still described trading runtime startup or trading HTTP APIs as live.
+- Impacted Routes: Discord slash `/주가`, `/차트`, `/분석` removed; stale doc references to `/api/trading` and `/api/trades` retired
+- Impacted Services: `src/discord/commandDefinitions.ts`, `src/discord/runtime/commandRouter.ts`, `src/discord/commands/market.ts`, `src/discord/commands/admin.ts`, `src/discord/commands/crm.ts`, `src/services/skills/actions/registry.ts`, `src/services/skills/actionRunnerConfig.ts`, `src/services/index.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this is an intentional feature-surface removal. Channel/forum utility commands remain in `market.ts`, and operator docs now describe the current runtime instead of the removed trading control plane.
+- Validation: `npm exec tsc -- --noEmit`; `vitest run`
+
 ## 2026-04-18 - Discord Eligible Slash Surface Routing Extracted From The Main Command Router
 
 - Why: even after the shared `/뮤엘` policy helper and session-progress parity work landed, `commandRouter.ts` still owned the eligible slash-surface product routing inline. That kept the main Discord shell file responsible for `/해줘`, `/뮤엘`, and the legacy `/만들어줘` grace branch instead of treating those as one focused eligible-surface boundary.

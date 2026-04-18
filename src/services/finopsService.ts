@@ -58,7 +58,7 @@ const csvSet = (raw: string, fallback: string[]): Set<string> => {
 
 const FINOPS_DEGRADE_ALLOWED_ACTIONS = csvSet(
   FINOPS_DEGRADE_ALLOWED_ACTIONS_RAW,
-  ['rag.retrieve', 'stock.quote', 'stock.chart', 'privacy.forget.user', 'privacy.forget.guild'],
+  ['rag.retrieve', 'privacy.forget.user', 'privacy.forget.guild'],
 );
 const FINOPS_HARD_BLOCK_EXEMPT_ACTIONS = csvSet(
   FINOPS_HARD_BLOCK_EXEMPT_ACTIONS_RAW,

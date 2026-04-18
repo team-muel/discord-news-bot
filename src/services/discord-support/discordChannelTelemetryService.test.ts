@@ -93,6 +93,25 @@ describe('recordDiscordChannelMessageSignal', () => {
     ).not.toThrow();
   });
 
+  it('ignores private thread signals so they do not enter telemetry buckets', async () => {
+    for (let index = 0; index < 40; index += 1) {
+      recordDiscordChannelMessageSignal({
+        guildId: 'g-private-thread',
+        channelId: `thread-${index}`,
+        channelName: `private-${index}`,
+        authorId: `u${index}`,
+        isThread: true,
+        isPrivateThread: true,
+        parentChannelId: 'parent-private',
+      });
+    }
+
+    await flushAsyncWork();
+
+    expect(vi.mocked(upsertObsidianGuildDocument)).not.toHaveBeenCalled();
+    expect(vi.mocked(logger.info)).not.toHaveBeenCalled();
+  });
+
   it('logs reflection summary when a flush succeeds', async () => {
     vi.mocked(upsertObsidianGuildDocument).mockResolvedValue({
       ok: true,

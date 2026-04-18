@@ -490,7 +490,6 @@ flowchart TD
   B --> C[startAutomationJobs]
   B --> D[startMemoryJobRunner]
   B --> E[startOpencodePublishWorker]
-  B --> F[startTradingEngine]
   B --> G[startRuntimeAlerts]
   A --> H[HTTP app listen]
 ```
@@ -533,7 +532,7 @@ Run in order:
 3. `GET /ready` confirms runtime readiness
 4. OAuth login from frontend works
 5. `GET /api/auth/me` returns session + CSRF metadata
-6. Admin-only endpoint check (`/api/trading/strategy` or `/api/bot/status`) matches expected permission
+6. Admin-only endpoint check (for example `GET /api/bot/agent/runtime/scheduler-policy`) matches expected permission
 7. Obsidian sync dry run and real run complete without fatal errors
 8. `guild_lore_docs` has updated rows for active guilds
 9. `GET /api/bot/agent/obsidian/runtime` confirms remote-mcp health, cache boundary, and `inboxChatLoop` state
@@ -683,14 +682,13 @@ Severity model (suggested):
 ### 6.1 Immediate Mitigation Playbook
 
 1. Identify blast radius:
-   - API-only, bot-only, frontend-only, data-only, or sync-only
-2. Check recent changes:
-   - deployment, env edits, schema changes, key rotation
-3. Stabilize service:
-   - restart Render service if stuck
-   - pause optional loops if needed (`START_TRADING_BOT=false`, automation toggles)
-4. Protect data correctness:
-   - avoid manual table edits without traceability
+  API-only, bot-only, frontend-only, data-only, or sync-only.
+1. Check recent changes:
+  deployment, env edits, schema changes, key rotation.
+1. Stabilize service:
+  restart Render service if stuck; pause optional loops if needed (automation toggles).
+1. Protect data correctness:
+  avoid manual table edits without traceability.
 
 ### 6.2 Common Fault Domains
 
@@ -791,7 +789,7 @@ This section defines how to run staged autonomy evolution safely.
 
 1. Stage A: control-plane boundary split (in-process)
 2. Stage B: queue-first split for heavy memory jobs
-3. Stage C: trading runtime isolation readiness and canary
+3. Stage C: runtime hardening and canary verification
 
 Rule:
 
@@ -912,9 +910,6 @@ npm run smoke:api
 Current runtime supports a controlled generic action layer via `ops-execution`:
 
 - `youtube.search.first`
-- `stock.quote`
-- `stock.chart`
-- `investment.analysis`
 - `rag.retrieve` (guild memory retrieval with citation-first evidence)
 - `youtube.search.webhook` (YouTube 검색 결과를 MCP 워커가 Discord webhook으로 전송)
 - `privacy.forget.user` (user-scoped right-to-be-forgotten purge)

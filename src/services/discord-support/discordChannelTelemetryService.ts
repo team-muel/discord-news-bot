@@ -136,6 +136,7 @@ export const recordDiscordChannelMessageSignal = (params: {
   channelName: string;
   authorId: string;
   isThread?: boolean;
+  isPrivateThread?: boolean;
   parentChannelId?: string | null;
 }): void => {
   if (!ENABLED) {
@@ -148,6 +149,9 @@ export const recordDiscordChannelMessageSignal = (params: {
   const channelId = String(params.channelId || '').trim();
   const authorId = String(params.authorId || '').trim();
   if (!guildId || !channelId || !authorId) {
+    return;
+  }
+  if (params.isPrivateThread) {
     return;
   }
 

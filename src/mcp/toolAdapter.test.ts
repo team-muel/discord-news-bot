@@ -204,38 +204,6 @@ describe('toolAdapter runtime lanes', () => {
     });
   });
 
-  it('routes stock quote actions through the system-internal pipeline lane', async () => {
-    mockRunGoalPipeline.mockResolvedValue({
-      handled: true,
-      output: 'AAPL 123.45',
-      hasSuccess: true,
-      externalUnavailable: false,
-      diagnostics: {
-        totalFailures: 0,
-        missingAction: 0,
-        policyBlocked: 0,
-        governanceUnavailable: 0,
-        finopsBlocked: 0,
-        externalFailures: 0,
-        unknownFailures: 0,
-      },
-      actionResults: [],
-    });
-
-    const result = await callMcpTool({
-      name: 'stock.quote',
-      arguments: { symbol: 'aapl' },
-    });
-
-    expect(result.isError).not.toBe(true);
-    expect(mockRunGoalPipeline).toHaveBeenCalledWith(expect.objectContaining({
-      goal: 'stock.quote AAPL',
-      guildId: 'MCP',
-      requestedBy: 'mcp-adapter',
-      runtimeLane: 'system-internal',
-    }));
-  });
-
   it('returns the hybrid automation capability catalog', async () => {
     mockBuildAutomationCapabilityCatalog.mockResolvedValue({
       model: 'API-First & Agent-Fallback',

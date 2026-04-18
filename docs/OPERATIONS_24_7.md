@@ -124,7 +124,6 @@ Set these in your runtime environment (`.env` or host secret manager):
 
 - `NODE_ENV=production`
 - `START_BOT=true`
-- `START_TRADING_BOT=false` (enable only when strategy loop should run on this instance)
 - `START_AUTOMATION_JOBS=true`
 - `DISCORD_TOKEN=<your token>` (or `DISCORD_BOT_TOKEN`)
 - `JWT_SECRET=<strong secret>`
@@ -240,32 +239,7 @@ Recommended single-instance starting values:
 - `tickYieldEvery=100`
 - `maxTicksPerCycle=1200`
 - `memorySoftLimitMb=300` (pause engine automatically when heap exceeds this)
-- AI-trading execution mode (single Render default):
-  - Recommended local mode (same service process):
-    - `AI_TRADING_MODE=local`
-    - `BINANCE_API_KEY=<your-binance-key>`
-    - `BINANCE_API_SECRET=<your-binance-secret>`
-    - optional: `BINANCE_FUTURES=true`, `BINANCE_HEDGE_MODE=false`
-  - Optional proxy mode (external service delegation):
-    - `AI_TRADING_MODE=proxy`
-    - `AI_TRADING_BASE_URL=https://<ai-trading-service-domain>`
-    - `AI_TRADING_INTERNAL_TOKEN=<shared-internal-token>`
-    - `AI_TRADING_ORDER_PATH=/internal/binance/order`
-    - `AI_TRADING_POSITION_PATH=/internal/binance/position`
-    - `AI_TRADING_TIMEOUT_MS=15000`
-
-- In-process strategy loop (optional):
-  - `START_TRADING_BOT=true`
-  - `TRADING_DRY_RUN=true` for initial rollout
-  - `TRADING_SYMBOLS=BTC/USDT` (comma-separated)
-  - `TRADING_TIMEFRAME=30m`
-  - `TRADING_CANDLES_TABLE=candles`
-  - `TRADING_STATE_TABLE=bot_state`
-  - runtime strategy overrides are stored in `trading_engine_configs`
-  - runtime controls are available via API:
-    - pause: `POST /api/trading/runtime/pause`
-    - resume: `POST /api/trading/runtime/resume`
-    - force close: `POST /api/trading/position/close`
+- Trading runtime has been retired from the current platform profiles. Ignore older `AI_TRADING_*`, `START_TRADING_BOT`, and `/api/trading/*` references in archived notes.
 
 ## 2.2) Supabase Schema Setup (Required for DB mode)
 

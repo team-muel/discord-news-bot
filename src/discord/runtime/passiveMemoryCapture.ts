@@ -92,6 +92,7 @@ export const processPassiveMemoryCapture = async (message: Message): Promise<voi
     channelName: channelMeta.channelName || 'unknown',
     authorId: message.author.id,
     isThread: channelMeta.isThread,
+    isPrivateThread: channelMeta.isPrivateThread,
     parentChannelId: channelMeta.parentChannelId,
   });
 

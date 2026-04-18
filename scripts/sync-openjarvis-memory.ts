@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArg, parseBool, parseBoolEnvAny } from './lib/cliArgs.mjs';
 import { SUPABASE_KEY, SUPABASE_URL, createScriptClient, isMissingRelationError } from './lib/supabaseClient.mjs';
 import { getObsidianAdapterRuntimeStatus, readObsidianFileWithAdapter } from '../src/services/obsidian/router.ts';
+import { atomicWriteFileSync } from '../src/utils/atomicWrite.ts';
 import { getObsidianVaultRoot } from '../src/utils/obsidianEnv.ts';
 
 type ProjectionSection = 'obsidian' | 'repo' | 'supabase';
@@ -60,6 +61,7 @@ type WeeklyReportRow = {
 const execFileAsync = promisify(execFile);
 const ROOT = process.cwd();
 const OUTPUT_DIR = path.join(ROOT, 'tmp', 'openjarvis-memory-feed');
+const SUMMARY_FILE_NAME = 'summary.json';
 const INDEX_TIMEOUT_MS = Math.max(10_000, Number(process.env.OPENJARVIS_MEMORY_INDEX_TIMEOUT_MS || '60000') || 60_000);
 const MAX_DOC_CHARS = Math.max(2_000, Number(process.env.OPENJARVIS_MEMORY_SYNC_MAX_DOC_CHARS || '24000') || 24_000);
 const ENABLED = parseBoolEnvAny(['OPENJARVIS_MEMORY_SYNC_ENABLED', 'OPENJARVIS_LEARNING_LOOP_ENABLED'], false);
@@ -138,9 +140,14 @@ const asJsonBlock = (value: unknown): string => {
   }
 };
 
-const ensureCleanDir = (dirPath: string): void => {
-  fs.rmSync(dirPath, { recursive: true, force: true });
+export const ensureProjectionOutputDir = (dirPath: string): void => {
   fs.mkdirSync(dirPath, { recursive: true });
+  for (const entry of fs.readdirSync(dirPath)) {
+    if (entry === SUMMARY_FILE_NAME) {
+      continue;
+    }
+    fs.rmSync(path.join(dirPath, entry), { recursive: true, force: true });
+  }
 };
 
 const resolveVaultPath = (): string => {
@@ -347,7 +354,7 @@ const loadSupabaseDocs = async (guildId: string | null): Promise<{ docs: Project
 };
 
 const writeProjectionDocs = (docs: ProjectionDoc[]): void => {
-  ensureCleanDir(OUTPUT_DIR);
+  ensureProjectionOutputDir(OUTPUT_DIR);
   for (const doc of docs) {
     const targetDir = path.join(OUTPUT_DIR, doc.section);
     fs.mkdirSync(targetDir, { recursive: true });
@@ -355,8 +362,12 @@ const writeProjectionDocs = (docs: ProjectionDoc[]): void => {
   }
 };
 
+export const writeProjectionSummary = (summaryPath: string, summary: Record<string, unknown>): void => {
+  atomicWriteFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+};
+
 const writeSummary = (summary: Record<string, unknown>): void => {
-  fs.writeFileSync(path.join(OUTPUT_DIR, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+  writeProjectionSummary(path.join(OUTPUT_DIR, SUMMARY_FILE_NAME), summary);
 };
 
 const runJarvisMemoryIndex = async (): Promise<string> => {

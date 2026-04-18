@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-04-11",
+  "updatedAt": "2026-04-18",
   "description": "Machine-readable classification for repository markdown externalization, stub conversion, and delete-ready audits.",
   "defaults": {
     "backfillRequiredFor": ["externalize", "delete-candidate"],
@@ -96,14 +96,7 @@
           "docs/OBSIDIAN_SUPABASE_SYNC.md",
           "docs/POSTMORTEM_TEMPLATE.md",
           "docs/SPRINT_ENV_VARS.md",
-          "docs/adr/ADR-001-memory-domain-model.md",
-          "docs/adr/ADR-002-memory-retrieval-policy.md",
-          "docs/adr/ADR-003-admin-correction-loop.md",
-          "docs/adr/ADR-004-citation-first-response.md",
           "docs/adr/ADR-005-context-compression-pipeline.md",
-          "docs/adr/ADR-006-intent-intelligence-layer.md",
-          "docs/adr/ADR-006-memory-evolution-and-tiering.md",
-          "docs/adr/ADR-007-multi-platform-surface-abstraction.md",
           "docs/planning/AUTONOMOUS_AGENT_EVOLUTION_PLAN.md",
           "docs/planning/contexts/team-muel_discord-news-bot.md",
           "docs/planning/development/2026-04-10_obsidian-development-archaeology-wikiization.md",
