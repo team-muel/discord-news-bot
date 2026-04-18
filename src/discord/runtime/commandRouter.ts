@@ -103,7 +103,10 @@ import {
 } from '../../services/openclaw/gatewayHealth';
 import { autoProposeWorker } from '../../services/workerGeneration/autoWorkerProposal';
 import { executeDiscordIngress, primeDiscordIngressCutoverPolicy, type DiscordIngressExecutionHandler } from './discordIngressAdapter';
-import { initDiscordChatSdkRuntime, tryHandleDiscordChatSdkSlashCommand } from './chatSdkRuntime';
+import {
+  initDiscordChatSdkRuntime,
+} from './chatSdkRuntime';
+import { tryHandleEligibleChatSurfaceSlashCommand } from './eligibleChatSurfaceRouter';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -324,6 +327,16 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
     }
 
     try {
+      if (await tryHandleEligibleChatSurfaceSlashCommand(interaction, {
+        docs: docsHandlers,
+        vibe: vibeHandlers,
+      }, {
+        codingIntentPattern: CODING_INTENT_PATTERN,
+        automationIntentPattern: AUTOMATION_INTENT_PATTERN,
+      })) {
+        return;
+      }
+
       switch (interaction.commandName) {
         case DISCORD_CHAT_COMMAND_NAMES.HELP: {
           await adminHandlers.handleHelpCommand(interaction);
@@ -343,24 +356,6 @@ export function attachAllHandlers(client: Client, deps: CommandRouterDeps): void
         }
         case DISCORD_CHAT_COMMAND_NAMES.SUBSCRIBE: {
           await handleGroupedSubscribeCommand(interaction);
-          return;
-        }
-        case DISCORD_CHAT_COMMAND_NAMES.MAKE: {
-          await vibeHandlers.handleMakeCommand(interaction);
-          return;
-        }
-        case DISCORD_CHAT_COMMAND_NAMES.ASK_COMPAT: {
-          if (await tryHandleDiscordChatSdkSlashCommand(interaction)) {
-            return;
-          }
-          await docsHandlers.handleAskCommand(interaction);
-          return;
-        }
-        case DISCORD_CHAT_COMMAND_NAMES.MUEL: {
-          if (await tryHandleDiscordChatSdkSlashCommand(interaction)) {
-            return;
-          }
-          await docsHandlers.handleAskCommand(interaction);
           return;
         }
         case DISCORD_CHAT_COMMAND_NAMES.CHANGELOG: {

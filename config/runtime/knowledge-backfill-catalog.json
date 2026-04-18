@@ -572,6 +572,27 @@
       ]
     },
     {
+      "id": "plan-discord-chat-surface-full-closure",
+      "title": "Discord Chat Surface Full Closure Plan",
+      "sourcePath": "docs/planning/DISCORD_CHAT_SURFACE_FULL_CLOSURE_PLAN.md",
+      "targetPath": "plans/execution/DISCORD_CHAT_SURFACE_FULL_CLOSURE_PLAN.md",
+      "plane": "learning",
+      "concern": "recursive-improvement",
+      "audience": "shared",
+      "canonical": true,
+      "startHere": false,
+      "agentReference": true,
+      "tags": ["plan", "discord", "chat-sdk", "cleanup", "execution", "de-hardcoding"],
+      "intent": "architecture",
+      "queries": [
+        "discord full closure plan",
+        "discord chat surface full closure",
+        "m24 m21 full resolution plan",
+        "discord de-hardcoding plan",
+        "chat sdk grace close legacy cleanup program"
+      ]
+    },
+    {
       "id": "plan-capability-gap-analysis",
       "title": "Capability Gap Analysis",
       "sourcePath": "docs/planning/CAPABILITY_GAP_ANALYSIS.md",

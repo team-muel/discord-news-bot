@@ -3,7 +3,7 @@
 Status note:
 
 - Reference validation contract for M-24 cutover verification.
-- Current gate state: boundary-definition and rollout controls are complete, and the eligible chat surfaces now have live selected-path parity, forced-fallback rollback, and runtime-green evidence for the generic ingress seam. Cutover validation has exited first-pass evidence collection; remaining work is exact-unit grace-close and later owner-change validation.
+- Current gate state: boundary-definition and rollout controls are complete, and the eligible chat surfaces now have live selected-path parity, forced-fallback rollback, and runtime-green evidence for the generic ingress seam. A fresh local-process go artifact also confirms the current code still records both eligible rollback rehearsals after the `/뮤엘` parity and slash-dispatch refactors. Remaining work is exact-unit grace-close and later owner-change validation on the deployed internal control plane.
 - Current execution priority remains in `EXECUTION_BOARD.md`.
 
 ## Objective
@@ -33,16 +33,15 @@ Today, the live Discord ingress contract is narrower than the full bot surface.
 ## Current Readiness Verdict
 
 - Boundary-definition status: complete.
-- Adapter implementation status: complete for the eligible chat surfaces. Session A and Session B are both closed for `/해줘`, `/뮤엘`, and prefixed `뮤엘 ...`; `/만들어줘` remains phase 2 and outside this window.
+- Adapter implementation status: complete for the eligible chat surfaces. Session A and Session B are both closed for `/해줘`, `/뮤엘`, and prefixed `뮤엘 ...`; the separate `/만들어줘` public slash surface is retired, and build or automation requests now enter through `/뮤엘` or prefixed `뮤엘 ...` before reusing the existing vibe/session flow.
 - Rollout-control status: core primitives and live seam evidence are complete for the eligible chat surfaces.
 - Removal inventory status: the first exact-unit refresh is complete. The `docs.ask` post-ingress fallback now qualifies as rollback-only residue, while whole-file removal for `docs.ts`, `vibe.ts`, `session.ts`, and `commandRouter.ts` remains locked.
 - Cutover validation status: green for the current canary window and closed for the first generic-ingress evidence gate; later preferred-adapter changes still require their own bounded validation window.
 Remaining follow-ups for full owner transition:
 - eligible surface 전체 default-on/100 전환은 아직 완료되지 않았다.
 - rollback grace-close 종료와 legacy demotion/removal은 별도 후속 session이다.
-- `/만들어줘`와 full session-progress reply/update lifecycle은 여전히 phase 2 범위다.
 - prefixed `muel-message` fallback branch still needs its own production live rollback observation artifact before it can move to rollback-only.
-- the latest production rerun (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) refreshed live selected-owner parity for both eligible surfaces on the current `chat-sdk` canary, but the deployed internal cutover exercise route still emitted only a single forced-fallback rollback observation. Local code now supports per-surface rollback rehearsal for both eligible surfaces, so the remaining blocker is deploying that newer control-plane path and re-running the bounded live validation window.
+- the latest production rerun (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) refreshed live selected-owner parity for both eligible surfaces on the current `chat-sdk` canary, and the fresh local-process rerun (`2026-04-18_chat-sdk-cutover-20260418-095009.*`) confirmed that the current code records forced-fallback rollback observations for both eligible surfaces at rollout 100. The remaining blocker is still deploying that newer control-plane path and re-running the bounded live validation window through the internal exercise route.
 
 - `src/discord/runtime/discordIngressAdapter.ts` now emits structured route-decision telemetry, per-surface rollout/holdout gating, and persisted cutover evidence snapshots under `tmp/discord-ingress-cutover/latest.json`.
 - `scripts/run-chat-sdk-discord-cutover-validation.ts` now emits the md/json gate-run artifact pair under `docs/planning/gate-runs/chat-sdk-cutover/`.
@@ -51,6 +50,7 @@ Remaining follow-ups for full owner transition:
 - lab rehearsal evidence may still be recorded in production, but it stays `observed-only` there and cannot satisfy the final live parity or rollback decision.
 - `npm run gates:discord:cutover:lab:dry` may still accept lab evidence during a dry-run rehearsal even when dotenv resolves `NODE_ENV=production`, because the command writes no final artifact and is scoped to local rehearsal closeout only.
 - latest live-go artifact: `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-212611.md`
+- latest local-process go artifact: `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-095009.md`
 - latest pre-chat-sdk live-go artifact for the extracted seam itself: `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-142211.md`
 
 ## Entry Criteria

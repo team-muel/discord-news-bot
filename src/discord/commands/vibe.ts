@@ -5,6 +5,12 @@ import { buildUserCard, EMBED_INFO, EMBED_WARN, EMBED_ERROR } from '../ui';
 import { ensureFeatureAccess } from '../auth';
 import { DISCORD_VIBE_DEDUP_MAX_ENTRIES, DISCORD_VIBE_WORKER_REQUEST_CLIP, DISCORD_VIBE_AUTO_PROPOSAL_MAX_ENTRIES } from '../runtimePolicy';
 import { seedFeedbackReactions } from '../session';
+import {
+  isLowSignalPrompt,
+  isQuickConversation,
+  UTILITY_TASK_HINT_PATTERN,
+} from '../muelEntryPolicy';
+import { sanitizeDiscordUserFacingText } from '../userFacingSanitizer';
 import logger from '../../logger';
 import { acquireDistributedLease } from '../../services/infra/distributedLockService';
 import type { DiscordIngressExecutionHandler } from '../runtime/discordIngressAdapter';
@@ -14,13 +20,6 @@ import {
   VIBE_AUTO_WORKER_PROPOSAL_ENABLED,
   VIBE_AUTO_WORKER_PROPOSAL_COOLDOWN_MS,
 } from '../../config';
-
-// ── Quick-intent patterns: intercept simple conversational queries before Sprint ──
-// These bypass the full Sprint pipeline and go directly to generateText().
-const QUICK_INTENT_PATTERN = /^(안녕|하이|ㅎㅇ|반가|뭐해|뭐하고|오늘.*날씨|날씨.*어때|지금.*몇시|몇 시|시간.*알려|오늘.*뭐|봇.*살아|살아.*있어|테스트|ping|hello|hi\b)/i;
-// Short messages (≤30 chars) that are clearly just casual chat also qualify
-const isQuickConversation = (text: string): boolean =>
-  QUICK_INTENT_PATTERN.test(text) || (text.length <= 30 && /[?!？！]$/.test(text) && !/스프린트|분석|구현|만들|작성|검색|정리|요약/.test(text));
 
 type VibeDeps = {
   getReplyVisibility: (interaction: ChatInputCommandInteraction) => 'private' | 'public';
@@ -55,6 +54,17 @@ type MessageIngressResponsePayload = {
   seedFeedback?: boolean;
 };
 
+type VibeResponseTone = 'info' | 'warn' | 'error';
+
+type VibeResponsePayload = {
+  title?: string;
+  body: string;
+  tone?: VibeResponseTone;
+  seedFeedback?: boolean;
+  components?: ActionRowBuilder<ButtonBuilder>[];
+  ephemeral?: boolean;
+};
+
 type MessageIngressResponseSinkV1 = {
   ack: () => Promise<void>;
   updateProgress: (payload: MessageIngressResponsePayload) => Promise<void>;
@@ -62,7 +72,14 @@ type MessageIngressResponseSinkV1 = {
   followUp: (payload: MessageIngressResponsePayload) => Promise<void>;
 };
 
-const UTILITY_TASK_HINT_PATTERN = /(찾아|검색|분석|요약|정리|작성|만들|추천|조회|계획|실행|해줘|해 줘|please|search|find|analyze|summarize|build|create|plan|check)/i;
+type VibeResponseSink = {
+  ack: (payload?: VibeResponsePayload) => Promise<void>;
+  updateProgress: (payload: VibeResponsePayload) => Promise<Message | null>;
+  final: (payload: VibeResponsePayload) => Promise<Message | null>;
+  followUp: (payload: VibeResponsePayload) => Promise<void>;
+  getPrimaryReply: () => Promise<Message | null>;
+};
+
 const MISSING_TOOL_SIGNAL_PATTERN = /(ACTION_NOT_IMPLEMENTED|DYNAMIC_WORKER_NOT_FOUND|unsupported job type|missing_action=([1-9]\d*))/i;
 const VIBE_MESSAGE_PREFIX_PATTERN = /^뮤엘(?:아)?(?:(?:\s*:\s*)|\s+|$)/;
 const MESSAGE_INGRESS_REPLY_LIMIT = 1_800;
@@ -164,6 +181,14 @@ const acquireAutoProposalSlot = (key: string): boolean => {
   return true;
 };
 
+const resolveVibeCommandRequest = (interaction: ChatInputCommandInteraction): string => {
+  return String(
+    interaction.options.getString('요청', false)
+    || interaction.options.getString('질문', false)
+    || '',
+  ).trim();
+};
+
 const formatAutoProposalError = (error: string): string => {
   const text = String(error || '').trim();
   if (!text) {
@@ -246,6 +271,153 @@ const clipMessageIngressContent = (value: string): string => {
   return String(value || '').trim().slice(0, MESSAGE_INGRESS_REPLY_LIMIT);
 };
 
+const VIBE_EMBED_BY_TONE = {
+  info: EMBED_INFO,
+  warn: EMBED_WARN,
+  error: EMBED_ERROR,
+} as const;
+
+const resolveVibeRuntimeGoal = (
+  request: string,
+  codingIntentPattern: RegExp,
+): { runtimeGoal: string; showCodingTip: boolean } => {
+  const normalized = String(request || '').trim();
+  if (!normalized) {
+    return {
+      runtimeGoal: '',
+      showCodingTip: false,
+    };
+  }
+
+  if (codingIntentPattern.test(normalized)) {
+    return {
+      runtimeGoal: `코드로 구현해줘: ${normalized}`,
+      showCodingTip: true,
+    };
+  }
+
+  return {
+    runtimeGoal: normalized,
+    showCodingTip: false,
+  };
+};
+
+const createInteractionVibeResponseSink = (
+  interaction: ChatInputCommandInteraction,
+  shared: boolean,
+): VibeResponseSink => {
+  let acked = false;
+  let primaryReply: Message | null = null;
+
+  const ensureAcked = async () => {
+    if (acked) {
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: !shared });
+    acked = true;
+  };
+
+  const editPrimaryReply = async (payload: VibeResponsePayload): Promise<Message | null> => {
+    await ensureAcked();
+
+    if (payload.title) {
+      await interaction.editReply(buildUserCard(payload.title, payload.body, VIBE_EMBED_BY_TONE[payload.tone || 'info']));
+    } else {
+      await interaction.editReply({
+        content: payload.body,
+        components: payload.components,
+      });
+    }
+
+    primaryReply = await interaction.fetchReply().catch(() => null);
+    if (payload.seedFeedback && primaryReply) {
+      await seedFeedbackReactions(primaryReply).catch(() => {});
+    }
+
+    return primaryReply;
+  };
+
+  return {
+    ack: async (payload) => {
+      await ensureAcked();
+      if (payload) {
+        await editPrimaryReply(payload);
+      }
+    },
+    updateProgress: editPrimaryReply,
+    final: editPrimaryReply,
+    followUp: async (payload) => {
+      await ensureAcked();
+      if (payload.title) {
+        await interaction.followUp({
+          ...buildUserCard(payload.title, payload.body, VIBE_EMBED_BY_TONE[payload.tone || 'info']),
+          components: payload.components,
+          ephemeral: payload.ephemeral ?? !shared,
+        });
+        return;
+      }
+
+      await interaction.followUp({
+        content: payload.body,
+        components: payload.components,
+        ephemeral: payload.ephemeral ?? !shared,
+      });
+    },
+    getPrimaryReply: async () => {
+      if (primaryReply) {
+        return primaryReply;
+      }
+      primaryReply = await interaction.fetchReply().catch(() => null);
+      return primaryReply;
+    },
+  };
+};
+
+const createMessageVibeResponseSink = (message: Message): VibeResponseSink => {
+  let primaryReply: Message | null = null;
+
+  const sendPrimaryReply = async (payload: VibeResponsePayload): Promise<Message | null> => {
+    const clipped = clipMessageIngressContent(payload.body);
+    if (!clipped) {
+      return primaryReply;
+    }
+
+    if (!primaryReply) {
+      primaryReply = await message.reply(clipped);
+    } else {
+      await primaryReply.edit(clipped);
+    }
+
+    if (payload.seedFeedback && primaryReply) {
+      await seedFeedbackReactions(primaryReply).catch(() => {});
+    }
+
+    return primaryReply;
+  };
+
+  return {
+    ack: async (payload) => {
+      if (payload) {
+        await sendPrimaryReply(payload);
+      }
+    },
+    updateProgress: sendPrimaryReply,
+    final: sendPrimaryReply,
+    followUp: async (payload) => {
+      const clipped = clipMessageIngressContent(payload.body);
+      if (!clipped) {
+        return;
+      }
+      await message.reply({
+        content: clipped,
+        components: payload.components,
+      });
+    },
+    getPrimaryReply: async () => primaryReply,
+  };
+};
+
 const createMessageIngressResponseSink = (
   message: Message,
   getErrorMessage: (error: unknown) => string,
@@ -289,6 +461,112 @@ const createMessageIngressResponseSink = (
       await message.reply(clipped);
     },
   };
+};
+
+const runVibeSessionFlow = async (
+  sink: VibeResponseSink,
+  params: {
+    guildId: string;
+    userId: string;
+    request: string;
+    runtimeGoal: string;
+    accessNotice?: string;
+    showCodingTip?: boolean;
+    shared: boolean;
+    codeThreadEnabled: boolean;
+    startVibeSession: VibeDeps['startVibeSession'];
+    streamSessionProgress: VibeDeps['streamSessionProgress'];
+    tryPostCodeThread: VibeDeps['tryPostCodeThread'];
+    getErrorMessage: VibeDeps['getErrorMessage'];
+    autoProposeWorker?: VibeDeps['autoProposeWorker'];
+  },
+): Promise<void> => {
+  if (params.showCodingTip) {
+    await sink.updateProgress({
+      title: DISCORD_MESSAGES.vibe.tipTitle,
+      body: DISCORD_MESSAGES.vibe.tipLines.join('\n'),
+      tone: 'info',
+    });
+  }
+
+  let session: AgentSession;
+  try {
+    session = await params.startVibeSession(params.guildId, params.userId, params.runtimeGoal);
+  } catch (error) {
+    await sink.final({
+      title: DISCORD_MESSAGES.vibe.titleStartFailed,
+      body: params.getErrorMessage(error),
+      tone: 'error',
+    });
+    return;
+  }
+
+  let lastPayload: VibeResponsePayload = {
+    title: DISCORD_MESSAGES.vibe.titleAccepted,
+    body: `${DISCORD_MESSAGES.vibe.acceptedLines(session.id, params.request).join('\n')}${params.accessNotice || ''}`,
+    tone: 'info',
+  };
+  await sink.updateProgress(lastPayload);
+
+  await params.streamSessionProgress({
+    update: async (content) => {
+      lastPayload = {
+        title: DISCORD_MESSAGES.vibe.titleProgress,
+        body: content,
+        tone: 'info',
+      };
+      await sink.updateProgress(lastPayload);
+    },
+  }, session.id, params.runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
+
+  const completed = getAgentSession(session.id);
+  if (completed?.status === 'completed' || completed?.status === 'failed') {
+    await sink.final({
+      ...lastPayload,
+      seedFeedback: true,
+    });
+  }
+
+  const resultText = String(completed?.result || '');
+  if (shouldSuggestPolicyGuidance(resultText)) {
+    await sink.followUp({
+      body: `⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`,
+      ephemeral: true,
+    }).catch((error) => logVibeNonCritical('followUp(policy hint) failed', error, params.getErrorMessage));
+  }
+
+  if (shouldSuggestWorkerProposal(params.request, resultText)) {
+    let autoProposalLine = '';
+    if (params.autoProposeWorker && shouldAutoProposeWorker(params.request, resultText)) {
+      const autoKey = `${params.guildId}:${params.userId}:${params.request.slice(0, 80).toLowerCase()}`;
+      if (acquireAutoProposalSlot(autoKey)) {
+        const autoResult = await params.autoProposeWorker({
+          guildId: params.guildId,
+          requestedBy: params.userId,
+          request: params.request,
+          sessionId: session.id,
+        }).catch((error) => ({ ok: false, error: params.getErrorMessage(error) }));
+        autoProposalLine = autoResult.ok
+          ? `\n자동 제안 생성 완료 (승인 ID: \`${('approvalId' in autoResult && autoResult.approvalId) ? autoResult.approvalId : 'n/a'}\`)`
+          : `\n자동 제안 생성 실패: ${formatAutoProposalError(String(autoResult.error || 'unknown'))}`;
+      }
+    }
+
+    await sink.followUp({
+      body: `💡 ${DISCORD_MESSAGES.vibe.workerHint}${autoProposalLine}`,
+      components: [buildWorkerProposalRow(session.id, params.request)],
+      ephemeral: true,
+    }).catch((error) => logVibeNonCritical('followUp(worker hint) failed', error, params.getErrorMessage));
+  }
+
+  if (params.codeThreadEnabled && completed?.status === 'completed') {
+    const primaryReply = await sink.getPrimaryReply();
+    if (primaryReply) {
+      await params.tryPostCodeThread(primaryReply, completed, params.guildId).catch((error) => {
+        logVibeNonCritical('code thread posting failed', error, params.getErrorMessage);
+      });
+    }
+  }
 };
 
 export const createVibeHandlers = (deps: VibeDeps) => {
@@ -343,155 +621,45 @@ export const createVibeHandlers = (deps: VibeDeps) => {
     const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
 
     const shared = deps.getReplyVisibility(interaction) === 'public';
-    await interaction.deferReply({ ephemeral: !shared });
+    const sink = createInteractionVibeResponseSink(interaction, shared);
+    await sink.ack();
 
-    const request = (interaction.options.getString('요청', true) || '').trim();
+    const request = resolveVibeCommandRequest(interaction);
     if (!request) {
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleInputError, DISCORD_MESSAGES.vibe.inputExampleAsk, EMBED_WARN));
-      return;
-    }
-
-    let runtimeGoal = request;
-    if (deps.codingIntentPattern.test(request)) {
-      runtimeGoal = `코드로 구현해줘: ${request}`;
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.tipTitle, DISCORD_MESSAGES.vibe.tipLines.join('\n'), EMBED_INFO));
-    }
-
-    let session: AgentSession;
-    try {
-      session = await deps.startVibeSession(guildId, interaction.user.id, runtimeGoal);
-    } catch (error) {
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
-      return;
-    }
-
-    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleAccepted, `${DISCORD_MESSAGES.vibe.acceptedLines(session.id, request).join('\n')}${accessNotice}`, EMBED_INFO));
-
-    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleProgress, content, EMBED_INFO)) }, session.id, runtimeGoal, { showDebugBlocks: false, maxLinks: 2 });
-
-    const completed = getAgentSession(session.id);
-    if (completed?.status === 'completed' || completed?.status === 'failed') {
-      const replyForSeed = await interaction.fetchReply().catch(() => null);
-      await seedFeedbackReactions(replyForSeed);
-    }
-    const resultText = String(completed?.result || '');
-    if (shouldSuggestPolicyGuidance(resultText)) {
-      await interaction.followUp({
-        content: `⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`,
-        ephemeral: true,
-      }).catch((error) => logVibeNonCritical('followUp(policy hint) failed', error, deps.getErrorMessage));
-    }
-    if (shouldSuggestWorkerProposal(request, resultText)) {
-      let autoProposalLine = '';
-      if (deps.autoProposeWorker && shouldAutoProposeWorker(request, resultText)) {
-        const autoKey = `${guildId}:${interaction.user.id}:${request.slice(0, 80).toLowerCase()}`;
-        if (acquireAutoProposalSlot(autoKey)) {
-          const autoResult = await deps.autoProposeWorker({
-            guildId,
-            requestedBy: interaction.user.id,
-            request,
-            sessionId: session.id,
-          }).catch((error) => ({ ok: false, error: deps.getErrorMessage(error) }));
-          autoProposalLine = autoResult.ok
-            ? `\n자동 제안 생성 완료 (승인 ID: \`${('approvalId' in autoResult && autoResult.approvalId) ? autoResult.approvalId : 'n/a'}\`)`
-            : `\n자동 제안 생성 실패: ${formatAutoProposalError(String(autoResult.error || 'unknown'))}`;
-        }
-      }
-
-      await interaction.followUp({
-        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}${autoProposalLine}`,
-        components: [buildWorkerProposalRow(session.id, request)],
-        ephemeral: true,
-      }).catch((error) => logVibeNonCritical('followUp(worker hint) failed', error, deps.getErrorMessage));
-    }
-
-    if (deps.codeThreadEnabled && shared) {
-      if (completed?.status === 'completed') {
-        try {
-          const replyMsg = await interaction.fetchReply();
-          if (replyMsg && 'startThread' in replyMsg) {
-            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch((error) => {
-              logger.debug('[VIBE] code thread posting failed (ask command): %s', deps.getErrorMessage(error));
-            });
-          }
-        } catch (error) {
-          logger.debug('[VIBE] fetchReply/startThread failed (ask command): %s', deps.getErrorMessage(error));
-        }
-      }
-    }
-  };
-
-  const handleMakeCommand = async (interaction: ChatInputCommandInteraction) => {
-    const access = await ensureFeatureAccess(interaction);
-    if (!access.ok && access.reason === 'guild_only') {
-      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
-      return;
-    }
-    if (!access.ok) {
-      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titlePermissionError, DISCORD_MESSAGES.subscribe.loginRequired, EMBED_WARN), ephemeral: true });
-      return;
-    }
-    const guildId = interaction.guildId;
-    if (!guildId) {
-      await interaction.reply({ ...buildUserCard(DISCORD_MESSAGES.vibe.titleUsageError, DISCORD_MESSAGES.common.guildOnly, EMBED_WARN), ephemeral: true });
-      return;
-    }
-    const accessNotice = access.autoLoggedIn ? `\n${DISCORD_MESSAGES.common.autoLoginActivated}` : '';
-
-    const shared = deps.getReplyVisibility(interaction) === 'public';
-    await interaction.deferReply({ ephemeral: !shared });
-
-    const request = (interaction.options.getString('요청', true) || '').trim();
-    if (!request) {
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleInputError, DISCORD_MESSAGES.vibe.inputExampleMake, EMBED_WARN));
-      return;
-    }
-
-    const codeGoal = deps.codingIntentPattern.test(request) ? request : `코드로 구현해줘: ${request}`;
-
-    let session: AgentSession;
-    try {
-      session = await deps.startVibeSession(guildId, interaction.user.id, codeGoal);
-    } catch (error) {
-      await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleStartFailed, deps.getErrorMessage(error), EMBED_ERROR));
-      return;
-    }
-
-    await interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeStart, `${DISCORD_MESSAGES.vibe.codeStartLines(session.id, request, shared).join('\n')}${accessNotice}`, EMBED_INFO));
-
-    await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildUserCard(DISCORD_MESSAGES.vibe.titleCodeProgress, content, EMBED_INFO)) }, session.id, codeGoal, { showDebugBlocks: false, maxLinks: 2 });
-
-    {
-      const makeCompleted = getAgentSession(session.id);
-      if (makeCompleted?.status === 'completed' || makeCompleted?.status === 'failed') {
-        const replyForSeed = await interaction.fetchReply().catch(() => null);
-        await seedFeedbackReactions(replyForSeed);
-      }
-    }
-
-    if (deps.codeThreadEnabled) {
-      const completed = getAgentSession(session.id);
-      if (completed?.status === 'completed') {
-        try {
-          const replyMsg = await interaction.fetchReply();
-          if (replyMsg && 'startThread' in replyMsg) {
-            await deps.tryPostCodeThread(replyMsg as Message, completed, guildId).catch((error) => {
-              logger.debug('[VIBE] code thread posting failed (make command): %s', deps.getErrorMessage(error));
-            });
-          }
-        } catch (error) {
-          logger.debug('[VIBE] fetchReply/startThread failed (make command): %s', deps.getErrorMessage(error));
-        }
-      }
-    }
-
-    if (deps.automationIntentPattern.test(request)) {
-      await interaction.followUp({
-        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}`,
-        components: [buildWorkerProposalRow(session.id, request)],
-        ephemeral: true,
+      await sink.final({
+        title: DISCORD_MESSAGES.vibe.titleInputError,
+        body: DISCORD_MESSAGES.vibe.inputExampleAsk,
+        tone: 'warn',
       });
+      return;
     }
+
+    if (isLowSignalPrompt(request, deps)) {
+      await sink.final({
+        title: DISCORD_MESSAGES.vibe.titleInputError,
+        body: DISCORD_MESSAGES.vibe.mentionPrompt,
+        tone: 'warn',
+      });
+      return;
+    }
+
+    const { runtimeGoal, showCodingTip } = resolveVibeRuntimeGoal(request, deps.codingIntentPattern);
+
+    await runVibeSessionFlow(sink, {
+      guildId,
+      userId: interaction.user.id,
+      request,
+      runtimeGoal,
+      accessNotice,
+      showCodingTip,
+      shared,
+      codeThreadEnabled: deps.codeThreadEnabled && shared,
+      startVibeSession: deps.startVibeSession,
+      streamSessionProgress: deps.streamSessionProgress,
+      tryPostCodeThread: deps.tryPostCodeThread,
+      getErrorMessage: deps.getErrorMessage,
+      autoProposeWorker: deps.autoProposeWorker,
+    });
   };
 
   const handleVibeMessage = async (message: Message) => {
@@ -565,7 +733,7 @@ export const createVibeHandlers = (deps: VibeDeps) => {
             maxTokens: 150,
             temperature: 0.8,
           });
-          const replyText = String(reply || '').trim();
+          const replyText = clipMessageIngressContent(sanitizeDiscordUserFacingText(String(reply || '')));
           if (replyText) {
             await message.reply(replyText);
             return;
@@ -576,63 +744,31 @@ export const createVibeHandlers = (deps: VibeDeps) => {
       }
     }
 
-    const progressMessage = await message.reply(DISCORD_MESSAGES.vibe.acceptedNoSessionLines(request).join('\n'));
-
-    let session: AgentSession;
-    try {
-      session = await deps.startVibeSession(message.guildId, message.author.id, request);
-    } catch (error) {
-      await progressMessage.edit(DISCORD_MESSAGES.vibe.startFailedInline(deps.getErrorMessage(error)));
+    if (isLowSignalPrompt(request, deps)) {
+      await message.reply(DISCORD_MESSAGES.vibe.mentionPrompt);
       return;
     }
 
-    await progressMessage.edit(DISCORD_MESSAGES.vibe.acceptedLines(session.id, request).join('\n'));
+    const sink = createMessageVibeResponseSink(message);
+    await sink.ack({
+      body: DISCORD_MESSAGES.vibe.acceptedNoSessionLines(request).join('\n'),
+    });
 
-    await deps.streamSessionProgress({ update: (content) => progressMessage.edit(content) }, session.id, request, { showDebugBlocks: false, maxLinks: 2 });
-
-    const completed = getAgentSession(session.id);
-    if (completed?.status === 'completed' || completed?.status === 'failed') {
-      await seedFeedbackReactions(progressMessage);
-    }
-    const resultText = String(completed?.result || '');
-    if (shouldSuggestPolicyGuidance(resultText)) {
-      await message.reply(`⚠️ ${DISCORD_MESSAGES.vibe.policyBlockedHint}`).catch((error) => {
-        logVibeNonCritical('message.reply(policy hint) failed', error, deps.getErrorMessage);
-      });
-    }
-    if (shouldSuggestWorkerProposal(request, resultText)) {
-      let autoProposalLine = '';
-      if (deps.autoProposeWorker && shouldAutoProposeWorker(request, resultText)) {
-        const autoKey = `${message.guildId}:${message.author.id}:${request.slice(0, 80).toLowerCase()}`;
-        if (acquireAutoProposalSlot(autoKey)) {
-          const autoResult = await deps.autoProposeWorker({
-            guildId: message.guildId,
-            requestedBy: message.author.id,
-            request,
-            sessionId: session.id,
-          }).catch((error) => ({ ok: false, error: deps.getErrorMessage(error) }));
-          autoProposalLine = autoResult.ok
-            ? `\n자동 제안 생성 완료 (승인 ID: \`${('approvalId' in autoResult && autoResult.approvalId) ? autoResult.approvalId : 'n/a'}\`)`
-            : `\n자동 제안 생성 실패: ${formatAutoProposalError(String(autoResult.error || 'unknown'))}`;
-        }
-      }
-
-      await message.reply({
-        content: `💡 ${DISCORD_MESSAGES.vibe.workerHint}${autoProposalLine}`,
-        components: [buildWorkerProposalRow(session.id, request)],
-      }).catch((error) => {
-        logVibeNonCritical('message.reply(worker hint) failed', error, deps.getErrorMessage);
-      });
-    }
-
-    if (deps.codeThreadEnabled) {
-      if (completed?.status === 'completed') {
-        await deps.tryPostCodeThread(progressMessage, completed, message.guildId).catch((error) => {
-          logVibeNonCritical('code thread posting failed (message mode)', error, deps.getErrorMessage);
-        });
-      }
-    }
+    const { runtimeGoal } = resolveVibeRuntimeGoal(request, deps.codingIntentPattern);
+    await runVibeSessionFlow(sink, {
+      guildId: message.guildId,
+      userId: message.author.id,
+      request,
+      runtimeGoal,
+      shared: true,
+      codeThreadEnabled: deps.codeThreadEnabled,
+      startVibeSession: deps.startVibeSession,
+      streamSessionProgress: deps.streamSessionProgress,
+      tryPostCodeThread: deps.tryPostCodeThread,
+      getErrorMessage: deps.getErrorMessage,
+      autoProposeWorker: deps.autoProposeWorker,
+    });
   };
 
-  return { handleVibeCommand, handleMakeCommand, handleVibeMessage };
+  return { handleVibeCommand, handleVibeMessage };
 };

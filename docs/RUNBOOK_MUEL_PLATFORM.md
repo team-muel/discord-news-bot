@@ -971,7 +971,8 @@ Discord operator surface:
 - Preferred ask command: `/뮤엘`
 - Compatibility alias: `/해줘`
 - Relationship and memory surfaces: `/프로필`, `/메모`
-- Threaded implementation surface: `/만들어줘`
+- Threaded implementation surface: `/뮤엘` with coding or automation intent, or prefixed `뮤엘 ...`
+- Slash registrations are synced from `src/discord/commandDefinitions.ts` on `clientReady`. After removing a public command, some Discord clients can still show the cached command briefly; the current grace window keeps stale `/만들어줘` interactions mapped into the vibe/session flow until one clean re-registration window has passed.
 
 MCP delegation controls:
 

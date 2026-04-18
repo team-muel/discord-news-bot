@@ -28,9 +28,9 @@ Current first slice note:
 - OPENAI_API_KEY=[secret] (if openai)
 - GEMINI_API_KEY=[secret] (if gemini)
 - ANTHROPIC_API_KEY=[secret] (if anthropic)
-- HF_TOKEN=<secret> (if huggingface; primary key)
-- HF_API_KEY=<secret> (huggingface alias)
-- HUGGINGFACE_API_KEY=<secret> (huggingface alias)
+- HF_TOKEN=[secret] (if huggingface; primary key)
+- HF_API_KEY=[secret] (huggingface alias)
+- HUGGINGFACE_API_KEY=[secret] (huggingface alias)
 - HUGGINGFACE_CHAT_COMPLETIONS_URL=`https://router.huggingface.co/v1/chat/completions` (optional)
 - HUGGINGFACE_MODEL=[model-id] (optional)
 - OPENCLAW_BASE_URL=[url] (if openclaw)
@@ -83,7 +83,7 @@ Provider fallback controls:
 ## External OSS Adapters (Sprint Pipeline)
 
 - OPENCLAW_ENABLED=true (optional, enable OpenClaw adapter)
-- OPENCLAW_GATEWAY_URL=http://34.56.232.61:18789 (optional, OpenClaw Gateway HTTP endpoint)
+- OPENCLAW_GATEWAY_URL=`http://34.56.232.61:18789` (optional, OpenClaw Gateway HTTP endpoint)
 - OPENCLAW_GATEWAY_TOKEN=[secret] (optional, OpenClaw Gateway bearer token)
 - OPENJARVIS_ENABLED=true (optional, enable OpenJarvis adapter)
 - NEMOCLAW_ENABLED=true (optional, enable NemoClaw adapter)
@@ -128,12 +128,12 @@ Provider fallback controls:
 - AGENT_WORKFLOW_CACHE_ERROR_LOG_THROTTLE_MS=300000 (optional, workflow cache refresh warn log throttle)
 - AGENT_SKILL_CATALOG_CACHE_ERROR_LOG_THROTTLE_MS=300000 (optional, skill catalog refresh warn log throttle)
 - WORKER_APPROVAL_SAVE_ERROR_LOG_THROTTLE_MS=300000 (optional, approval store save warn log throttle)
-- MCP_SHARED_MCP_URL=https://<worker-domain-or-sslip>/mcp (optional, canonical shared full-catalog MCP ingress)
-- MCP_SHARED_MCP_TOKEN=<secret> (optional, shared MCP Bearer token; omitted 시 OBSIDIAN_REMOTE_MCP_TOKEN 또는 MCP_WORKER_AUTH_TOKEN fallback)
-- MCP_INDEXING_REMOTE_URL=https://<worker-domain-or-sslip>/mcp (optional, shared code-index ingress; omitted 시 MCP_SHARED_MCP_URL fallback)
+- MCP_SHARED_MCP_URL=`https://[worker-domain-or-sslip]/mcp` (optional, canonical shared full-catalog MCP ingress)
+- MCP_SHARED_MCP_TOKEN=[secret] (optional, shared MCP Bearer token; omitted 시 OBSIDIAN_REMOTE_MCP_TOKEN 또는 MCP_WORKER_AUTH_TOKEN fallback)
+- MCP_INDEXING_REMOTE_URL=`https://[worker-domain-or-sslip]/mcp` (optional, shared code-index ingress; omitted 시 MCP_SHARED_MCP_URL fallback)
 - OBSIDIAN_REMOTE_MCP_ENABLED=true (optional, 권장: GCP VM의 MCP 서버를 통한 vault 접근)
-- OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/mcp (optional, legacy obsidian alias; `/obsidian` compatibility path도 계속 지원)
-- OBSIDIAN_REMOTE_MCP_TOKEN=<secret> (optional, Bearer auth 토큰; omitted 시 MCP_WORKER_AUTH_TOKEN fallback)
+- OBSIDIAN_REMOTE_MCP_URL=`https://[worker-domain-or-sslip]/mcp` (optional, legacy obsidian alias; `/obsidian` compatibility path도 계속 지원)
+- OBSIDIAN_REMOTE_MCP_TOKEN=[secret] (optional, Bearer auth 토큰; omitted 시 MCP_WORKER_AUTH_TOKEN fallback)
 - OBSIDIAN_VAULT_NAME=[vault-name] (optional, vault 식별자)
 - OBSIDIAN_ADAPTER_ORDER=remote-mcp,native-cli,script-cli,local-fs (optional)
 - OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,native-cli,script-cli,local-fs (optional)
@@ -375,7 +375,7 @@ Provider fallback controls:
 - 기본 lane은 `AI_PROVIDER=openjarvis`, `LITELLM_MODEL=muel-balanced`, `OLLAMA_MODEL=<local-model>` 조합입니다.
 - 비용 최소화가 목표라면 `OLLAMA_MODEL`과 `LLM_WORKFLOW_PROFILE_DEFAULTS=action.code.*=cost-optimized;chat.*=cost-optimized;memory.*=cost-optimized` 같이 quality/cost posture만 조정하고, canonical provider chain은 유지하는 편이 drift가 적습니다.
 - local-first hybrid가 목표라면 `AI_PROVIDER=openjarvis`, `OPENJARVIS_ENABLED=true`, `LITELLM_MODEL=muel-balanced`, `LLM_PROVIDER_BASE_ORDER=`(empty), `LLM_PROVIDER_FALLBACK_CHAIN=`(empty), `LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true`, `LLM_WORKFLOW_MODEL_BINDINGS=operate.ops=openjarvis:<model>;eval.*=openjarvis:<model>;worker.*=openjarvis:<model>`, `LLM_WORKFLOW_PROFILE_DEFAULTS=operate.ops=quality-optimized;eval.*=quality-optimized;worker.*=quality-optimized`, `OPENJARVIS_REQUIRE_OPENCODE_WORKER=true` 조합을 권장합니다.
-- `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps the compact slash surface (`/뮤엘`, `/해줘`, `/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`, `/프로필`, `/메모`, `/만들어줘`) and enables mention-first chat UX.
+- `DISCORD_SIMPLE_COMMANDS_ENABLED=true` keeps the compact slash surface (`/뮤엘`, `/해줘`, `/구독`, `/로그인`, `/도움말`, `/설정`, `/ping`, `/프로필`, `/메모`) and enables mention-first chat UX.
 - `DISCORD_LOGIN_SESSION_TTL_MS` controls how long a non-admin login session stays active for subscription add/remove.
 - `DISCORD_LOGIN_SESSION_REFRESH_WINDOW_MS` enables sliding expiration; sessions accessed near expiry are extended.
 - `DISCORD_LOGIN_SESSION_CLEANUP_INTERVAL_MS` controls periodic cleanup of expired persisted sessions.
@@ -406,9 +406,9 @@ Use this profile when 운영 목표가 "로컬 의존 0"인 경우:
 - ACTION_POLICY_FAIL_OPEN_ON_ERROR=false
 - AGENT_READINESS_FAIL_OPEN=false
 - OBSIDIAN_REMOTE_MCP_ENABLED=true
-- MCP_SHARED_MCP_URL=https://<worker-domain-or-sslip>/mcp
-- OBSIDIAN_REMOTE_MCP_URL=https://<worker-domain-or-sslip>/mcp
-- OBSIDIAN_REMOTE_MCP_TOKEN=<secret>
+- MCP_SHARED_MCP_URL=`https://[worker-domain-or-sslip]/mcp`
+- OBSIDIAN_REMOTE_MCP_URL=`https://[worker-domain-or-sslip]/mcp`
+- OBSIDIAN_REMOTE_MCP_TOKEN=[secret]
 - OBSIDIAN_ADAPTER_STRICT=true
 - OBSIDIAN_ADAPTER_ORDER=remote-mcp,script-cli
 - OBSIDIAN_ADAPTER_ORDER_READ_LORE=remote-mcp,script-cli

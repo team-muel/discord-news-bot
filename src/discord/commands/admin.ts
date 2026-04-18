@@ -111,14 +111,13 @@ export const createAdminHandlers = (deps: AdminDeps) => {
   const handleHelpCommand = async (interaction: ChatInputCommandInteraction) => {
     const publicCommands = [
       '`/ping` : 봇 응답/지연 상태 확인',
-      '`/로그인` : 내 계정 권한/세션 진단 및 수동 갱신',
+      '`/로그인` : 내 계정 권한 확인 및 자동 로그인 준비 상태 점검',
       '`뮤엘 ...` 또는 `@Muel ...` : 채팅에서 바로 자연어로 대화/요청',
-      '`/뮤엘` : 질문/요약/문서·메모·지식 기반 응답',
+      '`/뮤엘` : 질문/요약/문서·메모·지식 기반 응답, 코드·자동화 요청은 바로 작업 흐름으로 연결',
       '`/해줘` : 기존 질문 명령 호환 alias (`/뮤엘`과 동일)',
       '`/구독` : 영상/게시글/뉴스 구독 (현재 채널에 자동 등록)',
       '`/프로필` : 유저 관계/기억 기반 프로필 조회',
       '`/메모` : 유저 메모 추가 또는 조회',
-      '`/만들어줘` : 스레드 기반 협업 코딩/자동화 구현',
       '`/학습 조회|활성화|비활성화` : 내 자동 학습 저장 on/off (개인 설정)',
       '`/주가` : 현재가 조회',
       '`/차트` : 30일 차트 조회',
@@ -127,13 +126,9 @@ export const createAdminHandlers = (deps: AdminDeps) => {
       '`/잊어줘` : 내 데이터 또는 서버 데이터 삭제(확인 UX 제공)',
     ];
     const adminCommands = [
-      '`/세션 조회` : 현재 작동 중인 세션 확인/즉시 실행 버튼',
-      '`/세션 이력` : 최근 완료 세션 산출물(코드/결과) 요약 목록',
-      '`/세션 제거` : 현재 작동 중인 세션 제거 버튼',
-      '`/정책 조회` : 세션 한도·뉴스 도메인 허용 목록 조회',
-      '`/정책 도메인추가` : 뉴스 캡처 허용 도메인 추가',
-      '`/정책 도메인삭제` : 뉴스 캡처 허용 목록에서 도메인 삭제',
-      '`/관리설정` : 학습 허용 on/off',
+      '`/온보딩` : 서버 기본 안내, 준비 상태, 첫 사용 흐름을 다시 실행할 때 사용합니다.',
+      '`/시작` : 운영자가 별도 점검이나 처리 작업을 직접 지시해서 실행할 때 사용합니다. 목표만 간단히 적으면 됩니다.',
+      '`/중지` : 현재 진행 중인 관리자 작업을 작업 ID 기준으로 중단합니다.',
     ];
 
     await interaction.reply({
@@ -325,14 +320,14 @@ export const createAdminHandlers = (deps: AdminDeps) => {
 
     if (inGuild && blockers.length === 0 && interaction.guildId) {
       const mode = await deps.markUserLoggedIn(interaction.guildId, interaction.user.id);
-      checks.push('사용자 로그인 세션: ACTIVE');
-      checks.push(`세션 영속화: ${mode === 'persisted' ? 'OK' : 'MEMORY_ONLY'}`);
-      checks.push(`세션 만료 정책: ttl=${deps.loginSessionTtlMs}ms, sliding=${deps.loginSessionRefreshWindowMs}ms`);
+      checks.push('로그인 상태: ACTIVE');
+      checks.push(`로그인 유지 방식: ${mode === 'persisted' ? 'OK' : 'MEMORY_ONLY'}`);
+      checks.push(`자동 로그인 유지 시간: ttl=${deps.loginSessionTtlMs}ms, sliding=${deps.loginSessionRefreshWindowMs}ms`);
       if (mode !== 'persisted') warnings.push('Supabase 미설정 또는 저장 실패로 재시작 후 로그인 유지가 제한될 수 있습니다.');
     }
 
     const title = blockers.length === 0 ? '로그인/권한 진단: 정상' : '로그인/권한 진단: 점검 필요';
-    const summary = blockers.length === 0 ? '로그인 세션이 활성화되었습니다. 이제 주요 기능 사용이 가능합니다.' : blockers.slice(0, 4).join('\n');
+    const summary = blockers.length === 0 ? '로그인 준비가 완료되었습니다. 이제 주요 기능을 바로 사용할 수 있습니다.' : blockers.slice(0, 4).join('\n');
 
     await interaction.reply({
       ...buildSimpleEmbed(

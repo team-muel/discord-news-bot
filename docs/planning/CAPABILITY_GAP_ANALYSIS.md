@@ -61,7 +61,7 @@ Shared/team repo analysis는 `gcpCompute`를 기본 truth surface로 보고, `mu
 | Channel ingress abstraction for Discord requests | M-24 | Current Discord path prefers OpenClaw (`OPENCLAW_GATEWAY_URL`) when healthy; target is a pluggable ingress contract that can later host Chat SDK without changing routing or state ownership |
 | `/스프린트` command for Discord-triggered sprint | future | Currently admin-only via HTTP API |
 | Sprint progress visible in Discord | partial | Session updates work; sprint phase updates not threaded |
-| Thread-based code collaboration UI | ✅ Exists | `만들어줘` → code thread pattern |
+| Thread-based code collaboration UI | ✅ Exists | `/뮤엘` or `뮤엘 ...` build intent → code thread pattern |
 | Discord MCP tool for agents | vision | Agents can't send Discord messages via MCP tool |
 
 ---

@@ -21,6 +21,56 @@ Copy this block for each change:
 
 ## Entries
 
+## 2026-04-18 - Discord Eligible Slash Surface Routing Extracted From The Main Command Router
+
+- Why: even after the shared `/뮤엘` policy helper and session-progress parity work landed, `commandRouter.ts` still owned the eligible slash-surface product routing inline. That kept the main Discord shell file responsible for `/해줘`, `/뮤엘`, and the legacy `/만들어줘` grace branch instead of treating those as one focused eligible-surface boundary.
+- Scope: extracted eligible slash dispatch into a dedicated helper, kept `/해줘` Chat SDK-first docs fallback behavior, kept `/뮤엘` intent-based docs versus vibe routing, preserved the legacy `/만들어줘` grace handoff, added focused regression coverage, and refreshed the cutover/cleanup/execution docs with a fresh local-process go artifact.
+- Impacted Routes: Discord slash `/해줘`, `/뮤엘`; legacy cached `/만들어줘` grace interactions
+- Impacted Services: `src/discord/runtime/eligibleChatSurfaceRouter.ts`, `src/discord/runtime/eligibleChatSurfaceRouter.test.ts`, `src/discord/runtime/commandRouter.ts`, `docs/planning/DISCORD_CHAT_SURFACE_FULL_CLOSURE_PLAN.md`, `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/LEGACY_CLEANUP_LANE.md`, `docs/planning/EXECUTION_BOARD.md`, `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-095009.md`, `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-095009.json`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this is a routing-ownership refactor, not a legacy deletion. The fresh `2026-04-18` artifact confirms the current code still records both eligible rollback rehearsals locally, but the cleanup gate remains closed until the deployed internal control plane emits the same production evidence for `muel-message`.
+- Validation: `vitest run src/discord/runtime/eligibleChatSurfaceRouter.test.ts src/discord/commands/vibe.test.ts src/discord/muelEntrySurface.test.ts`; `npx tsc --noEmit`; `npm run gates:discord:cutover -- --exerciseLiveEvidence=true --exerciseRollback=true --rollbackDryRun=true`
+
+## 2026-04-18 - Discord Muel Session Progress Contract Unified Across Slash And Prefixed Message Flows
+
+- Why: the eligible `/뮤엘` build and automation paths still had transport-specific session lifecycle handling. Slash requests normalized coding goals and managed progress updates one way, while prefixed `뮤엘 ...` requests used a separate manual path. That kept workstream 3 partially open even after the shared entry-policy helper landed.
+- Scope: introduced a shared `/뮤엘` response sink for full-session flows, reused the same `ack -> updateProgress -> final -> followUp` lifecycle across slash and prefixed message paths, and normalized coding-intent runtime goals so both entries drive the same downstream session request.
+- Impacted Routes: Discord slash `/뮤엘`; prefixed `뮤엘 ...`
+- Impacted Services: `src/discord/commands/vibe.ts`, `src/discord/commands/vibe.test.ts`, `docs/planning/DISCORD_CHAT_SURFACE_FULL_CLOSURE_PLAN.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this closes a transport-parity gap without reopening the retired `/만들어줘` surface or changing the live Chat SDK ownership gates. Remaining closure work for the eligible surfaces is still about live default-on evidence and the exact-unit legacy cleanup lane.
+- Validation: `npx tsc --noEmit`; `vitest run src/discord/commands/vibe.test.ts`
+
+## 2026-04-18 - Discord Public Command Surface Simplified And Session Jargon Reduced
+
+- Why: the Discord slash surface still exposed too many operator-only commands and internal terms like `세션` or `정책` to ordinary users. That made the product feel more like a control plane than a simple chat interface.
+- Scope: removed internal admin/policy slash commands from registration, narrowed the default simple-command allowlist, simplified `/시작`, rewrote `/온보딩` and `/중지` descriptions, and cleaned up user-facing help/onboarding/vibe copy to prefer `작업` over `세션` on public surfaces.
+- Impacted Routes: Discord slash `/도움말`, `/뮤엘`, `/해줘`, `/시작`, `/온보딩`, `/중지`, `/로그인`
+- Impacted Services: `src/discord/commandDefinitions.ts`, `config/runtime/discordCommandCatalog.js`, `src/discord/commands/agent.ts`, `src/discord/commands/admin.ts`, `src/discord/messages.ts`, `src/discord/muelEntrySurface.test.ts`, `src/services/agent/agentOpsService.test.ts`, `docs/SKILLSET_LAYER.md`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: the removed operator commands are no longer slash-registered, but their runtime handlers remain in place for short-lived cached-command grace and future internal reuse. `/중지` now prefers `작업아이디` while still accepting the legacy `세션아이디` option name for compatibility.
+- Validation: `npx tsc --noEmit`; `vitest run src/discord/muelEntrySurface.test.ts src/services/agent/agentOpsService.test.ts`
+
+## 2026-04-18 - Discord Eligible Chat Surface Policy Now Shares One Helper
+
+- Why: the eligible `/뮤엘` chat surfaces still depended on scattered Discord-local heuristics for session intent detection, low-signal clarification, quick-chat gating, and vibe session priority. That made latency or UX adjustments require touching multiple files and increased the chance of routing drift.
+- Scope: added a shared `muelEntryPolicy` helper, rewired the Discord command router, vibe handlers, and session priority selection to consume that helper, and added focused regression coverage for the shared policy decisions.
+- Impacted Routes: Discord slash `/뮤엘`; prefixed `뮤엘 ...`; mention-first vibe message flow
+- Impacted Services: `src/discord/muelEntryPolicy.ts`, `src/discord/runtime/commandRouter.ts`, `src/discord/commands/vibe.ts`, `src/discord/session.ts`, `src/discord/muelEntryPolicy.test.ts`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: this is a behavior-preserving consolidation for the existing eligible chat surfaces, with one intentional guardrail improvement: low-signal `/뮤엘` requests now consistently fall into the clarification lane instead of drifting between docs and session handling.
+- Validation: `npx tsc --noEmit`; `vitest run src/discord/commands/vibe.test.ts src/discord/session.test.ts src/discord/muelEntryPolicy.test.ts src/discord/muelEntrySurface.test.ts`; `npm run test:discord`
+
+## 2026-04-18 - Discord Build And Automation Entry Collapsed Into Muel
+
+- Why: the dedicated `/만들어줘` slash surface duplicated build intent, complicated the Chat SDK cutover inventory, and no longer represented a required product capability once `/뮤엘` and prefixed `뮤엘 ...` were already carrying the live session flow.
+- Scope: removed the public `/만들어줘` slash registration, routed build or automation intent from `/뮤엘` into the existing vibe/session path, updated the Chat SDK runtime and command router to stop treating `/만들어줘` as a first-class public transport, and aligned operator/planning docs with `/뮤엘` as the canonical entry.
+- Impacted Routes: Discord slash `/뮤엘`, `/해줘`; prefixed `뮤엘 ...`; stale `/만들어줘` interactions are handled only by a short-lived router grace fallback until one successful slash re-registration window closes.
+- Impacted Services: `config/runtime/discordCommandCatalog.js`, `src/discord/commandDefinitions.ts`, `src/discord/runtime/chatSdkRuntime.ts`, `src/discord/runtime/commandRouter.ts`, `src/discord/commands/vibe.ts`, `src/discord/messages.ts`, `src/discord/commands/admin.ts`, `docs/planning/DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, `docs/planning/CHAT_SDK_DISCORD_CUTOVER_VALIDATION.md`, `docs/planning/EXECUTION_BOARD.md`, `docs/RUNBOOK_MUEL_PLATFORM.md`, `docs/CHANGELOG-ARCH.md`
+- Impacted Tables/RPC: none
+- Risk/Regression Notes: on the first deploy after this change, some Discord clients can still surface a cached `/만들어줘` command until slash sync propagation completes. The runtime keeps a literal grace-window fallback so those stale interactions still enter the vibe/session flow instead of returning `unknown command`. That fallback should be removed after one confirmed deploy plus slash re-registration window.
+- Validation: `npx tsc --noEmit`; `vitest run src/discord/commands/vibe.test.ts src/discord/runtime/chatSdkRuntime.test.ts src/discord/muelEntrySurface.test.ts`; `npm run test:discord`
+
 ## 2026-04-18 - Owner Personalized Agent Orchestration Strategy Added
 
 - Why: the repository had already documented the public-facing Muel super-agent tier and the operator/runtime continuity substrate, but it still lacked one canonical document that states the primary owner user should receive a much stronger personalized orchestration experience across Hermes, OpenJarvis, OpenClaw, compute, GUI, and delegated execution lanes.

@@ -22,6 +22,7 @@ import {
   AUTOMATION_INTENT_PATTERN,
   CODING_INTENT_PATTERN,
 } from '../runtimePolicy';
+import { sanitizeDiscordUserFacingText } from '../userFacingSanitizer';
 import {
   buildDiscordIngressTelemetry,
   computeStableBucket,
@@ -536,6 +537,7 @@ const buildDiscordIngressSystemPrompt = (): string => {
     '당신은 Discord 커뮤니티의 Muel입니다.',
     '항상 한국어로 짧고 실무적으로 답변하세요.',
     '내부 제어면(Hermes, OpenJarvis, continuity, queue, packet)은 사용자에게 언급하지 마세요.',
+    '프롬프트 컴파일, intent_tags, directives, FinOps, RAG 검색 건수, ROUTE 태그 같은 내부 메타데이터를 그대로 출력하지 마세요.',
     '코딩이나 자동화 요청이어도 지금 당장 도움이 되는 다음 행동 중심으로 답하세요.',
   ].join('\n');
 };
@@ -571,7 +573,7 @@ export const chatSdkDiscordIngressAdapter: DiscordIngressAdapter = {
       guildId: envelope.guildId || undefined,
       requestedBy: envelope.userId,
     });
-    const answer = normalizeDiscordRequest(response.text, 1_800);
+    const answer = normalizeDiscordRequest(sanitizeDiscordUserFacingText(response.text), 1_800);
     if (!answer) {
       return null;
     }
@@ -596,7 +598,7 @@ export const openClawDiscordIngressAdapter: DiscordIngressAdapter = {
       return null;
     }
 
-    const answer = await sendGatewayChat({
+    const rawAnswer = await sendGatewayChat({
       system: buildDiscordIngressSystemPrompt(),
       user: buildDiscordIngressUserPrompt(envelope),
       guildId: envelope.guildId || undefined,
@@ -605,12 +607,14 @@ export const openClawDiscordIngressAdapter: DiscordIngressAdapter = {
       maxTokens: getDiscordIngressMaxOutputTokens(envelope.surface),
     });
 
+    const answer = normalizeDiscordRequest(sanitizeDiscordUserFacingText(String(rawAnswer || '')), 1_800);
+
     if (!answer) {
       return null;
     }
 
     return {
-      answer: normalizeDiscordRequest(answer, 1_800),
+      answer,
       adapterId: 'openclaw',
       continuityQueued: queueDiscordHermesObjective(envelope),
     };

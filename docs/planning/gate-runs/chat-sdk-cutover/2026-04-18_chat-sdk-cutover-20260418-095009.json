@@ -1,0 +1,378 @@
+{
+  "generated_at": "2026-04-18T09:50:09.083Z",
+  "run_id": "chat-sdk-cutover-20260418-095009",
+  "environment": "production",
+  "adapter_id": "chat-sdk",
+  "adapter_revision": "28db740",
+  "shadow_mode": false,
+  "rollout_percentage": 100,
+  "eligible_surfaces": [
+    "docs.ask",
+    "muel.prefixed"
+  ],
+  "policy_by_surface": {
+    "docs-command": {
+      "preferredAdapterId": "chat-sdk",
+      "hardDisable": false,
+      "shadowMode": false,
+      "rolloutPercentage": 100,
+      "mode": "default-on",
+      "lastUpdatedAt": "2026-04-18T09:50:26.443Z"
+    },
+    "muel-message": {
+      "preferredAdapterId": "chat-sdk",
+      "hardDisable": false,
+      "shadowMode": false,
+      "rolloutPercentage": 100,
+      "mode": "default-on",
+      "lastUpdatedAt": "2026-04-18T09:50:26.445Z"
+    }
+  },
+  "parity": {
+    "live_docs_ask": {
+      "verdict": "pass",
+      "reason": "observed=2, selected=2, owner=chat-sdk",
+      "observedCount": 2,
+      "selectedCount": 2
+    },
+    "live_muel_prefixed": {
+      "verdict": "pass",
+      "reason": "observed=2, selected=2, owner=chat-sdk",
+      "observedCount": 2,
+      "selectedCount": 2
+    },
+    "live_selected_owner_by_surface": {
+      "docs-command": "chat-sdk",
+      "muel-message": "chat-sdk"
+    },
+    "docs_ask": {
+      "verdict": "pass",
+      "reason": "observed=2, selected=2, owner=chat-sdk",
+      "observedCount": 2,
+      "selectedCount": 2
+    },
+    "muel_prefixed": {
+      "verdict": "pass",
+      "reason": "observed=2, selected=2, owner=chat-sdk",
+      "observedCount": 2,
+      "selectedCount": 2
+    },
+    "fallback": {
+      "verdict": "pass",
+      "reason": "runtime fallback observed count=2",
+      "observedFallbacks": 2
+    },
+    "continuity_private_thread": {
+      "verdict": "pass",
+      "reason": "covered by discord ingress adapter tests"
+    },
+    "sanitization": {
+      "verdict": "pass",
+      "reason": "covered by discord surface tests and current message clipping"
+    }
+  },
+  "live_rehearsal": {
+    "exercised": true,
+    "surfaces": {
+      "docs-command": {
+        "verdict": "pass",
+        "reason": "live_selected_path_adapter_accept",
+        "observedCount": 1,
+        "selectedCount": 1
+      },
+      "muel-message": {
+        "verdict": "pass",
+        "reason": "live_selected_path_adapter_accept",
+        "observedCount": 1,
+        "selectedCount": 1
+      }
+    },
+    "rollback": {
+      "verdict": "pass",
+      "reason": "live rollback rehearsal produced forced legacy fallback on docs-command and muel-message",
+      "observedFallbacks": 2,
+      "selectedAdapterId": "chat-sdk",
+      "surfaces": {
+        "docs-command": {
+          "verdict": "pass",
+          "reason": "live rollback rehearsal produced forced legacy fallback",
+          "observedFallbacks": 1,
+          "selectedAdapterId": "chat-sdk"
+        },
+        "muel-message": {
+          "verdict": "pass",
+          "reason": "live rollback rehearsal produced forced legacy fallback",
+          "observedFallbacks": 1,
+          "selectedAdapterId": "chat-sdk"
+        }
+      }
+    }
+  },
+  "lab_rehearsal": null,
+  "lab_rehearsal_mode": "not-run",
+  "operator_runtime": {
+    "verdict": "pass",
+    "reason": "runtime health and scheduler policy snapshots available",
+    "source": "external-health",
+    "url": "https://muel-service.onrender.com/health",
+    "cutover_control_plane": {
+      "mode": "local-process",
+      "base_url": null
+    },
+    "health": {
+      "status": "ok",
+      "botStatusGrade": "healthy",
+      "anyEnabled": true,
+      "healthy": true,
+      "allEnabledHealthy": true
+    },
+    "bot_ready": true,
+    "automation_healthy": true,
+    "scheduler_policy_summary": {
+      "total": 20,
+      "appOwned": 18,
+      "dbOwned": 2,
+      "enabled": 15,
+      "running": 9
+    },
+    "memory_queue": {
+      "queued": 0,
+      "running": 0,
+      "completed": 108,
+      "failed": 0,
+      "canceled": 0,
+      "retryScheduled": 0,
+      "deadlettered": 0,
+      "queueLagP50Sec": 0,
+      "queueLagP95Sec": 0,
+      "oldestQueuedSec": 0,
+      "total": 108
+    },
+    "memory_queue_error": null,
+    "memory_runner": {
+      "enabled": true,
+      "inFlight": false,
+      "recoveryInFlight": false,
+      "pollIntervalMs": 8000,
+      "concurrency": 4,
+      "maxRetries": 3,
+      "backoffBaseMs": 15000,
+      "backoffMaxMs": 1800000,
+      "deadletterAutoRecoveryEnabled": true,
+      "deadletterRecoveryIntervalMs": 120000,
+      "deadletterRecoveryBatchSize": 3,
+      "deadletterMaxRecoveryAttempts": 3,
+      "startedAt": null,
+      "lastTickAt": null,
+      "lastSuccessAt": null,
+      "lastErrorAt": null,
+      "lastErrorMessage": null,
+      "lastRecoveryAt": null,
+      "lastRecoveryErrorAt": null,
+      "lastRecoveryErrorMessage": null,
+      "processed": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "recoveredDeadletters": 0,
+      "recoveryFailures": 0
+    },
+    "runtime_alerts": {
+      "name": "[ALERT]",
+      "started": false,
+      "running": false,
+      "intervalMs": 30000,
+      "runCount": 0,
+      "lastRunAt": null,
+      "lastSummary": null,
+      "lastErrorAt": null,
+      "enabled": true,
+      "cooldownMs": 300000,
+      "webhookConfigured": false
+    },
+    "structured_errors": 0
+  },
+  "rollback": {
+    "exercised": true,
+    "verdict": "pass",
+    "reason": "rollback rehearsal passed",
+    "observedFallbacks": 0,
+    "artifactPath": null
+  },
+  "evidence": {
+    "snapshot_path": "tmp/discord-ingress-cutover/latest.json",
+    "recent_events": [
+      {
+        "recordedAt": "2026-04-18T09:50:26.453Z",
+        "telemetry": {
+          "recordedAt": "2026-04-18T09:50:26.453Z",
+          "correlationId": "live-prefixed-rollback",
+          "surface": "muel-message",
+          "guildId": "live-guild",
+          "replyMode": "channel",
+          "selectedAdapterId": "chat-sdk",
+          "adapterId": null,
+          "routeDecision": "legacy_fallback",
+          "fallbackReason": "hard_disabled",
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 12,
+          "selectedByRollout": true,
+          "policyMode": "rollback",
+          "evidenceSource": "live"
+        }
+      },
+      {
+        "recordedAt": "2026-04-18T09:50:26.452Z",
+        "telemetry": {
+          "recordedAt": "2026-04-18T09:50:26.452Z",
+          "correlationId": "live-docs-rollback",
+          "surface": "docs-command",
+          "guildId": "live-guild",
+          "replyMode": "private",
+          "selectedAdapterId": "chat-sdk",
+          "adapterId": null,
+          "routeDecision": "legacy_fallback",
+          "fallbackReason": "hard_disabled",
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 93,
+          "selectedByRollout": true,
+          "policyMode": "rollback",
+          "evidenceSource": "live"
+        }
+      },
+      {
+        "recordedAt": "2026-04-18T09:50:26.450Z",
+        "telemetry": {
+          "recordedAt": "2026-04-18T09:50:26.450Z",
+          "correlationId": "live-prefixed-selected",
+          "surface": "muel-message",
+          "guildId": "live-guild",
+          "replyMode": "channel",
+          "selectedAdapterId": "chat-sdk",
+          "adapterId": "chat-sdk",
+          "routeDecision": "adapter_accept",
+          "fallbackReason": null,
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 12,
+          "selectedByRollout": true,
+          "policyMode": "default-on",
+          "evidenceSource": "live"
+        }
+      },
+      {
+        "recordedAt": "2026-04-18T09:50:26.447Z",
+        "telemetry": {
+          "recordedAt": "2026-04-18T09:50:26.447Z",
+          "correlationId": "live-docs-selected",
+          "surface": "docs-command",
+          "guildId": "live-guild",
+          "replyMode": "private",
+          "selectedAdapterId": "chat-sdk",
+          "adapterId": "chat-sdk",
+          "routeDecision": "adapter_accept",
+          "fallbackReason": null,
+          "shadowMode": false,
+          "rolloutPercentage": 100,
+          "stableBucket": 93,
+          "selectedByRollout": true,
+          "policyMode": "default-on",
+          "evidenceSource": "live"
+        }
+      }
+    ],
+    "command_checks": [
+      {
+        "label": "discord-tests",
+        "command": "npm run test:discord",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "\n> muel-backend@0.0.0 test:discord\n> vitest run --project discord\n\n\n\u001b[1m\u001b[46m RUN \u001b[49m\u001b[22m \u001b[36mv4.1.0 \u001b[39m\u001b[90mC:/Muel_S/discord-news-bot\u001b[39m\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/loginAttempt.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/bucketFlushUtils.test.ts \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/chatSdkRuntime.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 113\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/docs.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 148\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtimePolicy.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 160\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/userCrmService.test.ts \u001b[2m(\u001b[22m\u001b[2m12 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/discordIngressAdapter.test.ts \u001b[2m(\u001b[22m\u001b[2m15 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 285\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordChannelTelemetryService.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordReactionRewardService.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordLoginSessionStore.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/startupTasks.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 5\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/persona.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 534\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m renders personalization runtime details and admin comparison on /프로필 \u001b[33m 531\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/subscribe.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 39\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/muelEntryPolicy.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/auth.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 662\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m hasValidLoginSession은 캐시 미스 시 DB에서 세션을 로드한다 \u001b[33m 629\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/discordTopologySyncService.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n\u001b[90mstdout\u001b[2m | src/discord/commands/vibe.test.ts\u001b[2m > \u001b[22m\u001b[2mvibe message ingress\u001b[2m > \u001b[22m\u001b[2mprefers the injected Chat SDK ingress for prefixed vibe messages\n\u001b[22m\u001b[39m{\"level\":\"warn\",\"message\":\"[BOT] Chat SDK runtime unavailable: DISCORD_PUBLIC_KEY is missing\",\"timestamp\":\"2026-04-18T09:50:12.896Z\"}\r\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/vibe.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 2956\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m prefers the injected Chat SDK ingress for prefixed vibe messages \u001b[33m 2950\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/botRuntimeState.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/session.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 5\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/muelEntrySurface.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m20 passed\u001b[39m\u001b[22m\u001b[90m (20)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m115 passed\u001b[39m\u001b[22m\u001b[90m (115)\u001b[39m\n\u001b[2m   Start at \u001b[22m 18:50:09\n\u001b[2m   Duration \u001b[22m 4.03s\u001b[2m (transform 6.11s, setup 0ms, import 10.80s, tests 4.99s, environment 2ms)\u001b[22m\n\n",
+        "stderr": "\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables an invalid coding override instead of widening back to the default pattern\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid coding intent regex rejected (syntax); override disabled\n\n\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables a ReDoS-suspect automation override instead of silently restoring the broad default\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid automation intent regex rejected (redos-suspect); override disabled\n\n",
+        "stdoutTail": "> muel-backend@0.0.0 test:discord\n> vitest run --project discord\n\n\n\u001b[1m\u001b[46m RUN \u001b[49m\u001b[22m \u001b[36mv4.1.0 \u001b[39m\u001b[90mC:/Muel_S/discord-news-bot\u001b[39m\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/loginAttempt.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/bucketFlushUtils.test.ts \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/chatSdkRuntime.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 113\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/commands/docs.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 148\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtimePolicy.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 160\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/services/discord-support/userCrmService.test.ts \u001b[2m(\u001b[22m\u001b[2m12 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[46m discord \u001b[49m\u001b[39m src/discord/runtime/discordIngressAdapter.test.ts \u001b[2m(\u001b[22m\u001b[2m15 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 285\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[3",
+        "stderrTail": "\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables an invalid coding override instead of widening back to the default pattern\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid coding intent regex rejected (syntax); override disabled\n\n\u001b[90mstderr\u001b[2m | src/discord/runtimePolicy.test.ts\u001b[2m > \u001b[22m\u001b[2mdiscord runtimePolicy intent regex handling\u001b[2m > \u001b[22m\u001b[2mdisables a ReDoS-suspect automation override instead of silently restoring the broad default\n\u001b[22m\u001b[39m[discord-runtime-policy] invalid automation intent regex rejected (redos-suspect); override disabled",
+        "durationMs": 4672
+      },
+      {
+        "label": "typecheck",
+        "command": "npx tsc --noEmit",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "stdoutTail": "",
+        "stderrTail": "",
+        "durationMs": 11078
+      },
+      {
+        "label": "gate-validation",
+        "command": "npm run gates:validate:strict",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "\n> muel-backend@0.0.0 gates:validate:strict\n> node scripts/validate-go-no-go-runs.mjs --requireChecklist=true --checklistSinceDays=1 --requireRuntimeArtifactPolicy=true && npm run gates:validate:docs-policy && npm run rehearsal:stage-rollback:validate:strict && npm run gates:runbook-checklist\n\n[GO-NO-GO][VALIDATE] validated 121 JSON run logs (no-go=16) checklist=on runtimeArtifactPolicy=on\n\n> muel-backend@0.0.0 gates:validate:docs-policy\n> node scripts/validate-provider-bootstrap-docs.mjs\n\n[DOCS-POLICY][OK] HF alias/fallback and startup DAG documentation consistency validated\n\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-17T19:31:37.550Z total_runs=0 fail=0 p95_elapsed_ms=0\n\n> muel-backend@0.0.0 gates:runbook-checklist\n> node scripts/validate-runbook-readiness-checklist.mjs\n\n[RUNBOOK-CHECKLIST] written: docs/planning/gate-runs/runbook-checklists/2026-04-18_runbook-checklist.md\n[RUNBOOK-CHECKLIST] verdict=PASS passed=5/5\n",
+        "stderr": "",
+        "stdoutTail": "> muel-backend@0.0.0 gates:validate:strict\n> node scripts/validate-go-no-go-runs.mjs --requireChecklist=true --checklistSinceDays=1 --requireRuntimeArtifactPolicy=true && npm run gates:validate:docs-policy && npm run rehearsal:stage-rollback:validate:strict && npm run gates:runbook-checklist\n\n[GO-NO-GO][VALIDATE] validated 121 JSON run logs (no-go=16) checklist=on runtimeArtifactPolicy=on\n\n> muel-backend@0.0.0 gates:validate:docs-policy\n> node scripts/validate-provider-bootstrap-docs.mjs\n\n[DOCS-POLICY][OK] HF alias/fallback and startup DAG documentation consistency validated\n\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-17T19:31:37.550Z total_runs=0 fail=0 p95_elapsed_ms=0\n\n> muel-backend@0.0.0 gates:runbook-checklist\n> node scripts/validate-runbook-readiness-checklist.mjs\n\n[RUNBOOK-CHECKLIST] written: docs/planning/gate-runs/runbook-checklists/2026-04-18_runbook-checklist.md\n[RUNBOOK-CHECKLIST] verdict=PASS",
+        "stderrTail": "",
+        "durationMs": 1259
+      },
+      {
+        "label": "rollback-readiness-validation",
+        "command": "npm run rehearsal:stage-rollback:validate:strict",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "\n> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-17T19:31:37.550Z total_runs=0 fail=0 p95_elapsed_ms=0\n",
+        "stderr": "",
+        "stdoutTail": "> muel-backend@0.0.0 rehearsal:stage-rollback:validate:strict\n> node scripts/validate-stage-rollback-readiness.mjs --maxSummaryAgeHours=36 --maxRecoveryMinutes=10 --maxFailCount=0 --allowZeroRuns=true\n\n[ROLLBACK-READINESS] validated summary=docs/planning/gate-runs/rollback-rehearsals/WEEKLY_SUMMARY.md generated_at=2026-04-17T19:31:37.550Z total_runs=0 fail=0 p95_elapsed_ms=0",
+        "stderrTail": "",
+        "durationMs": 286
+      },
+      {
+        "label": "rollback-rehearsal",
+        "command": "node scripts/archive/run-stage-rollback-rehearsal.mjs --dryRun=true --maxRecoveryMinutes=10",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "[ROLLBACK-REHEARSAL] previewed: docs/planning/gate-runs/rollback-rehearsals/2026-04-18_rollback-20260418-095026.md\n{\n  \"generated_at\": \"2026-04-18T09:50:26.431Z\",\n  \"run_id\": \"rollback-20260418-095026\",\n  \"api_base\": \"http://localhost:3000\",\n  \"max_recovery_minutes\": 10,\n  \"elapsed_ms\": 270000,\n  \"elapsed_minutes\": 4.5,\n  \"within_recovery_target\": true,\n  \"reconnect_status\": 202,\n  \"reconnect_replay_status\": 409,\n  \"replay_header\": \"true\",\n  \"overall\": \"pass\",\n  \"dry_run\": true,\n  \"payload\": {\n    \"timestamp\": \"2026-04-18T09:50:26.431Z\",\n    \"base\": \"http://localhost:3000\",\n    \"adminUserId\": \"dry-run\",\n    \"idempotencyKey\": \"dry-run\",\n    \"statusBefore\": 200,\n    \"reconnectStatus\": 202,\n    \"reconnectReplayStatus\": 409,\n    \"replayHeader\": \"true\",\n    \"statusAfter\": 200,\n    \"beforeGrade\": \"ok\",\n    \"afterGrade\": \"ok\",\n    \"reconnectPayload\": {\n      \"accepted\": true\n    },\n    \"replayPayload\": {\n      \"replayed\": true\n    }\n  }\n}\n",
+        "stderr": "",
+        "stdoutTail": "\"payload\": {\n    \"timestamp\": \"2026-04-18T09:50:26.431Z\",\n    \"base\": \"http://localhost:3000\",\n    \"adminUserId\": \"dry-run\",\n    \"idempotencyKey\": \"dry-run\",\n    \"statusBefore\": 200,\n    \"reconnectStatus\": 202,\n    \"reconnectReplayStatus\": 409,\n    \"replayHeader\": \"true\",\n    \"statusAfter\": 200,\n    \"beforeGrade\": \"ok\",\n    \"afterGrade\": \"ok\",\n    \"reconnectPayload\": {\n      \"accepted\": true\n    },\n    \"replayPayload\": {\n      \"replayed\": true\n    }\n  }\n}",
+        "stderrTail": "",
+        "durationMs": 63
+      }
+    ],
+    "rollback_rehearsal_payload": {
+      "generated_at": "2026-04-18T09:50:26.431Z",
+      "run_id": "rollback-20260418-095026",
+      "api_base": "http://localhost:3000",
+      "max_recovery_minutes": 10,
+      "elapsed_ms": 270000,
+      "elapsed_minutes": 4.5,
+      "within_recovery_target": true,
+      "reconnect_status": 202,
+      "reconnect_replay_status": 409,
+      "replay_header": "true",
+      "overall": "pass",
+      "dry_run": true,
+      "payload": {
+        "timestamp": "2026-04-18T09:50:26.431Z",
+        "base": "http://localhost:3000",
+        "adminUserId": "dry-run",
+        "idempotencyKey": "dry-run",
+        "statusBefore": 200,
+        "reconnectStatus": 202,
+        "reconnectReplayStatus": 409,
+        "replayHeader": "true",
+        "statusAfter": 200,
+        "beforeGrade": "ok",
+        "afterGrade": "ok",
+        "reconnectPayload": {
+          "accepted": true
+        },
+        "replayPayload": {
+          "replayed": true
+        }
+      }
+    }
+  },
+  "overall": "go",
+  "required_actions": []
+}

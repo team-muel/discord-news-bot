@@ -48,6 +48,11 @@ let runtime: DiscordChatSdkRuntime | null = null;
 let runtimePromise: Promise<DiscordChatSdkRuntime | null> | null = null;
 let runtimeConfigLogKey: string | null = null;
 
+const canHandleSlashCommandViaChatSdk = (interaction: ChatInputCommandInteraction): boolean => {
+  return interaction.commandName === DISCORD_CHAT_COMMAND_NAMES.ASK_COMPAT
+    || interaction.commandName === DISCORD_CHAT_COMMAND_NAMES.MUEL;
+};
+
 const buildChatSdkWaitUntil = (label: string) => ({
   waitUntil: (task: Promise<unknown>) => {
     void task.catch((error) => {
@@ -326,6 +331,10 @@ export const tryHandleDiscordChatSdkSlashCommand = async (
 ): Promise<boolean> => {
   const request = resolveChatSdkSlashRequest(interaction);
   if (!request) {
+    return false;
+  }
+
+  if (!canHandleSlashCommandViaChatSdk(interaction)) {
     return false;
   }
 

@@ -20,6 +20,8 @@ import {
   SESSION_RESULT_CLIP_LIMIT_DEBUG,
   SESSION_RESULT_CLIP_LIMIT_USER,
 } from './runtimePolicy';
+import { resolveVibeSessionPriority } from './muelEntryPolicy';
+import { sanitizeDiscordUserFacingText } from './userFacingSanitizer';
 
 const FEEDBACK_PROMPT_ENABLED = DISCORD_ENABLE_FEEDBACK_PROMPT;
 const FEEDBACK_PROMPT_LINE = DISCORD_FEEDBACK_PROMPT_LINE;
@@ -53,21 +55,17 @@ export const seedFeedbackReactions = async (
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
-const DEBUG_LINE_PATTERN =
-  /^(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
-const DEBUG_INLINE_PATTERN =
-  /(요청 결과|액션:|검증:|재시도 횟수:|소요시간\(ms\):|상태:)/;
 const SECTION_HEADER_PATTERN =
-  /^(?:#+\s*)?\*{0,2}(deliverable|verification|confidence)\*{0,2}\s*:?\s*(.*)$/i;
+  /^(?:#+\s*)?\*{0,2}(deliverable|verification|confidence|why this path)\*{0,2}\s*:?\s*(.*)$/i;
 
-type SectionName = 'deliverable' | 'verification' | 'confidence';
+type SectionName = 'deliverable' | 'verification' | 'confidence' | 'why this path';
 
 const parseSectionHeader = (line: string): { section: SectionName; trailing: string } | null => {
   const match = String(line || '').trim().match(SECTION_HEADER_PATTERN);
   if (!match) return null;
 
   const section = String(match[1] || '').toLowerCase() as SectionName;
-  if (section !== 'deliverable' && section !== 'verification' && section !== 'confidence') {
+  if (section !== 'deliverable' && section !== 'verification' && section !== 'confidence' && section !== 'why this path') {
     return null;
   }
 
@@ -77,76 +75,8 @@ const parseSectionHeader = (line: string): { section: SectionName; trailing: str
   };
 };
 
-const isDebugLine = (line: string): boolean =>
-  DEBUG_LINE_PATTERN.test(String(line || '').trim());
-
 const stripActionDebugText = (raw: string): string => {
-  const lines = String(raw || '').split(/\r?\n/);
-  const kept: string[] = [];
-  const keptLinks: string[] = [];
-  let section: 'none' | 'artifact' | 'verification' = 'none';
-
-  const pushLink = (value: string) => {
-    const links = String(value || '').match(URL_PATTERN) || [];
-    for (const link of links) {
-      if (!keptLinks.includes(link)) keptLinks.push(link);
-    }
-  };
-
-  for (const original of lines) {
-    const line = String(original || '').trim();
-    if (!line) continue;
-
-    if (line.startsWith('산출물:')) {
-      section = 'artifact';
-      const body = line.replace(/^산출물:\s*/i, '').trim();
-      pushLink(body);
-      if (body && body !== '없음') kept.push(body.replace(DEBUG_INLINE_PATTERN, '').trim());
-      continue;
-    }
-    if (line.startsWith('검증:')) { section = 'verification'; continue; }
-    if (isDebugLine(line)) { section = 'none'; continue; }
-    if (section === 'verification' && line.startsWith('-')) continue;
-
-    if (line.startsWith('- ')) {
-      const bulletBody = line.slice(2).trim();
-      pushLink(bulletBody);
-      if (section === 'artifact' && bulletBody) {
-        const cleaned = bulletBody.replace(DEBUG_INLINE_PATTERN, '').trim();
-        if (cleaned) kept.push(cleaned);
-      }
-      continue;
-    }
-
-    pushLink(line);
-    if (DEBUG_INLINE_PATTERN.test(line)) {
-      const cleaned = line
-        .replace(/요청 결과\s*/g, '')
-        .replace(/액션:[^\n]*/g, '')
-        .replace(/검증:[^\n]*/g, '')
-        .replace(/재시도 횟수:[^\n]*/g, '')
-        .replace(/소요시간\(ms\):[^\n]*/g, '')
-        .replace(/상태:[^\n]*/g, '')
-        .trim();
-      if (cleaned) kept.push(cleaned);
-      continue;
-    }
-    kept.push(line);
-  }
-
-  const compact = kept
-    .filter((l) => !isDebugLine(l))
-    .map((l) => l.replace(/\s{2,}/g, ' ').trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-  if (compact) return compact;
-
-  if (keptLinks.length > 0) {
-    const top = keptLinks.slice(0, 2);
-    return [DISCORD_MESSAGES.session.linkFoundHeader, ...top.map((url) => `- ${url}`)].join('\n');
-  }
-  return '';
+  return sanitizeDiscordUserFacingText(raw);
 };
 
 const extractDeliverableBody = (raw: string): string | null => {
@@ -229,10 +159,12 @@ const toUserFacingResult = (session: AgentSession, options: ProgressRenderOption
 };
 
 const toUserFacingFailureMessage = (session: AgentSession): string => {
-  const cleaned = stripActionDebugText(String(session.error || '').trim());
+  const cleaned = sanitizeDiscordUserFacingText(String(session.error || '').trim());
   if (cleaned) return `${DISCORD_MESSAGES.session.failureGeneric.split('\n')[0]}\n${cleaned}`;
   return DISCORD_MESSAGES.session.failureGeneric;
 };
+
+export { resolveVibeSessionPriority };
 
 const toFriendlyStageLine = (stage: string): string => {
   const n = String(stage || '').toLowerCase();
@@ -371,12 +303,17 @@ export const startVibeSession = async (
   request: string,
 ): Promise<AgentSession> => {
     const routed = await buildReasoningGoalForGuild(request, guildId);
+    const priority = resolveVibeSessionPriority({
+      request,
+      route: routed.route,
+      reasons: routed.reasons,
+    });
     const session = startAgentSession({
       guildId,
       requestedBy: userId,
       goal: routed.goal,
       skillId: null,
-      priority: routed.route === 'knowledge' ? 'fast' : 'balanced',
+      priority,
     });
 
     void recordTaskRoutingMetric({

@@ -35,23 +35,11 @@ const createAskSlashCommand = (name: string, description: string) => new SlashCo
 
 const createAgentStartCommand = () => new SlashCommandBuilder()
   .setName(DISCORD_CHAT_COMMAND_NAMES.START)
-  .setDescription('관리자: AI 에이전트 세션을 시작합니다')
+  .setDescription('관리자: 운영용 작업을 시작합니다')
   .setDMPermission(false)
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((o) =>
-    o.setName('목표').setDescription('실행 목표').setRequired(true),
-  )
-  .addStringOption((o) =>
-    o.setName('스킬').setDescription('선택 스킬 ID').setRequired(false),
-  )
-  .addStringOption((o) =>
-    o.setName('우선순위').setDescription('실행 우선순위')
-      .addChoices(
-        { name: '빠르게', value: 'fast' },
-        { name: '균형', value: 'balanced' },
-        { name: '정밀', value: 'precise' },
-      )
-      .setRequired(false),
+    o.setName('목표').setDescription('예: 온보딩 점검, 오류 원인 확인, 작업 재실행').setRequired(true),
   )
   .addStringOption((o) =>
     o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
@@ -59,25 +47,19 @@ const createAgentStartCommand = () => new SlashCommandBuilder()
       .setRequired(false),
   );
 
-const createAgentSkillListCommand = () => new SlashCommandBuilder()
-  .setName(DISCORD_CHAT_COMMAND_NAMES.SKILL_LIST)
-  .setDescription('관리자: 사용 가능한 에이전트 스킬 목록을 조회합니다')
-  .setDMPermission(false)
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
-
 const createAgentOnboardingCommand = () => new SlashCommandBuilder()
   .setName(DISCORD_CHAT_COMMAND_NAMES.ONBOARDING)
-  .setDescription('관리자: 길드 온보딩 세션을 시작합니다')
+  .setDescription('관리자: 서버 기본 안내와 준비 작업을 다시 실행합니다')
   .setDMPermission(false)
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 const createAgentStopCommand = () => new SlashCommandBuilder()
   .setName(DISCORD_CHAT_COMMAND_NAMES.STOP)
-  .setDescription('관리자: 실행 중인 에이전트 세션을 중지합니다')
+  .setDescription('관리자: 진행 중인 작업을 중지합니다')
   .setDMPermission(false)
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((o) =>
-    o.setName('세션아이디').setDescription('중지할 세션 ID').setRequired(true),
+    o.setName('작업아이디').setDescription('중지할 작업 ID').setRequired(true),
   );
 
 const ALL_COMMANDS = [
@@ -142,63 +124,12 @@ const ALL_COMMANDS = [
   createAskSlashCommand(DISCORD_CHAT_COMMAND_NAMES.MUEL, '뮤엘에게 질문합니다 — 문서·메모·지식 기반으로 답변합니다'),
   createAskSlashCommand(DISCORD_CHAT_COMMAND_NAMES.ASK_COMPAT, '호환 명령입니다 — /뮤엘과 같은 질문 응답을 수행합니다'),
   new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.MAKE)
-    .setDescription('코드·스크립트·자동화를 스레드로 협업 생성합니다')
-    .setDMPermission(false)
-    .addStringOption((o) =>
-      o.setName('요청').setDescription('예: Express 라우터 만들어줘, Python 크롤러 만들어줘').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-
-  new SlashCommandBuilder()
     .setName(DISCORD_CHAT_COMMAND_NAMES.STATUS)
     .setDescription('봇과 자동화 런타임 상태를 확인합니다')
     .setDMPermission(false),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.POLICY)
-    .setDescription('서버 운영 정책을 조회하고 설정합니다')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub.setName('조회').setDescription('현재 서버 정책 전체 조회 (세션 한도, 도메인 허용 목록 등)'),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('도메인추가')
-        .setDescription('뉴스 자동 캡처 허용 도메인 추가')
-        .addStringOption((o) =>
-          o.setName('도메인').setDescription('예: reuters.com, bloomberg.com').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('도메인삭제')
-        .setDescription('뉴스 자동 캡처 허용 목록에서 도메인 삭제')
-        .addStringOption((o) =>
-          o.setName('도메인').setDescription('삭제할 도메인').setRequired(true),
-        ),
-    ),
   createAgentStartCommand(),
-  createAgentSkillListCommand(),
   createAgentOnboardingCommand(),
   createAgentStopCommand(),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.MANAGE_SETTINGS)
-    .setDescription('서버 데이터 학습 허용(on/off)을 설정합니다')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addStringOption((o) =>
-      o.setName('학습').setDescription('학습 허용 on/off')
-        .addChoices(
-          { name: 'on', value: 'on' },
-          { name: 'off', value: 'off' },
-        )
-        .setRequired(false),
-    ),
   new SlashCommandBuilder()
     .setName(DISCORD_CHAT_COMMAND_NAMES.FORGET)
     .setDescription('잊혀질 권리: 유저/길드 데이터 삭제를 요청합니다')
@@ -268,69 +199,6 @@ const ALL_COMMANDS = [
     .addIntegerOption((o) =>
       o.setName('개수').setDescription('표시할 항목 수 (기본 3, 최대 5)').setMinValue(1).setMaxValue(5).setRequired(false),
     ),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.ADMIN)
-    .setDescription('관리자 도구 모음')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub.setName('상태').setDescription('봇/자동화 런타임 상태 확인'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('자동화실행')
-        .setDescription('자동화 잡 즉시 실행')
-        .addStringOption((o) =>
-          o.setName('잡이름').setDescription('실행할 잡 이름').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('즉시전송').setDescription('즉시 전송 요청'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('재연결').setDescription('Discord 연결 재시도'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('채널아이디')
-        .setDescription('채널 ID 확인')
-        .addChannelOption((o) =>
-          o.setName('channel').setDescription('대상 채널').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('포럼아이디')
-        .setDescription('포럼 ID 확인')
-        .addChannelOption((o) =>
-          o.setName('forum').setDescription('대상 포럼').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('동기화').setDescription('슬래시 커맨드 강제 동기화'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('세션이력').setDescription('최근 완료된 AI 세션 산출물 이력 조회'),
-    ),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.USER)
-    .setDescription('내 프로필과 활동 통계를 확인합니다')
-    .setDMPermission(false),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.STATS)
-    .setDescription('관리자: 특정 유저의 CRM 프로필과 활동 정보를 조회합니다')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addUserOption((o) =>
-      o.setName('유저').setDescription('조회할 대상 유저').setRequired(true),
-    )
-    .addStringOption((o) =>
-      o.setName('공개범위').setDescription('응답을 나만 볼지, 채널에 공유할지 선택')
-        .addChoices({ name: '나만 보기', value: 'private' }, { name: '채널에 공유', value: 'public' })
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName(DISCORD_CHAT_COMMAND_NAMES.METRIC_REVIEW)
-    .setDescription('관리자: Metric Review — KR별 지표 현황, 리스크, 활성 Intent 요약')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ];
 
 export const commandDefinitions = ALL_COMMANDS

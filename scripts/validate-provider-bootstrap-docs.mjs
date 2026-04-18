@@ -22,6 +22,12 @@ const requireText = (content, needle, filePath) => {
   }
 };
 
+const requireAnyText = (content, needles, filePath) => {
+  if (!needles.some((needle) => content.includes(needle))) {
+    fail(`${filePath} missing required text: ${needles.join(' OR ')}`);
+  }
+};
+
 const runbookPath = 'docs/RUNBOOK_MUEL_PLATFORM.md';
 const archPath = 'docs/ARCHITECTURE_INDEX.md';
 const envTemplatePath = 'docs/RENDER_AGENT_ENV_TEMPLATE.md';
@@ -45,9 +51,18 @@ requireText(architecture, '2. `HF_API_KEY`', archPath);
 requireText(architecture, '3. `HUGGINGFACE_API_KEY`', archPath);
 requireText(architecture, 'Fallback chain composition:', archPath);
 
-requireText(envTemplate, '- HF_TOKEN=<secret> (if huggingface; primary key)', envTemplatePath);
-requireText(envTemplate, '- HF_API_KEY=<secret> (huggingface alias)', envTemplatePath);
-requireText(envTemplate, '- HUGGINGFACE_API_KEY=<secret> (huggingface alias)', envTemplatePath);
+requireAnyText(envTemplate, [
+  '- HF_TOKEN=<secret> (if huggingface; primary key)',
+  '- HF_TOKEN=[secret] (if huggingface; primary key)',
+], envTemplatePath);
+requireAnyText(envTemplate, [
+  '- HF_API_KEY=<secret> (huggingface alias)',
+  '- HF_API_KEY=[secret] (huggingface alias)',
+], envTemplatePath);
+requireAnyText(envTemplate, [
+  '- HUGGINGFACE_API_KEY=<secret> (huggingface alias)',
+  '- HUGGINGFACE_API_KEY=[secret] (huggingface alias)',
+], envTemplatePath);
 requireText(envTemplate, 'Provider fallback controls:', envTemplatePath);
 requireText(envTemplate, '- LLM_PROVIDER_AUTOMATIC_FALLBACK_ENABLED=true (optional)', envTemplatePath);
 

@@ -4,7 +4,7 @@ Status note:
 
 - Reference mapping specification for Discord adapter to core command translation.
 - Canonical boundary-definition document for M-24 channel ingress abstraction and Chat SDK-ready migration seams.
-- Current repo state: boundary-definition is complete, and the request-side seam now lives at per-surface `executeDiscordIngress()` injection in `src/discord/runtime/commandRouter.ts` with execution + telemetry in `src/discord/runtime/discordIngressAdapter.ts`. `routeDiscordIngress()` remains a lower-level compatibility helper, not the migration boundary. Eligible chat surfaces now have response sink ownership plus per-surface selector, hard-disable, shadow, rollout/holdout gating, structured ingress telemetry, and green live canary verification. Full default-on, grace-close, and legacy demotion remain separate follow-up work.
+- Current repo state: boundary-definition is complete, and the request-side seam now lives at per-surface `executeDiscordIngress()` injection in `src/discord/runtime/commandRouter.ts` with execution + telemetry in `src/discord/runtime/discordIngressAdapter.ts`. `routeDiscordIngress()` remains a lower-level compatibility helper, not the migration boundary. Eligible chat surfaces now have response sink ownership plus per-surface selector, hard-disable, shadow, rollout/holdout gating, structured ingress telemetry, and green live canary verification. Canonical build or automation entry is now `/뮤엘` plus prefixed `뮤엘 ...`; the separate `/만들어줘` slash surface has been retired while the existing vibe/session flow remains the execution owner for build intents. Full default-on, grace-close, and legacy demotion remain separate follow-up work.
 - Use this document for contract alignment; WIP priority stays in `docs/planning/EXECUTION_BOARD.md`.
 
 Purpose:
@@ -21,28 +21,20 @@ Primary handler hub:
 | Discord command | Adapter handler | Core command_type | Core payload focus |
 | --- | --- | --- | --- |
 | 해줘 | docsHandlers.handleAskCommand | docs.ask | query, visibility (compat alias) |
-| 뮤엘 | docsHandlers.handleAskCommand | docs.ask | query, visibility |
-| 만들어줘 | vibeHandlers.handleMakeCommand | worker.generate.request | goal, coding intent, visibility |
+| 뮤엘 | docsHandlers.handleAskCommand or vibeHandlers.handleVibeCommand | docs.ask or agent.run | query or build/automation goal, visibility |
 | 변경사항 | docsHandlers.handleChangelogCommand | docs.changelog | Obsidian #changelog tag search |
-| 정책 | agentHandlers.handlePolicyCommand | agent.policy.control | subcommand + policy update args |
-| 시작 | agentHandlers.handleAgentCommand | agent.session.start | goal/priority/skill |
+| 시작 | agentHandlers.handleAgentCommand | agent.session.start | goal + visibility |
 | 온보딩 | agentHandlers.handleAgentCommand | agent.onboarding.run | guild onboarding trigger |
-| 중지 | agentHandlers.handleAgentCommand | agent.session.stop | session identifier |
-| 스킬목록 | agentHandlers.handleAgentCommand | agent.skill.list | guild scope |
-| 관리자 | adminHandlers.handleAdminCommand | admin.runtime.command | channel/forum/admin ops |
+| 중지 | agentHandlers.handleAgentCommand | agent.session.stop | work identifier |
 | 상태 | adminHandlers.handleStatusCommand | runtime.status.read | guild/runtime snapshot |
-| 관리설정 | adminHandlers.handleManageSettingsCommand | admin.settings.update | learning toggle |
 | 잊어줘 | adminHandlers.handleForgetCommand | privacy.forget.request | scope, mode, confirm token |
 | 도움말 | adminHandlers.handleHelpCommand | help.read | command catalog |
 | 구독 | handleGroupedSubscribeCommand | subscription.command | action/type/link/channel |
 | 주가 | handleStockPriceCommand | market.query | symbol + visibility |
 | 차트 | handleStockChartCommand | market.query | symbol + visibility |
 | 분석 | handleAnalyzeCommand | market.query | query + visibility |
-| 유저 | crmHandlers.handleMyInfoCommand | user.crm.self | self CRM profile + login diag |
-| 통계 | crmHandlers.handleUserInfoCommand | user.crm.lookup | target user CRM lookup (admin) |
 | 프로필 | personaHandlers.handleProfileCommand | user.profile.read | self or target user profile |
 | 메모 | personaHandlers.handleMemoCommand | user.note.command | view or add user memo |
-| 지표리뷰 | inline in bot.ts | metrics.review.read | metric snapshot generation |
 
 ## 2) Non-Chat Interaction Mapping
 
@@ -96,9 +88,8 @@ Non-goals for this migration track:
 | --- | --- | --- | --- |
 | Bot lifecycle and gateway health | `bot.ts`, `src/discord/runtime/botRuntimeState.ts`, `src/discord/runtime/gatewayPreflight.ts` | Keep Discord-native. Not part of Chat SDK migration. | none |
 | Slash command registration and permission bits | `src/discord/commandDefinitions.ts` | Keep Discord-native; future adapters consume the normalized command catalog, not Discord builders. | none |
-| Docs ask ingress (`/뮤엘`, `/해줘`) | `src/discord/runtime/commandRouter.ts` injects `executeDocsCommandIngress()` backed by `executeDiscordIngress()` into `src/discord/commands/docs.ts` | Request-side seam and response sink are extracted. Legacy docs RAG/LLM remains deterministic fallback. | eligible cutover surface closed |
+| Docs ask ingress (`/뮤엘`, `/해줘`) | `src/discord/runtime/commandRouter.ts` injects `executeDocsCommandIngress()` backed by `executeDiscordIngress()` into `src/discord/commands/docs.ts` | Request-side seam and response sink are extracted. `/뮤엘` remains the canonical slash entry: doc questions stay on `docs.ask`, while build or automation intent is rerouted into the existing vibe/session lane. `/해줘` remains the deterministic docs alias. | eligible cutover surface closed |
 | Prefixed message ingress (`뮤엘 ...`) | `src/discord/runtime/commandRouter.ts` injects `executePrefixedMessageIngress()` backed by `executeDiscordIngress()` into `src/discord/commands/vibe.ts` | Request-side seam and message sink are extracted for adapter-accept traffic. Quick-chat/full-session remains deterministic fallback. | eligible cutover surface closed |
-| Make/code ingress (`/만들어줘`) | `src/discord/commands/vibe.ts` -> `src/discord/session.ts` | Migrate after docs.ask seam is proven stable. | adapter implementation phase 2 |
 | Session progress streaming | `src/discord/session.ts` | Reuse as transport-neutral orchestration surface. | adapter implementation |
 | OpenClaw ingress preference + Hermes objective queueing | `executeDiscordIngress()` and `openClawDiscordIngressAdapter` in `src/discord/runtime/discordIngressAdapter.ts` (`routeDiscordIngress()` retained as lower-level compatibility helper) | Keep behavior behind the extracted request-side seam. Eligible chat surfaces are closed through sink ownership plus structured telemetry, and live canary verification is green; full default-on plus grace-close remain a separate session. | eligible surfaces live-canary verified; default-on/grace-close pending |
 | Admin/persona/tasks/market commands | `src/discord/commands/*.ts` except docs/vibe | Leave on the legacy Discord adapter until chat surfaces are stable. | defer |
@@ -128,10 +119,12 @@ Existing code that already matches the target seam:
   - handler injection from `src/discord/runtime/commandRouter.ts` into the docs and prefixed-message handlers through `executeDocsCommandIngress()` and `executePrefixedMessageIngress()`
   - `docs.ask` now uses `IngressResponseSink v1` in `src/discord/commands/docs.ts`, so `ack`, `updateProgress`, `final`, and feedback seeding are owned by the sink instead of the request handler body
   - prefixed `뮤엘 ...` now uses a message sink in `src/discord/commands/vibe.ts`, so adapter-accept `message.reply()` and feedback seeding are owned by the sink instead of the ingress decision branch
+  - `/뮤엘` now absorbs build or automation intent into the existing `handleVibeCommand()` / `streamSessionProgress()` lane, and the separate `/만들어줘` public slash surface has been removed from the command catalog while a literal stale-command fallback remains in the router during the grace window
+  - slash `/뮤엘` and prefixed `뮤엘 ...` now share the same full-session reply contract and coding-intent runtime-goal normalization, so build or automation session-progress parity is no longer an open implementation gap for the eligible surfaces
+  - eligible slash-surface dispatch for `/해줘`, `/뮤엘`, and the legacy `/만들어줘` grace path now lives behind `src/discord/runtime/eligibleChatSurfaceRouter.ts`, so `commandRouter.ts` no longer owns those product-routing branches inline
   - both eligible chat surfaces now share preferred adapter selection, hard-disable, shadow-mode evaluation, per-surface rollout/holdout gating, structured ingress telemetry, and persisted cutover evidence snapshots through `executeDiscordIngress()`
   - `scripts/run-chat-sdk-discord-cutover-validation.ts` can emit md/json gate-run artifacts from the persisted ingress evidence snapshot
 - Still incomplete for the full owner-transition window:
-  - `/만들어줘` plus the full session-progress reply/update lifecycle remain phase 2 and outside the first cutover window
   - eligible surface 전체 default-on/100 전환, rollback grace-close 종료, legacy demotion/removal은 아직 별도 후속 lane이다
 - Session state:
   - boundary-definition: complete
@@ -144,14 +137,14 @@ Existing code that already matches the target seam:
 
 - Boundary Definition Session: deliverable is this document, the shared-knowledge backfill registration, and the architecture changelog entry. Status: complete in the current repo state. Exit criteria are that the first migrated surfaces are frozen to `docs.ask` (`/뮤엘`, `/해줘`) plus prefixed `뮤엘 ...`, and non-goals are explicit.
 - Discord Adapter Implementation Session A: complete when `docs.ask` owns `IngressResponseSink v1`, docs-specific adapter selection plus hard-disable exists, shadow evaluation emits correlation-id based telemetry, and deterministic fallback to the legacy docs path remains intact. Status: complete in the current repo state.
-- Discord Adapter Implementation Session B: complete when prefixed `뮤엘 ...` shares the same sink, selector, and telemetry contract while preserving deterministic fallback to quick chat or the full vibe session. Status: complete in the current repo state. `/만들어줘` remains phase 2 after the first chat surfaces are fully closed.
+- Discord Adapter Implementation Session B: complete when prefixed `뮤엘 ...` shares the same sink, selector, and telemetry contract while preserving deterministic fallback to quick chat or the full vibe session. Status: complete in the current repo state. The dedicated `/만들어줘` public surface is retired; any later phase 2 work is about session-progress transport ownership, not restoring a separate make command.
 - Rollout Control Session: core primitives and the first live evidence window are complete for the eligible chat surfaces at the generic ingress seam. Per-surface rollout percentage, holdout-safe canary selection, hard-disable, shadow evaluation, and cutover evidence snapshots now exist, and selected-path plus forced-fallback evidence has already been recorded in production. Remaining work is exact-unit grace-close and later preferred-adapter owner changes, not first-pass parity collection.
-- Legacy Removal Identification Session: this is an inventory-lock pass first, not deletion authority. Re-run it after each implementation slice that changes the eligible Discord seams so stale symbols do not survive into the next session. The current live seam is `executeDocsCommandIngress()` / `executePrefixedMessageIngress()` in `src/discord/runtime/commandRouter.ts` plus `executeDiscordIngress()` in `src/discord/runtime/discordIngressAdapter.ts`, not `routeDiscordIngress()` or removed inline helpers. Actual code deletion still starts only after the relevant surface is default-on, cutover evidence exists, and the rollback grace window is explicitly closed. Exit criteria are that the inventory is locked against live code and migrated chat surfaces import Discord types only in the adapter layer, not in the core use-case layer.
+- Legacy Removal Identification Session: this is an inventory-lock pass first, not deletion authority. Re-run it after each implementation slice that changes the eligible Discord seams so stale symbols do not survive into the next session. The current live seam is `executeDocsCommandIngress()` / `executePrefixedMessageIngress()` in `src/discord/runtime/commandRouter.ts`, eligible slash dispatch in `src/discord/runtime/eligibleChatSurfaceRouter.ts`, and execution + telemetry in `src/discord/runtime/discordIngressAdapter.ts`, not `routeDiscordIngress()` or removed inline helpers. Actual code deletion still starts only after the relevant surface is default-on, cutover evidence exists, and the rollback grace window is explicitly closed. Exit criteria are that the inventory is locked against live code and migrated chat surfaces import Discord types only in the adapter layer, not in the core use-case layer.
 - Cutover Verification Session: the first generic-ingress validation window is now closed for `docs.ask` and prefixed `뮤엘 ...`. Later preferred-adapter owner changes still need their own bounded validation window, and rollback to the legacy Discord router should remain open for at least one release window after each broader owner change. Whole-file deletion remains a separate later session.
 
 ## 7) Removal Inventory Lock
 
-Current lock date: 2026-04-17, after live cutover go evidence and exact-unit inventory refresh.
+Current lock date: 2026-04-18, after fresh local-process cutover evidence and eligible slash-dispatch inventory refresh.
 
 ### Remove-Now
 
@@ -170,9 +163,9 @@ Current lock date: 2026-04-17, after live cutover go evidence and exact-unit inv
 | File | Current live unit | Why it is locked as non-removal now | Recheck trigger |
 | --- | --- | --- | --- |
 | `src/discord/commands/docs.ts` | `handleAskCommand()`, `createDocsAskResponseSink()`, `handleDocsCommand()` / `handleChangelogCommand()`, and the ingress-accept command shell around `handleDocsAskRequest()` | The Discord.js slash shell and response sink still own the live transport boundary. Only the post-ingress legacy fallback segment is rollback-only; the rest of the file remains active docs command behavior outside the legacy-removal scope. | Reclassify further only after the Discord.js shell is no longer the active transport owner. |
-| `src/discord/commands/vibe.ts` | `handlePrefixedMessageIngressRequest()`, the post-ingress prefixed-message continuation inside `handleVibeMessage()`, and slash/session reply wiring in `handleVibeCommand()` / `handleMakeCommand()` | Live selected-path evidence now exists for prefixed `뮤엘 ...`, and the latest production rerun (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) refreshed that parity on the current `chat-sdk` canary. But the exact `muel-message` fallback branch still has no production rollback artifact because the deployed internal exercise route reported only one forced-fallback rollback observation. `/만들어줘` and session flows remain active live units, not rollback residue. | Reclassify the prefixed fallback only after a live `muel-message` rollback observation lands in the cutover evidence window from the deployed two-surface rollback exercise path. |
+| `src/discord/commands/vibe.ts` | `handlePrefixedMessageIngressRequest()`, the post-ingress prefixed-message continuation inside `handleVibeMessage()`, and the shared full-session sink wiring in `handleVibeCommand()` | Live selected-path evidence now exists for prefixed `뮤엘 ...`, and the latest production rerun (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) refreshed that parity on the current `chat-sdk` canary. The eligible full-session reply contract is already unified, but the exact `muel-message` fallback branch still has no production rollback artifact because the deployed internal exercise route reported only one forced-fallback rollback observation. Build/session flows remain active live units, not rollback residue. | Reclassify the prefixed fallback only after a live `muel-message` rollback observation lands in the cutover evidence window from the deployed two-surface rollback exercise path. |
 | `src/discord/session.ts` | `streamSessionProgress()`, render helpers, `startVibeSession()`, and `seedFeedbackReactions()` | `streamSessionProgress()` is the canonical reusable progress surface and is explicitly a keep/reuse asset. `seedFeedbackReactions()` is still a shared helper consumed by live docs and vibe paths; relocation may happen later, but it is not currently a legacy delete or rollback-only unit. | Reclassify only after all Discord sinks stop importing this helper or the helper is moved to a dedicated sink utility module. |
-| `src/discord/runtime/commandRouter.ts` | outer `interactionCreate` / `messageCreate` shells, docs ingress injection, slash dispatch table, and non-chat runtime wiring | This file still owns the live Discord runtime boundary for buttons, modals, persona/admin/task/market commands, guild lifecycle, passive memory, CRM side effects, and the current eligible chat-surface dispatch. None of that is superseded yet. | Reclassify only after a registry-based ingress dispatcher or Chat SDK router takes ownership of the eligible chat surfaces without collapsing the non-target runtime duties still hosted here. |
+| `src/discord/runtime/commandRouter.ts` | outer `interactionCreate` / `messageCreate` shells, docs ingress injection, non-eligible slash dispatch table, and non-chat runtime wiring | This file still owns the live Discord runtime boundary for buttons, modals, persona/admin/task/market commands, guild lifecycle, passive memory, CRM side effects, and the remaining non-eligible command dispatch. None of that is superseded yet. | Reclassify only after a registry-based ingress dispatcher or Chat SDK router takes ownership of the non-target runtime duties still hosted here. |
 
 Inventory rule for the next session:
 
@@ -190,7 +183,7 @@ Explicit non-removal targets for the first migration window:
 
 ## 8) Hard Invariants
 
-- Existing `/뮤엘`, `/해줘`, `/만들어줘`, and prefixed `뮤엘 ...` behavior must remain intact during migration.
+- Existing `/뮤엘`, `/해줘`, and prefixed `뮤엘 ...` behavior must remain intact during migration, while build or automation requests keep routing into the live vibe/session flow.
 - OpenClaw remains an optional ingress preference, not the semantic owner of the workstream.
 - Hermes continuity, OpenJarvis managed operations, Supabase hot-state, and Obsidian semantic ownership remain unchanged.
 - Deliverable sanitization and user-facing Discord output safety must remain enforced on the migrated path.

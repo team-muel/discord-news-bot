@@ -430,6 +430,130 @@ describe('discordIngressAdapter', () => {
     });
   });
 
+  it('sanitizes leaked prompt compiler and deliverable wrapper text before returning ingress answers', async () => {
+    mocks.generateTextWithMeta.mockResolvedValue({
+      text: [
+        '[프롬프트 컴파일]',
+        '- dropped_noise=false',
+        '- intent_tags=ops,coding',
+        '- directives=response.short,response.with-verification,response.risk-first',
+        'FinOps 모드: normal (daily=0.0509/5.00, monthly=0.2532/100.00)',
+        '## Deliverable',
+        '중간 과정 노출 없이 최종 답만 반환합니다.',
+        '## Verification',
+        '- evidence_bundle_id: abc123',
+      ].join('\n'),
+      provider: 'openjarvis',
+      model: 'qwen2.5:7b',
+      latencyMs: 15,
+      estimatedCostUsd: 0.0001,
+    });
+
+    const {
+      buildDiscordIngressEnvelope,
+      chatSdkDiscordIngressAdapter,
+    } = await import('./discordIngressAdapter');
+    const envelope = buildDiscordIngressEnvelope({
+      request: '중간 과정 노출 없이 답해줘',
+      guildId: 'guild-1',
+      userId: 'user-1',
+      channel: { id: 'channel-1' } as any,
+      messageId: 'msg-1',
+      correlationId: 'corr-chat-sdk-sanitize',
+      entryLabel: '/해줘',
+      surface: 'docs-command',
+      replyMode: 'private',
+      tenantLane: 'operator-personal',
+    });
+
+    const result = await chatSdkDiscordIngressAdapter.route(envelope);
+
+    expect(result).toMatchObject({
+      answer: '중간 과정 노출 없이 최종 답만 반환합니다.',
+      adapterId: 'chat-sdk',
+      continuityQueued: false,
+    });
+  });
+
+  it('declines ingress answers that collapse to internal diagnostics only after sanitization', async () => {
+    mocks.generateTextWithMeta.mockResolvedValue({
+      text: [
+        '[프롬프트 컴파일]',
+        '- dropped_noise=false',
+        '- intent_tags=ops,coding',
+        '- directives=response.short,response.with-verification,response.risk-first',
+        'FinOps 모드: normal (daily=0.0509/5.00, monthly=0.2532/100.00)',
+        'RAG 근거 6건 검색 완료 (query="요구사항: 중간 과정/역할별 산출물 노출 금지 목표: [ROUTE:mixed]")',
+        '검증: 없음',
+      ].join('\n'),
+      provider: 'openjarvis',
+      model: 'qwen2.5:7b',
+      latencyMs: 15,
+      estimatedCostUsd: 0.0001,
+    });
+
+    const {
+      buildDiscordIngressEnvelope,
+      chatSdkDiscordIngressAdapter,
+    } = await import('./discordIngressAdapter');
+    const envelope = buildDiscordIngressEnvelope({
+      request: '중간 과정 노출 없이 답해줘',
+      guildId: 'guild-1',
+      userId: 'user-1',
+      channel: { id: 'channel-1' } as any,
+      messageId: 'msg-1',
+      correlationId: 'corr-chat-sdk-empty',
+      entryLabel: '/해줘',
+      surface: 'docs-command',
+      replyMode: 'private',
+      tenantLane: 'operator-personal',
+    });
+
+    const result = await chatSdkDiscordIngressAdapter.route(envelope);
+
+    expect(result).toBeNull();
+  });
+
+  it('drops why-this-path sections before returning ingress answers', async () => {
+    mocks.generateTextWithMeta.mockResolvedValue({
+      text: [
+        '## Deliverable',
+        '최종 답변만 반환합니다.',
+        '## Why This Path',
+        'intent_tags=mixed,response.risk-first',
+      ].join('\n'),
+      provider: 'openjarvis',
+      model: 'qwen2.5:7b',
+      latencyMs: 15,
+      estimatedCostUsd: 0.0001,
+    });
+
+    const {
+      buildDiscordIngressEnvelope,
+      chatSdkDiscordIngressAdapter,
+    } = await import('./discordIngressAdapter');
+    const envelope = buildDiscordIngressEnvelope({
+      request: '최종 답변만 줘',
+      guildId: 'guild-1',
+      userId: 'user-1',
+      channel: { id: 'channel-1' } as any,
+      messageId: 'msg-1',
+      correlationId: 'corr-chat-sdk-why-this-path',
+      entryLabel: '/해줘',
+      surface: 'docs-command',
+      replyMode: 'private',
+      tenantLane: 'operator-personal',
+    });
+
+    const result = await chatSdkDiscordIngressAdapter.route(envelope);
+
+    expect(result).toMatchObject({
+      answer: '최종 답변만 반환합니다.',
+      adapterId: 'chat-sdk',
+      continuityQueued: false,
+    });
+  });
+
   it('declines the chat-sdk adapter when no LLM provider is configured', async () => {
     mocks.isAnyLlmConfigured.mockReturnValue(false);
 

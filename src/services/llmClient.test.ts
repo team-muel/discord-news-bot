@@ -473,10 +473,11 @@ describe('generateText', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const pending = generateText({ system: 'sys', user: 'timeout me' });
+    const expectedTimeout = expect(pending).rejects.toThrow('API_TIMEOUT');
 
     await vi.advanceTimersByTimeAsync(30);
 
-    await expect(pending).rejects.toThrow('API_TIMEOUT');
+    await expectedTimeout;
   });
 
   it('hedged fallback은 primary가 늦게 실패해도 secondary 성공을 기다린다', async () => {

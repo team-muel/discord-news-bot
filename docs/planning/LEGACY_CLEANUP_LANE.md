@@ -57,7 +57,7 @@ Current classification:
 
 - Remove-Now: none
 - Rollback-Only: the post-ingress legacy fallback branch inside `src/discord/commands/docs.ts` `handleDocsAskRequest()` for `/뮤엘` and `/해줘`; the replacement request path is now the live ingress seam and the old branch remains only as explicit rollback/grace behavior.
-- Keep-For-Now: all remaining rows already locked in `DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, including the rest of `docs.ts`, all of `vibe.ts`, all of `session.ts`, and all of `commandRouter.ts`. The prefixed `뮤엘 ...` fallback now has local/operator rollback rehearsal evidence and refreshed production selected-path parity (`2026-04-17_chat-sdk-cutover-20260417-212611.*`), but it stays here until the deployed live control plane records its own production rollback artifact.
+- Keep-For-Now: all remaining rows already locked in `DISCORD_ADAPTER_CORE_COMMAND_MAPPING_V1.md`, including the rest of `docs.ts`, all of `vibe.ts`, all of `session.ts`, and the remaining non-eligible portions of `commandRouter.ts`. The prefixed `뮤엘 ...` fallback now has refreshed production selected-path parity (`2026-04-17_chat-sdk-cutover-20260417-212611.*`) plus fresh local-process rollback rehearsal evidence for both eligible surfaces (`2026-04-18_chat-sdk-cutover-20260418-095009.*`), but it stays here until the deployed live control plane records its own production rollback artifact.
 
 Exact predecessor evidence closed for the rollback-only unit:
 
@@ -65,6 +65,7 @@ Exact predecessor evidence closed for the rollback-only unit:
 - `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-144035.json` repeated the same production verdict, confirming that the `docs.ask` fallback is explicit grace behavior rather than missing-owner drift.
 - `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-161707.json` later changed the preferred adapter owner again while keeping `docs.ask` on the same ingress boundary, which confirms that the replacement boundary is the ingress seam rather than one adapter brand.
 - `docs/planning/gate-runs/chat-sdk-cutover/2026-04-17_chat-sdk-cutover-20260417-212611.json` refreshed the current `chat-sdk` canary parity for both eligible surfaces, but it did not open the prefixed-message rollback-only gate because the currently deployed internal exercise route still reported only one forced-fallback rollback observation.
+- `docs/planning/gate-runs/chat-sdk-cutover/2026-04-18_chat-sdk-cutover-20260418-095009.json` confirmed that the current local-process control plane now records forced-fallback rollback observations for both eligible surfaces at rollout 100, but it still does not open the prefixed-message rollback-only gate because the deployed internal exercise route has not yet emitted the same production artifact.
 
 Delete gate opens only when all of the following are true:
 

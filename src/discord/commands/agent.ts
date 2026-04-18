@@ -150,8 +150,6 @@ export const createAgentHandlers = (deps: AgentDeps) => {
       const shared = (interaction.options.getString('공개범위') || 'private') === 'public';
       await interaction.deferReply({ ephemeral: !shared });
       const goal = interaction.options.getString('목표', true).trim();
-      const skillId = (interaction.options.getString('스킬') || '').trim();
-      const priority = (interaction.options.getString('우선순위') || 'balanced').trim();
       if (!goal) {
         await interaction.editReply(buildAdminCard(DISCORD_MESSAGES.agent.titleInputError, DISCORD_MESSAGES.agent.goalRequired, [DISCORD_MESSAGES.agent.goalParameterHint], EMBED_WARN));
         return;
@@ -159,13 +157,13 @@ export const createAgentHandlers = (deps: AgentDeps) => {
 
       let session: AgentSession;
       try {
-        session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal, skillId: skillId || null, priority, isAdmin: true });
+        session = startAgentSession({ guildId: interaction.guildId, requestedBy: interaction.user.id, goal, skillId: null, priority: 'balanced', isAdmin: true });
       } catch (error) {
         await interaction.editReply(buildAdminCard(DISCORD_MESSAGES.agent.titleSessionStartFailed, deps.getErrorMessage(error), [`guild=${interaction.guildId}`], EMBED_ERROR));
         return;
       }
 
-      await interaction.editReply(buildAdminCard(DISCORD_MESSAGES.agent.titleRequestAccepted, DISCORD_MESSAGES.agent.requestAcceptedLines(session.id, session.goal, session.priority).join('\n'), [`session=${session.id}`, `requestedBy=${interaction.user.id}`], EMBED_INFO));
+      await interaction.editReply(buildAdminCard(DISCORD_MESSAGES.agent.titleRequestAccepted, DISCORD_MESSAGES.agent.requestAcceptedLines(session.id, session.goal).join('\n'), [`work=${session.id}`, `requestedBy=${interaction.user.id}`], EMBED_INFO));
       await deps.streamSessionProgress({ update: (content) => interaction.editReply(buildAdminCard(DISCORD_MESSAGES.agent.titleProgress, content, [`session=${session.id}`], EMBED_INFO)) }, session.id, session.goal, { showDebugBlocks: session.priority === 'precise' && !shared, maxLinks: 4 });
       return;
     }
@@ -278,7 +276,15 @@ export const createAgentHandlers = (deps: AgentDeps) => {
 
     if (sub === '중지') {
       await interaction.deferReply({ ephemeral: true });
-      const sessionId = interaction.options.getString('세션아이디', true).trim();
+      const sessionId = String(
+        interaction.options.getString('작업아이디')
+        || interaction.options.getString('세션아이디')
+        || ''
+      ).trim();
+      if (!sessionId) {
+        await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titleInputError, DISCORD_MESSAGES.agent.workIdRequired, EMBED_WARN));
+        return;
+      }
       const session = getAgentSession(sessionId);
       if (!session || session.guildId !== interaction.guildId) {
         await interaction.editReply(buildSimpleEmbed(DISCORD_MESSAGES.agent.titleStopFailed, DISCORD_MESSAGES.agent.sessionNotFound, EMBED_WARN));

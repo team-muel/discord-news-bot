@@ -138,7 +138,7 @@ describe('agentOpsService onGuildJoined', () => {
       discordChannelId: 'channel-1',
     });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(String(send.mock.calls[0]?.[0] || '')).toContain('자동 온보딩 세션 시작됨: session-1');
+    expect(String(send.mock.calls[0]?.[0] || '')).toContain('자동 온보딩 작업 시작됨: session-1');
     expect(String(send.mock.calls[0]?.[0] || '')).toContain('기본 뉴스 브리핑을 <#channel-1> 채널에 연결했습니다.');
     expect(mocks.triggerAutomationJob).toHaveBeenCalledWith('news-monitor', { guildId: 'guild-1' });
   });
