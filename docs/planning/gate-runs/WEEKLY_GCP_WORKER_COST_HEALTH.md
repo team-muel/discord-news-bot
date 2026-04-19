@@ -1,6 +1,6 @@
 # GCP Worker Cost/Health Report
 
-- checkedAt: 2026-04-19T03:50:26.699Z
+- checkedAt: 2026-04-19T07:46:31.491Z
 - period: weekly
 - ok: false
 - projectId: gen-lang-client-0405212361
@@ -16,16 +16,16 @@
 ## Endpoint
 
 - url: <https://34.56.232.61.sslip.io>
-- healthOk: true
-- statusCode: 200
+- healthOk: false
+- statusCode: 0
 
 ## Always-On Services
 
-- implementWorker: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/health>
-- architectWorker: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/architect/health>
-- reviewWorker: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/review/health>
-- operateWorker: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/operate/health>
-- openjarvisServe: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/openjarvis/health>
+- implementWorker: ok=false status=0 checkedUrl=<http://34.56.232.61:8787>
+- architectWorker: ok=false status=0 checkedUrl=<http://34.56.232.61:8791>
+- reviewWorker: ok=false status=0 checkedUrl=<http://34.56.232.61:8792>
+- operateWorker: ok=false status=0 checkedUrl=<http://34.56.232.61:8793>
+- openjarvisServe: ok=false status=0 checkedUrl=<http://34.56.232.61:8000>
 - unifiedMcp: ok=true status=200 checkedUrl=<https://34.56.232.61.sslip.io/mcp/health>
 
 ## Static IP
@@ -52,6 +52,11 @@
 
 ## Failures
 
+- Always-on service 'implementWorker' health probe failed.
+- Always-on service 'architectWorker' health probe failed.
+- Always-on service 'reviewWorker' health probe failed.
+- Always-on service 'operateWorker' health probe failed.
+- Always-on service 'openjarvisServe' health probe failed.
 - Failed to read worker instance metadata: ERROR: (gcloud.compute.instances.describe) You do not currently have an active account selected.
 Please run:
 
