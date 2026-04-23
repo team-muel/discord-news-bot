@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-04-23T08:10:42.661Z
+- generated_at: 2026-04-23T14:11:29.937Z
 - total_runs: 124
 - go: 11
 - no_go: 16
@@ -100,13 +100,13 @@
 | MONTHLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/MONTHLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_GCP_WORKER_COST_HEALTH | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_GCP_WORKER_COST_HEALTH.md |
 | WEEKLY_SUMMARY_NORMALIZED | unknown | unknown | pending | unknown | unknown | missing | missing | missing | docs/planning/gate-runs/WEEKLY_SUMMARY_NORMALIZED.md |
-| gate-20260415-145814 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-145814.md |
-| gate-20260415-150843 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-150843.md |
-| gate-20260415-151807 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-151807.md |
-| gate-20260415-152011 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152011.md |
-| gate-20260415-152216 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152216.md |
 | gate-20260415-152526 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152526.md |
 | gate-20260415-152850 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-152850.md |
 | gate-20260415-153156 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-153156.md |
 | gate-20260415-153504 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-153504.md |
 | gate-20260415-153716 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-153716.md |
+| gate-20260415-154730 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-154730.md |
+| gate-20260415-155613 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-155613.md |
+| gate-20260415-155946 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-155946.md |
+| gate-20260415-160534 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-160534.md |
+| gate-20260415-160807 | A | weekly:auto | pending | false | none | incomplete | incomplete | incomplete | docs/planning/gate-runs/2026-04-15_gate-20260415-160807.md |
