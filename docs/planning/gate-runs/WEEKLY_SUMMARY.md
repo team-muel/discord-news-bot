@@ -1,7 +1,7 @@
 # Go/No-Go Weekly Summary
 
 - window_days: 7
-- generated_at: 2026-04-26T07:54:56.356Z
+- generated_at: 2026-04-26T13:41:22.803Z
 - total_runs: 124
 - go: 11
 - no_go: 16
