@@ -1,9 +1,10 @@
 import { parseBooleanEnv, parseIntegerEnv, parseStringEnv } from '../../utils/env';
+import { ALL_WORKFLOWS_DISABLED } from '../../config';
 import type { JobConfig } from './types';
 
 export const AUTOMATION_ENABLED = parseBooleanEnv(
   process.env.START_AUTOMATION_JOBS ?? process.env.START_AUTOMATION_BOT,
-  true,
+  !ALL_WORKFLOWS_DISABLED,
 );
 export const PRIMARY_DISCORD_TOKEN = parseStringEnv(process.env.DISCORD_TOKEN ?? process.env.DISCORD_BOT_TOKEN, '');
 export const AUTOMATION_RUNTIME_ENABLED = AUTOMATION_ENABLED && Boolean(PRIMARY_DISCORD_TOKEN);

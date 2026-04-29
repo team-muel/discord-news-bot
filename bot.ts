@@ -3,6 +3,7 @@ import { client, startBot } from './src/bot';
 import { setDefaultResultOrder } from 'dns';
 import logger from './src/logger';
 import initMonitoring from './src/init';
+import { ALL_WORKFLOWS_DISABLED, START_BOT } from './src/config';
 import { initObsidianRAG } from './src/services/obsidian/obsidianRagService';
 import { recordRuntimeError } from './src/services/sprint/sprintTriggers';
 
@@ -32,6 +33,11 @@ if (process.env.NODE_ENV !== 'production') {
 if (!token) {
   logger.error('DISCORD token not provided. Set DISCORD_TOKEN or DISCORD_BOT_TOKEN.');
   process.exit(1);
+}
+
+if (ALL_WORKFLOWS_DISABLED || !START_BOT) {
+  logger.warn('[BOOT] Workflow shutdown mode is active; bot startup is skipped.');
+  process.exit(0);
 }
 
 // 안전한 비동기 시작: startBot이 Promise를 반환하더라도 정상 동작하도록 await 처리합니다.

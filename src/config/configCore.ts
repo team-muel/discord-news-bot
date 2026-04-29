@@ -8,6 +8,7 @@ const parsePositiveNumberEnv = (raw: string | undefined, fallback: number): numb
 export const PORT = parseIntegerEnv(process.env.PORT, 3000);
 export const FRONTEND_ORIGIN = parseStringEnv(process.env.CORS_ALLOWLIST ?? process.env.FRONTEND_ORIGIN ?? process.env.OAUTH_REDIRECT_ALLOWLIST, '');
 export const NODE_ENV = parseStringEnv(process.env.NODE_ENV, 'development');
+export const ALL_WORKFLOWS_DISABLED = parseBooleanEnv(process.env.ALL_WORKFLOWS_DISABLED, false);
 export const JSON_BODY_LIMIT = parseStringEnv(process.env.JSON_BODY_LIMIT, '2mb');
 export const PUBLIC_BASE_URL = parseUrlEnv(process.env.PUBLIC_BASE_URL ?? process.env.RENDER_EXTERNAL_URL ?? process.env.RENDER_PUBLIC_URL, '');
 const JWT_SECRET_FALLBACK = 'dev-jwt-secret-change-in-production';

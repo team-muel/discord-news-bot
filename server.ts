@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import logger from './src/logger';
 import initMonitoring from './src/init';
-import { BOT_START_FAILURE_EXIT_ENABLED, PORT, START_BOT } from './src/config';
+import { ALL_WORKFLOWS_DISABLED, BOT_START_FAILURE_EXIT_ENABLED, PORT, START_BOT } from './src/config';
 import { startServerProcessRuntime } from './src/services/runtime/runtimeBootstrap';
 import { stopAutomationModules } from './src/services/automationBot';
 import { stopMcpSkillRouter } from './src/services/mcpSkillRouter';
@@ -61,6 +61,10 @@ const exitForRequiredBotFailure = (message: string, error?: unknown) => {
 };
 
 startServerProcessRuntime();
+
+if (ALL_WORKFLOWS_DISABLED) {
+  logger.warn('[BOOT] Workflow shutdown mode is active; background workflows will not start.');
+}
 
 logger.info('[BOOT] START_BOT=%s START_AUTOMATION_JOBS=%s DISCORD_TOKEN_PRESENT=%s',
   String(START_BOT),

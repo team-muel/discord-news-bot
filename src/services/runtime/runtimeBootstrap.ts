@@ -20,6 +20,7 @@ import { bootstrapServerInfrastructure } from './bootstrapServerInfra';
 import { bootstrapDiscordLoops } from './bootstrapDiscordLoops';
 import { runAndCacheMigrationValidation } from '../../utils/migrationRegistry';
 import logger from '../../logger';
+import { ALL_WORKFLOWS_DISABLED } from '../../config';
 
 type PgCronBootstrapStatus = 'not-required' | 'pending' | 'ready' | 'partial' | 'failed';
 
@@ -209,12 +210,16 @@ export const startServerProcessRuntime = (): void => {
   // Check schema migration status (non-blocking, logs warnings for pending)
   void runAndCacheMigrationValidation();
 
-  startAutomationJobs();
+  if (!ALL_WORKFLOWS_DISABLED) {
+    startAutomationJobs();
+  }
   startSharedLoops('server-process');
   startOpencodePublishWorker();
   startRuntimeAlerts();
-  startBotAutoRecovery();
-  startLocalAutonomySupervisorLoop();
+  if (!ALL_WORKFLOWS_DISABLED) {
+    startBotAutoRecovery();
+    startLocalAutonomySupervisorLoop();
+  }
 
   // Delegate sprint, MCP, sandbox, adapters, signal bus, observer
   bootstrapServerInfrastructure(isPgCronOwned);
@@ -264,7 +269,7 @@ export const startDiscordReadyRuntime = (client: Client): void => {
 
   runtimeState.discordReadyStarted = true;
 
-  if (isAutomationEnabled()) {
+  if (!ALL_WORKFLOWS_DISABLED && isAutomationEnabled()) {
     startAutomationModules(createDiscordChannelSink(client));
   }
 

@@ -1,3 +1,7 @@
+# Workflow Shutdown
+
+- Set `ALL_WORKFLOWS_DISABLED=true` to prevent automated workflow startup across bot, server, automation, sprint, and local autonomy loops.
+- Use this for full repository stop / archival mode when the project should remain dormant.
 # God Object Decomposition Plan
 
 > Status: CLOSED FOR M-21 STRUCTURAL WAVE | Created: 2026-04-04 | Updated: 2026-04-18
