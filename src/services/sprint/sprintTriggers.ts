@@ -6,6 +6,7 @@ import {
   SPRINT_TRIGGER_CRON_SECURITY_AUDIT,
   SPRINT_TRIGGER_CRON_IMPROVEMENT,
   SPRINT_AUTONOMY_LEVEL,
+  ALL_WORKFLOWS_DISABLED,
 } from '../../config';
 import {
   createSprintPipeline,
@@ -226,7 +227,7 @@ let improvementTimer: ReturnType<typeof setInterval> | null = null;
 let selfImprovementLoopTimer: ReturnType<typeof setInterval> | null = null;
 
 export const startSprintScheduledTriggers = (): void => {
-  if (!SPRINT_ENABLED) return;
+  if (!SPRINT_ENABLED || ALL_WORKFLOWS_DISABLED) return;
 
   const securityIntervalMs = parseCronIntervalMs(SPRINT_TRIGGER_CRON_SECURITY_AUDIT);
   if (securityIntervalMs > 0 && !securityAuditTimer) {
