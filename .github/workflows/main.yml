@@ -1,12 +1,7 @@
 name: Backend CI
 
+# Sunset mode: disable automatic CI triggers for this repository.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:

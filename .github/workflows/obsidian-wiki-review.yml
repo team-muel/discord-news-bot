@@ -1,8 +1,8 @@
 name: obsidian-wiki-review
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Triggered on PRs whose branch starts with wiki/ (e.g. wiki/2026-04-08-ingest)
-# Runs the Obsidian graph audit and posts the result as a PR comment.
+# Manual-only during repo sunset; former PR wiki audit flow is retained only
+# as a reference path for explicit operator-triggered runs.
 #
 # NOTE: for vault-only repos, copy this file to:
 #   {vault-repo}/.github/workflows/obsidian-wiki-review.yml
@@ -10,12 +10,6 @@ name: obsidian-wiki-review
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'wiki/**'
-      - '**.md'
   workflow_dispatch:
     inputs:
       vault_path:

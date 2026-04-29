@@ -1,8 +1,8 @@
 name: Deploy to Render
 
+# Sunset mode: disable automatic deploy triggers for this repository.
 on:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   render-deploy:

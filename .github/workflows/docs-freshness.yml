@@ -1,10 +1,8 @@
 name: docs-freshness
 
+# Sunset mode: disable automatic docs freshness checks for this repository.
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   docs-check:

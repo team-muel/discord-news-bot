@@ -1,8 +1,7 @@
 name: openjarvis-unattended
 
+# Sunset mode: disable scheduled unattended automation for this repository.
 on:
-  schedule:
-    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       dryRun:
